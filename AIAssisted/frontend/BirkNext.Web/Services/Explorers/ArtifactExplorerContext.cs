@@ -475,7 +475,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             // scope requirements, links and evidence are recorded and matched in. Reading the same state again changes nothing.
             if (viewing is not null && packs.Count > 1 && !_workspace.SddLifecycle.PackFocus.Any(f => f.WorkspaceScope == model.Scope && f.Module == module && f.Pack == viewing))
                 SetPackFocus(model.Scope, module, viewing);
-            SetActiveRequirementScope(packs.Count > 1 ? RequirementScopes.Of(model.Scope, module, viewing) : null);
+            // Every viewed pack scopes its requirements — also the only pack of a module — so FR-001 of one module never meets FR-001 of another.
+            SetActiveRequirementScope(viewing is not null ? RequirementScopes.Of(model.Scope, module, viewing) : null);
         }
         ArtifactExplorerState State(ExplorerArtifactStatus status, IReadOnlyList<ExplorerArtifact> listed, ScopeEntry? selected = null,
             ExplorerSelectionReason? reason = null, bool packRequired = false, bool ambiguous = false)

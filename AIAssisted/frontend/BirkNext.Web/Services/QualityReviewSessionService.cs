@@ -29,11 +29,11 @@ public sealed class QualityReviewSessionService
 
     /// <summary>
     /// Whether a saved result describes the inputs viewed now: the same role, artifact and content fingerprint for each input. A result for
-    /// another artifact pack (or changed documents) is never shown as current. A result saved without input records cannot be compared and is
-    /// treated as before.
+    /// another artifact pack (or changed documents) is never shown as current. A result saved without input records cannot be compared: it is
+    /// restored as before only outside Artifact Packs — never for a viewed pack, which must match its own inputs.
     /// </summary>
     public static bool InputsMatch(IReadOnlyList<SddReviewInput> saved, IReadOnlyList<SddReviewInput> current) =>
-        saved.Count == 0 || saved.Select(Key).Order(StringComparer.Ordinal).SequenceEqual(current.Select(Key).Order(StringComparer.Ordinal));
+        saved.Count == 0 ? current.All(i => i.Pack is null) : saved.Select(Key).Order(StringComparer.Ordinal).SequenceEqual(current.Select(Key).Order(StringComparer.Ordinal));
 
     private static string Key(SddReviewInput input) => $"{input.Role}|{input.ArtifactId}|{input.Fingerprint}";
 

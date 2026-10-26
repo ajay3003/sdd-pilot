@@ -7,19 +7,19 @@
 <section class="apr" aria-labelledby="@($"{_id}-title")" data-testid="apr">
     <div class="apr-head">
         <div>
-            <h2 class="apr-title" id="@($"{_id}-title")">All artifact packs</h2>
+            <h2 class="apr-title" id="@($"{_id}-title")">All Artifact Packs</h2>
             <p class="apr-text">
-                @Packs.Count packs@(ModuleLabel is { } module ? $" in module {module}" : ""). Each pack is reviewed on its own artifacts and the
-                shared artifacts that apply to it — never against a sibling pack.
+                @Packs.Count Artifact Pack@(Packs.Count == 1 ? "" : "s")@(ModuleLabel is { } module ? $" in module {module}" : ""). Each Artifact Pack is reviewed on its own
+                documents and the shared documents that apply to it — never against a sibling pack.
             </p>
         </div>
         <button type="button" class="btn-secondary" data-testid="apr-run" disabled="@(_running || ReviewPackIds.Count == 0)" @onclick="RunAsync">
-            @(_running ? "Reviewing packs…" : "Review every pack")
+            @(_running ? "Reviewing Artifact Packs…" : "Review every Artifact Pack")
         </button>
     </div>
     @if (ReviewPackIds.Count == 0)
     {
-        <p class="apr-text" role="status">Select at least one review pack above.</p>
+        <p class="apr-text" role="status">Select at least one Review Pack above.</p>
     }
     @if (_error is not null)
     {
@@ -30,9 +30,9 @@
         <p class="apr-headline" role="status" data-testid="apr-headline">@summary.Headline</p>
         <div class="apr-scroll">
             <table class="apr-table" data-testid="apr-table">
-                <caption class="apr-sr">Document Quality Review per artifact pack</caption>
+                <caption class="apr-sr">Document Quality Review per Artifact Pack</caption>
                 <thead>
-                    <tr><th scope="col">Pack</th><th scope="col">Artifacts present</th><th scope="col">Pack score</th><th scope="col">Findings</th></tr>
+                    <tr><th scope="col">Artifact Pack</th><th scope="col">Artifacts present</th><th scope="col">Documentation review score</th><th scope="col">Findings</th></tr>
                 </thead>
                 <tbody>
                     @foreach (var result in summary.Packs)
@@ -57,8 +57,8 @@
             </table>
         </div>
         <p class="apr-aggregate" data-testid="apr-aggregate">
-            Module aggregate (mean of assessed packs): <strong>@(summary.AggregateScore is { } aggregate ? $"{aggregate:0}%" : "Not assessed")</strong>.
-            Each pack's own score is the result for that pack.
+            Module documentation review score (mean of assessed Artifact Packs): <strong>@(summary.AggregateScore is { } aggregate ? $"{aggregate:0}%" : "Not assessed")</strong>.
+            Each Artifact Pack's own score is the result for that pack. Scores measure documentation rule coverage, not runtime quality or release readiness.
         </p>
     }
 </section>

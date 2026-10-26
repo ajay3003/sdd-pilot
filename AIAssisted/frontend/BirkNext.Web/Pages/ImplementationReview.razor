@@ -47,14 +47,7 @@
     {
         <p class="notice">Specification evidence is not available. Source and other reviews remain independent of SDD.</p>
     }
-    @if (HasFailedSource)
-    {
-        <p class="notice">Source Analysis is unsupported for this evidence: the selected analysis failed. Implementation is not assessed.</p>
-    }
-    else if (!HasSource)
-    {
-        <p class="notice">Source Analysis linkage: Not available to this review. Documented requirements remain documented; implementation is not assessed.</p>
-    }
+    <p class="notice" role="status" data-testid="ier-source-linkage" data-state="@Linkage.State">@LinkageText</p>
 
     <section>
         <h2>Requirements and evidence</h2>
@@ -79,7 +72,7 @@
                         <td>@TaskLinks(requirement.Id)</td>
                         <td>@(implementation.Count == 0 ? "No implementation evidence" : string.Join(", ", implementation.Select(x => $"{x.EvidenceType} ({x.Confidence}; {x.Currentness})")))</td>
                         <td>@(tests.Count == 0 ? "No test design" : string.Join(", ", tests.Select(x => $"{x.State} ({x.Currentness})")))<br />@(executions.Count == 0 ? "Not executed" : string.Join(", ", executions.Select(x => $"{x.ExecutionState}/{x.Result} ({x.Currentness})")))</td>
-                        <td>@Assessment(implementation)</td>
+                        <td data-testid="ier-assessment">@Assessment(implementation)</td>
                     </tr>
                 }
                 </tbody>
@@ -97,11 +90,14 @@
             // @bind reads the dictionary entry while rendering; an open question without an entry would throw KeyNotFoundException.
             _resolutions.TryAdd(key, "");
             _resolutionRefs.TryAdd(key, "");
-            var state = Artifacts.SddLifecycle.Questions.FirstOrDefault(x => x.Id == key);
-            <article class="question">
+            var state = Artifacts.SddLifecycle.Questions.FirstOrDefault(x => x.Id == key && RequirementScopes.Matches(x.RequirementScope, Artifacts.SddLifecycle.ActiveRequirementScope))
+                ?? Artifacts.SddLifecycle.Questions.FirstOrDefault(x => x.Id == key && x.RequirementScope is null && Artifacts.SddLifecycle.ActiveRequirementScope is null);
+            var clarification = ClarificationStates.Of(item, state);
+            <article class="question" data-testid="ier-clarification" data-state="@clarification">
                 <h3>@(item.Id ?? key): @item.Question</h3>
                 @if (!string.IsNullOrWhiteSpace(item.Answer)) { <p>Documented answer: @item.Answer</p> }
-                <p>Status: <strong>@(state?.Status ?? "Open — explicit resolution not recorded")</strong></p>
+                <p>Status: <strong data-testid="ier-clarification-status">@ClarificationStates.Label(clarification)</strong></p>
+                @if (ClarificationStates.Help(clarification) is { } help) { <p class="note">@help</p> }
                 @if (state?.Status != "Resolved")
                 {
                     <label for="resolution-@key">Resolution</label>
@@ -122,22 +118,33 @@
         <button @onclick="CaptureBaselineAsync" disabled="@(!Artifacts.SddLifecycle.Revisions.Any(x => x.Authority == "Baseline"))">Capture selected baseline revisions</button>
         @foreach (var baseline in Artifacts.SddLifecycle.Baselines.OrderByDescending(x => x.CreatedAt))
         { <p>@baseline.Label · @baseline.Status · @baseline.ArtifactRevisionIds.Count artifact revision(s) · @baseline.CreatedAt.ToLocalTime().ToString("g")</p> }
-        @foreach (var group in Artifacts.SddLifecycle.Revisions.GroupBy(x => x.Role).OrderBy(x => x.Key))
+        @* History is per logical artifact (role + project + path): another module's or Artifact Pack's file of the same role is a different
+           artifact, never an earlier revision. Versions are content versions of that one document across imports. *@
+        @foreach (var role in ArtifactLogicalIdentity.Histories(Artifacts.SddLifecycle).GroupBy(h => h.Role))
         {
-            <h3>@group.Key</h3>
-            <div class="table-wrap" tabindex="0" role="region" aria-label="Artifact revisions table"><table><thead><tr><th>Revision</th><th>Authority</th><th>Selection</th><th>Fingerprint</th><th>Captured</th><th>Action</th></tr></thead><tbody>
-            @foreach (var revision in group.OrderByDescending(x => x.Revision))
+            <h3>@role.Key <span class="note">· @role.Count() document@(role.Count() == 1 ? "" : "s")</span></h3>
+            @foreach (var history in role)
             {
-                <tr><td>@revision.Revision</td><td>
-                    <select aria-label="Authority for @group.Key revision @revision.Revision" value="@revision.Authority" @onchange="e => SetAuthorityAsync(revision.RevisionId, e.Value?.ToString())">
-                        @foreach (var value in AuthorityValues) { <option value="@value" disabled="@(revision.IsCurrentSelection && value == "Superseded")">@value</option> }
-                    </select>
-                </td><td>@(revision.IsCurrentSelection ? "Current selection" : "Historical")</td><td><code>@revision.Fingerprint[..Math.Min(12, revision.Fingerprint.Length)]</code></td><td>@revision.CapturedAt.ToLocalTime().ToString("g")</td><td>
-                    @if (!revision.IsCurrentSelection && group.Any(x => x.IsCurrentSelection))
-                    { <button class="secondary" @onclick="() => SupersedeAsync(revision, group.First(x => x.IsCurrentSelection))">Mark superseded by current selection</button> }
-                </td></tr>
+                var current = history.Current;
+                <details class="artifact-history" data-testid="ier-artifact-history" data-path="@history.Path">
+                    <summary><strong>@history.Path</strong> · @history.Scope · @history.Versions.Count content version@(history.Versions.Count == 1 ? "" : "s")</summary>
+                    <div class="table-wrap" tabindex="0" role="region" aria-label="@($"Versions of {history.Path}")"><table><thead><tr><th>Version</th><th>Authority</th><th>Status</th><th>Fingerprint</th><th>Captured</th><th>Action</th></tr></thead><tbody>
+                    @foreach (var version in history.Versions.OrderByDescending(v => v.Version))
+                    {
+                        var revision = version.Latest;
+                        var isCurrent = ReferenceEquals(version, current);
+                        <tr data-testid="ier-artifact-version"><td>@version.Version@(version.Revisions.Count > 1 ? $" (in {version.Revisions.Count} imports)" : "")</td><td>
+                            <select aria-label="Authority for @history.Path version @version.Version" value="@revision.Authority" @onchange="e => SetAuthorityAsync(revision.RevisionId, e.Value?.ToString())">
+                                @foreach (var value in AuthorityValues) { <option value="@value" disabled="@(revision.IsCurrentSelection && value == "Superseded")">@value</option> }
+                            </select>
+                        </td><td>@(isCurrent ? "Latest content" : "Earlier content")@(revision.IsCurrentSelection ? " · selected" : "")</td><td><code>@revision.Fingerprint[..Math.Min(12, revision.Fingerprint.Length)]</code></td><td>@revision.CapturedAt.ToLocalTime().ToString("g")</td><td>
+                            @if (!isCurrent)
+                            { <button class="secondary" @onclick="() => SupersedeAsync(revision, current.Latest)">Mark superseded by the latest version</button> }
+                        </td></tr>
+                    }
+                    </tbody></table></div>
+                </details>
             }
-            </tbody></table></div>
         }
     </section>
 
@@ -158,7 +165,7 @@
         <h2>Review history</h2>
         <button @onclick="RecordReviewAsync">Record deterministic review</button>
         @if (Artifacts.SddLifecycle.ReviewRuns.Count == 0) { <p>No review run recorded.</p> }
-        @foreach (var run in Artifacts.SddLifecycle.ReviewRuns.OrderByDescending(x => x.RanAt))
+        @foreach (var run in Artifacts.SddLifecycle.ReviewRuns.Where(x => RequirementScopes.Matches(x.RequirementScope, Artifacts.SddLifecycle.ActiveRequirementScope)).OrderByDescending(x => x.RanAt))
         {
                 var baselineStatus = run.BaselineId is { } id ? Artifacts.SddLifecycle.Baselines.FirstOrDefault(x => x.BaselineId == id)?.Status : null;
                 var stale = run.ProjectionMode == nameof(LifecycleProjectionMode.ActiveWorkspace)
@@ -189,7 +196,7 @@
                 @foreach (var snapshot in _sourceSnapshots)
                 { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToLocalTime().ToString("g") · @snapshot.Status · @Short(snapshot.Archive.Sha256)</option> }
             </select>
-            <button data-testid="ier-bind-codelinks" @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(Artifacts.ProjectName))">Bind explicit CodeLinks</button>
+            <button data-testid="ier-bind-codelinks" @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(CodeLinkProject))">Bind explicit CodeLinks</button>
         }
         @foreach (var evidence in Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability"))
         {
@@ -235,8 +242,21 @@
     private List<SddRequirementGraphRow> GraphRows => Projection.Rows.ToList();
     private List<SemanticRequirement> Requirements => GraphRows.Select(x => x.Requirement).ToList();
     private List<SemanticClarification> Clarifications => Context?.GetClarifications().ToList() ?? [];
-    private bool HasSource => SddSourceAssessment.HasSource(Artifacts.SddLifecycle);
-    private bool HasFailedSource => SddSourceAssessment.HasFailedSource(Artifacts.SddLifecycle);
+    private SourceLinkage Linkage => SddSourceAssessment.Linkage(Artifacts.SddLifecycle);
+    /// <summary>The project CodeLinks are read for: the workspace project, else the current Project Import's project.</summary>
+    private string? CodeLinkProject => !string.IsNullOrWhiteSpace(Artifacts.ProjectName) ? Artifacts.ProjectName
+        : Artifacts.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == Artifacts.SddLifecycle.CurrentProjectImportId)?.ProjectName;
+    /// <summary>Some implementation evidence is recorded in this Artifact Pack's scope: the pack is mapped to source.</summary>
+    private bool PackMapped => Artifacts.SddLifecycle.ImplementationEvidence.Any(x => RequirementScopes.Matches(x.RequirementScope, Artifacts.SddLifecycle.ActiveRequirementScope));
+
+    private string LinkageText => Linkage.State switch
+    {
+        SourceLinkageState.Unavailable => "Source snapshot unavailable — no Source Analysis snapshot is linked to this project. Documented requirements remain documented; implementation is not assessed.",
+        SourceLinkageState.Failed => "Source Analysis failed for the recorded snapshot. Implementation is not assessed.",
+        SourceLinkageState.Ambiguous => $"Source snapshot ambiguous — {Linkage.Basis} Implementation is not assessed until one is chosen.",
+        _ when !PackMapped => $"Source snapshot available ({Linkage.Basis}) — this Artifact Pack is not mapped to source yet: no explicit implementation links are recorded. Implementation is not assessed; bind explicit CodeLinks below.",
+        _ => $"Source snapshot available ({Linkage.Basis}). Requirements show linked implementation evidence where explicit links exist.",
+    };
     private int PlanLinkedCount => Requirements.Count(x => PlanLinks(x.Id) > 0);
     private int TaskLinkedCount => Requirements.Count(x => TaskLinks(x.Id) > 0);
     private int PlanLinks(string id) => GraphRows.FirstOrDefault(x => x.Requirement.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.PlanReferences.Count ?? 0;
@@ -252,12 +272,9 @@
 
     private string Assessment(List<SddImplementationEvidence> evidence)
     {
-        if (!Artifacts.Has(WorkspaceArtifactType.Specification)) return "Requirements not available";
-        if (HasFailedSource && evidence.Count == 0) return "SourceUnsupported — Source Analysis failed; implementation not assessed";
-        if (!HasSource && evidence.Count == 0) return "NoSourceAvailable — implementation not assessed";
+        if (Requirements.Count == 0) return "Requirements not available";
         if (SddSourceAssessment.HasPartialSource(Artifacts.SddLifecycle) && evidence.Count == 0) return "Partial source analysis — requirement implementation not assessed";
-        if (evidence.Count == 0) return "No implementation evidence registered";
-        return evidence.Any(x => x.Confidence is "Confirmed" or "StronglySupported") ? "Implementation evidence found" : "Inferred evidence only";
+        return SddSourceAssessment.RequirementImplementation(Linkage, evidence, PackMapped);
     }
 
     private string QuestionKey(SemanticClarification item) => string.IsNullOrWhiteSpace(item.Id)
@@ -313,17 +330,19 @@
             RequirementCount = requirements.Count,
             RequirementsWithPlanEvidence = requirements.Count(x => PlanLinks(x.Id) > 0),
             RequirementsWithTaskEvidence = requirements.Count(x => TaskLinks(x.Id) > 0),
-            SourceSnapshotReference = Artifacts.SddLifecycle.SourceSnapshots.FirstOrDefault(x => x.Currentness == "Current")?.SnapshotId ?? "Not available",
+            SourceSnapshotReference = Linkage.SnapshotId is { } snapshotId ? $"{snapshotId} ({Linkage.State})" : Linkage.State.ToString(),
             SourceFingerprint = Artifacts.SddLifecycle.SourceSnapshots.FirstOrDefault(x => x.Currentness == "Current")?.Fingerprint ?? "",
             LifecycleEvidenceFingerprint = EvidenceGraph.Fingerprint(Artifacts, ProjectionMode, HistoricalBaselineId),
             TestEvidenceFingerprint = Fingerprint(System.Text.Json.JsonSerializer.Serialize(GraphRows.Select(x => new { x.Requirement.Id, x.Executions }))),
             ReviewVersion = 3,
             ProjectionMode = Projection.Metadata.Mode.ToString(), BaselineId = Projection.Metadata.BaselineId,
             ArtifactRevisionIds = Projection.Metadata.ArtifactRevisionIds.ToList(), ArtifactFingerprints = Projection.Metadata.ArtifactFingerprints.ToList(),
+            RequirementScope = Artifacts.SddLifecycle.ActiveRequirementScope,
             Currentness = "Current"
         };
         Artifacts.SddLifecycle.ReviewRuns.Add(run);
-        foreach (var previous in Artifacts.SddLifecycle.ReviewRuns.Where(x => x.Id != run.Id && x.Currentness == "Current")) previous.Currentness = "Historical";
+        foreach (var previous in Artifacts.SddLifecycle.ReviewRuns.Where(x => x.Id != run.Id && x.Currentness == "Current" && RequirementScopes.Matches(x.RequirementScope, run.RequirementScope)))
+            previous.Currentness = "Historical";
         await AutoSave.SaveNowAsync();
     }
 
@@ -364,10 +383,10 @@
             await AutoSave.SaveNowAsync();
             return;
         }
-        if (string.IsNullOrWhiteSpace(Artifacts.ProjectName)) { _sourceMessage = "A workspace project identifier is required to read persisted CodeLinks."; return; }
+        if (CodeLinkProject is not { Length: > 0 } project) { _sourceMessage = "A workspace project identifier is required to read persisted CodeLinks."; return; }
         try
         {
-            var links = await SddEvidenceApi.CodeLinksAsync(Artifacts.ProjectName);
+            var links = await SddEvidenceApi.CodeLinksAsync(project);
             SddEvidenceGraphService.RecordSourceSnapshot(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);
             var added = SddEvidenceGraphService.BindCodeLinks(Artifacts.SddLifecycle, snapshot, links, Requirements.Select(x => x.Id));
             SddEvidenceGraphService.SourceSnapshotChanged(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);

@@ -70,7 +70,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Run Document Quality Review");
-            cut.Markup.Should().Contain("Review packs");
+            cut.Markup.Should().Contain("Review Packs");
             cut.Markup.Should().NotContain("SpecificationImport");
             cut.FindAll("input[type=file]").Should().BeEmpty();
             cut.FindAll("textarea").Should().BeEmpty();
@@ -416,7 +416,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var summary = cut.Find(".qr-review-summary");
-            summary.TextContent.Should().Contain("Selected-pack average:");
+            summary.TextContent.Should().Contain("Documentation review score (average of selected Review Packs):");
             summary.TextContent.Should().Contain("33%");
             summary.QuerySelector("svg").Should().BeNull();
             summary.QuerySelector(".qr-score-ring-wrap").Should().BeNull();
@@ -797,9 +797,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var summary = cut.Find(".qr-review-summary");
             summary.TextContent.Should().Contain("Readiness not assessed");
-            summary.TextContent.Should().Contain("Selected-pack average:");
+            summary.TextContent.Should().Contain("Documentation review score (average of selected Review Packs):");
             summary.TextContent.Should().Contain("62.5%");
-            summary.QuerySelector(".qr-findings-context")!.TextContent.Should().ContainAll("0 findings across", "2 completed packs");
+            summary.QuerySelector(".qr-findings-context")!.TextContent.Should().ContainAll("0 findings across", "2 completed Review Packs");
         });
     }
 
@@ -876,7 +876,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             packCard.TextContent.Should().Contain("QA Auditor");
             packCard.TextContent.Should().Contain("HIGH");
             packCard.TextContent.Should().Contain("1 finding");
-            packCard.TextContent.Should().Contain("Pack score 75%");
+            packCard.TextContent.Should().Contain("Documentation coverage 75%");
             packCard.TextContent.Should().Contain("View details →");
             packCard.TextContent.Should().NotContain("Fair");
             packCard.TextContent.Should().NotContain("Needs attention");
@@ -1115,7 +1115,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("[data-testid=qr-pack-readiness]").Should().HaveCount(5).And.OnlyContain(c => c.TextContent == "Ready");
-            cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Be("5 artifacts available · 5 packs selected · 5 ready · 0 partial · 0 blocked");
+            cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Be("5 artifacts available · 5 Review Packs selected · 5 ready · 0 partial · 0 blocked");
             cut.Find("[data-testid=qr-expected-limitations]").TextContent.Should().Contain("None from missing inputs");
             cut.Find(".qr-readiness-note").TextContent.Should().Contain("not that it will pass");
         });
@@ -1155,7 +1155,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var limitations = cut.Find("[data-testid=qr-expected-limitations]").TextContent;
             limitations.Should().Contain("QA Readiness:").And.NotContain("QA Auditor:");
-            cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("1 pack selected · 0 ready · 1 partial · 0 blocked");
+            cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("1 Review Pack selected · 0 ready · 1 partial · 0 blocked");
         });
     }
 
@@ -1172,7 +1172,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Find("button.btn-primary").HasAttribute("disabled").Should().BeTrue();
-            cut.Find("[data-testid=qr-run-disabled-reason]").TextContent.Should().Be("Select at least one review pack.");
+            cut.Find("[data-testid=qr-run-disabled-reason]").TextContent.Should().Be("Select at least one Review Pack.");
         });
     }
 
@@ -1183,12 +1183,12 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll(".qr-shortcut-btn").Should().NotBeEmpty());
 
         cut.FindAll(".qr-shortcut-btn").Single(b => b.TextContent == "Select All").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("2 packs selected · 0 ready · 2 partial · 0 blocked"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("2 Review Packs selected · 0 ready · 2 partial · 0 blocked"));
 
         var readiness = cut.FindAll(".qr-shortcut-btn").Single(b => b.TextContent == "Only Readiness");
         readiness.GetAttribute("title").Should().Contain("replaces the current selection");
         readiness.Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("1 pack selected"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("1 Review Pack selected"));
 
         ClickRun(cut);
         cut.WaitForAssertion(() => _qualityReview.Calls.Single().SelectedPackIds.Should().Equal("qa-readiness"));
@@ -1250,7 +1250,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Find(".qr-review-summary").TextContent.Should().Contain("80%");
-            cut.Find("[data-testid=qr-assessed-packs]").TextContent.Should().Contain("1 of 2 packs assessed");
+            cut.Find("[data-testid=qr-assessed-packs]").TextContent.Should().Contain("1 of 2 Review Packs assessed");
             cut.Markup.Should().Contain("Not assessed");
         });
     }
@@ -2129,7 +2129,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             summary.QuerySelector(".qr-gate-issues")!.TextContent.Should().Contain("2 delivery gate issues");
             summary.QuerySelector(".qr-severity-summary")!.TextContent.Should().Contain("1 Critical");
             summary.QuerySelector(".qr-severity-summary")!.TextContent.Should().Contain("1 High");
-            summary.QuerySelector(".qr-findings-context")!.TextContent.Should().ContainAll("2 findings across", "1 completed pack");
+            summary.QuerySelector(".qr-findings-context")!.TextContent.Should().ContainAll("2 findings across", "1 completed Review Pack");
             summary.QuerySelector("svg").Should().BeNull();
         });
     }
@@ -2252,7 +2252,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var metadata = packCard.QuerySelector(".qr-pack-card-metadata");
             metadata.Should().BeNull();
             packCard.TextContent.Should().Contain("No issues");
-            packCard.TextContent.Should().Contain("Pack score 100%");
+            packCard.TextContent.Should().Contain("Documentation coverage 100%");
             packCard.QuerySelector(".qr-pack-card-severity").Should().BeNull();
         });
     }
@@ -5997,7 +5997,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".issue-sev").Select(e => e.TextContent.Trim()).Should().Equal("High", "Medium", "Low");
-            cut.FindAll(".issue-status").Select(e => e.TextContent.Trim()).Should().Equal("Status: Failed", "Status: Potential gap", "Status: Failed");
+            cut.FindAll(".issue-status").Select(e => e.TextContent.Trim()).Should().Equal("Status: Documentation gap — not found in reviewed documentation", "Status: Potential documentation gap", "Status: Documentation gap — not found in reviewed documentation");
             cut.FindAll(".issue-component").Select(e => e.TextContent.Trim()).Should().ContainInOrder(
                 "STD-H — High rule", "STD-M — Medium rule", "STD-L — Low rule");
             cut.FindAll(".issue-sev").Select(e => e.TextContent).Should().NotContain(new[] { "Error", "Warning", "Info" });

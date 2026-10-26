@@ -52,6 +52,7 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
                         return Projection(workspace, context, LifecycleProjectionMode.ActiveWorkspace, null, [], [], limitations);
                     }
                     limitations.Add("Baseline uses explicitly-authoritative role revisions; no aggregate manifest has been captured.");
+                    explicitBaselineRevisions = ForActivePack(state, explicitBaselineRevisions, limitations);
                     revisionIds = explicitBaselineRevisions.Select(x => x.RevisionId).ToList();
                     resolvedBaselineId = null;
                     context = BuildFromRevisions(explicitBaselineRevisions, limitations);
@@ -69,7 +70,7 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
             }
             var revisions = manifest.ArtifactRevisionIds.Select(id => state.Revisions.FirstOrDefault(x => x.RevisionId == id)).ToList();
             if (revisions.Any(x => x is null)) limitations.Add("One or more baseline artifact revisions are missing; projection is partial.");
-            var found = revisions.OfType<SddArtifactRevision>().ToList();
+            var found = ForActivePack(state, revisions.OfType<SddArtifactRevision>().ToList(), limitations);
             revisionIds = found.Select(x => x.RevisionId).ToList(); fingerprints = found.Select(x => x.Fingerprint).ToList();
             resolvedBaselineId = manifest.BaselineId;
             evidenceCutoff = manifest.CreatedAt;
@@ -91,6 +92,29 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
         var legacy = state.ImplementationEvidence.Count(x => x.RequirementScope is null) + state.TestEvidence.Count(x => x.RequirementScope is null)
             + state.TestExecutions.Count(x => x.RequirementScope is null && (x.RequirementReferences.Count > 0 || x.AcceptanceCriterionReferences.Count > 0));
         return legacy == 0 ? [] : [$"{legacy} legacy unscoped evidence item{(legacy == 1 ? " is" : "s are")} not applied to {RequirementScopes.Label(scope)}: they were recorded before artifact packs and name no pack."];
+    }
+
+    /// <summary>
+    /// The baseline revisions that apply to the viewed Artifact Pack: per role, the revision inside the pack's folder, else the one shared
+    /// revision of the module. A role with several candidates and none in the pack is left out (reported) — never one picked arbitrarily.
+    /// </summary>
+    private static List<SddArtifactRevision> ForActivePack(SddLifecycleState state, List<SddArtifactRevision> revisions, List<string> limitations)
+    {
+        var parsed = RequirementScopes.Parse(state.ActiveRequirementScope);
+        var result = new List<SddArtifactRevision>();
+        foreach (var role in revisions.GroupBy(r => r.Role, StringComparer.OrdinalIgnoreCase))
+        {
+            var candidates = role.ToList();
+            if (candidates.Count == 1) { result.Add(candidates[0]); continue; }
+            string PathOf(SddArtifactRevision r) => "/" + ArtifactLogicalIdentity.PathOf(state, r).Replace('\\', '/');
+            var inModule = parsed is { Module: { Length: > 0 } module } ? candidates.Where(r => PathOf(r).Contains($"/{module}/", StringComparison.OrdinalIgnoreCase) || PathOf(r).StartsWith($"/{module}/", StringComparison.OrdinalIgnoreCase)).ToList() : candidates;
+            var inPack = parsed is { Pack: { } pack } ? inModule.Where(r => PathOf(r).Contains($"/specs/{pack}/", StringComparison.OrdinalIgnoreCase)).ToList() : [];
+            var shared = inModule.Where(r => !PathOf(r).Contains("/specs/", StringComparison.OrdinalIgnoreCase)).ToList();
+            var chosen = inPack.Count == 1 ? inPack[0] : inPack.Count == 0 && shared.Count == 1 ? shared[0] : null;
+            if (chosen is not null) result.Add(chosen);
+            else limitations.Add($"{candidates.Count} {role.Key} baseline revisions exist and none applies unambiguously to {RequirementScopes.Label(state.ActiveRequirementScope)}; that role is left out of this projection.");
+        }
+        return result;
     }
 
     private ReviewContext? BuildFromRevisions(IReadOnlyList<SddArtifactRevision> revisions, List<string> limitations)
@@ -121,19 +145,31 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
         // FR-001 evidence, and unscoped legacy evidence in a pack-organised module, never satisfy this pack's FR-001.
         var scope = state.ActiveRequirementScope;
         bool InScope(string? itemScope) => RequirementScopes.Matches(itemScope, scope);
+        // Plan and task links are the canonical ones of the projected artifacts (the selected Artifact Pack's documents, or the baseline's), the
+        // same explicit references Plan and Task Explorer read — never a separately persisted copy that may not have been recorded yet.
+        // Designed tests are the pack's acceptance scenarios, plus any designed-test evidence recorded in this pack's scope.
         return context?.GetRequirements().Select(r => new SddRequirementGraphRow(r,
-            mode == LifecycleProjectionMode.ActiveWorkspace
-                ? state.Links.Where(x => InScope(x.RequirementScope) && x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementPlansTo" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
-                : context.GetLinkedPlans(r.Id).ToArray(),
-            mode == LifecycleProjectionMode.ActiveWorkspace
-                ? state.Links.Where(x => InScope(x.RequirementScope) && x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
-                : context.GetLinkedTasks(r.Id).ToArray(),
+            context.GetLinkedPlans(r.Id).ToArray(),
+            context.GetLinkedTasks(r.Id).ToArray(),
             state.ImplementationEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || (x.RecordedAt ?? x.ObservedAt) is not { } recorded || recorded <= evidenceCutoff)).ToArray(),
-            state.TestEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || x.Timestamp is null || x.Timestamp <= evidenceCutoff)).ToArray(),
+            DesignedTests(state, r, InScope, evidenceCutoff),
             state.TestExecutions.Where(x => InScope(x.RequirementScope) && (evidenceCutoff is null || x.ExecutedAt is null || x.ExecutedAt <= evidenceCutoff) && (x.RequirementReferences.Contains(r.Id, StringComparer.OrdinalIgnoreCase) ||
                 r.LinkedAcceptanceScenarios.Any(ac => x.AcceptanceCriterionReferences.Contains(ac.Id ?? ac.Title, StringComparer.OrdinalIgnoreCase)))).ToArray(),
             state.Questions.Any(q => InScope(q.RequirementScope) && (q.Status is "Open" or "NeedsAnswer") && q.RequirementIds.Contains(r.Id, StringComparer.OrdinalIgnoreCase)))).ToArray() ?? [];
     }
+    private static SddTestEvidence[] DesignedTests(SddLifecycleState state, SemanticRequirement r, Func<string?, bool> inScope, DateTimeOffset? evidenceCutoff)
+    {
+        var recorded = state.TestEvidence.Where(x => inScope(x.RequirementScope) && x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase)
+            && (evidenceCutoff is null || x.Timestamp is null || x.Timestamp <= evidenceCutoff)).ToList();
+        foreach (var ac in r.LinkedAcceptanceScenarios)
+        {
+            var acId = ac.Id ?? ac.Title;
+            if (!recorded.Any(x => x.State == "Designed" && string.Equals(x.AcceptanceCriterionId, acId, StringComparison.Ordinal)))
+                recorded.Add(new SddTestEvidence { RequirementId = r.Id, AcceptanceCriterionId = acId, TestReference = acId, State = "Designed", Provenance = "SpecificationAcceptanceScenario", RequirementScope = state.ActiveRequirementScope });
+        }
+        return [.. recorded];
+    }
+
     public void SynchronizeCurrentArtifacts(IWorkspaceSessionService workspace)
     {
         var context = contexts.GetCurrent();

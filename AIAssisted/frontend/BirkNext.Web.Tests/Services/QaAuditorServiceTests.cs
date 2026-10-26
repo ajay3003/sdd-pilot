@@ -221,7 +221,8 @@ public class QaAuditorServiceTests
             .FirstOrDefault(f => f.RuleCode == "CONST-001" && f.AffectedArtifact == "PP-01");
 
         principleFinding.Should().NotBeNull();
-        principleFinding!.Severity.Should().Be(QaSeverity.Critical);
+        principleFinding!.Severity.Should().Be(QaSeverity.Medium, "an unreferenced rule ID is a documentation traceability gap, not a product failure");
+        principleFinding.Title.Should().StartWith("Documentation gap");
     }
 
     [Fact]

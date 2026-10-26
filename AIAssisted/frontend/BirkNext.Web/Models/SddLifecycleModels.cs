@@ -457,6 +457,8 @@ public sealed class SddTestEvidence
 public sealed class SddReviewRun
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>The Artifact Pack scope the run reviewed; a later run supersedes only runs of the same scope. Null for runs before packs.</summary>
+    public string? RequirementScope { get; set; }
     public DateTimeOffset RanAt { get; set; } = DateTimeOffset.UtcNow;
     public string SpecificationFingerprint { get; set; } = "";
     public string PlanFingerprint { get; set; } = "";

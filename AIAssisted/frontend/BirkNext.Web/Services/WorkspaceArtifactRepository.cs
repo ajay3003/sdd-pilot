@@ -264,7 +264,10 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             throw new InvalidOperationException("Select a replacement revision before superseding the current selection.");
         if (authority == "Baseline")
         {
-            foreach (var other in SddLifecycle.Revisions.Where(x => x.Role == revision.Role && x.RevisionId != revisionId && x.Authority == "Baseline"))
+            // One baseline per logical artifact: an earlier version of the same document becomes Historical; another module's or pack's
+            // document of the same role keeps its own baseline.
+            foreach (var other in SddLifecycle.Revisions.Where(x => x.Role == revision.Role && x.RevisionId != revisionId && x.Authority == "Baseline"
+                && ArtifactLogicalIdentity.SameArtifact(SddLifecycle, x, revision)))
                 other.Authority = "Historical";
         }
         revision.Authority = authority;
@@ -307,7 +310,9 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SourceReference = sourcePath,
             Content = text,
             Fingerprint = fingerprint,
-            Revision = SddLifecycle.Revisions.Where(x => x.Role == role).Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1,
+            // Numbered per document (scope, role, file name), like imported revisions — never across unrelated documents of the role.
+            Revision = SddLifecycle.Revisions.Where(x => x.Role == role && x.WorkspaceScope == scope && string.Equals(x.FileName, fileName ?? role, StringComparison.Ordinal))
+                .Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1,
             IsCurrentSelection = true,
             CapturedAt = DateTimeOffset.UtcNow,
             WorkspaceScope = scope

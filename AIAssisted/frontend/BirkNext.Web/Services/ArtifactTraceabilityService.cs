@@ -107,8 +107,11 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 list.Add(specId);
             }
         }
+        ruleToReqs = new Dictionary<string, List<string>>(ruleToReqs.GroupBy(x => ConstitutionRuleIds.Normalize(x.Key))
+            .ToDictionary(g => g.Key, g => g.SelectMany(x => x.Value).Distinct().ToList()), ConstitutionRuleIds.Comparer);
 
-        foreach (var rule in constitution.RuleCatalog.Where(r => !r.IsReferenceOnly))
+        // Rules without a citable ID cannot be referenced by ID: they are not counted as covered or missing (no deterministic mapping).
+        foreach (var rule in constitution.RuleCatalog.Where(r => !r.IsReferenceOnly && !ConstitutionRuleIds.HasNoCitableId(r)))
         {
             var allIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rule.RuleId };
             foreach (var alias in rule.Aliases) allIds.Add(alias);
@@ -172,10 +175,12 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             var links = new List<TraceabilityLink>();
             foreach (var planId in planIds)
             {
+                // A decision, or a plan location ("§ Heading") where the requirement id is written explicitly.
                 var planItem = context.Plan.ArchitectureDecisions
                     .FirstOrDefault(d => d.Id == planId);
+                var title = planItem?.Title ?? (planId.StartsWith("§ ", StringComparison.Ordinal) ? planId[2..] : null);
 
-                if (planItem is not null)
+                if (title is not null)
                 {
                     links.Add(new TraceabilityLink
                     {
@@ -184,7 +189,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                         TargetId    = planId,
                         TargetType  = ArtifactType.Plan,
                         SourceTitle = requirement.Text,
-                        TargetTitle = planItem.Title,
+                        TargetTitle = title,
                     });
                 }
             }

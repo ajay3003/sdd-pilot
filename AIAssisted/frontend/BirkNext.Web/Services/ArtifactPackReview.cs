@@ -35,10 +35,10 @@ public sealed record ArtifactPackReviewSummary(IReadOnlyList<ArtifactPackReviewR
     /// <summary>The module aggregate: the mean of the assessed packs' scores. Null when no pack could be assessed.</summary>
     public double? AggregateScore => Assessed == 0 ? null : Packs.Where(p => p.Score is not null).Average(p => p.Score!.Value);
 
-    /// <summary>"3 artifact packs assessed · 2 complete · 1 partial · 78 findings across 3 packs".</summary>
+    /// <summary>"3 Artifact Packs assessed · 2 complete · 1 partial · 78 findings across 3 Artifact Packs".</summary>
     public string Headline =>
-        $"{Assessed} artifact pack{(Assessed == 1 ? "" : "s")} assessed · {CompleteCount} complete · {PartialCount} partial · " +
-        $"{TotalFindings} finding{(TotalFindings == 1 ? "" : "s")} across {Packs.Count} pack{(Packs.Count == 1 ? "" : "s")}";
+        $"{Assessed} Artifact Pack{(Assessed == 1 ? "" : "s")} assessed · {CompleteCount} complete · {PartialCount} partial · " +
+        $"{TotalFindings} finding{(TotalFindings == 1 ? "" : "s")} across {Packs.Count} Artifact Pack{(Packs.Count == 1 ? "" : "s")}";
 }
 
 public static class ArtifactPackReview

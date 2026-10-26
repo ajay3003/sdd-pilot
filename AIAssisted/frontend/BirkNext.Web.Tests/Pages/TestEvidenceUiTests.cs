@@ -191,7 +191,7 @@ public sealed class TestEvidenceUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=te-message]").TextContent.Should().Contain("Recorded 2 source test definition(s)"));
         _repository.SddLifecycle.SourceSnapshots.Single(s => s.Currentness == "Current").SnapshotId.Should().Be(S.SnapshotB.ToString());
         _repository.SddLifecycle.TestDefinitions.Should().HaveCount(2).And.OnlyContain(d => d.SourceSnapshotId == S.SnapshotB.ToString());
-        cut.Find("[data-testid=te-source]").TextContent.Should().Contain("2 current source test definition(s)");
+        cut.Find("[data-testid=te-source]").TextContent.Should().Contain("Linked source tests found: 2 of 2 source tests").And.Contain("Executed evidence not imported");
     }
 
     [Fact]

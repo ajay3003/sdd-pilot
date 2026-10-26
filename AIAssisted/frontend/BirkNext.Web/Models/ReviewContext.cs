@@ -323,20 +323,25 @@ public static class ReviewContextFactory
     }
 
     /// <summary>
-    /// Link specification elements to plan decisions.
+    /// Link specification elements to the plan: architecture decisions that name the requirement, and every plan location ("§ Heading") where
+    /// the requirement id is written explicitly. Ids are compared in one spelling (FR-1 = FR-001); similar wording never links.
     /// </summary>
     private static Dictionary<string, List<string>> BuildSpecToPlanLinks(
         SpecificationSemanticModel specification,
         PlanSemanticModel plan)
     {
         var links = new Dictionary<string, List<string>>();
+        var mentions = plan.RequirementMentions.ToDictionary(m => BirkNext.Web.Services.RequirementScopes.NormalizeId(m.Key), m => m.Value, StringComparer.OrdinalIgnoreCase);
 
         foreach (var requirement in specification.Requirements)
         {
+            var id = BirkNext.Web.Services.RequirementScopes.NormalizeId(requirement.Id);
             var architectureDecisions = plan.ArchitectureDecisions
-                .Where(d => d.RelatedRequirementIds.Contains(requirement.Id))
+                .Where(d => d.RelatedRequirementIds.Any(r => BirkNext.Web.Services.RequirementScopes.NormalizeId(r).Equals(id, StringComparison.OrdinalIgnoreCase)))
                 .Select(d => d.Id)
                 .ToList();
+            if (mentions.TryGetValue(id, out var places))
+                architectureDecisions.AddRange(places.Where(p => !architectureDecisions.Contains(p)));
 
             if (architectureDecisions.Count > 0)
             {
@@ -370,10 +375,11 @@ public static class ReviewContextFactory
         {
             var linkedTasks = new List<string>();
 
-            if (tasks.FRToTasks.TryGetValue(requirement.Id, out var frTasks))
-            {
-                linkedTasks.AddRange(frTasks);
-            }
+            // Task ids are written FR-01 or FR-001; the requirement is matched in one spelling, never by similar text.
+            var id = BirkNext.Web.Services.RequirementScopes.NormalizeId(requirement.Id);
+            foreach (var (taskRequirement, frTasks) in tasks.FRToTasks)
+                if (BirkNext.Web.Services.RequirementScopes.NormalizeId(taskRequirement).Equals(id, StringComparison.OrdinalIgnoreCase))
+                    linkedTasks.AddRange(frTasks.Where(t => !linkedTasks.Contains(t)));
 
             if (linkedTasks.Count > 0)
             {

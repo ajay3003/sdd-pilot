@@ -19,12 +19,84 @@ public static class SddSourceAssessment
         lifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus == "Partial");
 
     /// <summary>
+    /// Which Source Analysis snapshot this workspace's reviews may use, by evidence-safe precedence: (1) a snapshot explicitly recorded for the
+    /// workspace (CodeLinks / source tests bound to it), (2) the snapshot the current Project Import created or reused for the same archive,
+    /// (3) none. Several explicitly recorded current snapshots are reported as ambiguous — none is chosen. Target Environment bindings are not
+    /// used here: Implementation Evidence Review is documentation-to-source, not environment-bound.
+    /// </summary>
+    public static SourceLinkage Linkage(SddLifecycleState lifecycle)
+    {
+        var recorded = lifecycle.SourceSnapshots.Where(x => x.Currentness == "Current").ToList();
+        if (recorded.Select(x => x.SnapshotId).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            return new(SourceLinkageState.Ambiguous, null, $"{recorded.Count} source snapshots are recorded as current; none is chosen automatically.");
+        if (recorded.FirstOrDefault() is { } snapshot)
+            return snapshot.AnalysisStatus == "Failed"
+                ? new(SourceLinkageState.Failed, snapshot.SnapshotId, "The recorded Source Analysis failed.")
+                : new(SourceLinkageState.Recorded, snapshot.SnapshotId, $"Source snapshot recorded for this workspace ({snapshot.AnalysisStatus}).");
+        if (lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == lifecycle.CurrentProjectImportId) is { SourceSnapshotId: { } imported } import
+            && import.SourceState is "Created" or "Reused")
+            return new(SourceLinkageState.ImportedProject, imported.ToString(), $"Source snapshot from Project Import of {import.ArchiveFileName}.");
+        return new(SourceLinkageState.Unavailable, null, "No Source Analysis snapshot is linked to this project.");
+    }
+
+    /// <summary>A requirement's implementation evidence state in tester words — never a failure claim.</summary>
+    public static string RequirementImplementation(SourceLinkage linkage, IReadOnlyCollection<SddImplementationEvidence> evidence, bool packMapped)
+    {
+        if (evidence.Any(x => x.Currentness == "Current" && x.Confidence is "Confirmed" or "StronglySupported")) return "Implementation evidence linked";
+        if (evidence.Any(x => x.Currentness == "Current")) return "Implementation evidence linked (inferred only)";
+        if (evidence.Any(x => x.Currentness == "PotentiallyStale")) return "Evidence stale — from another source snapshot or artifact revision";
+        if (evidence.Count > 0) return "Historical implementation evidence only";
+        return linkage.State switch
+        {
+            SourceLinkageState.Unavailable => "Source snapshot unavailable — implementation not assessed",
+            SourceLinkageState.Failed => "Source Analysis failed — implementation not assessed",
+            SourceLinkageState.Ambiguous => "Source snapshot ambiguous — implementation not assessed",
+            _ when !packMapped => "Source snapshot available — Artifact Pack not mapped to source; implementation not assessed",
+            _ => "Source snapshot available — no explicit implementation link for this requirement",
+        };
+    }
+
+    /// <summary>
+    /// Source tests in tester words, kept apart from executed results: not assessed (no snapshot, or definitions not recorded), none discovered,
+    /// discovered without explicit requirement references, or linked. Designed ≠ source test ≠ executed ≠ passed.
+    /// </summary>
+    public static string SourceTests(SddLifecycleState lifecycle)
+    {
+        var linkage = Linkage(lifecycle);
+        var current = lifecycle.TestDefinitions?.Where(d => d.Currentness == "Current").ToList() ?? [];
+        var executed = lifecycle.TestExecutions.Count > 0 ? "" : " Executed evidence not imported.";
+        if (current.Count == 0)
+        {
+            var recordedSnapshot = lifecycle.SourceSnapshots.Any(x => x.Currentness == "Current");
+            return linkage.State switch
+            {
+                SourceLinkageState.Unavailable => "Source tests not assessed — no Source Analysis snapshot is linked to this project.",
+                SourceLinkageState.ImportedProject => "Source tests not assessed — the Project Import source snapshot is available; record its test definitions below.",
+                _ when recordedSnapshot && (lifecycle.TestDefinitions?.Count ?? 0) > 0 => "No current source tests — earlier definitions are historical.",
+                _ => "Source tests not assessed — record the selected snapshot's test definitions below.",
+            } + executed;
+        }
+        var referencing = current.Count(d => d.Definition.References.Count > 0);
+        return (referencing == 0
+            ? $"Tests discovered; no explicit requirement link ({current.Count} source test{(current.Count == 1 ? "" : "s")})."
+            : $"Linked source tests found: {referencing} of {current.Count} source tests reference a requirement or acceptance criterion explicitly.") + executed;
+    }
+
+    /// <summary>
     /// Implementation evidence can be judged: some evidence is recorded, or a complete (Ready, not Partial) current source
     /// snapshot exists, so "no evidence" means nothing was found rather than nothing was looked at.
     /// </summary>
     public static bool ImplementationAssessed(SddLifecycleState lifecycle) =>
         lifecycle.ImplementationEvidence.Count > 0
         || lifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus == "Ready");
+}
+
+public enum SourceLinkageState { Unavailable, ImportedProject, Recorded, Failed, Ambiguous }
+
+/// <summary>The Source Analysis snapshot a review may use and why (<see cref="SddSourceAssessment.Linkage"/>).</summary>
+public sealed record SourceLinkage(SourceLinkageState State, string? SnapshotId, string Basis)
+{
+    public bool Available => State is SourceLinkageState.ImportedProject or SourceLinkageState.Recorded;
 }
 
 /// <summary>Implementation evidence for a requirement or a task, from the SDD lifecycle graph (never from a task checkbox).</summary>

@@ -20,7 +20,7 @@
         <p class="sd-muted">Source Analysis discovers the tests in an uploaded source archive. Record a snapshot's test definitions so results can be matched to exact source tests
             and their explicit requirement references. @SourceTestsSummary</p>
         <div class="te-form">
-            <label for="te-source-env">Source Analysis environment ID<input id="te-source-env" @bind="_sourceEnvironment" maxlength="200" data-testid="te-source-env" /></label>
+            <label for="te-source-env">Source Analysis environment ID (optional — blank lists the project's snapshots, e.g. from Project Import)<input id="te-source-env" @bind="_sourceEnvironment" maxlength="200" data-testid="te-source-env" /></label>
             @if (_sourceSnapshots.Count > 0)
             {
                 <label for="te-source-pick">Snapshot
@@ -32,7 +32,7 @@
             }
         </div>
         <div class="te-actions">
-            <button type="button" class="btn-secondary" @onclick="LoadSourceSnapshotsAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_sourceEnvironment))" data-testid="te-source-load">Load snapshots</button>
+            <button type="button" class="btn-secondary" @onclick="LoadSourceSnapshotsAsync" disabled="@_busy" data-testid="te-source-load">Load snapshots</button>
             @if (_sourceSnapshots.Count > 0)
             {
                 <button type="button" class="btn-secondary" @onclick="RecordPickedAsync" disabled="@_busy" data-testid="te-record-definitions">Record source test definitions</button>
@@ -242,8 +242,8 @@
         get
         {
             var current = Workspace.SddLifecycle.TestDefinitions?.Where(d => d.Currentness == "Current").ToList() ?? [];
-            return current.Count == 0 ? "No source test definitions are recorded in this workspace yet."
-                : $"{current.Count} current source test definition(s) recorded from {current.Select(d => d.SourceSnapshotId).Distinct().Count()} snapshot(s).";
+            return SddSourceAssessment.SourceTests(Workspace.SddLifecycle)
+                + (current.Count == 0 ? "" : $" Recorded from {current.Select(d => d.SourceSnapshotId).Distinct().Count()} snapshot(s).");
         }
     }
 
@@ -254,7 +254,9 @@
         try
         {
             _sourceSnapshots = (await sources.SourceSnapshotsAsync(_sourceEnvironment.Trim())).Where(s => s.Status != BirkNext.Integrations.SourceAnalysisStatus.Failed).ToList();
-            _sourcePick = _sourceSnapshots.FirstOrDefault()?.Id.ToString() ?? "";
+            // The Project Import's own snapshot first when it is listed; otherwise the reader picks — never guessed between archives.
+            var imported = SddSourceAssessment.Linkage(Workspace.SddLifecycle) is { State: SourceLinkageState.ImportedProject, SnapshotId: { } id } ? id : null;
+            _sourcePick = _sourceSnapshots.FirstOrDefault(s => s.Id.ToString() == imported)?.Id.ToString() ?? _sourceSnapshots.FirstOrDefault()?.Id.ToString() ?? "";
             _message = _sourceSnapshots.Count == 0 ? "No usable Source Analysis snapshot exists for this environment." : $"{_sourceSnapshots.Count} snapshot(s) available. Nothing was recorded yet.";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _message = $"Source Analysis is unavailable: {ex.Message}"; }

@@ -363,7 +363,7 @@ public sealed class ArtifactPackReviewTests : BunitContext
         _calls[1].Should().Be((Constitution, SpecB, null, null), "pack 002 never borrows pack 001's plan or tasks; the shared constitution applies");
         summary.Packs.Select(p => (p.Pack.Pack, p.CompletenessLabel, p.Score, p.Findings)).Should().Equal(("001-cart", "Complete", 90d, 1), ("002-refund", "Partial", 50d, 3));
         summary.Packs[1].Inputs.Should().Contain(i => i.Role == WorkspaceArtifactType.Constitution && i.Scope == ArtifactScope.Project);
-        summary.Headline.Should().Be("2 artifact packs assessed · 1 complete · 1 partial · 4 findings across 2 packs");
+        summary.Headline.Should().Be("2 Artifact Packs assessed · 1 complete · 1 partial · 4 findings across 2 Artifact Packs");
         summary.AggregateScore.Should().Be(70);
         _repository.SddLifecycle.PackFocus.Should().BeEmpty("reviewing every pack never changes the pack being viewed");
     }
@@ -378,11 +378,11 @@ public sealed class ArtifactPackReviewTests : BunitContext
 
         cut.Find("[data-testid=apr-run]").Click();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=apr-headline]").TextContent.Should().Contain("2 artifact packs assessed"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=apr-headline]").TextContent.Should().Contain("2 Artifact Packs assessed"));
         var rows = cut.FindAll("[data-testid=apr-row]");
         rows.Select(r => r.GetAttribute("data-pack")).Should().Equal("001-cart", "002-refund");
         rows[1].QuerySelector("[data-testid=apr-inputs]")!.TextContent.Should().Be("Constitution (shared), Specification");
         rows[1].QuerySelector("[data-testid=apr-score]")!.TextContent.Should().Be("50%");
-        cut.Find("[data-testid=apr-aggregate]").TextContent.Should().Contain("Module aggregate (mean of assessed packs): 70%");
+        cut.Find("[data-testid=apr-aggregate]").TextContent.Should().Contain("Module documentation review score (mean of assessed Artifact Packs): 70%");
     }
 }

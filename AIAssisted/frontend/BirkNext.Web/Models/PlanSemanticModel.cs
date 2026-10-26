@@ -56,6 +56,8 @@ public sealed class PlanSemanticModel
 
     // ── Relationships ───────────────────────────────────────────────────────
     public Dictionary<string, List<string>> DecisionToRequirements { get; init; } = [];
+    /// <summary>Explicit requirement IDs (normalized) → plan locations ("§ Heading") that name them, anywhere in the plan.</summary>
+    public Dictionary<string, List<string>> RequirementMentions { get; init; } = [];
     public Dictionary<string, List<string>> RiskToRequirements { get; init; } = [];
     /// <summary>Phase key → tasks of every source section mapped to that key, in source order.</summary>
     public Dictionary<string, List<string>> PhaseToTasks { get; init; } = [];

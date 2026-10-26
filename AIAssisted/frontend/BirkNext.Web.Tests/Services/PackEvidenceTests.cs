@@ -113,12 +113,12 @@ public sealed class PackEvidenceTests
     }
 
     [Fact]
-    public async Task A_single_pack_project_keeps_the_legacy_unscoped_identity()
+    public async Task A_single_pack_is_still_scoped_so_its_requirements_never_collide_with_another_module_s()
     {
         Import(("specs/001-cart/spec.md", Spec), ("specs/001-cart/plan.md", Plan));
         await State(WorkspaceArtifactType.Specification);
-        _repository.SddLifecycle.ActiveRequirementScope.Should().BeNull();
-        RequirementKey.Of(null, "FR-001").Display.Should().Be("FR-001");
+        _repository.SddLifecycle.ActiveRequirementScope.Should().EndWith("|001-cart", "FR-001 of the only pack is still that pack's FR-001");
+        RequirementKey.Of(null, "FR-001").Display.Should().Be("FR-001", "legacy unscoped identity remains readable");
     }
 
     [Fact]
@@ -351,7 +351,8 @@ public sealed class PackEvidenceTests
 
         QualityReviewSessionService.InputsMatch(cart, cart).Should().BeTrue();
         QualityReviewSessionService.InputsMatch(cart, refund).Should().BeFalse("pack 001's result is never shown as pack 002's");
-        QualityReviewSessionService.InputsMatch([], refund).Should().BeTrue("a result saved without input records is treated as before");
+        QualityReviewSessionService.InputsMatch([], refund).Should().BeFalse("a result without input records is never restored for a known Artifact Pack");
+        QualityReviewSessionService.InputsMatch([], []).Should().BeTrue("outside Artifact Packs a legacy result is still shown");
     }
 
     [Fact]

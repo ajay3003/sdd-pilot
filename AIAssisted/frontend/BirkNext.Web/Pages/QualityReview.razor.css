@@ -928,7 +928,7 @@
 
 .qr-pack-card-severity.is-critical { background: #fee2e2; color: #b91c1c; }
 .qr-pack-card-severity.is-high { background: #ffedd5; color: #c2410c; }
-.qr-pack-card-severity.is-medium { background: #fef3c7; color: #a16207; }
+.qr-pack-card-severity.is-medium { background: #fef3c7; color: #854d0e; }
 .qr-pack-card-severity.is-low { background: #e2e8f0; color: #475569; }
 
 .qr-pack-card-metadata {
@@ -1117,13 +1117,13 @@
 
 .qr-issue-severity[data-severity="high"],
 .qr-issue-severity[data-severity="error"] {
-    background: #ea580c;
+    background: #c2410c;
     color: #fff;
 }
 
 .qr-issue-severity[data-severity="medium"],
 .qr-issue-severity[data-severity="warning"] {
-    background: #d97706;
+    background: #b45309;
     color: #fff;
 }
 

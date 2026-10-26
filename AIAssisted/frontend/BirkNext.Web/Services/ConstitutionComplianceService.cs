@@ -72,6 +72,9 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
 
             var status = DetermineStatus(hasSpec, hasPlan, hasTask, isViolated,
                 spec is not null, plan is not null, tasks is not null);
+            // A rule without a citable ID cannot be referenced by ID: no deterministic mapping (Unknown), never a missing reference.
+            var noCitableId = ConstitutionRuleIds.HasNoCitableId(rule);
+            if (noCitableId && status == ComplianceStatus.Missing) status = ComplianceStatus.Unknown;
 
             results.Add(new ComplianceResult
             {
@@ -93,7 +96,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
             bool missTask  = tasks is not null && !hasTask;
             bool noArtifacts = spec is null && plan is null && tasks is null;
 
-            if ((missSpec || missPlan || missTask) && status != ComplianceStatus.Violation)
+            if ((missSpec || missPlan || missTask) && status != ComplianceStatus.Violation && !noCitableId)
             {
                 var sev = GapSeverityFor(rule.RuleType, missSpec, missPlan, missTask);
                 gaps.Add(new ComplianceGap
@@ -242,7 +245,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
     private static Dictionary<string, List<string>> BuildSpecMentions(SpecTree? spec)
     {
         if (spec is null) return [];
-        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, List<string>>(ConstitutionRuleIds.Comparer);
         var nodes = FlattenSpec(spec.Roots);
         foreach (var node in nodes)
         {
@@ -258,7 +261,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
     private static Dictionary<string, List<string>> BuildPlanMentions(PlanDocument? plan)
     {
         if (plan is null) return [];
-        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, List<string>>(ConstitutionRuleIds.Comparer);
 
         // Gates and check items — strongest signal
         foreach (var g in plan.Gates)
@@ -298,7 +301,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
     private static Dictionary<string, List<string>> BuildTaskMentions(TaskTree? tasks)
     {
         if (tasks is null) return [];
-        var map   = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var map   = new Dictionary<string, List<string>>(ConstitutionRuleIds.Comparer);
         var nodes = FlattenTasks(tasks.Roots);
         foreach (var node in nodes)
         {
@@ -314,7 +317,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
     private static Dictionary<string, List<ComplianceViolation>> BuildPlanViolations(PlanDocument? plan)
     {
         if (plan is null) return [];
-        var map = new Dictionary<string, List<ComplianceViolation>>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, List<ComplianceViolation>>(ConstitutionRuleIds.Comparer);
 
         foreach (var c in plan.ConstitutionCheckItems
             .Where(c => c.Status == ConstitutionCheckStatus.NonCompliant && !string.IsNullOrEmpty(c.RuleId)))
@@ -369,14 +372,14 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
     private static ViolationSeverity GapSeverityFor(
         ConstitutionRuleType ruleType, bool missSpec, bool missPlan, bool missTask)
     {
-        // Principles are the most critical; missing across all artifacts = Critical
+        // A gap is a missing reference in the documentation (traceability), not a product failure: at most Medium. Documented contradictions
+        // (non-compliant plan checks, failed gates) are violations and keep their own High/Critical severity.
         bool allMissing = missSpec && missPlan && missTask;
         return ruleType switch
         {
-            ConstitutionRuleType.Principle  => allMissing ? ViolationSeverity.Critical : ViolationSeverity.High,
-            ConstitutionRuleType.Standard   => allMissing ? ViolationSeverity.High     : ViolationSeverity.Medium,
-            ConstitutionRuleType.Constraint => allMissing ? ViolationSeverity.High     : ViolationSeverity.Medium,
-            ConstitutionRuleType.Guideline  => allMissing ? ViolationSeverity.Medium   : ViolationSeverity.Low,
+            ConstitutionRuleType.Principle  => allMissing ? ViolationSeverity.Medium : ViolationSeverity.Low,
+            ConstitutionRuleType.Standard   => allMissing ? ViolationSeverity.Medium : ViolationSeverity.Low,
+            ConstitutionRuleType.Constraint => allMissing ? ViolationSeverity.Medium : ViolationSeverity.Low,
             _                               => ViolationSeverity.Low,
         };
     }

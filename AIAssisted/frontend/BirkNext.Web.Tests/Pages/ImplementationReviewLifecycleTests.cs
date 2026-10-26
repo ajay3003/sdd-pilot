@@ -29,8 +29,9 @@ public sealed class ImplementationReviewLifecycleTests : BunitContext
     {
         var cut = Render<ImplementationReview>();
 
-        cut.Markup.Should().Contain("Not available");
+        cut.Markup.Should().Contain("Source snapshot unavailable");
         cut.Markup.Should().Contain("implementation is not assessed");
+        cut.Markup.Should().NotContain("NoSourceAvailable");
         cut.Find("#test-result-import").Should().NotBeNull();
         cut.Markup.Should().Contain("Designed scenarios remain separate");
         cut.Markup.Should().NotContain("Reviewing...");

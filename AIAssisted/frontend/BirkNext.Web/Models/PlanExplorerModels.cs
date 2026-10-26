@@ -92,6 +92,10 @@ public sealed class PlanDocument
     // Free-form sections (Technical Context, Project Structure, etc.)
     public List<PlanSection> Sections { get; init; } = [];
 
+    /// <summary>Explicit requirement IDs written anywhere in the plan (normalized "FR-001") → the headings they appear under. An ID written
+    /// in the plan is an explicit reference; nothing is inferred from similar wording.</summary>
+    public Dictionary<string, List<string>> RequirementMentions { get; init; } = [];
+
     // Structured extractions
     public List<PlanRisk> Risks { get; init; } = [];
     public List<PlanConstraint> Constraints { get; init; } = [];

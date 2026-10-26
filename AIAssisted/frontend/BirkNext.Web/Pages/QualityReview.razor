@@ -234,6 +234,7 @@
         @if (_inputExpanded)
         {
             <p class="qr-section-desc">Available means the artifact is present in the current workspace. It is not a review, an approval or a pass.</p>
+            <p class="qr-section-desc" data-testid="qr-primary-note">Primary artifacts of the selected Artifact Pack — pack-local documents and the shared documents (such as the module Constitution) that apply to it. The Review Packs read these primary documents only; supporting pack documentation is not read.</p>
             @if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired))
             {
                 <p role="status" class="qr-inline-note" data-testid="qr-selection-required">@(PackRequired
@@ -267,13 +268,13 @@
 
             <!-- ── Review pack selector ─────────────────────────────────── -->
             <div class="qr-packs-section">
-                <h2 class="qr-packs-title"><span class="qr-step-badge">2</span> Review packs</h2>
-                <div class="qr-shortcut-bar" role="group" aria-label="Quick pack selection">
+                <h2 class="qr-packs-title"><span class="qr-step-badge">2</span> Review Packs</h2>
+                <div class="qr-shortcut-bar" role="group" aria-label="Quick Review Pack selection">
                     <span class="qr-shortcut-label" aria-hidden="true">Select</span>
-                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks" title="Select every pack that can run with the current artifacts">Select All</button>
+                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks" title="Select every Review Pack that can run with the current artifacts">Select All</button>
                     @foreach (var group in PackGroups)
                     {
-                        <button class="qr-shortcut-btn" @onclick="() => SelectPackGroup(group)" title="Select only the @group packs that can run (replaces the current selection)">Only @group</button>
+                        <button class="qr-shortcut-btn" @onclick="() => SelectPackGroup(group)" title="Select only the @group Review Packs that can run (replaces the current selection)">Only @group</button>
                     }
                     <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()" title="Clear all selections">Clear</button>
                 </div>
@@ -321,7 +322,7 @@
                     <span class="qr-run-details" data-testid="qr-run-summary">@RunSummaryText</span>
                     @if (readinessSummary.Selected > 0)
                     {
-                        <ul class="qr-readiness-counts" aria-label="Selected pack readiness" data-testid="qr-readiness-counts">
+                        <ul class="qr-readiness-counts" aria-label="Selected Review Pack readiness" data-testid="qr-readiness-counts">
                             <li class="qr-readiness-chip is-ready"><strong>@readinessSummary.Ready</strong> ready</li>
                             <li class="qr-readiness-chip is-partial"><strong>@readinessSummary.Partial</strong> partial</li>
                             <li class="qr-readiness-chip is-blocked"><strong>@readinessSummary.Blocked</strong> blocked</li>
@@ -334,7 +335,7 @@
                             <span class="qr-limitations-title">Expected limitations</span>
                             @if (readinessSummary.ExpectedLimitations.Count == 0)
                             {
-                                <span class="qr-limitations-none">None from missing inputs. Every selected pack has the artifacts it reads.</span>
+                                <span class="qr-limitations-none">None from missing inputs. Every selected Review Pack has the artifacts it reads.</span>
                             }
                             else
                             {
@@ -346,7 +347,7 @@
                                 </ul>
                             }
                         </div>
-                        <p class="qr-readiness-note">Ready means a pack's inputs are available, not that it will pass. Selected packs read document artifacts only; shared SDD evidence is contextual and is not reported as a Document Quality Review finding.</p>
+                        <p class="qr-readiness-note">Ready means a Review Pack's inputs are available, not that it will pass. Selected Review Packs read the primary documents of the Artifact Pack only (no supporting documents); shared SDD evidence is contextual and is not reported as a Document Quality Review finding.</p>
                         <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_packReadinessOpen ? "true" : "false")" aria-controls="qr-pack-readiness-list"
                                 data-testid="qr-pack-readiness-toggle" @onclick="() => _packReadinessOpen = !_packReadinessOpen">
                             @(_packReadinessOpen ? "Hide pack readiness" : "View pack readiness")
@@ -402,20 +403,23 @@
         @if (QualitySession.ReviewInputs.Count > 0)
         {
             @* What this result read, as it was read: pack, scope and exact path. A later selection does not change it. *@
-            <section class="qr-provenance" aria-label="Reviewed inputs" data-testid="qr-provenance">
-                <span class="qr-context-label">Reviewed</span>
+            <section class="qr-provenance" aria-label="What did this review read?" data-testid="qr-provenance">
+                <span class="qr-context-label">What did this review read?</span>
                 @if (QualitySession.ReviewInputs.Select(i => i.Pack).FirstOrDefault(p => p is not null) is { } reviewedPack)
                 {
-                    <span class="qr-provenance-pack" data-testid="qr-provenance-pack">Artifact pack @reviewedPack</span>
+                    <span class="qr-provenance-pack" data-testid="qr-provenance-pack">Artifact Pack @reviewedPack@(QualitySession.ReviewInputs.Select(i => i.Module).FirstOrDefault(m => !string.IsNullOrEmpty(m)) is { } reviewedModule ? $" · module {reviewedModule}" : "")</span>
                 }
+                <span class="qr-context-label">Primary artifacts — @QualitySession.ReviewInputs.Count</span>
                 <ul class="qr-provenance-list">
                     @foreach (var input in QualitySession.ReviewInputs)
                     {
                         <li data-testid="qr-provenance-input" data-role="@input.Role">
                             <strong>@input.Role</strong> · @ArtifactPackReview.ScopeLabel(input.Scope) · <span class="qr-provenance-path">@input.Path</span>
+                            <span class="qr-context-label"> · fingerprint @input.Fingerprint[..Math.Min(12, input.Fingerprint.Length)]</span>
                         </li>
                     }
                 </ul>
+                <p class="qr-context-label" data-testid="qr-provenance-additional">Additional documentation read: none — the Review Packs read only the primary documents above (no research, quickstart, contract or sibling-pack documents, no generated documentation).</p>
             </section>
         }
 
@@ -442,16 +446,17 @@
             <div class="qr-score-context">
                 @if (_report.AssessedPacks > 0)
                 {
-                    <div><span class="qr-score-context-label">Selected-pack average:</span> <strong>@_report.OverallScore.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</strong> <span class="qr-score-context-label" data-testid="qr-assessed-packs">(@_report.AssessedPacks of @_report.PackResults.Count packs assessed)</span></div>
+                    <div><span class="qr-score-context-label">Documentation review score (average of selected Review Packs):</span> <strong>@_report.OverallScore.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</strong> <span class="qr-score-context-label" data-testid="qr-assessed-packs">(@_report.AssessedPacks of @_report.PackResults.Count Review Packs assessed)</span></div>
                     <div class="qr-score-interpretation">Score interpretation: @ScoreLabel(_report.OverallScore)</div>
                 }
                 else
                 {
-                    <div data-testid="qr-no-score"><span class="qr-score-context-label">Selected-pack average:</span> <strong>No score</strong> — no selected pack had anything to assess.</div>
+                    <div data-testid="qr-no-score"><span class="qr-score-context-label">Documentation review score:</span> <strong>No score</strong> — no selected Review Pack had anything to assess.</div>
                 }
                 <div class="qr-findings-context">
                     @_report.TotalFindings finding@(_report.TotalFindings != 1 ? "s" : "") across
-                    @_report.PackResults.Count(r => r.Error is null) completed pack@(_report.PackResults.Count(r => r.Error is null) != 1 ? "s" : "")
+                    @_report.PackResults.Count(r => r.Error is null) completed Review Pack@(_report.PackResults.Count(r => r.Error is null) != 1 ? "s" : "")
+                    <span class="qr-score-context-label"> · scores measure documentation rule coverage, not software quality or release readiness</span>
                 </div>
             </div>
             <div class="qr-severity-summary" aria-label="Top finding severities">
@@ -524,7 +529,7 @@
                                 {
                                     <div class="qr-pack-card-metadata">@totalF finding@(totalF != 1 ? "s" : "")</div>
                                 }
-                                <div class="qr-pack-card-score"><span>Pack score</span> @(result.Assessed ? result.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%" : "Not assessed")</div>
+                                <div class="qr-pack-card-score"><span>Documentation coverage</span> @(result.Assessed ? result.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%" : "Not assessed")</div>
                                 <div class="qr-pack-card-affordance">View details →</div>
                             }
                         </button>
@@ -956,8 +961,8 @@
             if (ModuleRequired) return "Choose the module to review in a document Explorer before running.";
             if (PackRequired) return "Select the artifact pack to review in a document Explorer before running.";
             if (SelectionRequired) return "Choose one artifact per role in its Explorer before running.";
-            if (_selectedPacks.Count == 0) return "Select at least one review pack.";
-            return "None of the selected packs can run: their required inputs are absent.";
+            if (_selectedPacks.Count == 0) return "Select at least one Review Pack.";
+            return "None of the selected Review Packs can run: their required inputs are absent.";
         }
     }
 
@@ -971,10 +976,10 @@
         {
             if (!AnyArtifactLoaded) return "Add artifacts to the current workspace";
             if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired)) return "Choose artifacts in their Explorers before reviewing";
-            if (_selectedPacks.Count == 0) return "Select at least one review pack";
+            if (_selectedPacks.Count == 0) return "Select at least one Review Pack";
             int loaded = AvailableArtifactCount;
             var summary = QualityReviewPackReadiness.Summarize(SelectedReadiness);
-            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} available · {summary.Selected} pack{(summary.Selected != 1 ? "s" : "")} selected · {summary.Ready} ready · {summary.Partial} partial · {summary.Blocked} blocked";
+            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} available · {summary.Selected} Review Pack{(summary.Selected != 1 ? "s" : "")} selected · {summary.Ready} ready · {summary.Partial} partial · {summary.Blocked} blocked";
         }
     }
 
@@ -1052,6 +1057,7 @@
                 {
                     ArtifactType = diagnostic.ArtifactType, FileName = System.IO.Path.GetFileName(input.Path), IsAvailable = diagnostic.IsAvailable,
                     ContentLength = diagnostic.ContentLength, Sha256 = diagnostic.Sha256, Path = input.Path, Pack = input.Pack, Scope = input.Scope,
+                    LogicalArtifactId = input.ArtifactId,
                 }
                 : diagnostic;
         }
@@ -1066,9 +1072,24 @@
 
         var packs = report.PackResults.Select(r => PackDiagnostic.FromPackResult(r)).ToList();
 
+        var lifecycle = SddWorkspace?.SddLifecycle;
+        var rows = SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph ? sddGraph.Project(sddWorkspace, SddProjectionMode).Rows : [];
+        var linkage = lifecycle is null ? null : SddSourceAssessment.Linkage(lifecycle);
         return new QualityReviewDiagnosticExport
         {
-            SchemaVersion = 1,
+            SchemaVersion = 2,
+            ArtifactPack = QualitySession.ReviewInputs.Select(i => i.Pack).FirstOrDefault(p => p is not null),
+            Module = QualitySession.ReviewInputs.Select(i => i.Module).FirstOrDefault(m => !string.IsNullOrEmpty(m)),
+            ReviewPackIds = selectedPackIds.ToList(),
+            EvidenceScope = "Primary documents of the Artifact Pack (pack-local) and the shared documents that apply to it; supporting documents are not read.",
+            AdditionalEvidenceFiles = [],
+            Requirements = [.. rows.Select(r => new RequirementDiagnostic
+            {
+                Id = r.Requirement.Id, Scope = lifecycle?.ActiveRequirementScope,
+                PlanReferences = [.. r.PlanReferences], TaskReferences = [.. r.TaskReferences],
+            })],
+            SourceSnapshotState = linkage?.State.ToString() ?? "NotAvailable",
+            SourceSnapshotId = linkage?.SnapshotId,
             ProjectSlug = _selectedProject ?? string.Empty,
             ProjectDisplayName = projectName,
             RunAtUtc = report.RunAt.UtcDateTime,
@@ -1110,7 +1131,9 @@
             {
                 var projection = sddGraph.Project(sddWorkspace, SddProjectionMode);
                 var graphFingerprint = sddGraph.Fingerprint(sddWorkspace, SddProjectionMode);
-                foreach (var oldRun in sddWorkspace.SddLifecycle.QualityReviewRuns.Where(x => x.Currentness == "Current")) oldRun.Currentness = "Historical";
+                // A new run supersedes earlier runs of the same Artifact Pack only; another pack's current run stays current.
+                foreach (var oldRun in sddWorkspace.SddLifecycle.QualityReviewRuns.Where(x => x.Currentness == "Current"
+                    && RequirementScopes.Matches(x.RequirementScope, sddWorkspace.SddLifecycle.ActiveRequirementScope))) oldRun.Currentness = "Historical";
                 sddWorkspace.SddLifecycle.QualityReviewRuns.Add(new SddQualityReviewRun
                 {
                     LifecycleGraphFingerprint = graphFingerprint,
@@ -1328,7 +1351,9 @@
                 {
                     var sev = StdSevString(s.Severity);
                     var logicalId = $"SEMANTIC:{s.Title}";
-                    allIssues.Add((logicalId, s.Title, s.Title, s.Recommendation ?? "", sev, SeveritySortKey(sev), r.PackName, r.PackId));
+                    // A markdown-only standard: the documents do not describe it — a documentation gap, never an implementation failure.
+                    var gapTitle = $"Documentation gap — {s.Title} not found in the reviewed documentation";
+                    allIssues.Add((logicalId, gapTitle, gapTitle, s.Recommendation ?? "", sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             if (r.QaReadiness is not null)
                 foreach (var g in r.QaReadiness.Gaps)
@@ -1533,6 +1558,8 @@
         var prefixedTitle = $"{issue.RuleCode} — ";
         if (title.StartsWith(prefixedTitle, StringComparison.OrdinalIgnoreCase))
             title = title[prefixedTitle.Length..].Trim();
+        // Rule titles written "PS-04 — Primary Identifier" keep their own separator; never show it twice.
+        title = title.TrimStart('—', '–', '-', ':', ' ');
 
         return string.IsNullOrWhiteSpace(title) ? issue.RuleCode : $"{issue.RuleCode} — {title}";
     }
@@ -1826,18 +1853,18 @@
             __builder.AddAttribute(seq++, "class", "qr-std-summary");
             __builder.OpenElement(seq++, "span");
             __builder.AddAttribute(seq++, "class", "qr-std-passed");
-            __builder.AddContent(seq++, $"{summary.Passed} passed");
+            __builder.AddContent(seq++, $"{summary.Passed} documented");
             __builder.CloseElement();
             __builder.AddMarkupContent(seq++, " · ");
             __builder.OpenElement(seq++, "span");
             __builder.AddAttribute(seq++, "class", "qr-std-warning");
-            var gapLabel = summary.Warnings == 1 ? "potential gap" : "potential gaps";
+            var gapLabel = summary.Warnings == 1 ? "potential documentation gap" : "potential documentation gaps";
             __builder.AddContent(seq++, $"{summary.Warnings} {gapLabel}");
             __builder.CloseElement();
             __builder.AddMarkupContent(seq++, " · ");
             __builder.OpenElement(seq++, "span");
             __builder.AddAttribute(seq++, "class", "qr-std-failed");
-            __builder.AddContent(seq++, $"{summary.Failed} failed");
+            __builder.AddContent(seq++, $"{summary.Failed} documentation gap{(summary.Failed == 1 ? "" : "s")}");
             __builder.CloseElement();
             __builder.CloseElement();
         }
@@ -2815,19 +2842,21 @@
         _                   => "info",
     };
 
+    // Severity of a documentation check (how important the documentation is), labelled High/Medium — never "error", which reads as a failure.
     private static string StdSevString(CheckSeverity sev) => sev switch
     {
-        CheckSeverity.High   => "error",
-        CheckSeverity.Medium => "warning",
+        CheckSeverity.High   => "high",
+        CheckSeverity.Medium => "medium",
         _                    => "info",
     };
 
     private static string StandardStatusLabel(CheckStatus status) => status switch
     {
-        CheckStatus.Warning       => "Potential gap",
-        CheckStatus.Failed        => "Failed",
+        // Markdown-only review: what the documents say, never runtime behaviour or an implementation verdict.
+        CheckStatus.Warning       => "Potential documentation gap",
+        CheckStatus.Failed        => "Documentation gap — not found in reviewed documentation",
         CheckStatus.NotApplicable => "Not applicable",
-        _                         => "Passed",
+        _                         => "Documented",
     };
 
     private static string FormatStandardIdentity(string? ruleId, string? title)

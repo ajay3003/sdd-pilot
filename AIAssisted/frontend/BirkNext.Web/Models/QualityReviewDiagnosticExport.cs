@@ -18,6 +18,31 @@ public sealed class QualityReviewDiagnosticExport
     public int HighCount { get; init; }
     public int MediumCount { get; init; }
     public int LowCount { get; init; }
+
+    // ── Schema 2: pack-aware evidence identity (no document text, no test values) ──
+    /// <summary>The Artifact Pack reviewed (folder name) and its module; null outside Artifact Packs.</summary>
+    public string? ArtifactPack { get; init; }
+    public string? Module { get; init; }
+    /// <summary>The Review Packs run (same ids as <see cref="SelectedPackIds"/>, named unambiguously).</summary>
+    public List<string> ReviewPackIds { get; init; } = [];
+    /// <summary>What the Review Packs read: the primary documents only; supporting documents are listed when read (none today).</summary>
+    public string EvidenceScope { get; init; } = string.Empty;
+    public List<string> AdditionalEvidenceFiles { get; init; } = [];
+    /// <summary>Requirement identities (pack scope + local id) with their canonical plan/task links and how each link was established.</summary>
+    public List<RequirementDiagnostic> Requirements { get; init; } = [];
+    /// <summary>The Source Analysis snapshot reviews may use and why (state: Unavailable, ImportedProject, Recorded, Failed, Ambiguous).</summary>
+    public string SourceSnapshotState { get; init; } = string.Empty;
+    public string? SourceSnapshotId { get; init; }
+}
+
+public sealed class RequirementDiagnostic
+{
+    public string Id { get; init; } = string.Empty;
+    public string? Scope { get; init; }
+    public List<string> PlanReferences { get; init; } = [];
+    public List<string> TaskReferences { get; init; } = [];
+    public string PlanLinkSource { get; init; } = "Explicit requirement ID in a plan section or architecture decision";
+    public string TaskLinkSource { get; init; } = "Explicit requirement ID in a task";
 }
 
 public sealed class ArtifactInputDiagnostic
@@ -31,6 +56,8 @@ public sealed class ArtifactInputDiagnostic
     public string? Path { get; init; }
     public string? Pack { get; init; }
     public string? Scope { get; init; }
+    /// <summary>The logical artifact id (explorer id: workspace path) the review read.</summary>
+    public string? LogicalArtifactId { get; init; }
 
     public static ArtifactInputDiagnostic FromContent(string artifactType, string fileName, string? content)
     {

@@ -23,6 +23,12 @@ public sealed record RequirementKey(string? Workspace, string? Module, string? P
 /// </summary>
 public static class RequirementScopes
 {
+    /// <summary>One spelling per requirement id across artifacts: "FR-1", "fr-01", "FR001" → "FR-001"; anything else is returned as written.
+    /// Only the spelling is normalized — the id is still compared within one pack's scope.</summary>
+    public static string NormalizeId(string id) =>
+        System.Text.RegularExpressions.Regex.Match(id ?? "", @"^\s*(FR|SC|NFR)-?\s*(\d{1,4})\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } m
+            ? $"{m.Groups[1].Value.ToUpperInvariant()}-{int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture):000}" : (id ?? "").Trim();
+
     public static string? Of(string? workspace, string module, string? pack) => pack is null ? null : $"{workspace ?? "manual"}|{module}|{pack}";
 
     public static (string? Workspace, string Module, string Pack)? Parse(string? scope)

@@ -37,11 +37,11 @@
 }
 
 .qr-finding-severity[data-severity="high"] {
-    background: #ea580c;
+    background: #c2410c;
 }
 
 .qr-finding-severity[data-severity="medium"] {
-    background: #d97706;
+    background: #b45309;
 }
 
 .qr-finding-severity[data-severity="low"] {

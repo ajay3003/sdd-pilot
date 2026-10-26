@@ -66,9 +66,9 @@ public sealed class QaSpecificationRulePack : IRulePack
                     RulePackId     = RulePackId,
                     RuleId         = "SPEC-002",
                     Category       = "Specification",
-                    Title          = $"{unplanned} requirement(s) without plan coverage",
-                    Description    = $"{unplanned} specification requirement(s) are not referenced in the implementation plan.",
-                    Severity       = unplanned > 3 ? "High" : "Medium",
+                    Title          = $"Plan coverage gap — {unplanned} requirement(s) have no explicit Plan link",
+                    Description    = $"{unplanned} of {trace.SpecificationCoverage.TotalItems} requirement(s) are not referenced by ID anywhere in this Artifact Pack's plan: {string.Join(", ", trace.SpecToPlan.Where(r => r.Status == TraceabilityStatus.Missing).Select(r => r.ItemId))}. Explicit linkage only — an ID written in a plan section or architecture decision.",
+                    Severity       = unplanned > 3 ? "Medium" : "Low",
                     Status         = "Failed",
                     Recommendation = "Reference all specification requirements in the implementation plan.",
                 });

@@ -480,6 +480,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             InputSource = inputSource,
             Summary = summary,
             Sections = sections,
+            RequirementMentions = RequirementMentionsOf(markdown),
             Risks = risks,
             Constraints = constraints,
             ArchitectureDecisions = decisions,
@@ -3213,6 +3214,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             HasImplementationPhases = document.Phases.Count > 0,
             HasRiskAssessment = document.Risks.Count > 0,
             DecisionToRequirements = [],
+            RequirementMentions = document.RequirementMentions,
             RiskToRequirements = [],
             PhaseToTasks = phaseGroups.ToDictionary(g => g.PhaseKey, g => g.TaskIds),
             PhaseGroups = phaseGroups,
@@ -3252,6 +3254,25 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         _ when number is int n => $"Phase {n}",
         _ => string.IsNullOrWhiteSpace(heading) ? title : StripMarkdown(heading),
     };
+
+    /// <summary>Every explicit FR id in the plan text, normalized, with the nearest heading as its location ("§ Phase 2: Core").</summary>
+    public static Dictionary<string, List<string>> RequirementMentionsOf(string markdown)
+    {
+        var mentions = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var heading = "Plan";
+        foreach (var line in (markdown ?? string.Empty).Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+            if (System.Text.RegularExpressions.Regex.Match(trimmed, @"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$") is { Success: true } h)
+                heading = $"§ {StripMarkdown(h.Groups[1].Value).Trim()}";
+            foreach (var id in ExtractRequirementReferences(trimmed))
+            {
+                if (!mentions.TryGetValue(id, out var places)) mentions[id] = places = [];
+                if (!places.Contains(heading, StringComparer.Ordinal)) places.Add(heading);
+            }
+        }
+        return mentions;
+    }
 
     private static List<string> ExtractRequirementReferences(string text) =>
         FrIdRe.Matches(text)
