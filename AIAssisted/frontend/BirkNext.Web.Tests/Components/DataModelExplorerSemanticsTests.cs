@@ -42,7 +42,7 @@ public sealed class DataModelExplorerSemanticsTests : BunitContext
         zeroMetricText.Should().NotContain(text => text.Contains("Fields / columns", StringComparison.Ordinal));
         cut.Markup.Should().Contain("Not extracted").And.Contain("Not represented").And.NotContain("No columns defined");
 
-        ClickTab(cut, "Data Structures");
+        ClickTab(cut, "Structure cards");
         cut.Markup.Should().Contain("Record / DTO");
         cut.Markup.Should().Contain("Fields or properties were not extracted");
 

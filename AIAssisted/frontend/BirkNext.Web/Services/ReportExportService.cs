@@ -1031,9 +1031,12 @@ public sealed class ReportExportService : IReportExportService
         };
     }
 
-    public string ExportDataModel(DataModelDocument document, string? projectName)
+    public string ExportDataModel(DataModelDocument document, string? projectName, string? layerLabel = null)
     {
         var sb = new StringBuilder();
+        // The exported view names its layer, so a Combined view is never mistaken for an authored artifact.
+        if (!string.IsNullOrWhiteSpace(layerLabel))
+            sb.Append("<p class=\"layer-note\" data-layer>").Append(Esc(layerLabel)).Append("</p>\n");
 
         sb.Append("<div class=\"kpi-row\">");
         sb.Append(Kpi(document.EntityCount.ToString(), "Data structures"));
@@ -1047,7 +1050,7 @@ public sealed class ReportExportService : IReportExportService
 
         sb.Append(BuildDataModelBody(document));
 
-        return BuildHtml(Esc(document.Title), projectName, null, sb.ToString());
+        return BuildHtml(Esc(string.IsNullOrWhiteSpace(layerLabel) ? document.Title : $"{document.Title} ({layerLabel})"), projectName, null, sb.ToString());
     }
 
     public string ExportDashboardSummary(

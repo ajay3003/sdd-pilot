@@ -159,12 +159,22 @@ public sealed class DataModelModelViewTests : BunitContext
         document.Entities.Should().ContainSingle().Which.Name.Should().Be("OrderPlaced");
     }
 
-    private IRenderedComponent<DataModelExplorerPanel> Panel(string text, string? path = "specs/001-x/data-model.md") =>
+    private IRenderedComponent<DataModelExplorerPanel> Render(string text, string? path) =>
         Render<DataModelExplorerPanel>(p => p.Add(x => x.ParsedDataModel, _parser.Parse(text)).Add(x => x.DataModelText, text).Add(x => x.ArtifactPath, path).Add(x => x.ArtifactRevision, 2));
 
-    [Fact]
-    public void The_model_view_is_the_default_and_shows_structures_fields_and_provenance_without_parser_terms()
+    /// <summary>The Data rules view in its technical field table (the tester view is the default inside it).</summary>
+    private IRenderedComponent<DataModelExplorerPanel> Panel(string text, string? path = "specs/001-x/data-model.md")
     {
+        var cut = Render(text, path);
+        cut.Find("[data-testid=dme-tab-model]").Click();
+        if (cut.FindAll("[data-testid=dme-field-view-technical]").Count > 0) cut.Find("[data-testid=dme-field-view-technical]").Click();
+        return cut;
+    }
+
+    [Fact]
+    public void The_model_view_shows_structures_fields_and_provenance_without_parser_terms()
+    {
+        Render(CodeDeclarations, "specs/001-x/data-model.md").Find("[data-testid=dme-tab-overview]").GetAttribute("aria-selected").Should().Be("true", "Overview is the tester's default");
         var cut = Panel(CodeDeclarations);
         cut.Find("[data-testid=dme-tab-model]").GetAttribute("aria-selected").Should().Be("true");
         cut.Find("[data-testid=dme-model-entities]").TextContent.Should().Be("2");
@@ -173,6 +183,7 @@ public sealed class DataModelModelViewTests : BunitContext
 
         cut.FindAll("[data-testid=dme-model-item]").Select(i => i.GetAttribute("data-entity")).Should().Equal("registry", "TracedItem");
         cut.FindAll("[data-testid=dme-model-item]").Single(i => i.GetAttribute("data-entity") == "TracedItem").Click();
+        cut.Find("[data-testid=dme-field-view-technical]").Click();
         var detail = cut.Find("[data-testid=dme-model-detail]");
         detail.QuerySelectorAll("thead th").Select(th => th.TextContent).Should().Equal("Field", "Type", "Required", "Nullable", "Cardinality", "Key", "Constraints", "Source");
         var rows = cut.FindAll("[data-testid=dme-model-field]").ToDictionary(r => r.GetAttribute("data-field")!, r => r.Children.Select(c => c.TextContent.Trim()).ToArray());
@@ -204,7 +215,7 @@ public sealed class DataModelModelViewTests : BunitContext
     public void Search_finds_fields_and_enum_values_and_generated_origin_is_never_canonical()
     {
         var cut = Panel(CodeDeclarations, path: "Cart/autodoc/data-model.md");
-        cut.Find("[data-testid=dme-model-source]").TextContent.Should().Contain("Generated documentation — derived, never the canonical model");
+        cut.Find("[data-testid=dme-model-source]").TextContent.Should().Contain("Generated documentation — derived, not authoritative implementation evidence");
         cut.Find("[data-testid=dme-model-search]").Input("event_key");
         cut.FindAll("[data-testid=dme-model-item]").Select(i => i.GetAttribute("data-entity")).Should().Equal("registry");
         cut.Find("[data-testid=dme-model-search]").Input("Accepted");
@@ -217,7 +228,8 @@ public sealed class DataModelModelViewTests : BunitContext
     {
         var cut = Panel("# Notes\n\nSome prose about the project.\n\n```\nnot a model\n```\n");
         cut.Find("[data-testid=dme-model-empty]").TextContent.Should().Contain("No normalized data model could be derived from the selected evidence.");
-        cut.Find("[data-testid=dme-model-partial]").TextContent.Should().Contain("Partial model coverage");
+        cut.Find("[data-testid=dme-model-partial]").TextContent.Should().Contain("Some document content is not represented in the structured view.")
+            .And.Contain("BirkNext does not infer missing model facts from unmapped content");
         cut.Find("[data-testid=markdown-source-notes-toggle]").Click();
         cut.FindAll("article[data-source-block-id]").Should().NotBeEmpty();
     }

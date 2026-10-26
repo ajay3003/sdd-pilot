@@ -31,7 +31,8 @@ public sealed class DataModelEvidenceUiTests : BunitContext
         var cut = Render<DataModelEvidencePanel>(p => p.Add(x => x.Snapshot, Model()).Add(x => x.DocumentedEntities, ["Order", "Invoice"]));
         (cut.Find("[data-testid=data-model-evidence-explicit]").TextContent, cut.Find("[data-testid=data-model-evidence-convention]").TextContent,
             cut.Find("[data-testid=data-model-evidence-migrations]").TextContent).Should().Be(("1", "1", "1"));
-        cut.Find("[data-testid=data-model-evidence-documented]").TextContent.Should().Contain("1 of 2 documented entities found in source").And.Contain("not found: Invoice");
+        cut.Find("[data-testid=data-model-evidence-documented]").TextContent.Should().Contain("1 of 2 documented structures found in source");
+        cut.Find("[data-testid=data-model-evidence-not-matched]").TextContent.Should().Contain("1 not matched: Invoice");
         cut.Markup.Should().Contain("not proof they were applied").And.Contain("no live database or row data");
         cut.Find("[data-testid=data-model-evidence-dictionary-text]").TextContent.Should().Contain("tbl_order").And.Contain("Explicit");
     }

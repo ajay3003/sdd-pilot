@@ -21,3 +21,6 @@
 .dme-layers legend { font-weight: 600; font-size: .85rem; padding: 0 .25rem; }
 .dme-layer-option { display: inline-flex; gap: .3rem; align-items: center; font-size: .88rem; }
 .dme-layer-note { flex-basis: 100%; margin: 0; font-size: .8rem; color: var(--text-muted, #555); overflow-wrap: anywhere; }
+.dme-layer-technical { flex-basis: 100%; font-size: .8rem; }
+.dme-layer-technical > summary { cursor: pointer; color: #1d4ed8; }
+.dme-layer-technical p { margin: .25rem 0 0; overflow-wrap: anywhere; color: #334155; }

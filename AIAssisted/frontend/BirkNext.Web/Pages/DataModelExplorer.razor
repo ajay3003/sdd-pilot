@@ -19,7 +19,7 @@
     <PageHeader Title="Data Model Explorer"
                 Description="@ArtifactExplorerRoles.Purpose(WorkspaceArtifactType.DataModel)" />
 
-    <ArtifactExplorerHost @ref="_host" Role="WorkspaceArtifactType.DataModel" OnStateChanged="OnArtifactChanged">
+    <ArtifactExplorerHost @ref="_host" Role="WorkspaceArtifactType.DataModel" OnStateChanged="OnArtifactChanged" AvailabilityText="@AvailabilityText">
         @if (_analysisError is not null)
         {
             <ExplorerAnalysisError Role="WorkspaceArtifactType.DataModel" Message="@_analysisError" />
@@ -27,22 +27,26 @@
         else
         {
             <div class="dme-export-row">
-                <button type="button" class="btn-primary" @onclick="ExportHtml">Export HTML</button>
+                <button type="button" class="btn-secondary" data-testid="dme-export" @onclick="ExportHtml">Export HTML<span class="visually-hidden"> — @LayerExportLabel</span></button>
             </div>
             <div class="dme-page-body">
                 @if (_baseParsed is not null && _parsed is not null)
                 {
                     @* A pack's own data model over the shared base of its module/project: both stay separate artifacts; the aggregate is derived. *@
                     <fieldset class="dme-layers" data-testid="dme-layers">
-                        <legend>Data model layer</legend>
-                        @foreach (var (key, label) in LayerOptions)
+                        <legend>Data model view</legend>
+                        @foreach (var (key, label, hint) in LayerOptions)
                         {
-                            <label class="dme-layer-option">
+                            <label class="dme-layer-option" title="@hint">
                                 <input type="radio" name="dme-layer" value="@key" checked="@(_layer == key)" data-testid="dme-layer-@key" @onchange="() => _layer = key" />
                                 @label
                             </label>
                         }
                         <p class="dme-layer-note" data-testid="dme-layer-note">@LayerNote</p>
+                        <details class="dme-layer-technical" data-testid="dme-layer-technical">
+                            <summary>Technical terms</summary>
+                            <p>Feature model = the pack model (@_artifactPath). Shared model = the module's shared base (@_basePath@(BirkNext.Web.Services.DataModelLayers.IsGenerated(_basePath) ? ", generated documentation" : "")). Combined view = the derived aggregate: shared structures plus the feature's; a feature structure with the same logical identity overrides the shared one, which stays inspectable. Nothing is persisted as a new artifact.</p>
+                        </details>
                     </fieldset>
                 }
                 <DataModelExplorerPanel
@@ -52,14 +56,20 @@
                     InitialView="@_initialView"
                     ArtifactPath="@ShownPath"
                     ArtifactRevision="@(_layer == "base" ? _baseRevision : _layer == "pack" ? _artifactRevision : null)"
-                    OriginOverride="@(_layer == "aggregate" ? "Derived aggregate — shared base plus this pack's model; read-only, never an authored artifact" : null)"
+                    OriginOverride="@(_layer == "aggregate" ? BirkNext.Web.Services.DataModelLayers.CombinedOrigin : null)"
                     EntityLayers="@(_layer == "aggregate" ? _aggregateOrigins : null)"
+                    Structures="@(_layer == "aggregate" ? _structures : null)"
                     BaseArtifactPath="@_basePath"
                     PackArtifactPath="@_artifactPath"
                     OnTextChanged="ImportFromPanel" />
-                <ReviewDisclosure Text="Source data model evidence" CollapseText="Hide source data model evidence" Hint="The persistence model Source Analysis extracted · compared with this document"
+                @* Implementation evidence stays Source Analysis's: collapsed, compared with the shown view, never replaced by generated docs. *@
+                <ReviewDisclosure Text="Compare with implementation source" CollapseText="Hide comparison with implementation source"
+                                  Hint="Source Analysis evidence of the persistence model · source-derived, not the deployed database"
                                   TestId="dme-source-evidence" Class="disclosure-inline" @bind-Expanded="_sourceEvidenceExpanded">
-                    @if (_sourceEvidenceExpanded) { <DataModelEvidencePanel DocumentedEntities="@(_parsed?.Entities.Select(e => e.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList())" /> }
+                    @if (_sourceEvidenceExpanded)
+                    {
+                        <DataModelEvidencePanel DocumentedEntities="@(ShownModel?.Entities.Select(e => e.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList())" DocumentedModel="@ShownModel" />
+                    }
                 </ReviewDisclosure>
             </div>
         }
@@ -97,22 +107,39 @@
     private DataModelDocument? _baseParsed;
     private DataModelDocument? _aggregate;
     private IReadOnlyDictionary<string, BirkNext.Web.Services.DataModelLayerOrigin>? _aggregateOrigins;
+    private IReadOnlyList<BirkNext.Web.Services.LogicalStructure>? _structures;
 
-    private static readonly (string Key, string Label)[] LayerOptions = [("pack", "Pack model"), ("base", "Shared base"), ("aggregate", "Derived aggregate")];
+    // Tester-facing names; the internal keys (pack / base / aggregate) stay stable.
+    private static readonly (string Key, string Label, string Helper)[] LayerOptions =
+    [
+        ("pack", BirkNext.Web.Services.DataModelLayers.FeatureLabel, BirkNext.Web.Services.DataModelLayers.FeatureHelper),
+        ("base", BirkNext.Web.Services.DataModelLayers.SharedLabel, BirkNext.Web.Services.DataModelLayers.SharedHelper),
+        ("aggregate", BirkNext.Web.Services.DataModelLayers.CombinedLabel, BirkNext.Web.Services.DataModelLayers.CombinedHelper),
+    ];
+
+    /// <summary>What is available for this feature: one authored feature model, plus a shared model when the module has one — never two competing models.</summary>
+    private string? AvailabilityText => _parsed is null ? null : _baseParsed is not null ? "Feature model + shared model available" : "Feature model available";
+
+    private string LayerExportLabel => _layer switch
+    {
+        "base" => BirkNext.Web.Services.DataModelLayers.IsGenerated(_basePath) ? $"Shared model — {BirkNext.Web.Services.DataModelLayers.GeneratedOrigin}" : "Shared model",
+        "aggregate" => "Combined view — derived/read-only",
+        _ => "Feature model — authored",
+    };
 
     private DataModelDocument? ShownModel => _layer switch { "base" => _baseParsed, "aggregate" => _aggregate, _ => _parsed };
     private string? ShownPath => _layer switch { "base" => _basePath, "aggregate" => $"{_basePath} + {_artifactPath}", _ => _artifactPath };
 
     private string LayerNote => _layer switch
     {
-        "base" => $"The shared base data model ({_basePath}) that applies to every pack of the module.",
-        "aggregate" => "Derived view: base structures plus this pack's own; a pack structure with the same name overrides the base one and is marked. Both documents stay separate.",
-        _ => $"This pack's own data model ({_artifactPath}). A shared base data model also applies ({_basePath}).",
+        "base" => BirkNext.Web.Services.DataModelLayers.SharedHelper + (BirkNext.Web.Services.DataModelLayers.IsGenerated(_basePath) ? $" {BirkNext.Web.Services.DataModelLayers.GeneratedOrigin}." : ""),
+        "aggregate" => BirkNext.Web.Services.DataModelLayers.CombinedHelper,
+        _ => BirkNext.Web.Services.DataModelLayers.FeatureHelper + " A shared model is also available.",
     };
 
     private async Task LoadSharedBaseAsync()
     {
-        _baseParsed = null; _aggregate = null; _aggregateOrigins = null; _baseText = string.Empty; _basePath = null; _baseRevision = null;
+        _baseParsed = null; _aggregate = null; _aggregateOrigins = null; _structures = null; _baseText = string.Empty; _basePath = null; _baseRevision = null;
         if (_parsed is null) { _layer = "pack"; return; }
         ArtifactExplorerState? shared;
         try { shared = await ExplorerContext.GetSharedBaseAsync(WorkspaceArtifactType.DataModel); }
@@ -122,13 +149,14 @@
         {
             _baseParsed = DataModelService.Parse(baseText);
             (_aggregate, _aggregateOrigins) = BirkNext.Web.Services.DataModelLayers.Aggregate(_baseParsed, _parsed);
+            _structures = BirkNext.Web.Services.DataModelLayers.Structures(_baseParsed, _parsed);
             _baseText = baseText;
             _basePath = baseArtifact.SourcePath ?? baseArtifact.FileName;
             _baseRevision = baseArtifact.Revision;
         }
         catch (Exception)
         {
-            _baseParsed = null; _aggregate = null; _aggregateOrigins = null; _layer = "pack";
+            _baseParsed = null; _aggregate = null; _aggregateOrigins = null; _structures = null; _layer = "pack";
         }
     }
 
@@ -159,8 +187,9 @@
 
     private async Task ExportHtml()
     {
-        if (_parsed is null) return;
-        var html = ExportService.ExportDataModel(_parsed, Workspace.ProjectName);
+        // The shown view is exported with its layer: the Combined view is labelled derived/read-only, never as an authored artifact.
+        if (ShownModel is not { } shown) return;
+        var html = ExportService.ExportDataModel(shown, Workspace.ProjectName, _baseParsed is null ? null : LayerExportLabel);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"data-model-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 }

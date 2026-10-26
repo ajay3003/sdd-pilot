@@ -230,7 +230,11 @@
                         </div>
                         <p class="axh-context-line" data-testid="artifact-explorer-summary">@ContextLine(selected)</p>
                         <span class="axh-badges">@ReasonBadge
-                            @if (others > 0)
+                            @if (AvailabilityText is { } availability)
+                            {
+                                <span class="axh-badge" data-testid="artifact-explorer-availability">@availability</span>
+                            }
+                            else if (others > 0)
                             {
                                 <span class="axh-badge" data-testid="artifact-explorer-supporting">@OthersText(others)</span>
                             }
@@ -322,6 +326,9 @@
     [Parameter] public RenderFragment<ArtifactExplorerState>? ChildContent { get; set; }
     /// <summary>Raised after every load, so the page can (re)build its analysis or clear it.</summary>
     [Parameter] public EventCallback<ArtifactExplorerState> OnStateChanged { get; set; }
+    /// <summary>What the page found available for this feature (e.g. "Feature model + shared model available"); replaces the generic
+    /// "N other documents" badge when the other document is a layer of the same view, not a competing artifact. Details still list them.</summary>
+    [Parameter] public string? AvailabilityText { get; set; }
 
     private readonly string _id = "axh-" + Guid.NewGuid().ToString("N")[..8];
     private ArtifactExplorerState? _state;

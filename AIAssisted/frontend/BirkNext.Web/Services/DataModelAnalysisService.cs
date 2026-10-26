@@ -1408,6 +1408,9 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
     public bool IsSensitiveColumn(DataColumn column) => IsColumnSensitive(column);
 
+    /// <summary>The existing sensitive-name rule, for presentation (Data Model Explorer tester view).</summary>
+    public static bool IsSensitiveByName(DataColumn column) => IsColumnSensitive(column);
+
     // ── Filter helpers ─────────────────────────────────────────────────────────
 
     public IEnumerable<DataEntity> FilterEntities(IEnumerable<DataEntity> entities, string query)

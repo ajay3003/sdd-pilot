@@ -5,7 +5,9 @@
 
 @* Shared data model evidence of a Source Analysis snapshot (the persistence model Source Analysis extracted once) beside the documented
    data model: entity ≠ table until mapped, explicit vs convention mapping, declared migrations (never "applied"), nullability layers.
-   With a snapshot passed in it renders that snapshot; otherwise the reader chooses one (never the newest automatically). *@
+   With a snapshot passed in it renders that snapshot; otherwise the reader chooses one (never the newest automatically).
+   With documented structures (Data Model Explorer) the comparison comes first, scoped to the source stores those structures were found in;
+   the full source dictionary, framework tables and repository-wide counts are technical source evidence. *@
 <div class="sd-source-contracts" data-testid="data-model-evidence">
     @if (Snapshot is null)
     {
@@ -26,22 +28,72 @@
     {
         var entities = DataModelQueries.GetEntities(model);
         var migrations = DataModelQueries.Migrations(model);
-        <dl class="sd-summary" data-testid="data-model-evidence-summary">
-            <div><dt>Tables / entities</dt><dd>@entities.Count</dd></div>
-            <div><dt>Explicit table mapping</dt><dd data-testid="data-model-evidence-explicit">@entities.Count(e => e.Mapping == DataMappingConfidence.Explicit)</dd></div>
-            <div><dt>Convention only</dt><dd data-testid="data-model-evidence-convention">@entities.Count(e => e.Mapping == DataMappingConfidence.Strong && e.Entity is not null)</dd></div>
-            <div><dt>Migrations declared</dt><dd data-testid="data-model-evidence-migrations">@migrations.Count</dd></div>
-            <div><dt>Nullability differences</dt><dd>@entities.Sum(e => e.Fields.Count(f => f.NullabilityDiffers))</dd></div>
-        </dl>
         @if (DocumentedEntities is { Count: > 0 } documented)
         {
-            var sourceNames = entities.Select(e => e.Entity ?? e.Table).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var missing = documented.Where(d => !sourceNames.Contains(d)).ToList();
-            <p data-testid="data-model-evidence-documented">@(documented.Count - missing.Count) of @documented.Count documented entities found in source@(missing.Count > 0 ? $" · not found: {string.Join(", ", missing.Take(8))}{(missing.Count > 8 ? " …" : "")}" : "")</p>
+            var comparison = DataModelSourceComparison.Compare(documented, DocumentedModel, entities, migrations);
+            var aliases = comparison.Matched.Where(m => m.Match == DataModelNameMatch.NormalizedImplementationName).ToList();
+            <section class="dme-compare" aria-label="Comparison with implementation source" data-testid="data-model-comparison">
+                <p data-testid="data-model-evidence-documented"><strong>@comparison.Matched.Count of @comparison.Documented.Count documented structures found in source</strong>@(aliases.Count > 0 ? $" ({aliases.Count} via normalized implementation name)" : "")</p>
+                @if (comparison.NotMatched.Count > 0)
+                {
+                    <p data-testid="data-model-evidence-not-matched">@comparison.NotMatched.Count not matched: @string.Join(", ", comparison.NotMatched.Take(8))@(comparison.NotMatched.Count > 8 ? " …" : "")</p>
+                }
+                @if (aliases.Count > 0)
+                {
+                    <ul class="dme-plain" data-testid="data-model-evidence-aliases">
+                        @foreach (var alias in aliases)
+                        {
+                            <li><strong>@alias.Documented</strong> ↔ <strong>@(alias.Source.Entity ?? alias.Source.Table)</strong> — @DataModelIdentity.NormalizedLabel <span class="sd-muted">(@DataModelIdentity.NormalizedBasis)</span></li>
+                        }
+                    </ul>
+                }
+                @{
+                    var nullability = comparison.FieldDifferences.Count(d => d.Kind.StartsWith("Authored says", StringComparison.Ordinal));
+                    var unknown = comparison.FieldDifferences.Count(d => d.State == SourceDifferenceState.Unknown);
+                    var other = comparison.FieldDifferences.Count - nullability - unknown;
+                }
+                <dl class="sd-summary" data-testid="data-model-comparison-summary">
+                    <div><dt>Required/optional differences</dt><dd data-testid="data-model-comparison-requirement">@nullability to review</dd></div>
+                    <div><dt>Unknown on one side</dt><dd>@unknown</dd></div>
+                    <div><dt>Other field differences</dt><dd>@other to review</dd></div>
+                    <div><dt>Source nullability layers</dt><dd data-testid="data-model-comparison-nullability">@comparison.NullabilityLayerDifferences nullability differences to review</dd></div>
+                    <div><dt>Explicit source mappings</dt><dd>@comparison.ExplicitMappings</dd></div>
+                    <div><dt>Migrations declared</dt><dd>@comparison.MigrationsDeclared</dd></div>
+                </dl>
+                <p class="sd-muted" data-testid="data-model-comparison-scope">@ScopeText(comparison)</p>
+                <p class="sd-muted">A difference is something to review, not a defect. Source-derived schema evidence is not the deployed database schema; migrations declared are not migrations applied; no live database or row data was read.</p>
+                @if (comparison.FieldDifferences.Count > 0)
+                {
+                    <ReviewDisclosure Text="@($"View {comparison.FieldDifferences.Count} field differences to review")" CollapseText="Hide field differences" TestId="data-model-comparison-differences" Class="disclosure-inline">
+                        <div class="dme-model-scroll" tabindex="0" role="region" aria-label="Field differences to review">
+                            <table class="dme-model-table">
+                                <thead><tr><th scope="col">Structure</th><th scope="col">Field</th><th scope="col">Difference</th><th scope="col">Review state</th></tr></thead>
+                                <tbody>
+                                    @foreach (var d in comparison.FieldDifferences)
+                                    {
+                                        <tr data-testid="data-model-comparison-difference"><td>@d.Structure</td><th scope="row">@d.Field</th><td>@d.Kind</td><td>@DataModelSourceComparison.StateLabel(d.State)</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </ReviewDisclosure>
+                }
+            </section>
         }
-        <p class="sd-muted">Declared in source. Migrations are declarations, not proof they were applied; no live database or row data was read. A convention mapping is not an explicit table name.</p>
-        <ReviewDisclosure Text="View data dictionary" CollapseText="Hide data dictionary" TestId="data-model-evidence-dictionary" Class="disclosure-inline">
-            <pre class="sd-doc" data-testid="data-model-evidence-dictionary-text">@DataModelQueries.Dictionary(model)</pre>
+        <ReviewDisclosure Text="Technical source evidence" CollapseText="Hide technical source evidence" Expanded="@(DocumentedEntities is not { Count: > 0 })"
+                          Hint="@($"{entities.Count} source tables / entities in the snapshot")" TestId="data-model-evidence-technical" Class="disclosure-inline">
+            <dl class="sd-summary" data-testid="data-model-evidence-summary">
+                <div><dt>Tables / entities</dt><dd>@entities.Count</dd></div>
+                <div><dt>Explicit table mapping</dt><dd data-testid="data-model-evidence-explicit">@entities.Count(e => e.Mapping == DataMappingConfidence.Explicit)</dd></div>
+                <div><dt>Convention only</dt><dd data-testid="data-model-evidence-convention">@entities.Count(e => e.Mapping == DataMappingConfidence.Strong && e.Entity is not null)</dd></div>
+                <div><dt>Migrations declared</dt><dd data-testid="data-model-evidence-migrations">@migrations.Count</dd></div>
+                <div><dt>Nullability differences to review</dt><dd>@entities.Sum(e => e.Fields.Count(f => f.NullabilityDiffers))</dd></div>
+                <div><dt>Framework tables</dt><dd data-testid="data-model-evidence-framework">@entities.Count(DataModelSourceComparison.IsFramework)</dd></div>
+            </dl>
+            <p class="sd-muted">Declared in source. Migrations are declarations, not proof they were applied; no live database or row data was read. A convention mapping is not an explicit table name.</p>
+            <ReviewDisclosure Text="View data dictionary" CollapseText="Hide data dictionary" TestId="data-model-evidence-dictionary" Class="disclosure-inline">
+                <pre class="sd-doc" data-testid="data-model-evidence-dictionary-text">@DataModelQueries.Dictionary(model)</pre>
+            </ReviewDisclosure>
         </ReviewDisclosure>
     }
     else if (Snapshot is not null || _selected.Length > 0)
@@ -53,11 +105,23 @@
     /// <summary>A known snapshot (Source Analysis Data); null lets the reader choose one (Data Model Explorer).</summary>
     [Parameter] public DatabaseArchitectureSnapshot? Snapshot { get; set; }
     [Parameter] public IReadOnlyList<string>? DocumentedEntities { get; set; }
+    /// <summary>The documented model shown (feature, shared or combined) for field-level differences; names alone compare structures only.</summary>
+    [Parameter] public BirkNext.Web.Models.DataModelDocument? DocumentedModel { get; set; }
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
     private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
     private string _selected = "";
     private string? _error;
     private DatabaseArchitectureSnapshot? Model => Snapshot ?? _snapshots?.FirstOrDefault(s => s.Id.ToString() == _selected)?.DatabaseArchitecture;
+
+    private static string ScopeText(DataModelSourceComparison c)
+    {
+        var scope = c.ScopeStores.Count == 0 ? "No documented structure was found in source; all application source structures were compared."
+            : $"Compared within {string.Join(", ", c.ScopeStores)} ({c.InScope.Count} source structures).";
+        var outside = new List<string>();
+        if (c.OutOfScope > 0) outside.Add($"{c.OutOfScope} structures in other stores");
+        if (c.FrameworkTables > 0) outside.Add($"{c.FrameworkTables} framework tables (e.g. Wolverine)");
+        return outside.Count == 0 ? scope : $"{scope} {string.Join(" and ", outside)} are under Technical source evidence.";
+    }
 
     protected override async Task OnInitializedAsync()
     {

@@ -53,35 +53,42 @@ else
             }
         </div>
         <div class="dme-header-right">
-            <div class="dme-tab-bar" role="tablist">
+            @* Tester-first order: what the model says and how to test it, then traceability and findings; technical views last. *@
+            <div class="dme-tab-bar" role="tablist" aria-label="Data model views">
+                <button class="dme-tab @(_activeTab == "overview" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "overview" ? "true" : "false")" data-testid="dme-tab-overview"
+                        @onclick='() => SetTab("overview")'>Overview</button>
                 <button class="dme-tab @(_activeTab == "model" ? "is-active" : "")"
                         role="tab" aria-selected="@(_activeTab == "model" ? "true" : "false")" data-testid="dme-tab-model"
-                        @onclick='() => SetTab("model")'>Model</button>
-                <button class="dme-tab @(_activeTab == "overview" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "overview" ? "true" : "false")"
-                        @onclick='() => SetTab("overview")'>Overview</button>
-                <button class="dme-tab @(_activeTab == "design" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "design" ? "true" : "false")"
-                        @onclick='() => SetTab("design")'>
-                    Data Structures @if (_document.EntityCount > 0) { <span class="dme-tab-count">@_document.EntityCount</span> }
-                </button>
+                        @onclick='() => SetTab("model")'>Data rules</button>
                 <button class="dme-tab @(_activeTab == "relationships" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "relationships" ? "true" : "false")"
+                        role="tab" aria-selected="@(_activeTab == "relationships" ? "true" : "false")" data-testid="dme-tab-relationships"
                         @onclick='() => SetTab("relationships")'>
                     Relationships @if (_document.RelationshipCount > 0) { <span class="dme-tab-count">@_document.RelationshipCount</span> }
                 </button>
-                <button class="dme-tab @(_activeTab == "indexes" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "indexes" ? "true" : "false")"
-                        @onclick='() => SetTab("indexes")'>
-                    Indexes &amp; Constraints @if (_document.IndexCount > 0) { <span class="dme-tab-count">@_document.IndexCount</span> }
+                <button class="dme-tab @(_activeTab == "reference" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "reference" ? "true" : "false")" data-testid="dme-tab-reference"
+                        @onclick='() => SetTab("reference")'>
+                    Reference data @if (ReferenceStructures.Count > 0) { <span class="dme-tab-count">@ReferenceStructures.Count</span> }
                 </button>
                 <button class="dme-tab @(_activeTab == "traceability" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "traceability" ? "true" : "false")"
+                        role="tab" aria-selected="@(_activeTab == "traceability" ? "true" : "false")" data-testid="dme-tab-traceability"
                         @onclick='() => SetTab("traceability")'>Traceability</button>
                 <button class="dme-tab @(_activeTab == "findings" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "findings" ? "true" : "false")"
+                        role="tab" aria-selected="@(_activeTab == "findings" ? "true" : "false")" data-testid="dme-tab-findings"
                         @onclick='() => SetTab("findings")'>
                     Findings @if (_document.FindingCount > 0) { <span class="dme-tab-count @(_document.ErrorCount > 0 ? "dme-tab-count-warn" : "")">@_document.FindingCount</span> }
+                </button>
+                <span class="dme-tab-sep" aria-hidden="true">Technical</span>
+                <button class="dme-tab dme-tab-technical @(_activeTab == "indexes" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "indexes" ? "true" : "false")" data-testid="dme-tab-indexes"
+                        @onclick='() => SetTab("indexes")'>
+                    Constraints &amp; indexes @if (_document.IndexCount > 0) { <span class="dme-tab-count">@_document.IndexCount</span> }
+                </button>
+                <button class="dme-tab dme-tab-technical @(_activeTab == "design" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "design" ? "true" : "false")" data-testid="dme-tab-design"
+                        @onclick='() => SetTab("design")'>
+                    Structure cards @if (_document.EntityCount > 0) { <span class="dme-tab-count">@_document.EntityCount</span> }
                 </button>
             </div>
         </div>
@@ -117,6 +124,9 @@ else
         @if (_activeTab == "overview")
         {
             <div class="dme-overview">
+                @TesterOverview(_document)
+                <details class="dme-technical-summary" data-testid="dme-technical-summary">
+                <summary>Technical summary</summary>
                 <div class="dme-stat-row">
                     <div class="dme-stat">
                         <span class="dme-stat-value">@_document.EntityCount</span>
@@ -137,10 +147,6 @@ else
                         <span class="dme-stat-label">Indexes</span>
                         <span class="dme-stat-detail">@EvidenceLabel(_document.IndexEvidence)</span>
                     </div>
-                    <div class="dme-stat @(_document.ErrorCount > 0 ? "dme-stat-error" : (_document.WarningCount > 0 ? "dme-stat-warn" : ""))">
-                        <span class="dme-stat-value">@_document.FindingCount</span>
-                        <span class="dme-stat-label">Findings</span>
-                    </div>
                     @if (_document.EvidenceGaps.Count > 0)
                     {
                         <div class="dme-stat dme-stat-neutral" data-testid="dme-evidence-gap-count">
@@ -149,8 +155,6 @@ else
                         </div>
                     }
                 </div>
-
-                <p class="dme-source-disclaimer" data-testid="dme-source-disclaimer">Source-derived model only. Deployed database schemas and runtime state are not verified here.</p>
 
                 @if (_document.Entities.Count > 0)
                 {
@@ -161,6 +165,9 @@ else
                         }
                     </section>
                 }
+                </details>
+
+                <p class="dme-source-disclaimer" data-testid="dme-source-disclaimer">Documented model only. Deployed database schemas and runtime state are not verified here; no live database or row data was read.</p>
 
                 @if (!string.IsNullOrWhiteSpace(_document.Overview))
                 {
@@ -377,6 +384,18 @@ else
             }
             else
             {
+                <ul class="dme-plain dme-friendly-rels" data-testid="dme-friendly-relationships">
+                    @foreach (var rel in visible)
+                    {
+                        var friendly = DataModelTesterView.Friendly(rel, _document);
+                        <li class="dme-friendly-rel" data-testid="dme-friendly-relationship">
+                            <strong class="dme-wrap">@friendly.Text</strong>@if (friendly.Via is { } via) { <span class="dme-muted"> · via @via</span> }
+                            <span class="dme-friendly-card">@friendly.Cardinality</span>
+                        </li>
+                    }
+                </ul>
+                <details class="dme-technical-details" data-testid="dme-relationships-technical">
+                <summary>Technical relationship details</summary>
                 <div class="dme-rel-list" role="list">
                     @foreach (var rel in visible)
                     {
@@ -403,7 +422,14 @@ else
                         </div>
                     }
                 </div>
+                </details>
             }
+        }
+
+        @* ── Reference data: structures other structures point to (tables included — never forced into enums) ── *@
+        @if (_activeTab == "reference")
+        {
+            @ReferenceView(_document)
         }
 
         @* ── Indexes & Constraints ────────────────────────────────────────────── *@
@@ -412,6 +438,7 @@ else
             var visibleIdx = AnalysisService.FilterIndexes(_document.Indexes, _searchQuery).ToList();
             var visibleCon = AnalysisService.FilterConstraints(_document.Constraints, _searchQuery).ToList();
 
+            @BusinessConstraints(_document)
             <div class="dme-idx-section">
                 <div class="dme-section-label">Indexes (@EvidenceValue(_document.IndexCount, _document.IndexEvidence)) · @EvidenceLabel(_document.IndexEvidence)</div>
                 @if (visibleIdx.Count == 0)
@@ -489,22 +516,22 @@ else
                 <div class="dme-stat-row">
                     <div class="dme-stat">
                         <span class="dme-stat-value">@allIds.Count</span>
-                        <span class="dme-stat-label">Unique Traceability IDs</span>
+                        <span class="dme-stat-label">Unique requirement IDs</span>
                     </div>
                     <div class="dme-stat">
                         <span class="dme-stat-value">@linked.Count</span>
-                        <span class="dme-stat-label">Data structures linked</span>
+                        <span class="dme-stat-label">Structures with requirement links</span>
                     </div>
                     <div class="dme-stat">
                         <span class="dme-stat-value">@unlinked.Count</span>
-                        <span class="dme-stat-label">Data structures without links</span>
+                        <span class="dme-stat-label">Structures without explicit links</span>
                     </div>
                 </div>
             </div>
 
             @if (linked.Count > 0)
             {
-                <div class="dme-section-label" style="margin-top:1.5rem">Linked data structures</div>
+                <div class="dme-section-label" style="margin-top:1.5rem">Structures with requirement links</div>
                 @foreach (var entity in linked)
                 {
                     <div class="dme-trace-entity-row">
@@ -523,7 +550,7 @@ else
             @if (unlinked.Count > 0)
             {
                 <div class="dme-section-label" style="margin-top:1.5rem">
-                    Data structures with no requirement references extracted (@unlinked.Count)
+                    No requirement references extracted (@unlinked.Count) · not a defect unless the project requires links
                 </div>
                 @foreach (var entity in unlinked)
                 {
@@ -555,7 +582,7 @@ else
             @if (_document.Findings.Count == 0)
             {
                 <div class="dme-empty-tab">
-                    <span>No deterministic model findings were generated from the evidence extracted here.</span>
+                    <span data-testid="dme-findings-none"><strong>No deterministic findings.</strong> This does not mean the model has been fully verified.</span>
                 </div>
             }
             else
@@ -600,6 +627,8 @@ else
     [Parameter] public string?             OriginOverride { get; set; }
     /// <summary>The layer of each structure in a derived aggregate (Shared base / Pack model / Overridden in pack); null for one document.</summary>
     [Parameter] public IReadOnlyDictionary<string, DataModelLayerOrigin>? EntityLayers { get; set; }
+    /// <summary>Combined view only: one logical structure per identity with each origin's definition kept (feature definition effective).</summary>
+    [Parameter] public IReadOnlyList<LogicalStructure>? Structures { get; set; }
     /// <summary>With <see cref="EntityLayers"/>: the document each layer comes from, so a structure's lines name its own source.</summary>
     [Parameter] public string?             BaseArtifactPath { get; set; }
     [Parameter] public string?             PackArtifactPath { get; set; }
@@ -672,7 +701,7 @@ else
         {
             if (!ReferenceEquals(_document, ParsedDataModel)) _selectedEntity = null;
             _document = ParsedDataModel;
-            _activeTab = InitialView ?? "model";
+            _activeTab = InitialView ?? "overview";
             _searchQuery = string.Empty;
         }
         else if (!string.IsNullOrWhiteSpace(DataModelText) && _document is null)
@@ -697,7 +726,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_localText)) return;
         _document    = AnalysisService.Parse(_localText);
-        _activeTab   = InitialView ?? "model";
+        _activeTab   = InitialView ?? "overview";
         _selectedEntity = null;
         _searchQuery = string.Empty;
     }
@@ -714,8 +743,8 @@ else
     private string? _selectedEntity;
     private string _modelQuery = string.Empty, _modelFilter = "all";
 
-    private bool GeneratedOrigin => ArtifactPath is { } path && (path.Contains("/autodoc/", StringComparison.OrdinalIgnoreCase) || path.Contains("generated-docs/", StringComparison.OrdinalIgnoreCase));
-    private string OriginLabel => OriginOverride ?? (GeneratedOrigin ? "Generated documentation — derived, never the canonical model" : "Authored document");
+    private bool GeneratedOrigin => DataModelLayers.IsGenerated(ArtifactPath);
+    private string OriginLabel => OriginOverride ?? (GeneratedOrigin ? DataModelLayers.GeneratedOrigin : "Authored document");
 
     private IEnumerable<DataEntity> ModelEntities(DataModelDocument document) => document.Entities
         .Where(e => _modelFilter switch
@@ -724,6 +753,7 @@ else
             "records" => e.Kind == DataStructureKind.Record,
             "events" => e.Kind is DataStructureKind.Event or DataStructureKind.Message,
             "relationships" => RelationshipsOf(document, e.Name).Any(),
+            "reference" => IsReference(e),
             _ => true,
         })
         .Where(e => _modelQuery.Trim() is not { Length: > 0 } q || e.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
@@ -776,6 +806,181 @@ else
     private static string Lines(ProjectionProvenance? provenance) => provenance?.Sources.FirstOrDefault() is { } s
         ? s.StartLine == s.EndLine ? $"Line {s.StartLine}" : $"Lines {s.StartLine}–{s.EndLine}" : "—";
 
+    private bool _technicalFields;
+    private DataModelDocument? _referenceFor;
+    private IReadOnlyList<ReferenceDataStructure> _references = [];
+
+    /// <summary>Reference data structures of the shown model (cached per document).</summary>
+    private IReadOnlyList<ReferenceDataStructure> ReferenceStructures
+    {
+        get
+        {
+            if (_document is null) return [];
+            if (!ReferenceEquals(_referenceFor, _document)) { _references = DataModelTesterView.ReferenceData(_document); _referenceFor = _document; }
+            return _references;
+        }
+    }
+
+    private LogicalStructure? StructureOf(DataEntity entity) => Structures?.FirstOrDefault(s => ReferenceEquals(s.Effective, entity));
+
+    /// <summary>The textual origin of a structure in the Combined view (Feature model / Shared model / Feature + shared model); null for one document.</summary>
+    private string? OriginBadgeText(DataEntity entity) => StructureOf(entity)?.OriginLabel
+        ?? (EntityLayers?.TryGetValue(entity.Name, out var layer) == true ? DataModelLayers.Label(layer) : null);
+
+    private bool IsReference(DataEntity entity) => ReferenceStructures.Any(r => ReferenceEquals(r.Entity, entity));
+
+    private void OpenStructure(string name)
+    {
+        _selectedEntity = name;
+        SetTab("model");
+    }
+
+    private RenderFragment OriginBadge(DataEntity entity) => __builder =>
+    {
+        if (OriginBadgeText(entity) is { } origin)
+        {
+            var css = StructureOf(entity)?.Origin switch
+            {
+                LogicalStructureOrigin.Shared => "sharedbase",
+                LogicalStructureOrigin.Both => "overriddeninpack",
+                LogicalStructureOrigin.Feature => "pack",
+                _ => EntityLayers![entity.Name].ToString().ToLowerInvariant(),
+            };
+            <span class="dme-layer dme-layer-@css" data-testid="dme-model-layer">@origin</span>
+        }
+    };
+
+    private RenderFragment RuleBadges(FieldRule rule) => __builder =>
+    {
+        if (rule.Identifier == IdentifierEvidence.Declared) { <span class="dme-badge dme-badge-id" data-testid="dme-rule-identifier">Identifier</span> }
+        else if (rule.Identifier == IdentifierEvidence.Inferred)
+        {
+            <span class="dme-badge dme-badge-inferred" data-testid="dme-rule-identifier">Likely identifier</span>
+            <small class="dme-muted">Inferred from field name</small>
+        }
+        if (rule.Security is not null)
+        {
+            <span class="dme-badge dme-badge-security" data-testid="dme-rule-security" title="@rule.SecurityText">Security relevant</span>
+            <small class="dme-muted">@rule.SecurityText Not a vulnerability finding.</small>
+        }
+        if (rule.Sensitive)
+        {
+            <span class="dme-badge dme-badge-sensitive" data-testid="dme-rule-sensitive">Sensitive data</span>
+            <small class="dme-muted">Field name matches a sensitive-data pattern.</small>
+        }
+    };
+
+    private RenderFragment TesterOverview(DataModelDocument document) => __builder =>
+    {
+        var summary = DataModelTesterView.Summary(document);
+        var differences = Structures?.Sum(s => s.Differences.Count);
+        <section class="dme-tester-summary" aria-labelledby="dme-tester-summary-title" data-testid="dme-tester-summary">
+            <h3 id="dme-tester-summary-title">Testable data rules</h3>
+            <dl class="dme-tester-counts">
+                <div><dt>Structures</dt><dd data-testid="dme-sum-structures">@summary.Structures</dd></div>
+                <div><dt>Required fields</dt><dd data-testid="dme-sum-required">@summary.Required</dd></div>
+                <div><dt>Optional fields</dt><dd data-testid="dme-sum-optional">@summary.Optional</dd></div>
+                @if (summary.Unknown > 0) { <div><dt>Requirement unknown</dt><dd data-testid="dme-sum-unknown">@summary.Unknown</dd></div> }
+                <div><dt>Relationships</dt><dd>@summary.Relationships</dd></div>
+                <div><dt>Reference data structures</dt><dd data-testid="dme-sum-reference">@summary.ReferenceData</dd></div>
+                <div><dt>Security-relevant fields</dt><dd data-testid="dme-sum-security">@summary.SecurityFields</dd></div>
+                @if (summary.SensitiveFields > 0) { <div><dt>Sensitive fields</dt><dd data-testid="dme-sum-sensitive">@summary.SensitiveFields</dd></div> }
+                <div><dt>Differences requiring review</dt><dd data-testid="dme-sum-differences">@(differences is { } d ? $"{d} between feature and shared model" : "Compare with implementation source below")</dd></div>
+            </dl>
+            <p class="dme-findings-status" data-testid="dme-findings-status">
+                @if (document.FindingCount == 0)
+                {
+                    <strong>No deterministic findings.</strong> <span>This does not mean the model has been fully verified.</span>
+                }
+                else
+                {
+                    <strong>@document.FindingCount deterministic finding@(document.FindingCount == 1 ? "" : "s")</strong> <span>— listed under Findings. Zero would not mean the model has been fully verified.</span>
+                }
+            </p>
+            <ul class="dme-plain dme-overview-structures" data-testid="dme-overview-structures" aria-label="Structures">
+                @foreach (var entity in document.Entities.OrderBy(e => IsReference(e)).ThenBy(e => DataModelIdentity.LogicalName(e.Name), StringComparer.OrdinalIgnoreCase))
+                {
+                    var e = entity;
+                    var rules = DataModelTesterView.Rules(e, document);
+                    <li>
+                        <button type="button" class="dme-overview-structure" data-testid="dme-overview-structure" data-entity="@e.Name" @onclick="() => OpenStructure(e.Name)">
+                            <strong class="dme-wrap">@DataModelIdentity.LogicalName(e.Name)</strong>
+                            @OriginBadge(e)
+                            @if (IsReference(e)) { <span class="dme-badge dme-badge-reference">Reference data</span> }
+                            <span class="dme-muted">@rules.Count field(s) · @rules.Count(r => r.Requirement == FieldRequirement.Required) required · @rules.Count(r => r.Requirement == FieldRequirement.Optional) optional@(rules.Any(r => r.Security is not null) ? " · security relevant" : "")</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        </section>
+    };
+
+    private RenderFragment ReferenceView(DataModelDocument document) => __builder =>
+    {
+        <section class="dme-reference-view" aria-label="Reference data" data-testid="dme-reference-view">
+            <p class="dme-muted">@ReferenceDataStructure.Basis. Persisted tables count as reference data too; they are not turned into enums.</p>
+            @if (ReferenceStructures.Count == 0)
+            {
+                <p data-testid="dme-reference-none">No reference data structures were identified from the declared relationships.</p>
+            }
+            else
+            {
+                <ul class="dme-plain dme-reference-list">
+                    @foreach (var reference in ReferenceStructures)
+                    {
+                        var r = reference;
+                        <li class="dme-reference-item" data-testid="dme-reference-item" data-entity="@r.Name">
+                            <h4 class="dme-wrap">@r.Name @OriginBadge(r.Entity)</h4>
+                            <dl class="dme-reference-facts">
+                                <div><dt>Identifier / key</dt><dd>@(r.Key ?? "Not declared")</dd></div>
+                                @if (r.UniqueValue is { } value) { <div><dt>Unique value field</dt><dd>@value (must be unique)</dd></div> }
+                                @if (r.ActiveField is { } active) { <div><dt>Active / inactive field</dt><dd>@active <small class="dme-muted">· inferred from field name</small></dd></div> }
+                                @if (r.SortField is { } sort) { <div><dt>Sorting field</dt><dd>@sort <small class="dme-muted">· inferred from field name</small></dd></div> }
+                                @if (r.CodeFields.Count > 0) { <div><dt>Code fields</dt><dd>@string.Join(", ", r.CodeFields) <small class="dme-muted">· inferred from field name</small></dd></div> }
+                                <div><dt>Used by</dt><dd>@string.Join(", ", r.UsedBy)</dd></div>
+                            </dl>
+                            <button type="button" class="btn-secondary btn-small" @onclick="() => OpenStructure(r.Entity.Name)">Open data rules<span class="visually-hidden"> for @r.Name</span></button>
+                        </li>
+                    }
+                </ul>
+            }
+            @if (document.Enums.Count > 0)
+            {
+                <h4>Enums</h4>
+                <ul class="dme-plain">
+                    @foreach (var en in document.Enums) { <li class="dme-wrap"><strong>@en.Name</strong> · @string.Join(", ", en.Values)</li> }
+                </ul>
+            }
+        </section>
+    };
+
+    private RenderFragment BusinessConstraints(DataModelDocument document) => __builder =>
+    {
+        var items = document.Entities.SelectMany(e => DataModelTesterView.Rules(e, document).SelectMany(r => new[]
+        {
+            r.Uniqueness is { } u ? $"{r.Column.Name} {char.ToLowerInvariant(u[0])}{u[1..]}" : null,
+            r.Length is { } l ? $"{r.Column.Name}: {char.ToLowerInvariant(l[0])}{l[1..]}" : null,
+            r.Range is { } g ? $"{r.Column.Name}: {char.ToLowerInvariant(g[0])}{g[1..]}" : null,
+        }.OfType<string>().Select(text => (Structure: DataModelIdentity.LogicalName(e.Name), Text: text)))).ToList();
+        var composite = document.Indexes.Where(i => i.IsUnique && i.Columns.Count > 1)
+            .Select(i => (Structure: DataModelIdentity.LogicalName(i.EntityName), Text: $"{string.Join(" + ", i.Columns)} must be unique together")).ToList();
+        <section class="dme-business-constraints" aria-labelledby="dme-business-constraints-title" data-testid="dme-business-constraints">
+            <h3 id="dme-business-constraints-title" class="dme-section-label">Business constraints</h3>
+            @if (items.Count + composite.Count == 0) { <p class="dme-muted">No uniqueness, length or range rules are declared in this document.</p> }
+            else
+            {
+                @foreach (var group in items.Concat(composite).GroupBy(i => i.Structure))
+                {
+                    <div class="dme-business-group">
+                        <strong class="dme-wrap">@group.Key</strong>
+                        <ul class="dme-plain">@foreach (var item in group) { <li data-testid="dme-business-constraint">@item.Text</li> }</ul>
+                    </div>
+                }
+            }
+            <p class="dme-muted">Technical index and constraint names follow; they are the document's declarations, not the deployed database.</p>
+        </section>
+    };
+
     private RenderFragment ModelView(DataModelDocument document) => __builder =>
     {
         var unresolved = document.EvidenceGaps.Count + document.Findings.Count(f => f.Category == "Model discrepancy");
@@ -785,11 +990,16 @@ else
                 <div><dt>Data structures</dt><dd data-testid="dme-model-entities">@document.EntityCount</dd></div>
                 <div><dt>Fields</dt><dd data-testid="dme-model-fields">@document.ColumnCount</dd></div>
                 <div><dt>Relationships</dt><dd>@(document.RelationshipEvidence is DataModelEvidenceState.Extracted or DataModelEvidenceState.NoneDeclared ? document.RelationshipCount.ToString() : "Not assessed")</dd></div>
-                <div><dt>Enums / reference types</dt><dd data-testid="dme-model-enums">@document.Enums.Count</dd></div>
+                <div><dt>Reference data structures</dt><dd data-testid="dme-model-reference">@ReferenceStructures.Count</dd></div>
+                <div><dt>Enums</dt><dd data-testid="dme-model-enums">@document.Enums.Count</dd></div>
                 <div><dt>Unresolved</dt><dd>@unresolved</dd></div>
             </dl>
             <p class="dme-model-source" data-testid="dme-model-source">Source: <span class="dme-wrap">@(ArtifactPath ?? "Pasted or imported document")</span>@(ArtifactRevision is { } rev ? $" · revision {rev}" : "") · @OriginLabel</p>
-            @if (partial) { <p class="dme-model-partial" role="status" data-testid="dme-model-partial">Partial model coverage — @document.UnmappedSourceBlocks.Count section(s) of the document were not mapped to the model. They are listed under technical details; nothing is guessed from them.</p> }
+            @if (partial)
+            {
+                <p class="dme-model-partial" role="status" data-testid="dme-model-partial">Some document content is not represented in the structured view.
+                    <span class="dme-muted">@(document.UnmappedSourceBlocks.Count > 0 ? $"{document.UnmappedSourceBlocks.Count} source sections are available under technical details. " : "")BirkNext does not infer missing model facts from unmapped content — nothing is guessed from them.</span></p>
+            }
         </section>
         if (document.EntityCount == 0 && document.Enums.Count == 0)
         {
@@ -811,6 +1021,7 @@ else
             <label class="dme-model-field">Show
                 <select data-testid="dme-model-filter" value="@_modelFilter" @onchange="e => _modelFilter = e.Value?.ToString() ?? string.Empty">
                     <option value="all">All structures</option>
+                    @if (ReferenceStructures.Count > 0) { <option value="reference">Reference data</option> }
                     @if (document.Entities.Any(e => e.IsTable || e.Kind == DataStructureKind.Table)) { <option value="tables">Tables</option> }
                     @if (document.Entities.Any(e => e.Kind == DataStructureKind.Record)) { <option value="records">Records / DTOs</option> }
                     @if (document.Entities.Any(e => e.Kind is DataStructureKind.Event or DataStructureKind.Message)) { <option value="events">Events / messages</option> }
@@ -826,14 +1037,13 @@ else
                     {
                         var e = entity;
                         var isSelected = selected is not null && e.Name == selected.Name;
+                        var rules = DataModelTesterView.Rules(e, document);
                         <li>
                             <button type="button" class="dme-model-item @(isSelected ? "is-selected" : "")" aria-current="@(isSelected ? "true" : null)" data-testid="dme-model-item" data-entity="@e.Name" @onclick="() => _selectedEntity = e.Name">
-                                <strong class="dme-wrap">@e.Name</strong>
-                                @if (EntityLayers?.TryGetValue(e.Name, out var layer) == true)
-                                {
-                                    <span class="dme-layer dme-layer-@layer.ToString().ToLowerInvariant()" data-testid="dme-model-layer">@DataModelLayers.Label(layer)</span>
-                                }
-                                <span class="dme-muted">@StructureKindLabel(e.Kind) · @e.Columns.Count field(s) · @(e.Columns.Any(c => c.IsPrimaryKey) ? "key declared" : "no key declared") · @RelationshipsOf(document, e.Name).Count() relationship(s)</span>
+                                <strong class="dme-wrap">@DataModelIdentity.LogicalName(e.Name)</strong>
+                                @OriginBadge(e)
+                                @if (IsReference(e)) { <span class="dme-badge dme-badge-reference">Reference data</span> }
+                                <span class="dme-muted">@rules.Count field(s) · @rules.Count(r => r.Requirement == FieldRequirement.Required) required · @rules.Count(r => r.Requirement == FieldRequirement.Optional) optional · @RelationshipsOf(document, e.Name).Count() relationship(s)</span>
                             </button>
                         </li>
                     }
@@ -842,17 +1052,57 @@ else
             @if (selected is not null)
             {
                 var relations = RelationshipsOf(document, selected.Name).ToList();
+                var rules = DataModelTesterView.Rules(selected, document);
+                var structure = StructureOf(selected);
+                var conditions = DataModelTesterView.Conditions(selected, document);
                 <section class="dme-model-detail" aria-labelledby="dme-model-detail-title" data-testid="dme-model-detail" data-entity="@selected.Name">
-                    <h3 id="dme-model-detail-title" class="dme-wrap">@selected.Name</h3>
-                    <p class="dme-muted">@StructureKindLabel(selected.Kind) · @Lines(selected.Provenance) of @(SourceOf(selected) ?? "the document") · @OriginLabel</p>
+                    <h3 id="dme-model-detail-title" class="dme-wrap">@DataModelIdentity.LogicalName(selected.Name) @OriginBadge(selected)</h3>
+                    <p class="dme-muted">@StructureKindLabel(selected.Kind) · @(structure?.Origin == LogicalStructureOrigin.Shared ? (DataModelLayers.IsGenerated(BaseArtifactPath) ? DataModelLayers.GeneratedOrigin : "Shared model") : OriginLabel)</p>
+                    @if (structure is { Origin: LogicalStructureOrigin.Both, Shared: { } sharedDefinition })
+                    {
+                        <p class="dme-origin-effective" data-testid="dme-origin-effective"><strong>Feature definition used in combined view.</strong> Shared definition also available.</p>
+                        <details class="dme-origin-shared" data-testid="dme-origin-shared">
+                            <summary>Shared definition also available — @sharedDefinition.Columns.Count field(s) · @structure.Differences.Count difference(s) to review</summary>
+                            <p class="dme-muted">From @(BaseArtifactPath ?? "the shared model")@(DataModelLayers.IsGenerated(BaseArtifactPath) ? $" · {DataModelLayers.GeneratedOrigin}" : "")@(structure.Match == DataModelNameMatch.NormalizedImplementationName ? $" · {DataModelIdentity.NormalizedLabel} ({sharedDefinition.Name})" : "")</p>
+                            @if (structure.Differences.Count > 0)
+                            {
+                                <ul class="dme-plain" data-testid="dme-origin-differences">
+                                    @foreach (var d in structure.Differences) { <li><strong>@d.Field</strong> — @d.Kind</li> }
+                                </ul>
+                            }
+                            <ul class="dme-plain dme-rules">
+                                @foreach (var rule in DataModelTesterView.Rules(sharedDefinition, document)) { <li><strong>@rule.Column.Name</strong> <span>@rule.Summary</span></li> }
+                            </ul>
+                        </details>
+                    }
                     @if (!string.IsNullOrWhiteSpace(selected.Description))
                     {
                         <details class="dme-model-notes" data-testid="dme-model-notes"><summary>Notes from the document</summary><p class="dme-wrap">@selected.Description</p></details>
                     }
-                    <h4>Fields</h4>
+                    <div class="dme-fields-head">
+                        <h4>Fields</h4>
+                        <div class="dme-field-view" role="group" aria-label="Field view">
+                            <button type="button" class="dme-field-view-btn @(!_technicalFields ? "is-active" : "")" aria-pressed="@(!_technicalFields ? "true" : "false")" data-testid="dme-field-view-tester" @onclick="() => _technicalFields = false">Tester view</button>
+                            <button type="button" class="dme-field-view-btn @(_technicalFields ? "is-active" : "")" aria-pressed="@(_technicalFields ? "true" : "false")" data-testid="dme-field-view-technical" @onclick="() => _technicalFields = true">Technical view</button>
+                        </div>
+                    </div>
                     @if (selected.Columns.Count == 0) { <p class="dme-muted" data-testid="dme-model-no-fields">No fields are declared for this structure in the document.</p> }
+                    else if (!_technicalFields)
+                    {
+                        <ul class="dme-plain dme-rules" data-testid="dme-rules">
+                            @foreach (var rule in rules)
+                            {
+                                <li class="dme-rule" data-testid="dme-rule" data-field="@rule.Column.Name">
+                                    <strong class="dme-wrap dme-rule-name">@rule.Column.Name</strong>
+                                    <span class="dme-rule-summary" data-testid="dme-rule-summary">@rule.Summary</span>
+                                    <span class="dme-rule-badges">@RuleBadges(rule)</span>
+                                </li>
+                            }
+                        </ul>
+                    }
                     else
                     {
+                        <p class="dme-muted" data-testid="dme-model-lines">@Lines(selected.Provenance) of @(SourceOf(selected) ?? "the document")</p>
                         <div class="dme-model-scroll" tabindex="0" role="region" aria-label="@($"Fields of {selected.Name}")">
                             <table class="dme-model-table" data-testid="dme-model-fields-table">
                                 <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Nullable</th><th scope="col">Cardinality</th><th scope="col">Key</th><th scope="col">Constraints</th><th scope="col">Source</th></tr></thead>
@@ -874,6 +1124,18 @@ else
                             </table>
                         </div>
                     }
+                    <section class="dme-test-conditions" aria-labelledby="dme-test-conditions-title" data-testid="dme-test-conditions">
+                        <h4 id="dme-test-conditions-title">Potential test conditions</h4>
+                        <p class="dme-muted">Generic conditions from the model's explicit constraints — conditions to test, not expected results.</p>
+                        @if (conditions.Count == 0) { <p class="dme-muted" data-testid="dme-test-conditions-none">No explicit constraint in this structure gives a generic test condition.</p> }
+                        else
+                        {
+                            <ul class="dme-plain">
+                                @foreach (var c in conditions) { <li data-testid="dme-test-condition"><strong>@c.Field</strong>: @c.Condition <span class="dme-muted">· @c.Basis</span></li> }
+                            </ul>
+                        }
+                        <p class="dme-muted">Reusable test values belong in <a href="test-data" data-testid="dme-test-data-link">Test Data</a>; suggestions there stay candidates until approved.</p>
+                    </section>
                     <h4>Relationships</h4>
                     @if (relations.Count == 0)
                     {
@@ -881,9 +1143,19 @@ else
                     }
                     else
                     {
-                        <ul class="dme-plain" data-testid="dme-model-relationships">
-                            @foreach (var r in relations) { <li class="dme-wrap">@r.Source → @r.Target · @(r.RelationshipType ?? "relationship") · @Lines(r.Provenance)</li> }
+                        <ul class="dme-plain" data-testid="dme-model-relationships-friendly">
+                            @foreach (var r in relations)
+                            {
+                                var friendly = DataModelTesterView.Friendly(r, document);
+                                <li class="dme-wrap"><strong>@friendly.Text</strong>@(friendly.Via is { } via ? $" · via {via}" : "") · @friendly.Cardinality</li>
+                            }
                         </ul>
+                        <details class="dme-technical-details">
+                            <summary>Technical relationship details</summary>
+                            <ul class="dme-plain" data-testid="dme-model-relationships">
+                                @foreach (var r in relations) { <li class="dme-wrap">@r.Source → @r.Target · @(r.RelationshipType ?? "relationship") · @Lines(r.Provenance)</li> }
+                            </ul>
+                        </details>
                     }
                     @foreach (var discrepancy in document.Findings.Where(f => f.Category == "Model discrepancy" && f.EntityName == selected.Name))
                     {

@@ -77,7 +77,7 @@ public sealed class DataModelLayersTests
         origins["Refund"].Should().Be(DataModelLayerOrigin.Pack);
         origins["Order"].Should().Be(DataModelLayerOrigin.OverriddenInPack);
         aggregate.Entities.Single(e => e.Name == "Order").Columns.Select(c => c.Name).Should().Equal(["Id", "RefundedAt"], "the pack's definition wins; fields are never merged");
-        DataModelLayers.Label(DataModelLayerOrigin.OverriddenInPack).Should().Be("Overridden in pack");
+        DataModelLayers.Label(DataModelLayerOrigin.OverriddenInPack).Should().Be("Feature + shared model");
     }
 
     private readonly WorkspaceArtifactRepository _repository = new();

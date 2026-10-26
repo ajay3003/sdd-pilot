@@ -266,7 +266,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-muted, #888);
+    color: #475569;
     margin-bottom: 0.5rem;
 }
 .dme-section-label-warn { color: var(--clr-warning, #b45309); }
@@ -800,3 +800,49 @@
 .dme-layer { display: inline-block; align-self: flex-start; width: fit-content; margin: .15rem 0; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; background: #eef2ff; color: #3730a3; }
 .dme-layer-overriddeninpack { background: #fef3c7; color: #78350f; }
 .dme-layer-sharedbase { background: #f1f5f9; color: #334155; }
+
+/* ── Tester view: testable data rules first; technical views after a label ───────────────── */
+.dme-tab-sep { align-self: center; font-size: .72rem; color: #475569; margin: 0 .15rem 0 .5rem; text-transform: uppercase; letter-spacing: .04em; }
+.dme-tester-summary { display: grid; gap: .6rem; min-width: 0; }
+.dme-tester-summary h3 { margin: 0; font-size: 1rem; }
+.dme-tester-counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: .5rem; margin: 0; }
+.dme-tester-counts > div { border: 1px solid #cbd5e1; border-radius: 8px; padding: .45rem .6rem; background: #fff; min-width: 0; }
+.dme-tester-counts dt { font-size: .75rem; color: #475569; }
+.dme-tester-counts dd { margin: .1rem 0 0; font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
+.dme-findings-status { margin: 0; font-size: .88rem; color: #1f2937; }
+.dme-overview-structures { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .4rem; }
+.dme-overview-structure { display: grid; gap: .15rem; width: 100%; text-align: left; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: .45rem .6rem; cursor: pointer; font: inherit; color: inherit; min-width: 0; }
+.dme-overview-structure:hover { border-color: #1d4ed8; }
+.dme-overview-structure:focus-visible, .dme-field-view-btn:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+.dme-technical-summary, .dme-technical-details { margin: .6rem 0; }
+.dme-technical-summary > summary, .dme-technical-details > summary, .dme-origin-shared > summary { cursor: pointer; color: #1d4ed8; font-size: .85rem; }
+.dme-badge { display: inline-block; width: fit-content; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid #94a3b8; background: #f8fafc; color: #1f2937; }
+.dme-badge-id { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
+.dme-badge-inferred { background: #fff; color: #334155; border-style: dashed; }
+.dme-badge-security { background: #fef2f2; color: #7f1d1d; border-color: #fca5a5; }
+.dme-badge-sensitive { background: #fdf4ff; color: #701a75; border-color: #f0abfc; }
+.dme-badge-reference { background: #ecfdf5; color: #064e3b; border-color: #6ee7b7; }
+.dme-fields-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem; }
+.dme-field-view { display: inline-flex; gap: .25rem; }
+.dme-field-view-btn { font: inherit; font-size: .8rem; padding: .2rem .6rem; border: 1px solid #94a3b8; border-radius: 6px; background: #fff; color: #1f2937; cursor: pointer; }
+.dme-field-view-btn.is-active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.dme-rules { display: grid; gap: .35rem; }
+.dme-rule { display: grid; gap: .1rem; padding: .35rem .5rem; border: 1px solid #e2e8f0; border-radius: 6px; min-width: 0; }
+.dme-rule-summary { color: #1f2937; font-size: .88rem; overflow-wrap: anywhere; }
+.dme-rule-badges { display: flex; flex-wrap: wrap; gap: .25rem .4rem; align-items: center; }
+.dme-rule-badges small { font-size: .74rem; color: #475569; }
+.dme-test-conditions { margin-top: .75rem; padding: .5rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; }
+.dme-test-conditions h4 { margin: 0 0 .2rem; }
+.dme-origin-effective { margin: .35rem 0; padding: .35rem .55rem; border-left: 3px solid #b45309; background: #fffbeb; color: #1f2937; font-size: .88rem; }
+.dme-friendly-rels { display: grid; gap: .3rem; margin-bottom: .5rem; }
+.dme-friendly-rel { display: flex; flex-wrap: wrap; gap: .2rem .6rem; padding: .35rem .5rem; border: 1px solid #e2e8f0; border-radius: 6px; }
+.dme-friendly-card { color: #334155; font-size: .85rem; }
+.dme-reference-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: .5rem; }
+.dme-reference-item { border: 1px solid #cbd5e1; border-radius: 8px; padding: .5rem .7rem; background: #fff; min-width: 0; }
+.dme-reference-item h4 { margin: 0 0 .3rem; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+.dme-reference-facts { display: grid; gap: .2rem; margin: 0 0 .4rem; font-size: .85rem; }
+.dme-reference-facts dt { font-weight: 600; color: #334155; }
+.dme-reference-facts dd { margin: 0; overflow-wrap: anywhere; }
+.dme-business-constraints { margin-bottom: 1rem; }
+.dme-business-group { margin: .3rem 0; }
+.dme-muted { color: #475569; }

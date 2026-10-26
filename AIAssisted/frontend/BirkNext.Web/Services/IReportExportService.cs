@@ -25,7 +25,7 @@ public interface IReportExportService
     string ExportPerformanceReview(WasmPerformanceReviewReport report, string? projectName);
     string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName);
     string ExportImplementationReview(AlignmentReport report, string? projectName, TaskAlignmentSnapshot? snapshot = null, TaskAlignmentCurrentness currentness = TaskAlignmentCurrentness.Current);
-    string ExportDataModel(DataModelDocument document, string? projectName);
+    string ExportDataModel(DataModelDocument document, string? projectName, string? layerLabel = null);
     string ExportDashboardSummary(
         string? projectName,
         ArtifactTraceabilityReport? traceability,
