@@ -70,8 +70,8 @@ public sealed class NavMenuLayoutTests : BunitContext
         link.Children.Select(c => c.ClassName?.Split(' ')[0]).Should().StartWith(["nav-icon", "nav-label", "nav-applicability"]);
         link.QuerySelector(".nav-label")!.TextContent.Should().Be("Integration Quality Review");
         link.GetAttribute("title").Should().Be("Integration Quality Review");
-        cut.Find("a[href='task-alignment']").GetAttribute("title").Should().Be("Implementation Review: tasks checked against the specification");
-        cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Implementation Traceability: ");
+        cut.Find("a[href='task-alignment']").GetAttribute("title").Should().Be("Task Alignment Review: tasks checked against the Specification and Success Criteria; no source code is read");
+        cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
     }
 
     [Fact]

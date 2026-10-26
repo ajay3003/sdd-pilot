@@ -115,7 +115,8 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         workflow.Markup.Should().NotContain("No workspace loaded");
         workflow.Find("[data-testid=rw-next-action] .rw-next-action-title").TextContent.Should().NotBe("Load project artifacts");
         workflow.Markup.Should().NotContain("of 5");
-        workflow.Find("[data-testid=rw-release-readiness-card] .metric-value").TextContent.Should().Be("—", "nothing has been reviewed yet: not assessed, not 0%");
+        workflow.Find("[data-testid=rw-manual-review-card] .metric-value").TextContent.Should().StartWith("0 / ", "nothing has been decided yet");
+        workflow.Find("[data-testid=rw-release-note]").TextContent.Should().Contain("not assessed here", "the workflow never claims release readiness without a policy");
         workflow.Find("[data-testid=rw-save-status]").TextContent.Should().Be("Not saved", "an unsaved workspace is still loaded");
         workflow.Markup.Should().Contain("Specification Explorer", "the real next step comes from the review steps");
     }

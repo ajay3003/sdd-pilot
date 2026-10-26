@@ -20,11 +20,11 @@ public sealed class ImplementationTraceabilityApiService
         {
             var result = await _client.GetFromJsonAsync<ProviderStatus>(
                 "api/implementation-traceability/status");
-            return result ?? new ProviderStatus { Configured = false, UsingMock = true, Message = "Status unavailable." };
+            return result ?? new ProviderStatus { Configured = false, UsingMock = false, Message = "Change Traceability status unavailable." };
         }
         catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
         {
-            return new ProviderStatus { Configured = false, UsingMock = true, Message = BackendRequestClassifier.FromException("Implementation traceability status", ex, "GET api/implementation-traceability/status").UserMessage };
+            return new ProviderStatus { Configured = false, UsingMock = false, Message = BackendRequestClassifier.FromException("Change Traceability status", ex, "GET api/implementation-traceability/status").UserMessage };
         }
     }
 

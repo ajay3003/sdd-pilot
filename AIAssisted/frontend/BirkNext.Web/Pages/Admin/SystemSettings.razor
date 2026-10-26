@@ -765,7 +765,7 @@ else if (_settings is not null)
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">Azure DevOps Integration</div>
                     <p class="settings-card-note">
-                        Read-only configuration for Implementation Traceability. PAT must be set via <code>ADO_PAT</code> environment variable or <code>appsettings.Local.json</code> â€” it is never displayed here.
+                        Read-only configuration for Change Traceability. PAT must be set via <code>ADO_PAT</code> environment variable or <code>appsettings.Local.json</code> â€” it is never displayed here.
                     </p>
 
                     <div class="dev-diag-subgrid">
@@ -1825,8 +1825,8 @@ else if (_settings is not null)
         ("Documentation Drift",              "SpecDrift"),
         ("Impact Analysis",         "ImpactAnalysis"),
         ("Requirements Traceability",   "ArtifactTraceability"),
-        ("Implementation Review",   "ImplementationReview"),
-        ("Implementation Traceability", "ImplementationTraceability"),
+        ("Task Alignment Review",   "ImplementationReview"),
+        ("Change Traceability", "ImplementationTraceability"),
         ("Source Analysis",         "SourceAnalysis"),
         ("Azure Environment Analysis", "AzureEnvironmentAnalysis"),
 
@@ -2212,9 +2212,9 @@ else if (_settings is not null)
                 "Requires loaded workspace or target URL",
                 RuntimeReviews.PerformanceReview.RunTimestamp);
 
-            yield return new("Implementation Review",
+            yield return new("Change Traceability",
                 AdoApi.GetCached() is null ? StatusNotRun : StatusPass,
-                AdoApi.GetCached() is null ? "Analysis exists but has not been executed in this session." : "Implementation review cache is available.",
+                AdoApi.GetCached() is null ? "Analysis exists but has not been executed in this session." : "Change Traceability cache is available.",
                 "Requires spec.md and tasks.md",
                 null);
 
@@ -3326,8 +3326,8 @@ else if (_settings is not null)
         ("Documentation Drift",                   "documentation-drift"),
         ("Impact Analysis",              "impact-analysis"),
         ("Requirements Traceability",        "artifact-traceability"),
-        ("Implementation Review",        "task-alignment"),
-        ("Implementation Traceability",  "implementation-traceability"),
+        ("Task Alignment Review",        "task-alignment"),
+        ("Change Traceability",          "implementation-traceability"),
         ("Source Analysis",              "source-analysis"),
         ("Document Quality Review",      "quality/document"),
         ("WASM Performance Review",      "wasm-performance-review"),
@@ -3361,7 +3361,7 @@ else if (_settings is not null)
         ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
         ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),
         ("User Guide", "/task-alignment",                       "Implementation Review link"),
-        ("User Guide", "/implementation-traceability",          "Implementation Traceability link"),
+        ("User Guide", "/implementation-traceability",          "Change Traceability link"),
         ("User Guide", "/traceability",                         "Traceability & Coverage link"),
         ("User Guide", "/traceability/suggestions",             "Traceability Suggestions link"),
         ("User Guide", "/code-traceability",                    "Code Traceability link"),

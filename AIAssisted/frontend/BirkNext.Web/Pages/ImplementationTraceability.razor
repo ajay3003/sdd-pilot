@@ -1,16 +1,17 @@
 @page "/implementation-traceability"
+@page "/change-traceability"
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using System.Text
 @inject ImplementationTraceabilityApiService EvidenceApi
 @inject IJSRuntime JS
 
-<PageTitle>Implementation Traceability</PageTitle>
+<PageTitle>Change Traceability</PageTitle>
 
 <div class="it-page">
 
-    <PageHeader Title="Implementation Traceability"
-                Description="Retrieve deterministic implementation evidence from Azure DevOps: Work Item → Pull Request → Commit → Changed Files.">
+    <PageHeader Title="Change Traceability"
+                Description="Trace Azure DevOps work items through pull requests, commits and changed files.">
         @if (_report is not null)
         {
             <div class="it-header-actions">
@@ -21,15 +22,27 @@
     </PageHeader>
 
     @* ── ADO status banner ─────────────────────────────────────────────────── *@
+    <p class="it-boundary" data-testid="ct-boundary">Change provenance shows which code changed for tracked work. It does not prove that a requirement is correctly implemented. Azure DevOps is optional: source-backed evidence is reviewed in <a href="implementation-review">Implementation Evidence Review</a>.</p>
     @if (_status is not null)
     {
-        <div class="notification @(_status.UsingMock ? "notification-warning" : "notification-success")"
-             role="status">
+        @* Not configured is a neutral state; developer demo evidence (explicit backend flag) is labelled as such, never as project evidence. *@
+        <div class="notification @(_status.Configured ? "notification-success" : _status.UsingMock ? "notification-warning" : "notification-info")"
+             role="status" data-testid="ct-status" data-state="@(_status.Configured ? "Configured" : _status.UsingMock ? "DemoEvidence" : "NotConfigured")">
+            @if (!_status.Configured && !_status.UsingMock) { <strong>Not configured · </strong> }
             @_status.Message
         </div>
     }
 
     @* ── Input card ────────────────────────────────────────────────────────── *@
+    @if (NotConfigured)
+    {
+        <div class="it-input-card" data-testid="ct-not-configured">
+            <h2 class="it-input-title">Azure DevOps is not configured for this project</h2>
+            <p>Configure Azure DevOps in System Settings to trace Work Item → Pull Request → Commit → Changed Files. No change provenance is shown until then, and nothing on this page counts toward workflow, coverage or readiness.</p>
+        </div>
+    }
+    else
+    {
     <div class="it-input-card">
         <div class="it-input-header">
             <h2 class="it-input-title">Load Evidence from Azure DevOps</h2>
@@ -113,9 +126,10 @@
             }
         }
     </div>
+    }
 
     @* ── Report ────────────────────────────────────────────────────────────── *@
-    @if (_report is not null)
+    @if (_report is not null && !NotConfigured)
     {
         var report = _report;
 
@@ -500,6 +514,8 @@
     private string? _errorMessage;
 
     private ProviderStatus? _status;
+    /// <summary>Azure DevOps is not configured and no explicit developer demo flag is set: nothing to load, nothing shown as evidence.</summary>
+    private bool NotConfigured => _status is { Configured: false, UsingMock: false };
     private ImplementationTraceabilityReport? _report;
     private string _tab = "overview";
     private readonly HashSet<string> _expandedPrs = [];
@@ -588,13 +604,13 @@
         if (_report is null) return;
         // Build simple HTML export of the report
         var sb = new StringBuilder();
-        sb.Append("<html><head><meta charset=\"utf-8\"><title>Implementation Traceability</title>");
+        sb.Append("<html><head><meta charset=\"utf-8\"><title>Change Traceability</title>");
         sb.Append("<style>body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 2rem; max-width: 1200px; margin: 0 auto; }");
         sb.Append("h1 { color: #0f172a; margin-bottom: 2rem; } h2 { color: #1e293b; margin-top: 2rem; margin-bottom: 1rem; }");
         sb.Append("table { width: 100%; border-collapse: collapse; margin: 1rem 0; }");
         sb.Append("th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e2e8f0; }");
         sb.Append("th { background: #f8fafc; font-weight: 600; } </style></head><body>");
-        sb.Append("<h1>Implementation Traceability Report</h1>");
+        sb.Append("<h1>Change Traceability Report</h1>");
         sb.Append($"<p>Generated: {DateTime.Now:F}</p>");
         sb.Append("</body></html>");
 

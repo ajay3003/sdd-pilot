@@ -1175,6 +1175,15 @@
 
     .rw-phase-header {
         gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .rw-phase-titles {
+        min-width: 0;
+    }
+
+    .rw-step-badge {
+        white-space: normal;
     }
 
     .rw-pack-groups {
@@ -1441,3 +1450,12 @@
     background: var(--clr-surface-white);
     border: 1.5px solid var(--rw-phase-color);
 }
+
+/* Evidence branches after the core path: independent cards, neutral until their own evidence is ready. */
+.rw-branch-list { display: grid; gap: .6rem; margin: 0; padding: 0; list-style: none; }
+.rw-branch { min-width: 0; padding: .65rem .85rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: .5rem; background: var(--clr-surface-white, #fff); }
+.rw-branch-head { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline; }
+.rw-branch-state { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.rw-branch-purpose, .rw-branch-detail { margin: .25rem 0; overflow-wrap: anywhere; }
+.rw-branch-detail { font-size: .85rem; color: var(--clr-text-muted, #475569); }
+.rw-source-binding { margin: .25rem 0; font-size: .85rem; }

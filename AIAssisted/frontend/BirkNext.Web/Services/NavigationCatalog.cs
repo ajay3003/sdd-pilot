@@ -104,10 +104,11 @@ public static class NavigationCatalog
         new("traceability", "Traceability",
         [
             new("artifact-traceability", "Requirements Traceability", "nav-icon-artifact-traceability", f => f.ArtifactTraceability),
-            new("task-alignment", "Implementation Review", "nav-icon-task-alignment", f => f.ImplementationReview,
-                Hint: "tasks checked against the specification"),
-            new("implementation-traceability", "Implementation Traceability", "nav-icon-task-alignment", f => f.ImplementationTraceability,
-                Hint: "work items linked to pull requests and changed files"),
+            // Stable routes and visibility keys; display names say what each page is (also reachable at /task-alignment-review, /change-traceability).
+            new("task-alignment", "Task Alignment Review", "nav-icon-task-alignment", f => f.ImplementationReview,
+                Hint: "tasks checked against the Specification and Success Criteria; no source code is read"),
+            new("implementation-traceability", "Change Traceability", "nav-icon-task-alignment", f => f.ImplementationTraceability,
+                Hint: "Azure DevOps work items → pull requests → commits → changed files (optional)"),
             new("documentation-drift", "Documentation Drift", "nav-icon-spec-drift", f => f.SpecDrift),
             new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis),
             new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilityCoverage, OptionalByDefault: true),

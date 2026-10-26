@@ -20,6 +20,18 @@ public enum ArtifactLoadState { Required, Partial, Done }
 /// <summary>A review the project's inputs make applicable, in sidebar order, with the lane (sidebar section) it belongs to.</summary>
 public sealed record WorkflowReviewOption(string ReviewId, string Label, string Route, string Lane, ApplicabilityStatus Status, string Reason);
 
+/// <summary>Whether the viewed Artifact Pack is explicitly bound to source evidence (recorded CodeLinks in its scope). Never inferred from file names.</summary>
+public enum SourceBindingState { NoSource, NotEstablished, Established }
+
+/// <summary>Azure DevOps change provenance: optional, independent of Source Analysis.</summary>
+public enum ChangeProvenanceState { Unknown, NotConfigured, Configured, DemoEvidence }
+
+/// <summary>
+/// One evidence branch after the document and alignment reviews (source-backed implementation evidence, Azure DevOps change provenance,
+/// runtime evidence). Branches are independent: none is a prerequisite of another, and none is a step of the core review path.
+/// </summary>
+public sealed record WorkflowEvidenceBranch(string Key, string Title, string Purpose, string State, string Detail, string Route, string ActionLabel, bool Ready);
+
 /// <summary>
 /// Workflow readiness for the current project inputs. Whether a workspace, project or artifact exists comes from
 /// <see cref="CurrentWorkspaceSnapshot"/> (the same read model the Dashboard uses); source and target come from the shared
@@ -51,6 +63,21 @@ public sealed record WorkflowReadiness(
 
     /// <summary>Reviews that currently apply (Applicable or Partial), in sidebar order.</summary>
     public IReadOnlyList<WorkflowReviewOption> ApplicableReviews { get; init; } = [];
+
+    /// <summary>Source snapshot analyzed ≠ Artifact Pack bound to source ≠ implementation evidence assessed.</summary>
+    public SourceBindingState SourceBinding { get; init; } = SourceBindingState.NoSource;
+
+    /// <summary>Azure DevOps change provenance (Change Traceability) — optional evidence, never a blocker for source-backed review.</summary>
+    public ChangeProvenanceState ChangeProvenance { get; init; } = ChangeProvenanceState.Unknown;
+
+    /// <summary>Evidence-based reviews after the core path: source evidence, change provenance, runtime evidence.</summary>
+    public IReadOnlyList<WorkflowEvidenceBranch> EvidenceBranches { get; init; } = [];
+
+    /// <summary>Required gates with a review decision recorded on their current revisions: reviewed, reviewed with gaps or approved.</summary>
+    public int DecidedReviewCount => RequiredReviewGates.Count(step => ArtifactReviewPresentation.Of(step).IsDecided);
+
+    /// <summary>Every required review decision is recorded (and at least one applies).</summary>
+    public bool RequiredDecisionsComplete => RequiredReviewGates.Count > 0 && DecidedReviewCount == RequiredReviewGates.Count;
 
     /// <summary>Other useful starts shown beside the recommendation when no input is provided yet (add source, configure a target).</summary>
     public IReadOnlyList<WorkflowStepViewModel> AlternativeActions { get; init; } = [];
@@ -94,8 +121,8 @@ public sealed record WorkflowReadiness(
     public bool IsOnboarding => !Inputs.AnyProvided && !WorkspaceLoaded && !WorkspaceError;
 
     /// <summary>
-    /// Approved share of the required review steps, or null when nothing has been assessed yet (no required step, or no step
-    /// reviewed, approved or rejected). Not assessed is never shown as 0%.
+    /// Share of the required review steps with a recorded review decision, or null when nothing has been decided yet. Not assessed is
+    /// never shown as 0%. Guidance only: it is not release readiness (no readiness policy is configured).
     /// </summary>
     public int? ReleaseReadinessPercent { get; init; }
 
@@ -122,10 +149,17 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     public const string CompleteTargetKey = "CompleteTarget";
     public const string OpenReviewKeyPrefix = "OpenReview:";
 
+    public const string EstablishSourceBindingKey = "EstablishSourceBinding";
+    public const string ImplementationEvidenceRoute = "implementation-review";
+    public const string ChangeTraceabilityRoute = "implementation-traceability";
+    public const string NoReleasePolicy = "Recommended Workflow guides reviews; it does not decide release readiness — no readiness policy is configured.";
+
     private readonly ICurrentWorkspaceProjection _workspace;
     private readonly ProjectApplicabilityState _applicability;
     private readonly IRecommendedWorkflowApiService _workflowApi;
     private readonly ILogger<WorkflowReadinessService> _logger;
+    private readonly IWorkspaceSessionService? _session;
+    private readonly ImplementationTraceabilityApiService? _changeTraceability;
 
     public event Action? ReadinessChanged;
 
@@ -133,12 +167,16 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         ICurrentWorkspaceProjection workspace,
         ProjectApplicabilityState applicability,
         IRecommendedWorkflowApiService workflowApi,
-        ILogger<WorkflowReadinessService> logger)
+        ILogger<WorkflowReadinessService> logger,
+        IWorkspaceSessionService? session = null,
+        ImplementationTraceabilityApiService? changeTraceability = null)
     {
         _workspace = workspace;
         _applicability = applicability;
         _workflowApi = workflowApi;
         _logger = logger;
+        _session = session;
+        _changeTraceability = changeTraceability;
         _workspace.Changed += OnWorkspaceChanged;
         // A Target Environment saved, a source analyzed or an integration configured refreshes applicability (on navigation and
         // workspace changes); the workflow follows it without polling.
@@ -153,7 +191,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         try { await _applicability.EnsureLoadedAsync(); }
         catch (Exception ex) { environmentKnown = false; _logger.LogWarning(ex, "Source and target state could not be read"); }
         var inputs = ProjectInputPresentation.Build(workspace, _applicability.Profile, _applicability.Coverage, environmentKnown && _applicability.LoadError is null);
-        var reviews = ApplicableReviews();
+        var binding = SourceBindingOf(inputs);
+        var change = await ChangeProvenanceAsync();
+        var reviews = ApplicableReviews(change);
+        var branches = EvidenceBranches(inputs, binding, change);
 
         if (workspace.State == CurrentWorkspaceState.Error)
             return Empty(workspace, null, "The workspace could not be read, so release readiness cannot be evaluated.") with { Inputs = inputs };
@@ -163,16 +204,17 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             // No documents and no workspace. With source or a target the project can still progress through their reviews;
             // with nothing at all, step 1 (load project artifacts) is the action, and source and target are alternatives.
             if (inputs.AnyProvided)
-                return Empty(workspace, NextAction(workspace, inputs, [], reviews, ArtifactLoadState.Required, []),
-                    "Release readiness is based on document review approvals; no project documents are loaded.") with
+                return Empty(workspace, NextAction(workspace, inputs, [], reviews, ArtifactLoadState.Required, [], binding),
+                    NoReleasePolicy) with
                 {
-                    Inputs = inputs, ApplicableReviews = reviews,
+                    Inputs = inputs, ApplicableReviews = reviews, SourceBinding = binding, ChangeProvenance = change, EvidenceBranches = branches,
                 };
             var load = LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), ArtifactLoadState.Required, [], workspace);
-            return Empty(workspace, load, "Add project documents, source or a target before release readiness can be evaluated.") with
+            return Empty(workspace, load, NoReleasePolicy) with
             {
                 Inputs = inputs,
                 ApplicableReviews = reviews,
+                SourceBinding = binding, ChangeProvenance = change, EvidenceBranches = branches,
                 Steps = [load],
                 AlternativeActions = [ImportDocuments([]), AddSource(inputs.Source), ConfigureTarget(inputs.Target)],
             };
@@ -211,12 +253,15 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         var implementationState = FindStep(steps, "Implementation");
         var qualityGateState = FindStep(steps, "Quality");
 
-        // The required gates that apply (not N/A, not optional), each approved on the artifact revisions it reads now.
+        // The required gates that apply (not N/A, not optional). A gate is done when a review decision is recorded on the artifact revisions
+        // it reads now — reviewed, reviewed with gaps or approved. Approval counts only where a step asks for it; viewing never counts.
         var required = steps.Where(step => IsReleaseReviewStep(step) && !step.IsOptional && step.Status != WorkflowStepStatus.NotApplicable).ToList();
         var approved = required.Count(step => step.Status == WorkflowStepStatus.Approved);
+        var decided = required.Count(step => ArtifactReviewPresentation.Of(step).IsDecided);
         var assessed = required.Any(step => ArtifactReviewPresentation.Of(step) is { IsDecided: true } or { State: ArtifactReviewState.Stale });
-        int? releasePercent = required.Count > 0 && assessed ? approved * 100 / required.Count : null;
-        var canRelease = required.Count > 0 && approved == required.Count && IsQualityGatePassed(qualityGateState);
+        int? releasePercent = required.Count > 0 && assessed ? decided * 100 / required.Count : null;
+        // No readiness policy is configured: the workflow never claims release readiness.
+        const bool canRelease = false;
 
         return new WorkflowReadiness(
             Workspace: workspace,
@@ -224,7 +269,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             TraceabilityState: traceabilityState,
             ImplementationReviewState: implementationState,
             QualityGateState: qualityGateState,
-            NextRecommendedAction: NextAction(workspace, inputs, steps, reviews, artifactLoad, missingRoles),
+            NextRecommendedAction: NextAction(workspace, inputs, steps, reviews, artifactLoad, missingRoles, binding),
             OverallReadiness: new WorkflowReadinessBreakdown
             {
                 ArtifactReadiness = workspace.AvailableRoleCount * 100 / CurrentWorkspaceSnapshot.WorkflowRoles.Count,
@@ -236,13 +281,14 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             ApprovedReviewCount: approved,
             Steps: steps,
             CanRelease: canRelease,
-            ReleaseReason: canRelease
-                ? $"All {required.Count} required reviews are approved on the current artifact revisions."
-                : "Release is available only after all required review steps are approved on the current artifact revisions.")
+            ReleaseReason: NoReleasePolicy)
         {
             ReleaseReadinessPercent = releasePercent,
             Inputs = inputs,
             ApplicableReviews = reviews,
+            SourceBinding = binding,
+            ChangeProvenance = change,
+            EvidenceBranches = branches,
             ArtifactLoad = artifactLoad,
             RequiredRoles = requiredRoles,
             MissingRoles = missingRoles,
@@ -322,7 +368,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     /// </summary>
     private static WorkflowStepViewModel? NextAction(CurrentWorkspaceSnapshot workspace, ProjectInputs inputs,
         IReadOnlyList<WorkflowStepViewModel> steps, IReadOnlyList<WorkflowReviewOption> reviews,
-        ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles)
+        ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles, SourceBindingState binding)
     {
         if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
             return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
@@ -354,11 +400,24 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         if (inputs.Source.Status == ProjectInputStatus.NeedsAttention)
             return Synthetic(RefreshSourceKey, "Analyze the source again", inputs.Source.Detail, ProjectInputPresentation.SourceAnalysisRoute, "Open Source Analysis");
 
-        // The first applicable review gate still open: not reviewed, reviewed but unapproved, needs changes, or stale.
-        var documentStep = steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step))
-            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step)
-                                            && step.Status is not (WorkflowStepStatus.Approved or WorkflowStepStatus.Locked or WorkflowStepStatus.NotApplicable));
+        // The first applicable review gate without a review decision on its current revisions (open, in review or stale). Reviewed, reviewed
+        // with gaps and approved are decisions: the recommendation moves on. A low traceability coverage is never a blocker by itself.
+        var documentStep = steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step) && !ArtifactReviewPresentation.Of(step).IsDecided)
+            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step) && IsOpenGate(step));
         if (documentStep is not null) return documentStep;
+
+        // Source-backed evidence after the core path: analyzed source is not yet implementation evidence — the pack needs an explicit binding.
+        if (workspace.WorkspaceLoaded && steps.Count > 0)
+        {
+            if (binding == SourceBindingState.NotEstablished)
+                return Synthetic(EstablishSourceBindingKey, "Establish source evidence binding",
+                    "Source snapshot is available, but this Artifact Pack is not yet mapped to source evidence. Bind explicit CodeLinks in Implementation Evidence Review; implementation stays Not assessed until then.",
+                    ImplementationEvidenceRoute, "Open Implementation Evidence Review");
+            if (binding == SourceBindingState.Established)
+                return Synthetic(OpenReviewKeyPrefix + "implementation-evidence", "Open Implementation Evidence Review",
+                    "This Artifact Pack is bound to source evidence: review its source-backed implementation and test evidence.",
+                    ImplementationEvidenceRoute, "Open Implementation Evidence Review");
+        }
 
         if (reviews.FirstOrDefault() is { } review)
         {
@@ -376,6 +435,84 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         return null;
     }
 
+    /// <summary>A gate still waiting for a review decision: ready, opened, or decided on an earlier revision only (stale).</summary>
+    private static bool IsOpenGate(WorkflowStepViewModel step) =>
+        ArtifactReviewPresentation.Of(step).State is ArtifactReviewState.ReadyToReview or ArtifactReviewState.InReview or ArtifactReviewState.Stale
+        || step.RequiresApproval && step.Status == WorkflowStepStatus.Reviewed;
+
+    /// <summary>
+    /// Source snapshot → Artifact Pack binding. Bound only when explicit implementation evidence (CodeLinks) is recorded in the viewed pack's
+    /// requirement scope — the same fact Implementation Evidence Review uses. An analyzed snapshot alone never binds a pack.
+    /// </summary>
+    private SourceBindingState SourceBindingOf(ProjectInputs inputs)
+    {
+        if (inputs.Source.Status != ProjectInputStatus.Ready) return SourceBindingState.NoSource;
+        var lifecycle = _session?.SddLifecycle;
+        if (lifecycle is null) return SourceBindingState.NotEstablished;
+        return lifecycle.ImplementationEvidence.Any(e => RequirementScopes.Matches(e.RequirementScope, lifecycle.ActiveRequirementScope))
+            ? SourceBindingState.Established : SourceBindingState.NotEstablished;
+    }
+
+    /// <summary>Azure DevOps change provenance from the backend status. Unknown when it cannot be read — never a blocker either way.</summary>
+    private async Task<ChangeProvenanceState> ChangeProvenanceAsync()
+    {
+        if (_changeTraceability is null) return ChangeProvenanceState.Unknown;
+        try
+        {
+            var status = await _changeTraceability.GetStatusAsync();
+            return status.Configured ? ChangeProvenanceState.Configured
+                : status.UsingMock ? ChangeProvenanceState.DemoEvidence
+                : ChangeProvenanceState.NotConfigured;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Change Traceability status could not be read");
+            return ChangeProvenanceState.Unknown;
+        }
+    }
+
+    /// <summary>The three evidence branches after the core review path. Independent of each other; each names its own prerequisite.</summary>
+    private static IReadOnlyList<WorkflowEvidenceBranch> EvidenceBranches(ProjectInputs inputs, SourceBindingState binding, ChangeProvenanceState change) =>
+    [
+        new("source", "Implementation Evidence Review",
+            "Assess documented requirements against explicit source-backed implementation and test evidence.",
+            binding switch
+            {
+                SourceBindingState.NoSource => "Source unavailable",
+                SourceBindingState.NotEstablished => "Source analyzed · Artifact Pack source binding not established",
+                _ => "Ready to review",
+            },
+            binding switch
+            {
+                SourceBindingState.NoSource => "Add a source snapshot (Import Project or Source Analysis) to review implementation evidence. Implementation is Not assessed.",
+                SourceBindingState.NotEstablished => "Source snapshot is available, but this Artifact Pack is not yet mapped to source evidence. Implementation is Not assessed until explicit CodeLinks are bound.",
+                _ => "Explicit source-backed evidence is recorded for this Artifact Pack.",
+            },
+            binding == SourceBindingState.NoSource ? inputs.Source.Route : ImplementationEvidenceRoute,
+            binding == SourceBindingState.NoSource ? inputs.Source.ActionLabel : "Open Implementation Evidence Review",
+            binding == SourceBindingState.Established),
+        new("change", "Change Traceability",
+            "Trace Azure DevOps work items through pull requests, commits and changed files. Optional; it does not prove a requirement is implemented.",
+            change switch
+            {
+                ChangeProvenanceState.Configured => "Azure DevOps configured",
+                ChangeProvenanceState.DemoEvidence => "Developer demo evidence only — not project evidence",
+                ChangeProvenanceState.NotConfigured => "Not configured",
+                _ => "Status unknown",
+            },
+            change == ChangeProvenanceState.Configured
+                ? "Change provenance can be loaded for this project's work items."
+                : "Azure DevOps is not configured for this project. This does not block source-backed implementation review.",
+            ChangeTraceabilityRoute, "Open Change Traceability", change == ChangeProvenanceState.Configured),
+        new("runtime", "Runtime and environment reviews",
+            "Reviews that test the deployed system (frontend, API, integration, performance).",
+            inputs.Target.Status == ProjectInputStatus.Ready ? "Configured" : inputs.Target.Status == ProjectInputStatus.Partial ? "Partially configured" : "Not configured",
+            inputs.Target.Status == ProjectInputStatus.Ready
+                ? "Runtime reviews can run against the configured Target Environment."
+                : "Required for runtime reviews only — never for document, traceability or source reviews.",
+            inputs.Target.Route, inputs.Target.ActionLabel, inputs.Target.Status == ProjectInputStatus.Ready),
+    ];
+
     /// <summary>The review runs against a configured browser or API target (from its declared requirements, not its name).</summary>
     private static bool NeedsTarget(string reviewId) =>
         BirkNext.Technology.ReviewCatalog.Find(reviewId)?.Requires.Any(c => c is Capability.BrowserTarget or Capability.ApiTarget) == true;
@@ -387,13 +524,26 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         Synthetic("ConfigureTarget", "Configure a Target Environment", target.Detail, target.Route, "Configure Target Environment", isCurrent: false);
 
     /// <summary>Applicable and partially applicable reviews, in sidebar order, each with its sidebar section as the lane.</summary>
-    private IReadOnlyList<WorkflowReviewOption> ApplicableReviews() =>
-        NavigationCatalog.Sections
+    private IReadOnlyList<WorkflowReviewOption> ApplicableReviews(ChangeProvenanceState change)
+    {
+        var reviews = NavigationCatalog.Sections
             .SelectMany(section => section.Items.Where(item => item.ReviewId is not null).Select(item => (section, item)))
             .Select(x => (x.section, x.item, applicability: _applicability.For(x.item.ReviewId!)))
             .Where(x => x.applicability?.Status is ApplicabilityStatus.Applicable or ApplicabilityStatus.PartiallyApplicable)
             .Select(x => new WorkflowReviewOption(x.item.ReviewId!, x.item.Label, x.item.Route, x.section.Label, x.applicability!.Status, x.applicability.Reason))
             .ToList();
+        // Target-project analysis of generated documentation: applicable only when the imported project carries generated docs. Absent = neutral.
+        var lifecycle = _session?.SddLifecycle;
+        if (lifecycle?.CurrentProjectImportId is { } importId
+            && lifecycle.GeneratedDocumentationSets.FirstOrDefault(s => s.ProjectImportId == importId) is { State: "Present" })
+            reviews.Add(new("generated-documentation-health", "Generated Documentation Health", NavigationCatalog.GeneratedDocumentationHealthRoute, "Source Review",
+                ApplicabilityStatus.Applicable, "Generated documentation detected in the current target project."));
+        // Azure DevOps change provenance: optional evidence, applicable only when Azure DevOps is configured.
+        if (change == ChangeProvenanceState.Configured)
+            reviews.Add(new("change-traceability", "Change Traceability", ChangeTraceabilityRoute, "Traceability",
+                ApplicabilityStatus.Applicable, "Azure DevOps is configured for this project."));
+        return reviews;
+    }
 
     private static string ExplorerRoute(WorkspaceArtifactType role) => ProjectInputPresentation.ExplorerRoute(role);
 

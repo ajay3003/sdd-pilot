@@ -955,7 +955,7 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
 
-        return BuildHtml("Artifact Traceability Report", projectName, null, sb.ToString());
+        return BuildHtml("Requirements Traceability Report", projectName, null, sb.ToString());
     }
 
     private static string CoverageLabel(TraceabilityCoverageStats stats) =>
@@ -1108,8 +1108,8 @@ public sealed class ReportExportService : IReportExportService
         // Analyses run
         var ran = new List<string>();
         if (traceability is not null)  ran.Add(traceability.Health.HasAssessedCoverage
-            ? $"Artifact Traceability — {traceability.Health.CoveragePercentage:0.#}% across assessed transitions"
-            : "Artifact Traceability — transitions not assessed");
+            ? $"Requirements Traceability — {traceability.Health.CoveragePercentage:0.#}% across assessed transitions"
+            : "Requirements Traceability — transitions not assessed");
         if (compliance is not null)    ran.Add($"Constitution Compliance — {compliance.Coverage.CompliancePercentage:0.#}% compliant");
         if (audit is not null)         ran.Add($"QA Audit — score {audit.Health.AuditScore:0.#}, {audit.Health.TotalFindings} findings");
         if (delivery is not null)      ran.Add($"Delivery Readiness — {delivery.Health.OverallReadinessScore:0.#}% overall");

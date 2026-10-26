@@ -84,7 +84,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(ApprovalState.Pending, progress.ApprovalState);
         var step = Step(await BuildAsync(), "SpecificationExplorer");
         Assert.Equal(WorkflowStepStatus.Reviewed, step.Status);
-        Assert.True(step.IsCurrent, "a reviewed step still needs its approval");
+        Assert.False(step.IsCurrent, "a recorded review decision completes the step; approval is not required");
     }
 
     // Test 3: Step becomes Approved only after Approve
@@ -141,8 +141,13 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task BuildWorkflowSteps_LocksImplementationReviewUntilTraceabilityApproved()
     {
         var implReview = Step(await BuildAsync(), "ImplementationReview");
+        Assert.Equal("Task Alignment Review", implReview.Title);
         Assert.Equal(WorkflowStepStatus.Locked, implReview.Status);
-        Assert.Equal("Approve Artifact Traceability first", implReview.DisabledReason);
+        Assert.Equal("Requirements Traceability review decision required", implReview.DisabledReason);
+
+        // A review with known gaps is a recorded decision: it satisfies the dependency (no pass is required).
+        await _service.RejectStepAsync(_workspaceId, "ArtifactTraceability", Current, comment: "66 coverage gaps");
+        Assert.Equal(WorkflowStepStatus.Available, Step(await BuildAsync(), "ImplementationReview").Status);
 
         await _service.ApproveStepAsync(_workspaceId, "ArtifactTraceability", Current);
 
@@ -166,7 +171,8 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(ApprovalState.NeedsChanges, progress.ApprovalState);
         var steps = await BuildAsync();
         Assert.Equal(WorkflowStepStatus.NeedsAttention, Step(steps, "ConstitutionExplorer").Status);
-        Assert.Equal("ConstitutionExplorer", _service.GetCurrentRecommendedStep(steps)?.Key);
+        // Reviewed with gaps is a recorded decision: the recommendation moves on to the next open review.
+        Assert.Equal("SpecificationExplorer", _service.GetCurrentRecommendedStep(steps)?.Key);
     }
 
     // Test 9: GetCurrentRecommendedStep returns the first open review step, and moves on after an approval
@@ -291,7 +297,8 @@ public class RecommendedWorkflowServiceTests : IDisposable
 
         var breakdown = _service.GetReadinessBreakdown(await BuildAsync(dataModel: true));
 
-        Assert.Equal(6, breakdown.StepsRequiringApproval);
+        Assert.Equal(6, breakdown.StepsRequiringReview);
+        Assert.Equal(6, breakdown.StepsReviewed);
         Assert.Equal(6, breakdown.StepsApproved);
         Assert.True(breakdown.ReadyForRelease, "the optional Data Model review does not block release");
     }
@@ -302,14 +309,12 @@ public class RecommendedWorkflowServiceTests : IDisposable
     {
         var steps = await BuildAsync(plan: false, tasks: false);
 
-        var dashboard = Step(steps, "Dashboard");
-        Assert.False(dashboard.RequiresApproval);
-        Assert.False(dashboard.RequiresManualReview);
+        Assert.DoesNotContain(steps, s => s.Key == "Dashboard");
         Assert.DoesNotContain(steps, s => s.Key == "ReviewContextValidation");
 
         var breakdown = _service.GetReadinessBreakdown(steps);
         Assert.Equal(0, breakdown.StepsApproved);
-        Assert.DoesNotContain(steps.Where(s => s.RequiresApproval), s => s.Key == "Dashboard");
+        Assert.Equal(0, breakdown.StepsReviewed);
     }
 
     // Test 19: Five Explorers present in workflow
@@ -351,8 +356,8 @@ public class RecommendedWorkflowServiceTests : IDisposable
         var expectedOrder = new[]
         {
             "LoadSampleProject", "ConstitutionExplorer", "SpecificationExplorer", "PlanExplorer", "TaskExplorer",
-            "DataModelExplorer", "ArtifactTraceability", "ImplementationReview", "Dashboard"
-        };
+            "DataModelExplorer", "ArtifactTraceability", "ImplementationReview"
+        }; // The Dashboard is an overview, never a numbered review step.
         Assert.Equal(expectedOrder, steps.Select(s => s.Key));
         for (int i = 0; i < steps.Count; i++)
             Assert.Equal(i + 1, steps[i].Number);
@@ -381,7 +386,8 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(WorkflowStepStatus.NotApplicable, Step(steps, "ImplementationReview").Status);
 
         var breakdown = _service.GetReadinessBreakdown(steps);
-        Assert.Equal(3, breakdown.StepsRequiringApproval); // Constitution, Plan, Tasks — not the three that need a Specification
+        Assert.Equal(3, breakdown.StepsRequiringReview); // Constitution, Plan, Tasks — not the three that need a Specification
+        Assert.Equal(0, breakdown.StepsRequiringApproval); // no step requires approval: a recorded review decision completes it
     }
 
     // ── Decisions are bound to exact artifact revisions ─────────────────────────────────────────────────────────────────

@@ -62,7 +62,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
     {
         var cut = Render<TaskToSpecAlignment>();
 
-        cut.Markup.Should().Contain("Implementation Review");
+        cut.Markup.Should().Contain("Task Alignment Review");
         cut.WaitForAssertion(() => cut.Find("[data-testid='ir-no-project']").TextContent.Should().Contain("No project is currently loaded"));
         cut.Find("[data-testid='ir-import-project']").GetAttribute("href").Should().Be("project-import");
         cut.Markup.Should().NotContain("No Sample Project selected");
@@ -76,7 +76,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
 
         var cut = Render<TaskToSpecAlignment>();
 
-        cut.Markup.Should().Contain("Implementation Review");
+        cut.Markup.Should().Contain("Task Alignment Review");
         cut.WaitForAssertion(() => cut.Find("[data-testid='ir-status']").GetAttribute("data-state").Should().Be("Current"));
         cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
@@ -97,7 +97,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
 
         var cut = Render<TaskToSpecAlignment>();
 
-        cut.Markup.Should().Contain("Implementation Review");
+        cut.Markup.Should().Contain("Task Alignment Review");
         cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }

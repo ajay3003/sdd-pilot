@@ -94,7 +94,7 @@ public class DashboardPageTests : BunitContext
         {
             var workflow = cut.Find("[data-testid=db-health-area][data-key=workflow]");
             workflow.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.InProgress));
-            workflow.TextContent.Should().Contain("1 of 3 required reviews approved (30%)").And.Contain("In progress");
+            workflow.TextContent.Should().Contain("required review decisions recorded (30%)").And.Contain("In progress");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 

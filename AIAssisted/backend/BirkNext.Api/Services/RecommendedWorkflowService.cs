@@ -169,12 +169,13 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
             var binding = bindings[definition.StepKey];
             var reviewStep = definition.RequiresApproval || definition.RequiresManualReview;
 
-            // An approval dependency blocks only while the step it names applies and is not approved on its current revisions.
+            // A dependency blocks only while the step it names applies and has no review decision on its current revisions. Any recorded
+            // decision counts — reviewed, reviewed with gaps or approved: a review with known gaps is a completed review, not a failed one.
             var approvalDepsRequired = ApprovalDependencies.TryGetValue(definition.StepKey, out var deps) ? deps : new List<string>();
             var unmetDependency = approvalDepsRequired
                 .Select(WorkflowDefinitions.GetDefinition)
                 .FirstOrDefault(dep => dep is not null && visibleDefinitions.Contains(dep) && Applies(dep)
-                                       && CurrentDecision(dep.StepKey)?.ApprovalState != ApprovalState.Approved);
+                                       && !(CurrentDecision(dep.StepKey) is { } decision && IsDecision(decision)));
 
             // Stale: nothing decided on the current revisions, but a decision exists on an earlier revision of the same artifacts
             // (or a legacy decision that named no revision). Decisions on other artifacts of the role are not carried over.
@@ -202,10 +203,12 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
                 _ => false
             };
 
-            // The current step is the first applicable review step that is open, still unapproved, needs changes or is stale.
+            // The current step is the first applicable review step without a decision on its current revisions (open or stale). A step
+            // reviewed, reviewed with gaps or approved is done; approval is required only where a step asks for it.
             var isCurrent = !currentStepAssigned &&
                 isAvailable &&
-                status != WorkflowStepStatus.Approved &&
+                (status is WorkflowStepStatus.Available or WorkflowStepStatus.InProgress or WorkflowStepStatus.Stale
+                 || definition.RequiresApproval && status == WorkflowStepStatus.Reviewed) &&
                 reviewStep;
 
             if (isCurrent)
@@ -230,7 +233,7 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
                     : reviewStep && binding is null
                     ? $"Choose the {UnidentifiedRole(definition, loadedArtifacts, artifacts)} artifact to review first"
                     : unmetDependency is not null
-                    ? $"Approve {unmetDependency.Title} first"
+                    ? $"{unmetDependency.Title} review decision required"
                     : "",
                 IsCurrent = isCurrent,
                 IsFuture = !isAvailable,
@@ -399,18 +402,18 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         var artifactTotal = releaseSteps.Count;
 
         // Count review completion
+        // A recorded decision: reviewed, reviewed with gaps (needs changes) or approved.
         var stepsReviewed = requiredSteps.Count(s =>
             s.ReviewState == ReviewState.Reviewed ||
-            s.ApprovalState == ApprovalState.Approved);
+            s.ApprovalState is ApprovalState.Approved or ApprovalState.NeedsChanges);
         var stepsRequiringReview = requiredSteps.Count(s => s.RequiresManualReview);
 
         // Count approval completion
         var stepsApproved = requiredSteps.Count(s => s.ApprovalState == ApprovalState.Approved);
         var stepsRequiringApproval = requiredSteps.Count(s => s.RequiresApproval);
 
-        // Count blocking issues: needs changes or a stale decision on a required step
-        var blockingIssues = requiredSteps.Count(s =>
-            s.Status is WorkflowStepStatus.NeedsAttention or WorkflowStepStatus.Stale);
+        // Count blocking issues: a stale decision on a required step. Reviewed with gaps is a recorded decision, not a blocker.
+        var blockingIssues = requiredSteps.Count(s => s.Status is WorkflowStepStatus.Stale);
 
         // Calculate percentages (avoid division by zero)
         var artifactScore = artifactTotal > 0

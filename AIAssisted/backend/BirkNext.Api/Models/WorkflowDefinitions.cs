@@ -76,7 +76,7 @@ public static class WorkflowDefinitions
             SortOrder = 2,
             RequiredArtifacts = new() { "Constitution" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             Color = "#1e40af"
         },
         new()
@@ -90,7 +90,7 @@ public static class WorkflowDefinitions
             SortOrder = 3,
             RequiredArtifacts = new() { "Specification" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             Color = "#0f766e"
         },
         new()
@@ -104,7 +104,7 @@ public static class WorkflowDefinitions
             SortOrder = 4,
             RequiredArtifacts = new() { "Plan" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             Color = "#6d28d9"
         },
         new()
@@ -118,7 +118,7 @@ public static class WorkflowDefinitions
             SortOrder = 5,
             RequiredArtifacts = new() { "Tasks" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             Color = "#b45309"
         },
         new()
@@ -132,37 +132,42 @@ public static class WorkflowDefinitions
             SortOrder = 6,
             OptionalArtifacts = new() { "DataModel" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             IsOptional = true,
             Color = "#065f46"
         },
         new()
         {
+            // Step key kept for stored review decisions; the feature is Requirements Traceability (document/reference coverage only).
             StepKey = "ArtifactTraceability",
-            Title = "Artifact Traceability",
-            Description = "Analyze end-to-end coverage across artifacts",
+            Title = "Requirements Traceability",
+            Description = "Review end-to-end requirement coverage across Specification, Plan, Tasks, test design and related evidence. Document and reference coverage — not implementation verification or test execution.",
             Route = "artifact-traceability",
-            ActionLabel = "Run Artifact Traceability",
+            ActionLabel = "Open Requirements Traceability",
             StepType = WorkflowStepType.Analysis,
             SortOrder = 7,
-            RequiredArtifacts = new() { "Constitution", "Specification", "Plan", "Tasks" },
+            // The Constitution is read when present (Constitution → Specification); the binding sorts roles, so decisions keep their identity.
+            RequiredArtifacts = new() { "Specification", "Plan", "Tasks" },
+            OptionalArtifacts = new() { "Constitution" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             Color = "#2563eb"
         },
         new()
         {
+            // Step key kept for stored review decisions; the feature is Task Alignment Review (tasks against the Specification — no source code).
             StepKey = "ImplementationReview",
-            Title = "Implementation Review",
-            Description = "Validate tasks against spec for alignment gaps",
+            Title = "Task Alignment Review",
+            Description = "Review how tasks align with Specification requirements and Success Criteria, identify possible deviations, and highlight areas that may need additional testing. This review does not inspect source code or verify that a task is implemented.",
             Route = "task-alignment",
-            ActionLabel = "Run Implementation Review",
+            ActionLabel = "Open Task Alignment Review",
             StepType = WorkflowStepType.Analysis,
             SortOrder = 8,
             RequiredArtifacts = new() { "Specification", "Tasks" },
+            // A recorded Requirements Traceability review decision (reviewed, with or without gaps) — never a pass.
             RequiredPreviousApprovals = new() { "ArtifactTraceability" },
             RequiresManualReview = true,
-            RequiresApproval = true,
+            RequiresApproval = false,
             Color = "#c2410c"
         },
         new()
@@ -179,20 +184,7 @@ public static class WorkflowDefinitions
             IsDeveloperOnly = true,
             Color = "#6366f1"
         },
-        new()
-        {
-            StepKey = "Dashboard",
-            Title = "Dashboard",
-            Description = "View comprehensive analysis dashboard",
-            Route = "dashboard",
-            ActionLabel = "View Dashboard",
-            StepType = WorkflowStepType.Dashboard,
-            SortOrder = 10,
-            RequiresManualReview = false,
-            RequiresApproval = false,
-            IsOptional = true,
-            Color = "#8b5cf6"
-        }
+        // The Dashboard is an overview, not a review step: Recommended Workflow links it separately ("Review overview").
     };
 
     public static WorkflowStepDefinition? GetDefinition(string stepKey)

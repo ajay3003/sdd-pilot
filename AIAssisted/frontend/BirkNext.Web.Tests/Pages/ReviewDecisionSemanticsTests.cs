@@ -98,7 +98,8 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
 
         labels["ConstitutionExplorer"].Label.Should().Be("Approved");
         labels["ConstitutionExplorer"].Summary.Should().Be("Approved on 7 Oct 2026 · current revision");
-        labels["SpecificationExplorer"].Label.Should().Be("Needs changes");
+        labels["SpecificationExplorer"].Label.Should().Be("Reviewed with gaps");
+        labels["SpecificationExplorer"].IsDecided.Should().BeTrue("a review with known gaps is a recorded decision");
         labels["PlanExplorer"].Label.Should().Be("Review stale");
         labels["PlanExplorer"].Summary.Should().Be("Review stale · the artifact changed since it was approved on 6 Oct 2026");
         labels["TaskExplorer"].Label.Should().Be("Reviewed");
@@ -155,13 +156,14 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
         decision.QuerySelector("summary")!.TextContent.Should().Be("Record review decision");
         decision.QuerySelector("[data-testid=rw-decision-target]")!.TextContent.Should().Be("Applies to DataModel: DataModel.md @ A1A1A1A1");
         decision.QuerySelector("[role=group]")!.GetAttribute("aria-labelledby").Should().Be("rw-decision-DataModelExplorer");
-        decision.QuerySelectorAll("button").Select(b => b.TextContent.Trim()).Should().Equal("Mark Reviewed", "Approve", "Needs Changes");
+        // Approve is offered only because this fixture's steps require approval (policy); a recorded review decision completes a step.
+        decision.QuerySelectorAll("button").Select(b => b.TextContent.Trim()).Should().Equal("Mark reviewed", "Reviewed with gaps", "Approve");
 
-        // Approved: no second approval; needs changes: no second rejection; blocked: no decision at all.
+        // Approved: no second approval; reviewed with gaps: no second one; blocked: no decision at all.
         cut.Find("[data-testid=rw-step][data-step=ConstitutionExplorer] [data-testid=rw-decision]").QuerySelectorAll("button")
-            .Select(b => b.TextContent.Trim()).Should().Equal("Needs Changes");
+            .Select(b => b.TextContent.Trim()).Should().Equal("Reviewed with gaps");
         cut.Find("[data-testid=rw-step][data-step=SpecificationExplorer] [data-testid=rw-decision]").QuerySelectorAll("button")
-            .Select(b => b.TextContent.Trim()).Should().Equal("Approve");
+            .Select(b => b.TextContent.Trim()).Should().Equal("Mark reviewed", "Approve");
         cut.Find("[data-testid=rw-step][data-step=ImplementationReview]").QuerySelectorAll("button, details").Should().BeEmpty();
     }
 
@@ -207,7 +209,8 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
         // Required and applicable: Constitution, Specification, Plan, Tasks, Implementation Review — not the optional Data Model
         // review, not the not-applicable traceability step. One of them (Constitution) is approved.
         var card = cut.Find("[data-testid=rw-manual-review-card]");
-        card.TextContent.Should().Contain("1 / 5").And.Contain("Required reviews approved · 1 optional not counted");
+        // Decided: Constitution (approved), Specification (reviewed with gaps), Tasks (reviewed).
+        card.TextContent.Should().Contain("3 / 5").And.Contain("required review decisions recorded").And.Contain("1 optional not counted");
         card.TextContent.Should().NotContain("incl. optional");
 
         var gates = cut.FindAll("[data-testid=rw-review-gate]");
@@ -216,7 +219,7 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
         gates.Count(g => g.GetAttribute("data-counted") == "required").Should().Be(5);
         gates.Single(g => g.GetAttribute("data-counted") == "optional").GetAttribute("data-step").Should().Be("DataModelExplorer");
         gates.Single(g => g.GetAttribute("data-counted") == "not-counted").GetAttribute("data-step").Should().Be("ArtifactTraceability");
-        cut.Find("[data-testid=rw-review-gates] summary").TextContent.Should().Be("What Manual Review counts");
+        cut.Find("[data-testid=rw-review-gates] summary").TextContent.Should().Be("Which review decisions are counted");
     }
 
     [Fact]
@@ -227,7 +230,7 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
 
         var cut = RenderPage(Readiness(PersonModule(), four));
 
-        cut.Find("[data-testid=rw-manual-review-card]").TextContent.Should().Contain("1 / 5").And.Contain("Required reviews approved")
+        cut.Find("[data-testid=rw-manual-review-card]").TextContent.Should().Contain("3 / 5").And.Contain("required review decisions recorded")
             .And.NotContain("optional", "no optional gate applies");
     }
 

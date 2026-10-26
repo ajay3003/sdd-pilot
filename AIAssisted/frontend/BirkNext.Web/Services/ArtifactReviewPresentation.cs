@@ -16,9 +16,10 @@ public enum ArtifactReviewState
     ReadyToReview,
     /// <summary>Opened, nothing decided.</summary>
     InReview,
-    /// <summary>Inspected by a person; no approval decision.</summary>
+    /// <summary>Inspected by a person: a recorded review decision (no approval implied). Completes the review.</summary>
     Reviewed,
     Approved,
+    /// <summary>Reviewed with gaps / needs follow-up: a recorded decision that names known gaps. Completes the review; it is not a failure.</summary>
     NeedsChanges,
     /// <summary>Decided on an earlier revision of the same artifacts; nothing decided on the current one.</summary>
     Stale,
@@ -50,11 +51,11 @@ public static class ArtifactReviewPresentation
         {
             WorkflowStepStatus.NotApplicable => new(ArtifactReviewState.NotApplicable, "N/A",
                 $"Not applicable · {Reason(step, "a required artifact is absent")}", null, "–"),
-            WorkflowStepStatus.Locked => new(ArtifactReviewState.Blocked, "Blocked", Reason(step, "Complete the previous step first"), revisions, "🔒"),
+            WorkflowStepStatus.Locked => new(ArtifactReviewState.Blocked, "Blocked", $"Blocked — {Reason(step, "a prerequisite is missing")}", revisions, "🔒"),
             WorkflowStepStatus.Approved => new(ArtifactReviewState.Approved, "Approved",
                 $"Approved{On(step.DecidedAt)} · current revision", revisions, "✓"),
-            WorkflowStepStatus.NeedsAttention => new(ArtifactReviewState.NeedsChanges, "Needs changes",
-                $"Needs changes{On(step.DecidedAt)} · current revision", revisions, "!"),
+            WorkflowStepStatus.NeedsAttention => new(ArtifactReviewState.NeedsChanges, "Reviewed with gaps",
+                $"Reviewed with gaps{On(step.DecidedAt)} · needs follow-up · current revision", revisions, "◑"),
             WorkflowStepStatus.Stale => new(ArtifactReviewState.Stale, "Review stale", StaleSummary(step), revisions, "⟳"),
             WorkflowStepStatus.Reviewed => new(ArtifactReviewState.Reviewed, "Reviewed",
                 $"Reviewed{On(step.DecidedAt)}{(step.RequiresApproval ? " · awaiting approval" : "")}", revisions, "◐"),

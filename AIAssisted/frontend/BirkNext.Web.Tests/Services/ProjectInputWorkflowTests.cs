@@ -236,8 +236,9 @@ public sealed class ProjectInputWorkflowTests
 
         DocumentStepsApproved();
         r = await ReadinessAsync();
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review",
-            "the Document Quality Review appears before Source Review and runtime reviews in the sidebar");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.EstablishSourceBindingKey,
+            "the source is analyzed but this Artifact Pack is not mapped to source evidence: the binding comes before optional reviews");
+        r.SourceBinding.Should().Be(SourceBindingState.NotEstablished);
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Ready);
     }
 

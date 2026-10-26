@@ -41,7 +41,7 @@ public sealed class MockImplementationEvidenceProvider : IImplementationEvidence
             TestEvidence   = testEvidence,
             Gaps           = gaps,
             Source         = "Mock",
-            StatusMessage  = "Azure DevOps integration is not configured. Showing local/demo evidence.",
+            StatusMessage  = "Developer demo evidence (AzureDevOps:DemoEvidence) — not this project's change provenance.",
         };
 
         return Task.FromResult(report);

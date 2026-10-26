@@ -196,9 +196,14 @@ builder.Services.Configure<AzureDevOpsOptions>(options =>
         builder.Services.AddHttpClient<AzureDevOpsImplementationEvidenceProvider>();
         builder.Services.AddScoped<IImplementationEvidenceProvider, AzureDevOpsImplementationEvidenceProvider>();
     }
+    else if (builder.Configuration.GetValue<bool>($"{AzureDevOpsOptions.SectionName}:DemoEvidence"))
+    {
+        // Developer demo evidence only on an explicit flag: it must never look like the project's own change provenance.
+        builder.Services.AddScoped<IImplementationEvidenceProvider, MockImplementationEvidenceProvider>();
+    }
     else
     {
-        builder.Services.AddScoped<IImplementationEvidenceProvider, MockImplementationEvidenceProvider>();
+        builder.Services.AddScoped<IImplementationEvidenceProvider, NotConfiguredImplementationEvidenceProvider>();
     }
 }
 

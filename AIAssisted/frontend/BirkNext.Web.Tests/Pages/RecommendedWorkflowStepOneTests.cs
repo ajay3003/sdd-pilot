@@ -248,9 +248,10 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
     {
         var cut = RenderPage(await ReadinessAsync(PersonModule()));
 
-        cut.FindAll(".rw-workspace-details dt").Select(dt => dt.TextContent).Should().Equal("Workspace", "Project", "Artifact roles", "Saved");
+        cut.FindAll("[data-testid=rw-workspace-name], [data-testid=rw-project], [data-testid=rw-module], [data-testid=rw-pack], [data-testid=rw-artifact-roles], [data-testid=rw-saved]")
+            .Should().HaveCount(6, "current workspace: workspace, project, module, Artifact Pack, roles, saved");
         cut.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("None available");
-        cut.FindAll(".rw-summary .metric-card").Should().HaveCount(2, "Manual Review and Release Readiness only");
+        cut.FindAll(".rw-summary .metric-card").Should().HaveCount(1, "review decisions only — release readiness is not claimed without a policy");
         cut.Markup.Should().NotContain("Automatic Setup");
     }
 }

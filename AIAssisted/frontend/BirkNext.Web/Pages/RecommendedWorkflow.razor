@@ -18,7 +18,7 @@
 <div class="rw-page">
 
     <PageHeader Title="Recommended Workflow"
-                Description="A live workspace-aware guide that recommends the next action from the current workflow readiness state." />
+                Description="A workspace-aware guide that recommends the next useful review based on the inputs, evidence and review decisions currently available." />
 
     @if (_readiness is null)
     {
@@ -46,7 +46,7 @@
         <section class="rw-inputs" aria-labelledby="rw-inputs-heading" data-testid="rw-inputs">
             <div class="rw-inputs-header">
                 <h2 id="rw-inputs-heading" class="rw-inputs-title">Project inputs</h2>
-                <p class="rw-inputs-lead">Documents, source and a target environment each unlock different reviews. Start with any of them; none is required for every project.</p>
+                <p class="rw-inputs-lead">Documents, source and target environment unlock different reviews. A project does not need every input for every review.</p>
             </div>
             <div class="rw-input-grid" role="status" aria-live="polite">
                 @foreach (var input in _readiness.Inputs.All)
@@ -75,6 +75,11 @@
                                 @foreach (var fact in input.Facts) { <li class="rw-input-fact">@fact</li> }
                             </ul>
                         }
+                        @if (input.Kind == ProjectInputKind.Source && input.Status == ProjectInputStatus.Ready)
+                        {
+                            @* Source snapshot analyzed ≠ Artifact Pack bound to source ≠ implementation evidence assessed. *@
+                            <p class="rw-input-fact rw-source-binding" data-testid="rw-source-binding" data-state="@_readiness.SourceBinding">Artifact Pack source binding: @(_readiness.SourceBinding == SourceBindingState.Established ? "Established" : "Not established")</p>
+                        }
                         <a href="@input.Route" class="rw-input-action" data-testid="rw-input-action">@input.ActionLabel →</a>
                     </article>
                 }
@@ -89,11 +94,11 @@
                 <div class="rw-next-action-header">
                     <span class="rw-next-action-icon">▶</span>
                     <div>
-                        <div class="rw-next-action-label">Current Recommendation</div>
+                        <div class="rw-next-action-label">Recommended next review</div>
                         <div class="rw-next-action-title">@_readiness.NextRecommendedAction.Title</div>
                     </div>
                 </div>
-                <div class="rw-next-action-label">Why this is the next step</div>
+                <div class="rw-next-action-label">Why</div>
                 <p class="rw-next-action-desc">@_readiness.NextRecommendedAction.Description</p>
                 @if (_readiness.RecommendationIsListedStep)
                 {
@@ -113,12 +118,13 @@
         }
         else if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
         {
-            <p class="rw-no-next-action" data-testid="rw-no-next-action">No open recommendation: the document review steps are approved and no further review applies to the current inputs.</p>
+            <p class="rw-no-next-action" data-testid="rw-no-next-action">@(_readiness.RequiredDecisionsComplete ? "Required review decisions complete." : "No open recommendation.") Open the Dashboard for an overview, or an applicable review below.</p>
         }
 
         @if (_readiness.Steps.Count > 0)
         {
-            <h2 class="rw-section-heading">Workflow steps</h2>
+            <h2 class="rw-section-heading">Core review path</h2>
+            <p class="rw-reviews-lead" data-testid="rw-core-lead">The usual document and alignment order. Open any available review independently; a step is complete when a review decision is recorded on the documents it reads — opening it records nothing.</p>
         }
 
         <div class="rw-phases">
@@ -169,11 +175,31 @@
             }
         </div>
 
+        @if (_readiness.EvidenceBranches.Count > 0 && _readiness.WorkspaceLoaded)
+        {
+            @* Evidence branches after the core path: independent of each other, never a chain, never a step of the core path. *@
+            <section class="rw-reviews" aria-labelledby="rw-evidence-heading" data-testid="rw-evidence-branches">
+                <h2 id="rw-evidence-heading" class="rw-section-heading">Evidence-based reviews</h2>
+                <p class="rw-reviews-lead">Each branch depends only on its own evidence: source evidence does not need Azure DevOps, and neither needs a Target Environment.</p>
+                <ul class="rw-branch-list">
+                    @foreach (var branch in _readiness.EvidenceBranches)
+                    {
+                        <li class="rw-branch" data-testid="rw-evidence-branch" data-branch="@branch.Key" data-ready="@branch.Ready.ToString().ToLowerInvariant()">
+                            <div class="rw-branch-head"><strong>@branch.Title</strong> <span class="rw-branch-state" data-testid="rw-branch-state">@branch.State</span></div>
+                            <p class="rw-branch-purpose">@branch.Purpose</p>
+                            <p class="rw-branch-detail">@branch.Detail</p>
+                            <a href="@branch.Route" class="rw-input-action">@branch.ActionLabel →</a>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
         @if (_readiness.ApplicableReviews.Count > 0)
         {
             <section class="rw-reviews" aria-labelledby="rw-reviews-heading" data-testid="rw-applicable-reviews">
                 <h2 id="rw-reviews-heading" class="rw-section-heading">Applicable reviews</h2>
-                <p class="rw-reviews-lead">Reviews the current inputs make applicable, grouped as in the sidebar. Applicability is not a result: open a review to run it.</p>
+                <p class="rw-reviews-lead">Applicable means the current workspace contains enough relevant input to open this review. It does not mean the review has passed or is required.</p>
                 @foreach (var lane in _readiness.ApplicableReviews.GroupBy(r => r.Lane))
                 {
                     <div class="rw-review-lane">
@@ -192,16 +218,11 @@
             </section>
         }
 
-        @if (_readiness.CanRelease)
-        {
-            <div class="rw-release">
-                <span class="rw-release-icon" aria-hidden="true">✓</span>
-                <div class="rw-release-content">
-                    <div class="rw-release-label">Release</div>
-                    <p class="rw-release-desc">@_readiness.ReleaseReason</p>
-                </div>
-            </div>
-        }
+        @* The Dashboard is an overview, not a review step: it never counts toward review decisions. *@
+        <section class="rw-reviews" aria-labelledby="rw-overview-heading" data-testid="rw-review-overview">
+            <h2 id="rw-overview-heading" class="rw-section-heading">Review overview</h2>
+            <a href="dashboard" class="rw-input-action" data-testid="rw-open-dashboard">Open Dashboard →</a>
+        </section>
 
             </main>
 
@@ -233,6 +254,14 @@
                                 <dd class="rw-detail-value" data-testid="rw-project" title="@ProjectValue">@ProjectValue</dd>
                             </div>
                             <div class="rw-detail-item">
+                                <dt class="rw-detail-label">Selected module</dt>
+                                <dd class="rw-detail-value" data-testid="rw-module">@(Workspace?.ModuleLabel ?? "—")</dd>
+                            </div>
+                            <div class="rw-detail-item">
+                                <dt class="rw-detail-label">Selected Artifact Pack</dt>
+                                <dd class="rw-detail-value" data-testid="rw-pack">@(Workspace?.PackLabel ?? "—")</dd>
+                            </div>
+                            <div class="rw-detail-item">
                                 <dt class="rw-detail-label">Artifact roles</dt>
                                 <dd class="rw-detail-value" data-testid="rw-artifact-roles">@ArtifactRolesValue</dd>
                             </div>
@@ -250,20 +279,26 @@
                         }
                     </div>
 
+                    <dl class="rw-workspace-details" data-testid="rw-sidebar-inputs" aria-label="Inputs">
+                        @foreach (var input in _readiness.Inputs.All)
+                        {
+                            <div class="rw-detail-item"><dt class="rw-detail-label">@input.Title</dt><dd class="rw-detail-value">@input.StatusLabel</dd></div>
+                        }
+                        <div class="rw-detail-item"><dt class="rw-detail-label">Source binding</dt><dd class="rw-detail-value" data-testid="rw-sidebar-binding">@(_readiness.SourceBinding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", _ => "No source snapshot" })</dd></div>
+                    </dl>
+
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
                         <div class="rw-metric" data-testid="rw-manual-review-card">
-                            <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
-                        </div>
-                        <div class="rw-metric" data-testid="rw-release-readiness-card">
-                            <MetricCard Value="@ReleaseReadinessValue" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
+                            <MetricCard Value="@ManualApprovalValue" Label="Review decisions" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
                         </div>
                     </div>
+                    <p class="rw-gates-lead" data-testid="rw-release-note">Release readiness: not assessed here — @WorkflowReadinessService.NoReleasePolicy</p>
 
                     @if (_readiness.ReviewGates.Count > 0)
                     {
                         <details class="rw-gates" data-testid="rw-review-gates">
-                            <summary>What Manual Review counts</summary>
-                            <p class="rw-gates-lead">Required review steps that apply to this project, each approved on the artifact revision it reads now. Optional and not-applicable steps are listed but not counted.</p>
+                            <summary>Which review decisions are counted</summary>
+                            <p class="rw-gates-lead">Required review steps that apply to this project. A step counts when a review decision — reviewed, reviewed with gaps or approved — is recorded on the artifact revision it reads now. Optional and not-applicable steps are listed but not counted; the Dashboard is never counted.</p>
                             <ul class="rw-gates-list">
                                 @foreach (var gate in _readiness.ReviewGates)
                                 {
@@ -271,7 +306,7 @@
                                     var counted = !gateReview.Applies ? "not-counted" : gate.IsOptional ? "optional" : "required";
                                     <li class="rw-gate" data-testid="rw-review-gate" data-step="@gate.Key" data-counted="@counted">
                                         <span class="rw-gate-name">@gate.Title</span>
-                                        <span class="rw-gate-scope">@(counted switch { "required" => "Required", "optional" => "Optional, not counted", _ => "N/A, not counted" })</span>
+                                        <span class="rw-gate-scope">@(counted switch { "required" => "Required", "optional" => "Optional, not counted", _ => "Not applicable, not counted" })</span>
                                         <span class="rw-gate-state"><span aria-hidden="true">@gateReview.Icon </span>@gateReview.Label</span>
                                     </li>
                                 }
@@ -335,9 +370,8 @@
     /// <summary>The denominator: required review steps that apply (not N/A, not optional), from the step list itself.</summary>
     private IReadOnlyList<WorkflowStepViewModel> RequiredGates => _readiness?.RequiredReviewGates ?? [];
 
-    /// <summary>Required gates approved on the artifact revisions they read now. Reviewed alone is not approved.</summary>
-    private int ManualApprovedCount =>
-        RequiredGates.Count(step => ArtifactReviewPresentation.Of(step).State == ArtifactReviewState.Approved);
+    /// <summary>Required gates with a review decision recorded on the artifact revisions they read now (reviewed, reviewed with gaps, approved).</summary>
+    private int ManualApprovedCount => _readiness?.DecidedReviewCount ?? 0;
 
     private string ManualApprovalValue => RequiredGates.Count == 0 ? "—" : $"{ManualApprovedCount} / {RequiredGates.Count}";
 
@@ -347,7 +381,8 @@
         {
             if (RequiredGates.Count == 0) return "No review steps apply";
             var optional = _readiness?.OptionalReviewGates.Count ?? 0;
-            return "Required reviews approved" + (optional > 0 ? $" · {optional} optional not counted" : "");
+            return $"{ManualApprovedCount} / {RequiredGates.Count} required review decisions recorded — {string.Join(", ", RequiredGates.Select(g => g.Title))}"
+                   + (optional > 0 ? $" · {optional} optional not counted" : "");
         }
     }
 
@@ -530,17 +565,19 @@
             <summary>Record review decision</summary>
             <p class="rw-decision-target" id="rw-decision-@step.Key" data-testid="rw-decision-target">Applies to @step.ArtifactReferences</p>
             <div class="rw-approval-buttons" role="group" aria-labelledby="rw-decision-@step.Key">
-                @if (step.RequiresManualReview && step.ReviewState != BirkNext.Web.Services.ReviewState.Reviewed)
+                @if (step.RequiresManualReview && review.State is not (ArtifactReviewState.Reviewed or ArtifactReviewState.Approved))
                 {
-                    <SecondaryButton Class="rw-review-button" Disabled="busy" OnClick="() => MarkReviewedAsync(step)">@(busy ? "Saving..." : "Mark Reviewed")</SecondaryButton>
-                }
-                @if (step.RequiresApproval && review.State != ArtifactReviewState.Approved)
-                {
-                    <PrimaryButton Class="rw-approve-button" Disabled="busy" OnClick="() => ApproveStepAsync(step)">@(busy ? "Saving..." : "Approve")</PrimaryButton>
+                    <PrimaryButton Class="rw-review-button" Disabled="busy" OnClick="() => MarkReviewedAsync(step)">@(busy ? "Saving..." : "Mark reviewed")</PrimaryButton>
                 }
                 @if (review.State != ArtifactReviewState.NeedsChanges)
                 {
-                    <DangerButton Class="rw-needs-changes-button" Disabled="busy" OnClick="() => RejectStepAsync(step)">@(busy ? "Saving..." : "Needs Changes")</DangerButton>
+                    @* A review with known gaps is a completed review decision, not a failure. *@
+                    <SecondaryButton Class="rw-needs-changes-button" Disabled="busy" OnClick="() => RejectStepAsync(step)">@(busy ? "Saving..." : "Reviewed with gaps")</SecondaryButton>
+                }
+                @if (step.RequiresApproval && review.State != ArtifactReviewState.Approved)
+                {
+                    @* Only a step whose policy asks for approval offers it. *@
+                    <SecondaryButton Class="rw-approve-button" Disabled="busy" OnClick="() => ApproveStepAsync(step)">@(busy ? "Saving..." : "Approve")</SecondaryButton>
                 }
             </div>
         </details>

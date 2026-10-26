@@ -1,4 +1,5 @@
 @page "/task-alignment"
+@page "/task-alignment-review"
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
@@ -11,12 +12,12 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
-<PageTitle>Implementation Review</PageTitle>
+<PageTitle>Task Alignment Review</PageTitle>
 
 <div class="ir-page">
 
-    <PageHeader Title="Implementation Review"
-                Description="Checks every task in the Task artifact for a reference that resolves to the Specification, and suggests where to focus testing. It does not read source code or verify that a task is implemented.">
+    <PageHeader Title="Task Alignment Review"
+                Description="Review how tasks align with Specification requirements and Success Criteria, identify possible deviations, and highlight areas that may need additional testing. This review does not inspect source code or verify that a task is implemented.">
         @if (_report is not null)
         {
             <button type="button" class="ir-action" data-testid="ir-reanalyze" @onclick="RunAnalysis">Re-analyze</button>
@@ -373,6 +374,8 @@
 
         <nav class="ir-chain" aria-label="Related reviews" data-testid="ir-chain">
             <span>Related:</span>
+            <a href="/artifact-traceability">Requirements Traceability</a>
+            <span aria-hidden="true">·</span>
             <a href="/implementation-review">Implementation Evidence Review</a> <span class="ir-muted">(source and test evidence)</span>
             <span aria-hidden="true">·</span>
             <a href="/documentation-drift">Documentation Drift</a>

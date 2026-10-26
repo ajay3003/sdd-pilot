@@ -339,8 +339,7 @@ public static class DashboardPresentation
         if (next is null)
         {
             if (!workspace.WorkspaceLoaded) return null;
-            return new("none", "No required step is waiting", workflow.CanRelease ? workflow.ReleaseReason
-                    : "Every applicable review step is complete or does not apply to this project.",
+            return new("none", "Required review decisions complete", "Every applicable review step has a recorded review decision or does not apply to this project.",
                 "Optional reviews and testing can still add evidence.", "Open Recommended Workflow", WorkflowRoute, then);
         }
 
@@ -589,9 +588,9 @@ public static class DashboardPresentation
         if (workflow is null) return Area("workflow", DashboardStatus.Loading, "Loading the recommended workflow…", null, null);
         if (workflow.ReleaseReadinessPercent is not { } percent)
             return Area("workflow", DashboardStatus.NotAssessed, "Recommended workflow not started.", "Start recommended workflow", WorkflowRoute);
-        var result = $"{workflow.ApprovedReviewCount} of {workflow.RequiredReviewCount} required reviews approved ({percent}%)";
+        var result = $"{workflow.DecidedReviewCount} of {workflow.RequiredReviewCount} required review decisions recorded ({percent}%)";
         return percent == 100
-            ? Area("workflow", DashboardStatus.Passed, "All required reviews are approved on the current documents.", "Open Recommended Workflow", WorkflowRoute, result)
+            ? Area("workflow", DashboardStatus.Passed, "Every required review decision is recorded on the current documents.", "Open Recommended Workflow", WorkflowRoute, result)
             : Area("workflow", DashboardStatus.InProgress, "The recommended workflow has started.", "Continue recommended workflow", WorkflowRoute, result);
     }
 

@@ -150,14 +150,15 @@ public sealed class WorkflowReadinessServiceTests
 
         var readiness = await fixture.Service.GetReadinessAsync();
 
-        readiness.ReleaseReadinessPercent.Should().Be(0, "a review decision exists, so 0 approved is an assessed 0");
+        readiness.ReleaseReadinessPercent.Should().Be(33, "a recorded review decision completes a step; approval is not required");
+        readiness.DecidedReviewCount.Should().Be(1);
         readiness.CanRelease.Should().BeFalse();
     }
 
     [Theory]
     [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Available, WorkflowStepStatus.Locked, "ArtifactTraceability", false, 33)]
     [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Available, "ImplementationReview", false, 66)]
-    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, null, true, 100)]
+    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, null, false, 100)]
     public async Task ReviewApprovalChain_DerivesNextActionAndReleaseReadiness(
         WorkflowStepStatus specificationStatus,
         WorkflowStepStatus traceabilityStatus,

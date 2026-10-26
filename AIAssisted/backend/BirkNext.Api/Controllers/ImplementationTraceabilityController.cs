@@ -37,7 +37,9 @@ public class ImplementationTraceabilityController : ControllerBase
             Configured = _adoOptions.IsConfigured,
             UsingMock  = _usingMock,
             Message    = _usingMock
-                ? "Azure DevOps integration is not configured. Showing local/demo evidence."
+                ? "Developer demo evidence (AzureDevOps:DemoEvidence) — not this project's change provenance. Azure DevOps is not configured."
+                : _provider is NotConfiguredImplementationEvidenceProvider || !_adoOptions.IsConfigured
+                ? NotConfiguredImplementationEvidenceProvider.Message
                 : "Azure DevOps integration is configured.",
         };
         return Ok(response);
