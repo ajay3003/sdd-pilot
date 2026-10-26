@@ -12,7 +12,8 @@ using System.Text;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Documentation Drift and Impact Analysis read the backend's per-Sample-Project requirement/test store, which Project Import does not write.
+/// Impact Analysis (and, before it became a documentation comparison, Documentation Drift) reads the backend's per-Sample-Project
+/// requirement/test store, which Project Import does not write.
 /// Found by real-project acceptance: with an imported project they told the user to select a Sample Project (replacing their project).
 /// They now say the workspace is not assessed by them, and only fall back to the import/sample choice when nothing is loaded.
 /// </summary>
@@ -44,12 +45,7 @@ public sealed class SampleProjectStoreNoticeTests : BunitContext
         });
         _workspace.Set(WorkspaceArtifactType.Specification, "# Spec\n\n- FR-001: The system shall work.");
 
-        // The coverage report is the Overview tab (Documents, the comparison of documentation artifacts, is the default tab).
-        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("/documentation-drift?tab=overview");
-        var specDriftMarkup = Render<SpecDrift>().Markup;
-        specDriftMarkup.Should().Contain("data-testid=\"sample-store-notice\"").And.Contain("Not assessed for this workspace");
-        specDriftMarkup.Should().NotContain("Select a Sample Project").And.NotContain("notification-error");
-
+        // Documentation Drift no longer reads the Sample Project coverage store: it compares documentation artifacts only.
         var impactMarkup = Render<ImpactAnalysis>().Markup;
         impactMarkup.Should().Contain("Imported fixture").And.Contain("No persisted requirement records were returned");
         impactMarkup.Should().NotContain("Select a Sample Project").And.NotContain("notification-error");

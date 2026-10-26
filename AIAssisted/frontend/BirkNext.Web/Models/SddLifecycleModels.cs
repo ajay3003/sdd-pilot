@@ -89,6 +89,8 @@ public sealed class SddDriftSide
     public string Path { get; set; } = "";
     public string Fingerprint { get; set; } = "";
     public Guid? RevisionId { get; set; }
+    /// <summary>The artifact revision number as compared ("rev 2"); null for generated documents and comparisons saved before it was kept.</summary>
+    public int? RevisionNumber { get; set; }
     public string? ProjectImportId { get; set; }
     public string? ProjectRevision { get; set; }
     public string? GeneratedSetId { get; set; }

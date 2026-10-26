@@ -1,35 +1,63 @@
-/* Documentation Drift → Documents. Shared tokens only; long paths and fingerprints wrap, wide tables scroll inside their own region. */
-.dd { display: grid; gap: .75rem; min-width: 0; }
-.dd-title { font-size: 1.15rem; font-weight: 700; margin: 0; }
+/* Documentation Drift. Shared tokens only; long paths and fingerprints wrap, wide tables scroll inside their own region. */
+.dd { display: grid; gap: .85rem; min-width: 0; }
+.dd h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.dd h4 { margin: 0 0 .25rem; font-size: .95rem; }
 .dd-note { color: var(--clr-text-muted, #475569); font-size: .875rem; margin: .25rem 0; }
 .dd-empty { padding: .75rem 1rem; border: 1px dashed var(--clr-border, #cbd5e1); border-radius: var(--radius-md, 8px); }
-.dd-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: .75rem; }
-.dd-side { min-width: 0; min-inline-size: 0; border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 8px); padding: .5rem .85rem .75rem; display: grid; gap: .5rem; background: var(--clr-surface, #fff); }
+.dd-empty-line { margin: 0; padding: .5rem .75rem; border: 1px dashed var(--clr-border, #cbd5e1); border-radius: var(--radius-md, 8px); color: var(--clr-text-muted, #475569); font-size: .875rem; }
+.dd-type { display: grid; gap: .25rem; max-width: 40rem; }
+
+/* Left and Right: one structure, equal columns on desktop, stacked when narrow; each side as tall as its own content. */
+.dd-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; align-items: start; }
+@media (max-width: 900px) { .dd-sides { grid-template-columns: minmax(0, 1fr); } }
+.dd-side { min-width: 0; min-inline-size: 0; margin: 0; border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 8px); padding: .5rem .85rem .75rem; display: grid; gap: .5rem; background: var(--clr-surface, #fff); }
 .dd-side legend { font-weight: 700; padding: 0 .25rem; }
+.dd-side-fields { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr); gap: .5rem; align-items: end; }
+@media (max-width: 480px) { .dd-side-fields { grid-template-columns: minmax(0, 1fr); } }
+.dd-side-empty { margin: 0; padding: .4rem .6rem; border: 1px dashed var(--clr-border, #cbd5e1); border-radius: var(--radius-sm, 6px); color: var(--clr-text-muted, #475569); font-size: .875rem; }
 .dd-field { display: grid; gap: .2rem; min-width: 0; font-size: .875rem; }
-.dd-field select { max-width: 100%; width: 100%; min-width: 0; }
+.dd-field select { width: 100%; max-width: 100%; min-width: 0; height: auto; }
+.dd-field-wide { max-width: 48rem; }
 .dd-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .2rem .75rem; margin: 0; font-size: .875rem; }
+.dd-facts > div { display: contents; }
 .dd-facts dt { color: var(--clr-text-muted, #475569); }
 .dd-facts dd { margin: 0; min-width: 0; }
 .dd-wrap, .dd-facts code { overflow-wrap: anywhere; }
+
 .dd-quick { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .875rem; }
+.dd-quick-list { font-size: .875rem; }
+.dd-quick-list summary { cursor: pointer; }
 .dd-run { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; }
 .dd-run .dd-field { flex: 1 1 14rem; }
-.dd-context { flex-basis: 100%; margin: 0; font-weight: 600; }
+.dd-scope { margin: 0; font-size: .875rem; flex-basis: 100%; }
+.dd-context { flex-basis: 100%; margin: 0; font-weight: 600; font-size: .9rem; }
+
 .dd-result { border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 8px); padding: .75rem 1rem; background: var(--clr-surface, #fff); min-width: 0; }
-.dd-result h3 { margin: 0 0 .35rem; font-size: 1rem; }
 .dd-counts { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: .25rem 0 .5rem; }
 .dd-counts dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
 .dd-counts dd { margin: 0; font-weight: 700; }
-.dd-items, .dd-plain { list-style: none; padding: 0; margin: 0; display: grid; gap: .4rem; }
+.dd-items, .dd-plain, .dd-cards { list-style: none; padding: 0; margin: 0; display: grid; gap: .4rem; }
+.dd-bullets { margin: .25rem 0; padding-left: 1.25rem; font-size: .9rem; }
 .dd-item { border-top: 1px solid var(--clr-border, #e2e8f0); padding-top: .4rem; }
 .dd-item p { margin: 0; }
+
+.dd-summary { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; }
+.dd-summary dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.dd-summary dd { margin: 0; font-size: 1.15rem; font-weight: 700; }
 .dd-scroll { overflow-x: auto; max-width: 100%; position: relative; }
 .dd-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
 .dd-table th, .dd-table td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); vertical-align: top; }
+.dd-table .dd-num { text-align: right; }
+.dd-gen-history, .dd-inv-list { font-size: .9rem; }
+.dd-gen-history > summary, .dd-inv-list > summary { cursor: pointer; font-weight: 600; }
+.dd-gen-change { border-top: 1px solid var(--clr-border, #e2e8f0); padding-top: .5rem; margin-top: .5rem; }
+.dd-gen-change p { margin: .2rem 0; }
+.dd-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: .6rem; }
+.dd-card { border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 8px); padding: .6rem .8rem; background: var(--clr-surface, #fff); min-width: 0; display: grid; gap: .25rem; justify-items: start; }
+.dd-card p { margin: 0; }
 .dd .btn-link { color: var(--clr-primary-hover, #1d4ed8); }
+
 @media (max-width: 480px) { .dd-facts { grid-template-columns: minmax(0, 1fr); } .dd-facts dd { margin-bottom: .25rem; } }
 .dd > *, .dd-result > * { min-width: 0; }
-.dd-result, .dd-item, .dd-quick, .dd-context { overflow-wrap: anywhere; }
-.dd-run .dd-field select, .dd-run select { width: 100%; max-width: 100%; }
-.dd-quick button, .dd-quick .btn-link { white-space: normal; max-width: 100%; text-align: left; }
+.dd-result, .dd-item, .dd-quick, .dd-context, .dd-card { overflow-wrap: anywhere; }
+.dd-quick button, .dd-quick .btn-link, .dd-quick-list .btn-link { white-space: normal; max-width: 100%; text-align: left; }
