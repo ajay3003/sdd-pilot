@@ -30,6 +30,7 @@
                     SemanticModel="@_semanticModel"
                     Evidence="@_evidence"
                     PreviousRevisions="@_previousRevisions"
+                    CurrentRevision="@_currentRevision"
                     InitialView="@_initialView"
                     OnTextChanged="ImportFromPanel" />
             </div>
@@ -48,6 +49,7 @@
     private TaskEvidenceIndex _evidence = TaskEvidenceIndex.NotAssessed;
     private IWorkspaceSessionService? _workspace;
     private IReadOnlyList<TaskRevisionOption> _previousRevisions = [];
+    private TaskRevisionOption? _currentRevision;
 
     protected override void OnInitialized()
     {
@@ -95,6 +97,7 @@
         if (string.Equals(text, _text, StringComparison.Ordinal)) return;
         _text = text;
         _previousRevisions = PreviousRevisionsOf(state, text);
+        _currentRevision = TaskRevisionHistory.Current(state, text);
         _parsed = null;
         _semanticModel = null;
         _analysisError = null;

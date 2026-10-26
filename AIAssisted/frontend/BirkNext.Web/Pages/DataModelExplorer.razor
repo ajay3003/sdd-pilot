@@ -147,7 +147,10 @@
         if (shared is not { Content: { Length: > 0 } baseText, Selected: { } baseArtifact }) { _layer = "pack"; return; }
         try
         {
+            var basePath = baseArtifact.SourcePath ?? baseArtifact.FileName;
             _baseParsed = DataModelService.Parse(baseText);
+            // Generated documentation states less than an authored model: its omissions are unknown evidence, not schema findings.
+            if (BirkNext.Web.Services.DataModelLayers.IsGenerated(basePath)) BirkNext.Web.Services.DataModelGeneratedSemantics.Apply(_baseParsed);
             (_aggregate, _aggregateOrigins) = BirkNext.Web.Services.DataModelLayers.Aggregate(_baseParsed, _parsed);
             _structures = BirkNext.Web.Services.DataModelLayers.Structures(_baseParsed, _parsed);
             _baseText = baseText;
@@ -174,6 +177,7 @@
         try
         {
             _parsed = DataModelService.Parse(text);
+            if (BirkNext.Web.Services.DataModelLayers.IsGenerated(_artifactPath)) BirkNext.Web.Services.DataModelGeneratedSemantics.Apply(_parsed);
             _semanticModel = DataModelAnalysisService.BuildSemanticModel(_parsed);
         }
         catch (Exception ex)

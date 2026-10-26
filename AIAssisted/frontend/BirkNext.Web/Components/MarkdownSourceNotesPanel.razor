@@ -6,9 +6,11 @@
 {
     <section class="markdown-source-notes" aria-label="Unmapped source content" data-testid="markdown-source-notes">
         <p class="markdown-source-notes-summary" data-testid="markdown-source-notes-summary">
-            @Blocks.Count source block@(Blocks.Count == 1 ? " was" : "s were") not mapped to structured fields.
+            <span class="markdown-source-notes-label">Structured extraction diagnostics · technical details</span>
+            @Blocks.Count source block@(Blocks.Count == 1 ? " was" : "s were") not mapped to structured fields and @(Blocks.Count == 1 ? "is" : "are") kept as raw source notes.
+            <span class="markdown-source-notes-scope" data-testid="markdown-source-notes-scope">Unmapped is not ignored: Document Quality Review reads the full text of the document.</span>
             <button type="button" class="btn-secondary btn-small" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_id"
-                    data-testid="markdown-source-notes-toggle" @onclick="() => _open = !_open">@(_open ? "Hide source notes" : "Review source notes")</button>
+                    data-testid="markdown-source-notes-toggle" @onclick="() => _open = !_open">@(_open ? "Hide raw source notes" : "View raw source notes")</button>
         </p>
         @if (_open)
         {

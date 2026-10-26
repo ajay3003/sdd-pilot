@@ -379,7 +379,7 @@ else
                     @if (!string.IsNullOrWhiteSpace(_searchQuery))
                     { <span>No relationships match "<strong>@_searchQuery</strong>"</span> }
                     else
-                    { <span>@EvidenceEmptyMessage("Relationships", _document.RelationshipEvidence)</span> }
+                    { <span>@EvidenceEmptyMessage("Relationships", _document.RelationshipEvidence, _document.IsGeneratedDocumentation)</span> }
                 </div>
             }
             else
@@ -447,7 +447,7 @@ else
                         @if (!string.IsNullOrWhiteSpace(_searchQuery))
                         { <span>No indexes match "<strong>@_searchQuery</strong>"</span> }
                         else
-                        { <span>@EvidenceEmptyMessage("Indexes", _document.IndexEvidence)</span> }
+                        { <span>@EvidenceEmptyMessage("Indexes", _document.IndexEvidence, _document.IsGeneratedDocumentation)</span> }
                     </div>
                 }
                 else
@@ -579,6 +579,17 @@ else
                     }
                 </section>
             }
+            @if (_document.NotStatedInGeneratedDocumentation.Count > 0)
+            {
+                <details class="dme-evidence-gaps" data-testid="dme-generated-not-stated">
+                    <summary><strong>@_document.NotStatedInGeneratedDocumentation.Count details not stated in generated documentation</strong> — unknown evidence, not model findings</summary>
+                    @foreach (var omission in _document.NotStatedInGeneratedDocumentation.GroupBy(o => o.EntityName ?? ""))
+                    {
+                        <div class="dme-evidence-gap-row"><strong>@(omission.Key.Length == 0 ? "Model" : omission.Key)</strong>
+                            <span>@string.Join(" ", omission.Select(o => o.Description))</span></div>
+                    }
+                </details>
+            }
             @if (_document.Findings.Count == 0)
             {
                 <div class="dme-empty-tab">
@@ -662,8 +673,11 @@ else
         _ => "Not assessed",
     };
 
-    private static string EvidenceEmptyMessage(string subject, DataModelEvidenceState state) => state switch
+    /// <summary>Why nothing is listed. In generated documentation absence is "not represented in this generated artifact", never "the implementation has none".</summary>
+    private static string EvidenceEmptyMessage(string subject, DataModelEvidenceState state, bool generated = false) => state switch
     {
+        DataModelEvidenceState.NotRepresented or DataModelEvidenceState.NoneDeclared when generated =>
+            $"{subject} not represented in this generated artifact — this does not mean the implementation has none.",
         DataModelEvidenceState.NoneDeclared => $"No {subject.ToLowerInvariant()} are declared in this artifact.",
         DataModelEvidenceState.Unsupported => $"{subject} are mentioned, but this notation was not extracted by the analyzer.",
         DataModelEvidenceState.NotApplicable => $"{subject} are not applicable to the extracted data structures.",

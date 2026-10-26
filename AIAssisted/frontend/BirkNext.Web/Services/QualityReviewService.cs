@@ -1,4 +1,6 @@
 using BirkNext.Web.Models;
+using BirkNext.Web.Services.Engine;
+using BirkNext.Web.Services.Explorers;
 
 namespace BirkNext.Web.Services;
 
@@ -75,33 +77,53 @@ public sealed class QualityReviewService : IQualityReviewService
 
     // ── Execution ─────────────────────────────────────────────────────────────
 
-    public async Task<QualityReviewReport> RunAsync(
+    public Task<QualityReviewReport> RunAsync(
         string? constitutionText,
         string? specText,
         string? planText,
         string? taskText,
         string? dataModelText,
-        IEnumerable<string> selectedPackIds)
+        IEnumerable<string> selectedPackIds) =>
+        RunAsync(new QualityReviewRunInput
+        {
+            ConstitutionText = constitutionText, SpecText = specText, PlanText = planText, TaskText = taskText, DataModelText = dataModelText,
+        }, selectedPackIds);
+
+    public async Task<QualityReviewReport> RunAsync(QualityReviewRunInput input, IEnumerable<string> selectedPackIds)
     {
         // Parse all artifacts once — shared across every selected pack.
-        var parsed = _parser.Parse(constitutionText, specText, planText, taskText);
+        var parsed = _parser.Parse(input.ConstitutionText, input.SpecText, input.PlanText, input.TaskText);
+        var inventory = input.Inventory;
+
+        // The Plan as its document set: supporting plan documents of the pack (research, contracts, decisions …) widen the run's own parse.
+        if (parsed.Plan is not null && inventory is not null)
+            PlanDocumentSet.From(parsed.Plan, inventory, new PlanAnalysisService(), input.PlanText).ExtendForReview(parsed.Plan, inventory);
 
         // Build clean combined text from the shared engine's token stream.
         // Used by keyword-based packs (WCAG, OWASP, GDPR, ISO 25010).
-        var combinedText = BuildCombinedText(constitutionText, specText, planText, taskText);
+        var combinedText = BuildCombinedText(input.ConstitutionText, input.SpecText, input.PlanText, input.TaskText);
+
+        // Every authored document of the pack (primary, supporting, shared), each searched separately with its path.
+        var reviewed = inventory?.AuthoredForReview ?? [];
+        var documents = reviewed.Select(d => new RuleDocument(d.Path, CleanText(d.Text))).Where(d => d.Text.Length > 0).ToList();
+        if (documents.Count > 0) combinedText = string.Join("\n", documents.Select(d => d.Text));
 
         DataModelDocument? dataModel = null;
-        if (!string.IsNullOrWhiteSpace(dataModelText))
-            dataModel = _dataModelAnalysis.Parse(dataModelText);
+        if (!string.IsNullOrWhiteSpace(input.DataModelText))
+            dataModel = _dataModelAnalysis.Parse(input.DataModelText);
 
         var ctx = new RunContext
         {
             CombinedText     = combinedText,
+            Documents        = documents,
+            Supporting       = [.. reviewed.Where(d => d.IsSupporting).Select(d => (d.Path, d.Text ?? ""))],
+            Generated        = [.. (inventory?.Family(WorkspaceArtifactType.DataModel, includeGenerated: true) ?? []).Where(d => d.Class == PackDocumentClass.Generated)],
             Constitution     = parsed.Constitution,
             Spec             = parsed.Spec,
             Plan             = parsed.Plan,
             Tasks            = parsed.Tasks,
             DataModel        = dataModel,
+            Policy           = input.Policy,
         };
 
         var selected = selectedPackIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -130,6 +152,11 @@ public sealed class QualityReviewService : IQualityReviewService
 
         return new QualityReviewReport
         {
+            DocumentsRead     = DocumentsRead(inventory, results),
+            DocumentsExcluded = [.. (inventory?.Excluded ?? []).Select(e => new QualityReviewDocumentExcluded(e.Path, e.Kind, e.Reason))],
+            ScopeLimitations  = [.. inventory?.Limitations ?? []],
+            HasDocumentScope  = inventory is not null,
+            Policy            = input.Policy,
             PackResults   = results,
             OverallScore  = valid.Count > 0
                 ? Math.Round(valid.Average(r => r.Score), 1) : 0,
@@ -142,6 +169,32 @@ public sealed class QualityReviewService : IQualityReviewService
             RunAt         = DateTimeOffset.UtcNow,
         };
     }
+
+    /// <summary>
+    /// The run's provenance: every document of the inventory the selected packs read, with the packs that read it (per their input contracts).
+    /// Without an inventory (text-only run) nothing is claimed beyond the primary texts.
+    /// </summary>
+    private static List<QualityReviewDocumentRead> DocumentsRead(ArtifactPackInventory? inventory, List<QualityReviewPackResult> results)
+    {
+        if (inventory is null) return [];
+        var ran = results.Where(r => r.Error is null).ToList();
+        var read = new List<QualityReviewDocumentRead>();
+        foreach (var d in inventory.Documents.Where(d => d.IsPrimary || d.IsSupporting || d.Class == PackDocumentClass.Generated))
+        {
+            var consumers = ran.Where(r => QualityReviewInputContracts.Reads(r.PackId, d)).Select(r => r.PackName).ToList();
+            if (consumers.Count == 0 && d.Class == PackDocumentClass.Generated) continue; // generated documentation nobody requested is not "read"
+            read.Add(new QualityReviewDocumentRead
+            {
+                Path = d.Path, Kind = d.Kind, ClassLabel = d.ClassLabel, Category = QualityReviewInputContracts.Category(d), Origin = d.Origin.ToString(),
+                Scope = ArtifactPackReview.ScopeLabel(ArtifactPackReview.ScopeName(d.Scope)), Fingerprint = d.Fingerprint, Revision = d.Revision,
+                Reason = d.Reason, ConsumedBy = consumers,
+            });
+        }
+        return read;
+    }
+
+    /// <summary>Clean searchable text of one document (the same token pass as the combined text).</summary>
+    private static string CleanText(string? text) => BuildCombinedText(text, null, null, null);
 
     // ── Combined-text builder ─────────────────────────────────────────────────
 
@@ -198,6 +251,13 @@ public sealed class QualityReviewService : IQualityReviewService
         public PlanDocument?         Plan         { get; init; }
         public TaskTree?             Tasks        { get; init; }
         public DataModelDocument?    DataModel    { get; init; }
+
+        // The reviewed documents one by one (standards), supporting authored documents (constitution references) and generated data-model
+        // documentation (Data Model Quality context only).
+        public IReadOnlyList<RuleDocument> Documents { get; init; } = [];
+        public IReadOnlyList<(string Path, string Text)> Supporting { get; init; } = [];
+        public IReadOnlyList<PackDocument> Generated { get; init; } = [];
+        public DocumentationGatePolicy Policy { get; init; } = DocumentationGatePolicy.None;
     }
 
     // ── Internal adapter interface ────────────────────────────────────────────
@@ -238,6 +298,7 @@ public sealed class QualityReviewService : IQualityReviewService
                 Low       = report.Health.LowCount,
                 Info      = report.Health.InfoCount,
                 QaAudit   = report,
+                InputContract = QualityReviewInputContracts.Describe(Descriptor.PackId),
             });
         }
     }
@@ -269,7 +330,7 @@ public sealed class QualityReviewService : IQualityReviewService
                     Error     = "Constitution not loaded — load constitution.md to run this pack.",
                 });
 
-            var report = _compliance.Analyze(ctx.Constitution, ctx.Spec, ctx.Plan, ctx.Tasks);
+            var report = _compliance.Analyze(ctx.Constitution, ctx.Spec, ctx.Plan, ctx.Tasks, supportingDocuments: ctx.Supporting);
 
             // Map ViolationSeverity → normalised counts (violations + gaps combined).
             int critical = Count(report.Violations, ViolationSeverity.Critical)
@@ -292,6 +353,7 @@ public sealed class QualityReviewService : IQualityReviewService
                 Medium     = medium,
                 Low        = low,
                 Compliance = report,
+                InputContract = QualityReviewInputContracts.Describe(Descriptor.PackId),
             });
         }
 
@@ -337,6 +399,7 @@ public sealed class QualityReviewService : IQualityReviewService
                 Medium      = medium,
                 Low         = low,
                 QaReadiness = report,
+                InputContract = QualityReviewInputContracts.Describe(Descriptor.PackId),
             });
         }
     }
@@ -360,11 +423,15 @@ public sealed class QualityReviewService : IQualityReviewService
         public Task<QualityReviewPackResult> ExecuteAsync(RunContext ctx)
         {
             var report = _delivery.Assess(ctx.Constitution, ctx.Spec, ctx.Plan, ctx.Tasks);
+            report.ReleaseSignificant = ctx.Policy.ReleaseSignificant;
+            report.PolicySource = ctx.Policy.Source;
 
-            int critical = report.Blockers.Count(b => b.Severity == GateSeverity.Critical);
-            int high     = report.Blockers.Count(b => b.Severity == GateSeverity.High);
-            int medium   = report.Blockers.Count(b => b.Severity == GateSeverity.Medium);
-            int low      = report.Blockers.Count(b => b.Severity == GateSeverity.Low);
+            // Gate issues count as Critical/High findings only under a policy that makes them a release gate; otherwise they are advisory (Info).
+            var gate = ctx.Policy.ReleaseSignificant;
+            int critical = gate ? report.Blockers.Count(b => b.Severity == GateSeverity.Critical) : 0;
+            int high     = gate ? report.Blockers.Count(b => b.Severity == GateSeverity.High) : 0;
+            int medium   = gate ? report.Blockers.Count(b => b.Severity == GateSeverity.Medium) : 0;
+            int low      = gate ? report.Blockers.Count(b => b.Severity == GateSeverity.Low) : 0;
 
             return Task.FromResult(new QualityReviewPackResult
             {
@@ -376,7 +443,9 @@ public sealed class QualityReviewService : IQualityReviewService
                 High              = high,
                 Medium            = medium,
                 Low               = low,
+                Info              = gate ? 0 : report.Blockers.Count,
                 DeliveryReadiness = report,
+                InputContract     = QualityReviewInputContracts.Describe(Descriptor.PackId),
             });
         }
     }
@@ -419,7 +488,8 @@ public sealed class QualityReviewService : IQualityReviewService
                 ctx.Spec         is not null,
                 ctx.Plan         is not null,
                 ctx.Tasks        is not null,
-                [_entry.StandardId]);
+                [_entry.StandardId],
+                ctx.Documents);
 
             var summary = report.Summaries.FirstOrDefault();
             var results = report.Results;
@@ -441,6 +511,7 @@ public sealed class QualityReviewService : IQualityReviewService
                 Medium    = medium,
                 Low       = low,
                 Standards = report,
+                InputContract = QualityReviewInputContracts.Describe(Descriptor.PackId),
             });
         }
     }
@@ -495,6 +566,8 @@ public sealed class QualityReviewService : IQualityReviewService
                 Low       = low,
                 Info      = info,
                 DataModel = doc,
+                InputContract = QualityReviewInputContracts.Describe(Descriptor.PackId),
+                ContextDocuments = [.. ctx.Generated.Select(g => g.Path)],
             });
         }
     }

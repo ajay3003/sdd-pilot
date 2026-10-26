@@ -77,6 +77,10 @@ public sealed class StandardCheckResult
     public CheckStatus   Status         { get; init; }
     public string?       Evidence       { get; init; }
     public string        Recommendation { get; init; } = string.Empty;
+    /// <summary>The reviewed document whose text documents the rule; null when no reviewed document does.</summary>
+    public string?       MatchedDocument { get; init; }
+    /// <summary>The documents searched for this rule (the review's full relevant document set).</summary>
+    public IReadOnlyList<string> SearchedDocuments { get; init; } = [];
 }
 
 // ── Per-standard summary ──────────────────────────────────────────────────────

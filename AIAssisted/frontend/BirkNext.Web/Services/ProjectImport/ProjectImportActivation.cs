@@ -98,6 +98,12 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
                     scope, Origin, select: role.State == SampleRoleState.Detected, projectImportId: preview.ImportId);
             }
         }
+        // Supporting documentation (quickstart, contracts, decisions …) of the feature packs, and documents they explicitly reference: kept with
+        // the same provenance so reviews can read them. Never selected, never a role, never authoritative.
+        string? Text(string path) => preview.Documents.FirstOrDefault(d => d.RelativePath == path)?.Content;
+        foreach (var document in SupportingDocuments.Retained(discovery.Documents, Text))
+            repository.AddArtifactRevision(WorkspaceArtifactType.SupportingDocument, ArtifactDocumentDiscovery.Normalize(Text(document.RelativePath)!),
+                document.RelativePath, document.RelativePath, scope, Origin, select: false, projectImportId: preview.ImportId);
         // Session artifacts follow the import's scope only: roles the import does not provide (or has to choose) are not carried over.
         repository.RefreshSessionArtifacts();
         updates?.NotifyMutation();

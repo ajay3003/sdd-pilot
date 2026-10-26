@@ -35,7 +35,13 @@
     [Parameter] public string? Given { get; set; }
     [Parameter] public string? When { get; set; }
     [Parameter] public string? Then { get; set; }
-    private bool Expanded { get; set; }
+    /// <summary>Controlled expansion: the owner keeps the state by item identity (e.g. across filtering). Null = the component keeps it.</summary>
+    [Parameter] public bool? IsExpanded { get; set; }
+    [Parameter] public EventCallback<bool> IsExpandedChanged { get; set; }
+    private bool _expanded;
+    private bool Expanded => IsExpanded ?? _expanded;
+    /// <summary>Characters shown while collapsed; the rest stays in the document (selectable, searchable) but hidden until Show more.</summary>
+    private const int PreviewLength = 100;
     private bool HasStructuredScenario => Given is not null || When is not null || Then is not null;
     private string ExpansionText => HasStructuredScenario ? $"{Given} {When} {Then}" : Text;
     private bool CanExpand => ExpansionText.Length > 100;
@@ -45,14 +51,31 @@
         if (HasStructuredScenario)
         {
             @ScenarioPart("Given", Given, "given")
-            @ScenarioPart("When", When, "when")
-            @ScenarioPart("Then", Then, "then")
+            @* Collapsed, a long scenario shows its Given; When and Then follow on Show more. *@
+            <div class="traceability-item__scenario-rest" hidden="@(CanExpand && !Expanded)">
+                @ScenarioPart("When", When, "when")
+                @ScenarioPart("Then", Then, "then")
+            </div>
+        }
+        else if (CanExpand)
+        {
+            // A fixed preview, not a height clamp: a clamp that the text happens to fit makes "Show more" change nothing.
+            var cut = PreviewCut(Text);
+            @(Text[..cut])<span class="traceability-item__rest" hidden="@(!Expanded)">@(Text[cut..])</span>
         }
         else
         {
             @Text
         }
     };
+
+    /// <summary>Where the preview ends: the last word boundary within <see cref="PreviewLength"/> characters (or exactly there).</summary>
+    private static int PreviewCut(string text)
+    {
+        if (text.Length <= PreviewLength) return text.Length;
+        var space = text.LastIndexOf(' ', PreviewLength);
+        return space > PreviewLength / 2 ? space : PreviewLength;
+    }
 
     private static RenderFragment ScenarioPart(string label, string? value, string kind) => __builder =>
     {
@@ -64,5 +87,9 @@
 
     private string ActivateLabel => $"{ItemType}{(string.IsNullOrWhiteSpace(ItemId) ? "" : $" {ItemId}")}: {Text}";
     private Task Activate() => OnActivate.InvokeAsync();
-    private void Toggle() => Expanded = !Expanded;
+    private async Task Toggle()
+    {
+        if (IsExpandedChanged.HasDelegate) await IsExpandedChanged.InvokeAsync(!Expanded);
+        else _expanded = !_expanded;
+    }
 }

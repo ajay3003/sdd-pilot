@@ -137,7 +137,7 @@
                     }
                     else
                     {
-                        <SpecificationReviewCandidateList Candidates="ReviewCandidates" Summary="ReviewSummary" />
+                        <SpecificationReviewCandidateList Candidates="ReviewCandidates" Summary="ReviewSummary" SourceDocument="@_sourcePath" />
                     }
                 </section>
             </div>
@@ -184,9 +184,13 @@
     }
     private SpecificationReviewSummary ReviewSummary => SpecificationReviewProjection.Summarize(_projection, ReviewCandidates);
 
+    /// <summary>The analyzed specification document's path: review suggestions name it as their source.</summary>
+    private string? _sourcePath;
+
     private async Task OnArtifactChanged(ArtifactExplorerState state)
     {
         var text = state.Content ?? string.Empty;
+        _sourcePath = state.Selected?.SourcePath ?? state.Selected?.FileName;
         var artifactKey = BuildArtifactKey(state, text);
         if (string.Equals(artifactKey, _artifactKey, StringComparison.Ordinal)) return;
         // Preserve prior analysis only as stale context; it is never rendered as current for another artifact.

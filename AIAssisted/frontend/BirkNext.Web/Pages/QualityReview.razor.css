@@ -903,7 +903,7 @@
 }
 
 .is-good .qr-pack-card-score { color: #15803d; }
-.is-fair .qr-pack-card-score { color: #a16207; }
+.is-fair .qr-pack-card-score { color: #854d0e; }
 .is-poor .qr-pack-card-score { color: #b91c1c; }
 
 .qr-pack-card-score span {
@@ -971,7 +971,7 @@
 }
 
 .qr-pack-card-release-state .is-healthy { color: #15803d; }
-.qr-pack-card-release-state .is-warning { color: #a16207; }
+.qr-pack-card-release-state .is-warning { color: #854d0e; }
 .qr-pack-card-release-state .is-critical { color: #b91c1c; }
 
 .qr-pack-card-gate-issues {

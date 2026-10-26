@@ -18,16 +18,26 @@
                 </select>
                 <button type="button" class="btn-primary" data-testid="tc-revision-compare-btn" @onclick="CompareWithRevision">Compare</button>
             </div>
-            <p class="delta-no-baseline-hint">Or compare with a tasks.md you provide:</p>
+            @* The exact versions compared: an earlier recorded content version of this same Task artifact against the current one. *@
+            <dl class="tc-revision-provenance" data-testid="tc-revision-provenance">
+                <div><dt>Left (earlier)</dt><dd data-testid="tc-left-version">@PreviousRevisions[Math.Clamp(_revisionIndex, 0, PreviousRevisions.Count - 1)].Provenance</dd></div>
+                @if (CurrentVersion is { } current)
+                {
+                    <div><dt>Right (current)</dt><dd data-testid="tc-right-version">@current.Provenance</dd></div>
+                }
+            </dl>
         }
         @if (string.IsNullOrWhiteSpace(_oldTasksText) && PreviousRevisions.Count == 0)
         {
-            // CASE A: No comparison baseline available (old version not provided)
-            <div class="delta-no-baseline-hint">
-                No comparison available yet. Add a previous tasks.md by uploading a file or pasting its content.
+            // CASE A: No recorded earlier revision of this Task artifact: manual upload/paste is the fallback.
+            <div class="delta-no-baseline-hint" data-testid="tc-no-recorded-revision">
+                No comparison available yet. No earlier recorded revision of this Task artifact is available. Add a previous tasks.md by uploading a file or pasting its content.
             </div>
         }
 
+        @* Manual comparison is a fallback: open by default only when no recorded revision exists. *@
+        <details class="tc-manual-compare" data-testid="tc-manual-compare" open="@(PreviousRevisions.Count == 0)">
+        <summary>@(PreviousRevisions.Count == 0 ? "Compare with a tasks.md you provide" : "Or compare with a tasks.md you provide (fallback)")</summary>
         <div class="delta-inputs-row">
             <div class="delta-input-panel">
                 <div class="delta-input-header">
@@ -83,7 +93,7 @@
             <button
                 class="btn-primary delta-analyse-btn"
                 disabled="@(!CanAnalyse)"
-                @onclick="RunAnalysis">
+                @onclick="AnalyzeManual">
                 Analyze Changes
             </button>
             @if (!CanAnalyse)
@@ -91,12 +101,17 @@
                 <span class="delta-analyse-hint">Paste or import both versions to compare</span>
             }
         </div>
+        </details>
     }
     else
     {
         <div class="delta-results-header">
             <div>
                 <h3 class="delta-results-title">Task Changes</h3>
+                @if (_comparedLeft is { } left)
+                {
+                    <p class="delta-results-sub" data-testid="tc-compared-versions">Compared @left.Provenance → @(CurrentVersion?.Provenance ?? "current Task artifact")</p>
+                }
                 <p class="delta-results-sub">
                     @if (_report.TotalChanges == 0)
                     {
@@ -504,11 +519,15 @@
     /// <summary>Earlier revisions of the same Task artifact lineage (never another pack's), newest first.</summary>
     [Parameter] public IReadOnlyList<TaskRevisionOption> PreviousRevisions { get; set; } = [];
     private int _revisionIndex;
+    /// <summary>The recorded revision the current result compares against (null for a manual comparison).</summary>
+    private TaskRevisionOption? _comparedLeft;
+    [Parameter] public TaskRevisionOption? CurrentVersion { get; set; }
 
     private void CompareWithRevision()
     {
         if (_revisionIndex < 0 || _revisionIndex >= PreviousRevisions.Count) return;
         _oldTasksText = PreviousRevisions[_revisionIndex].Content;
+        _comparedLeft = PreviousRevisions[_revisionIndex];
         if (string.IsNullOrWhiteSpace(_newTasksText)) _newTasksText = CurrentTasksText;
         RunAnalysis();
     }
@@ -532,6 +551,13 @@
         !string.IsNullOrWhiteSpace(_oldTasksText) && !string.IsNullOrWhiteSpace(_newTasksText);
 
     private void OnOldFileImported(string content) => _oldTasksText = content;
+
+    /// <summary>A comparison of the texts in the inputs: no recorded revision is claimed as its left side.</summary>
+    private void AnalyzeManual()
+    {
+        _comparedLeft = null;
+        RunAnalysis();
+    }
     private void OnOldFileRemoved() => _oldTasksText = string.Empty;
     private void OnNewFileImported(string content) => _newTasksText = content;
     private void OnNewFileRemoved() => _newTasksText = string.Empty;

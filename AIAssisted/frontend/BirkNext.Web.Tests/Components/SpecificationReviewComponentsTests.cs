@@ -131,6 +131,45 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
     }
 
     [Fact]
+    public void ShowMore_expands_only_that_suggestion_and_show_less_collapses_it()
+    {
+        var longA = "FR-101: " + string.Join(' ', Enumerable.Repeat("The first requirement keeps its own complete text.", 6)) + " END-A";
+        var longB = "FR-102: " + string.Join(' ', Enumerable.Repeat("The second requirement keeps its own complete text.", 6)) + " END-B";
+        var cut = RenderList(Candidate(longA, ScenarioKind.Requirement), Candidate(longB, ScenarioKind.Requirement));
+
+        var items = cut.FindAll("[data-testid='spec-review-candidates'] > li");
+        items[0].QuerySelector(".traceability-item__rest")!.HasAttribute("hidden").Should().BeTrue("collapsed shows a fixed preview, so Show more always reveals more");
+        items[1].QuerySelector(".traceability-item__toggle")!.Click();
+
+        items = cut.FindAll("[data-testid='spec-review-candidates'] > li");
+        items[1].QuerySelector(".traceability-item__rest")!.HasAttribute("hidden").Should().BeFalse();
+        items[1].QuerySelector(".traceability-item__toggle")!.GetAttribute("aria-expanded").Should().Be("true");
+        items[0].QuerySelector(".traceability-item__rest")!.HasAttribute("hidden").Should().BeTrue("only the clicked suggestion expands");
+
+        items[1].QuerySelector(".traceability-item__toggle")!.Click();
+        cut.FindAll("[data-testid='spec-review-candidates'] > li")[1].QuerySelector(".traceability-item__toggle")!.TextContent.Should().Be("Show more");
+    }
+
+    [Fact]
+    public void Filtering_and_search_keep_expansion_on_the_same_suggestion()
+    {
+        var longReq = "FR-201: " + string.Join(' ', Enumerable.Repeat("A requirement long enough to need the expand control.", 5)) + " END-REQ";
+        var longTest = "Given " + string.Join(' ', Enumerable.Repeat("a long scenario precondition that keeps going", 5)) + " END-TEST";
+        var cut = RenderList(Candidate(longReq, ScenarioKind.Requirement), Candidate(longTest, ScenarioKind.Test));
+
+        cut.FindAll("[data-testid='spec-review-candidates'] > li").Single(li => li.TextContent.Contains("END-REQ"))
+            .QuerySelector(".traceability-item__toggle")!.Click();
+        cut.Find("[data-testid=src-filter-test]").Click();
+        cut.FindAll("[data-testid='spec-review-candidates'] > li").Single().QuerySelector(".traceability-item__toggle")!
+            .GetAttribute("aria-expanded").Should().Be("false", "the test suggestion was never expanded");
+
+        cut.Find("[data-testid=src-filter-all]").Click();
+        var requirement = cut.FindAll("[data-testid='spec-review-candidates'] > li").Single(li => li.TextContent.Contains("END-REQ"));
+        requirement.QuerySelector(".traceability-item__toggle")!.GetAttribute("aria-expanded").Should().Be("true", "expansion belongs to the suggestion's identity");
+        requirement.QuerySelector("[data-testid=src-why]")!.TextContent.Should().StartWith("Why:");
+    }
+
+    [Fact]
     public void CandidateListSaysCandidatesAreNotFindings()
     {
         var cut = RenderList(Candidate("FR-004: The system MUST approve requests.", ScenarioKind.Requirement));

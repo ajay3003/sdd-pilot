@@ -146,9 +146,10 @@ public sealed class StandardsComplianceService : IStandardsComplianceService
         bool                hasSpec,
         bool                hasPlan,
         bool                hasTasks,
-        IEnumerable<string> selectedStandards)
+        IEnumerable<string> selectedStandards,
+        IReadOnlyList<RuleDocument>? documents = null)
     {
-        var context  = new RuleContext { CombinedText = combinedText };
+        var context  = new RuleContext { CombinedText = combinedText, Documents = documents ?? [] };
         var selected = selectedStandards.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Preserve index.json order; skip packs that failed to load.
@@ -207,6 +208,8 @@ public sealed class StandardsComplianceService : IStandardsComplianceService
             Status         = status,
             Evidence       = f.Evidence,
             Recommendation = status == CheckStatus.Passed ? string.Empty : f.Recommendation,
+            MatchedDocument = f.MatchedDocument,
+            SearchedDocuments = f.SearchedDocuments,
         };
     }
 

@@ -18,3 +18,5 @@
 .markdown-source-notes > button { white-space: normal; max-width: 100%; text-align: left; }
 .markdown-source-notes { min-width: 0; max-width: 100%; }
 .markdown-source-notes pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-source-notes-label { display: block; font-weight: 600; font-size: .78rem; color: var(--clr-text-muted, #475569); }
+.markdown-source-notes-scope { display: block; font-size: .8rem; color: var(--clr-text-muted, #475569); }

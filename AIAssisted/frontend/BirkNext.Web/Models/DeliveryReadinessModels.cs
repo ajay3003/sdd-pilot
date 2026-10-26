@@ -98,4 +98,11 @@ public sealed class DeliveryReadinessReport
     public bool HasSpecification { get; init; }
     public bool HasPlan          { get; init; }
     public bool HasTasks         { get; init; }
+
+    /// <summary>
+    /// True only when a project documentation gate policy makes this assessment a release gate (<see cref="PolicySource"/> names it).
+    /// False by default: the gates are advisory documentation readiness and never a product release decision.
+    /// </summary>
+    public bool ReleaseSignificant { get; set; }
+    public string? PolicySource { get; set; }
 }

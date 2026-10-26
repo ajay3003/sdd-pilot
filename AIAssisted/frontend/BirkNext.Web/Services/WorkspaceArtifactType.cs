@@ -17,5 +17,10 @@ public enum WorkspaceArtifactType
     /// <summary>Bounded, source-bound Schema Studio Designer drafts.</summary>
     SchemaStudioDrafts,
     /// <summary>User-requested, bounded XML examples with schema and snapshot provenance.</summary>
-    SchemaStudioGeneratedXml
+    SchemaStudioGeneratedXml,
+    /// <summary>
+    /// Authored documentation that supports an Artifact Pack without being one of its roles (quickstart, contract, decision, checklist …):
+    /// kept as revisions so reviews can read it with provenance. Never an explorer role and never authoritative by itself.
+    /// </summary>
+    SupportingDocument
 }

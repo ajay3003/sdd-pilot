@@ -178,7 +178,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 // A decision, or a plan location ("§ Heading") where the requirement id is written explicitly.
                 var planItem = context.Plan.ArchitectureDecisions
                     .FirstOrDefault(d => d.Id == planId);
-                var title = planItem?.Title ?? (planId.StartsWith("§ ", StringComparison.Ordinal) ? planId[2..] : null);
+                // A supporting plan document of the pack ("research.md § Testing Stack") names its document.
+                var title = planItem?.Title ?? (planId.StartsWith("§ ", StringComparison.Ordinal) ? planId[2..]
+                    : planId.Contains(".md", StringComparison.OrdinalIgnoreCase) ? planId : null);
 
                 if (title is not null)
                 {

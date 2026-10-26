@@ -18,7 +18,8 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
         SpecTree?             spec,
         PlanDocument?         plan,
         TaskTree?             tasks,
-        ReviewContext?        context = null)
+        ReviewContext?        context = null,
+        IReadOnlyList<(string Path, string Text)>? supportingDocuments = null)
     {
         if (constitution is null)
         {
@@ -48,6 +49,11 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
         var planMentions  = BuildPlanMentions(plan);    // ruleId → [plan item titles]
         var taskMentions  = BuildTaskMentions(tasks);   // ruleId → [task titles]
         var planViolations = BuildPlanViolations(plan); // ruleId → [(item, severity, issue)]
+        // Supporting documents of the pack outside Specification, Plan and Tasks (contracts, security, checklists …): ruleId → [paths].
+        var supportingMentions = new Dictionary<string, List<string>>(ConstitutionRuleIds.Comparer);
+        foreach (var (path, text) in supportingDocuments ?? [])
+            foreach (Match m in RuleIdRe.Matches(text ?? string.Empty))
+                AddMention(supportingMentions, m.Groups[1].Value.ToUpperInvariant(), path);
 
         // ── Per-rule results ───────────────────────────────────────────────
 
@@ -63,6 +69,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
             var specRefs = allIds.SelectMany(id => specMentions.GetValueOrDefault(id.ToUpperInvariant(), [])).Distinct().ToList();
             var planRefs = allIds.SelectMany(id => planMentions.GetValueOrDefault(id.ToUpperInvariant(), [])).Distinct().ToList();
             var taskRefs = allIds.SelectMany(id => taskMentions.GetValueOrDefault(id.ToUpperInvariant(), [])).Distinct().ToList();
+            var supportingRefs = allIds.SelectMany(id => supportingMentions.GetValueOrDefault(id.ToUpperInvariant(), [])).Distinct().ToList();
 
             bool hasSpec  = spec  is not null && specRefs.Count > 0;
             bool hasPlan  = plan  is not null && planRefs.Count > 0;
@@ -72,6 +79,8 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
 
             var status = DetermineStatus(hasSpec, hasPlan, hasTask, isViolated,
                 spec is not null, plan is not null, tasks is not null);
+            // Cited only in a supporting document of the pack: documented, but not in Specification, Plan or Tasks — partial, never missing.
+            if (status == ComplianceStatus.Missing && supportingRefs.Count > 0) status = ComplianceStatus.Partial;
             // A rule without a citable ID cannot be referenced by ID: no deterministic mapping (Unknown), never a missing reference.
             var noCitableId = ConstitutionRuleIds.HasNoCitableId(rule);
             if (noCitableId && status == ComplianceStatus.Missing) status = ComplianceStatus.Unknown;
@@ -88,6 +97,7 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
                 SpecReferences  = specRefs,
                 PlanReferences  = planRefs,
                 TaskReferences  = taskRefs,
+                SupportingReferences = supportingRefs,
             });
 
             // Gaps: rule not covered in at least one loaded artifact
@@ -96,7 +106,9 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
             bool missTask  = tasks is not null && !hasTask;
             bool noArtifacts = spec is null && plan is null && tasks is null;
 
-            if ((missSpec || missPlan || missTask) && status != ComplianceStatus.Violation && !noCitableId)
+            // A rule the pack documents anywhere in its reviewed documents is not a documentation gap (H4: the full document set decides).
+            var onlyInSupporting = supportingRefs.Count > 0 && !hasSpec && !hasPlan && !hasTask;
+            if ((missSpec || missPlan || missTask) && status != ComplianceStatus.Violation && !noCitableId && !onlyInSupporting)
             {
                 var sev = GapSeverityFor(rule.RuleType, missSpec, missPlan, missTask);
                 gaps.Add(new ComplianceGap
@@ -283,10 +295,12 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
         foreach (var s in plan.Sections)     ScanText(s.RawContent, s.Title);
         foreach (var d in plan.ArchitectureDecisions)
         {
-            ScanText(d.Context,   d.Title);
-            ScanText(d.Decision,  d.Title);
-            ScanText(d.Rationale, d.Title);
-            ScanText(d.RawText,   d.Title);
+            // A decision of a supporting plan document keeps its document in the reference label.
+            var label = d.SourceDocument is { } source ? $"{source[(source.LastIndexOf('/') + 1)..]}: {d.Title}" : d.Title;
+            ScanText(d.Context,   label);
+            ScanText(d.Decision,  label);
+            ScanText(d.Rationale, label);
+            ScanText(d.RawText,   label);
         }
         foreach (var p in plan.Phases)
         {

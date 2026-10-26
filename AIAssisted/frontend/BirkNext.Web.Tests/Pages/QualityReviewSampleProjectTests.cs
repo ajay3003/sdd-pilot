@@ -265,11 +265,12 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         SeedProjectB();
         _resolver.SetSelectedProject("project-a");
 
+        // Five role resolutions plus one Artifact Pack inventory (one scope load) per project load.
         var cut = Render<QualityReview>();
-        cut.WaitForAssertion(() => _resolver.DiscoveryCallCount.Should().Be(5));
+        cut.WaitForAssertion(() => _resolver.DiscoveryCallCount.Should().Be(6));
 
         cut.Render();
-        cut.WaitForAssertion(() => _resolver.DiscoveryCallCount.Should().Be(5));
+        cut.WaitForAssertion(() => _resolver.DiscoveryCallCount.Should().Be(6));
 
         _resolver.SetSelectedProject("project-b");
         cut.Render();
@@ -277,7 +278,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Project B");
-            _resolver.DiscoveryCallCount.Should().Be(10);
+            _resolver.DiscoveryCallCount.Should().Be(12);
         });
     }
 
@@ -2100,6 +2101,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         var delivery = new DeliveryReadinessReport
         {
             ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 37 },
+            // A project policy that makes the documentation gate a release gate: blocking wording is valid only then.
+            ReleaseSignificant = true, PolicySource = "test release policy",
             Blockers =
             [
                 new() { Title = "Release gate", Severity = GateSeverity.Critical },
@@ -2336,10 +2339,12 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var card = cut.Find(".qr-pack-card");
             card.TextContent.Should().Contain("Delivery Readiness");
-            card.TextContent.Should().Contain("Release:");
-            card.TextContent.Should().Contain("NOT READY");
-            card.TextContent.Should().Contain("2 delivery gate issues");
-            card.TextContent.Should().Contain("Readiness score 24%");
+            // No project policy gives the review release significance: advisory documentation readiness, never "Release: NOT READY".
+            card.TextContent.Should().Contain("Documentation gate:");
+            card.TextContent.Should().Contain("Documentation gate not met");
+            card.TextContent.Should().Contain("2 documentation readiness issues · advisory");
+            card.TextContent.Should().Contain("Documentation readiness score 24%");
+            card.TextContent.Should().NotContain("Release:");
             card.TextContent.Should().Contain("View gates →");
             card.TextContent.Should().NotContain("Needs attention");
             card.TextContent.Should().NotContain("Strongest");
@@ -2372,9 +2377,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var card = cut.Find(".qr-pack-card");
-            card.TextContent.Should().Contain("Release:");
-            card.TextContent.Should().Contain("READY");
-            card.TextContent.Should().Contain("No delivery gate issues");
+            card.TextContent.Should().Contain("Documentation gate:");
+            card.TextContent.Should().Contain("Documentation gate met");
+            card.TextContent.Should().Contain("No documentation readiness issues");
         });
     }
 
@@ -5013,6 +5018,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
             TestingDecision = new() { Name = "Testing", State = ReadinessState.MostlyReady, Score = 60 },
             ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 0 },
+            // A project policy that makes the documentation gate a release gate: blocking wording is valid only then.
+            ReleaseSignificant = true, PolicySource = "test release policy",
             Blockers = new List<ReadinessBlocker>
             {
                 new() { Title = "Development gate not cleared", Severity = GateSeverity.Critical, Phase = "Release", Description = "Development readiness must reach MostlyReady before release assessment. Current: NotReady." },
@@ -5352,6 +5359,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
             TestingDecision = new() { Name = "Testing", State = ReadinessState.MostlyReady, Score = 60 },
             ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 0 },
+            // A project policy that makes the documentation gate a release gate: blocking wording is valid only then.
+            ReleaseSignificant = true, PolicySource = "test release policy",
             Health = new() { OverallReadinessScore = 30 },
         };
 
@@ -5937,6 +5946,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 32 },
             TestingDecision = new() { Name = "Testing", State = ReadinessState.MostlyReady, Score = 68 },
             ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 24 },
+            // A project policy that makes the documentation gate a release gate: blocking wording is valid only then.
+            ReleaseSignificant = true, PolicySource = "test release policy",
             Blockers =
             [
                 new() { Title = "Critical release gate", Severity = GateSeverity.Critical, Phase = "Release" },

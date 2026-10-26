@@ -104,7 +104,18 @@ public static class TestingWork
 }
 
 /// <summary>An earlier revision of the same Task artifact offered for comparison ("Revision 1 · 24 Oct 2026 · tasks.md").</summary>
-public sealed record TaskRevisionOption(string Label, string Content);
+public sealed record TaskRevisionOption(string Label, string Content, string? Path = null, string? Fingerprint = null, int? Revision = null,
+    DateTimeOffset? CapturedAt = null)
+{
+    /// <summary>"rev 2 · captured 2026-10-24 10:12 · fingerprint 3fa9c1d2e4b5 · Person/specs/001-x/tasks.md" — the exact version compared.</summary>
+    public string Provenance => string.Join(" · ", new[]
+    {
+        Revision is { } r ? $"rev {r}" : null,
+        CapturedAt is { } at ? $"captured {at.ToLocalTime():yyyy-MM-dd HH:mm}" : null,
+        Fingerprint is { Length: > 0 } f ? $"fingerprint {f[..Math.Min(12, f.Length)]}" : null,
+        Path,
+    }.Where(p => !string.IsNullOrEmpty(p)));
+}
 
 /// <summary>
 /// Earlier revisions of one Task artifact from the workspace's stored artifact revisions (what imports already record): the same project (an
@@ -128,8 +139,14 @@ public static class TaskRevisionHistory
                         && !string.Equals(ArtifactFingerprint.Compute(r.Content), current, StringComparison.Ordinal))
             .OrderByDescending(r => r.CapturedAt)
             .DistinctBy(r => ArtifactFingerprint.Compute(r.Content))
-            .Select(r => new TaskRevisionOption($"Revision {r.Revision} · captured {r.CapturedAt.ToLocalTime():yyyy-MM-dd HH:mm}", r.Content))];
+            .Select(r => new TaskRevisionOption($"Revision {r.Revision} · captured {r.CapturedAt.ToLocalTime():yyyy-MM-dd HH:mm}", r.Content,
+                r.SourceReference ?? r.FileName, r.Fingerprint is { Length: > 0 } f ? f : ArtifactFingerprint.Compute(r.Content), r.Revision, r.CapturedAt))];
     }
+
+    /// <summary>The current Task artifact as the right-hand side of a comparison (its path, revision and content fingerprint).</summary>
+    public static TaskRevisionOption? Current(BirkNext.Web.Services.Explorers.ArtifactExplorerState state, string content) =>
+        state.Selected is not { } selected || string.IsNullOrEmpty(content) ? null
+            : new TaskRevisionOption("Current", content, selected.SourcePath ?? selected.FileName, ArtifactFingerprint.Compute(content), selected.Revision, selected.CapturedAt);
 
     private static string Normalize(string? path) => (path ?? "").Replace('\\', '/').TrimStart('/');
 }

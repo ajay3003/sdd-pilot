@@ -10,7 +10,8 @@ public interface IConstitutionComplianceService
         SpecTree?             spec,
         PlanDocument?         plan,
         TaskTree?             tasks,
-        ReviewContext?        context = null);
+        ReviewContext?        context = null,
+        IReadOnlyList<(string Path, string Text)>? supportingDocuments = null);
 
     // Search and filter helpers for the UI
     IEnumerable<ComplianceResult>        SearchResults(IEnumerable<ComplianceResult> results, string query);

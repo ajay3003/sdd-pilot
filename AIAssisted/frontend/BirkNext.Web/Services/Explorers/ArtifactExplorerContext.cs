@@ -194,6 +194,13 @@ public interface IArtifactExplorerContext
 
     /// <summary>Adds a file, dropped file or pasted text to the workspace as an artifact revision of the role, and shows it.</summary>
     ArtifactImportResult Import(ArtifactImportRequest request);
+
+    /// <summary>
+    /// The canonical document inventory of the viewed Artifact Pack (or of <paramref name="pack"/> of the focused module): primary, shared,
+    /// supporting and generated documents with provenance and inclusion reasons, plus what was left out and why. Reads only; changes nothing viewed.
+    /// </summary>
+    Task<ArtifactPackInventory> GetPackInventoryAsync(string? pack = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult(ArtifactPackInventory.Empty(CurrentScope));
 }
 
 /// <summary>
@@ -267,9 +274,10 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         return shared is { Status: ExplorerArtifactStatus.Loaded, Selected: not null } && shared.Selected.Id != current.Selected?.Id ? shared : null;
     }
 
-    private async Task<ArtifactExplorerState> StateAsync(WorkspaceArtifactType role, string? viewPack, CancellationToken cancellationToken, bool sharedOnly = false)
+    private async Task<ArtifactExplorerState> StateAsync(WorkspaceArtifactType role, string? viewPack, CancellationToken cancellationToken, bool sharedOnly = false,
+        ScopeModel? loaded = null)
     {
-        var model = await LoadScopeAsync(cancellationToken);
+        var model = loaded ?? await LoadScopeAsync(cancellationToken);
         if (model.Failure is { } failure)
             return new ArtifactExplorerState(role, failure, model.Scope, model.ProjectName, [], Error: model.Error);
 
@@ -546,7 +554,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         IReadOnlyDictionary<WorkspaceArtifactType, string?> ChosenSamplePaths,
         IReadOnlyList<string> Modules,
         ExplorerArtifactStatus? Failure = null,
-        string? Error = null)
+        string? Error = null,
+        IReadOnlyList<ScopeEntry>? Supporting = null)
     {
         /// <summary>Artifacts in more than one module group: roles resolve per module.</summary>
         public bool HasModules => Modules.Count > 1;
@@ -561,6 +570,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var scope = CurrentScope;
         var roles = SampleArtifactClassifier.RoleOrder.ToDictionary(r => r, _ => new List<ScopeEntry>());
         var chosen = new Dictionary<WorkspaceArtifactType, string?>();
+        var supporting = new List<ScopeEntry>();
         var paths = new List<string?>();
         string? projectName = null;
         IReadOnlyDictionary<WorkspaceArtifactType, List<ScopeEntry>> NoRoles() => SampleArtifactClassifier.RoleOrder.ToDictionary(r => r, _ => new List<ScopeEntry>());
@@ -604,10 +614,21 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                         ExplorerArtifactCurrentness.Current, null, identity), () => content, false));
                 }
             }
+            // Supporting documentation: documents no role claimed, kept only when in a feature pack or referenced by one (same rule as Project Import).
+            foreach (var document in SupportingDocuments.Retained(discovery.Documents, p => _discovery.GetContent(discovery.ProjectSlug, p)))
+            {
+                var content = _discovery.GetContent(discovery.ProjectSlug, document.RelativePath);
+                var (displayName, identity) = SampleMeta(discovery.ProjectSlug, document.RelativePath, document.FileName, content);
+                supporting.Add(new ScopeEntry(new ExplorerArtifact(
+                    SamplePrefix + document.RelativePath, WorkspaceArtifactType.SupportingDocument, displayName, document.FileName,
+                    document.RelativePath, ExplorerArtifactSource.SampleProject, null, null, 0, "Unknown",
+                    ExplorerArtifactCurrentness.Current, null, identity), () => content, false));
+            }
         }
 
         foreach (var role in SampleArtifactClassifier.RoleOrder)
             roles[role].AddRange(WorkspaceArtifacts(role, scope).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, i.Revision.IsCurrentSelection)));
+        supporting.AddRange(WorkspaceArtifacts(WorkspaceArtifactType.SupportingDocument, scope).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, false)));
         // Module roots come from the artifacts' own paths (every role, every revision of the scope) — the same evidence before and after an
         // import and for Demo Projects. A stray specs/ folder among unclassified documents does not create a module.
         paths.AddRange(roles.Values.SelectMany(l => l).Select(e => e.Artifact.SourcePath ?? e.Artifact.FileName));
@@ -620,11 +641,56 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                 var path = e.Artifact.SourcePath ?? e.Artifact.FileName;
                 return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path) } };
             }).ToList();
+        supporting = supporting.Select(e =>
+        {
+            var path = e.Artifact.SourcePath ?? e.Artifact.FileName;
+            return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path) } };
+        }).ToList();
 
         // Named modules in path order; the project-level group (if any) last.
         var modules = roles.Values.SelectMany(l => l).Select(e => e.Artifact.Module).Distinct(StringComparer.Ordinal)
             .OrderBy(m => m.Length == 0 ? 1 : 0).ThenBy(m => m, StringComparer.Ordinal).ToList();
-        return new ScopeModel(scope, projectName, roles, chosen, modules);
+        return new ScopeModel(scope, projectName, roles, chosen, modules, Supporting: supporting);
+    }
+
+    public async Task<ArtifactPackInventory> GetPackInventoryAsync(string? pack = null, CancellationToken cancellationToken = default)
+    {
+        // The explorers' own resolution decides each role's primary document for the pack: one scope load, one resolution, never a second scanner.
+        var model = await LoadScopeAsync(cancellationToken);
+        if (model.Failure is not null) return ArtifactPackInventory.Empty(model.Scope);
+        var primary = new Dictionary<WorkspaceArtifactType, string>();
+        var viewed = pack;
+        foreach (var role in SampleArtifactClassifier.RoleOrder.Where(r => r != WorkspaceArtifactType.Research))
+        {
+            var state = await StateAsync(role, pack, cancellationToken, loaded: model);
+            if (state is { Status: ExplorerArtifactStatus.Loaded, Selected: { } selected }) primary[role] = selected.Id;
+            viewed ??= state.Pack;
+        }
+        var module = model.HasModules ? FocusOf(model) : model.Modules.FirstOrDefault() ?? ArtifactModules.ProjectLevel;
+        if (module is null)
+            return ArtifactPackInventory.Empty(model.Scope) with { Limitations = ["Choose a module first: documents are inventoried per module and Artifact Pack."] };
+
+        var candidates = model.Roles.Values.SelectMany(l => l).Concat(model.Supporting ?? [])
+            .Select(e => new PackInventoryCandidate(e.Artifact, e.Content, Math.Max(0, e.Artifact.RevisionCount - 1))).ToList();
+        var lifecycle = _workspace.SddLifecycle;
+        var limitations = new List<string>();
+        var generated = new List<PackInventoryGenerated>();
+        PackDocument? snapshot = null;
+        if (ProjectImportScope.IsImport(model.Scope))
+        {
+            var importId = ProjectImportScope.ImportIdOf(model.Scope);
+            if (!lifecycle.Revisions.Any(r => r.WorkspaceScope == model.Scope && r.Role == nameof(WorkspaceArtifactType.SupportingDocument)))
+                limitations.Add("No supporting documentation is stored for this import. Projects imported before supporting-document discovery keep only their role documents; import the project again to include quickstart, contract and decision documents.");
+            if (lifecycle.GeneratedDocumentationSets.FirstOrDefault(s => s.ProjectImportId == importId) is { } set)
+                generated.AddRange(set.Artifacts.Where(a => DocumentationDrift.IsMarkdown(a.RelativePath)).Select(a => new PackInventoryGenerated(
+                    a.RelativePath, a.ModuleRoot ?? "", a.Kind, a.Fingerprint, a.Generator,
+                    () => lifecycle.GeneratedDocumentContents.GetValueOrDefault(a.Fingerprint))));
+            if (lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is { SourceSnapshotId: { } snapshotId } record)
+                snapshot = new PackDocument("source:" + snapshotId, "Source Analysis snapshot", null, null, record.ArchiveFileName, record.ArchiveFileName,
+                    module, null, PackDocumentOrigin.Authored, ArtifactScope.Project, null, snapshotId.ToString(), ExplorerArtifactCurrentness.Current,
+                    PackDocumentClass.SourceSnapshotReference, ["Source snapshot of the current project import — implementation source, not documentation"], null);
+        }
+        return ArtifactPackInventoryBuilder.Build(model.Scope, module, viewed, candidates, primary, generated, snapshot, limitations);
     }
 
     public ArtifactImportResult Import(ArtifactImportRequest request)

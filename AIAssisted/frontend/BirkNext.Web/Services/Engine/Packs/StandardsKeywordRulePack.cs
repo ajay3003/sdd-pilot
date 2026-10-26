@@ -28,12 +28,14 @@ public sealed class StandardsKeywordRulePack : IRulePack
 
     public RulePackResult Execute(RuleContext context)
     {
-        var text  = context.CombinedText;
-        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var lower = text.ToLowerInvariant();
+        // Each reviewed document separately when known (provenance: searched and matched documents), else the combined text.
+        var documents = context.Documents.Count > 0
+            ? context.Documents.Select(d => ((string?)d.Path, d.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries))).ToList()
+            : [((string?)null, context.CombinedText.Split('\n', StringSplitOptions.RemoveEmptyEntries))];
+        var searched = context.Documents.Select(d => d.Path).ToList();
 
         var findings = _pack.Rules
-            .Select(rule => EvaluateRule(rule, lower, lines))
+            .Select(rule => EvaluateRule(rule, documents, searched))
             .ToList();
 
         return new RulePackResult
@@ -45,11 +47,17 @@ public sealed class StandardsKeywordRulePack : IRulePack
         };
     }
 
-    private RuleFinding EvaluateRule(StandardRule rule, string lower, string[] lines)
+    private RuleFinding EvaluateRule(StandardRule rule, List<(string? Path, string[] Lines)> documents, IReadOnlyList<string> searched)
     {
+        (string? Evidence, string? Path) Find(string term)
+        {
+            foreach (var (path, lines) in documents)
+                if (ExtractPositiveEvidence(lines, term) is { } found) return (found, path);
+            return (null, null);
+        }
         foreach (var term in rule.RequiredKeywords)
         {
-            var evidence = ExtractPositiveEvidence(lines, term);
+            var (evidence, matched) = Find(term);
             if (evidence is not null)
                 return new RuleFinding
                 {
@@ -62,11 +70,13 @@ public sealed class StandardsKeywordRulePack : IRulePack
                     Status         = "Passed",
                     Evidence       = evidence,
                     Recommendation = string.Empty,
+                    MatchedDocument = matched,
+                    SearchedDocuments = searched,
                 };
         }
         foreach (var term in rule.OptionalKeywords)
         {
-            var evidence = ExtractPositiveEvidence(lines, term);
+            var (evidence, matched) = Find(term);
             if (evidence is not null)
                 return new RuleFinding
                 {
@@ -79,6 +89,8 @@ public sealed class StandardsKeywordRulePack : IRulePack
                     Status         = "Warning",
                     Evidence       = evidence,
                     Recommendation = rule.Recommendation,
+                    MatchedDocument = matched,
+                    SearchedDocuments = searched,
                 };
         }
         return new RuleFinding
@@ -91,6 +103,7 @@ public sealed class StandardsKeywordRulePack : IRulePack
             Severity       = rule.Severity,
             Status         = "Failed",
             Recommendation = rule.Recommendation,
+            SearchedDocuments = searched,
         };
     }
 

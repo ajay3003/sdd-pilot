@@ -462,13 +462,20 @@
                             @if (!string.IsNullOrWhiteSpace(_search))
                             { <span>No architecture decisions match "<strong>@_search</strong>"</span> }
                             else
-                            { <span>No architecture decisions were identified in this Plan.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: an <code>## Architecture</code> section with <code>### Decision Title</code> or <code>### ADR-01: Title</code> headings.</span></details> }
+                            { <span data-testid="pe-architecture-none">@(SupportingInspected > 0 ? $"No architecture decisions were identified in the primary Plan. {SupportingInspected} relevant supporting document{(SupportingInspected == 1 ? "" : "s")} were also inspected and state none." : "No architecture decisions were identified in the primary Plan.")</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: an <code>## Architecture</code> section with <code>### Decision Title</code> or <code>### ADR-01: Title</code> headings.</span></details> }
                         </div>
                     }
                     else if (VisibleDecisions.Any())
                     {
                         <div class="pe-adr-section">
                             <div class="pe-section-kicker">Architecture Decision Records</div>
+                            @if (SupportingInspected > 0)
+                            {
+                                <p class="pe-tab-note" data-testid="pe-architecture-scope">@((DocumentSet!.PrimaryDecisionCount == 0
+                                    ? "The primary Plan states no architecture decisions; the decisions below are stated in supporting documents of this Artifact Pack. "
+                                    : $"{DocumentSet!.PrimaryDecisionCount} decision{(DocumentSet!.PrimaryDecisionCount == 1 ? "" : "s")} in the primary Plan; the others are stated in supporting documents. ")
+                                    + $"{SupportingInspected} supporting document{(SupportingInspected == 1 ? "" : "s")} inspected.")</p>
+                            }
                             @foreach (var adr in VisibleDecisions)
                             {
                                 var isExpanded = _expanded.Contains(adr.NodeId);
@@ -478,6 +485,8 @@
                                             @if (!string.IsNullOrEmpty(adr.Id))
                                             { <span class="pe-adr-id" title="Architecture Decision Record @adr.Id">@adr.Id</span> }
                                             <span class="pe-adr-title">@adr.Title</span>
+                                            @if (DecisionSource(adr) is { } adrSource)
+                                            { <span class="pe-adr-source" data-testid="pe-adr-source" title="Stated in @adrSource">@adrSource[(adrSource.LastIndexOf('/') + 1)..]</span> }
                                         </div>
                                         <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
                                     </button>
@@ -881,19 +890,49 @@
                 <div class="pe-testing" data-birknext-projection-id="@_plan.TestingInfo?.Provenance?.ProjectionId" data-birknext-projection-kind="@_plan.TestingInfo?.Provenance?.ProjectionKind">
                     @{
                         var testing = _plan.TestingInfo;
+                        var testSet = DocumentSet ?? PlanDocumentSet.Single(_plan, text: PlanText);
+                        var supportingStatements = testSet.TestingStatements.Where(st => st.Path != testSet.Primary.Path).ToList();
+                    }
+                    @* The testing conclusion covers every inspected Plan document, never the primary plan alone when supporting documents exist. *@
+                    <dl class="pe-testing-scope" data-testid="pe-testing-scope">
+                        <div><dt>Documents inspected</dt><dd data-testid="pe-testing-documents">@testSet.Documents.Count
+                            <details class="pe-howto"><summary>Show</summary><ul class="pe-section-list">
+                                @foreach (var doc in testSet.Documents) { <li><code>@doc.Path</code> — @doc.ClassLabel</li> }
+                            </ul></details></dd></div>
+                        <div><dt>Testing statements</dt><dd data-testid="pe-testing-statement-count">@testSet.TestingStatements.Count</dd></div>
+                        <div><dt>Testing tools named</dt><dd>@(testSet.TestingTools.Count == 0 ? "None" : string.Join(", ", testSet.TestingTools.Select(t => t.Tool)))</dd></div>
+                        <div><dt>Success-criterion references</dt><dd>@(testSet.AcceptanceReferences.Count == 0 ? "None" : string.Join(", ", testSet.AcceptanceReferences.Select(r => r.Id)))</dd></div>
+                        <div><dt>Verification activities</dt><dd>@testSet.VerificationActivities.Count</dd></div>
+                    </dl>
+                    @if (testSet.TestingGaps.Count > 0)
+                    {
+                        <ul class="pe-testing-gaps" data-testid="pe-testing-gaps">
+                            @foreach (var gap in testSet.TestingGaps) { <li>@gap</li> }
+                        </ul>
+                    }
+                    @if (supportingStatements.Count > 0)
+                    {
+                        <div class="pe-testing-section" data-testid="pe-testing-supporting">
+                            <div class="pe-testing-section-title">Testing statements in supporting documents</div>
+                            <ul class="pe-section-list">
+                                @foreach (var st in supportingStatements) { <li>@st.Text <span class="pe-adr-source">@st.Path[(st.Path.LastIndexOf('/') + 1)..]</span></li> }
+                            </ul>
+                        </div>
                     }
                     @if (testing is null)
                     {
                         <div class="pe-empty-tab">
-                            <span>The Plan does not describe a testing approach.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Testing</code> section.</span></details>
+                            <span>The primary Plan does not describe a testing approach.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Testing</code> section.</span></details>
                         </div>
                     }
                     else
                     {
                         <p class="pe-tab-note" data-testid="pe-testing-note">This section shows the testing approach described in the Plan. Actual test results are shown from imported/executed test evidence elsewhere.</p>
-                        @if (PlanTesterPresentation.TestingStatements(_plan).Count == 0)
+                        @if (testSet.TestingStatements.Count == 0)
                         {
-                            <p class="pe-ov-help" data-testid="pe-testing-no-statements">The Plan names testing tools but no testing statements (what to test, how, or with which evidence).</p>
+                            <p class="pe-ov-help" data-testid="pe-testing-no-statements">@(testSet.Documents.Count > 1
+                                ? $"The {testSet.Documents.Count} inspected Plan documents name testing tools but no testing statements (what to test, how, or with which evidence)."
+                                : "The Plan names testing tools but no testing statements (what to test, how, or with which evidence).")</p>
                         }
                         <!-- Free-form blocks: the Plan's own testing statements first -->
                         @foreach (var block in testing.Blocks.Where(b => b.HasContent || b.SubHeading is not null))
@@ -1103,6 +1142,8 @@
     [Parameter] public ArtifactExplorerState? SpecificationState { get; set; }
     [Parameter] public string? InitialView { get; set; }
     [Parameter] public EventCallback<string> OnTextChanged { get; set; }
+    /// <summary>The Plan as a document set (primary plus the pack's supporting plan documents from the canonical inventory); null = primary only.</summary>
+    [Parameter] public PlanDocumentSet? DocumentSet { get; set; }
 
     private PlanDocument? _plan;
     private string _localText = string.Empty;
@@ -1129,8 +1170,18 @@
         _              => "Search...",
     };
 
+    /// <summary>Decisions of the whole Plan document set (primary first), else of the primary Plan only.</summary>
+    private IReadOnlyList<PlanArchitectureDecision> AllDecisions =>
+        DocumentSet is { } set ? [.. set.Decisions.Select(d => d.Decision)] : _plan?.ArchitectureDecisions ?? [];
+
     private IEnumerable<PlanArchitectureDecision> VisibleDecisions =>
-        _plan is null ? [] : AnalysisService.SearchDecisions(_plan.ArchitectureDecisions, _search);
+        _plan is null ? [] : AnalysisService.SearchDecisions(AllDecisions, _search);
+
+    /// <summary>The supporting document a decision is stated in; null for the primary Plan.</summary>
+    private string? DecisionSource(PlanArchitectureDecision adr) =>
+        DocumentSet?.Decisions.FirstOrDefault(d => ReferenceEquals(d.Decision, adr)) is { IsPrimary: false } d ? d.Path : null;
+
+    private int SupportingInspected => DocumentSet?.Supporting.Count ?? 0;
 
     private IEnumerable<PlanRisk> VisibleRisks
     {
@@ -1185,7 +1236,7 @@
         _              => 0,
     };
 
-    private string AdrBadge         => _plan?.ArchitectureDecisions.Count > 0 ? $"({_plan.ArchitectureDecisions.Count})" : string.Empty;
+    private string AdrBadge         => AllDecisions.Count > 0 ? $"({AllDecisions.Count})" : string.Empty;
     private string ComplexityBadge   => _plan?.ComplexityItems.Count > 0 ? $"({_plan.ComplexityItems.Count})" : string.Empty;
 
     /// <summary>The tab holds risks and constraints; each gets its own count so neither is mistaken for the other.</summary>

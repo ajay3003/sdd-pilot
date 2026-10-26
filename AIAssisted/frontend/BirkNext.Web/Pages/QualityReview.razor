@@ -234,7 +234,7 @@
         @if (_inputExpanded)
         {
             <p class="qr-section-desc">Available means the artifact is present in the current workspace. It is not a review, an approval or a pass.</p>
-            <p class="qr-section-desc" data-testid="qr-primary-note">Primary artifacts of the selected Artifact Pack — pack-local documents and the shared documents (such as the module Constitution) that apply to it. The Review Packs read these primary documents only; supporting pack documentation is not read.</p>
+            <p class="qr-section-desc" data-testid="qr-primary-note">Primary artifacts of the selected Artifact Pack — pack-local documents and the shared documents (such as the module Constitution) that apply to it. Supporting documentation of the pack is listed below; each Review Pack reads the documents its input contract names.</p>
             @if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired))
             {
                 <p role="status" class="qr-inline-note" data-testid="qr-selection-required">@(PackRequired
@@ -265,6 +265,60 @@
                     </div>
                 }
             </div>
+
+            @* The canonical Artifact Pack inventory: supporting, generated and excluded documents with their reasons — never rediscovered here. *@
+            @if (_inventory is { } inventory && inventory.Documents.Count > 0)
+            {
+                var supportingDocs = inventory.Supporting.Where(d => d.IsAuthored).ToList();
+                var generatedDocs = inventory.Generated;
+                <section class="qr-doc-scope" data-testid="qr-document-scope">
+                    <h3 class="qr-doc-scope-title">Supporting documentation included in this review <span class="qr-doc-scope-count" data-testid="qr-supporting-count">@supportingDocs.Count</span></h3>
+                    @if (supportingDocs.Count == 0)
+                    {
+                        <p class="qr-context-label" data-testid="qr-supporting-none">No supporting documentation applies to this Artifact Pack.</p>
+                    }
+                    else
+                    {
+                        <ul class="qr-doc-list">
+                            @foreach (var doc in supportingDocs)
+                            {
+                                <li data-testid="qr-supporting-doc" data-path="@doc.Path">
+                                    <span class="qr-doc-name">@doc.Kind</span> <span class="qr-provenance-path">@doc.Path</span>
+                                    <span class="qr-context-label"> · @doc.ClassLabel · @doc.Reason@(doc.Fingerprint is { Length: > 0 } fp ? $" · fingerprint {fp[..Math.Min(12, fp.Length)]}" : "")</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (generatedDocs.Count > 0)
+                    {
+                        <details class="qr-doc-details" data-testid="qr-generated-docs">
+                            <summary>Generated documentation — derived, used only by Review Packs that request it (@generatedDocs.Count)</summary>
+                            <ul class="qr-doc-list">
+                                @foreach (var doc in generatedDocs)
+                                {
+                                    <li><span class="qr-provenance-path">@doc.Path</span> <span class="qr-context-label"> · @doc.Reason</span></li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                    @if (inventory.Excluded.Count > 0)
+                    {
+                        <details class="qr-doc-details" data-testid="qr-excluded-docs">
+                            <summary>Documents excluded from this review (@inventory.Excluded.Count)</summary>
+                            <ul class="qr-doc-list">
+                                @foreach (var doc in inventory.Excluded)
+                                {
+                                    <li><span class="qr-provenance-path">@doc.Path</span> <span class="qr-context-label"> · @doc.Reason</span></li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                    @foreach (var limitation in inventory.Limitations)
+                    {
+                        <p class="qr-inline-note" role="status" data-testid="qr-scope-limitation">@limitation</p>
+                    }
+                </section>
+            }
 
             <!-- ── Review pack selector ─────────────────────────────────── -->
             <div class="qr-packs-section">
@@ -419,7 +473,44 @@
                         </li>
                     }
                 </ul>
-                <p class="qr-context-label" data-testid="qr-provenance-additional">Additional documentation read: none — the Review Packs read only the primary documents above (no research, quickstart, contract or sibling-pack documents, no generated documentation).</p>
+                @{ var additional = _report.DocumentsRead.Where(d => d.Category != "Primary artifacts").ToList(); }
+                @if (additional.Count > 0)
+                {
+                    @foreach (var group in additional.GroupBy(d => d.Category))
+                    {
+                        <span class="qr-context-label" data-testid="qr-provenance-group" data-category="@group.Key">@group.Key — @group.Count()</span>
+                        <ul class="qr-provenance-list">
+                            @foreach (var doc in group)
+                            {
+                                <li data-testid="qr-provenance-document" data-path="@doc.Path">
+                                    <strong>@doc.Kind</strong> · @doc.Scope · <span class="qr-provenance-path">@doc.Path</span>
+                                    <span class="qr-context-label">@(doc.Fingerprint is { Length: > 0 } fp ? $" · fingerprint {fp[..Math.Min(12, fp.Length)]}" : "")@(doc.Revision is { } rev ? $" · revision {rev}" : "") · @doc.Reason · read by @(doc.ConsumedBy.Count == 0 ? "no selected Review Pack" : string.Join(", ", doc.ConsumedBy))</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                }
+                else if (_report.HasDocumentScope)
+                {
+                    <p class="qr-context-label" data-testid="qr-provenance-additional">Additional documentation read: none — no supporting documentation applies to this Artifact Pack.</p>
+                }
+                else
+                {
+                    <p class="qr-context-label" data-testid="qr-provenance-additional">Additional documentation read: none — this result was produced from the primary documents only.</p>
+                }
+                @if (_report.DocumentsExcluded.Count > 0)
+                {
+                    <details class="qr-doc-details" data-testid="qr-provenance-excluded">
+                        <summary>Documents excluded (@_report.DocumentsExcluded.Count)</summary>
+                        <ul class="qr-provenance-list">
+                            @foreach (var doc in _report.DocumentsExcluded) { <li><span class="qr-provenance-path">@doc.Path</span> · @doc.Reason</li> }
+                        </ul>
+                    </details>
+                }
+                @foreach (var limitation in _report.ScopeLimitations)
+                {
+                    <p class="qr-inline-note" role="status">@limitation</p>
+                }
             </section>
         }
 
@@ -430,11 +521,12 @@
             <div class="qr-readiness-summary">
                 @if (DeliveryReadinessResult is { } delivery)
                 {
-                    <div class="qr-readiness-state">
-                        <span class="qr-readiness-label">Release:</span>
-                        <strong class="qr-readiness-value is-@DrStateChip(delivery.ReleaseDecision.State)">@DrStateLabel(delivery.ReleaseDecision.State)</strong>
+                    <div class="qr-readiness-state" data-testid="qr-readiness-state" data-release-significant="@delivery.ReleaseSignificant.ToString().ToLowerInvariant()">
+                        <span class="qr-readiness-label">@DocumentationGate.Heading(delivery.ReleaseSignificant):</span>
+                        <strong class="qr-readiness-value is-@DrGateChip(delivery)">@DocumentationGate.StateLabel(delivery.ReleaseDecision.State, delivery.ReleaseSignificant)</strong>
                     </div>
-                    <div class="qr-gate-issues">@delivery.Blockers.Count delivery gate issue@(delivery.Blockers.Count != 1 ? "s" : "")</div>
+                    <div class="qr-gate-issues">@delivery.Blockers.Count @(delivery.ReleaseSignificant ? "delivery gate" : "documentation readiness") issue@(delivery.Blockers.Count != 1 ? "s" : "")</div>
+                    <div class="qr-context-label" data-testid="qr-gate-policy">@(delivery.ReleaseSignificant ? $"Release gate per project policy {delivery.PolicySource}." : DocumentationGate.AdvisoryNote)</div>
                 }
                 else
                 {
@@ -502,15 +594,15 @@
                             else if (result.DeliveryReadiness is { } deliveryReadiness)
                             {
                                 <div class="qr-pack-card-release-state">
-                                    <span>Release:</span>
-                                    <strong class="is-@DrStateChip(deliveryReadiness.ReleaseDecision.State)">@DrStateLabel(deliveryReadiness.ReleaseDecision.State).ToUpperInvariant()</strong>
+                                    <span>@DocumentationGate.Heading(deliveryReadiness.ReleaseSignificant):</span>
+                                    <strong class="is-@DrGateChip(deliveryReadiness)">@DocumentationGate.StateLabel(deliveryReadiness.ReleaseDecision.State, deliveryReadiness.ReleaseSignificant)</strong>
                                 </div>
                                 <div class="qr-pack-card-gate-issues">
                                     @(deliveryReadiness.Blockers.Count == 0
-                                        ? "No delivery gate issues"
-                                        : $"{deliveryReadiness.Blockers.Count} delivery gate issue{(deliveryReadiness.Blockers.Count != 1 ? "s" : "")}")
+                                        ? "No documentation readiness issues"
+                                        : $"{deliveryReadiness.Blockers.Count} {(deliveryReadiness.ReleaseSignificant ? "delivery gate" : "documentation readiness")} issue{(deliveryReadiness.Blockers.Count != 1 ? "s" : "")}{(deliveryReadiness.ReleaseSignificant ? "" : " · advisory")}")
                                 </div>
-                                <div class="qr-pack-card-score"><span>Readiness score</span> @result.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</div>
+                                <div class="qr-pack-card-score"><span>Documentation readiness score</span> @result.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</div>
                                 <div class="qr-pack-card-affordance">View gates →</div>
                             }
                             else
@@ -660,6 +752,8 @@
     private string _planText         = string.Empty;
     private string _taskText         = string.Empty;
     private string _dataModelText    = string.Empty;
+    /// <summary>The canonical document inventory of the reviewed Artifact Pack (supporting, generated, excluded documents with reasons).</summary>
+    private BirkNext.Web.Services.Explorers.ArtifactPackInventory? _inventory;
 
     private string? _selectedProject;
     private string? _selectedProjectName;
@@ -858,6 +952,8 @@
         _planText = Content(WorkspaceArtifactType.Plan);
         _taskText = Content(WorkspaceArtifactType.Tasks);
         _dataModelText = Content(WorkspaceArtifactType.DataModel);
+        try { _inventory = await ArtifactContext.GetPackInventoryAsync(); }
+        catch (Exception) { _inventory = null; }
         _selectedProject = ArtifactContext.CurrentScope;
         _previousProject = _selectedProject;
         _selectedProjectName = _selectedProject;
@@ -1081,8 +1177,10 @@
             ArtifactPack = QualitySession.ReviewInputs.Select(i => i.Pack).FirstOrDefault(p => p is not null),
             Module = QualitySession.ReviewInputs.Select(i => i.Module).FirstOrDefault(m => !string.IsNullOrEmpty(m)),
             ReviewPackIds = selectedPackIds.ToList(),
-            EvidenceScope = "Primary documents of the Artifact Pack (pack-local) and the shared documents that apply to it; supporting documents are not read.",
-            AdditionalEvidenceFiles = [],
+            EvidenceScope = report.HasDocumentScope
+                ? "Primary documents of the Artifact Pack and the supporting, shared and requested generated documents of its inventory, per Review Pack input contract."
+                : "Primary documents only (no Artifact Pack inventory was available).",
+            AdditionalEvidenceFiles = [.. report.DocumentsRead.Where(d => d.Category != "Primary artifacts").Select(d => d.Path)],
             Requirements = [.. rows.Select(r => new RequirementDiagnostic
             {
                 Id = r.Requirement.Id, Scope = lifecycle?.ActiveRequirementScope,
@@ -1117,13 +1215,17 @@
             var inputs = ArtifactPackReview.InputsOf(_roleStates.Values);
             QualitySession.MarkRunning(selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot, inputs);
 
-            _report = await QrService.RunAsync(
-                string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
-                string.IsNullOrWhiteSpace(_specText)         ? null : _specText,
-                string.IsNullOrWhiteSpace(_planText)         ? null : _planText,
-                string.IsNullOrWhiteSpace(_taskText)         ? null : _taskText,
-                string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
-                selectedPackIds);
+            // No project policy gives Document Quality Review release significance today: Delivery Readiness runs as advisory.
+            _report = await QrService.RunAsync(new QualityReviewRunInput
+            {
+                ConstitutionText = string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
+                SpecText         = string.IsNullOrWhiteSpace(_specText)         ? null : _specText,
+                PlanText         = string.IsNullOrWhiteSpace(_planText)         ? null : _planText,
+                TaskText         = string.IsNullOrWhiteSpace(_taskText)         ? null : _taskText,
+                DataModelText    = string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
+                Inventory        = _inventory,
+                Policy           = DocumentationGatePolicy.None,
+            }, selectedPackIds);
 
             QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot, inputs);
 
@@ -1365,7 +1467,8 @@
             if (r.DeliveryReadiness is not null)
                 foreach (var b in r.DeliveryReadiness.Blockers)
                 {
-                    var sev = DrSevCard(b.Severity);
+                    // Advisory documentation readiness (no release-gate policy) never ranks as a Critical/High issue.
+                    var sev = r.DeliveryReadiness.ReleaseSignificant ? DrSevCard(b.Severity) : "info";
                     var logicalId = $"SEMANTIC:{b.Title}";
                     allIssues.Add((logicalId, b.Title, b.Title, b.Description ?? "", sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
@@ -1911,6 +2014,8 @@
                 __builder.AddAttribute(seq++, "Description", r.Description);
                 if (!string.IsNullOrEmpty(r.Recommendation))
                     __builder.AddAttribute(seq++, "SuggestedFix", r.Recommendation);
+                if (StandardEvidenceReference(r) is { } evidenceReference)
+                    __builder.AddAttribute(seq++, "Reference", evidenceReference);
                 __builder.CloseComponent();
             }
             __builder.CloseElement();
@@ -2106,20 +2211,21 @@
     private RenderFragment RenderDeliveryReadinessSection(DeliveryReadinessReport report) => __builder =>
     {
         <div class="dr-decision-hierarchy">
-            <div class="dr-release-decision is-@DrStateChip(report.ReleaseDecision.State)">
-                <div class="dr-release-label">Release</div>
-                <div class="dr-release-state">@DrStateLabel(report.ReleaseDecision.State).ToUpperInvariant()</div>
+            <div class="dr-release-decision is-@DrGateChip(report)" data-testid="dr-release-decision">
+                <div class="dr-release-label">@DocumentationGate.Heading(report.ReleaseSignificant)</div>
+                <div class="dr-release-state">@DocumentationGate.StateLabel(report.ReleaseDecision.State, report.ReleaseSignificant).ToUpperInvariant()</div>
                 <div class="dr-release-issues">
-                    @report.Blockers.Count delivery gate issue@(report.Blockers.Count != 1 ? "s" : "")
+                    @report.Blockers.Count @(report.ReleaseSignificant ? "delivery gate" : "documentation readiness") issue@(report.Blockers.Count != 1 ? "s" : "")
                     @if (report.Blockers.Any(b => b.Severity == GateSeverity.Critical))
                     {
                         <span> · @report.Blockers.Count(b => b.Severity == GateSeverity.Critical) critical</span>
                     }
                 </div>
-                @if (!string.IsNullOrWhiteSpace(report.ReleaseDecision.Summary))
+                @if (DocumentationGate.Summary(report.ReleaseDecision, report.ReleaseSignificant) is { Length: > 0 } releaseSummary)
                 {
-                    <div class="dr-release-summary">@report.ReleaseDecision.Summary</div>
+                    <div class="dr-release-summary">@releaseSummary</div>
                 }
+                <div class="dr-release-summary" data-testid="dr-gate-policy">@(report.ReleaseSignificant ? $"Release gate per project policy {report.PolicySource}." : DocumentationGate.AdvisoryNote)</div>
             </div>
             <div class="dr-supporting-decisions">
                 @DrSupportingDecision(report.DevelopmentDecision)
@@ -2773,6 +2879,28 @@
         ReadinessState.Blocked     => "critical",
         _                          => "neutral",
     };
+
+    /// <summary>
+    /// Which documents a standards rule searched and which one matched: "Not found in reviewed documentation — searched 9 documents: …" or
+    /// "Weak mention in research.md: '…'". Null when the run did not know its documents.
+    /// </summary>
+    private static string? StandardEvidenceReference(StandardCheckResult r)
+    {
+        if (r.SearchedDocuments.Count == 0) return null;
+        static string Name(string path) => path[(path.LastIndexOf('/') + 1)..];
+        return r.Status switch
+        {
+            CheckStatus.Failed => $"Not found in reviewed documentation — searched {r.SearchedDocuments.Count} document{(r.SearchedDocuments.Count == 1 ? "" : "s")}: {string.Join(", ", r.SearchedDocuments.Select(Name))}",
+            CheckStatus.Warning when r.MatchedDocument is { } matched => $"Potential documentation gap — weak mention in {matched}{(string.IsNullOrEmpty(r.Evidence) ? "" : $": “{r.Evidence}”")}",
+            _ when r.MatchedDocument is { } matched => $"Documented in {matched}",
+            _ => null,
+        };
+    }
+
+    /// <summary>Blocking tones only under a release-gate policy; an advisory documentation gate is a warning at most.</summary>
+    private static string DrGateChip(DeliveryReadinessReport report) =>
+        report.ReleaseSignificant ? DrStateChip(report.ReleaseDecision.State)
+        : report.ReleaseDecision.State == ReadinessState.Ready ? "healthy" : "warning";
 
     private static string DrSevCard(GateSeverity sev) => sev switch
     {

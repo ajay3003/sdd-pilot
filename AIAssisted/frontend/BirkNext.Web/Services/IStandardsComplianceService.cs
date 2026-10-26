@@ -33,5 +33,7 @@ public interface IStandardsComplianceService
         bool                hasSpec,
         bool                hasPlan,
         bool                hasTasks,
-        IEnumerable<string> selectedStandards);
+        IEnumerable<string> selectedStandards,
+        // When given, each reviewed document is searched separately so results name the searched and matching documents.
+        IReadOnlyList<BirkNext.Web.Services.Engine.RuleDocument>? documents = null);
 }

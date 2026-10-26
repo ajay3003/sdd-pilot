@@ -20,7 +20,9 @@ public sealed class TraceabilityItemTextTests : BunitContext
             .Add(x => x.ItemId, "ID-42")
             .Add(x => x.Text, fullText));
 
-        cut.Markup.Should().Contain(fullText);
+        // The whole text stays in the document; collapsed, everything after the preview is hidden until Show more.
+        cut.Find(".traceability-item__text").TextContent.Should().Be(fullText);
+        cut.Find(".traceability-item__rest").HasAttribute("hidden").Should().BeTrue();
         cut.Find(".traceability-item__text").ClassList.Should().Contain("is-collapsed");
         var toggle = cut.Find(".traceability-item__toggle");
         toggle.TextContent.Should().Be("Show more");
@@ -28,6 +30,7 @@ public sealed class TraceabilityItemTextTests : BunitContext
         toggle.Click();
 
         cut.Find(".traceability-item__text").ClassList.Should().NotContain("is-collapsed");
+        cut.Find(".traceability-item__rest").HasAttribute("hidden").Should().BeFalse();
         cut.Find(".traceability-item__toggle").TextContent.Should().Be("Show less");
         cut.Find(".traceability-item__toggle").GetAttribute("aria-expanded").Should().Be("true");
         cut.Markup.Should().Contain("ID-42");

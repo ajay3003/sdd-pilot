@@ -28,7 +28,7 @@ public sealed class MarkdownSourceNotesPanelTests : BunitContext
 
         var rendered = Render<MarkdownSourceNotesPanel>(parameters => parameters.Add(p => p.Blocks, blocks));
 
-        rendered.Find("[data-testid=markdown-source-notes-summary]").TextContent.Should().Contain("3 source blocks were not mapped to structured fields.");
+        rendered.Find("[data-testid=markdown-source-notes-summary]").TextContent.Should().Contain("3 source blocks were not mapped to structured fields and are kept as raw source notes.");
         rendered.Markup.Should().NotContain("Lines 12", "line ranges and parser block types are technical detail, rendered on request");
         rendered.Find("[data-testid=markdown-source-notes-toggle]").Click();
         rendered.FindAll("article[data-source-block-id]").Select(x => x.GetAttribute("data-source-block-id"))

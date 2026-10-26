@@ -42,6 +42,11 @@ public sealed class QualityReviewPackResult
     public QAReadinessReport?            QaReadiness      { get; init; }
     public DeliveryReadinessReport?      DeliveryReadiness { get; init; }
     public DataModelDocument?            DataModel         { get; init; }
+
+    /// <summary>What this Review Pack reads (its input contract), in tester words.</summary>
+    public string? InputContract { get; init; }
+    /// <summary>Documents read as context only (never scored), e.g. generated data-model documentation for Data Model Quality.</summary>
+    public List<string> ContextDocuments { get; init; } = [];
 }
 
 // ── Aggregate report ──────────────────────────────────────────────────────────
@@ -59,4 +64,51 @@ public sealed class QualityReviewReport
     public int            MediumCount    { get; init; }
     public int            LowCount       { get; init; }
     public DateTimeOffset RunAt          { get; init; }
+
+    /// <summary>Authoritative review provenance: every document read (primary, supporting, shared, generated) and the packs that read it.</summary>
+    public List<QualityReviewDocumentRead> DocumentsRead { get; init; } = [];
+    /// <summary>Documents considered and left out, with the reason (sibling pack, history, generated not requested …).</summary>
+    public List<QualityReviewDocumentExcluded> DocumentsExcluded { get; init; } = [];
+    /// <summary>Limitations of the document scope (e.g. an import that kept no supporting documents).</summary>
+    public List<string> ScopeLimitations { get; init; } = [];
+    /// <summary>True when the run knew its document scope (an Artifact Pack inventory); false for text-only runs.</summary>
+    public bool HasDocumentScope { get; init; }
+    /// <summary>The documentation gate policy the run applied (None: Delivery Readiness is advisory).</summary>
+    public BirkNext.Web.Services.DocumentationGatePolicy Policy { get; init; } = BirkNext.Web.Services.DocumentationGatePolicy.None;
 }
+
+// ── Review input scope and provenance ─────────────────────────────────────────
+
+/// <summary>
+/// What one Document Quality Review run reads: the primary documents' text and, when known, the Artifact Pack's canonical inventory (supporting
+/// and generated documents with provenance) and the documentation gate policy in force.
+/// </summary>
+public sealed class QualityReviewRunInput
+{
+    public string? ConstitutionText { get; init; }
+    public string? SpecText         { get; init; }
+    public string? PlanText         { get; init; }
+    public string? TaskText         { get; init; }
+    public string? DataModelText    { get; init; }
+    public BirkNext.Web.Services.Explorers.ArtifactPackInventory? Inventory { get; init; }
+    public BirkNext.Web.Services.DocumentationGatePolicy Policy { get; init; } = BirkNext.Web.Services.DocumentationGatePolicy.None;
+}
+
+/// <summary>One document a review run read, as it was read: identity, provenance, why it was included and which Review Packs consumed it.</summary>
+public sealed class QualityReviewDocumentRead
+{
+    public string Path        { get; init; } = string.Empty;
+    public string Kind        { get; init; } = string.Empty;
+    /// <summary>"Primary · pack-local", "Supporting · shared module", "Generated documentation" …</summary>
+    public string ClassLabel  { get; init; } = string.Empty;
+    public string Category    { get; init; } = string.Empty;
+    public string Origin      { get; init; } = string.Empty;
+    public string Scope       { get; init; } = string.Empty;
+    public string? Fingerprint { get; init; }
+    public int?   Revision    { get; init; }
+    public string Reason      { get; init; } = string.Empty;
+    public List<string> ConsumedBy { get; init; } = [];
+}
+
+/// <summary>A document considered and left out of the review, with the reason.</summary>
+public sealed record QualityReviewDocumentExcluded(string Path, string Kind, string Reason);

@@ -38,6 +38,8 @@ public sealed class ComplianceResult
     public List<string> SpecReferences  { get; init; } = [];
     public List<string> PlanReferences  { get; init; } = [];
     public List<string> TaskReferences  { get; init; } = [];
+    /// <summary>Supporting documents of the Artifact Pack (outside Specification, Plan and Tasks) that cite the rule, by path.</summary>
+    public List<string> SupportingReferences { get; init; } = [];
 }
 
 // ── Violation ─────────────────────────────────────────────────────────────────

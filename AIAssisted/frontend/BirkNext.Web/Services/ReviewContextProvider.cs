@@ -107,7 +107,9 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                 string? Content(WorkspaceArtifactType role) => roles.FirstOrDefault(state => state.Role == role) is { Status: BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded } state ? state.Content : null;
                 constitution = BuildConstitutionModel(Content(WorkspaceArtifactType.Constitution));
                 specification = BuildSpecificationModel(Content(WorkspaceArtifactType.Specification));
-                plan = BuildPlanModel(Content(WorkspaceArtifactType.Plan));
+                // Requirement IDs in the pack's own supporting plan documents (research, contracts …) are plan references too.
+                var inventory = await _artifactContext.GetPackInventoryAsync();
+                plan = BuildPlanModel(Content(WorkspaceArtifactType.Plan), inventory);
                 tasks = BuildTasksModel(Content(WorkspaceArtifactType.Tasks));
                 dataModel = BuildDataModelModel(Content(WorkspaceArtifactType.DataModel));
             }
@@ -202,7 +204,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
     private PlanSemanticModel BuildPlanModel()
         => BuildPlanModel(_artifacts.Get(WorkspaceArtifactType.Plan)?.Text);
 
-    private PlanSemanticModel BuildPlanModel(string? text)
+    private PlanSemanticModel BuildPlanModel(string? text, BirkNext.Web.Services.Explorers.ArtifactPackInventory? inventory = null)
     {
         try
         {
@@ -213,6 +215,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
             }
 
             var document = _planService.Parse(text);
+            PlanDocumentSet.AddPackScopedMentions(document, inventory);
             var model = PlanAnalysisService.BuildSemanticModel(document);
             _logger.LogInformation("Plan model built: {PhaseCount} phases", model.Phases.Count);
             return model;

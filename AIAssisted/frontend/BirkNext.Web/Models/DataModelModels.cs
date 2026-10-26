@@ -16,9 +16,16 @@ public sealed class DataModelDocument
     public List<DataModelEvidenceGap> EvidenceGaps { get; init; } = [];
     public List<MarkdownSourceNote> UnmappedSourceBlocks { get; init; } = [];
     public DataModelEvidenceState ColumnEvidence { get; init; } = DataModelEvidenceState.NotExtracted;
-    public DataModelEvidenceState RelationshipEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
-    public DataModelEvidenceState IndexEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
-    public DataModelEvidenceState ConstraintEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
+    public DataModelEvidenceState RelationshipEvidence { get; set; } = DataModelEvidenceState.NotRepresented;
+    public DataModelEvidenceState IndexEvidence { get; set; } = DataModelEvidenceState.NotRepresented;
+    public DataModelEvidenceState ConstraintEvidence { get; set; } = DataModelEvidenceState.NotRepresented;
+
+    /// <summary>
+    /// Generated documentation (autodoc): derived, and its generator may simply omit declarations. Omissions are then listed in
+    /// <see cref="NotStatedInGeneratedDocumentation"/> as unknown evidence, never as model findings.
+    /// </summary>
+    public bool IsGeneratedDocumentation { get; set; }
+    public List<DataModelFinding> NotStatedInGeneratedDocumentation { get; init; } = [];
 
     public int EntityCount       => Entities.Count;
     public int ColumnCount       => Entities.Sum(e => e.Columns.Count);

@@ -2184,8 +2184,11 @@ button.te-ref-chip:hover {
     color: var(--clr-text-subtle, #475569);
 }
 
+/* Design-system secondary button (btn-secondary), compact inside the summary line. */
 .te-summary-link {
     margin-left: 0.35rem;
+    min-height: 26px;
+    padding: 0.1rem 0.55rem;
     font-weight: 500;
     font-size: 0.78rem;
 }

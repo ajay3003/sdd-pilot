@@ -207,7 +207,10 @@ public sealed class ReportExportService : IReportExportService
                 sb.Append("<div class=\"gate-row\">\n");
                 sb.Append(GateCard(dr.DevelopmentDecision.Name, dr.DevelopmentDecision.State.ToString(), dr.DevelopmentDecision.Score));
                 sb.Append(GateCard(dr.TestingDecision.Name, dr.TestingDecision.State.ToString(), dr.TestingDecision.Score));
-                sb.Append(GateCard(dr.ReleaseDecision.Name, dr.ReleaseDecision.State.ToString(), dr.ReleaseDecision.Score));
+                // Without a release-gate policy the release decision is advisory documentation readiness, never "Blocked".
+                sb.Append(dr.ReleaseSignificant
+                    ? GateCard(dr.ReleaseDecision.Name, dr.ReleaseDecision.State.ToString(), dr.ReleaseDecision.Score)
+                    : GateCard("Documentation gate (advisory)", DocumentationGate.StateLabel(dr.ReleaseDecision.State, false), dr.ReleaseDecision.Score));
                 sb.Append("</div>\n");
 
                 if (dr.Blockers.Count > 0)

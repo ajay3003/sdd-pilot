@@ -143,7 +143,7 @@ public class PlanExplorerTesterViewTests : BunitContext
         var plan = new PlanAnalysisService().Parse("# Plan\n\n## Summary\n\nSmall change.\n");
         var cut = Render<PlanExplorerPanel>(p => p.Add(x => x.ParsedPlan, plan).Add(x => x.InitialView, "architecture"));
         var empty = cut.Find(".pe-empty-tab");
-        empty.TextContent.Should().StartWith("No architecture decisions were identified in this Plan.");
+        empty.TextContent.Should().StartWith("No architecture decisions were identified in the primary Plan.");
         empty.QuerySelector("details")!.HasAttribute("open").Should().BeFalse("authoring instructions are not the primary message");
     }
 

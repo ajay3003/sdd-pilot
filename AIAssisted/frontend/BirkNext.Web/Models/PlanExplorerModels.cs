@@ -184,6 +184,8 @@ public sealed class PlanArchitectureDecision
     public string? Rationale { get; init; }
     public List<string> Consequences { get; init; } = [];
     public string RawText { get; init; } = string.Empty;
+    /// <summary>The supporting document of the Plan document set that states this decision (e.g. research.md); null for the primary Plan.</summary>
+    public string? SourceDocument { get; init; }
 }
 
 // ── Complexity ────────────────────────────────────────────────────────────────
@@ -351,7 +353,7 @@ public sealed class PlanHealth
     public int UnratedRisks { get; init; }
 
     // Architecture
-    public int TotalArchitectureDecisions { get; init; }
+    public int TotalArchitectureDecisions { get; set; }
 
     // Complexity
     public int TotalComplexityItems { get; init; }
@@ -393,8 +395,9 @@ public sealed class PlanHealth
     public bool HasConstitutionCheck { get; init; }
     public bool HasProjectStructure { get; init; }
     public bool HasImplementationPhases { get; init; }
-    public bool HasTestingInfo { get; init; }
-    public bool HasArchitecture { get; init; }
+    /// <summary>Settable so a review can widen the primary plan to its document set (supporting testing/architecture statements).</summary>
+    public bool HasTestingInfo { get; set; }
+    public bool HasArchitecture { get; set; }
 
     // Special cases
     public bool IsFrontendOnly { get; init; }

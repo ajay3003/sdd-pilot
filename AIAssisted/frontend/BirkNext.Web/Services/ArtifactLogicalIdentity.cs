@@ -55,6 +55,24 @@ public static partial class ArtifactLogicalIdentity
             return new ArtifactHistory(g.Key, ordered[0].Role, path, ScopeOf(path), versions, ordered[^1]);
         }).OrderBy(h => h.Role, StringComparer.Ordinal).ThenBy(h => h.Path, StringComparer.OrdinalIgnoreCase)];
 
+    /// <summary>History breadth: the viewed Artifact Pack (default), its module, or every artifact of the workspace.</summary>
+    public enum HistoryScope { ArtifactPack, Module, All }
+
+    /// <summary>
+    /// Whether a history belongs to the current project and the chosen breadth. The Artifact Pack scope keeps the pack's own documents and the
+    /// shared documents of its module (and the project root); never a sibling pack's. Without a module or pack the narrower scopes widen.
+    /// </summary>
+    public static bool InScope(ArtifactHistory history, string? project, string? module, string? pack, HistoryScope scope)
+    {
+        if (scope == HistoryScope.All) return true;
+        if (project is not null && !string.Equals(history.Key.Split('|')[1], project, StringComparison.OrdinalIgnoreCase)) return false;
+        var path = history.Path.Replace('\\', '/');
+        var projectLevel = !path.Contains('/') || path.StartsWith(".specify/", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(module) && !projectLevel && !path.StartsWith(module + "/", StringComparison.OrdinalIgnoreCase)) return false;
+        if (scope == HistoryScope.Module || string.IsNullOrEmpty(pack)) return true;
+        return PackFolder().Match(path) is not { Success: true } m || string.Equals(m.Groups[1].Value, pack, StringComparison.Ordinal);
+    }
+
     [GeneratedRegex(@"(?:^|/)specs/([^/]+)/", RegexOptions.IgnoreCase)]
     private static partial Regex PackFolder();
 }

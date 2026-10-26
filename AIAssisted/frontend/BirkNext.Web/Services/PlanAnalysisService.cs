@@ -25,6 +25,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         @"\b(FR)-?\s*(\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // "Decision: Runtime", "Decision 001: Drop uniqueness", "ADR-002 — Outbox": an explicitly stated decision heading.
+    private static readonly Regex ExplicitDecisionRe = new(
+        @"^(?:decision|(?=adr)ADR)(?:[\s-]*((?:ADR-?)?\d+))?\s*[:\-–—]\s*(.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex AdrIdRe = new(
         @"^(ADR-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -440,6 +444,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         FlushSection();
 
+        // Explicit decision headings anywhere ("### Decision: Runtime", "# Decision 001: …", "## ADR-002: …"): a stated decision, wherever it is.
+        ExtractExplicitDecisions(tokens, decisions, documentFingerprint);
+
         // Detect phases from any section if not already found
         if (phases.Count == 0)
             ExtractPhasesFromSections(sections, phases);
@@ -739,6 +746,37 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         }
     }
 
+    /// <summary>
+    /// Decisions stated by an explicit heading outside an Architecture section: "Decision: X", "Decision 001: X" or "ADR-002: X" at any level.
+    /// The body runs to the next heading of the same or a higher level (a whole ADR document for its title). Already extracted titles are kept once.
+    /// </summary>
+    private static void ExtractExplicitDecisions(IReadOnlyList<MarkdownToken> tokens, List<PlanArchitectureDecision> decisions, string documentFingerprint)
+    {
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            var tok = tokens[i];
+            if (tok.Kind != MarkdownTokenKind.Heading || ExplicitDecisionRe.Match(tok.Content.Trim()) is not { Success: true } match) continue;
+            var title = StripMarkdown(match.Groups[2].Value.Trim());
+            if (title.Length == 0 || decisions.Any(d => string.Equals(d.Title, title, StringComparison.OrdinalIgnoreCase))) continue;
+            var body = new List<string>();
+            var end = tok.LineIndex;
+            for (var j = i + 1; j < tokens.Count && !(tokens[j].Kind == MarkdownTokenKind.Heading && tokens[j].HeadingLevel <= tok.HeadingLevel); j++)
+            {
+                body.Add(tokens[j].RawLine);
+                if (tokens[j].Kind != MarkdownTokenKind.Blank) end = tokens[j].LineIndex;
+            }
+            var text = string.Join("\n", body);
+            var source = ProjectionProvenance.Source(documentFingerprint, tok.LineIndex + 1, end + 1, "PlanArchitectureDecision", tok.Content + "\n" + text);
+            var id = match.Groups[1].Success && match.Groups[1].Value.Length > 0 ? match.Groups[1].Value.ToUpperInvariant().Replace(' ', '-') : "";
+            if (ParseDecision(title, text, ProjectionProvenance.Create("Plan", "ArchitectureDecision", $"{title}:{source.SourceBlockId}", source)) is { } decision)
+                decisions.Add(new PlanArchitectureDecision
+                {
+                    Provenance = decision.Provenance, Id = id.Length > 0 ? id : decision.Id, Title = decision.Title, Context = decision.Context,
+                    Decision = decision.Decision, Rationale = decision.Rationale, Consequences = decision.Consequences, RawText = decision.RawText,
+                });
+        }
+    }
+
     // Extracts a PlanArchitectureDecision from any H3 heading — ADR format optional.
     private static PlanArchitectureDecision? ParseDecision(string heading, string body, ProjectionProvenance provenance)
     {
@@ -775,7 +813,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 }
 
                 case MarkdownTokenKind.Heading:
-                    break; // sub-headings within a decision body are skipped
+                    // A sub-heading names the ADR part that follows ("## Context", "## Decision", "## Consequences"); other sub-headings are skipped.
+                    var part = tok.Content.Trim().TrimEnd(':').ToLowerInvariant();
+                    currentProp = part.StartsWith("context") ? "context" : part.StartsWith("decision") ? "decision" : part.StartsWith("rationale") ? "rationale"
+                        : part.StartsWith("consequence") ? "consequences" : currentProp;
+                    break;
 
                 default:
                 {

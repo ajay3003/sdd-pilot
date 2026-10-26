@@ -331,7 +331,8 @@
             <div class="db-readiness-grid">
                 @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "quality/document")
                 @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "quality/document")
-                @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "quality/document")
+                @ReadinessCard(Snapshot.DeliveryReport?.ReleaseSignificant == true ? "Release" : "Documentation gate (advisory)", Snapshot.DeliveryReport?.ReleaseDecision.State, Snapshot.DeliveryReport?.Health.ReleaseScore, "quality/document",
+                    advisory: Snapshot.DeliveryReport?.ReleaseSignificant != true)
                 @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "quality/document")
             </div>
         }
@@ -615,7 +616,7 @@
                     <div class="db-analysis-chips">
                         <span class="db-count-chip @(dr.DevelopmentDecision.State == ReadinessState.Ready ? "db-count-good" : dr.DevelopmentDecision.State == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Dev</span>
                         <span class="db-count-chip @(dr.TestingDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.TestingDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Test</span>
-                        <span class="db-count-chip @(dr.ReleaseDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.ReleaseDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Release</span>
+                        <span class="db-count-chip @(dr.ReleaseDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.ReleaseDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">@(dr.ReleaseSignificant ? "Release" : "Doc gate")</span>
                     </div>
                 }
                 else
@@ -859,6 +860,7 @@
         DevelopmentDecision = Snapshot.DeliveryReport?.DevelopmentDecision.State,
         TestingDecision = Snapshot.DeliveryReport?.TestingDecision.State,
         ReleaseDecision = Snapshot.DeliveryReport?.ReleaseDecision.State,
+        ReleaseSignificant = Snapshot.DeliveryReport?.ReleaseSignificant ?? false,
         RisksAssessed = Snapshot.AuditReport is not null || Snapshot.DeliveryReport is not null,
         RiskCount = (Snapshot.AuditReport?.Risks.Count ?? 0) + (Snapshot.DeliveryReport?.Blockers.Count ?? 0),
         Performance = RuntimeReviews.PerformanceReview.Status,
@@ -1137,14 +1139,15 @@
 
     // ── RenderFragment helpers ────────────────────────────────────────────────
 
-    private RenderFragment ReadinessCard(string label, ReadinessState? state, double? score, string href) => __builder =>
+    private RenderFragment ReadinessCard(string label, ReadinessState? state, double? score, string href, bool advisory = false) => __builder =>
     {
         <div class="db-readiness-card">
             <div class="db-readiness-label">@label</div>
             @if (state.HasValue && score.HasValue)
             {
                 <div class="db-readiness-score @ScoreClass(score.Value)">@score.Value.ToString("0")%</div>
-                <div class="db-readiness-state @ReadinessStatusClass(state.Value)">@ReadinessStateLabel(state.Value)</div>
+                @* An advisory documentation gate never reads as a blocked product release. *@
+                <div class="db-readiness-state @(advisory ? (state.Value == ReadinessState.Ready ? ReadinessStatusClass(state.Value) : ReadinessStatusClass(ReadinessState.MostlyReady)) : ReadinessStatusClass(state.Value))">@(advisory ? DocumentationGate.StateLabel(state.Value, false) : ReadinessStateLabel(state.Value))</div>
             }
             else
             {

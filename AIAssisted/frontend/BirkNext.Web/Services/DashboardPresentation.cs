@@ -79,6 +79,8 @@ public sealed record DashboardReviewFacts
     public ReadinessState? DevelopmentDecision { get; init; }
     public ReadinessState? TestingDecision { get; init; }
     public ReadinessState? ReleaseDecision { get; init; }
+    /// <summary>True only when a project policy makes the documentation gate a release gate; otherwise the release decision is advisory.</summary>
+    public bool ReleaseSignificant { get; init; }
     public bool RisksAssessed { get; init; }
     public int RiskCount { get; init; }
 
@@ -554,7 +556,9 @@ public static class DashboardPresentation
     {
         if (r.DeliveryRun && r.ReleaseDecision is { } release)
             return Area("delivery", release == ReadinessState.Ready ? DashboardStatus.Passed : DashboardStatus.AttentionNeeded,
-                $"Development: {Readiness(r.DevelopmentDecision)} · Testing: {Readiness(r.TestingDecision)} · Release: {Readiness(release)}.",
+                r.ReleaseSignificant
+                    ? $"Development: {Readiness(r.DevelopmentDecision)} · Testing: {Readiness(r.TestingDecision)} · Release: {Readiness(release)}."
+                    : $"Development: {Readiness(r.DevelopmentDecision)} · Testing: {Readiness(r.TestingDecision)} · Documentation gate: {DocumentationGate.StateLabel(release, false)} (advisory).",
                 "Open results", DocumentReviewRoute);
         if (!HasRole(workspace, WorkspaceArtifactType.Plan) && !HasRole(workspace, WorkspaceArtifactType.Tasks))
             return Area("delivery", DashboardStatus.NotApplicable, "No plan or tasks found, so there is no delivery evidence to assess.", null, null);

@@ -48,6 +48,11 @@
         <p class="notice">Specification evidence is not available. Source and other reviews remain independent of SDD.</p>
     }
     <p class="notice" role="status" data-testid="ier-source-linkage" data-state="@Linkage.State">@LinkageText</p>
+    @if (Context?.Specification.AcceptanceScenarios is { Count: > 0 } scenarios)
+    {
+        @* Test design context: scenarios organised under user stories are not requirement coverage unless they carry the requirement ID. *@
+        <p class="note" data-testid="ier-scenario-context">@scenarios.Count acceptance scenario@(scenarios.Count == 1 ? " is" : "s are") organised under user stories; @scenarios.Count(x => x.LinkedRequirements.Count > 0) carry a direct requirement link. Related user-story scenarios are context, not requirement coverage.</p>
+    }
 
     <section>
         <h2>Requirements and evidence</h2>
@@ -71,7 +76,7 @@
                         <td>@PlanLinks(requirement.Id)</td>
                         <td>@TaskLinks(requirement.Id)</td>
                         <td>@(implementation.Count == 0 ? "No implementation evidence" : string.Join(", ", implementation.Select(x => $"{x.EvidenceType} ({x.Confidence}; {x.Currentness})")))</td>
-                        <td>@(tests.Count == 0 ? "No test design" : string.Join(", ", tests.Select(x => $"{x.State} ({x.Currentness})")))<br />@(executions.Count == 0 ? "Not executed" : string.Join(", ", executions.Select(x => $"{x.ExecutionState}/{x.Result} ({x.Currentness})")))</td>
+                        <td data-testid="ier-test-design">@TestDesignText(requirement, tests)<br />@(executions.Count == 0 ? "Not executed" : string.Join(", ", executions.Select(x => $"{x.ExecutionState}/{x.Result} ({x.Currentness})")))</td>
                         <td data-testid="ier-assessment">@Assessment(implementation)</td>
                     </tr>
                 }
@@ -120,7 +125,14 @@
         { <p>@baseline.Label · @baseline.Status · @baseline.ArtifactRevisionIds.Count artifact revision(s) · @baseline.CreatedAt.ToLocalTime().ToString("g")</p> }
         @* History is per logical artifact (role + project + path): another module's or Artifact Pack's file of the same role is a different
            artifact, never an earlier revision. Versions are content versions of that one document across imports. *@
-        @foreach (var role in ArtifactLogicalIdentity.Histories(Artifacts.SddLifecycle).GroupBy(h => h.Role))
+        @* Defaults to the viewed Artifact Pack (its own and shared documents); broader scopes are an explicit choice. *@
+        <label for="ier-history-scope">Show artifact history for</label>
+        <select id="ier-history-scope" data-testid="ier-history-scope" @bind="_historyScope">
+            <option value="@ArtifactLogicalIdentity.HistoryScope.ArtifactPack">Current Artifact Pack</option>
+            <option value="@ArtifactLogicalIdentity.HistoryScope.Module">Current module</option>
+            <option value="@ArtifactLogicalIdentity.HistoryScope.All">All artifacts in the workspace</option>
+        </select>
+        @foreach (var role in ScopedHistories.GroupBy(h => h.Role))
         {
             <h3>@role.Key <span class="note">· @role.Count() document@(role.Count() == 1 ? "" : "s")</span></h3>
             @foreach (var history in role)
@@ -134,9 +146,17 @@
                         var revision = version.Latest;
                         var isCurrent = ReferenceEquals(version, current);
                         <tr data-testid="ier-artifact-version"><td>@version.Version@(version.Revisions.Count > 1 ? $" (in {version.Revisions.Count} imports)" : "")</td><td>
-                            <select aria-label="Authority for @history.Path version @version.Version" value="@revision.Authority" @onchange="e => SetAuthorityAsync(revision.RevisionId, e.Value?.ToString())">
-                                @foreach (var value in AuthorityValues) { <option value="@value" disabled="@(revision.IsCurrentSelection && value == "Superseded")">@value</option> }
-                            </select>
+                            @if (BirkNext.Web.Services.Explorers.SupportingDocuments.IsGenerated(history.Path))
+                            {
+                                @* Generated documentation has content history and provenance, never authored authority. *@
+                                <span data-testid="ier-generated-authority">Generated / derived — content version of the imported project, not authored authority</span>
+                            }
+                            else
+                            {
+                                <select aria-label="Authority for @history.Path version @version.Version" value="@revision.Authority" @onchange="e => SetAuthorityAsync(revision.RevisionId, e.Value?.ToString())">
+                                    @foreach (var value in AuthorityValues) { <option value="@value" disabled="@(revision.IsCurrentSelection && value == "Superseded")">@value</option> }
+                                </select>
+                            }
                         </td><td>@(isCurrent ? "Latest content" : "Earlier content")@(revision.IsCurrentSelection ? " · selected" : "")</td><td><code>@revision.Fingerprint[..Math.Min(12, revision.Fingerprint.Length)]</code></td><td>@revision.CapturedAt.ToLocalTime().ToString("g")</td><td>
                             @if (!isCurrent)
                             { <button class="secondary" @onclick="() => SupersedeAsync(revision, current.Latest)">Mark superseded by the latest version</button> }
@@ -197,6 +217,19 @@
                 { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToLocalTime().ToString("g") · @snapshot.Status · @Short(snapshot.Archive.Sha256)</option> }
             </select>
             <button data-testid="ier-bind-codelinks" @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(CodeLinkProject))">Bind explicit CodeLinks</button>
+            @if (_sourceSnapshots.FirstOrDefault(x => x.Id == _selectedSourceSnapshotId) is { } chosen
+                && SourceBindingSuggestions.For(SourceBindingSuggestions.ModuleOf(Artifacts.SddLifecycle.ActiveRequirementScope), chosen) is { Count: > 0 } suggestions)
+            {
+                @* Candidate assistance only: a suggested binding is not saved and is not implementation evidence. *@
+                <details class="ier-binding-suggestions" data-testid="ier-suggested-binding" open>
+                    <summary>Suggested source binding — @suggestions.Count candidate project@(suggestions.Count == 1 ? "" : "s") (not saved)</summary>
+                    <ul>
+                        @foreach (var s in suggestions)
+                        { <li data-testid="ier-suggested-project"><strong>@s.ProjectName</strong> · <code>@s.ProjectPath</code>@(s.IsTest ? " · test project" : "") — @s.Reason</li> }
+                    </ul>
+                    <p class="field-help">A suggestion is not a binding: only explicit CodeLinks bound above become implementation evidence, and a resolved source location proves the location exists — not that the requirement is implemented correctly.</p>
+                </details>
+            }
         }
         @foreach (var evidence in Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability"))
         {
@@ -234,6 +267,23 @@
     private Guid? _selectedSourceSnapshotId;
     private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot> _sourceSnapshots = [];
     private string _testResultJson = "";
+    private ArtifactLogicalIdentity.HistoryScope _historyScope = ArtifactLogicalIdentity.HistoryScope.ArtifactPack;
+
+    /// <summary>Artifact histories of the chosen breadth: by default the viewed Artifact Pack and its shared documents only.</summary>
+    private IEnumerable<ArtifactHistory> ScopedHistories
+    {
+        get
+        {
+            var lifecycle = Artifacts.SddLifecycle;
+            var parts = lifecycle.ActiveRequirementScope?.Split('|') ?? [];
+            var workspace = parts.Length > 0 ? parts[0] : null;
+            var project = ProjectImportScope.ImportIdOf(workspace) is { } importId
+                ? lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId)?.ProjectName : workspace;
+            var module = parts.Length > 1 && parts[1].Length > 0 ? parts[1] : null;
+            var pack = parts.Length > 2 && parts[2].Length > 0 ? parts[2] : null;
+            return ArtifactLogicalIdentity.Histories(lifecycle).Where(h => ArtifactLogicalIdentity.InScope(h, project, module, pack, _historyScope));
+        }
+    }
     private string? _testImportMessage;
     private ReviewContext? Context => ContextProvider.GetCurrent();
     private LifecycleProjectionMode ProjectionMode => Enum.TryParse<LifecycleProjectionMode>(_projectionMode, out var parsed) ? parsed : LifecycleProjectionMode.ActiveWorkspace;
@@ -254,9 +304,24 @@
         SourceLinkageState.Unavailable => "Source snapshot unavailable — no Source Analysis snapshot is linked to this project. Documented requirements remain documented; implementation is not assessed.",
         SourceLinkageState.Failed => "Source Analysis failed for the recorded snapshot. Implementation is not assessed.",
         SourceLinkageState.Ambiguous => $"Source snapshot ambiguous — {Linkage.Basis} Implementation is not assessed until one is chosen.",
-        _ when !PackMapped => $"Source snapshot available ({Linkage.Basis}) — this Artifact Pack is not mapped to source yet: no explicit implementation links are recorded. Implementation is not assessed; bind explicit CodeLinks below.",
+        _ when !PackMapped => $"Source snapshot available — implementation not assessed ({Linkage.Basis}). This Artifact Pack is not mapped to source yet: no explicit implementation links are recorded. Bind explicit CodeLinks below; suggested source bindings are never saved automatically.",
         _ => $"Source snapshot available ({Linkage.Basis}). Requirements show linked implementation evidence where explicit links exist.",
     };
+    /// <summary>
+    /// Test design for a requirement: direct requirement-linked designs, else "none" with the related user-story scenarios as context —
+    /// scenarios under a story the requirement belongs to are never counted as requirement coverage.
+    /// </summary>
+    private string TestDesignText(SemanticRequirement requirement, List<SddTestEvidence> tests)
+    {
+        if (tests.Count > 0) return string.Join(", ", tests.Select(x => $"{x.State} ({x.Currentness})"));
+        var stories = requirement.LinkedUserStories.Select(s => s.Id).Where(id => !string.IsNullOrEmpty(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var related = stories.Count == 0 ? 0 : (Context?.Specification.AcceptanceScenarios ?? [])
+            .Count(a => a.LinkedUserStories.Any(s => stories.Contains(s.Id ?? "")));
+        return related > 0
+            ? $"Direct requirement test design: none · Related user-story scenarios: {related} ({string.Join(", ", stories)}) — related scenarios exist, but no direct requirement link is established"
+            : "Direct requirement test design: none · no related user-story scenarios linked to this requirement";
+    }
+
     private int PlanLinkedCount => Requirements.Count(x => PlanLinks(x.Id) > 0);
     private int TaskLinkedCount => Requirements.Count(x => TaskLinks(x.Id) > 0);
     private int PlanLinks(string id) => GraphRows.FirstOrDefault(x => x.Requirement.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.PlanReferences.Count ?? 0;

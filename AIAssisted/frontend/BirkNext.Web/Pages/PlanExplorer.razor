@@ -29,6 +29,7 @@
                     ParsedPlan="@_parsed"
                     SemanticModel="@_semanticModel"
                     SpecificationState="@_specificationState"
+                    DocumentSet="@_documentSet"
                     InitialView="@_initialView"
                     OnTextChanged="ImportFromPanel" />
             </div>
@@ -44,6 +45,7 @@
     private string? _analysisError;
     private PlanDocument? _parsed;
     private PlanSemanticModel? _semanticModel;
+    private PlanDocumentSet? _documentSet;
     private ArtifactExplorerState? _specificationState;
     private int _specificationLoadVersion;
     private bool _disposed;
@@ -87,6 +89,24 @@
         }
 
         await RefreshSpecificationStateAsync();
+        await RefreshDocumentSetAsync();
+    }
+
+    /// <summary>The Plan's document set from the canonical Artifact Pack inventory: supporting plan documents are inspected, never rediscovered here.</summary>
+    private async Task RefreshDocumentSetAsync()
+    {
+        if (_parsed is null) { _documentSet = null; return; }
+        var parsed = _parsed;
+        try
+        {
+            var inventory = await ArtifactContext.GetPackInventoryAsync();
+            if (!ReferenceEquals(parsed, _parsed)) return;
+            _documentSet = PlanDocumentSet.From(parsed, inventory, PlanService, _text);
+        }
+        catch (Exception)
+        {
+            _documentSet = PlanDocumentSet.Single(parsed, text: _text);
+        }
     }
 
     private void OnArtifactContextChanged(object? sender, EventArgs args)

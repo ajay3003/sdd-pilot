@@ -288,7 +288,7 @@
                             <p class="te-changes-subtext">Compare the current Task artifact with an earlier revision of the same task list. Tasks of other feature packs are never offered.</p>
                         </div>
                     </div>
-                    <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" PreviousRevisions="PreviousRevisions" />
+                    <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" PreviousRevisions="PreviousRevisions" CurrentVersion="CurrentRevision" />
                 </div>
             }
             else if (_isDependenciesView)
@@ -310,7 +310,9 @@
                     else if (_tree.ExplicitDependencies.Count == 0)
                     {
                         <div class="te-dependencies-view-content">
-                            <div class="te-empty-message">No explicit task dependencies found.</div>
+                            <div class="te-empty-message" data-testid="te-no-explicit-dependencies">No explicit task dependencies found.</div>
+                            @* Phase order is sequencing the Task artifact shows, never a declared dependency between tasks. *@
+                            <p class="te-changes-subtext" data-testid="te-phase-sequencing">Phase order is shown as sequencing only: it is not a declared dependency between tasks.</p>
                         </div>
                     }
                     else
@@ -1462,7 +1464,7 @@
             @{ var (workTotalS, workTestingS, workVerificationS) = TestingWork.Count(tasks); }
             <div class="te-summary-item" data-testid="te-summary-testing-work">
                 <dt>Testing / verification work</dt>
-                <dd>@workTestingS testing · @workVerificationS verification <button type="button" class="te-summary-link" @onclick="ShowTestingView">Show testing work</button></dd>
+                <dd>@workTestingS testing · @workVerificationS verification <button type="button" class="btn-secondary btn-small te-summary-link" data-testid="te-show-testing-work" @onclick="ShowTestingView">Show testing work</button></dd>
             </div>
             <div class="te-summary-item te-summary-declared" data-testid="te-summary-status">
                 <dt>Marked complete in task file</dt>
@@ -1598,6 +1600,8 @@
 
     /// <summary>Earlier revisions of this same Task artifact (same project and path), newest first; empty when none are stored.</summary>
     [Parameter] public IReadOnlyList<TaskRevisionOption> PreviousRevisions { get; set; } = [];
+    /// <summary>The current Task artifact's exact version (path, revision, fingerprint) for comparison provenance.</summary>
+    [Parameter] public TaskRevisionOption? CurrentRevision { get; set; }
 
     private void ShowTestingView()
     {

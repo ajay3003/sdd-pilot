@@ -45,10 +45,18 @@
                         {
                             <span class="src-context">In: @candidate.ContextHeading</span>
                         }
+                        @if (!string.IsNullOrWhiteSpace(SourceDocument))
+                        {
+                            <span class="src-context" data-testid="src-source">Source: @SourceDocument</span>
+                        }
+                        <span class="src-context" data-testid="src-why">@WhySuggested(candidate.Type)</span>
                     </div>
+                    @* Expansion belongs to the suggestion's identity, so filtering or searching never moves it to another card. *@
                     <TraceabilityItemText ItemType="@SuggestionLabel(candidate.Type)"
                                           Text="@candidate.Text"
-                                          Given="@structured?.Given" When="@structured?.When" Then="@structured?.Then" />
+                                          Given="@structured?.Given" When="@structured?.When" Then="@structured?.Then"
+                                          IsExpanded="@_expandedIds.Contains(candidate.CandidateId)"
+                                          IsExpandedChanged="@(open => SetExpanded(candidate.CandidateId, open))" />
                 </li>
             }
         </ol>
@@ -65,6 +73,8 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SpecReviewCandidate> Candidates { get; set; } = [];
     [Parameter, EditorRequired] public SpecificationReviewSummary Summary { get; set; } = default!;
+    /// <summary>The specification document the suggestions were found in (provenance).</summary>
+    [Parameter] public string? SourceDocument { get; set; }
 
     private readonly string _id = Guid.NewGuid().ToString("N")[..8];
     private string HeadingId => $"src-title-{_id}";
@@ -75,6 +85,13 @@
     private string _search = string.Empty;
     private bool _showAll;
     private IReadOnlyList<SpecReviewCandidate>? _source;
+    private readonly HashSet<Guid> _expandedIds = [];
+
+    private void SetExpanded(Guid candidateId, bool open)
+    {
+        if (open) _expandedIds.Add(candidateId);
+        else _expandedIds.Remove(candidateId);
+    }
 
     private IReadOnlyList<SpecReviewCandidate> Filtered => SpecificationReviewProjection.Filter(Candidates, _type, _search);
     private IEnumerable<SpecReviewCandidate> Visible => _showAll ? Filtered : Filtered.Take(SpecificationReviewProjection.CandidatePreviewSize);
@@ -99,6 +116,7 @@
             _type = null;
             _search = string.Empty;
             _showAll = false;
+            _expandedIds.Clear();
         }
     }
 
@@ -127,6 +145,15 @@
         ReviewCandidateType.Test => "Suggested test scenario",
         ReviewCandidateType.Clarification => "Suggested clarification",
         _ => $"Suggested {ReviewCandidateTypes.Label(type).ToLowerInvariant()}",
+    };
+
+    /// <summary>Why the review suggests the item — the kind of text it found, never a verdict.</summary>
+    private static string WhySuggested(ReviewCandidateType type) => type switch
+    {
+        ReviewCandidateType.Requirement => "Why: requirement-like statement in the specification text",
+        ReviewCandidateType.Test => "Why: scenario or acceptance text that could be a test",
+        ReviewCandidateType.Clarification => "Why: open question or ambiguity in the specification text",
+        _ => "Why: found by the specification review",
     };
 
     private static string EntityLabel(SpecLogicalEntity entity) => entity.Kind switch

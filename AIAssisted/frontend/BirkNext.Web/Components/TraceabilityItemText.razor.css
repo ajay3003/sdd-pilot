@@ -5,7 +5,9 @@
 .traceability-item__content { padding: .3rem .9rem; }
 .traceability-item__id { flex: 0 0 auto; max-width: 12rem; overflow-wrap: anywhere; font-weight: 700; }
 .traceability-item__text { display: block; flex: 1 1 auto; min-width: 0; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-.traceability-item__text.is-collapsed { max-height: 4.35em; overflow: hidden; }
+/* Collapsed text shows a fixed preview (the rest is hidden in markup), so Show more always reveals more. */
+.traceability-item__text.is-collapsed::after { content: "…"; }
+.traceability-item__rest[hidden], .traceability-item__scenario-rest[hidden] { display: none; }
 .traceability-item__scenario-part { min-width: 0; }
 .traceability-item__keyword { font-weight: 700; }
 /* Scenario keywords: Given blue, When indigo, Then teal. Never red, and Then is not the Passed/success colour. */

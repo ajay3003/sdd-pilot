@@ -28,4 +28,11 @@ public interface IQualityReviewService
         string? taskText,
         string? dataModelText,
         IEnumerable<string> selectedPackIds);
+
+    /// <summary>
+    /// The same run with its document scope: the Artifact Pack inventory (primary, supporting and generated documents with provenance) and the
+    /// documentation gate policy. The report records exactly which documents each Review Pack read.
+    /// </summary>
+    Task<QualityReviewReport> RunAsync(QualityReviewRunInput input, IEnumerable<string> selectedPackIds) =>
+        RunAsync(input.ConstitutionText, input.SpecText, input.PlanText, input.TaskText, input.DataModelText, selectedPackIds);
 }

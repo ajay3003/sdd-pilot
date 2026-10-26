@@ -27,4 +27,9 @@ public sealed class RuleFinding
     /// e.g. a rule ID ("PP-01"), ADR identifier ("ADR-01"), or artifact path.
     /// </summary>
     public string? AffectedItem   { get; init; }
+
+    /// <summary>The reviewed document whose text matched (keyword packs reading documents one by one); null when nothing matched.</summary>
+    public string? MatchedDocument { get; init; }
+    /// <summary>Every document the rule searched, by path.</summary>
+    public IReadOnlyList<string> SearchedDocuments { get; init; } = [];
 }
