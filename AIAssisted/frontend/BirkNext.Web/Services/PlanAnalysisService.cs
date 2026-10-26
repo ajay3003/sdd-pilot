@@ -1450,16 +1450,18 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         return items;
     }
 
+    /// <summary>
+    /// The level of a complexity signal derived from a performance goal or scale/scope constraint. Such a goal is a target to verify, not a
+    /// statement of implementation difficulty: it is Medium unless the plan states an explicit magnitude of millions/billions or terabytes.
+    /// Loose words ("high", "complex", "thousand", "distributed") no longer decide the level: they rated "thousands per org unit" High and
+    /// "p95 &lt; 2s" Low for the same kind of evidence.
+    /// </summary>
     private static ComplexityLevel InferComplexityLevelFromText(string text)
     {
-        var lower = text.ToLowerInvariant();
-        if (lower.Contains("million") || lower.Contains("billion") || lower.Contains(" tb ") || lower.Contains("very high"))
+        var lower = $" {text.ToLowerInvariant()} ";
+        if (lower.Contains("million") || lower.Contains("billion") || lower.Contains(" tb ") || lower.Contains("terabyte"))
             return ComplexityLevel.VeryHigh;
-        if (lower.Contains("thousand") || lower.Contains("large scale") || lower.Contains("distributed") || lower.Contains("high") || lower.Contains("complex"))
-            return ComplexityLevel.High;
-        if (lower.Contains("medium") || lower.Contains("moderate"))
-            return ComplexityLevel.Medium;
-        return ComplexityLevel.Low;
+        return ComplexityLevel.Medium;
     }
 
     private static void ParseDependenciesSection(string raw, List<PlanDependency> deps, string documentFingerprint, int sectionStartLine)
@@ -1730,7 +1732,43 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         }
     }
 
+    /// <summary>
+    /// The constraint items of one field value. A list (bullets or numbered lines) gives one item per list entry, with continuation lines kept
+    /// on their entry and text before the list as its own item; otherwise a single paragraph is split only on top-level semicolons. Grouping
+    /// the author wrote in one sentence is never split further.
+    /// </summary>
     private static List<string> SplitConstraintItems(string value)
+    {
+        // A Markdown horizontal rule after the field ends the section; it is never part of a constraint.
+        var lines = value.Replace("\r\n", "\n").Split('\n').Where(l => !HorizontalRule.IsMatch(l)).ToArray();
+        value = string.Join("\n", lines);
+        if (lines.Length > 1 && lines.Any(l => ConstraintListItem.IsMatch(l)))
+        {
+            var listItems = new List<string>();
+            var item = new StringBuilder();
+            foreach (var line in lines)
+            {
+                if (ConstraintListItem.Match(line) is { Success: true } bullet)
+                {
+                    if (item.Length > 0) listItems.Add(item.ToString());
+                    item.Clear().Append(line[(bullet.Index + bullet.Length)..].Trim());
+                }
+                else if (!string.IsNullOrWhiteSpace(line))
+                {
+                    if (item.Length > 0) item.Append(' ');
+                    item.Append(line.Trim());
+                }
+            }
+            if (item.Length > 0) listItems.Add(item.ToString());
+            return listItems;
+        }
+        return SplitOnSemicolons(value);
+    }
+
+    private static readonly Regex ConstraintListItem = new(@"^\s*(?:[-*+]|\d+[.)])\s+", RegexOptions.Compiled);
+    private static readonly Regex HorizontalRule = new(@"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$", RegexOptions.Compiled);
+
+    private static List<string> SplitOnSemicolons(string value)
     {
         var items = new List<string>();
         var current = new StringBuilder();

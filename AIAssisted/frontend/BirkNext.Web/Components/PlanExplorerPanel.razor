@@ -181,6 +181,39 @@
                 <!-- ── Overview ──────────────────────────────────────────── -->
                 <div class="pe-overview">
 
+                    <!-- What this Plan means for testing: explicit Plan content only, each item labelled as declared in the Plan. -->
+                    @{
+                        var impact = PlanTesterPresentation.TestingImpact(_plan);
+                        var (specState, specText) = PlanTesterPresentation.SourceSpecification(SpecificationReference);
+                    }
+                    <section class="pe-testing-impact" aria-labelledby="pe-impact-title" data-testid="pe-testing-impact">
+                        <h3 class="pe-ov-heading" id="pe-impact-title">What this Plan means for testing</h3>
+                        @if (impact.Count == 0)
+                        {
+                            <p class="pe-ov-help">The Plan states no performance targets, constraints, risks, integrations or testing approach.</p>
+                        }
+                        else
+                        {
+                            <ul class="pe-impact-list">
+                                @foreach (var item in impact.Take(_showAllImpact ? int.MaxValue : ImpactPreview))
+                                {
+                                    <li data-testid="pe-impact-item"><span class="pe-impact-category">@item.Category</span> <span class="pe-impact-text">@item.Text</span> <span class="pe-origin pe-origin-declared">Declared in Plan</span></li>
+                                }
+                            </ul>
+                            @if (impact.Count > ImpactPreview)
+                            {
+                                <button type="button" class="pe-ov-more" aria-expanded="@(_showAllImpact ? "true" : "false")" @onclick="() => _showAllImpact = !_showAllImpact">@(_showAllImpact ? "Show fewer" : $"Show all {impact.Count}")</button>
+                            }
+                        }
+                    </section>
+
+                    <section class="pe-source-spec pe-source-spec-@specState.ToLowerInvariant().Replace(' ', '-')" aria-label="Source specification" data-testid="pe-source-spec" data-state="@specState">
+                        <span class="pe-source-spec-label">Source specification</span>
+                        <span class="pe-source-spec-state">@specState</span>
+                        <span class="pe-source-spec-text">@specText</span>
+                        @if (specState == "Linked") { <a class="pe-source-spec-open" href="specification-explorer">Open Specification</a> }
+                    </section>
+
                     <!-- Summary block -->
                     @if (!string.IsNullOrEmpty(_plan.Summary))
                     {
@@ -190,7 +223,9 @@
                         </div>
                     }
 
-                    <!-- Plan metadata and provenance (as written in the plan) -->
+                    <!-- Plan metadata and provenance (as written in the plan): technical details -->
+                    <details class="pe-meta-details">
+                    <summary>Technical details</summary>
                     <div class="pe-meta-card" data-testid="pe-metadata">
                         <div class="pe-meta-grid">
                             @if (!string.IsNullOrEmpty(_plan.FeatureName))
@@ -262,7 +297,7 @@
                                                 Current artifact: @resolvedArtifact.DisplayName · @(resolvedArtifact.SourcePath ?? resolvedArtifact.FileName)
                                                 @if (resolvedArtifact.Revision is { } revision)
                                                 { <text> · revision @revision</text> }
-                                                · resolved by @(reference.Match == PlanSpecificationReferenceMatch.ExactSourcePath ? "exact source path" : "unique filename")
+                                                · resolved by @(reference.Match switch { PlanSpecificationReferenceMatch.ExactSourcePath => "exact source path", PlanSpecificationReferenceMatch.RelativeSourcePath => "path relative to the module", _ => "unique filename" })
                                             </div>
                                         }
                                     }
@@ -270,6 +305,7 @@
                             }
                         </div>
                     </div>
+                    </details>
 
                     <!-- Plan analysis: findings derived from the plan. Facts, not a score or a verdict. -->
                     <section class="pe-ov-group" aria-labelledby="pe-ov-analysis" data-testid="pe-analysis">
@@ -282,11 +318,11 @@
                             </div>
                             <div class="pe-ov-card @(_plan.Health.HighComplexityItems > 0 ? "pe-ov-attention" : "")" data-testid="pe-complexity-summary">
                                 <div class="pe-ov-value">@_plan.Health.TotalComplexityItems</div>
-                                <div class="pe-ov-label">Complexity @(_plan.Health.TotalComplexityItems == 1 ? "item" : "items")</div>
+                                <div class="pe-ov-label">@(_plan.ComplexityDerived ? "Derived complexity signals" : $"Complexity {(_plan.Health.TotalComplexityItems == 1 ? "item" : "items")}")</div>
                                 <div class="pe-ov-detail" data-testid="pe-complexity-high">@_plan.Health.HighComplexityItems of @_plan.Health.TotalComplexityItems rated high or very high</div>
                                 @if (_plan.ComplexityDerived)
                                 {
-                                    <div class="pe-ov-detail">Derived by plan analysis; the plan lists none itself</div>
+                                    <div class="pe-ov-detail"><span class="pe-origin pe-origin-derived">Derived by BirkNext</span> not authored Plan statements</div>
                                 }
                             </div>
                         </div>
@@ -426,7 +462,7 @@
                             @if (!string.IsNullOrWhiteSpace(_search))
                             { <span>No architecture decisions match "<strong>@_search</strong>"</span> }
                             else
-                            { <span>No architecture decisions found. Add an <code>## Architecture</code> section with <code>### Decision Title</code> or <code>### ADR-01: Title</code> headings.</span> }
+                            { <span>No architecture decisions were identified in this Plan.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: an <code>## Architecture</code> section with <code>### Decision Title</code> or <code>### ADR-01: Title</code> headings.</span></details> }
                         </div>
                     }
                     else if (VisibleDecisions.Any())
@@ -498,7 +534,7 @@
                     @if (techSections.Count == 0)
                     {
                         <div class="pe-empty-tab">
-                            <span>No technical context section found. Add a <code>## Technical Context</code> section to the Plan artifact.</span>
+                            <span>No technical context was identified in this Plan.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Technical Context</code> section.</span></details>
                         </div>
                     }
                     else
@@ -527,7 +563,7 @@
                     @if (structureSections.Count == 0)
                     {
                         <div class="pe-empty-tab">
-                            <span>No project structure section found. Add a <code>## Project Structure</code> section to the Plan artifact.</span>
+                            <span>No project structure was identified in this Plan.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Project Structure</code> section.</span></details>
                         </div>
                     }
                     else
@@ -588,7 +624,7 @@
                             @if (!string.IsNullOrWhiteSpace(_search) || _riskFilter is not null)
                             { <span>No risks or constraints match the current filter.</span> }
                             else
-                            { <span>No risks or constraints found. Add a <code>## Risks</code> section with <code>### High Risk: Title</code> items or constraint definitions.</span> }
+                            { <span>No risks are explicitly listed in this Plan, and no constraints were identified.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Risks</code> section with <code>### High Risk: Title</code> items, or constraint definitions.</span></details> }
                         </div>
                     }
                     else
@@ -636,7 +672,7 @@
                         @if (_plan.Constraints.Count > 0 && string.IsNullOrWhiteSpace(_search) && _riskFilter is null)
                         {
                             <div class="pe-constraints">
-                                <div class="pe-constraints-section-header">Constraints &amp; Performance Goals</div>
+                                <div class="pe-constraints-section-header">Constraints &amp; Performance Goals <span class="pe-origin pe-origin-declared">Declared in Plan</span></div>
                                 @{
                                     var constraintGrouped = _plan.Constraints
                                         .GroupBy(c => c.ConstraintType)
@@ -676,7 +712,7 @@
                             @if (!string.IsNullOrWhiteSpace(_search) || _complexityFilter is not null)
                             { <span>No complexity items match the current filter.</span> }
                             else
-                            { <span>No complexity items found. Add a <code>## Complexity</code> section to the Plan artifact.</span> }
+                            { <span>No complexity items were identified in this Plan.</span> }
                         </div>
                     }
                     else
@@ -685,7 +721,7 @@
                         {
                             <div class="pe-auto-generated-notice" data-testid="pe-complexity-derived">
                                 <span class="pe-auto-generated-icon" aria-hidden="true">✦</span>
-                                Derived by plan analysis from constraints, declared dependencies, risks and section keywords — the plan lists no complexity items itself.
+                                <strong>BirkNext-derived complexity signals — not authored Plan statements.</strong> Derived from constraints, declared dependencies, risks and section keywords; the Plan lists no complexity items itself. High means potentially harder to implement or test — not failing.
                             </div>
                         }
                         @foreach (var group in VisibleComplexity.GroupBy(c => c.Level).OrderByDescending(g => g.Key))
@@ -700,8 +736,9 @@
                                     <div class="pe-complexity-card pe-complexity-@item.Level.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@item.Provenance?.ProjectionId" data-birknext-projection-kind="@item.Provenance?.ProjectionKind">
                                         <button class="pe-complexity-header" @onclick="() => Toggle(item.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                             <div class="pe-complexity-header-left">
-                                                <span class="pe-complexity-badge pe-cbadge-@item.Level.ToString().ToLowerInvariant()">@ComplexityLevelLabel(item.Level)</span>
+                                                <span class="pe-complexity-badge pe-cbadge-@item.Level.ToString().ToLowerInvariant()">@(_plan.ComplexityDerived ? "Derived · " : "")@ComplexityLevelLabel(item.Level)</span>
                                                 <span class="pe-complexity-area">@item.Area</span>
+                                                <span class="pe-complexity-dimension" data-testid="pe-complexity-dimension">@PlanTesterPresentation.ComplexityDimension(item)</span>
                                             </div>
                                             <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
                                         </button>
@@ -742,7 +779,7 @@
                             @if (!string.IsNullOrWhiteSpace(_search))
                             { <span>No phases match "<strong>@_search</strong>"</span> }
                             else
-                            { <span>No implementation phases found. Add an <code>## Implementation</code> section with <code>### Phase 1: Title</code> headings.</span> }
+                            { <span>No planned phases were identified in this Plan.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: an <code>## Implementation</code> section with <code>### Phase 1: Title</code> headings.</span></details> }
                         </div>
                     }
                     else
@@ -769,6 +806,8 @@
                                             <div class="pe-phase-header-left">
                                                 <span class="pe-phase-label">@phaseLabel</span>
                                                 <span class="pe-phase-title-text">@phase.Title</span>
+                                                <span class="pe-phase-planned" data-testid="pe-phase-planned">Planned phase</span>
+                                                @foreach (var us in PlanTesterPresentation.UserStoryRefs(phase)) { <span class="pe-phase-us" data-testid="pe-phase-us">@us</span> }
                                             </div>
                                             <div style="display:flex;align-items:center;gap:.5rem;">
                                                 @if (phase.Tasks.Count > 0)
@@ -846,12 +885,43 @@
                     @if (testing is null)
                     {
                         <div class="pe-empty-tab">
-                            <span>No testing section found. Add a <code>## Testing</code> section to the Plan artifact.</span>
+                            <span>The Plan does not describe a testing approach.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Testing</code> section.</span></details>
                         </div>
                     }
                     else
                     {
-                        <p class="pe-tab-note" data-testid="pe-testing-note">Testing approach as declared in the Plan artifact. No tests are run or read here; executed test results come from imported test evidence.</p>
+                        <p class="pe-tab-note" data-testid="pe-testing-note">This section shows the testing approach described in the Plan. Actual test results are shown from imported/executed test evidence elsewhere.</p>
+                        @if (PlanTesterPresentation.TestingStatements(_plan).Count == 0)
+                        {
+                            <p class="pe-ov-help" data-testid="pe-testing-no-statements">The Plan names testing tools but no testing statements (what to test, how, or with which evidence).</p>
+                        }
+                        <!-- Free-form blocks: the Plan's own testing statements first -->
+                        @foreach (var block in testing.Blocks.Where(b => b.HasContent || b.SubHeading is not null))
+                        {
+                            <div class="pe-testing-section">
+                                @if (!string.IsNullOrEmpty(block.SubHeading))
+                                {
+                                    <div class="pe-testing-section-title">@block.SubHeading</div>
+                                }
+                                @if (block.IsCodeBlock)
+                                {
+                                    <pre class="pe-code-block"><code>@block.CodeBlock</code></pre>
+                                }
+                                else
+                                {
+                                    @if (!string.IsNullOrEmpty(block.Paragraph))
+                                    { <p class="pe-section-para">@block.Paragraph</p> }
+                                    @if (block.BulletPoints.Count > 0)
+                                    {
+                                        <ul class="pe-section-list">
+                                            @foreach (var pt in block.BulletPoints) { <li>@pt</li> }
+                                        </ul>
+                                    }
+                                }
+                            </div>
+                        }
+                        <details class="pe-testing-tech" data-testid="pe-testing-technical">
+                        <summary>Technical testing details</summary>
                         <!-- Frameworks -->
                         @if (testing.Frameworks.Count > 0)
                         {
@@ -906,31 +976,7 @@
                             </div>
                         }
 
-                        <!-- Free-form blocks -->
-                        @foreach (var block in testing.Blocks.Where(b => b.HasContent || b.SubHeading is not null))
-                        {
-                            <div class="pe-testing-section">
-                                @if (!string.IsNullOrEmpty(block.SubHeading))
-                                {
-                                    <div class="pe-testing-section-title">@block.SubHeading</div>
-                                }
-                                @if (block.IsCodeBlock)
-                                {
-                                    <pre class="pe-code-block"><code>@block.CodeBlock</code></pre>
-                                }
-                                else
-                                {
-                                    @if (!string.IsNullOrEmpty(block.Paragraph))
-                                    { <p class="pe-section-para">@block.Paragraph</p> }
-                                    @if (block.BulletPoints.Count > 0)
-                                    {
-                                        <ul class="pe-section-list">
-                                            @foreach (var pt in block.BulletPoints) { <li>@pt</li> }
-                                        </ul>
-                                    }
-                                }
-                            </div>
-                        }
+                        </details>
                     }
                 </div>
             }
@@ -941,7 +987,7 @@
                 <div class="pe-constitution-check">
                     @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
                     {
-                        <p class="pe-tab-note" data-testid="pe-constitution-note">These statuses are the plan's own statements. Plan Explorer does not independently assess them against the Constitution artifact.</p>
+                        <p class="pe-tab-note" data-testid="pe-constitution-note">"Plan states" is what the Plan says about itself. BirkNext has not independently verified these statements against the Constitution (BirkNext verification: Not assessed). Document Quality Review checks documents against the Constitution.</p>
                     }
 
                     <!-- Gate table (table-based, rendered first) -->
@@ -957,7 +1003,8 @@
                                     <tr>
                                         <th>Gate</th>
                                         <th>Rule</th>
-                                        <th>Status stated in plan</th>
+                                        <th>Plan states</th>
+                                        <th>BirkNext verification</th>
                                         @if (showEvidenceColumn)
                                         {
                                             <th>Evidence</th>
@@ -973,9 +1020,10 @@
                                             <td class="pe-gate-rule">@(string.IsNullOrEmpty(gate.RuleId) ? gate.Principle : gate.RuleId)</td>
                                             <td>
                                                 <span class="pe-gate-status @GateStatusCss(gate.Status)">
-                                                    Plan says: @GateStatusLabel(gate)
+                                                    Plan states: @GateStatusLabel(gate)
                                                 </span>
                                             </td>
+                                            <td class="pe-gate-verification">Not assessed</td>
                                             @if (showEvidenceColumn)
                                             {
                                                 <td class="pe-gate-evidence">@(gate.Evidence ?? string.Empty)</td>
@@ -995,7 +1043,7 @@
                             @if (!string.IsNullOrWhiteSpace(_search) || _checkFilter is not null || _gateFilter is not null)
                             { <span>No constitution check items match the current filter.</span> }
                             else
-                            { <span>No constitution check items found. Add a <code>## Constitution Check</code> section with rule IDs (PP-01, PS-07) or a gate table.</span> }
+                            { <span>The Plan makes no Constitution statements.</span> <details class="pe-howto"><summary>Technical details</summary><span>Expected authoring format: a <code>## Constitution Check</code> section with rule IDs (PP-01, PS-07) or a gate table.</span></details> }
                         </div>
                     }
                     else if (VisibleChecks.Any())
@@ -1021,7 +1069,8 @@
                                                 <span class="pe-check-title">@item.Title</span>
                                             </div>
                                             <div class="pe-check-header-right">
-                                                <span class="pe-check-status-badge pe-check-badge-@CheckStatusCss(item.Status)">Plan says: @PlanCheckStatusLabel(item.Status)</span>
+                                                <span class="pe-check-status-badge pe-check-badge-@CheckStatusCss(item.Status)">Plan states: @PlanCheckStatusLabel(item.Status)</span>
+                                                <span class="pe-check-verification">BirkNext verification: Not assessed</span>
                                                 <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
                                             </div>
                                         </button>
@@ -1071,12 +1120,12 @@
 
     private string SearchPlaceholder => _tab switch
     {
-        "architecture" => "Search by ADR ID, title, context, or decision...",
-        "risks"        => "Search by title, description, severity, area, or constraint type...",
-        "complexity"   => "Search by area, level, or factor...",
-        "phases"       => "Search by phase title, description, or task...",
-        "testing"      => "Search testing content...",
-        "constitution" => "Search by rule ID (PP-01), gate, or status...",
+        "architecture" => "Search decisions...",
+        "risks"        => "Search risks and constraints...",
+        "complexity"   => "Search complexity signals...",
+        "phases"       => "Search phases or user stories...",
+        "testing"      => "Search the testing approach...",
+        "constitution" => "Search rules or statements...",
         _              => "Search...",
     };
 
@@ -1143,18 +1192,22 @@
     private string RisksTabLabel => _plan is null ? "Risks & Constraints"
         : $"Risks{(_plan.Risks.Count > 0 ? $" ({_plan.Risks.Count})" : "")} & Constraints{(_plan.Constraints.Count > 0 ? $" ({_plan.Constraints.Count})" : "")}";
 
+    /// <summary>Tester tabs first (overview, risks, testing, phases, constitution); derived and developer-oriented tabs after them.</summary>
     private IEnumerable<(string Key, string Label)> Tabs =>
     [
         ("overview", "Overview"),
+        ("risks", RisksTabLabel),
+        ("testing", $"Testing {TestingBadge}".Trim()),
+        ("phases", $"Phases {PhasesBadge}".Trim()),
+        ("constitution", $"Constitution {ConstitutionBadge}".Trim()),
+        ("complexity", $"{(_plan?.ComplexityDerived == true ? "Complexity (derived)" : "Complexity")} {ComplexityBadge}".Trim()),
         ("architecture", $"Architecture {AdrBadge}".Trim()),
         ("tech-context", "Technical Context"),
         ("structure", "Project Structure"),
-        ("risks", RisksTabLabel),
-        ("complexity", $"Complexity {ComplexityBadge}".Trim()),
-        ("phases", $"Phases {PhasesBadge}".Trim()),
-        ("testing", $"Testing {TestingBadge}".Trim()),
-        ("constitution", $"Constitution {ConstitutionBadge}".Trim()),
     ];
+
+    private const int ImpactPreview = 8;
+    private bool _showAllImpact;
 
     private const int DependencyPreview = 6;
     private bool _showAllDependencies;
@@ -1169,7 +1222,7 @@
     {
         get
         {
-            if (_plan is null || _plan.Health.TotalRisks == 0) return "No risks listed in the plan";
+            if (_plan is null || _plan.Health.TotalRisks == 0) return "No risks are explicitly listed in this Plan.";
             var h = _plan.Health;
             var parts = new List<string> { $"{h.CriticalRisks} critical", $"{h.HighRisks} high" };
             if (h.MediumRisks > 0) parts.Add($"{h.MediumRisks} medium");
@@ -1339,11 +1392,11 @@
 
     private static string PlanCheckStatusLabel(ConstitutionCheckStatus s) => s switch
     {
-        ConstitutionCheckStatus.Compliant => "marked met in plan",
-        ConstitutionCheckStatus.NonCompliant => "marked not met in plan",
-        ConstitutionCheckStatus.NeedsReview => "needs review in plan",
-        ConstitutionCheckStatus.NotApplicable => "marked not applicable in plan",
-        _ => $"{CheckStatusLabel(s)} in plan",
+        ConstitutionCheckStatus.Compliant => "Met",
+        ConstitutionCheckStatus.NonCompliant => "Not met",
+        ConstitutionCheckStatus.NeedsReview => "Needs review",
+        ConstitutionCheckStatus.NotApplicable => "Not applicable",
+        _ => CheckStatusLabel(s),
     };
 
     private static string CheckStatusCss(ConstitutionCheckStatus s) => s switch
@@ -1358,14 +1411,14 @@
     private static string GateStatusLabel(PlanGate gate)
     {
         if (gate.Status == PlanGateStatus.Warning && gate.IsJustifiedDeviation)
-            return "justified deviation";
+            return "Justified deviation";
 
         return gate.Status switch
         {
-            PlanGateStatus.Pass          => "marked met",
-            PlanGateStatus.Warning       => "warning",
-            PlanGateStatus.Fail          => "marked not met",
-            PlanGateStatus.NotApplicable => "not applicable",
+            PlanGateStatus.Pass          => "Met",
+            PlanGateStatus.Warning       => "Warning",
+            PlanGateStatus.Fail          => "Not met",
+            PlanGateStatus.NotApplicable => "Not applicable",
             _                            => gate.Status.ToString().ToLowerInvariant(),
         };
     }

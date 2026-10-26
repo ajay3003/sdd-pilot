@@ -244,7 +244,7 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
         cut.Find("[data-testid=pe-testing-summary]").TextContent.Should().Contain("In plan").And.Contain("pytest").And.Contain("No tests are run or read here");
 
         cut.Find("[data-testid=pe-tab][data-tab=testing]").Click();
-        cut.Find("[data-testid=pe-testing-note]").TextContent.Should().Contain("declared in the Plan artifact");
+        cut.Find("[data-testid=pe-testing-note]").TextContent.Should().Contain("testing approach described in the Plan").And.Contain("Actual test results are shown from imported/executed test evidence elsewhere");
 
         var none = RenderPlan("# Plan\n\n## Summary\n\nNothing about tests.\n");
         Tab(none, "testing").Should().Be("Testing");
@@ -271,7 +271,7 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
         var cut = RenderPlan(GenericPlan);
 
         Tab(cut, "risks").Should().Be($"Risks ({plan.Risks.Count}) & Constraints ({plan.Constraints.Count})");
-        Tab(cut, "complexity").Should().Be($"Complexity ({plan.ComplexityItems.Count})");
+        Tab(cut, "complexity").Should().Be($"Complexity (derived) ({plan.ComplexityItems.Count})");
         Tab(cut, "constitution").Should().Be("Constitution (2)");
         cut.Find("[role=tablist]").QuerySelectorAll("[role=tab]").Should().HaveCount(9);
         cut.Find("[data-testid=pe-tab][data-tab=overview]").GetAttribute("aria-selected").Should().Be("true");
@@ -295,7 +295,7 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
 
         cut.Find("[data-testid=pe-constitution-summary]").TextContent.Should().Contain("1 marked met").And.Contain("1 need review").And.Contain("BirkNext assessment: Not performed");
         cut.Find("[data-testid=pe-tab][data-tab=constitution]").Click();
-        cut.Find("[data-testid=pe-constitution-note]").TextContent.Should().Contain("plan's own statements").And.Contain("does not independently assess");
+        cut.Find("[data-testid=pe-constitution-note]").TextContent.Should().Contain("Plan states").And.Contain("BirkNext has not independently verified").And.Contain("Not assessed");
         cut.Markup.Should().NotContain("PASS");
     }
 

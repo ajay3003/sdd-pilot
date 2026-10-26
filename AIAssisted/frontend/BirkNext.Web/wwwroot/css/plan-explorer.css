@@ -1325,3 +1325,27 @@
 
 /* Complexity filter: one neutral active style; the level is in the text. */
 .pe-fc-cx.is-active { background: #334155; border-color: #334155; }
+
+/* ── Tester view: testing impact, source specification, declared vs derived ───────────────────────── */
+.pe-testing-impact { border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.75rem 1rem; background: #f8fafc; display: grid; gap: 0.4rem; }
+.pe-impact-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.pe-impact-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.5rem; font-size: 0.88rem; color: #0f172a; overflow-wrap: anywhere; }
+.pe-impact-category { font-weight: 700; color: #1e3a8a; min-width: 9rem; }
+.pe-impact-text { flex: 1 1 18rem; min-width: 0; }
+.pe-origin { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0 0.45rem; border-radius: 999px; border: 1px solid #cbd5e1; white-space: nowrap; }
+.pe-origin-declared { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
+.pe-origin-derived { background: #faf5ff; color: #581c87; border-color: #d8b4fe; }
+.pe-source-spec { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem; padding: 0.55rem 0.85rem; border: 1px solid #cbd5e1; border-left-width: 4px; border-radius: 6px; font-size: 0.88rem; background: #fff; }
+.pe-source-spec-linked { border-left-color: #15803d; }
+.pe-source-spec-not-found, .pe-source-spec-needs-review { border-left-color: #b45309; }
+.pe-source-spec-label { font-weight: 700; color: #334155; }
+.pe-source-spec-state { font-weight: 700; color: #0f172a; }
+.pe-source-spec-text { color: #334155; overflow-wrap: anywhere; }
+.pe-source-spec-open { font-weight: 600; }
+.pe-meta-details > summary, .pe-howto > summary, .pe-testing-tech > summary { cursor: pointer; color: #1d4ed8; font-size: 0.82rem; }
+.pe-howto { display: block; margin-top: 0.35rem; font-size: 0.8rem; }
+.pe-complexity-dimension { font-size: 0.75rem; color: #475569; font-style: italic; }
+.pe-phase-planned, .pe-phase-us { font-size: 0.7rem; font-weight: 600; padding: 0 0.45rem; border-radius: 999px; border: 1px solid #cbd5e1; color: #334155; background: #f8fafc; }
+.pe-phase-us { color: #1e3a8a; border-color: #93c5fd; background: #eff6ff; }
+.pe-gate-verification, .pe-check-verification { font-size: 0.78rem; color: #475569; }
+.pe-check-verification { margin-left: 0.4rem; }
