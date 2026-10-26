@@ -58,9 +58,9 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         var summary = SpecificationReviewProjection.Summarize(projection, candidates);
         cut.WaitForAssertion(() =>
         {
-            Metric(cut, "requirements-metric").Should().Contain($"{summary.Requirements}Requirements analyzed");
-            Metric(cut, "tests-metric").Should().Contain($"{summary.Tests}Tests analyzed");
-            Metric(cut, "clarifications-metric").Should().Contain($"{summary.Clarifications}Clarifications analyzed");
+            Metric(cut, "requirements-metric").Should().Contain($"{summary.Requirements}Requirements reviewed");
+            Metric(cut, "tests-metric").Should().Contain($"{summary.Tests}Test scenarios reviewed");
+            Metric(cut, "clarifications-metric").Should().Contain($"{summary.Clarifications}Clarifications reviewed");
             cut.Find("[data-testid='candidates-metric'] span").TextContent.Should().Be(summary.Candidates.ToString());
             cut.Find("[data-testid='candidates-by-type']").TextContent.Should().Contain($"{summary.RequirementCandidates} requirement");
             cut.Find("[data-testid='src-filter-requirement']").TextContent.Should().Contain(summary.RequirementCandidates.ToString());
@@ -75,7 +75,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         cut.Find("[data-testid='srp-tests-story']").TextContent.Should().Contain("/");
         cut.Find("[data-testid='srp-tests-linked']").TextContent.Should().Contain("/");
         cut.Find("[data-testid='srp-clar-linked']").TextContent.Should().Contain("/");
-        cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Not assessed for this Specification");
+        cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Traceability has not been assessed yet.");
         cut.Markup.Should().NotContain("78 findings").And.NotContain("Coverage Analysis");
         _analysisRuns.Should().Be(1);
     }
@@ -103,7 +103,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         Analyze(cut);
         cut.WaitForAssertion(() =>
         {
-            Metric(cut, "requirements-metric").Should().Be("1Requirements analyzed");
+            Metric(cut, "requirements-metric").Should().Be("1Requirements reviewed");
             cut.Markup.Should().NotContain("A MUST hold");
         });
     }
@@ -120,8 +120,8 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         Analyze(cut);
         cut.WaitForAssertion(() =>
         {
-            Metric(cut, "requirements-metric").Should().Be("1Requirements analyzed");
-            Metric(cut, "clarifications-metric").Should().Be("1Clarifications analyzed");
+            Metric(cut, "requirements-metric").Should().Be("1Requirements reviewed");
+            Metric(cut, "clarifications-metric").Should().Be("1Clarifications reviewed");
         });
     }
 
@@ -143,7 +143,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
     private void Analyze(IRenderedComponent<SpecificationExplorer> cut)
     {
         cut.WaitForAssertion(() => cut.Find("[data-testid='spec-explorer-analyze']").Should().NotBeNull());
-        if (cut.Find("[data-testid='spec-review-state']").TextContent.Trim() != "Analyzed")
+        if (cut.Find("[data-testid='spec-review-state']").TextContent.Trim() != "Reviewed")
             cut.Find("[data-testid='spec-explorer-analyze']").Click();
     }
 

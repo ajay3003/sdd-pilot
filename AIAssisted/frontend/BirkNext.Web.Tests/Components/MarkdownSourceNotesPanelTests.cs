@@ -28,7 +28,9 @@ public sealed class MarkdownSourceNotesPanelTests : BunitContext
 
         var rendered = Render<MarkdownSourceNotesPanel>(parameters => parameters.Add(p => p.Blocks, blocks));
 
-        rendered.Find("details > summary").TextContent.Should().Contain("3 blocks");
+        rendered.Find("[data-testid=markdown-source-notes-summary]").TextContent.Should().Contain("3 source blocks were not mapped to structured fields.");
+        rendered.Markup.Should().NotContain("Lines 12", "line ranges and parser block types are technical detail, rendered on request");
+        rendered.Find("[data-testid=markdown-source-notes-toggle]").Click();
         rendered.FindAll("article[data-source-block-id]").Select(x => x.GetAttribute("data-source-block-id"))
             .Should().Equal(blocks.Select(x => x.BlockId));
         rendered.Markup.Should().Contain("Trailing prose BEGIN-VISIBLE").And.Contain("END-VISIBLE complete text at EOF");
@@ -45,14 +47,16 @@ public sealed class MarkdownSourceNotesPanelTests : BunitContext
         var tasks = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, $"# Tasks\n\n{tail}"));
         var dataModel = Render<DataModelExplorerPanel>(p => p.Add(x => x.DataModelText, $"# Data Model\n\n{tail}"));
 
-        spec.Markup.Should().Contain(tail, spec.Markup);
-        constitution.Markup.Should().Contain(tail, constitution.Markup);
-        plan.Markup.Should().Contain(tail, plan.Markup);
-        tasks.Markup.Should().Contain(tail, tasks.Markup);
-        // Data Model keeps parser structure out of the primary view: technical details render only on request.
-        dataModel.Markup.Should().NotContain(tail, "technical details are collapsed and lazy");
-        dataModel.Find("[data-testid=markdown-source-notes-toggle]").Click();
-        dataModel.Markup.Should().Contain(tail, dataModel.Markup);
+        // Every explorer keeps parser structure out of the primary view: the verbatim blocks render only on "Review source notes".
+        static void Check<T>(IRenderedComponent<T> panel, string tail) where T : Microsoft.AspNetCore.Components.IComponent
+        {
+            panel.Markup.Should().NotContain(tail, "technical details render only on request");
+            panel.Markup.Should().NotContain("Lines ", "no line ranges in the normal view");
+            panel.Find("[data-testid=markdown-source-notes-summary]").TextContent.Should().Contain("not mapped to structured fields");
+            panel.Find("[data-testid=markdown-source-notes-toggle]").Click();
+            panel.Markup.Should().Contain(tail, "the authored text is preserved verbatim");
+        }
+        Check(spec, tail); Check(constitution, tail); Check(plan, tail); Check(tasks, tail); Check(dataModel, tail);
         spec.Find("article[data-source-block-id]").TextContent.Should().Contain(tail);
         spec.Find("article[data-source-block-id]").GetAttribute("data-source-block-id").Should().NotBeNullOrWhiteSpace();
     }

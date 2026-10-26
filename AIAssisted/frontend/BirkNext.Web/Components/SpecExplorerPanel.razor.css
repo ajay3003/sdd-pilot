@@ -1154,3 +1154,10 @@
     color: var(--clr-text-subtle);
     opacity: 0.8;
 }
+
+.se-details-tech { margin-top: 0.4rem; font-size: 0.8rem; }
+.se-details-tech > summary { cursor: pointer; color: var(--clr-primary, #1d4ed8); }
+.se-answered { margin-left: 0.4rem; padding: 0 0.45rem; border-radius: 999px; border: 1px solid #86efac; background: #f0fdf4; color: #14532d; font-size: 0.7rem; font-weight: 600; text-transform: none; }
+
+/* Readable on every row background (WCAG AA): the hide control keeps its own light surface. */
+.se-hide-btn { color: #334155; background: #ffffff; }

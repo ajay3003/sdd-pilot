@@ -284,16 +284,17 @@ public sealed class ArtifactPackTests : BunitContext
         ImportThreePacks();
         var cut = Host(WorkspaceArtifactType.Plan);
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer-choose-pack] h2").TextContent.Should().Be("Select an artifact pack to explore"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer-choose-pack] h2").TextContent.Should().Be("Choose a feature to explore"));
         cut.Markup.Should().NotContain("represents the current workspace").And.NotContain("needs selection");
         var cards = cut.FindAll("[data-testid=artifact-explorer-pack-choice]");
         cards.Select(c => c.GetAttribute("data-pack")).Should().Equal("001-cart", "002-refund", "003-invoice");
-        cards[0].TextContent.Should().Contain("Cart").And.Contain("Pack 001-cart").And.Contain("4 artifacts").And.Contain("Data Model");
+        cards[0].TextContent.Should().Contain("Cart").And.Contain("pack 001-cart").And.Contain("4 documents").And.Contain("Data Model");
 
         cards[1].Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer-pack]").TextContent.Should().Be("Refunds (002-refund)"));
         cut.Find("[data-testid=artifact-explorer-scope]").TextContent.Should().Be("Pack 002-refund");
-        cut.Find("[data-testid=artifact-explorer-reason]").TextContent.Should().Be("This pack's artifact");
+        cut.Find("[data-testid=artifact-explorer-reason]").TextContent.Should().Be("This pack's artifact", "the exact selection reason stays under Details");
+        cut.Find("[data-testid=artifact-explorer-primary]").TextContent.Should().StartWith("Primary ", "testers see the primary document, not the selection mechanics");
         cut.Find("[data-testid=artifact-explorer-pack-selector]").GetAttribute("value").Should().Be("002-refund");
 
         cut.Find("[data-testid=artifact-explorer-pack-selector]").Change("003-invoice");
@@ -301,7 +302,7 @@ public sealed class ArtifactPackTests : BunitContext
         {
             var empty = cut.Find("[data-testid=artifact-explorer-empty]");
             empty.GetAttribute("data-state").Should().Be("NotInPack");
-            empty.QuerySelector("h2")!.TextContent.Should().Be("Not provided in this pack");
+            empty.QuerySelector("h2")!.TextContent.Should().Be("No plan is available for this feature");
         });
         cut.Find("[data-testid=artifact-explorer-pack-bar]");
         _repository.SddLifecycle.ExplorerSelections.Should().BeEmpty("viewing a pack stores focus, never a selection or authority");

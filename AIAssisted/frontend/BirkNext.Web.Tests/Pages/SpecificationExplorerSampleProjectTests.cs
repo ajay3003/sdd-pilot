@@ -249,7 +249,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             analyzedText.Should().NotBe(workspaceSpec);
             cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("1");
             cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1");
-            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("Requirements analyzed");
+            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("Requirements reviewed");
             cut.Markup.Should().Contain("FR-001: The system shall approve requests.");
         });
     }
@@ -267,10 +267,10 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements-person.md");
-            cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Not assessed for this Specification");
-            cut.Find("[data-testid='se-traceability-state'] a[href='artifact-traceability']").TextContent.Should().Contain("Open Requirements Traceability");
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
-            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("Requirements analyzed");
+            cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Traceability has not been assessed yet.");
+            cut.Find("[data-testid='se-traceability-state'] a[href='artifact-traceability']").TextContent.Should().Contain("Review traceability");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Reviewed");
+            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("Requirements reviewed");
             cut.Markup.Should().NotContain("HEALTHY");
             cut.Markup.Should().NotContain("coverage attention");
             cut.Markup.Should().NotContain("No traceability information available");
@@ -291,9 +291,9 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Reviewed");
             cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("0");
-            cut.Find("[data-testid='spec-no-review-candidates']").TextContent.Should().Contain("No review candidates were found");
+            cut.Find("[data-testid='spec-no-review-candidates']").TextContent.Should().Contain("No review suggestions");
             cut.FindAll("[data-testid='extract-pre-state']").Should().BeEmpty();
         });
         _session.Verify(s => s.SaveSpecificationAnalysisAsync(It.IsAny<SpecificationAnalysisCacheEntry>()), Times.Once);
@@ -315,7 +315,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Reviewed");
             cut.Find("[data-testid='spec-review-candidates']").TextContent.Should().Contain("FR-007: Cached candidate");
         });
         _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Never);
@@ -340,7 +340,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.Find("[data-testid='spec-explorer-analyze']").Click();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Reviewed"));
         _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
@@ -378,7 +378,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Project B Specification");
             cut.Markup.Should().NotContain("FR-001: Project A only");
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Reviewed");
             cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("0");
         });
     }
@@ -426,7 +426,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Reviewed");
             cut.Find("[data-testid='spec-review-candidates']").TextContent.Should().Contain("Project B candidate");
             cut.Markup.Should().NotContain("Project A candidate");
         });

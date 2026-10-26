@@ -14,19 +14,23 @@
     var specLevel = Projection.OfKind(SpecEntityKind.Clarification).Where(c => Projection.PrimaryParentOf(c.Key) is null).ToList();
 
     <section class="srp" aria-labelledby="srp-title" data-testid="spec-relationships">
-        <p class="section-kicker">Specification relationships</p>
-        <h2 id="srp-title">Primary context</h2>
+        <p class="section-kicker">Specification links</p>
+        <h2 id="srp-title">How items are connected</h2>
         <p class="srp-intro">
-            Each item is placed under one parent for navigation: the section it sits in, or the one item it explicitly names.
-            Traceability links can be many-to-many and are listed on each item. This is document structure, not a coverage verdict.
+            Each item is shown under the user story or section it belongs to; other links are listed on the item.
+            Tests and requirements are present, but coverage is assessed separately.
         </p>
 
         <dl class="srp-metrics" aria-label="Relationship metrics" data-testid="srp-metrics">
-            <div><dt>Tests linked to requirements</dt><dd data-testid="srp-tests-linked">@summary.TestsLinkedToRequirements / @tests</dd></div>
-            <div><dt>Tests in a user story</dt><dd data-testid="srp-tests-story">@summary.TestsWithUserStoryContext / @tests</dd></div>
-            <div><dt>Clarifications linked to requirements</dt><dd data-testid="srp-clar-linked">@summary.ClarificationsLinkedToRequirements / @clarifications</dd></div>
-            <div><dt>Specification-level clarifications</dt><dd data-testid="srp-clar-spec">@summary.SpecificationLevelClarifications</dd></div>
+            <div><dt>Tests linked directly to a requirement ID</dt><dd data-testid="srp-tests-linked">@summary.TestsLinkedToRequirements / @tests</dd></div>
+            <div><dt>Tests organized under a user story</dt><dd data-testid="srp-tests-story">@summary.TestsWithUserStoryContext / @tests</dd></div>
+            <div><dt>Clarifications linked to a requirement</dt><dd data-testid="srp-clar-linked">@summary.ClarificationsLinkedToRequirements / @clarifications</dd></div>
+            <div><dt>Clarifications for the whole specification</dt><dd data-testid="srp-clar-spec">@summary.SpecificationLevelClarifications</dd></div>
         </dl>
+        @if (SpecificationRelationshipText.Explain(summary.TestsLinkedToRequirements, summary.TestsWithUserStoryContext, tests) is { } explanation)
+        {
+            <p class="srp-explain" role="note" data-testid="srp-explanation">@explanation</p>
+        }
 
         @if (Projection.Duplicates.Count > 0)
         {

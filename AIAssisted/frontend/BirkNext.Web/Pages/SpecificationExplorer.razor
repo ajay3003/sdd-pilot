@@ -28,6 +28,40 @@
         else
         {
             <div class="se-page-body">
+                @if (!_header.IsEmpty)
+                {
+                    <section class="se-feature-header" aria-label="Specification summary" data-testid="se-feature-header">
+                        @if (_header.Status is { } status)
+                        {
+                            <p class="se-feature-status" data-testid="se-spec-status"><span class="se-status-pill">Specification status: @status</span>
+                                <span class="se-muted">Ready for review</span></p>
+                        }
+                        @if (_header.Summary is { } featureSummary)
+                        {
+                            <div class="se-feature-summary" data-testid="se-feature-summary">
+                                <strong>Feature summary</strong>
+                                @if (featureSummary.Length > 320)
+                                {
+                                    <details><summary>@(featureSummary[..300])…</summary><p>@featureSummary</p></details>
+                                }
+                                else
+                                {
+                                    <p>@featureSummary</p>
+                                }
+                            </div>
+                        }
+                        @if (_header.FeatureBranch is not null || _header.Created is not null)
+                        {
+                            <details class="se-feature-tech" data-testid="se-feature-technical">
+                                <summary>Technical details</summary>
+                                <dl>
+                                    @if (_header.FeatureBranch is { } branch) { <div><dt>Feature branch</dt><dd>@branch</dd></div> }
+                                    @if (_header.Created is { } created) { <div><dt>Created</dt><dd>@created</dd></div> }
+                                </dl>
+                            </details>
+                        }
+                    </section>
+                }
                 <SpecExplorerPanel
                     InitialSpecMarkdown="@_text"
                     Candidates="@CandidatesForCurrentArtifact"
@@ -38,21 +72,21 @@
                 <section class="se-traceability-state" aria-labelledby="se-traceability-title" data-testid="se-traceability-state">
                     <div>
                         <p class="section-kicker">Traceability &amp; Coverage</p>
-                        <h2 id="se-traceability-title">Not assessed for this Specification</h2>
-                        <p>Document structure does not establish workspace coverage. Open Requirements Traceability to assess artifact links.</p>
+                        <h2 id="se-traceability-title">Traceability has not been assessed yet.</h2>
+                        <p>Tests and requirements are present in this specification, but coverage is assessed separately in Requirements Traceability.</p>
                     </div>
-                    <a class="btn-secondary" href="artifact-traceability">Open Requirements Traceability</a>
+                    <a class="btn-secondary" href="artifact-traceability">Review traceability</a>
                 </section>
 
                 <section class="review-results-panel" aria-label="Specification review analysis" data-testid="spec-review-analysis">
                     <div class="review-results-header">
                         <div class="review-results-title">
-                            <p class="section-kicker">Deterministic review</p>
-                            <h2>Specification Review Analysis</h2>
-                            <p>Deterministic review analysis runs automatically for the current Specification. Re-analysis is available when needed.</p>
+                            <p class="section-kicker">Automated specification review</p>
+                            <h2>Specification review</h2>
+                            <p>BirkNext reviews the selected specification automatically and lists suggestions for a person to check.</p>
                         </div>
                         <span class="se-analysis-state @(_analysisError is not null ? "is-failed" : _isAnalyzing ? "is-analyzing" : IsAnalysisStale ? "is-stale" : HasCurrentAnalysis ? "is-current" : "")" data-testid="spec-review-state">
-                            @(_analysisError is not null ? "Failed" : _isAnalyzing ? "Analyzing" : IsAnalysisStale ? "Stale" : HasCurrentAnalysis ? "Analyzed" : "Not run")
+                            @(_analysisError is not null ? "Failed" : _isAnalyzing ? "Analyzing" : IsAnalysisStale ? "Not current" : HasCurrentAnalysis ? "Reviewed" : "Not run")
                         </span>
                     </div>
 
@@ -60,19 +94,19 @@
                     {
                         <div class="review-summary-strip" aria-label="Review analysis metrics">
                             @* Unique logical entities of the analyzed Specification; candidate records are counted separately. *@
-                            <div class="summary-slot" data-testid="requirements-metric"><span>@ReviewSummary.Requirements</span><small>Requirements analyzed</small></div>
-                            <div class="summary-slot" data-testid="tests-metric"><span>@ReviewSummary.Tests</span><small>Tests analyzed</small></div>
-                            <div class="summary-slot" data-testid="clarifications-metric"><span>@ReviewSummary.Clarifications</span><small>Clarifications analyzed</small></div>
-                            <div class="summary-slot" data-testid="candidates-metric"><span>@ReviewSummary.Candidates</span><small>Review candidates</small><small class="summary-slot-detail" data-testid="candidates-by-type">@ReviewSummary.RequirementCandidates requirement · @ReviewSummary.TestCandidates test · @ReviewSummary.ClarificationCandidates clarification</small></div>
+                            <div class="summary-slot" data-testid="requirements-metric"><span>@ReviewSummary.Requirements</span><small>Requirements reviewed</small></div>
+                            <div class="summary-slot" data-testid="tests-metric"><span>@ReviewSummary.Tests</span><small>Test scenarios reviewed</small></div>
+                            <div class="summary-slot" data-testid="clarifications-metric"><span>@ReviewSummary.Clarifications</span><small>Clarifications reviewed</small></div>
+                            <div class="summary-slot" data-testid="candidates-metric"><span>@ReviewSummary.Candidates</span><small>Review suggestions</small><small class="summary-slot-detail" data-testid="candidates-by-type">@ReviewSummary.RequirementCandidates requirements · @ReviewSummary.TestCandidates tests · @ReviewSummary.ClarificationCandidates clarifications</small></div>
                         </div>
                     }
                     else if (_isAnalyzing)
                     {
-                        <p class="se-analysis-notice" role="status" aria-live="polite">Analyzing the current Specification. Structure remains available while deterministic review analysis runs.</p>
+                        <p class="se-analysis-notice" role="status" aria-live="polite">Reviewing this specification. The structure stays available while the review runs.</p>
                     }
                     else if (IsAnalysisStale)
                     {
-                        <p class="se-analysis-notice" role="status">The previous review analysis belongs to a different Specification artifact or revision. Run analysis for the selected artifact.</p>
+                        <p class="se-analysis-notice" role="status" data-testid="spec-review-not-current">Review results are from another specification or revision.</p>
                     }
 
                     <button type="button"
@@ -80,7 +114,7 @@
                             data-testid="spec-explorer-analyze"
                             disabled="@_isAnalyzing"
                             @onclick="AnalyzeSelectedSpecificationAsync">
-                        @(_isAnalyzing ? "Analyzing..." : HasCurrentAnalysis || IsAnalysisStale ? "Re-analyze" : _analysisError is not null ? "Retry analysis" : "Analyze Specification")
+                        @(_isAnalyzing ? "Analyzing..." : HasCurrentAnalysis ? "Re-run review" : _analysisError is not null ? "Retry analysis" : "Analyze this specification")
                     </button>
 
                     @if (!string.IsNullOrWhiteSpace(_analysisError))
@@ -90,15 +124,15 @@
                     else if (_analysisError is null && !HasCurrentAnalysis && !_isAnalyzing)
                     {
                         <div class="extract-pre-state" data-testid="extract-pre-state" role="status">
-                            <h3>@(IsAnalysisStale ? "Analysis is stale" : "Review analysis not run")</h3>
-                            <p>@(IsAnalysisStale ? "Re-analyze the selected Specification to create current review results." : "No review analysis has been run for this Specification artifact.")</p>
+                            <h3>@(IsAnalysisStale ? "Review results are from another specification or revision." : "Specification review not run")</h3>
+                            <p>@(IsAnalysisStale ? "Analyze this specification to see review results for it." : "No review has been run for this specification yet.")</p>
                         </div>
                     }
                     else if (CandidateMetric == 0)
                     {
                         <div class="extract-pre-state" data-testid="spec-no-review-candidates" role="status">
-                            <h3>No review candidates were found</h3>
-                            <p>Analysis completed for the selected Specification and returned no candidates.</p>
+                            <h3>No review suggestions</h3>
+                            <p>The review of this specification found nothing to suggest for human review.</p>
                         </div>
                     }
                     else
@@ -114,6 +148,7 @@
 
 @code {
     private string _text = string.Empty;
+    private SpecificationHeader _header = SpecificationHeader.Empty;
     private SpecificationEntityProjection _projection = SpecificationEntityProjection.Empty;
     private ExtractionPipelineResult? _candidatesSource;
     private IReadOnlyList<SpecReviewCandidate> _reviewCandidates = [];
@@ -156,6 +191,7 @@
         if (string.Equals(artifactKey, _artifactKey, StringComparison.Ordinal)) return;
         // Preserve prior analysis only as stale context; it is never rendered as current for another artifact.
         _text = text;
+        _header = SpecificationHeader.Parse(text);
         _artifactKey = artifactKey;
         _projection = SpecificationEntityProjection.Empty;
         _candidates = [];
@@ -186,10 +222,13 @@
 
     private async Task EnsureAnalysisCurrentAsync(string analysisKey, string analyzedText, bool force = false)
     {
-        if (_disposed || string.IsNullOrWhiteSpace(analyzedText) || _inFlightAnalysisKeys.Contains(analysisKey) || (!force && _attemptedAnalysisKeys.Contains(analysisKey)))
+        if (_disposed || string.IsNullOrWhiteSpace(analyzedText) || _inFlightAnalysisKeys.Contains(analysisKey))
             return;
 
         if (!force && HasCurrentAnalysis) return;
+        // An artifact already tried in this view (e.g. a pack viewed before) still gets its own cached result back when it is shown
+        // again — keyed by exact artifact, revision and content — but extraction is never re-run automatically (a failure is not retried).
+        var cacheOnly = !force && _attemptedAnalysisKeys.Contains(analysisKey);
         _attemptedAnalysisKeys.Add(analysisKey);
         _inFlightAnalysisKeys.Add(analysisKey);
         var analyzedArtifactKey = analysisKey;
@@ -224,6 +263,7 @@
                     }
                     return;
                 }
+                if (cacheOnly) return;
             }
 
             var result = await ExtractionService.ExtractAsync(analyzedText, ExtractionProfile.Speckit);

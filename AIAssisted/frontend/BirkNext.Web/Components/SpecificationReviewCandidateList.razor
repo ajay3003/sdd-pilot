@@ -4,19 +4,19 @@
 @* Review candidates are items suggested for human review. Counts here are candidate records, never logical entity counts. *@
 <section class="src" aria-labelledby="@HeadingId" data-testid="spec-review-candidate-list">
     <div class="src-head">
-        <h3 id="@HeadingId">Review candidates</h3>
-        <p class="src-note">Items the deterministic analysis suggests for human review. A review candidate is not a finding, a defect or a failed requirement.</p>
+        <h3 id="@HeadingId">Review suggestions <span class="src-total" data-testid="src-total">@Candidates.Count suggestion@(Candidates.Count == 1 ? "" : "s")</span></h3>
+        <p class="src-note" data-testid="src-disclaimer"><strong>These are suggestions for human review. They are not findings, defects or failed requirements.</strong></p>
     </div>
 
     <div class="src-toolbar">
-        <div class="src-filters" role="group" aria-label="Filter review candidates by candidate type" data-testid="src-filters">
-            @Filter(null, "All candidates", Candidates.Count)
-            @Filter(ReviewCandidateType.Requirement, "Requirement candidates", Summary.RequirementCandidates)
-            @Filter(ReviewCandidateType.Test, "Test candidates", Summary.TestCandidates)
-            @Filter(ReviewCandidateType.Clarification, "Clarification candidates", Summary.ClarificationCandidates)
+        <div class="src-filters" role="group" aria-label="Filter review suggestions by type" data-testid="src-filters">
+            @Filter(null, "All", Candidates.Count)
+            @Filter(ReviewCandidateType.Requirement, "Requirements", Summary.RequirementCandidates)
+            @Filter(ReviewCandidateType.Test, "Tests", Summary.TestCandidates)
+            @Filter(ReviewCandidateType.Clarification, "Clarifications", Summary.ClarificationCandidates)
         </div>
         <div class="src-search">
-            <label for="@SearchId">Search candidates</label>
+            <label for="@SearchId">Search suggestions</label>
             <input id="@SearchId" type="search" data-testid="src-search" placeholder="ID, text, Given/When/Then"
                    value="@_search" @oninput="OnSearch" />
         </div>
@@ -26,17 +26,17 @@
 
     @if (Filtered.Count == 0)
     {
-        <p class="src-empty" data-testid="src-empty">No review candidates match the current filter@(string.IsNullOrWhiteSpace(_search) ? "" : " and search").</p>
+        <p class="src-empty" data-testid="src-empty">No review suggestions match the current filter@(string.IsNullOrWhiteSpace(_search) ? "" : " and search").</p>
     }
     else
     {
-        <ol id="@ListId" class="src-items" data-testid="spec-review-candidates" aria-label="Specification review candidates">
+        <ol id="@ListId" class="src-items" data-testid="spec-review-candidates" aria-label="Specification review suggestions">
             @foreach (var candidate in Visible)
             {
                 var structured = candidate.Entity is { Kind: SpecEntityKind.Test, HasStructuredScenario: true } scenario ? scenario : null;
                 <li @key="candidate.CandidateId" class="src-item" data-candidate-type="@candidate.Type">
                     <div class="src-item-meta">
-                        <span class="src-type src-type--@candidate.Type.ToString().ToLowerInvariant()">@ReviewCandidateTypes.Label(candidate.Type) candidate</span>
+                        <span class="src-type src-type--@candidate.Type.ToString().ToLowerInvariant()">@SuggestionLabel(candidate.Type)</span>
                         @if (candidate.Entity is { } entity)
                         {
                             <span class="src-entity" data-testid="src-entity">Refers to @EntityLabel(entity)</span>
@@ -46,7 +46,7 @@
                             <span class="src-context">In: @candidate.ContextHeading</span>
                         }
                     </div>
-                    <TraceabilityItemText ItemType="@($"{ReviewCandidateTypes.Label(candidate.Type)} candidate")"
+                    <TraceabilityItemText ItemType="@SuggestionLabel(candidate.Type)"
                                           Text="@candidate.Text"
                                           Given="@structured?.Given" When="@structured?.When" Then="@structured?.Then" />
                 </li>
@@ -85,7 +85,7 @@
         {
             var filtered = Filtered.Count;
             var shown = _showAll ? filtered : Math.Min(filtered, SpecificationReviewProjection.CandidatePreviewSize);
-            var what = _type is { } type ? $"{ReviewCandidateTypes.Label(type).ToLowerInvariant()} candidate{(filtered == 1 ? "" : "s")}" : $"candidate{(filtered == 1 ? "" : "s")}";
+            var what = _type is { } type ? $"{ReviewCandidateTypes.Label(type).ToLowerInvariant()} suggestion{(filtered == 1 ? "" : "s")}" : $"suggestion{(filtered == 1 ? "" : "s")}";
             return $"Showing {shown} of {filtered} {what}";
         }
     }
@@ -119,6 +119,15 @@
                  data-testid="@($"src-filter-{(type?.ToString() ?? "All").ToLowerInvariant()}")" @onclick="() => Select(type)">
             @label <span class="src-filter-count">@count</span>
         </button>;
+
+    /// <summary>"Suggested requirement", "Suggested test scenario", "Suggested clarification" — a suggestion, never a finding.</summary>
+    private static string SuggestionLabel(ReviewCandidateType type) => type switch
+    {
+        ReviewCandidateType.Requirement => "Suggested requirement",
+        ReviewCandidateType.Test => "Suggested test scenario",
+        ReviewCandidateType.Clarification => "Suggested clarification",
+        _ => $"Suggested {ReviewCandidateTypes.Label(type).ToLowerInvariant()}",
+    };
 
     private static string EntityLabel(SpecLogicalEntity entity) => entity.Kind switch
     {

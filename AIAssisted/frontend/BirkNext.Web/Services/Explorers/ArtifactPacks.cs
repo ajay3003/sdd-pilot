@@ -39,9 +39,19 @@ public static partial class ArtifactPacks
     /// <summary>The packs evidenced by <paramref name="artifacts"/> (one module's artifacts of every role), in folder order.</summary>
     public static IReadOnlyList<ArtifactPackSummary> PacksOf(IEnumerable<ExplorerArtifact> artifacts, string module) =>
         [.. artifacts.Where(a => a.Feature is not null).GroupBy(a => a.Feature!, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(g => new ArtifactPackSummary(module, g.Key, FeatureIdOf(g.Key),
-                g.FirstOrDefault(a => a.Role == WorkspaceArtifactType.Specification)?.DisplayName is { Length: > 0 } title && title != g.First(a => a.Role == WorkspaceArtifactType.Specification).FileName ? PackTitle(title) : g.Key,
+            .Select(g => new ArtifactPackSummary(module, g.Key, FeatureIdOf(g.Key), TitleOf(g, g.Key),
                 [.. g.Select(a => a.Role).Distinct().OrderBy(r => r)], g.Count()))];
+
+    /// <summary>
+    /// The pack's title: its Spec-Kit spec.md's title (a quickstart or other supporting specification document in the folder never names the
+    /// feature), else the first specification document's, else the folder name.
+    /// </summary>
+    private static string TitleOf(IEnumerable<ExplorerArtifact> pack, string folder)
+    {
+        var spec = pack.Where(a => a.Role == WorkspaceArtifactType.Specification)
+            .OrderByDescending(a => IsPackFile(a.SourcePath ?? a.FileName, WorkspaceArtifactType.Specification)).FirstOrDefault();
+        return spec is { DisplayName: { Length: > 0 } title } && title != spec.FileName ? PackTitle(title) : folder;
+    }
 
     /// <summary>
     /// The pack key of a document path among <paramref name="roots"/>: module plus feature folder (empty for a shared document). Two documents

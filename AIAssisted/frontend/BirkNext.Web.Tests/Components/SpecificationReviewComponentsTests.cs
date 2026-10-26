@@ -40,7 +40,7 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
         var cut = RenderList(Enumerable.Range(1, 40).Select(i => Candidate($"Requirement candidate text {i:00} MUST hold.", ScenarioKind.Requirement)).ToArray());
 
         cut.FindAll("[data-testid='spec-review-candidates'] > li").Should().HaveCount(SpecificationReviewProjection.CandidatePreviewSize);
-        cut.Find("[data-testid='src-count']").TextContent.Should().Be("Showing 15 of 40 candidates");
+        cut.Find("[data-testid='src-count']").TextContent.Should().Be("Showing 15 of 40 suggestions");
         var toggle = cut.Find("[data-testid='src-show-all']");
         toggle.TextContent.Trim().Should().Be("Show all 40");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
@@ -62,10 +62,10 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
             Candidate("Given a pending request, When a manager approves it per FR-004 and FR-007, Then the request is archived.", ScenarioKind.Test),
             Candidate("Which limit applies?", ScenarioKind.NeedsClarification));
 
-        cut.Find("[data-testid='src-filter-all']").TextContent.Should().Contain("All candidates").And.Contain("4");
-        cut.Find("[data-testid='src-filter-requirement']").TextContent.Should().Contain("Requirement candidates").And.Contain("2");
-        cut.Find("[data-testid='src-filter-test']").TextContent.Should().Contain("Test candidates").And.Contain("1");
-        cut.Find("[data-testid='src-filter-clarification']").TextContent.Should().Contain("Clarification candidates").And.Contain("1");
+        cut.Find("[data-testid='src-filter-all']").TextContent.Should().Contain("All").And.Contain("4");
+        cut.Find("[data-testid='src-filter-requirement']").TextContent.Should().Contain("Requirements").And.Contain("2");
+        cut.Find("[data-testid='src-filter-test']").TextContent.Should().Contain("Tests").And.Contain("1");
+        cut.Find("[data-testid='src-filter-clarification']").TextContent.Should().Contain("Clarifications").And.Contain("1");
         cut.Find("[data-testid='src-filter-all']").GetAttribute("aria-pressed").Should().Be("true");
 
         cut.Find("[data-testid='src-filter-test']").Click();
@@ -74,7 +74,7 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
         cut.Find("[data-testid='src-filter-all']").GetAttribute("aria-pressed").Should().Be("false");
         cut.FindAll("[data-testid='spec-review-candidates'] > li").Should().ContainSingle()
             .Which.GetAttribute("data-candidate-type").Should().Be("Test");
-        cut.Find("[data-testid='src-count']").TextContent.Should().Be("Showing 1 of 1 test candidate");
+        cut.Find("[data-testid='src-count']").TextContent.Should().Be("Showing 1 of 1 test suggestion");
         cut.FindAll("[data-testid='src-show-all']").Should().BeEmpty();
     }
 
@@ -91,7 +91,7 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
             .Which.GetAttribute("data-candidate-type").Should().Be("Test");
 
         cut.Find("[data-testid='src-search']").Input("no such text");
-        cut.Find("[data-testid='src-empty']").TextContent.Should().Contain("No review candidates match");
+        cut.Find("[data-testid='src-empty']").TextContent.Should().Contain("No review suggestions match");
 
         cut.Find("[data-testid='src-search']").Input("limit");
         cut.FindAll("[data-testid='spec-review-candidates'] > li").Should().ContainSingle()
@@ -104,7 +104,7 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
         var cut = RenderList(Candidate("Given a pending request, When a manager approves it per FR-004 and FR-007, Then the request is archived.", ScenarioKind.Test));
 
         var item = cut.Find("[data-testid='spec-review-candidates'] > li");
-        item.QuerySelector(".src-type")!.TextContent.Should().Be("Test candidate");
+        item.QuerySelector(".src-type")!.TextContent.Should().Be("Suggested test scenario");
         item.QuerySelector("[data-testid='src-entity']")!.TextContent.Should().Be("Refers to US 1 · Scenario 1");
         var parts = item.QuerySelectorAll(".traceability-item__scenario-part");
         parts.Should().HaveCount(3);
@@ -135,7 +135,7 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
     {
         var cut = RenderList(Candidate("FR-004: The system MUST approve requests.", ScenarioKind.Requirement));
 
-        cut.Find(".src-note").TextContent.Should().Contain("not a finding, a defect or a failed requirement");
+        cut.Find(".src-note").TextContent.Should().Contain("These are suggestions for human review. They are not findings, defects or failed requirements.");
         cut.Markup.Should().NotContain("finding(s)").And.NotContain("Failed");
     }
 
@@ -177,7 +177,7 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
         underRequirement.TextContent.Should().Contain("Placed by explicit reference").And.Contain("Answer: 10 000 NOK.");
         cut.Find("[data-testid='srp-group'][data-entity='specification-clarifications'] [data-testid='srp-item']")
             .GetAttribute("data-entity").Should().Be("CL#2");
-        cut.Markup.Should().Contain("not a coverage verdict");
+        cut.Markup.Should().Contain("coverage is assessed separately");
     }
 
     [Fact]

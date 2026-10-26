@@ -30,14 +30,14 @@
                         <option value="@module.Module">@ModuleOptionText(module)</option>
                     }
                 </select>
-                <span class="axh-module-note">Reviews read the selected artifacts of this module.</span>
+                <span class="axh-module-note">Choose a module to review its features.</span>
             </div>
         }
         @if (_state.HasPacks && !_state.PackRequired && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
         {
             @* Feature packs: every role resolves within the viewed pack (plus shared artifacts); siblings are never mixed. *@
             <div class="axh-module-bar axh-pack-bar" data-testid="artifact-explorer-pack-bar">
-                <label class="axh-select-label" for="@($"{_id}-pack")">Artifact pack</label>
+                <label class="axh-select-label" for="@($"{_id}-pack")">Feature</label>
                 <select id="@($"{_id}-pack")" class="axh-select" data-testid="artifact-explorer-pack-selector"
                         value="@_state.Pack" @onchange="OnPackChanged">
                     @foreach (var pack in _state.Packs!)
@@ -45,7 +45,8 @@
                         <option value="@pack.Pack">@PackOptionText(pack)</option>
                     }
                 </select>
-                <span class="axh-module-note">Explorers and reviews read this pack and shared artifacts — never a sibling pack.</span>
+                <span class="axh-module-note" title="Documents from other feature packs are never mixed automatically.">Reviews use this feature and its shared project documents.
+                    <span class="visually-hidden">Documents from other feature packs are never mixed automatically.</span></span>
             </div>
         }
         switch (_state.Status)
@@ -96,10 +97,10 @@
                 @* The viewed pack has no artifact of this role and nothing shared applies: neutral, and never borrowed from a sibling pack. *@
                 <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="NotInPack">
                     <div class="axh-icon" aria-hidden="true">@Icon</div>
-                    <h2 class="axh-title">Not provided in this pack</h2>
+                    <h2 class="axh-title">No @Label.ToLowerInvariant() is available for this feature</h2>
                     <p class="axh-text">
-                        Pack <strong>@emptyPack.DisplayName</strong> (@emptyPack.Pack) has no @Label artifact, and no shared @Label artifact applies.
-                        Other packs' @Label artifacts are never used for this pack. Every artifact role is optional.
+                        <strong>@emptyPack.DisplayName</strong> <span class="axh-muted">(pack @emptyPack.Pack)</span> has no @Label artifact of its own, and no shared one applies.
+                        Other features' documents are never used instead. Choose another feature above, or open the other explorers for this feature's documents.
                     </p>
                 </div>
                 break;
@@ -154,10 +155,10 @@
             case ExplorerArtifactStatus.SelectionRequired when _state.PackRequired:
                 @* Several feature packs and none viewed: choosing a pack is navigation, not a warning and not an authority decision. *@
                 <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose-pack">
-                    <h2 class="axh-title">Select an artifact pack to explore</h2>
+                    <h2 class="axh-title">Choose a feature to explore</h2>
                     <p class="axh-text" data-testid="artifact-explorer-pack-candidates">
-                        @(_state.ModuleLabel is { } packModule ? $"Module {packModule}" : WorkspaceName) is organised in @_state.Packs!.Count feature packs.
-                        Each pack keeps its own artifacts; shared artifacts apply to every pack.
+                        @(_state.ModuleLabel is { } packModule ? $"Module {packModule}" : WorkspaceName) has @_state.Packs!.Count features (feature packs).
+                        Each feature keeps its own documents; shared project documents apply to every feature.
                     </p>
                     <ul class="axh-choices axh-packs">
                         @foreach (var pack in _state.Packs!)
@@ -166,11 +167,11 @@
                                 <button type="button" class="axh-choice" data-testid="artifact-explorer-pack-choice" data-pack="@pack.Pack"
                                         @onclick="() => SelectPackAsync(pack.Pack)">
                                     <span class="axh-choice-name">@pack.DisplayName</span>
-                                    <span class="axh-choice-meta">Pack @pack.Pack@(pack.FeatureId is { } fid ? $" · feature {fid}" : "") · @pack.Artifacts @(pack.Artifacts == 1 ? "artifact" : "artifacts")</span>
+                                    <span class="axh-choice-meta">@(pack.FeatureId is { } fid ? $"Feature {fid} · " : "")pack @pack.Pack · @pack.Artifacts @(pack.Artifacts == 1 ? "document" : "documents")</span>
                                     <span class="axh-badges">
                                         @foreach (var role in pack.RolesPresent)
                                         {
-                                            <span class="axh-badge">@ArtifactExplorerRoles.Label(role)</span>
+                                            <span class="axh-badge">@BadgeLabel(role)</span>
                                         }
                                     </span>
                                 </button>
@@ -218,12 +219,25 @@
 
             case ExplorerArtifactStatus.Loaded:
                 var selected = _state.Selected!;
+                var others = _state.Artifacts.Count - 1;
+                @* Tester view first: what this document is (feature title), where it belongs (module · feature), that it is the primary document.
+                   Provenance (file, path, source, revision, scope), the document switch and manual import are under Details. *@
                 <div class="axh-context" data-testid="artifact-explorer-context">
                     <div class="axh-context-main">
                         <div class="axh-context-heading">
                             <span class="axh-role"><span aria-hidden="true">@Icon</span> @Label</span>
                             <strong class="axh-name" data-testid="artifact-explorer-name">@selected.DisplayName</strong>
                         </div>
+                        <p class="axh-context-line" data-testid="artifact-explorer-summary">@ContextLine(selected)</p>
+                        <span class="axh-badges">@ReasonBadge
+                            @if (others > 0)
+                            {
+                                <span class="axh-badge" data-testid="artifact-explorer-supporting">@OthersText(others)</span>
+                            }
+                        </span>
+                    </div>
+                    <details class="axh-details" data-testid="artifact-explorer-details">
+                        <summary>Details<span class="visually-hidden"> of the @Label document</span></summary>
                         <dl class="axh-meta">
                             @if (_state.HasProject)
                             {
@@ -241,34 +255,38 @@
                             <div><dt>File</dt><dd data-testid="artifact-explorer-file">@selected.FileName</dd></div>
                             @if (!string.IsNullOrWhiteSpace(selected.SourcePath) && selected.SourcePath != selected.FileName)
                             {
-                                <div><dt>Path</dt><dd>@selected.SourcePath</dd></div>
+                                <div><dt>Path</dt><dd data-testid="artifact-explorer-path">@selected.SourcePath</dd></div>
                             }
                             <div><dt>Source</dt><dd data-testid="artifact-explorer-source">@SourceText(selected)</dd></div>
                             @if (selected.Revision is { } revision)
                             {
                                 <div><dt>Revision</dt><dd>@revision@(selected.RevisionCount > 1 ? $" of {selected.RevisionCount}" : "")</dd></div>
                             }
+                            @if (_state.Resolution is { } resolution)
+                            {
+                                <div><dt>Resolution</dt><dd>@resolution</dd></div>
+                            }
                         </dl>
-                        <span class="axh-badges">@Badges(selected)@ReasonBadge</span>
-                    </div>
-                    <div class="axh-context-actions">
-                        @if (_state.Artifacts.Count > 1)
-                        {
-                            <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts@(_state.PackSummary is { } p ? $" for pack {p.Pack}" : _state.ModuleLabel is { } m ? $" in {m}" : "")</label>
-                            <select id="@($"{_id}-select")" class="axh-select" data-testid="artifact-explorer-selector"
-                                    value="@selected.Id" @onchange="OnSelectorChanged">
-                                @foreach (var artifact in _state.Artifacts)
-                                {
-                                    <option value="@artifact.Id"
-                                            data-birknext-document-id="@artifact.DocumentIdentity">@OptionText(artifact)</option>
-                                }
-                            </select>
-                        }
-                        <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
-                                data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
-                            Import @Label.ToLowerInvariant()
-                        </button>
-                    </div>
+                        <span class="axh-badges">@Badges(selected)@TechnicalReasonBadge</span>
+                        <div class="axh-context-actions">
+                            @if (_state.Artifacts.Count > 1)
+                            {
+                                <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label documents@(_state.PackSummary is { } p ? $" for this feature" : _state.ModuleLabel is { } m ? $" in {m}" : "")</label>
+                                <select id="@($"{_id}-select")" class="axh-select" data-testid="artifact-explorer-selector"
+                                        value="@selected.Id" @onchange="OnSelectorChanged">
+                                    @foreach (var artifact in _state.Artifacts)
+                                    {
+                                        <option value="@artifact.Id"
+                                                data-birknext-document-id="@artifact.DocumentIdentity">@OptionText(artifact)</option>
+                                    }
+                                </select>
+                            }
+                            <button type="button" class="btn-secondary btn-small" aria-expanded="@(_importOpen ? "true" : "false")"
+                                    data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
+                                Add a @Label.ToLowerInvariant() manually
+                            </button>
+                        </div>
+                    </details>
                 </div>
                 break;
         }
@@ -456,15 +474,47 @@
     }
 
     private static string PackOptionText(ArtifactPackSummary pack) =>
-        pack.DisplayName == pack.Pack ? $"{pack.Pack} · {pack.Artifacts} artifacts" : $"{pack.DisplayName} ({pack.Pack}) · {pack.Artifacts} artifacts";
+        pack.DisplayName == pack.Pack ? $"{pack.Pack} · {pack.Artifacts} documents" : $"{pack.DisplayName} ({pack.Pack}) · {pack.Artifacts} documents";
+
+    /// <summary>Badge text for a role on a feature card: "Tasks" (a list), "Research" explained as supporting analysis.</summary>
+    private static string BadgeLabel(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Tasks => "Tasks",
+        WorkspaceArtifactType.Research => "Research (supporting)",
+        _ => ArtifactExplorerRoles.Label(role),
+    };
+
+    /// <summary>"Person · Feature 002 · Missing Parent Failure Code": module, feature number and feature title — no file or path.</summary>
+    private string ContextLine(ExplorerArtifact selected)
+    {
+        var parts = new List<string>();
+        if (_state?.ModuleLabel is { } module) parts.Add(module);
+        else if (_state?.HasProject == true) parts.Add(WorkspaceName);
+        if (_state?.PackSummary is { } pack)
+        {
+            if (pack.FeatureId is { } id) parts.Add($"Feature {id}");
+            if (pack.DisplayName != pack.Pack && pack.DisplayName != ArtifactPacks.PackTitle(selected.DisplayName)
+                && !selected.DisplayName.Contains(pack.DisplayName, StringComparison.OrdinalIgnoreCase)) parts.Add(pack.DisplayName);
+        }
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>Other documents of the role this feature can read: Spec-Kit supporting documents, or shared/other ones — never "competing".</summary>
+    private string OthersText(int others)
+    {
+        var noun = Label.ToLowerInvariant();
+        return _state?.Reason == ExplorerSelectionReason.PackFile
+            ? $"{others} supporting {noun} document{(others == 1 ? "" : "s")}"
+            : $"{others} other {noun} document{(others == 1 ? "" : "s")} available";
+    }
 
     private string ModuleOptionText(ArtifactModuleRoleState module) => $"{module.Label} — {ModuleStateText(module)}";
 
     private string ModuleStateText(ArtifactModuleRoleState module) => module switch
     {
         { Candidates: 0 } => $"no {Label} artifact",
-        { Packs: > 1, AmbiguousInPack: true } => $"{module.Packs} packs · a pack needs selection",
-        { Packs: > 1 } => $"{module.Packs} packs · {module.Candidates} {Label} artifacts",
+        { Packs: > 1, AmbiguousInPack: true } => $"{module.Packs} features · a feature requires clarification",
+        { Packs: > 1 } => $"{module.Packs} features · {module.Candidates} {Label} documents",
         { SelectedId: not null, Candidates: 1 } => $"1 {Label} artifact",
         { SelectedId: not null } => $"{module.Candidates} {Label} artifacts · selected",
         _ => $"{module.Candidates} {Label} artifacts · needs selection",
@@ -514,6 +564,21 @@
     };
 
     private RenderFragment ReasonBadge => __builder =>
+    {
+        var text = _state?.Reason switch
+        {
+            ExplorerSelectionReason.SharedArtifact => $"Shared {Label.ToLowerInvariant()} — this feature has none of its own",
+            ExplorerSelectionReason.Explicit => $"{Label} chosen for this feature",
+            null => null,
+            _ => $"Primary {Label.ToLowerInvariant()}",
+        };
+        if (text is not null)
+        {
+            <span class="axh-badge axh-badge-reason" data-testid="artifact-explorer-primary">@text</span>
+        }
+    };
+
+    private RenderFragment TechnicalReasonBadge => __builder =>
     {
         var text = _state?.Reason switch
         {

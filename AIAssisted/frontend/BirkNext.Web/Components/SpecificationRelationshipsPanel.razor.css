@@ -162,3 +162,5 @@
         padding-left: 0.4rem;
     }
 }
+
+.srp-explain { margin: 0.25rem 0 0; padding: 0.45rem 0.65rem; border-left: 3px solid #64748b; background: #f8fafc; font-size: 0.86rem; color: #1f2937; }

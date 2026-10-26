@@ -1539,10 +1539,11 @@ public class ViewBehaviorTests : BunitContext
 
         var detail = cut.Find("[data-testid='se-requirement-detail']").TextContent;
         detail.Should().Contain("expose search APIs");
-        detail.Should().Contain("Source heading");
-        detail.Should().Contain("User Story");
-        detail.Should().Contain("Scenarios parsed for this requirement");
-        detail.Should().Contain("Success criteria parsed in this section");
+        detail.Should().Contain("User story");
+        detail.Should().Contain("Test scenarios for this requirement");
+        detail.Should().Contain("Acceptance / success criteria in this section");
+        detail.Should().Contain("Source heading", "the source heading stays available under Technical details");
+        cut.Find("[data-testid='se-requirement-detail'] details.se-details-tech").HasAttribute("open").Should().BeFalse();
         detail.Should().NotContain("Coverage status");
     }
 
@@ -1554,7 +1555,7 @@ public class ViewBehaviorTests : BunitContext
         cut.FindAll(".se-row").First(r => r.TextContent.Contains("API Surface")).Click();
 
         var summary = cut.Find("[data-testid='se-section-summary']").TextContent;
-        summary.Should().Contain("Parsed structure");
+        summary.Should().Contain("In this section");
         summary.Should().Contain("Requirements:");
         summary.Should().Contain("Clarifications:");
         summary.Should().NotContain("Coverage:");
@@ -1566,10 +1567,10 @@ public class ViewBehaviorTests : BunitContext
     {
         var cut = RenderSpecExplorerWithTraceability();
 
-        cut.FindAll(".se-view-btn").First(b => b.TextContent.Contains("Map View")).Click();
+        cut.FindAll(".se-view-btn").First(b => b.TextContent.Contains("Structure Map")).Click();
 
-        cut.FindAll("[data-testid='se-map-structure']")
-            .Should().Contain(e => e.TextContent.Contains("Parsed heading -> document items"));
+        cut.FindAll(".se-row-map").Should().NotBeEmpty("the structure map shows the hierarchy");
+        cut.Markup.Should().NotContain("Parsed heading", "parser mapping is never shown to testers");
     }
 
     [Fact]

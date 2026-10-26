@@ -144,3 +144,13 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+/* Feature header: status and summary for testers; branch and creation date under Technical details. */
+.se-feature-header { display: grid; gap: 0.4rem; padding: 0.75rem 1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white, #fff); }
+.se-feature-status { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.88rem; }
+.se-status-pill { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; border: 1px solid #cbd5e1; background: #f8fafc; color: #1e293b; font-weight: 600; }
+.se-muted { color: var(--clr-text-muted, #64748b); }
+.se-feature-summary p { margin: 0.2rem 0 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.se-feature-summary summary, .se-feature-tech > summary { cursor: pointer; font-size: 0.85rem; }
+.se-feature-tech dl { margin: 0.3rem 0 0; display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; font-size: 0.82rem; }
+.se-feature-tech dd { margin: 0; overflow-wrap: anywhere; }

@@ -162,3 +162,5 @@
     font-weight: 600;
     cursor: pointer;
 }
+
+.src-total { margin-left: 0.4rem; font-size: 0.8rem; font-weight: 600; color: var(--clr-text-muted, #475569); }

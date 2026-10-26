@@ -37,19 +37,18 @@
             </div>
             <div class="se-header-right">
                 <div class="se-view-toggle" role="group" aria-label="View mode">
-                    <button class='se-view-btn @(!_isMapView ? "is-active" : "")' @onclick='() => _isMapView = false'>
+                    <button type="button" class='se-view-btn @(!_isMapView ? "is-active" : "")' aria-pressed="@(!_isMapView ? "true" : "false")" @onclick='() => _isMapView = false'>
                         Tree View
                     </button>
-                    <button class='se-view-btn @(_isMapView ? "is-active" : "")' @onclick='() => _isMapView = true'>
-                        Map View
+                    <button type="button" class='se-view-btn @(_isMapView ? "is-active" : "")' aria-pressed="@(_isMapView ? "true" : "false")" @onclick='() => _isMapView = true'>
+                        Structure Map
                     </button>
                 </div>
             </div>
         </div>
 
         <section class="se-purpose" data-testid="se-purpose">
-            <strong>Specification Structure Explorer</strong>
-            <span>Browse the specification hierarchy, section requirements, tests, and clarifications. Use Traceability &amp; Coverage for analytics and Flow View for release readiness.</span>
+            <span>Browse user stories, requirements, test scenarios and clarifications for this feature.</span>
         </section>
 
         @if (_semanticModel?.TotalRequirements == 0)
@@ -62,7 +61,7 @@
             <div class="se-search-wrap">
                 <input type="search"
                        class="se-search"
-                       placeholder="Search IDs, headings, Given/When/Then..."
+                       placeholder="Search requirements, scenarios, IDs or text"
                        value="@_searchQuery"
                        @oninput="HandleSearchInput"
                        aria-label="Search spec explorer" />
@@ -203,11 +202,6 @@
                                 </span>
                             }
 
-                            @if (_isMapView && isHeading && node.TotalDescendants > 0)
-                            {
-                                <span class="se-map-structure" data-testid="se-map-structure">Parsed heading -&gt; document items</span>
-                            }
-
                             <button class="se-hide-btn"
                                     title="Hide this node from view"
                                     @onclick:stopPropagation="true"
@@ -244,7 +238,7 @@
                         @if (selectedHealth is not null)
                         {
                             <div class="se-details-section se-section-summary" data-testid="se-section-summary">
-                                <div class="se-details-label">Parsed structure</div>
+                                <div class="se-details-label">In this section</div>
                                 <div class="se-summary-grid">
                                     <span>Requirements: <strong>@selectedHealth.Requirements</strong></span>
                                     <span>Clarifications: <strong>@selectedHealth.Clarifications</strong></span>
@@ -264,16 +258,14 @@
                         @if (selectedRequirement is not null)
                         {
                             <div class="se-details-section se-requirement-detail" data-testid="se-requirement-detail">
-                                <div class="se-details-label">Requirement Detail</div>
+                                <div class="se-details-label">Requirement</div>
                                 <div class="se-details-content">@selectedRequirement.RequirementText</div>
-                                <div class="se-summary-line">Source heading: @selectedRequirement.SourceHeading</div>
-                                <div class="se-summary-line">User Story: @(selectedRequirement.UserStory ?? "No user story mapped")</div>
-                                <div class="se-summary-line">Structure source: selected Specification artifact</div>
+                                <div class="se-summary-line">User story: @(selectedRequirement.UserStory ?? "Not inside a user story")</div>
                                 <div class="se-linked-block">
-                                    <strong>Scenarios parsed for this requirement</strong>
+                                    <strong>Test scenarios for this requirement</strong>
                                     @if (selectedRequirement.LinkedTests.Count == 0)
                                     {
-                                        <span>No scenarios are parsed for this requirement.</span>
+                                        <span>No test scenario is written for this requirement in the specification.</span>
                                     }
                                     else
                                     {
@@ -286,10 +278,10 @@
                                     }
                                 </div>
                                 <div class="se-linked-block">
-                                    <strong>Success criteria parsed in this section</strong>
+                                    <strong>Acceptance / success criteria in this section</strong>
                                     @if (selectedRequirement.LinkedSuccessCriteria.Count == 0)
                                     {
-                                        <span>No success criteria are parsed in this section.</span>
+                                        <span>No success criteria in this section.</span>
                                     }
                                     else
                                     {
@@ -301,7 +293,11 @@
                                         </ul>
                                     }
                                 </div>
-                                <a href="/traceability" class="se-action-link" data-testid="se-open-traceability">Open in Traceability</a>
+                                <details class="se-details-tech">
+                                    <summary>Technical details</summary>
+                                    <div class="se-summary-line">Source heading: @selectedRequirement.SourceHeading</div>
+                                    <div class="se-summary-line">Structure source: selected Specification artifact</div>
+                                </details>
                             </div>
                         }
 
@@ -318,9 +314,13 @@
                             @if (!string.IsNullOrEmpty(selected.AnswerText))
                             {
                                 <div class="se-details-section">
-                                    <div class="se-details-label">Answer</div>
+                                    <div class="se-details-label">Answer <span class="se-answered" data-testid="se-clarification-answered">Answered</span></div>
                                     <div class="se-qa-block se-qa-answer">@selected.AnswerText</div>
                                 </div>
+                            }
+                            else if (selected.NodeType == SpecNodeType.QaPair)
+                            {
+                                <div class="se-details-section"><span class="se-summary-line" data-testid="se-clarification-open">No answer is written in the specification yet.</span></div>
                             }
                         }
 
@@ -477,11 +477,11 @@
                             @if (linked.Count > 0)
                             {
                                 <div class="se-details-section">
-                                    <div class="se-details-label">Linked Extraction Results (@linked.Count)</div>
+                                    <div class="se-details-label">Review suggestions here (@linked.Count)</div>
                                     <ul class="se-details-linked">
                                         @foreach (var c in linked.Take(6))
                                         {
-                                            <li><span class="se-linked-tag se-linked-@c.Classification.ToString().ToLower()">@c.Classification</span> @c.Title</li>
+                                            <li><span class="se-linked-tag se-linked-@c.Classification.ToString().ToLower()">Suggested @c.Classification.ToString().ToLowerInvariant()</span> @c.Title</li>
                                         }
                                         @if (linked.Count > 6)
                                         {
@@ -492,14 +492,20 @@
                             }
                         }
 
+                        @* Traceability, Impact Analysis and Documentation Drift read the same module and feature focus, so the pack goes with them. *@
                         <div class="se-details-actions">
                             <a href="/traceability" class="se-action-link" data-testid="se-open-traceability">Open in Traceability</a>
-                            <a href="/traceability" class="se-action-link">Show Linked Tests</a>
-                            <a href="/traceability" class="se-action-link">Show Linked Success Criteria</a>
-                            <a href="/traceability" class="se-action-link">Show Related User Stories</a>
-                            <a href="/impact-analysis" class="se-action-link">Impact Analysis</a>
-                            <a href="/documentation-drift" class="se-action-link">Documentation Drift</a>
+                            <a href="/traceability" class="se-action-link">Show linked tests</a>
+                            <a href="/traceability" class="se-action-link">Show linked success criteria</a>
+                            <a href="/traceability" class="se-action-link">Show related user story</a>
                         </div>
+                        <details class="se-details-tech" data-testid="se-advanced-actions">
+                            <summary>More actions</summary>
+                            <div class="se-details-actions">
+                                <a href="/impact-analysis" class="se-action-link">Impact Analysis</a>
+                                <a href="/documentation-drift" class="se-action-link">Documentation Drift</a>
+                            </div>
+                        </details>
                     </div>
                 }
             }
@@ -581,8 +587,18 @@
         var all = SpecExplorerService.GetFlatVisible(_tree.Roots, _expandedIds, _searchQuery);
         _flatCache = all
             .Where(r => _hiddenIds.Count == 0 || !_hiddenIds.Contains(r.Node.Id))
+            .Where(r => IsEmbeddedInReview || !IsHeaderMetadata(r.Node, r.Depth))
             .ToList();
     }
+
+    /// <summary>
+    /// The specification's header lines (Feature Branch, Created, Status, Input) directly under the title: the Explorer page shows them as the
+    /// feature header (status, feature summary) and Technical details, so the structure tree lists the specification's content only.
+    /// </summary>
+    private static bool IsHeaderMetadata(SpecNode node, int depth) =>
+        depth == 1 && node.HeadingLevel == 0 && HeaderLine.IsMatch(node.Title);
+
+    private static readonly Regex HeaderLine = new(@"^\s*(Feature Branch|Created|Status|Input)\s*:", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private void HideNode(SpecNode node)
     {

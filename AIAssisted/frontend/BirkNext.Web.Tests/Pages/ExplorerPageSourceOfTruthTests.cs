@@ -192,7 +192,7 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid='artifact-explorer-name']").TextContent.Should().Be("Backlog B"));
         var selector = cut.Find("[data-testid='artifact-explorer-selector']");
-        cut.Find($"label[for='{selector.Id}']").TextContent.Should().Be("2 Task artifacts");
+        cut.Find($"label[for='{selector.Id}']").TextContent.Should().Be("2 Task documents");
 
         selector.Change(ArtifactExplorerContext.WorkspacePrefix + "backlog-a.md");
         cut.WaitForAssertion(() => cut.Find("[data-testid='artifact-explorer-name']").TextContent.Should().Be("Backlog A"));
