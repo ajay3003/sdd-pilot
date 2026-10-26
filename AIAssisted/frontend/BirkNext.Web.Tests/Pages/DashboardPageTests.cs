@@ -54,7 +54,8 @@ public class DashboardPageTests : BunitContext
             cut.Markup.Should().Contain("SDD Governance Dashboard");
             cut.Markup.Should().Contain("Project Health");
             cut.Markup.Should().Contain("Workflow");
-            cut.Markup.Should().Contain("Not assessed");
+            cut.Markup.Should().Contain("Needs setup", "without a project every area needs a project first");
+            cut.Markup.Should().NotContain(">—<", "no area shows a bare dash as its state");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -68,28 +69,32 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().NotContain(">0%<", "nothing is assessed without a workspace");
-            cut.Markup.Should().Contain("Not assessed");
+            cut.Markup.Should().Contain("Needs setup");
             cut.Markup.Should().Contain("No workspace loaded");
             cut.Markup.Should().Contain("Project Health");
             cut.Markup.Should().Contain("Traceability");
             cut.Markup.Should().Contain("Top Risks");
+            cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("Risks have not been assessed yet").And.NotContain("No risks detected");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
     [Fact]
     public void DashboardWorkflowMetric_UsesSharedReadinessForLoadedWorkspace()
     {
+        var readiness = LoadedWorkflowReadiness();
         _workflowReadiness
             .Setup(service => service.GetReadinessAsync())
-            .ReturnsAsync(LoadedWorkflowReadiness());
+            .ReturnsAsync(readiness);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(readiness.Workspace).Object);
         RegisterClient([], []);
 
         var cut = Render<Dashboard>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("30%");
-            cut.Markup.Should().Contain("Started");
+            var workflow = cut.Find("[data-testid=db-health-area][data-key=workflow]");
+            workflow.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.InProgress));
+            workflow.TextContent.Should().Contain("1 of 3 required reviews approved (30%)").And.Contain("In progress");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -118,8 +123,8 @@ public class DashboardPageTests : BunitContext
             cut.Markup.Should().Contain("SDD Governance Dashboard");
             cut.Markup.Should().Contain("Project Artifacts");
             cut.Markup.Should().NotContain("Governance Status");
-            cut.Markup.Should().Contain("Readiness Summary");
-            cut.Markup.Should().Contain("Analysis Summary");
+            cut.Markup.Should().Contain("Test and release evidence", "release evidence is separate from review readiness");
+            cut.Markup.Should().Contain("Analysis Summary", "per-analysis results stay available under Analysis details");
             cut.Markup.Should().Contain("Quick Actions");
         }, timeout: TimeSpan.FromSeconds(1));
     }
@@ -144,7 +149,7 @@ public class DashboardPageTests : BunitContext
         {
             cut.Markup.Should().Contain("SDD Governance Dashboard");
             cut.Markup.Should().Contain("No workspace loaded");
-            cut.Markup.Should().Contain("Not assessed");
+            cut.Markup.Should().Contain("Needs setup");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -310,7 +315,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             Text(cut, "db-workspace-name").Should().Contain("Autorisasjon");
-            Text(cut, "db-workspace-roles").Should().Be("5 artifact roles available");
+            Text(cut, "db-workspace-roles").Should().Be("5 document types");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -320,18 +325,21 @@ public class DashboardPageTests : BunitContext
     {
         var cut = RenderDashboardWithWorkspace("autorisasjon", CreateSampleProject("autorisasjon", "Autorisasjon"));
 
-        cut.WaitForAssertion(() => Text(cut, "db-workspace-roles").Should().Be("5 artifact roles available"));
+        cut.WaitForAssertion(() => Text(cut, "db-workspace-roles").Should().Be("5 document types"));
         var cards = cut.FindAll("[data-testid=db-artifact-card]");
         cards.Should().HaveCount(5);
         foreach (var card in cards)
         {
-            card.TextContent.Should().Contain("Available");
-            card.TextContent.Should().Contain("Not analyzed", "no analysis has run in this session");
+            // One primary status; availability and "review not run" are secondary metadata, not three equal badges.
+            card.QuerySelector("[data-testid=db-artifact-status]")!.TextContent.Should().EndWith("Ready to review");
+            card.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().StartWith("Available").And.Contain("Review not run");
             card.TextContent.Should().NotContain("Not loaded");
-            card.TextContent.Should().NotContain("Missing");
+            card.TextContent.Should().NotContain("Not found");
+            card.TextContent.Should().NotContain("healthy", "import metadata is not a review result");
         }
-        Text(cut, "db-governance-value").Should().Be("—", "five available roles are not a governance score; nothing is reviewed yet");
-        cut.Find("[data-testid=db-governance-kpi]").TextContent.Should().Contain("Not assessed").And.NotContain("Roles available");
+        var governance = cut.Find("[data-testid=db-health-area][data-key=governance]");
+        governance.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.NotAssessed), "five available roles are not a governance result");
+        governance.TextContent.Should().NotContain("Roles available").And.NotContain("—");
     }
 
     [Fact]
@@ -353,9 +361,12 @@ public class DashboardPageTests : BunitContext
             badge.TextContent.Should().EndWith(expected.Label);
         }
         // Approved: Constitution only, of the five document reviews that apply (Data Model's optional one included).
-        Text(cut, "db-governance-value").Should().Be("1 / 5");
-        cut.Find("[data-testid=db-governance-kpi]").TextContent.Should().Contain("1 needs changes");
-        cut.Find("[data-testid=db-artifact-card][data-role=Plan]").TextContent.Should().Contain("Available").And.Contain("Review stale").And.Contain("Not analyzed");
+        var governance = cut.Find("[data-testid=db-health-area][data-key=governance]");
+        governance.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.AttentionNeeded));
+        governance.TextContent.Should().Contain("1 of 5 document reviews approved").And.Contain("1 document review needs changes");
+        var plan = cut.Find("[data-testid=db-artifact-card][data-role=Plan]");
+        plan.QuerySelector("[data-testid=db-artifact-status]")!.TextContent.Should().EndWith("Review out of date");
+        plan.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().StartWith("Available").And.Contain("Review: review stale");
     }
 
     [Fact]
@@ -381,8 +392,12 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            Text(cut, "db-workspace-roles").Should().Be("3 artifact roles available");
-            cut.Find("[data-testid=db-artifact-card][data-role=Constitution]").TextContent.Should().Contain("Missing");
+            Text(cut, "db-workspace-roles").Should().Be("3 document types");
+            var constitution = cut.Find("[data-testid=db-artifact-card][data-role=Constitution]");
+            constitution.TextContent.Should().Contain("Not found");
+            constitution.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.NotApplicable));
+            cut.Find("[data-testid=db-health-area][data-key=compliance]").GetAttribute("data-status")
+                .Should().Be(nameof(DashboardStatus.NotApplicable), "no constitution means nothing to check — not the same as not assessed");
         });
     }
 
@@ -409,7 +424,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            Text(cut, "db-workspace-roles").Should().Be("0 artifact roles available");
+            Text(cut, "db-workspace-roles").Should().Be("0 document types");
             cut.Markup.Should().NotContain("No workspace loaded", "a project without documents is still a loaded workspace");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
@@ -427,9 +442,9 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Artifact availability unavailable");
+            cut.Markup.Should().Contain("Documents unavailable");
             cut.Markup.Should().NotContain("No workspace loaded");
-            cut.Markup.Should().NotContain("artifact roles available");
+            cut.Markup.Should().NotContain("document types");
         });
     }
 
@@ -444,9 +459,11 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            Text(cut, "db-workspace-roles").Should().Be("2 artifact roles available");
+            Text(cut, "db-workspace-roles").Should().Be("2 document types");
             Text(cut, "db-workspace-name").Should().Contain("Unsaved workspace");
-            cut.Find("[data-testid=db-artifact-card][data-role=Specification]").TextContent.Should().Contain("requirements.md");
+            var spec = cut.Find("[data-testid=db-artifact-card][data-role=Specification]");
+            spec.QuerySelector("[data-testid=db-artifact-summary]")!.TextContent.Should().NotContain("requirements.md", "file paths are details, not the headline");
+            spec.QuerySelector("[data-testid=db-artifact-details]")!.TextContent.Should().Contain("requirements.md");
         });
     }
 
@@ -458,9 +475,10 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("No workspace loaded");
-            Text(cut, "db-governance-value").Should().Be("—", "no workspace is not a 0% governance score");
-            cut.Markup.Should().NotContain("Ready for review");
-            cut.FindAll("[data-testid=db-artifact-card]").Should().OnlyContain(card => card.TextContent.Contains("Missing"));
+            cut.Find("[data-testid=db-health-area][data-key=governance]").GetAttribute("data-status")
+                .Should().Be(nameof(DashboardStatus.NeedsSetup), "no workspace is not a 0% governance score");
+            cut.FindAll("[data-status=ReadyToReview]").Should().BeEmpty("nothing can be reviewed without a workspace");
+            cut.FindAll("[data-testid=db-artifact-card]").Should().OnlyContain(card => card.TextContent.Contains("Not found"));
         });
     }
 
@@ -477,13 +495,13 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             Text(cut, "db-workspace-name").Should().Contain("Autorisasjon");
-            Text(cut, "db-workspace-roles").Should().Be("5 artifact roles available");
+            Text(cut, "db-workspace-roles").Should().Be("5 document types");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
 
     [Fact]
-    public void SeveralSpecifications_CountAsOneRole_AndShowSelectionRequired()
+    public void SpecificationsInSeparatePacks_AreNotAnAmbiguity()
     {
         var project = CreateSampleProject("multi", "Multi") with
         {
@@ -496,9 +514,15 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            Text(cut, "db-workspace-roles").Should().Be("2 artifact roles available · 3 artifacts");
-            var spec = cut.Find("[data-testid=db-artifact-card][data-role=Specification]").TextContent;
-            spec.Should().Contain("Available · 2").And.Contain("Needs selection");
+            Text(cut, "db-workspace-roles").Should().Be("2 feature packs · 2 document types");
+            var spec = cut.Find("[data-testid=db-artifact-card][data-role=Specification]");
+            spec.QuerySelector("[data-testid=db-artifact-summary]")!.TextContent.Should().Be("2 specifications");
+            spec.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().Contain("In 2 of 2 feature packs");
+            spec.TextContent.Should().NotContain("Needs selection").And.NotContain("candidates");
+            spec.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.ReadyToReview), "two packs with one specification each are valid");
+            cut.FindAll("[data-testid=db-attention-item][data-key^=ambiguous]").Should().BeEmpty();
+            // The root plan is shared by both packs: no pack is missing a plan.
+            cut.FindAll("[data-testid=db-attention-item][data-key=missing-Plan]").Should().BeEmpty();
         });
     }
 

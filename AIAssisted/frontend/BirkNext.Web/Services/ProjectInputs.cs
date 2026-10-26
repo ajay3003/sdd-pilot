@@ -74,7 +74,7 @@ public static class ProjectInputPresentation
 
         var facts = workspace.AvailableRoles.Select(r => r.ArtifactCount > 1 ? $"{r.Label} ({r.ArtifactCount})" : r.Label).ToList();
         if (workspace.ModuleRequired && workspace.Roles.FirstOrDefault(r => r.ModuleRequired && r.DetectedCount > 0) is { } moduleRole)
-            return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs selection",
+            return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Choose a module",
                 $"{workspace.ModuleCount} modules have their own documents. Choose the module to review; documents are never merged across modules.",
                 "Choose module", ExplorerRoute(moduleRole.Role), facts);
         if (workspace.PackRequired && workspace.Roles.FirstOrDefault(r => r.PackRequired) is { } packRole)

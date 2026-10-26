@@ -82,7 +82,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
     private static PageView Dashboard(IRenderedComponent<Dashboard> cut) => new(
         !cut.Markup.Contains("No workspace loaded"),
         cut.FindAll("[data-testid=db-workspace-name]").SingleOrDefault()?.TextContent.Replace("📁", "").Trim(),
-        cut.FindAll("[data-testid=db-role-badge]").ToDictionary(b => b.GetAttribute("data-role")!, b => b.GetAttribute("data-availability")!));
+        cut.FindAll("[data-testid=db-artifact-card]").ToDictionary(b => b.GetAttribute("data-role")!, b => b.GetAttribute("data-availability")!));
 
     private static PageView Workflow(IRenderedComponent<RecommendedWorkflow> cut) => new(
         cut.FindAll("[data-testid=rw-no-workspace]").Count == 0,
@@ -108,7 +108,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         var workflow = Render<RecommendedWorkflow>();
 
         workflow.WaitForAssertion(() => workflow.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("5 artifact roles available"));
-        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("5 artifact roles available"));
+        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("5 document types"));
         ShouldAgree(Dashboard(dashboard), Workflow(workflow));
         Dashboard(dashboard).Name.Should().Be("Person Module");
         Workflow(workflow).Roles.Values.Should().OnlyContain(a => a == nameof(ArtifactRoleAvailability.Available));
@@ -133,7 +133,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         else { workflow = Render<RecommendedWorkflow>(); dashboard = Render<Dashboard>(); }
 
         workflow.WaitForAssertion(() => workflow.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("2 artifact roles available"));
-        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("2 artifact roles available"));
+        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("2 document types"));
         ShouldAgree(Dashboard(dashboard), Workflow(workflow));
     }
 
@@ -183,7 +183,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
             .Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, "# Requirements\n\nFR-001", "requirements.md", "File"));
 
         workflow.WaitForAssertion(() => workflow.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("1 artifact role available"));
-        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("1 artifact role available"));
+        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("1 document type"));
         workflow.Find("[data-testid=rw-project]").TextContent.Should().Be("Not assigned", "a manual workspace has no project, and is still a workspace");
         ShouldAgree(Dashboard(dashboard), Workflow(workflow) with { Name = "Unsaved workspace" });
     }

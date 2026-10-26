@@ -327,10 +327,11 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
             return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
 
-        // A monorepo without a chosen module needs selection (not an error, not ready): reviews read one module's documents.
+        // A monorepo without a chosen module: reviews read one module's documents, so the user picks where to start. Navigation, not an
+        // ambiguity — "needs selection" is kept for several candidates in the same pack.
         if (workspace.ModuleRequired && workspace.Roles.FirstOrDefault(r => r.ModuleRequired && r.DetectedCount > 0) is { } moduleRole)
         {
-            return Synthetic(ChooseArtifactsKey, "Needs selection: choose the module to review",
+            return Synthetic(ChooseArtifactsKey, "Choose a module to review",
                 $"The project has {workspace.ModuleCount} modules with their own documents. Choose the module to review; a module with one artifact per role uses it automatically.",
                 ExplorerRoute(moduleRole.Role), $"Open {moduleRole.Label} Explorer");
         }

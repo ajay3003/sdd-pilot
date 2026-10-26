@@ -34,316 +34,300 @@
     </div>
 }
 
-    <PageHeader Title="SDD Governance Dashboard">
-        <StatusChip Status="neutral" Label="@_projectPhase" />
+    <PageHeader Title="SDD Governance Dashboard" Description="What BirkNext found in your project, what needs attention, and what to do next.">
         @if (_hasAnyScore)
         {
-            <StatusChip Status="@(_overallScore >= 80 ? "healthy" : _overallScore >= 50 ? "warning" : "critical")"
-                        Label="@_overallScoreLabel" />
+            <span class="db-pill is-@(_overallScore >= 80 ? "good" : "attention")" data-testid="db-quality-among-assessed">@_overallScoreLabel</span>
             <span class="db-assessment-coverage" data-testid="db-assessment-coverage" title="Quality is averaged over assessed areas only. Areas without evidence are coverage gaps, not low quality.">@_assessmentCoverageLabel</span>
         }
         @if (_hasAnySnapshot)
         {
-            <StatusChip Status="neutral" Label="This session" />
+            <button type="button" class="btn-secondary db-export-btn" @onclick="ExportHtml">Export HTML</button>
         }
     </PageHeader>
 
-    @* ── Workspace Status Panel ─────────────────────────────────────────────────── *@
-    @* Driven only by the current-workspace read model (ICurrentWorkspaceProjection), the same one Recommended Workflow reads. *@
-    <section class="db-workspace-panel" role="region" aria-label="Workspace status" data-testid="db-workspace-panel">
-        <div class="db-workspace-header">
-            <span class="db-workspace-title">Current Workspace</span>
-        </div>
-
+    @* ══ 1 · Workspace summary ═══════════════════════════════════════════════════
+       Driven only by the current-workspace read model (ICurrentWorkspaceProjection), the same one Recommended Workflow reads. *@
+    <section class="db-workspace-panel" aria-labelledby="db-workspace-heading" data-testid="db-workspace-panel">
+        <h2 id="db-workspace-heading" class="db-visually-hidden">Current project</h2>
         @if (_workspace is null)
         {
-            <div class="db-workspace-content">
-                <p class="db-workspace-message" role="status">Loading workspace…</p>
-            </div>
+            <p class="db-workspace-message" role="status">Loading project…</p>
         }
         else if (_workspace.State == CurrentWorkspaceState.NoWorkspace)
         {
-            <div class="db-workspace-content">
-                <div class="db-workspace-empty">
-                    <p class="db-workspace-message">No workspace loaded. Import your project ZIP (documents and source in one upload) or open a Demo Project to populate dashboard metrics.</p>
-                    <a href="project-import" class="btn-secondary db-workspace-action" data-testid="db-import-project">Import Project →</a>
-                    <a href="demo-projects" class="btn-secondary db-workspace-action">Open Demo Projects →</a>
+            <div class="db-workspace-empty">
+                <p class="db-workspace-message">No workspace loaded. Import your project ZIP (documents and source in one upload) or open a Demo Project to begin.</p>
+                <div class="db-workspace-actions">
+                    <a href="project-import" class="db-btn-primary" data-testid="db-import-project">Import Project</a>
+                    <a href="demo-projects" class="db-btn-secondary">Open Demo Projects</a>
                 </div>
             </div>
         }
         else
         {
-            <div class="db-workspace-content">
-                <div class="db-workspace-info">
-                    <span class="db-workspace-project" data-testid="db-workspace-name">📁 @(_workspace.ProjectName ?? _workspace.WorkspaceName)</span>
-                    @if (_workspace.IsImportedProject) { <span class="db-workspace-count" data-testid="db-workspace-origin">Imported project archive</span> }
-                    @if (_workspace.State == CurrentWorkspaceState.Error)
-                    {
-                        <span class="db-workspace-count" data-testid="db-workspace-roles">Unable to load workspace artifacts</span>
-                    }
-                    else if (_workspace.ProjectLoaded && !_workspace.ProjectInCatalog)
-                    {
-                        <span class="db-workspace-count" data-testid="db-workspace-roles">Artifact availability unavailable</span>
-                    }
-                    else
-                    {
-                        <span class="db-workspace-count" data-testid="db-workspace-roles">@_workspace.RoleSummary</span>
-                    }
-                    @if (_workspace.HasModules)
-                    {
-                        <span class="db-workspace-count" data-testid="db-workspace-modules">
-                            @(_workspace.ModuleLabel is { } reviewModule
-                                ? $"{_workspace.ModuleCount} modules · reviewing module {reviewModule}"
-                                : $"{_workspace.ModuleCount} modules · needs selection: choose the module to review in a document Explorer")
-                        </span>
-                    }
-                    @if (_workspace.PackOverview is { } packOverview)
-                    {
-                        <span class="db-workspace-count" data-testid="db-workspace-packs">@packOverview</span>
-                    }
+            @if (_workspace.IsImportedProject && _workspace.State == CurrentWorkspaceState.Loaded)
+            {
+                <p class="db-import-success" role="status" data-testid="db-import-success">
+                    <span aria-hidden="true">✓ </span><strong>Project imported successfully.</strong>
+                    @(_anythingReviewed ? " Review results below come from this session." : " Nothing has been reviewed or tested yet.")
+                </p>
+            }
+            <div class="db-workspace-info">
+                <div class="db-workspace-identity">
+                    <span class="db-workspace-label">@(_workspace.IsImportedProject ? "Imported project" : _workspace.ProjectLoaded ? "Project" : "Workspace")</span>
+                    <span class="db-workspace-project" data-testid="db-workspace-name">@(_workspace.ProjectName ?? _workspace.WorkspaceName)</span>
                 </div>
-
-                <div class="db-workspace-badges">
-                    @foreach (var role in _workspace.Roles)
-                    {
-                        <span class="db-artifact-badge @(role.IsAvailable ? "is-loaded" : "is-missing")" data-testid="db-role-badge" data-role="@role.Role" data-availability="@role.Availability">
-                            @(role.Availability switch { ArtifactRoleAvailability.Available => "✓", ArtifactRoleAvailability.Unknown => "?", _ => "○" }) @role.Label
-                        </span>
-                    }
-                </div>
-
-                <div class="db-workspace-status">
-                    <span class="db-status-badge db-status-notrun" data-testid="db-save-status" title="Save status. A workspace is loaded whether or not it is saved.">@_workspace.SaveStatusLabel</span>
-                </div>
-
-                @if (_workspace.WorkspaceLoaded && _workspace.AvailableRoleCount == 0)
+                @if (_workspace.State == CurrentWorkspaceState.Error)
                 {
-                    <a href="@(_workspace.IsImportedProject ? "project-import" : "demo-projects")" class="btn-secondary db-workspace-action">@(_workspace.IsImportedProject ? "Open Import Project →" : "Add artifacts →")</a>
+                    <span class="db-workspace-count" data-testid="db-workspace-roles">Failed to load the project's documents</span>
                 }
-                else if (_workspace.WorkspaceLoaded)
+                else if (_workspace.ProjectLoaded && !_workspace.ProjectInCatalog)
                 {
-                    <a href="getting-started" class="btn-secondary db-workspace-action">Open Recommended Workflow →</a>
+                    <span class="db-workspace-count" data-testid="db-workspace-roles">Documents unavailable — the project is no longer in the catalog</span>
                 }
+                else
+                {
+                    <span class="db-workspace-count" data-testid="db-workspace-roles">@DashboardPresentation.WorkspaceSummary(_workspace)</span>
+                }
+                <span class="db-workspace-env is-@DashboardPresentation.Tone(_environment.Status)" data-testid="db-test-environment">@_environment.Text</span>
+            </div>
+            <div class="db-workspace-meta">
+                @if (_workspace.ModuleLabel is { } reviewModule)
+                {
+                    <span data-testid="db-workspace-modules">Reviewing module @reviewModule@(_workspace.PackLabel is { } viewedPack ? $" · pack {viewedPack}" : "")</span>
+                }
+                else if (_workspace.ModuleRequired)
+                {
+                    <span data-testid="db-workspace-modules">No module chosen yet — reviews check one module at a time</span>
+                }
+                <span data-testid="db-save-status" title="Save status. A workspace is loaded whether or not it is saved.">@_workspace.SaveStatusLabel</span>
             </div>
         }
     </section>
 
-    @if (_hasAnySnapshot)
+    @* ══ 2 · Recommended next step ══════════════════════════════════════════════ *@
+    @if (_nextStep is { } next)
     {
-        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
-            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
-        </div>
+        <section class="db-next-step" aria-labelledby="db-next-heading" data-testid="db-next-step" data-key="@next.Key">
+            <h2 id="db-next-heading" class="db-next-eyebrow">Recommended next step</h2>
+            <p class="db-next-title" data-testid="db-next-title">@next.Title</p>
+            <p class="db-next-reason" data-testid="db-next-reason"><span class="db-next-k">Why:</span> @next.Reason</p>
+            <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
+            <div class="db-next-actions">
+                <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
+                <a href="getting-started" class="db-btn-link">See the full recommended workflow</a>
+            </div>
+            @if (next.Then.Count > 0)
+            {
+                <div class="db-next-then" data-testid="db-next-then">
+                    <span class="db-next-k">Then:</span>
+                    <ol>
+                        @foreach (var step in next.Then)
+                        {
+                            <li>@step</li>
+                        }
+                    </ol>
+                </div>
+            }
+        </section>
+    }
+    else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
+    {
+        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step">
+            <p class="db-workspace-message" role="status">Working out the recommended next step…</p>
+        </section>
     }
 
-    @* ══════════════════════════════════════════════════════════════════════════
-       ZONE 1 · EXECUTIVE SUMMARY
-       KPI Strip → Governance Status → Readiness Summary
-       ══════════════════════════════════════════════════════════════════════════ *@
+    @if (_workspace is { WorkspaceLoaded: true } || _workspace?.State == CurrentWorkspaceState.Error)
+    {
+        @* ══ 3 · What BirkNext found · 4 · Needs attention ══════════════════════ *@
+        <div class="db-overview-grid">
+            <section class="db-panel" aria-labelledby="db-found-heading" data-testid="db-found">
+                <h2 id="db-found-heading" class="db-h2">What BirkNext found</h2>
+                @if (_found.Count == 0)
+                {
+                    <p class="db-muted">No project documents were found.</p>
+                }
+                else
+                {
+                    <ul class="db-found-list">
+                        @foreach (var fact in _found)
+                        {
+                            <li data-testid="db-found-fact" data-key="@fact.Key">@fact.Text</li>
+                        }
+                    </ul>
+                }
+                @if (_workspace.Overview is { PackCount: > 0 } packOverview)
+                {
+                    <details class="db-details" data-testid="db-pack-list">
+                        <summary>Show feature packs</summary>
+                        <ul class="db-pack-list">
+                            @foreach (var group in packOverview.Packs.GroupBy(p => p.Module))
+                            {
+                                <li>
+                                    @if (packOverview.HasModules) { <span class="db-pack-module">@ArtifactModules.Label(group.Key)</span> }
+                                    <ul>
+                                        @foreach (var pack in group)
+                                        {
+                                            <li title="@pack.Pack">@pack.DisplayName <span class="db-muted">· @pack.RolesPresent.Count document type@(pack.RolesPresent.Count == 1 ? "" : "s")</span></li>
+                                        }
+                                    </ul>
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                }
+                @if (_workflowReadiness?.Inputs.Source is { Status: ProjectInputStatus.Ready or ProjectInputStatus.NeedsAttention })
+                {
+                    <p class="db-muted db-source-link">Source analysis available · <a href="source-analysis">View technical evidence</a></p>
+                }
+            </section>
 
-    @* ── KPI Strip ─────────────────────────────────────────────────────────── *@
-    <div class="db-kpi-strip" aria-label="Key performance indicators">
-        <div class="db-kpi" data-testid="db-governance-kpi">
-            <MetricCard Value="@GovernanceValue"
-                        Label="Governance"
-                        Sublabel="@GovernanceSublabel"
-                        Variant="@GovernanceVariant" />
+            <section class="db-panel" aria-labelledby="db-attention-heading" data-testid="db-attention">
+                <h2 id="db-attention-heading" class="db-h2">Needs attention</h2>
+                @if (_attention.Count == 0)
+                {
+                    <p class="db-muted" data-testid="db-attention-none">Nothing needs attention right now.</p>
+                }
+                else
+                {
+                    <ul class="db-attention-list">
+                        @foreach (var item in _attention)
+                        {
+                            <li class="db-attention-item @(item.Informational ? "is-info" : "is-attention")" data-testid="db-attention-item" data-key="@item.Key">
+                                <span class="db-attention-kind">@(item.Informational ? "Note" : "Attention")</span>
+                                <div class="db-attention-body">
+                                    <span class="db-attention-text">@item.Text</span>
+                                    @if (item.Detail is { Length: > 0 } detail) { <span class="db-attention-detail">@detail</span> }
+                                    @if (item.Items is { Count: > 0 } where)
+                                    {
+                                        <details class="db-details">
+                                            <summary>Details</summary>
+                                            <ul class="db-detail-list">
+                                                @foreach (var line in where) { <li>@line</li> }
+                                            </ul>
+                                        </details>
+                                    }
+                                </div>
+                                <a href="@item.Href" class="db-attention-action" data-testid="db-attention-action">@item.ActionLabel</a>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
         </div>
-        <MetricCard Value="@TraceabilityHealthVal"
-                    Label="Traceability"
-                    Sublabel="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)"
-                    Variant="@(_traceabilityHasData ? (_traceabilityScore >= 80 ? "success" : _traceabilityScore >= 50 ? "warning" : "danger") : null)" />
-        <MetricCard Value="@ComplianceHealthVal"
-                    Label="Compliance"
-                    Sublabel="@KpiStatusLabel(_complianceScore, _complianceHasData)"
-                    Variant="@(_complianceHasData ? (_complianceScore >= 80 ? "success" : _complianceScore >= 50 ? "warning" : "danger") : null)" />
-        <MetricCard Value="@QaHealthVal"
-                    Label="QA"
-                    Sublabel="@KpiStatusLabel(_qaScore, _qaHasData)"
-                    Variant="@(_qaHasData ? (_qaScore >= 80 ? "success" : _qaScore >= 50 ? "warning" : "danger") : null)" />
-        <MetricCard Value="@DeliveryHealthVal"
-                    Label="Delivery"
-                    Sublabel="@KpiStatusLabel(_deliveryScore, _deliveryHasData)"
-                    Variant="@(_deliveryHasData ? (_deliveryScore >= 80 ? "success" : _deliveryScore >= 50 ? "warning" : "danger") : null)" />
-        @if (_perfReport?.ReadinessReport is { HasData: true, OverallScore: not null } perfKpi)
-        {
-            <MetricCard Value="@perfKpi.OverallScore.ToString()"
-                        Label="Performance"
-                        Sublabel="@ReadinessStateLabel(perfKpi.OverallState)"
-                        Variant="@(perfKpi.OverallState == PerformanceReadinessState.Ready ? "success" : perfKpi.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "danger")" />
+
+        @* ══ 5 · Review readiness (to start reviewing) ════════════════════════════ *@
+        <section class="db-section" aria-labelledby="db-readiness-heading" data-testid="db-review-readiness">
+            <h2 id="db-readiness-heading" class="db-h2">Review readiness</h2>
+            <p class="db-section-lead">Can reviews and tests start? This is about available inputs — not a quality result and not a release decision.</p>
+            <ul class="db-readiness-list">
+                @foreach (var row in _readiness)
+                {
+                    <li class="db-readiness-row" data-testid="db-readiness-row" data-key="@row.Key" data-status="@row.Status">
+                        <span class="db-readiness-name">@row.Label</span>
+                        <span class="db-pill is-@DashboardPresentation.Tone(row.Status)"><span aria-hidden="true">@DashboardPresentation.Icon(row.Status) </span>@row.StatusLabel</span>
+                        <span class="db-readiness-text">@row.Text</span>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    @* ══ 6 · Project Health ═══════════════════════════════════════════════════════ *@
+    <section class="db-section" aria-labelledby="db-health-heading" data-testid="db-health">
+        <h2 id="db-health-heading" class="db-h2">Project Health</h2>
+        @{
+            var prominent = _health.Where(a => a.Prominent).ToList();
+            var compact = _health.Where(a => !a.Prominent).ToList();
         }
-        else
+        @if (prominent.Count > 0)
         {
-            <MetricCard Value="—" Label="Performance" Sublabel="@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)" />
+            <div class="db-health-grid" aria-label="Project health areas with something to do or a result">
+                @foreach (var area in prominent)
+                {
+                    <div class="db-health-card is-@DashboardPresentation.Tone(area.Status)" data-testid="db-health-area" data-key="@area.Key" data-status="@area.Status">
+                        <h3 class="db-health-label">@area.Area</h3>
+                        <span class="db-health-help">@area.Help</span>
+                        <span class="db-pill is-@DashboardPresentation.Tone(area.Status)" data-testid="db-health-status"><span aria-hidden="true">@DashboardPresentation.Icon(area.Status) </span>@DashboardPresentation.Label(area.Status)</span>
+                        @if (area.Result is { } result) { <span class="db-health-result" data-testid="db-health-result">@result</span> }
+                        <span class="db-health-text">@area.Explanation</span>
+                        @if (area.ActionLabel is { } action && area.Href is { } href) { <a href="@href" class="db-health-action">@action</a> }
+                    </div>
+                }
+            </div>
         }
-        @if (_workflowReadiness is not null)
+        @if (compact.Count > 0)
         {
-            <MetricCard Value="@WorkflowValue"
-                        Label="Workflow"
-                        Sublabel="@WorkflowStatusLabel"
-                        Variant="@WorkflowStatusVariant" />
+            <ul class="db-health-rows" aria-label="Project health areas without results yet">
+                @foreach (var area in compact)
+                {
+                    <li class="db-health-row" data-testid="db-health-area" data-key="@area.Key" data-status="@area.Status">
+                        <span class="db-health-row-name">@area.Area <span class="db-health-help">@area.Help</span></span>
+                        <span class="db-pill is-@DashboardPresentation.Tone(area.Status)" data-testid="db-health-status"><span aria-hidden="true">@DashboardPresentation.Icon(area.Status) </span>@DashboardPresentation.Label(area.Status)</span>
+                        <span class="db-health-text">@area.Explanation</span>
+                        @if (area.ActionLabel is { } action && area.Href is { } href) { <a href="@href" class="db-health-action">@action</a> }
+                    </li>
+                }
+            </ul>
         }
-    </div>
-
-    @* ── Health Summary ────────────────────────────────────────────────────── *@
-    <section class="db-section">
-        <SectionHeader Title="Project Health" />
-        <div class="db-health-grid" aria-label="Project health by dimension">
-
-            <div class="db-health-card">
-                <span class="db-health-label">Governance</span>
-                <span class="db-health-value @(GovernanceAssessed ? "" : "db-val-empty")" data-testid="db-governance-value">@GovernanceValue</span>
-                <StatusChip Status="@GovernanceChip" Label="@GovernanceSublabel" />
-            </div>
-
-            <div class="db-health-card">
-                <span class="db-health-label">Traceability</span>
-                <span class="db-health-value @(_traceabilityHasData ? ScoreClass(_traceabilityScore) : "db-val-empty")">@TraceabilityHealthVal</span>
-                <StatusChip Status="@(_traceabilityHasData ? (_traceabilityScore >= 80 ? "healthy" : _traceabilityScore >= 50 ? "warning" : "critical") : "neutral")"
-                            Label="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)" />
-            </div>
-
-            <div class="db-health-card">
-                <span class="db-health-label">Compliance</span>
-                <span class="db-health-value @(_complianceHasData ? ScoreClass(_complianceScore) : "db-val-empty")">@ComplianceHealthVal</span>
-                <StatusChip Status="@(_complianceHasData ? (_complianceScore >= 80 ? "healthy" : _complianceScore >= 50 ? "warning" : "critical") : "neutral")"
-                            Label="@KpiStatusLabel(_complianceScore, _complianceHasData)" />
-            </div>
-
-            <div class="db-health-card">
-                <span class="db-health-label">QA</span>
-                <span class="db-health-value @(_qaHasData ? ScoreClass(_qaScore) : "db-val-empty")">@QaHealthVal</span>
-                <StatusChip Status="@(_qaHasData ? (_qaScore >= 80 ? "healthy" : _qaScore >= 50 ? "warning" : "critical") : "neutral")"
-                            Label="@KpiStatusLabel(_qaScore, _qaHasData)" />
-            </div>
-
-            <div class="db-health-card">
-                <span class="db-health-label">Delivery</span>
-                <span class="db-health-value @(_deliveryHasData ? ScoreClass(_deliveryScore) : "db-val-empty")">@DeliveryHealthVal</span>
-                <StatusChip Status="@(_deliveryHasData ? (_deliveryScore >= 80 ? "healthy" : _deliveryScore >= 50 ? "warning" : "critical") : "neutral")"
-                            Label="@KpiStatusLabel(_deliveryScore, _deliveryHasData)" />
-            </div>
-
-            @if (_perfReport?.ReadinessReport is { HasData: true, OverallScore: not null } perfHealth)
-            {
-                <div class="db-health-card">
-                    <span class="db-health-label">Performance</span>
-                    <span class="db-health-value @ScoreClass(perfHealth.OverallScore!.Value)">@perfHealth.OverallScore</span>
-                    <StatusChip Status="@(perfHealth.OverallState == PerformanceReadinessState.Ready ? "healthy" : perfHealth.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "critical")"
-                                Label="@ReadinessStateLabel(perfHealth.OverallState)" />
-                </div>
-            }
-            else
-            {
-                <div class="db-health-card">
-                    <span class="db-health-label">Performance</span>
-                    <span class="db-health-value db-val-empty">—</span>
-                    <StatusChip Status="@RuntimeStatusChip(RuntimeReviews.PerformanceReview.Status)"
-                                Label="@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)" />
-                </div>
-            }
-
-        </div>
     </section>
 
-    @* ── Governance Status ─────────────────────────────────────────────────── *@
-    @* Availability (from the current workspace) and analysis (from this session's reports) are separate facts, shown as separate badges. *@
-    <section class="db-section">
-        <SectionHeader Title="Project Artifacts" Description="@ArtifactsDescription" />
+    @* ══ 7 · Project Artifacts ══════════════════════════════════════════════════
+       Availability (from the current workspace's project-wide pack overview) and review decisions (the workflow's review gates) are
+       separate facts: one primary status, the rest secondary. Files live under Details only. *@
+    <section class="db-section" aria-labelledby="db-artifacts-heading">
+        <h2 id="db-artifacts-heading" class="db-h2">Project Artifacts</h2>
         <div class="db-artifact-grid">
-
-            <div class="db-artifact-card db-artifact-constitution @(Available(WorkspaceArtifactType.Constitution) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Constitution">
-                <div class="db-artifact-icon" aria-hidden="true">⚖</div>
-                <div class="db-artifact-name">Constitution</div>
-                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Constitution, _constitutionAnalyzed)</div>
-                @if (Available(WorkspaceArtifactType.Constitution) && Snapshot.ComplianceReport?.HasConstitution == true)
-                {
-                    <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@Snapshot.ComplianceReport.Coverage.TotalItems rules</span>
-                    </div>
-                }
-                else
-                {
-                    @RoleStats(WorkspaceArtifactType.Constitution)
-                }
-                <a href="constitution-explorer" class="db-artifact-action">Open Constitution Explorer →</a>
-            </div>
-
-            <div class="db-artifact-card db-artifact-specification @(Available(WorkspaceArtifactType.Specification) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Specification">
-                <div class="db-artifact-icon" aria-hidden="true">📋</div>
-                <div class="db-artifact-name">Specification</div>
-                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Specification, _specAnalyzed)</div>
-                @if (Available(WorkspaceArtifactType.Specification) && Snapshot.TraceabilityReport is { Health.TotalRequirements: > 0 } specTrace)
-                {
-                    <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@specTrace.Health.TotalRequirements requirements</span>
-                        <span class="db-stat-pill">@(specTrace.HasPlan && specTrace.SpecificationCoverage.HasApplicablePopulation ? $"{specTrace.SpecificationCoverage.CoveragePercentage:0}% Requirement → Plan" : "Requirement → Plan not assessed")</span>
-                    </div>
-                }
-                else
-                {
-                    @RoleStats(WorkspaceArtifactType.Specification)
-                }
-                <a href="specification-explorer" class="db-artifact-action">Open Specification Explorer →</a>
-            </div>
-
-            <div class="db-artifact-card db-artifact-plan @(Available(WorkspaceArtifactType.Plan) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Plan">
-                <div class="db-artifact-icon" aria-hidden="true">🗺</div>
-                <div class="db-artifact-name">Plan</div>
-                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Plan, _planAnalyzed)</div>
-                @if (Available(WorkspaceArtifactType.Plan) && Snapshot.TraceabilityReport?.HasPlan == true)
-                {
-                    <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@Snapshot.TraceabilityReport.Health.TotalPlanItems plan phases</span>
-                        @if (Snapshot.TraceabilityReport.HasTasks && Snapshot.TraceabilityReport.PlanCoverage.HasApplicablePopulation)
-                        {
-                            <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.CoveredItems of @Snapshot.TraceabilityReport.PlanCoverage.TotalItems align with Task phases</span>
-                        }
-                        else
-                        {
-                            <span class="db-stat-pill">Plan-to-Task phase alignment not assessed</span>
-                        }
-                    </div>
-                }
-                else
-                {
-                    @RoleStats(WorkspaceArtifactType.Plan)
-                }
-                <a href="plan-explorer" class="db-artifact-action">Open Plan Explorer →</a>
-            </div>
-
-            <div class="db-artifact-card db-artifact-tasks @(Available(WorkspaceArtifactType.Tasks) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Tasks">
-                <div class="db-artifact-icon" aria-hidden="true">✅</div>
-                <div class="db-artifact-name">Tasks</div>
-                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Tasks, _tasksAnalyzed)</div>
-                @if (Available(WorkspaceArtifactType.Tasks) && Snapshot.TraceabilityReport is { Health.TotalTasks: > 0 } taskTrace)
-                {
-                    <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@taskTrace.Health.TotalTasks tasks</span>
-                        <span class="db-stat-pill">@(taskTrace.HasSpecification && taskTrace.TaskCoverage.HasApplicablePopulation ? $"{taskTrace.TaskCoverage.CoveredItems} of {taskTrace.TaskCoverage.TotalItems} Tasks have Requirement/SC references" : "Requirement/SC references not assessed")</span>
-                    </div>
-                }
-                else
-                {
-                    @RoleStats(WorkspaceArtifactType.Tasks)
-                }
-                <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
-            </div>
-
-            <div class="db-artifact-card db-artifact-datamodel @(Available(WorkspaceArtifactType.DataModel) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="DataModel">
-                <div class="db-artifact-icon" aria-hidden="true">🗄️</div>
-                <div class="db-artifact-name">Data Model</div>
-                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.DataModel, _dataModelAnalyzed)</div>
-                @RoleStats(WorkspaceArtifactType.DataModel)
-                <a href="data-model-explorer" class="db-artifact-action">Open Data Model Explorer →</a>
-            </div>
+            @foreach (var role in CurrentWorkspaceSnapshot.WorkflowRoles)
+            {
+                var card = DashboardPresentation.Card(role, _workspace, _workflowReadiness?.ReviewFor(role), Analyzed(role), ReviewFacts(role));
+                <div class="db-artifact-card is-@DashboardPresentation.Tone(card.Status)" data-testid="db-artifact-card" data-role="@role" data-status="@card.Status" data-availability="@(_workspace?.Role(role).Availability ?? ArtifactRoleAvailability.Missing)">
+                    <h3 class="db-artifact-name">@card.Title</h3>
+                    <span class="db-artifact-summary" data-testid="db-artifact-summary">@card.Summary</span>
+                    <span class="db-pill is-@DashboardPresentation.Tone(card.Status)" data-testid="db-artifact-status"><span aria-hidden="true">@DashboardPresentation.Icon(card.Status) </span>@card.StatusLabel</span>
+                    @if (card.Meta.Length > 0) { <span class="db-artifact-meta" data-testid="db-artifact-meta">@card.Meta</span> }
+                    @if (_workflowReadiness?.ReviewFor(role) is { } review && card.Status != DashboardStatus.NotApplicable)
+                    {
+                        <span class="db-visually-hidden" data-testid="db-artifact-review" data-state="@review.State">@review.Label</span>
+                    }
+                    @foreach (var line in card.Attention)
+                    {
+                        <span class="db-artifact-attention" data-testid="db-artifact-attention"><span aria-hidden="true">! </span>@line</span>
+                    }
+                    <a href="@card.Href" class="db-artifact-action" data-testid="db-artifact-action">@card.ActionLabel</a>
+                    @if (card.Files.Count > 0 || card.Provenance.Count > 0 || card.AttentionItems.Count > 0)
+                    {
+                        <details class="db-details db-artifact-details" data-testid="db-artifact-details">
+                            <summary>Show files</summary>
+                            @if (card.AttentionItems.Count > 0)
+                            {
+                                <ul class="db-detail-list">
+                                    @foreach (var line in card.AttentionItems) { <li>@line</li> }
+                                </ul>
+                            }
+                            @if (card.Files.Count > 0)
+                            {
+                                <ul class="db-detail-list db-file-list">
+                                    @foreach (var file in card.Files) { <li>@file</li> }
+                                    @if (card.MoreFiles > 0) { <li class="db-muted">+@card.MoreFiles more — open the explorer to see all</li> }
+                                </ul>
+                            }
+                            @foreach (var line in card.Provenance) { <p class="db-provenance">@line</p> }
+                        </details>
+                    }
+                </div>
+            }
         </div>
     </section>
 
-    @* ── Readiness Summary ──────────────────────────────────────────────────── *@
-    <section class="db-section">
-        <SectionHeader Title="Readiness Summary" />
+    @* ══ 8 · Test / release evidence (never the same as review readiness) ═══════ *@
+    <section class="db-section" aria-labelledby="db-release-heading" data-testid="db-release-evidence">
+        <h2 id="db-release-heading" class="db-h2">Test and release evidence</h2>
         @if (Snapshot.DeliveryReport is not null || Snapshot.ReadinessReport is not null)
         {
+            <p class="db-section-lead">From the latest Document Quality Review readiness packs. Review readiness above is not a release decision.</p>
             <div class="db-readiness-grid">
                 @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "quality/document")
                 @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "quality/document")
@@ -353,28 +337,24 @@
         }
         else
         {
-            <div class="db-section-empty">
-                Run a Document Quality Review with Readiness packs selected to populate this section.
+            <div class="db-section-empty" data-testid="db-release-empty">
+                No test or release evidence yet. It comes from reviews and testing — "Ready to review" above does not mean ready for release.
                 <div class="db-empty-actions">
-                    <a href="quality/document" class="db-qa-btn">Document Quality Review</a>
+                    <a href="quality/document" class="db-qa-btn">Run Document Quality Review with readiness packs</a>
                 </div>
             </div>
         }
     </section>
 
-    @* ══════════════════════════════════════════════════════════════════════════
-       ZONE 2 · DECISION SUPPORT
-       Top Risks → Top Recommendations → Recent Activity
-       ══════════════════════════════════════════════════════════════════════════ *@
-
-    @* ── Top Risks ──────────────────────────────────────────────────────────── *@
-    <section class="db-section db-zone-start">
-        <SectionHeader Title="Top Risks" />
+    @* ══ Top Risks: "no risks" only after an assessment ═══════════════════════ *@
+    <section class="db-section" aria-labelledby="db-risks-heading" data-testid="db-risks" data-assessed="@(_risks.Assessed ? "true" : "false")">
+        <h2 id="db-risks-heading" class="db-h2">Top Risks</h2>
         @{
             var topRisks = _topRisks.ToList();
         }
         @if (topRisks.Count > 0)
         {
+            <p class="db-section-lead">@_risks.Message Showing the most severe.</p>
             <div class="issue-cards">
                 @foreach (var (Title, Severity, Category, Detail) in topRisks)
                 {
@@ -384,18 +364,21 @@
         }
         else
         {
-            <div class="db-section-empty">
-                No risks detected. Run Document Quality Review to surface governance risks.
-                <div class="db-empty-actions">
-                    <a href="quality/document" class="db-qa-btn">Run Document Quality Review</a>
-                </div>
+            <div class="db-section-empty" data-testid="db-risks-message">
+                @_risks.Message
+                @if (!_risks.Assessed)
+                {
+                    <div class="db-empty-actions">
+                        <a href="quality/document" class="db-qa-btn">Run Document Quality Review</a>
+                    </div>
+                }
             </div>
         }
     </section>
 
     @* ── Top Recommendations ────────────────────────────────────────────────── *@
-    <section class="db-section">
-        <SectionHeader Title="Top Recommendations" />
+    <section class="db-section" aria-label="Top recommendations">
+        <h2 class="db-h2">Top Recommendations</h2>
         @{
             var topRecs = _topRecs.ToList();
         }
@@ -427,6 +410,11 @@
         }
     </section>
 
+    @* ══ Advanced: review results by analysis, session activity and every tool. Secondary to the tester workflow above. ══ *@
+    <section class="db-section db-zone-start" aria-labelledby="db-advanced-heading" data-testid="db-advanced">
+        <h2 id="db-advanced-heading" class="db-h2">Analysis details</h2>
+        <details class="db-advanced">
+            <summary>Show results by analysis, recent activity and all tools</summary>
     @* ── Recent Activity ────────────────────────────────────────────────────── *@
     <section class="db-section">
         <SectionHeader Title="Recent Activity" />
@@ -516,13 +504,8 @@
         </div>
     </section>
 
-    @* ══════════════════════════════════════════════════════════════════════════
-       ZONE 3 · OPERATIONAL ACTIONS
-       Analysis Summary → Quick Actions
-       ══════════════════════════════════════════════════════════════════════════ *@
-
     @* ── Analysis Summary ───────────────────────────────────────────────────── *@
-    <section class="db-section db-zone-start">
+    <section class="db-section">
         <SectionHeader Title="Analysis Summary" Description="Run each analysis to populate" />
         <div class="db-analysis-grid">
 
@@ -541,8 +524,7 @@
                     }
                     else
                     {
-                        <div class="db-analysis-score">—</div>
-                        <span class="db-analysis-status">Traceability transitions not assessed</span>
+                        <span class="db-analysis-status">Not assessed — no traceability transitions could be checked</span>
                     }
                     <div class="db-analysis-chips">
                         <span class="db-count-chip db-count-good">@tr.Health.CoveredCount covered</span>
@@ -660,8 +642,7 @@
                     }
                     else
                     {
-                        <div class="db-analysis-score">—</div>
-                        <span class="db-analysis-status">Partial assessment</span>
+                        <span class="db-analysis-status">Partial assessment — no overall score</span>
                     }
                     @if (fqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topFqrFinding)
                     {
@@ -807,6 +788,8 @@
             </div>
         </div>
     </section>
+        </details>
+    </section>
 
 @code {
     // ── Workspace status ──────────────────────────────────────────────────────
@@ -844,137 +827,86 @@
 
     private bool Available(WorkspaceArtifactType role) => _workspace?.Has(role) == true;
 
-    /// <summary>Availability, selection and analysis as separate badges. Analysis counts only for an available artifact.</summary>
-    private RenderFragment RoleBadges(WorkspaceArtifactType role, bool analyzed) => __builder =>
+    // ── Tester-facing projection: every value from shared state, none invented here ─────────────────────────────
+
+    private (DashboardStatus Status, string Text) _environment => DashboardPresentation.TestEnvironment(_workflowReadiness);
+    private DashboardNextStep? _nextStep => _workspace is null ? null : DashboardPresentation.NextStep(_workspace, _workflowReadiness);
+    private IReadOnlyList<DashboardFoundFact> _found => _workspace is null ? [] : DashboardPresentation.Found(_workspace, _workflowReadiness);
+    private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? [] : DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews);
+    private IReadOnlyList<DashboardReadinessRow> _readiness => _workspace is null ? [] : DashboardPresentation.ReviewReadiness(_workspace, _workflowReadiness, _reviews);
+    private IReadOnlyList<DashboardHealthArea> _health => DashboardPresentation.Health(_workspace, _workflowReadiness, _reviews);
+    private DashboardRiskState _risks => DashboardPresentation.Risks(_reviews);
+
+    /// <summary>Anything reviewed or tested: a session result or a recorded review decision. Import alone is never a review.</summary>
+    private bool _anythingReviewed => _hasAnySnapshot
+        || _workflowReadiness?.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).Any(r => r.IsDecided || r.State == ArtifactReviewState.Stale) == true;
+
+    /// <summary>This session's review results, as the presentation reads them.</summary>
+    private DashboardReviewFacts _reviews => new()
     {
-        var status = _workspace?.Role(role);
-        switch (status?.Availability)
-        {
-            case ArtifactRoleAvailability.Available:
-                <span class="db-badge db-badge-loaded">Available@(status.ArtifactCount > 1 ? $" · {status.ArtifactCount}" : "")</span>
-                if (status.Selection == ArtifactRoleSelection.SelectionRequired)
-                {
-                    <span class="db-badge db-badge-empty">Needs selection</span>
-                }
-                if (_workflowReadiness?.ReviewFor(role) is { } review)
-                {
-                    <span class="db-badge db-badge-review is-@review.State.ToString().ToLowerInvariant()" data-testid="db-artifact-review" data-state="@review.State"
-                          title="@review.Summary"><span aria-hidden="true">@review.Icon </span>@review.Label</span>
-                }
-                if (analyzed)
-                {
-                    <span class="db-badge db-badge-analyzed">Analyzed</span>
-                }
-                else
-                {
-                    <span class="db-badge db-badge-empty">Not analyzed</span>
-                }
-                break;
-            case ArtifactRoleAvailability.Unknown:
-                <span class="db-badge db-badge-empty">Availability unknown</span>
-                break;
-            default:
-                <span class="db-badge db-badge-empty">@(status is { HasModules: true, DetectedCount: > 0, Module: { } m } ? $"Not detected in module {ArtifactModules.Label(m)}" : "Missing")</span>
-                break;
-        }
+        DocumentReview = QualitySession.Status,
+        DocumentReviewAt = QualitySession.RunTimestamp,
+        DocumentReviewFindings = QualitySession.Report?.TotalFindings ?? 0,
+        DocumentReviewSevere = QualitySession.Report is { } dqr ? dqr.CriticalCount + dqr.HighCount : 0,
+        DocumentReviewScope = DocumentReviewScope(),
+        QaAssessed = _qaAssessed,
+        QaScore = _qaScore,
+        TraceabilityRun = Snapshot.TraceabilityReport is not null,
+        TraceabilityCoverage = Snapshot.TraceabilityReport is { Health.HasAssessedCoverage: true } tr ? tr.Health.CoveragePercentage : null,
+        ComplianceRun = Snapshot.ComplianceReport is not null,
+        ComplianceScore = _complianceScore,
+        DeliveryRun = Snapshot.DeliveryReport is not null,
+        DevelopmentDecision = Snapshot.DeliveryReport?.DevelopmentDecision.State,
+        TestingDecision = Snapshot.DeliveryReport?.TestingDecision.State,
+        ReleaseDecision = Snapshot.DeliveryReport?.ReleaseDecision.State,
+        RisksAssessed = Snapshot.AuditReport is not null || Snapshot.DeliveryReport is not null,
+        RiskCount = (Snapshot.AuditReport?.Risks.Count ?? 0) + (Snapshot.DeliveryReport?.Blockers.Count ?? 0),
+        Performance = RuntimeReviews.PerformanceReview.Status,
+        PerformanceScore = _perfReport?.ReadinessReport is { HasData: true, OverallScore: { } perfScore } ? perfScore : null,
+        PerformanceState = _perfReport?.ReadinessReport?.OverallState,
+        RuntimeEvidence = RuntimeReviews.PerformanceReview.HasResult || RuntimeReviews.SecurityReview.HasResult || RuntimeReviews.QualityReview.HasResult
+                          || RuntimeReviews.ApiQualityReview.HasResult || RuntimeReviews.IntegrationQualityReview.HasResult,
     };
 
-    /// <summary>The selected artifact's file and project, or how many artifacts wait for a choice.</summary>
-    private RenderFragment RoleStats(WorkspaceArtifactType role) => __builder =>
+    /// <summary>"pack Revision System (001-x) · module Person": what the latest Document Quality Review read, from its recorded inputs.</summary>
+    private string? DocumentReviewScope()
     {
-        var status = _workspace?.Role(role);
-        if (status?.ModuleSummary is { } moduleSummary)
-        {
-            <div class="db-artifact-stats"><span class="db-stat-pill" data-testid="db-artifact-modules">@moduleSummary</span></div>
-        }
-        if (status?.PackApplicability is { } applicability)
-        {
-            <div class="db-artifact-stats"><span class="db-stat-pill" data-testid="db-artifact-pack">@applicability</span></div>
-        }
-        if (status is not { IsAvailable: true }) return;
-        <div class="db-artifact-stats">
-            @if (status.SelectedArtifact is { } selected)
-            {
-                <span class="db-stat-pill">@selected.FileName</span>
-            }
-            else
-            {
-                <span class="db-stat-pill">@status.ArtifactCount artifacts</span>
-            }
-            @if (_workspace!.ProjectName is { } project)
-            {
-                <span class="db-stat-pill">@project</span>
-            }
-        </div>
-    };
-
-    // ── Governance: review decisions on the project's artifact revisions ──────────────────────────────────────────────
-    // Availability is context (the workspace card and Project Artifacts); Governance counts only decisions recorded on the
-    // revision each document review gate reads now — the same reading Recommended Workflow shows.
-
-    /// <summary>Document review gates that apply (one per available role with a review step; the Data Model's is optional).</summary>
-    private IReadOnlyList<ArtifactReviewStatus> DocumentReviews =>
-        _workflowReadiness?.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).ToList() ?? [];
-
-    /// <summary>Assessed once a decision exists on a current revision, or an earlier decision has gone stale.</summary>
-    private bool GovernanceAssessed => DocumentReviews.Any(r => r.IsDecided || r.State == ArtifactReviewState.Stale);
-
-    private int GovernanceApproved => DocumentReviews.Count(r => r.State == ArtifactReviewState.Approved);
-
-    /// <summary>"—" until assessed; then approved document reviews of those that apply. Never an availability count, never 0%.</summary>
-    private string GovernanceValue => GovernanceAssessed ? $"{GovernanceApproved} / {DocumentReviews.Count}" : "—";
-
-    private string GovernanceSublabel
-    {
-        get
-        {
-            if (_workspace is null) return "Loading";
-            if (_workspace.State == CurrentWorkspaceState.Error) return "Unavailable";
-            if (!_workspace.WorkspaceLoaded) return "No workspace";
-            if (!GovernanceAssessed) return "Not assessed";
-            var needsChanges = DocumentReviews.Count(r => r.State == ArtifactReviewState.NeedsChanges);
-            var stale = DocumentReviews.Count(r => r.State == ArtifactReviewState.Stale);
-            return needsChanges > 0 ? $"{needsChanges} need{(needsChanges == 1 ? "s" : "")} changes"
-                : stale > 0 ? $"{stale} review{(stale == 1 ? "" : "s")} stale"
-                : GovernanceApproved == DocumentReviews.Count ? "Document reviews approved"
-                : "Document reviews approved so far";
-        }
+        var inputs = QualitySession.ReviewInputs;
+        if (inputs.Count == 0) return null;
+        var pack = inputs.Select(i => i.Pack).FirstOrDefault(p => p is not null);
+        var module = inputs.Select(i => i.Module).FirstOrDefault(m => m is not null);
+        var summary = pack is null ? null : _workspace?.Overview?.Packs.FirstOrDefault(p => p.Pack == pack && (module is null || p.Module == module));
+        var parts = new List<string>();
+        if (pack is not null) parts.Add($"pack {(summary is null ? pack : ProjectPackOverview.PackName(summary))}");
+        if (module is not null) parts.Add($"module {ArtifactModules.Label(module)}");
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
-    /// <summary>Success only when every document review is approved; otherwise neutral — the sublabel names what needs attention.</summary>
-    private string? GovernanceVariant =>
-        GovernanceAssessed && GovernanceApproved == DocumentReviews.Count && DocumentReviews.Count > 0 ? "success" : null;
+    private bool Analyzed(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Constitution => _constitutionAnalyzed,
+        WorkspaceArtifactType.Specification => _specAnalyzed,
+        WorkspaceArtifactType.Plan => _planAnalyzed,
+        WorkspaceArtifactType.Tasks => _tasksAnalyzed,
+        _ => _dataModelAnalyzed,
+    };
 
-    private string GovernanceChip =>
-        GovernanceVariant == "success" ? "healthy"
-        : DocumentReviews.Any(r => r.State is ArtifactReviewState.NeedsChanges or ArtifactReviewState.Stale) ? "warning"
-        : "neutral";
-
-    /// <summary>What each card shows. The role count is the workspace card's; repeating it here could contradict an unknown state.</summary>
-    private const string ArtifactsDescription = "Availability · review decision on the selected revision · analysis";
+    /// <summary>Facts from this session's review reports for a document type (requirements, phases, tasks, rules). Only after a review ran.</summary>
+    private IReadOnlyList<string>? ReviewFacts(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Constitution when Snapshot.ComplianceReport is { HasConstitution: true } cr => [$"{cr.Coverage.TotalItems} rules checked"],
+        WorkspaceArtifactType.Specification when Snapshot.TraceabilityReport is { Health.TotalRequirements: > 0 } st =>
+            [$"{st.Health.TotalRequirements} requirements", st.HasPlan && st.SpecificationCoverage.HasApplicablePopulation ? $"{st.SpecificationCoverage.CoveragePercentage:0}% covered by the plan" : "Plan coverage not assessed"],
+        WorkspaceArtifactType.Plan when Snapshot.TraceabilityReport is { HasPlan: true } pt =>
+            [$"{pt.Health.TotalPlanItems} plan phases", pt.HasTasks && pt.PlanCoverage.HasApplicablePopulation ? $"{pt.PlanCoverage.CoveredItems} of {pt.PlanCoverage.TotalItems} align with task phases" : "Task alignment not assessed"],
+        WorkspaceArtifactType.Tasks when Snapshot.TraceabilityReport is { Health.TotalTasks: > 0 } tt =>
+            [$"{tt.Health.TotalTasks} tasks", tt.HasSpecification && tt.TaskCoverage.HasApplicablePopulation ? $"{tt.TaskCoverage.CoveredItems} of {tt.TaskCoverage.TotalItems} reference requirements" : "Requirement references not assessed"],
+        _ => null,
+    };
 
     // ── Workflow readiness ────────────────────────────────────────────────────
 
     private WorkflowReadiness? _workflowReadiness;
-
-    /// <summary>Approved share of the required reviews; "—" when nothing is assessed yet (never 0% by default).</summary>
-    private string WorkflowValue => _workflowReadiness?.ReleaseReadinessPercent is { } percent ? $"{percent}%" : "—";
-
-    private string WorkflowStatusLabel => _workflowReadiness switch
-    {
-        null or { WorkspaceLoaded: false } => "Not assessed",
-        { ReleaseReadinessPercent: null } => "Not Started",
-        { ReleaseReadinessPercent: 100 } => "Complete",
-        { ReleaseReadinessPercent: >= 50 } => "In Progress",
-        _ => "Started"
-    };
-
-    private string? WorkflowStatusVariant => _workflowReadiness?.ReleaseReadinessPercent switch
-    {
-        100 => "success",
-        >= 50 => "warning",
-        _ => null
-    };
 
     private async Task RefreshWorkflowReadinessAsync()
     {
@@ -1097,13 +1029,6 @@
 
     private string _overallScoreLabel => "Quality among assessed: " + (_overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk");
 
-    // ── Project phase & governance KPI ────────────────────────────────────────
-
-    private string _projectPhase =>
-        _tasksAnalyzed ? "Testing" :
-        Available(WorkspaceArtifactType.Plan)          ? "Implementation" :
-        Available(WorkspaceArtifactType.Specification) ? "Specification" : "Setup";
-
     // ── Top risks ─────────────────────────────────────────────────────────────
 
     private IEnumerable<(string Title, string Severity, string Category, string? Detail)> _topRisks
@@ -1146,29 +1071,6 @@
         }
     }
 
-    // ── Health Summary values ─────────────────────────────────────────────────
-
-    private string TraceabilityHealthVal =>
-        Snapshot.TraceabilityReport is { } tr
-            ? $"{tr.Health.CoveragePercentage:0}%"
-            : "—";
-
-    private string ComplianceHealthVal =>
-        Snapshot.ComplianceReport is { } cr
-            ? $"{cr.Health.CompliancePercentage:0}%"
-            : "—";
-
-    private string QaHealthVal =>
-        QualitySession.Report is { } report
-            ? $"{report.OverallScore:0}/100"
-            : Snapshot.AuditReport is { } ar
-                ? $"{ar.Health.AuditScore:0}/100"
-                : Snapshot.ReadinessReport is { } qr ? $"{qr.OverallScore:0}/100" : "-";
-    private string DeliveryHealthVal =>
-        Snapshot.DeliveryReport is { } dr
-            ? $"{dr.Health.OverallReadinessScore:0}%"
-            : "—";
-
     // ── Top findings for analysis cards ──────────────────────────────────────
 
     private string? _topAuditRiskTitle =>
@@ -1208,14 +1110,6 @@
         _                             => "db-status-notrun",
     };
 
-    private static string RuntimeStatusChip(RuntimeReviewStatus status) => status switch
-    {
-        RuntimeReviewStatus.Running   => "warning",
-        RuntimeReviewStatus.Completed => "healthy",
-        RuntimeReviewStatus.Failed    => "critical",
-        _                             => "neutral",
-    };
-
     private static string ReadinessStatusClass(ReadinessState state) => state switch
     {
         ReadinessState.Ready       => "db-status-healthy",
@@ -1224,30 +1118,13 @@
         _                          => "db-status-critical",
     };
 
-    private static string PerformanceStatusClass(PerformanceReadinessState state) => state switch
-    {
-        PerformanceReadinessState.Ready       => "db-status-healthy",
-        PerformanceReadinessState.MostlyReady => "db-status-warning",
-        PerformanceReadinessState.HighRisk    => "db-status-critical",
-        _                                     => "db-status-warning",
-    };
-
     private static string ReadinessStateLabel(ReadinessState state) => state switch
     {
         ReadinessState.Ready       => "Ready",
         ReadinessState.MostlyReady => "Mostly Ready",
         ReadinessState.NotReady    => "Not Ready",
         ReadinessState.Blocked     => "Blocked",
-        _                          => "—",
-    };
-
-    private static string ReadinessStateLabel(PerformanceReadinessState state) => state switch
-    {
-        PerformanceReadinessState.Ready            => "Ready",
-        PerformanceReadinessState.MostlyReady      => "Mostly Ready",
-        PerformanceReadinessState.NeedsImprovement => "Needs Improvement",
-        PerformanceReadinessState.HighRisk         => "High Risk",
-        _                                          => "Not Assessed",
+        _                          => "Not assessed",
     };
 
     private static string FormatBytes(long bytes)
@@ -1271,8 +1148,7 @@
             }
             else
             {
-                <div class="db-readiness-score db-val-empty">—</div>
-                <div class="db-readiness-state db-status-notrun">Not Run</div>
+                <div class="db-readiness-state db-status-notrun">Not assessed</div>
             }
             <a href="@href" class="db-readiness-link">Open →</a>
         </div>
@@ -1289,8 +1165,7 @@
             }
             else
             {
-                <div class="db-readiness-score db-val-empty">—</div>
-                <div class="db-readiness-state db-status-notrun">Not Run</div>
+                <div class="db-readiness-state db-status-notrun">Not assessed</div>
             }
             <a href="@href" class="db-readiness-link">Open →</a>
         </div>

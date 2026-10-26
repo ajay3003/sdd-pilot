@@ -756,3 +756,168 @@
 
 /* Assessment coverage sits beside the quality chip: how many areas the quality figure is averaged over. */
 .db-assessment-coverage { font-size: 0.8rem; color: var(--clr-text-subtle); align-self: center; }
+
+/* ══ Tester-first layout ════════════════════════════════════════════════════════
+   Workspace summary → recommended next step → found / needs attention → review readiness → health → artifacts.
+   Every status pill carries text and a glyph; colour only supports it. */
+
+.db-visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+.db-h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    margin: 0 0 0.6rem;
+}
+
+.db-section-lead { font-size: 0.82rem; color: var(--clr-text-subtle); margin: -0.25rem 0 0.75rem; }
+.db-muted { color: var(--clr-text-muted); font-size: 0.82rem; }
+
+.db-workspace-panel { margin-bottom: 1rem; }
+.db-workspace-info { flex-wrap: wrap; gap: 0.5rem 1rem; }
+.db-workspace-identity { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.db-workspace-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #4b5563; }
+.db-workspace-project { font-size: 1.05rem; overflow-wrap: anywhere; }
+.db-workspace-env {
+    display: inline-block; font-size: 0.82rem; font-weight: 600; padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-pill); border: 1px solid var(--clr-border); background: #fff; color: #1f2937;
+}
+.db-workspace-env.is-setup { border-color: #f59e0b; color: #92400e; background: #fffbeb; }
+.db-workspace-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-top: 0.5rem; font-size: 0.78rem; color: #4b5563; }
+.db-workspace-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+.db-import-success {
+    margin: 0 0 0.75rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm);
+    background: #dcfce7; color: #14532d; font-size: 0.86rem; border: 1px solid #86efac;
+}
+
+.db-btn-primary, .db-btn-secondary {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0.5rem 1rem;
+    border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; text-decoration: none;
+}
+.db-btn-primary { background: #1d4ed8; color: #fff; border: 1px solid #1d4ed8; }
+.db-btn-primary:hover { background: #1e40af; }
+.db-btn-secondary { background: #fff; color: #1d4ed8; border: 1px solid #93c5fd; }
+.db-btn-link { display: inline-flex; align-items: center; min-height: 44px; color: #1d4ed8; font-size: 0.85rem; }
+.db-btn-primary:focus-visible, .db-btn-secondary:focus-visible, .db-btn-link:focus-visible,
+.db-attention-action:focus-visible, .db-health-action:focus-visible, .db-artifact-action:focus-visible,
+.db-details > summary:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
+.db-export-btn { font-size: 0.8rem; }
+
+/* Recommended next step */
+.db-next-step {
+    border: 2px solid #1d4ed8; border-radius: var(--radius-lg); background: #eff6ff;
+    padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+}
+.db-next-eyebrow { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #1e3a8a; margin: 0 0 0.25rem; }
+.db-next-title { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin: 0 0 0.5rem; }
+.db-next-reason, .db-next-achieves { margin: 0 0 0.35rem; font-size: 0.9rem; color: #1f2937; }
+.db-next-k { font-weight: 700; }
+.db-next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 0.75rem; }
+.db-next-then { margin-top: 0.75rem; font-size: 0.84rem; color: #1f2937; }
+.db-next-then ol { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+
+/* Found / Needs attention */
+.db-overview-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 0.75rem; }
+@media (max-width: 860px) { .db-overview-grid { grid-template-columns: 1fr; } }
+.db-panel {
+    min-width: 0; background: var(--clr-surface-white); border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md); padding: 0.875rem 1rem;
+}
+.db-found-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.db-found-list li {
+    background: #f1f5f9; color: #0f172a; border-radius: var(--radius-pill); padding: 0.2rem 0.65rem;
+    font-size: 0.84rem; font-weight: 600;
+}
+.db-source-link { margin: 0.6rem 0 0; }
+.db-details { margin-top: 0.5rem; font-size: 0.8rem; }
+.db-details > summary { cursor: pointer; color: #1d4ed8; min-height: 24px; }
+.db-pack-list, .db-pack-list ul { list-style: none; margin: 0.25rem 0 0; padding-left: 0.75rem; }
+.db-pack-module { font-weight: 700; color: #1f2937; }
+.db-detail-list { margin: 0.35rem 0 0; padding-left: 1.1rem; overflow-wrap: anywhere; }
+.db-file-list li { font-family: var(--font-mono, monospace); font-size: 0.74rem; }
+.db-provenance { margin: 0.3rem 0 0; color: #4b5563; font-size: 0.74rem; overflow-wrap: anywhere; }
+
+.db-attention-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.db-attention-item {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: start;
+    padding: 0.5rem 0.6rem; border-radius: var(--radius-sm); border: 1px solid var(--clr-border);
+}
+.db-attention-item.is-attention { border-left: 4px solid #b45309; background: #fffbeb; }
+.db-attention-item.is-info { border-left: 4px solid #64748b; }
+.db-attention-kind { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: #7c2d12; padding-top: 0.1rem; }
+.db-attention-item.is-info .db-attention-kind { color: #334155; }
+.db-attention-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.db-attention-text { font-size: 0.88rem; font-weight: 600; color: #0f172a; }
+.db-attention-detail { font-size: 0.78rem; color: #374151; }
+.db-attention-action { align-self: center; font-size: 0.82rem; font-weight: 600; color: #1d4ed8; white-space: nowrap; min-height: 24px; display: inline-flex; align-items: center; }
+@media (max-width: 560px) {
+    .db-attention-item { grid-template-columns: minmax(0, 1fr); }
+    .db-attention-action { min-height: 44px; }
+}
+
+/* Status pill (text + glyph; colour supports it) */
+.db-pill {
+    display: inline-flex; align-items: center; width: fit-content; font-size: 0.74rem; font-weight: 700;
+    padding: 0.12rem 0.55rem; border-radius: var(--radius-pill); border: 1px solid #cbd5e1; background: #f8fafc; color: #334155;
+}
+.db-pill.is-good { background: #dcfce7; color: #14532d; border-color: #86efac; }
+.db-pill.is-attention { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+.db-pill.is-setup { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+.db-pill.is-ready { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
+
+/* Review readiness */
+.db-readiness-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.db-readiness-row {
+    display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(7rem, 9rem) minmax(0, 1fr); gap: 0.5rem; align-items: center;
+    padding: 0.5rem 0.875rem; border-bottom: 1px solid var(--clr-border); font-size: 0.86rem;
+}
+.db-readiness-row:last-child { border-bottom: none; }
+.db-readiness-name { font-weight: 600; color: #0f172a; }
+.db-readiness-text { color: #374151; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+    .db-readiness-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .db-readiness-text { grid-column: 1 / -1; }
+}
+
+/* Project Health */
+.db-health-card { min-width: 0; gap: 0.3rem; }
+.db-health-card.is-attention { border-left: 4px solid #b91c1c; }
+.db-health-card.is-good { border-left: 4px solid #15803d; }
+.db-health-card.is-ready { border-left: 4px solid #1d4ed8; }
+.db-health-label { margin: 0; }
+.db-health-help { font-size: 0.76rem; color: #4b5563; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.db-health-result { font-size: 0.95rem; font-weight: 700; color: #0f172a; }
+.db-health-text { font-size: 0.82rem; color: #374151; }
+.db-health-action { font-size: 0.82rem; font-weight: 600; color: #1d4ed8; min-height: 24px; display: inline-flex; align-items: center; width: fit-content; }
+.db-health-rows { list-style: none; margin: 0.75rem 0 0; padding: 0; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.db-health-row {
+    display: grid; grid-template-columns: minmax(10rem, 16rem) auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: center;
+    padding: 0.45rem 0.875rem; border-bottom: 1px solid var(--clr-border); font-size: 0.84rem;
+}
+.db-health-row:last-child { border-bottom: none; }
+.db-health-row-name { font-weight: 700; color: #0f172a; display: flex; flex-direction: column; }
+@media (max-width: 760px) {
+    .db-health-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .db-health-row .db-health-text, .db-health-row .db-health-action { grid-column: 1 / -1; }
+}
+
+/* Project Artifacts */
+.db-artifact-card { gap: 0.35rem; }
+.db-artifact-card.is-attention { border-left-color: #b91c1c; }
+.db-artifact-card.is-good { border-left-color: #15803d; }
+.db-artifact-card.is-ready { border-left-color: #1d4ed8; }
+.db-artifact-name { margin: 0; font-size: 0.95rem; }
+.db-artifact-summary { font-size: 0.84rem; color: #0f172a; font-weight: 600; }
+.db-artifact-meta { font-size: 0.74rem; color: #4b5563; }
+.db-artifact-attention { font-size: 0.78rem; color: #991b1b; font-weight: 600; }
+.db-artifact-action { font-size: 0.82rem; font-weight: 600; min-height: 24px; }
+.db-artifact-details summary { font-size: 0.76rem; }
+
+.db-advanced > summary { cursor: pointer; color: #1d4ed8; font-size: 0.88rem; min-height: 24px; }
+
+/* Five document cards and up to seven health areas: fill the row, wrap without a horizontal scroll. */
+.db-artifact-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr)); }
+.db-health-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }

@@ -157,7 +157,7 @@ public sealed record CurrentWorkspaceSnapshot(
     /// <summary>The module reviews currently read, or null (no modules, or none chosen yet).</summary>
     public string? ModuleLabel => Roles.Select(r => r.HasModules && r.Module is not null ? ArtifactModules.Label(r.Module) : null).FirstOrDefault(m => m is not null);
 
-    /// <summary>Several modules and none chosen: "Needs selection" — not an error and not ready.</summary>
+    /// <summary>Several modules and none chosen: the user chooses where to start — navigation, not an ambiguity, not an error and not ready.</summary>
     public bool ModuleRequired => Roles.Any(r => r.ModuleRequired);
 
     public int ModuleCount => Roles.Where(r => r.HasModules).Select(r => r.Modules!.Count).DefaultIfEmpty(0).Max();
@@ -203,6 +203,12 @@ public sealed record CurrentWorkspaceSnapshot(
     public IReadOnlyList<ArtifactRevisionRef> ArtifactRevisions => Roles.Select(r => r.Revision).OfType<ArtifactRevisionRef>()
         .Select(r => new ArtifactRevisionRef { Role = r.Role, ArtifactId = $"{ProjectSlug ?? "manual-workspace"}/{r.ArtifactId}", Fingerprint = r.Fingerprint, FileName = r.FileName })
         .ToList();
+
+    /// <summary>
+    /// Every module's documents as Module → Artifact Packs → roles (not just the focused module), or null when it could not be read. Discovery
+    /// only: availability, missing pack roles and genuine same-pack ambiguity — never a review result.
+    /// </summary>
+    public ProjectPackOverview? Overview { get; init; }
 
     public string ProjectDisplay => ProjectName ?? ProjectSlug ?? "Not assigned";
     /// <summary>The current project came from a Project Import archive (scope <c>import:{id}</c>), not from the Sample Projects catalog.</summary>
@@ -355,6 +361,17 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         var workspaceName = FirstNonBlank(explicitName, projectName, scope, metadata?.WorkspaceName, persisted?.WorkspaceName) ?? "Unsaved workspace";
         var saveStatus = persisted?.Status ?? (metadata?.AutoSaved == true ? "AutoSaved" : "NotSaved");
 
+        ProjectPackOverview? overview = null;
+        try
+        {
+            // The whole project's packs (every module), from the explorers' own candidates and per-module resolution.
+            if (unreadable is null && await _artifacts.GetModuleOverviewAsync() is { Error: null } modules) overview = ProjectPackOverview.Build(modules);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Project pack overview could not be read");
+        }
+
         return new CurrentWorkspaceSnapshot(
             unreadable is null ? CurrentWorkspaceState.Loaded : CurrentWorkspaceState.Error,
             metadata?.WorkspaceId ?? persisted?.CurrentWorkspaceId,
@@ -366,7 +383,7 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
             saveStatus,
             persisted?.LastSavedAt ?? metadata?.LoadedAt,
             version,
-            unreadable?.Error);
+            unreadable?.Error) { Overview = overview };
     }
 
     private static ArtifactRoleStatus ToRoleStatus(ArtifactExplorerState state)

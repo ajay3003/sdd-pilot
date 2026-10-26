@@ -110,7 +110,7 @@ public sealed class ModuleScopedConsumersTests : BunitContext
         var snapshot = WorkspaceSnapshots.Loaded("Auto_shop", "import:x", "shop") with { Roles = [status] };
         snapshot.ModuleRequired.Should().BeTrue();
         var documents = ProjectInputPresentation.Documents(snapshot);
-        documents.StatusLabel.Should().Be("Needs selection", "several modules and none chosen is a selection to make, not an error and not ready");
+        documents.StatusLabel.Should().Be("Choose a module", "several modules and none chosen is navigation — not an ambiguity, not an error and not ready");
         documents.ActionLabel.Should().Be("Choose module");
     }
 
