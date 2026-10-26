@@ -333,6 +333,8 @@
     private bool _disposed;
 
     private string Label => ArtifactExplorerRoles.Label(Role);
+    /// <summary>The role as a tester names one document of it: "specification", "plan", "task list", "data model".</summary>
+    private string Noun => Role == WorkspaceArtifactType.Tasks ? "task list" : Label.ToLowerInvariant();
     private string Icon => ArtifactExplorerRoles.Icon(Role);
     private string StatusKey => _state is null ? "Loading" : _state.Status.ToString();
     // Same canonical content fingerprint used by every role parser. This is an opaque identity, not source text or path.
@@ -502,7 +504,7 @@
     /// <summary>Other documents of the role this feature can read: Spec-Kit supporting documents, or shared/other ones — never "competing".</summary>
     private string OthersText(int others)
     {
-        var noun = Label.ToLowerInvariant();
+        var noun = Role == WorkspaceArtifactType.Tasks ? "task" : Label.ToLowerInvariant();
         return _state?.Reason == ExplorerSelectionReason.PackFile
             ? $"{others} supporting {noun} document{(others == 1 ? "" : "s")}"
             : $"{others} other {noun} document{(others == 1 ? "" : "s")} available";
@@ -567,10 +569,10 @@
     {
         var text = _state?.Reason switch
         {
-            ExplorerSelectionReason.SharedArtifact => $"Shared {Label.ToLowerInvariant()} — this feature has none of its own",
+            ExplorerSelectionReason.SharedArtifact => $"Shared {Noun} — this feature has none of its own",
             ExplorerSelectionReason.Explicit => $"{Label} chosen for this feature",
             null => null,
-            _ => $"Primary {Label.ToLowerInvariant()}",
+            _ => $"Primary {Noun}",
         };
         if (text is not null)
         {

@@ -82,7 +82,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
 
         ClickTaskRow(cut, "T001");
-        ClickTab(cut, "Impact");
+        ClickTab(cut, "Coverage");
 
         cut.FindAll("[data-testid='te-task-details']").Should().BeEmpty();
         cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
@@ -149,8 +149,8 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
 
         ClickTaskRow(cut, "T001");
-        ClickTab(cut, "Impact");
-        ClickTab(cut, "Tree");
+        ClickTab(cut, "Coverage");
+        ClickTab(cut, "All tasks");
 
         cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Traceability");
         cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
@@ -383,7 +383,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "No traceability links");
+        ClickFilter(cut, "No traceability link");
 
         AssertWarningMatch(FindTreeTaskRow(cut, "T002"));
     }
@@ -420,7 +420,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Marked done");
+        ClickFilter(cut, "Marked complete");
 
         var row = FindTreeTaskRow(cut, "T001");
         row.ClassList.Should().Contain("is-match");
@@ -1098,7 +1098,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
         // Click Map tab
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn.Should().NotBeNull("Map tab button should exist");
         mapTabBtn!.Click();
 
@@ -1120,7 +1120,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         // Map view should NOT have expand/collapse buttons
@@ -1144,7 +1144,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         // Should render .te-map container (not .te-tree)
@@ -1284,13 +1284,13 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
         // Click Map
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
         var mapView = cut.Find(".te-map");
         mapView.TextContent.Should().Contain("T001");
 
         // Click Tree
-        var treeTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Tree"));
+        var treeTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("All tasks"));
         treeTabBtn!.Click();
         var treeView = cut.Find(".te-tree");
         treeView.TextContent.Should().Contain("T001");
@@ -1797,7 +1797,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, allCompletedTasks));
 
         var status = cut.Find("[data-testid=te-summary-status]").TextContent;
-        status.Should().Contain("Marked done in Task artifact").And.Contain("2 / 2").And.Contain("(100%)");
+        status.Should().Contain("Marked complete in task file").And.Contain("2 of 2").And.Contain("not independently verified");
         cut.Find("[data-testid=te-summary]").TextContent.Should().NotContainAny(["task completion", "implementation complete", "Completed"],
             "a checkbox ratio is not implementation or test completion");
     }
@@ -1811,11 +1811,11 @@ public class TaskExplorerPageTests : BunitContext
             """;
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
-        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Impact"));
+        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Coverage"));
         impactTabBtn!.Click();
 
         var impactSection = cut.Find("[data-testid='te-implementation-coverage']");
-        impactSection.TextContent.Should().Contain("Requirement Implementation Coverage",
+        impactSection.TextContent.Should().Contain("Requirements linked to implementation tasks",
             "Should use clear terminology that specifies 'requirement' coverage");
     }
 
@@ -1828,7 +1828,7 @@ public class TaskExplorerPageTests : BunitContext
             """;
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
-        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Impact"));
+        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Coverage"));
         impactTabBtn!.Click();
 
         var implementationLabel = cut.FindAll(".te-section-kicker");
@@ -1849,16 +1849,16 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasksMissingRequirements));
 
         // The header shows the Task artifact checkbox status, separately from traceability
-        cut.Find("[data-testid=te-summary-status]").TextContent.Should().Contain("2 / 2");
-        cut.Find("[data-testid=te-summary-traceability]").TextContent.Should().Contain("0 with traceability links · 2 with no traceability links");
+        cut.Find("[data-testid=te-summary-status]").TextContent.Should().Contain("2 of 2");
+        cut.Find("[data-testid=te-summary-traceability]").TextContent.Should().Contain("0 tasks linked to requirements/user stories · 2 without traceability links");
 
         // Impact tab should show requirement coverage (potentially different)
-        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Impact"));
+        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Coverage"));
         if (impactTabBtn != null)
         {
             impactTabBtn.Click();
             var requirementCoverageText = cut.Find("[data-testid='te-implementation-coverage']").TextContent;
-            requirementCoverageText.Should().Contain("Requirement Implementation Coverage",
+            requirementCoverageText.Should().Contain("Requirements linked to implementation tasks",
                 "Impact should show requirement coverage with distinct terminology");
         }
     }
@@ -1872,13 +1872,13 @@ public class TaskExplorerPageTests : BunitContext
             """;
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
-        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Impact"));
+        var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Coverage"));
         impactTabBtn!.Click();
 
         var impactContent = cut.Find("[data-testid='te-impact-view']").TextContent;
-        impactContent.Should().Contain("Task completion", "Should mention task completion explicitly");
-        impactContent.Should().Contain("Requirement implementation coverage", "Should mention requirement coverage explicitly");
-        impactContent.Should().Contain("requirement-to-task",
+        impactContent.Should().Contain("Linkage only", "Should say the view is about linkage");
+        impactContent.Should().Contain("Requirements linked to tasks", "Should name requirement-to-task linkage explicitly");
+        impactContent.Should().Contain("not verified implementation",
             "Should clarify what requirement coverage measures");
     }
 
@@ -1957,12 +1957,12 @@ public class TaskExplorerPageTests : BunitContext
 
         var impactText = RenderImpactView(cut).TextContent;
 
-        impactText.Should().Contain("Requirement Implementation Coverage");
-        impactText.Should().Contain("User Stories linked");
-        impactText.Should().Contain("Functional Requirements linked");
-        impactText.Should().Contain("Success Criteria linked");
-        impactText.Should().Contain("Tests linked");
-        impactText.Should().Contain("Architecture Notes linked");
+        impactText.Should().Contain("Requirements linked to implementation tasks");
+        impactText.Should().Contain("User stories linked to tasks");
+        impactText.Should().Contain("Requirements linked to tasks");
+        impactText.Should().Contain("Success criteria linked to tasks");
+        impactText.Should().Contain("Test tasks (compared with referenced requirements)");
+        impactText.Should().Contain("Architecture notes linked", "kept under Advanced metrics");
     }
 
     [Fact]
@@ -2049,9 +2049,9 @@ public class TaskExplorerPageTests : BunitContext
         // Each fact in its own place: artifact, status, planning, traceability, implementation and test evidence.
         string Item(string id) => cut.Find($"[data-testid=te-summary-{id}]").TextContent;
         Item("artifact").Should().Contain("4 tasks ·");
-        Item("status").Should().Contain("Marked done in Task artifact").And.Contain("1 / 4").And.Contain("(25%)");
+        Item("status").Should().Contain("Marked complete in task file").And.Contain("1 of 4").And.Contain("not independently verified");
         Item("planning").Should().Contain("2 parallelizable tasks").And.NotContain("[P]");
-        Item("traceability").Should().Contain("with no traceability links");
+        Item("traceability").Should().Contain("without traceability links");
         Item("implementation").Should().Contain("Not assessed");
         Item("tests").Should().Contain("Not assessed");
     }
@@ -2071,7 +2071,7 @@ public class TaskExplorerPageTests : BunitContext
         var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent;
 
-        headerText.Should().Contain("Marked done in Task artifact",
+        headerText.Should().Contain("Marked complete in task file",
             "the checkbox ratio says what it is").And.NotContain("task completion");
     }
 
@@ -2093,7 +2093,7 @@ public class TaskExplorerPageTests : BunitContext
         var headerText = header.TextContent;
 
         // 2 out of 4 tasks complete = 50%
-        headerText.Should().Contain("2 / 4 (50%)",
+        headerText.Should().Contain("2 of 4",
             "Should calculate the marked-done percentage correctly");
     }
 
@@ -2182,7 +2182,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
         // Click Map tab to trigger RenderMapView
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn.Should().NotBeNull("Map tab button should exist");
 
         // This should not throw an unboxing exception
@@ -2206,7 +2206,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
         // Switch to Map view
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         // Click on a map task
@@ -2222,7 +2222,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         cut.FindAll(".te-map-phase-card").Should().HaveCount(7);
         cut.Find(".te-map-summary").TextContent.Should().Contain("7 phases");
@@ -2234,7 +2234,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         var phaseCards = cut.FindAll(".te-map-phase-card");
         phaseCards.Any(card =>
@@ -2262,7 +2262,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         var group = cut.Find(".te-map-group-header");
         group.QuerySelector(".te-map-group-title")!.TextContent.Should().Contain("Infrastructure changes");
@@ -2281,7 +2281,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         var task = cut.Find(".te-map-task");
         task.QuerySelector(".te-map-task-id")!.TextContent.Trim().Should().Be("T001");
@@ -2294,7 +2294,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         var taskIds = cut.FindAll(".te-map-task-id").Select(id => id.TextContent.Trim()).ToList();
         taskIds.Should().Contain("T033");
@@ -2306,7 +2306,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         var mapText = cut.Find(".te-map").TextContent;
         mapText.Should().NotContain("Phase Dependencies");
@@ -2322,7 +2322,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         var mapText = cut.Find(".te-map").TextContent;
         mapText.Should().NotContain("Purpose");
@@ -2342,7 +2342,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         cut.Find(".te-map").TextContent.Should().NotContain("[P]");
         cut.FindAll(".te-map-task-chips span").Should().NotContain(chip => chip.TextContent.Trim() == "P");
@@ -2360,7 +2360,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickTab(cut, "Map");
+        ClickTab(cut, "By phase");
 
         cut.Find(".te-map-header").ClassList.Should().Contain("pe-section-block");
         cut.Find(".te-map-kicker").ClassList.Should().Contain("pe-section-kicker");
@@ -2396,7 +2396,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, withDocs));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var mapText = cut.Find(".te-map").TextContent;
@@ -2436,7 +2436,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, scimLike));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var mapText = cut.Find(".te-map").TextContent;
@@ -2466,7 +2466,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var mapTasks = cut.FindAll(".te-map-task");
@@ -2490,7 +2490,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var mapText = cut.Find(".te-map").TextContent;
@@ -2519,7 +2519,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var mapText = cut.Find(".te-map").TextContent;
@@ -2547,7 +2547,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var phaseCards = cut.FindAll(".te-map-phase-card");
@@ -2570,14 +2570,14 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
         // Map view has phase cards
-        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("By phase"));
         mapTabBtn!.Click();
 
         var mapHasPhaseCards = cut.FindAll(".te-map-phase-card");
         mapHasPhaseCards.Should().NotBeEmpty("Map view should have phase cards");
 
         // Switch to Tree view - should not have phase cards
-        var treeTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Tree"));
+        var treeTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("All tasks"));
         treeTabBtn!.Click();
 
         var treeHasPhaseCards = cut.FindAll(".te-map-phase-card");
@@ -2826,7 +2826,7 @@ public class TaskExplorerPageTests : BunitContext
 
     private static AngleSharp.Dom.IElement RenderImpactView(IRenderedComponent<TaskExplorerPanel> cut)
     {
-        ClickTab(cut, "Impact");
+        ClickTab(cut, "Coverage");
         return cut.Find("[data-testid='te-impact-view']");
     }
 

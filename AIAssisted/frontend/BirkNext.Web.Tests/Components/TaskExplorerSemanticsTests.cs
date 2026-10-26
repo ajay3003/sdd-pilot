@@ -86,7 +86,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
 
         var cut = Render(text.ToString());
 
-        Item(cut, "status").Should().Contain("Marked done in Task artifact").And.Contain("64 / 65").And.Contain("(98%)");
+        Item(cut, "status").Should().Contain("Marked complete in task file").And.Contain("64 of 65").And.Contain("not independently verified").And.NotContain("✓");
         cut.Find("[data-testid=te-summary]").TextContent.Should().NotContainAny("task completion", "implemented", "Completed");
         Item(cut, "implementation").Should().Contain("Not assessed", "a checkbox is not implementation evidence");
         Item(cut, "tests").Should().Contain("Not assessed", "a checkbox is not test evidence");
@@ -115,7 +115,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     public void PhaseProgressBars_AreProgressbarsNamedAsTasksMarkedDoneInTheTaskArtifact()
     {
         var cut = Render();
-        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Impact").Click();
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Coverage").Click();
 
         var bars = cut.FindAll("[data-testid=te-phase-progress]");
         bars.Should().NotBeEmpty();
@@ -124,7 +124,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         setup.GetAttribute("aria-label").Should().EndWith("2 of 3 tasks marked done in Task artifact");
         setup.GetAttribute("aria-valuenow").Should().Be("2");
         setup.GetAttribute("aria-valuemax").Should().Be("3");
-        cut.Markup.Should().Contain("Partly marked done").And.NotContain("In Progress", "a checkbox share is not implementation progress");
+        cut.Markup.Should().Contain("Partly marked complete").And.NotContain("In Progress", "a checkbox share is not implementation progress");
     }
 
     // ── Phases nested under a document title (e.g. "# Tasks: X" → "## Phase 1") ─────────────────────────────────────────
@@ -175,7 +175,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     public void PhaseProgress_RendersForPhasesUnderADocumentTitle()
     {
         var cut = Render(TitledFixture);
-        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Impact").Click();
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Coverage").Click();
 
         var bars = cut.FindAll("[data-testid=te-phase-progress]");
         bars.Select(b => b.GetAttribute("aria-label")).Should().Equal(
@@ -190,7 +190,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     public void MapView_IsAFocusableNamedRegionOfListsOfButtons_NotOrphanTreeItems()
     {
         var cut = Render(TitledFixture);
-        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Map").Click();
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "By phase").Click();
 
         var map = cut.Find("[data-testid=te-map]");
         map.GetAttribute("tabindex").Should().Be("0", "the scroll region must be reachable by keyboard");
@@ -213,7 +213,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     public void MapView_TasksAreOneRovingTabStop_WithArrowKeyHintAndPhaseIndex()
     {
         var cut = Render(TitledFixture);
-        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Map").Click();
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "By phase").Click();
 
         var map = cut.Find("[data-testid=te-map]");
         var hint = cut.Find("[data-testid=te-map-keys]");
@@ -281,7 +281,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         TaskExplorerService.HasNoTraceabilityLinks(Task("T004"), []).Should().BeTrue("nothing links it");
 
         var cut = Render();
-        Item(cut, "traceability").Should().Contain("5 with traceability links · 1 with no traceability links");
+        Item(cut, "traceability").Should().Contain("5 tasks linked to requirements/user stories · 1 without traceability links");
         Click(cut, "NoLinks");
         VisibleMatches(cut).Should().Equal("T004");
         cut.Find("[data-testid=te-filter-status]").TextContent.Should().Contain("Showing 1 of 6 tasks");
@@ -321,9 +321,9 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     {
         var cut = Render(evidence: Index(new SddLifecycleState(), GraphRow("FR-001"), GraphRow("FR-002"), GraphRow("FR-003")));
 
-        Item(cut, "implementation").Should().Contain("Not assessed").And.Contain("no current Source Analysis").And.NotContain("0 ");
+        Item(cut, "implementation").Should().Contain("Not assessed").And.Contain("no implementation evidence is linked yet").And.NotContain("0 ");
         cut.Find("[data-testid=te-summary-implementation] a").GetAttribute("href").Should().Be("implementation-review");
-        cut.Find("[data-testid=te-summary-implementation] a").TextContent.Should().Be("Implementation Evidence Review",
+        cut.Find("[data-testid=te-summary-implementation] a").TextContent.Should().Be("Review implementation evidence",
             "/implementation-review is Implementation Evidence Review; \"Implementation Review\" is the task-alignment page");
         cut.Find("[data-testid=te-implementation-not-assessed]").TextContent.Should().Be("Not assessed");
         cut.FindAll("[data-testid=te-impl-chip]").Should().BeEmpty();
@@ -378,9 +378,9 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     {
         var cut = Render(evidence: Index(AnalysedSource(), GraphRow("FR-001")));
 
-        Item(cut, "tests").Should().Contain("Not assessed").And.Contain("no designed tests or test executions recorded").And.NotContain("0 ");
+        Item(cut, "tests").Should().Contain("Not assessed").And.Contain("no designed/executed test evidence is linked yet").And.NotContain("0 ");
         cut.Find("[data-testid=te-summary-tests] a").GetAttribute("href").Should().Be("implementation-review", "test results are imported in Implementation Evidence Review");
-        cut.Find("[data-testid=te-summary-tests] a").TextContent.Should().Be("Import test results in Implementation Evidence Review");
+        cut.Find("[data-testid=te-summary-tests] a").TextContent.Should().Be("Review / import test evidence");
         cut.Find("[data-testid=te-tests-not-assessed]").TextContent.Should().Be("Not assessed");
         cut.FindAll("[data-testid=te-test-chip]").Should().BeEmpty();
     }
@@ -484,7 +484,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     {
         var cut = Render("## Phase 1: Work\n\n- [ ] T001 Add unit test for the mapper\n- [ ] T002 Map the payload (FR-001)\n");
 
-        Item(cut, "traceability").Should().Contain("1 with traceability links · 1 with no traceability links");
+        Item(cut, "traceability").Should().Contain("1 task linked to requirements/user stories · 1 without traceability links");
         Row(cut, "T001").Click();
         cut.Find("[data-testid=te-detail-no-links]").TextContent.Should().StartWith("No traceability links");
         cut.Find("[data-testid=te-detail-topics]").TextContent.Should().Contain("Testing");
@@ -502,7 +502,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         var health = TaskExplorerService.ComputeEnrichedHealth(TaskExplorerService.Parse(text));
 
         (health.LinkedTasks + health.UnlinkedTasks).Should().Be(health.TotalTasks, "linked + unlinked == total");
-        Item(cut, "traceability").Should().Contain($"{health.LinkedTasks} with traceability links · {health.UnlinkedTasks} with no traceability links");
+        Item(cut, "traceability").Should().Contain($"{health.LinkedTasks} task{(health.LinkedTasks == 1 ? "" : "s")} linked to requirements/user stories · {health.UnlinkedTasks} without traceability links");
         Item(cut, "artifact").Should().Contain($"{health.TotalTasks} task");
         Item(cut, "planning").Should().Contain($"{health.ParallelTasks} parallelizable task");
 

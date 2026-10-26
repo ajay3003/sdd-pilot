@@ -1066,7 +1066,7 @@ button.te-ref-chip:hover {
 .te-table-rel-source {
     font-size: 0.7rem;
     font-weight: 600;
-    color: rgba(167,139,250,0.85);
+    color: #5b21b6;
     margin-right: 0.25rem;
 }
 
@@ -2235,3 +2235,26 @@ button.te-ref-chip:hover {
     .te-row { padding-left: calc(var(--te-depth, 0) * 8px + 4px); }
     .te-summary { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Tester view: Testing work first; advanced views after a label ───────────────────────── */
+.te-view-btn-primary { font-weight: 700; }
+.te-view-sep { align-self: center; font-size: 0.72rem; color: #475569; margin: 0 0.15rem 0 0.4rem; }
+.te-testing-view { display: grid; gap: 0.6rem; min-width: 0; }
+.te-testing-header h3 { margin: 0.15rem 0; }
+.te-testing-done { margin: 0.25rem 0 0; font-size: 0.86rem; color: #1f2937; }
+.te-testing-group { border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.6rem 0.8rem; background: #fff; min-width: 0; }
+.te-testing-group-title { margin: 0 0 0.35rem; font-size: 0.92rem; }
+.te-testing-kind { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-top: 0.35rem; }
+.te-testing-list { list-style: none; margin: 0.2rem 0 0; padding: 0; display: grid; gap: 0.25rem; }
+.te-testing-item { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; padding: 0.3rem 0.4rem; border-radius: 6px; min-width: 0; }
+.te-testing-item.is-selected { background: #eff6ff; outline: 1px solid #93c5fd; }
+.te-testing-open { display: flex; gap: 0.5rem; align-items: baseline; min-width: 0; flex: 1 1 20rem; text-align: left; background: none; border: 0; padding: 0.15rem 0; cursor: pointer; color: #0f172a; font: inherit; }
+.te-testing-open:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+.te-testing-id { font-weight: 700; color: #1e3a8a; white-space: nowrap; }
+.te-testing-title { overflow-wrap: anywhere; min-width: 0; }
+.te-testing-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.te-chip-cat { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
+.te-chip-marked { background: #f8fafc; color: #334155; }
+.te-summary-declared dd { color: #1f2937; }
+.te-summary-advanced dt { color: #475569; }
+.te-advanced-metrics > summary { cursor: pointer; color: #1d4ed8; font-size: 0.82rem; }

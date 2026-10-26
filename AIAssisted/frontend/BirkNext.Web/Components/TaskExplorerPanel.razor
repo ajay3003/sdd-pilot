@@ -58,15 +58,19 @@
             </div>
             <div class="te-header-right">
                 <div class="te-view-toggle" role="group" aria-label="View mode">
-                    <button type="button" class='te-view-btn @(!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView ? "is-active" : "")' aria-pressed="@((!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView) ? "true" : "false")" @onclick='ShowTreeView'>
-                        Tree
+                    <button type="button" class='te-view-btn te-view-btn-primary @(_isTestingView ? "is-active" : "")' aria-pressed="@(_isTestingView ? "true" : "false")" @onclick='ShowTestingView' data-testid="te-testing-tab-btn">
+                        Testing work
+                    </button>
+                    <button type="button" class='te-view-btn @(!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView && !_isTestingView ? "is-active" : "")' aria-pressed="@((!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView && !_isTestingView) ? "true" : "false")" @onclick='ShowTreeView'>
+                        All tasks
                     </button>
                     <button type="button" class='te-view-btn @(_isMapView ? "is-active" : "")' aria-pressed="@((_isMapView) ? "true" : "false")" @onclick='ShowMapView'>
-                        Map
+                        By phase
                     </button>
                     <button type="button" class='te-view-btn @(_isImpactView ? "is-active" : "")' aria-pressed="@((_isImpactView) ? "true" : "false")" @onclick='ShowImpactView'>
-                        Impact
+                        Coverage
                     </button>
+                    <span class="te-view-sep" aria-hidden="true">Advanced:</span>
                     <button type="button" class='te-view-btn @(_isDependenciesView ? "is-active" : "")' aria-pressed="@((_isDependenciesView) ? "true" : "false")" @onclick='ShowDependenciesView'>
                         Dependencies
                     </button>
@@ -86,13 +90,13 @@
         }
 
         <!-- Tab-Specific Controls (shown only for Tree view) -->
-        @if (!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView)
+        @if (!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView && !_isTestingView)
         {
             <div class="te-tab-controls">
                 <div class="te-search-wrap">
                     <input type="search"
                            class="te-search"
-                           placeholder="Search tasks, IDs, phases..."
+                           placeholder="Search tasks, IDs or phases"
                            value="@_searchQuery"
                            @oninput="HandleSearchInput"
                            aria-label="Search Task Explorer" />
@@ -111,7 +115,7 @@
                         <div class="te-filter-group-label">Task status</div>
                         <div class="te-filter-row">
                             @Chip(null, "All", "All tasks")
-                            @Chip("Completed", "✓ Marked done", "Tasks marked done ([x]) in the Task artifact. Not implementation or test evidence.")
+                            @Chip("Completed", "✓ Marked complete in task file", "Tasks marked done ([x]) in the Task artifact. Declared status only — not implementation or test evidence.")
                             @Chip("Open", "○ Open", "Tasks not marked done in the Task artifact")
                         </div>
                     </div>
@@ -123,10 +127,10 @@
                             @Chip("HasFrLinks", "Requirements (FR)", "Tasks that reference an FR ID or match a specification requirement")
                             @Chip("HasScLinks", "Success criteria (SC)", "Tasks that reference an SC ID or match a success criterion")
                             @Chip("HasTableLinks", "Table rows", "Tasks listed in a traceability table row of the Task artifact")
-                            @Chip("HasLinks", $"With traceability links ({_health.LinkedTasks})", "Tasks with at least one FR, SC, user-story, matched-requirement or table-row link. Topics and evidence are not links.")
+                            @Chip("HasLinks", $"Linked to requirements/user stories ({_health.LinkedTasks})", "Tasks with at least one FR, SC, user-story, matched-requirement or table-row link. Topics and evidence are not links.")
                             @if (_health.UnlinkedTasks > 0)
                             {
-                                @Chip("NoLinks", $"No traceability links ({_health.UnlinkedTasks})", "Tasks with no FR, SC, user-story, matched-requirement or table-row link of any kind", "te-fc-review")
+                                @Chip("NoLinks", $"No traceability link ({_health.UnlinkedTasks})", "Tasks with no FR, SC, user-story, matched-requirement or table-row link of any kind", "te-fc-review")
                             }
                         </div>
                     </div>
@@ -204,17 +208,87 @@
         <!-- Main layout: tree/map + details panel -->
         <div class="te-main @(ShouldShowTaskDetails ? "has-details" : "")">
 
-            @if (_isChangesView)
+            @if (_isTestingView)
+            {
+                var testingTasks = AllTasks.Where(TaskCategories.IsTestingWork).ToList();
+                var (workTotal, workTesting, workVerification) = TestingWork.Count(AllTasks);
+                var shown = testingTasks.Where(t => TestingFilterMatches(t)).ToList();
+                <div class="te-testing-view" data-testid="te-testing-view" aria-label="Testing work">
+                    <div class="te-testing-header">
+                        <div>
+                            <div class="te-section-kicker">Testing work</div>
+                            <h3 data-testid="te-testing-count">@workTotal task@(workTotal == 1 ? "" : "s") · @workTesting test@(workTesting == 1 ? "" : "s") · @workVerification verification</h3>
+                            <p class="te-changes-subtext">Testing and verification tasks from the Task artifact, by user story. A test task is planned work — it does not mean the test was executed.</p>
+                            @if (workTotal > 0 && testingTasks.All(t => t.IsCompleted))
+                            {
+                                <p class="te-testing-done" data-testid="te-testing-all-marked">All testing tasks marked complete in Task artifact <span class="te-summary-sub">· not independently verified</span></p>
+                            }
+                        </div>
+                    </div>
+                    <div class="te-filter-row" role="group" aria-label="Filter testing work" data-testid="te-testing-filters">
+                        @TestingChip(null, $"All ({workTotal})")
+                        @TestingChip("Testing", $"Tests ({workTesting})")
+                        @TestingChip("Verification", $"Verification ({workVerification})")
+                        @foreach (var extra in new[] { TaskCategory.Security, TaskCategory.Integration, TaskCategory.Accessibility, TaskCategory.Performance })
+                        {
+                            var n = testingTasks.Count(t => TaskCategories.Of(t).Contains(extra));
+                            if (n > 0) { @TestingChip(extra.ToString(), $"{TaskCategories.Label(extra)} ({n})") }
+                        }
+                        @{ var unlinked = testingTasks.Count(t => TaskExplorerService.HasNoTraceabilityLinks(t, _tableLinkedTaskIds)); }
+                        @if (unlinked > 0) { @TestingChip("Unlinked", $"Without requirement/user-story link ({unlinked})") }
+                    </div>
+                    @if (workTotal == 0)
+                    {
+                        <p class="te-detail-empty" data-testid="te-testing-none">No testing or verification tasks were found in this Task artifact. All tasks remain available under All tasks.</p>
+                    }
+                    else
+                    {
+                        @foreach (var group in TestingWork.Group(shown))
+                        {
+                            <section class="te-testing-group" data-testid="te-testing-group" aria-label="@group.Title">
+                                <h4 class="te-testing-group-title">@group.Title</h4>
+                                @foreach (var (label, list) in new[] { ("Testing", group.Testing), ("Verification", group.Verification) })
+                                {
+                                    @if (list.Count > 0)
+                                    {
+                                        <div class="te-testing-kind">@label</div>
+                                        <ul class="te-testing-list">
+                                            @foreach (var task in list)
+                                            {
+                                                <li class="te-testing-item @(task.Id == _selectedNodeId ? "is-selected" : "")" data-testid="te-testing-item">
+                                                    <button type="button" class="te-testing-open" @onclick="() => SelectTestingTask(task)">
+                                                        <span class="te-testing-id">@task.TaskId</span>
+                                                        <span class="te-testing-title">@(task.ShortTitle ?? (task.Title.Length > TreeTitlePreviewChars ? TreePreview(task.Title) + "…" : task.Title))</span>
+                                                    </button>
+                                                    <span class="te-testing-chips">
+                                                        @foreach (var c in TaskCategories.Of(task).Where(c => c is not (TaskCategory.Implementation or TaskCategory.Setup or TaskCategory.Other)))
+                                                        {
+                                                            <span class="te-chip te-chip-cat" data-testid="te-category-chip">@TaskCategories.Label(c)</span>
+                                                        }
+                                                        <span class="te-chip @(task.IsCompleted ? "te-chip-marked" : "")">@(task.IsCompleted ? "Marked complete in task file" : "Open in task file")</span>
+                                                        @if (TaskExplorerService.HasNoTraceabilityLinks(task, _tableLinkedTaskIds)) { <span class="te-chip">No traceability link</span> }
+                                                    </span>
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                }
+                            </section>
+                        }
+                    }
+                </div>
+            }
+            else if (_isChangesView)
             {
                 <div class="te-changes-view" data-testid="te-changes-view" aria-label="Changes">
                     <div class="te-changes-header">
                         <div>
                             <div class="te-section-kicker">Changes</div>
                             <h3>Compare task versions</h3>
-                            <p class="te-changes-subtext">Compare the current Task artifact with a previous version.</p>
+                            <p class="te-changes-subtext">Compare the current Task artifact with an earlier revision of the same task list. Tasks of other feature packs are never offered.</p>
                         </div>
                     </div>
-                    <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" />
+                    <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" PreviousRevisions="PreviousRevisions" />
                 </div>
             }
             else if (_isDependenciesView)
@@ -417,40 +491,45 @@
             }
             else if (_isImpactView && _coverage is not null)
             {
-                <div class="te-impact-view" data-testid="te-impact-view" aria-label="Implementation Impact">
+                <div class="te-impact-view" data-testid="te-impact-view" aria-label="Requirement-to-task coverage">
                     <div class="te-impact-header">
                         <div>
-                            <div class="te-section-kicker">Impact</div>
-                            <h3>Requirement coverage and implementation gaps</h3>
+                            <div class="te-section-kicker">Coverage</div>
+                            <h3>Requirements linked to tasks</h3>
                         </div>
-                        <span>Task completion tracks the Task artifact status. Requirement implementation coverage measures requirement-to-task linkage.</span>
+                        <span>Linkage only: a requirement linked to a task is not verified implementation, and a requirement without a linked task is not proven unimplemented.</span>
                     </div>
 
                     <!-- Requirement Implementation Coverage and Delivery Risk Analysis -->
-                    <div class="te-implementation-grid" data-testid="te-implementation-coverage" aria-label="Requirement Implementation Coverage">
+                    @{ var frMetric = _coverage.Metrics.First(m => m.Label == "Functional Requirements"); var frPct = frMetric.Total == 0 ? 0 : (int)Math.Round((double)frMetric.Linked / frMetric.Total * 100); }
+                    <div class="te-implementation-grid" data-testid="te-implementation-coverage" aria-label="Requirements linked to implementation tasks">
                         <div class="te-implementation-card te-implementation-card-primary">
-                            <div class="te-section-kicker">Requirement Implementation Coverage</div>
-                            <div class="te-implementation-percent">@_coverage.ImplementationPercent%</div>
-                            <div class="te-implementation-card-label">Are requirements covered by implementation tasks?</div>
-                            <span class="te-coverage-pill @CoverageStatusClass(_coverage.OverallStatus)">@_coverage.OverallStatus</span>
+                            <div class="te-section-kicker">Requirements linked to implementation tasks</div>
+                            <div class="te-implementation-percent">@frPct%</div>
+                            <div class="te-implementation-card-label" data-testid="te-coverage-headline">@frPct% of requirements have linked implementation tasks (@frMetric.Linked / @frMetric.Total)</div>
+                            <span class="te-coverage-pill @CoverageStatusClass(frMetric.Status)">@LinkageLabel(frMetric.Status)</span>
                         </div>
-                        @foreach (var metric in _coverage.Metrics)
+                        @foreach (var metric in _coverage.Metrics.Where(m => m.Label != "Architecture Notes"))
                         {
                             <div class="te-implementation-card">
                                 <div class="te-implementation-value">@metric.Linked / @metric.Total</div>
-                                <div class="te-implementation-card-label">@metric.Label linked</div>
-                                <span class="te-coverage-pill @CoverageStatusClass(metric.Status)">@metric.Status</span>
+                                <div class="te-implementation-card-label">@MetricLabel(metric.Label)</div>
+                                <span class="te-coverage-pill @CoverageStatusClass(metric.Status)">@LinkageLabel(metric.Status)</span>
                             </div>
                         }
                     </div>
+                    @if (_coverage.Metrics.FirstOrDefault(m => m.Label == "Architecture Notes") is { } arch)
+                    {
+                        <details class="te-advanced-metrics"><summary>Advanced metrics</summary><p>Architecture notes linked: @arch.Linked / @arch.Total (@LinkageLabel(arch.Status))</p></details>
+                    }
 
                     <!-- Implementation Gaps Section -->
                     <div class="te-gaps-section" data-testid="te-implementation-gaps">
-                        <h3>Implementation Gaps</h3>
+                        <h3>Requirements without linked implementation tasks</h3>
                         @if (_coverage.MissingRequirements.Count > 0)
                         {
                             <div class="te-gap-item">
-                                <strong>@_coverage.MissingRequirements.Count</strong> Requirement@(_coverage.MissingRequirements.Count != 1 ? "s" : "") without implementation
+                                <strong>@_coverage.MissingRequirements.Count</strong> requirement@(_coverage.MissingRequirements.Count != 1 ? "s have" : " has") no linked implementation task. This does not mean @(_coverage.MissingRequirements.Count != 1 ? "they are" : "it is") not implemented.
                             </div>
                             @foreach (var req in _coverage.MissingRequirements)
                             {
@@ -461,7 +540,7 @@
                         }
                         else
                         {
-                            <div class="te-gap-item">✓ All requirements have implementation tasks</div>
+                            <div class="te-gap-item">Every referenced requirement has a linked task.</div>
                         }
                     </div>
 
@@ -492,7 +571,7 @@
                     @if (_tree is not null && TaskExplorerService.PhaseNodes(_tree.Roots).Count > 0)
                     {
                         <div class="te-phase-dashboard">
-                            <div class="te-phase-dashboard-header">Phase progress <span class="te-phase-dashboard-sub">tasks marked done in Task artifact</span></div>
+                            <div class="te-phase-dashboard-header">Declared task progress <span class="te-phase-dashboard-sub">Based on checkboxes/status in tasks.md — not independently verified.</span></div>
                             <div class="te-phase-cards">
                                 @foreach (var phase in TaskExplorerService.PhaseNodes(_tree.Roots))
                                 {
@@ -925,6 +1004,13 @@
                                 </div>
                             </div>
 
+                            <div class="te-details-section" data-testid="te-detail-category">
+                                <div class="te-details-label">Category</div>
+                                <div class="te-details-status-row">
+                                    @foreach (var c in TaskCategories.Of(selected)) { <span class="te-chip te-chip-cat">@TaskCategories.Label(c)</span> }
+                                </div>
+                            </div>
+
                             var topics = TaskTopics(selected);
                             <div class="te-details-section" data-testid="te-detail-topics">
                                 <div class="te-details-label">Task topics</div>
@@ -995,6 +1081,10 @@
                                 <section class="te-detail-group" data-testid="te-detail-test-assets" aria-labelledby="te-detail-tests-h">
                                     <h4 class="te-detail-group-title" id="te-detail-tests-h">Test assets</h4>
                                     <p class="@(taskEvidence.Tests.Any ? "te-detail-value" : "te-detail-empty")" data-testid="te-detail-tests">@TestText(taskEvidence)</p>
+                                    @if (TaskCategories.IsTestingWork(selected) && !taskEvidence.Tests.Any)
+                                    {
+                                        <p class="te-detail-empty" data-testid="te-detail-test-execution">Test execution: Not assessed@(selected.IsCompleted ? " — the task is marked complete in the Task artifact, which is not an executed test." : ".")</p>
+                                    }
                                     @if (!taskEvidence.TestsAssessed)
                                     {
                                         <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-tests-cta">Import test results in Implementation Evidence Review</a>
@@ -1366,26 +1456,31 @@
         var evidence = tasks.Select(Evidence.For).ToList();
         <dl class="te-summary" data-testid="te-summary">
             <div class="te-summary-item" data-testid="te-summary-artifact">
-                <dt>Task artifact</dt>
+                <dt>Total tasks</dt>
                 <dd>@total task@(total == 1 ? "" : "s") · @_health.TotalPhases phase@(_health.TotalPhases == 1 ? "" : "s")</dd>
             </div>
-            <div class="te-summary-item" data-testid="te-summary-status">
-                <dt>Marked done in Task artifact</dt>
-                <dd>@done / @total <span class="te-summary-sub">(@percent%)</span></dd>
+            @{ var (workTotalS, workTestingS, workVerificationS) = TestingWork.Count(tasks); }
+            <div class="te-summary-item" data-testid="te-summary-testing-work">
+                <dt>Testing / verification work</dt>
+                <dd>@workTestingS testing · @workVerificationS verification <button type="button" class="te-summary-link" @onclick="ShowTestingView">Show testing work</button></dd>
             </div>
-            <div class="te-summary-item" data-testid="te-summary-planning">
-                <dt>Planning</dt>
-                <dd>@_health.ParallelTasks parallelizable task@(_health.ParallelTasks == 1 ? "" : "s")</dd>
+            <div class="te-summary-item te-summary-declared" data-testid="te-summary-status">
+                <dt>Marked complete in task file</dt>
+                <dd>@done of @total <span class="te-summary-sub">· declared status only — not independently verified</span></dd>
             </div>
             <div class="te-summary-item" data-testid="te-summary-traceability">
-                <dt>Traceability</dt>
-                <dd>@_health.LinkedTasks with traceability links · @_health.UnlinkedTasks with no traceability links</dd>
+                <dt>Requirement links</dt>
+                <dd>@_health.LinkedTasks task@(_health.LinkedTasks == 1 ? "" : "s") linked to requirements/user stories · @_health.UnlinkedTasks without traceability links</dd>
+            </div>
+            <div class="te-summary-item te-summary-advanced" data-testid="te-summary-planning">
+                <dt>Planning (advanced)</dt>
+                <dd>@_health.ParallelTasks parallelizable task@(_health.ParallelTasks == 1 ? "" : "s")</dd>
             </div>
             <div class="te-summary-item" data-testid="te-summary-implementation">
                 <dt>Implementation evidence</dt>
                 @if (!Evidence.ImplementationAssessed)
                 {
-                    <dd>Not assessed <span class="te-summary-sub">· no current Source Analysis or implementation evidence</span> <a class="te-summary-link" href="implementation-review">Implementation Evidence Review</a></dd>
+                    <dd>Not assessed <span class="te-summary-sub">· no implementation evidence is linked yet</span> <a class="te-summary-link" href="implementation-review">Review implementation evidence</a></dd>
                 }
                 else
                 {
@@ -1396,7 +1491,7 @@
                 <dt>Test evidence</dt>
                 @if (!Evidence.TestsAssessed)
                 {
-                    <dd>Not assessed <span class="te-summary-sub">· no designed tests or test executions recorded</span> <a class="te-summary-link" href="implementation-review">Import test results in Implementation Evidence Review</a></dd>
+                    <dd>Not assessed <span class="te-summary-sub">· no designed/executed test evidence is linked yet</span> <a class="te-summary-link" href="implementation-review">Review / import test evidence</a></dd>
                 }
                 else
                 {
@@ -1459,7 +1554,7 @@
 
     /// <summary>A phase's share of tasks marked done in the Task artifact, in words (not implementation progress).</summary>
     private static string PhaseMarkedDoneLabel(int done, int total) =>
-        total == 0 ? "No tasks" : done == 0 ? "None marked done" : done >= total ? "All marked done" : "Partly marked done";
+        total == 0 ? "No tasks" : done == 0 ? "None marked complete" : done >= total ? "All tasks marked complete in Task artifact" : "Partly marked complete";
 
     private static string TestShort(TaskTestEvidence t) =>
         t.Failed > 0 ? $"{t.Failed} failed" : t.Passed > 0 ? $"{t.Passed} passed" : t.Executed > 0 ? $"{t.Executed} executed" : $"{t.Designed} designed";
@@ -1497,6 +1592,56 @@
     private bool _isChangesView;
     private bool _isDependenciesView;
     private bool _isParallelView;
+    /// <summary>Testing work: testing and verification tasks by user story — the tester's primary view.</summary>
+    private bool _isTestingView;
+    private string? _testingFilter;
+
+    /// <summary>Earlier revisions of this same Task artifact (same project and path), newest first; empty when none are stored.</summary>
+    [Parameter] public IReadOnlyList<TaskRevisionOption> PreviousRevisions { get; set; } = [];
+
+    private void ShowTestingView()
+    {
+        _isMapView = false;
+        _isImpactView = false;
+        _isChangesView = false;
+        _isDependenciesView = false;
+        _isParallelView = false;
+        _isTestingView = true;
+    }
+
+    private void SelectTestingTask(TaskNode task) => _selectedNodeId = _selectedNodeId == task.Id ? null : task.Id;
+
+    private bool TestingFilterMatches(TaskNode task) => _testingFilter switch
+    {
+        null => true,
+        "Unlinked" => TaskExplorerService.HasNoTraceabilityLinks(task, _tableLinkedTaskIds),
+        var name when Enum.TryParse<TaskCategory>(name, out var category) => TaskCategories.Of(task).Contains(category),
+        _ => true,
+    };
+
+    private RenderFragment TestingChip(string? key, string label) => __builder =>
+    {
+        <button type="button" class="te-filter-chip @(_testingFilter == key ? "is-active" : "")" aria-pressed="@(_testingFilter == key ? "true" : "false")"
+                data-testid="te-testing-filter" data-key="@(key ?? "All")" @onclick="() => _testingFilter = key">@label</button>
+    };
+
+    /// <summary>Linkage wording: "Linked", "Partially linked", "Not linked" — never "covered", which would imply verified implementation.</summary>
+    private static string LinkageLabel(string status) => status switch
+    {
+        "Covered" => "Linked",
+        "Partial" => "Partially linked",
+        "Missing" or "Not covered" or "Gap" => "Not linked",
+        _ => status,
+    };
+
+    private static string MetricLabel(string label) => label switch
+    {
+        "Tests" => "Test tasks (compared with referenced requirements)",
+        "Functional Requirements" => "Requirements linked to tasks",
+        "User Stories" => "User stories linked to tasks",
+        "Success Criteria" => "Success criteria linked to tasks",
+        _ => $"{label} linked",
+    };
     private ElementReference _mapContainer;
     private ElementReference _parallelContainer;
     private List<(TaskNode Node, int Depth, bool IsMatch)> _flatCache = [];
@@ -1508,14 +1653,14 @@
     private bool CanBuild => !string.IsNullOrWhiteSpace(EffectiveText);
     private bool HasHealthData => _health.TotalTasks > 0 || _health.TotalPhases > 0 || _health.TablesDetected > 0 || _health.UnresolvedTableRefs > 0;
     private bool HasEnrichmentData => Report is not null || _health.SpecLinked + _health.HighRisk > 0;
-    private bool IsTreeView => !_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView;
+    private bool IsTreeView => !_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView && !_isTestingView;
     private TaskNode? SelectedNode => _tree is not null && _selectedNodeId is not null
         ? TaskExplorerService.FindNode(_tree.Roots, _selectedNodeId)
         : null;
     private bool ShouldShowTaskDetails => SelectedNode is { } selected && CurrentViewSupportsTaskDetails(selected);
 
     private bool CurrentViewSupportsTaskDetails(TaskNode selected) =>
-        IsTreeView || (_isMapView && selected.NodeType == TaskNodeType.Task);
+        IsTreeView || ((_isMapView || _isTestingView) && selected.NodeType == TaskNodeType.Task);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -1572,6 +1717,8 @@
                 ShowMapView();
             else if (InitialView == "impact" && !_isImpactView)
                 ShowImpactView();
+            else if (InitialView == "testing" && !_isTestingView)
+                ShowTestingView();
         }
     }
 
@@ -1729,6 +1876,7 @@
         _isChangesView = false;
         _isDependenciesView = false;
         _isParallelView = false;
+        _isTestingView = false;
     }
 
     private async Task ShowMapView()
@@ -1738,6 +1886,7 @@
         _isChangesView = false;
         _isDependenciesView = false;
         _isParallelView = false;
+        _isTestingView = false;
         await ResetMapScroll();
     }
 
@@ -1764,6 +1913,7 @@
         _isChangesView = false;
         _isDependenciesView = false;
         _isParallelView = false;
+        _isTestingView = false;
     }
 
     private void ShowDependenciesView()
@@ -1773,6 +1923,7 @@
         _isChangesView = false;
         _isDependenciesView = true;
         _isParallelView = false;
+        _isTestingView = false;
     }
 
     private async Task ShowParallelView()
@@ -1782,6 +1933,7 @@
         _isChangesView = false;
         _isDependenciesView = false;
         _isParallelView = true;
+        _isTestingView = false;
         await ResetParallelScroll();
     }
 
@@ -1808,6 +1960,7 @@
         _isChangesView = true;
         _isDependenciesView = false;
         _isParallelView = false;
+        _isTestingView = false;
     }
 
     private sealed record CoverageMetric(string Label, int Linked, int Total, string Status);

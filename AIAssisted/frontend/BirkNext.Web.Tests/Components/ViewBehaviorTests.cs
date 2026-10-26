@@ -1615,23 +1615,23 @@ public class ViewBehaviorTests : BunitContext
         var cut = RenderTaskExplorerWithImplementationGaps();
 
         // Requirement implementation coverage is the primary feature of the Impact tab
-        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
+        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Coverage")).Click();
 
         var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
 
         // Coverage metrics shown
-        impact.Should().Contain("Requirement Implementation Coverage");
-        impact.Should().Contain("Are requirements covered by implementation tasks?");
+        impact.Should().Contain("Requirements linked to implementation tasks");
+        impact.Should().Contain("of requirements have linked implementation tasks");
 
         // Specific metric types present
-        impact.Should().Contain("User Stories");
-        impact.Should().Contain("Functional Requirements");
-        impact.Should().Contain("Success Criteria");
-        impact.Should().Contain("Tests");
-        impact.Should().Contain("Architecture Notes");
+        impact.Should().Contain("User stories linked to tasks");
+        impact.Should().Contain("Requirements linked to tasks");
+        impact.Should().Contain("Success criteria linked to tasks");
+        impact.Should().Contain("Test tasks");
+        impact.Should().Contain("Advanced metrics");
 
         // Coverage status indicated (may show "Partial" or similar status)
-        (impact.Contains("Partial") || impact.Contains("Covered") || impact.Contains("Missing"))
+        (impact.Contains("Partially linked") || impact.Contains("Linked") || impact.Contains("Not linked"))
             .Should().BeTrue("Should show coverage status");
     }
 
@@ -1641,16 +1641,16 @@ public class ViewBehaviorTests : BunitContext
         var cut = RenderTaskExplorerWithImplementationGaps();
 
         // Impact tab performs gap analysis between requirements and implementation
-        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
+        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Coverage")).Click();
 
         var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
 
         // Should show implementation gaps section
-        impact.Should().Contain("Implementation Gaps");
+        impact.Should().Contain("Requirements without linked implementation tasks");
 
         // Should identify missing implementations (singular or plural depending on data)
-        (impact.Contains("Requirement without implementation") ||
-         impact.Contains("Requirements without implementation"))
+        (impact.Contains("has no linked implementation task") ||
+         impact.Contains("have no linked implementation task"))
             .Should().BeTrue("Should identify requirements lacking implementation");
 
         // Should show success indicators for aspects with no gaps
@@ -1666,12 +1666,12 @@ public class ViewBehaviorTests : BunitContext
     {
         var cut = RenderTaskExplorerWithImplementationGaps();
 
-        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
+        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Coverage")).Click();
 
         var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
 
         // New compact gaps section
-        impact.Should().Contain("Implementation Gaps");
+        impact.Should().Contain("Requirements without linked implementation tasks");
         impact.Should().Contain("FR-002", "Should show missing requirement");
 
         // At least one zero-gap indicator present
@@ -1705,7 +1705,7 @@ public class ViewBehaviorTests : BunitContext
 
         // Traceability dimension: filter by link relationships
         text.Should().Contain("Table rows");
-        text.Should().Contain("No traceability links");
+        text.Should().Contain("No traceability link");
 
         // Quality dimension: filter by task classification
         text.Should().Contain("Testing");

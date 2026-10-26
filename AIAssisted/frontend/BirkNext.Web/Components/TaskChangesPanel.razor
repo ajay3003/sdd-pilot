@@ -5,7 +5,22 @@
 
     @if (_report is null)
     {
-        @if (string.IsNullOrWhiteSpace(_oldTasksText))
+        @if (PreviousRevisions.Count > 0)
+        {
+            @* Reuses the workspace's stored revisions of this same Task artifact (same project and path): no upload needed. *@
+            <div class="tc-revision-compare" data-testid="tc-revision-compare">
+                <label for="tc-revision-select"><strong>Compare with previous revision</strong></label>
+                <select id="tc-revision-select" class="delta-select" data-testid="tc-revision-select" @bind="_revisionIndex">
+                    @for (var i = 0; i < PreviousRevisions.Count; i++)
+                    {
+                        <option value="@i">@PreviousRevisions[i].Label</option>
+                    }
+                </select>
+                <button type="button" class="btn-primary" data-testid="tc-revision-compare-btn" @onclick="CompareWithRevision">Compare</button>
+            </div>
+            <p class="delta-no-baseline-hint">Or compare with a tasks.md you provide:</p>
+        }
+        @if (string.IsNullOrWhiteSpace(_oldTasksText) && PreviousRevisions.Count == 0)
         {
             // CASE A: No comparison baseline available (old version not provided)
             <div class="delta-no-baseline-hint">
@@ -486,6 +501,17 @@
 
 @code {
     [Parameter] public string CurrentTasksText { get; set; } = string.Empty;
+    /// <summary>Earlier revisions of the same Task artifact lineage (never another pack's), newest first.</summary>
+    [Parameter] public IReadOnlyList<TaskRevisionOption> PreviousRevisions { get; set; } = [];
+    private int _revisionIndex;
+
+    private void CompareWithRevision()
+    {
+        if (_revisionIndex < 0 || _revisionIndex >= PreviousRevisions.Count) return;
+        _oldTasksText = PreviousRevisions[_revisionIndex].Content;
+        if (string.IsNullOrWhiteSpace(_newTasksText)) _newTasksText = CurrentTasksText;
+        RunAnalysis();
+    }
 
     private TaskDeltaReport? _report;
     private string _oldTasksText = string.Empty;

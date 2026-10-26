@@ -41,6 +41,12 @@ public static class TaskExplorerService
         @"\b(?:tests?|spec|asserts?|xunit|nunit|mstest|shouldly|testcontainers?|bunit|webapplicationfactory|test[\s-]?(?:cases?|tasks?)|integration[\s-]?tests?|unit[\s-]?tests?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // A test class named in the task ("Add SecurityClassificationServiceTests"): PascalCase ending in Test/Tests. Case-sensitive, so words such
+    // as "latest" never count.
+    private static readonly Regex TestClassNameRe = new(
+        @"\b[A-Z][A-Za-z0-9]*[a-z0-9]Tests?\b",
+        RegexOptions.Compiled);
+
     private static readonly Regex SecurityKeywordRe = new(
         @"\b(?:security|authoris[ae]|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication|ority))\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -502,7 +508,7 @@ public static class TaskExplorerService
             RawText = rawLine.Trim(),
             Provenance = ProjectionProvenance.Create("Tasks", "Task", taskId ?? $"{title}:{zeroBasedLine + 1}", source),
             RelatedFiles = relatedFiles,
-            IsTestingTask = TestKeywordRe.IsMatch(rawLine),
+            IsTestingTask = TestKeywordRe.IsMatch(rawLine) || TestClassNameRe.IsMatch(rawLine),
             IsSecurityTask = SecurityKeywordRe.IsMatch(rawLine),
             IsCritical = CriticalNoteRe.IsMatch(rawLine),
             IsFrontendOnly = FrontendOnlyKeywordRe.IsMatch(rawLine),
