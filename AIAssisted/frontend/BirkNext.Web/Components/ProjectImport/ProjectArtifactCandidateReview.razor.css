@@ -124,3 +124,10 @@
 .pac-warning {
     color: var(--clr-danger);
 }
+
+/* Role summary first (found · clarification · review action); per-module files only under "Show details". */
+.pac-role-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; min-height: 2.75rem; }
+.pac-role-head .pac-role-name { margin: 0; font-size: 0.95rem; }
+.pac-role-head .pac-review { margin-left: auto; font-weight: 600; }
+.pac-packs { margin: 0.25rem 0 0.5rem; }
+.pac-pack-list { margin: 0.25rem 0 0; padding-left: 1.1rem; }

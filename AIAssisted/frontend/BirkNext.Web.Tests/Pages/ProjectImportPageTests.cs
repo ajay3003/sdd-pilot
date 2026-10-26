@@ -79,7 +79,7 @@ public sealed class ProjectImportPageTests : BunitContext
         var cut = Render<ProjectImportPage>();
 
         cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Choose a project archive");
-        cut.Find("[data-testid=pi-outcomes]").TextContent.Should().Contain("Project documents").And.Contain("Source").And.Contain("Both");
+        cut.Find("[data-testid=pi-outcomes]").TextContent.Should().Contain("Project documents").And.Contain("Source code").And.Contain("Contracts and schemas").And.Contain("Infrastructure configuration");
         cut.Find("[data-testid=pi-choose-file]").GetAttribute("accept").Should().Be(".zip");
         cut.Find("[data-testid=pi-choose-file]").GetAttribute("aria-label").Should().Contain("Choose project ZIP");
         cut.FindAll("[data-testid=pi-current]").Should().BeEmpty();
@@ -311,7 +311,8 @@ public sealed class ProjectImportPageTests : BunitContext
 
         cut.Find("[data-testid=pi-current-name]").TextContent.Should().Be("shop");
         cut.Find("[data-testid=pi-current-fingerprint]").TextContent.Should().Be(new string('9', 12));
-        cut.Find("[data-testid=pi-current-source]").TextContent.Should().StartWith("Snapshot ");
+        cut.Find("[data-testid=pi-current-source]").TextContent.Trim().Should().StartWith("Source analysis available", "the snapshot id is technical detail");
+        cut.Find("[data-testid=pi-current-snapshot]").TextContent.Should().StartWith("Snapshot ");
         cut.Find("[data-testid=pi-close]").Click();
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull();
         cut.FindAll("[data-testid=pi-current]").Should().BeEmpty();

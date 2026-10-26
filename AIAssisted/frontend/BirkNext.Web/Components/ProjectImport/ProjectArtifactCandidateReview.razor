@@ -24,33 +24,44 @@
     }
     else
     {
+        var packOverview = ProjectPackOverview.Build(_overview);
+        var summaries = ImportProjectOverview.Contents(packOverview).ToDictionary(r => r.Role);
         @if (_overview.HasModules)
         {
-            <p class="pac-muted">
-                This project has @_overview.Modules.Count modules with their own documents. Each module keeps its own selection; documents are never
-                merged across modules.
-            </p>
             <div class="pac-focus">
-                <label for="@($"{_id}-focus")">Module to review</label>
+                <label for="@($"{_id}-focus")">Review module</label>
                 <select id="@($"{_id}-focus")" class="pac-select" data-testid="pac-focus" value="@(_overview.Focus ?? NoFocus)" @onchange="FocusChanged">
-                    @if (_overview.Focus is null) { <option value="@NoFocus">Needs selection — choose a module</option> }
+                    @if (_overview.Focus is null) { <option value="@NoFocus">Choose a module</option> }
                     @foreach (var module in _overview.Modules) { <option value="@module">@ArtifactModules.Label(module)</option> }
                 </select>
-                <span class="pac-muted">Explorers, Requirements Traceability, Document Quality Review and Test Coverage &amp; Overlap read this module.</span>
+                <span class="pac-muted">Choose a module to inspect its features and project documents. Each module is reviewed on its own documents.</span>
             </div>
+        }
+        var focusPacks = packOverview.Packs.Where(p => _overview.Focus is { } f ? p.Module == f : !_overview.HasModules).ToList();
+        @if (focusPacks.Count > 1)
+        {
+            <details class="pac-packs" data-testid="pac-packs">
+                <summary>@(_overview.HasModules ? ArtifactModules.Label(_overview.Focus) : "This project") · @focusPacks.Count feature packs</summary>
+                <ul class="pac-pack-list">
+                    @foreach (var pack in focusPacks) { <li data-testid="pac-pack">@pack.DisplayName <span class="pac-muted">· @pack.Pack</span></li> }
+                </ul>
+            </details>
         }
         <ul class="pac-roles">
             @foreach (var role in _overview.Roles.Where(r => r.Candidates.Count > 0))
             {
                 var label = ArtifactExplorerRoles.Label(role.Role);
+                var summary = summaries.GetValueOrDefault(role.Role);
                 <li class="pac-role" data-testid="pac-role" data-role="@role.Role">
+                    <div class="pac-role-head">
+                        <h3 class="pac-role-name">@(summary?.Title ?? label)</h3>
+                        <span class="pac-role-count" data-testid="pac-role-count">@(summary?.Found ?? CountText(role))</span>
+                        <span class="pac-badge pac-badge-@(role.ModulesNeedingSelection > 0 ? "attention" : "clear")" data-testid="pac-role-state">@StateText(role, summary)</span>
+                        @if (summary?.Note is { } note) { <span class="pac-muted" data-testid="pac-role-note">@note</span> }
+                        @if (summary?.Href is { } reviewHref) { <a class="pac-review" href="@reviewHref" data-testid="pac-role-review">@summary.ActionLabel</a> }
+                    </div>
                     <details>
-                        <summary>
-                            <span class="pac-role-name">@label</span>
-                            <span class="pac-role-count" data-testid="pac-role-count">@CountText(role)</span>
-                            <span class="pac-badge pac-badge-@(role.ModulesNeedingSelection > 0 ? "attention" : "clear")" data-testid="pac-role-state">@StateText(role)</span>
-                            <span class="pac-review">Review</span>
-                        </summary>
+                        <summary>Show details<span class="visually-hidden"> of @label documents</span></summary>
                         @foreach (var module in role.Modules.Where(m => m.Candidates > 0))
                         {
                             var candidates = role.Candidates.Where(c => !_overview.HasModules || c.Module == module.Module).ToList();
@@ -70,18 +81,18 @@
                                         var selected = module.SelectedId == candidate.Id || inPacks && packPeers == 1;
                                         <li class="pac-candidate @(selected ? "is-selected" : "")" data-testid="pac-candidate">
                                             <span class="pac-path">@(candidate.SourcePath ?? candidate.FileName)</span>
-                                            <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · pack {f}" : inPacks ? " · shared by the module's packs" : "")</span>
+                                            <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · feature pack {f}" : inPacks ? " · shared by the module's feature packs" : "")</span>
                                             @if (packFile)
                                             {
-                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">This pack's @label file</span>
+                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">Primary @label for this feature</span>
                                             }
                                             else if (inPacks && packPeers == 1)
                                             {
-                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(candidate.Feature is null ? "Shared artifact" : "This pack's artifact")</span>
+                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(candidate.Feature is null ? "Shared document" : "This feature's document")</span>
                                             }
                                             else if (selected)
                                             {
-                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(module.Reason == ExplorerSelectionReason.OnlyArtifact ? "Selected · only candidate" : "Selected")</span>
+                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(module.Reason == ExplorerSelectionReason.OnlyArtifact ? "Used · only document found" : "Used")</span>
                                             }
                                             else
                                             {
@@ -163,20 +174,21 @@
     }
 
     private string CountText(ArtifactRoleOverview role) => _overview!.HasModules
-        ? $"{role.Candidates.Count} candidate{(role.Candidates.Count == 1 ? "" : "s")} in {role.ModulesWithCandidates} module{(role.ModulesWithCandidates == 1 ? "" : "s")}"
-        : $"{role.Candidates.Count} candidate{(role.Candidates.Count == 1 ? "" : "s")}";
+        ? $"{role.Candidates.Count} found across {role.ModulesWithCandidates} module{(role.ModulesWithCandidates == 1 ? "" : "s")}"
+        : $"{role.Candidates.Count} found";
 
-    private string StateText(ArtifactRoleOverview role) => _overview!.HasModules
-        ? role.ModulesNeedingSelection > 0
-            ? $"{role.SelectedModules} selected · {role.ModulesNeedingSelection} need{(role.ModulesNeedingSelection == 1 ? "s" : "")} selection"
-            : $"{role.SelectedModules} selected"
-        : role.ModulesNeedingSelection > 0 ? "Needs selection" : "Selected";
+    /// <summary>"1 requires clarification" only for genuine same-pack (or same shared location) ambiguity; valid separate packs are clear.</summary>
+    private static string StateText(ArtifactRoleOverview role, ImportRoleSummary? summary)
+    {
+        var clarify = summary?.RequiresClarification ?? role.ModulesNeedingSelection;
+        return clarify > 0 ? ImportProjectOverview.Clarification(clarify) : "No choice needed";
+    }
 
     private static string ModuleText(ArtifactModuleRoleState module) => module.Packs > 1
-        ? $"{module.Candidates} across {module.Packs} artifact packs" + (module.AmbiguousInPack ? " · a pack needs selection" : " · one per pack")
+        ? $"{module.Candidates} found across {module.Packs} feature packs" + (module.AmbiguousInPack ? " · a feature requires clarification" : " · one per feature")
         : module.NeedsSelection
-        ? $"{module.Candidates} candidates · needs selection"
-        : module.Candidates == 1 ? "1 candidate · selected automatically" : $"{module.Candidates} candidates · selected";
+        ? $"{module.Candidates} found · requires clarification"
+        : module.Candidates == 1 ? "1 found · used automatically" : $"{module.Candidates} found · one in use";
 
     public void Dispose()
     {

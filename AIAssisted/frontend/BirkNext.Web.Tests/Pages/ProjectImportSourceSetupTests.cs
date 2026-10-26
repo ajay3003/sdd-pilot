@@ -148,7 +148,8 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         hub.QuerySelector("[data-testid=pi-previous-bindings]")!.TextContent.Should().Be("Used by 1 IQR integration: Demo – report intake");
         hub.QuerySelector("[data-testid=pi-previous-open-source]")!.GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}");
         hub.QuerySelector("[data-testid=pi-previous-open-source]")!.TextContent.Should().Be("Open Tiltak 2 - hub (1) in Source Analysis");
-        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Use Tiltak 2 - hub (1) as current");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Open this project");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.GetAttribute("aria-label").Should().Be("Open Tiltak 2 - hub (1)");
 
         var docs = rows.Single(r => r.TextContent.Contains("docs-only.zip"));
         docs.QuerySelector("[data-testid=pi-previous-logical]")!.TextContent.Should().Be("None", "a document-only import never satisfies a source requirement");
@@ -429,13 +430,16 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         var cut = RenderPage();
 
         var artifacts = cut.Find("[data-testid=pi-current] [data-testid=pi-current-candidates]");
-        artifacts.QuerySelector("h3")!.TextContent.Should().Contain("Project artifacts").And.Contain("from platform.zip");
+        artifacts.QuerySelector("h2")!.TextContent.Should().Be("Project contents");
+        artifacts.GetAttribute("data-import").Should().Be(cut.Find("[data-testid=pi-current-candidates]").GetAttribute("data-import"));
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("platform.zip", "the contents belong to the current project's archive");
         artifacts.GetAttribute("data-import").Should().Be(_activation.Current!.ImportId);
         cut.FindAll("[data-testid=pi-current-candidates]").Should().ContainSingle("there is no detached global artifact section");
 
         cut.FindAll("[data-testid=pi-previous-row]").Single(r => r.TextContent.Contains("Tiltak 2")).QuerySelector("[data-testid=pi-previous-use]")!.Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-current-candidates] h3").TextContent.Should().Contain("from Tiltak 2 - hub (1).zip"));
-        cut.Find("[data-testid=pi-current-no-artifacts]").TextContent.Should().Be("No artifact selections needed for this project.", "the hub import has no documents; platform's candidates do not leak");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-current-name]").TextContent.Should().Be("Tiltak 2 - hub (1)"));
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("Tiltak 2 - hub (1).zip");
+        cut.Find("[data-testid=pi-current-no-artifacts]").TextContent.Should().StartWith("No supported project documents were found.", "the hub import has no documents; platform's documents do not leak");
         _journeys.Verify(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2), "source setup refreshes when the current project changes");
     }
 
@@ -446,9 +450,11 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         var cut = RenderPage();
         var current = cut.Find("[data-testid=pi-current]");
 
-        current.QuerySelector("[data-testid=pi-current-technical]")!.HasAttribute("open").Should().BeFalse();
-        current.QuerySelector("[data-testid=pi-current-technical] [data-testid=pi-current-fingerprint]").Should().NotBeNull("the fingerprint is technical metadata");
-        current.QuerySelector("[data-testid=pi-current-logical]")!.TextContent.Should().Be("Platform");
+        cut.Find("[data-testid=pi-current-technical]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=pi-current-technical] [data-testid=pi-current-fingerprint]").Should().NotBeNull("the fingerprint is technical metadata");
+        cut.Find("[data-testid=pi-current-technical] [data-testid=pi-current-logical]").TextContent.Should().Be("Platform");
+        current.QuerySelector("[data-testid=pi-current-fingerprint]").Should().BeNull("the summary never leads with a fingerprint");
+        current.QuerySelector("[data-testid=pi-current-summary]")!.TextContent.Should().NotContainAny("Snapshot", "snapshot", "fingerprint", ".zip");
         cut.FindAll("[data-testid=pi-previous-match]").Select(b => b.TextContent).Should().Contain("Matches Message hub source requirement");
     }
 

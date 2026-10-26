@@ -144,8 +144,8 @@ public sealed class ModuleScopedConsumersTests : BunitContext
         {
             cut.Find("[data-testid=pac]").GetAttribute("data-has-modules").Should().Be("true");
             var spec = cut.Find("[data-testid=pac-role][data-role=Specification]");
-            spec.QuerySelector("[data-testid=pac-role-count]")!.TextContent.Should().Be("3 candidates in 2 modules");
-            spec.QuerySelector("[data-testid=pac-role-state]")!.TextContent.Should().Be("2 selected");
+            spec.QuerySelector("[data-testid=pac-role-count]")!.TextContent.Should().Be("3 specifications found across 2 modules");
+            spec.QuerySelector("[data-testid=pac-role-state]")!.TextContent.Should().Be("No choice needed");
             cut.FindAll("[data-testid=pac-candidate]").Should().NotContain(c => c.TextContent.Contains("template"));
         });
 
@@ -153,9 +153,9 @@ public sealed class ModuleScopedConsumersTests : BunitContext
             .Single(c => c.TextContent.Contains("002-refund"));
         // Two packs, one specification each: each is its pack's artifact; nothing to choose, nothing stored as a selection.
         billingRefund.QuerySelector("[data-testid=pac-use]").Should().BeNull();
-        billingRefund.QuerySelector("[data-testid=pac-selected]")!.TextContent.Should().Be("This pack's artifact");
+        billingRefund.QuerySelector("[data-testid=pac-selected]")!.TextContent.Should().Be("This feature's document");
         billingRefund.TextContent.Should().Contain("pack 002-refund");
-        cut.Find("[data-testid=pac-module][data-module=billing] .pac-module-name").TextContent.Should().Contain("2 across 2 artifact packs · one per pack");
+        cut.Find("[data-testid=pac-module][data-module=billing] .pac-module-name").TextContent.Should().Contain("2 found across 2 feature packs · one per feature");
         _repository.SddLifecycle.ExplorerSelections.Should().BeEmpty();
     }
 
