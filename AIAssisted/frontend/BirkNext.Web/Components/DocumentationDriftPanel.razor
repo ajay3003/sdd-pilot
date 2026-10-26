@@ -218,7 +218,7 @@
                     @if (d.SourceSnapshotId is { } snapshot) { <div><dt>Source snapshot</dt><dd><code class="dd-wrap">@snapshot</code></dd></div> }
                     <div><dt>Fingerprint</dt><dd><code>@Short(d.Fingerprint)</code></dd></div>
                 </dl>
-                @if (d.Origin == DriftOrigin.Generated) { <a class="btn-link" href="admin/system-settings?section=generated-docs-health" data-testid="@($"dd-{key}-gdh")">Open Generated Documentation Health</a> }
+                @if (d.Origin == DriftOrigin.Generated) { <a class="btn-link" href="generated-documentation-health" data-testid="@($"dd-{key}-gdh")">Open Generated Documentation Health</a> }
                 @if (!d.Supported) { <p class="dd-note">@DocumentationDrift.Unsupported</p> }
             }
         </fieldset>

@@ -5,7 +5,7 @@ using BirkNext.Web.Services.Explorers;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>Generated Documentation Health diagnostic (System Settings → Developer). The backend reads stored Source Analysis evidence; the
+/// <summary>Generated Documentation Health diagnostic (project analysis of the imported project). The backend reads stored Source Analysis evidence; the
 /// authored artifacts the workspace selected are sent for this run only (never stored).</summary>
 public interface IGeneratedDocumentationApiService
 {

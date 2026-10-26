@@ -51,7 +51,7 @@ public sealed class DocumentationDriftPanelTests : BunitContext
         right.Should().Contain("genset-import-a").And.Contain("maintain-docs").And.Contain(Snapshot.ToString()).And.Contain("Unknown — imported with project revision R1");
         cut.Find("[data-testid=dd-intent]").GetAttribute("value").Should().Be(nameof(DriftIntent.AuthoredVsGenerated));
         cut.Find("[data-testid=dd-revision-context]").TextContent.Should().StartWith(DocumentationDrift.SameRevision);
-        cut.Find("[data-testid=dd-right-gdh]").GetAttribute("href").Should().Be("admin/system-settings?section=generated-docs-health");
+        cut.Find("[data-testid=dd-right-gdh]").GetAttribute("href").Should().Be("generated-documentation-health");
 
         cut.Find("[data-testid=dd-run]").Click();
         cut.Find("[data-testid=dd-result]").GetAttribute("data-intent").Should().Be(nameof(DriftIntent.AuthoredVsGenerated));

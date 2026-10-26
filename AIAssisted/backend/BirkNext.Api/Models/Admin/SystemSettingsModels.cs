@@ -135,6 +135,7 @@ public class FeatureVisibilityInfo
     public bool ImplementationTraceability { get; set; } = true;
     public bool SourceAnalysis { get; set; } = true;
     public bool AzureEnvironmentAnalysis { get; set; } = true;
+    public bool GeneratedDocumentationHealth { get; set; } = true;
     public bool ConstitutionExplorer { get; set; } = true;
     public bool DataModelExplorer    { get; set; } = true;
     public bool PlanExplorer { get; set; } = true;

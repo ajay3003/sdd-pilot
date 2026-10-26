@@ -177,7 +177,7 @@ public sealed class GeneratedDocumentationHealthPanelTests : BunitContext
     {
         var older = Render<GeneratedDocumentationSourceSummary>(p => p.Add(x => x.Snapshot, new IqrSourceSnapshot()));
         older.Find("[data-testid=sa-generated-docs-missing]");
-        older.Find("[data-testid=sa-generated-docs-link]").GetAttribute("href").Should().Be("admin/system-settings?section=generated-docs-health");
+        older.Find("[data-testid=sa-generated-docs-link]").GetAttribute("href").Should().Be("generated-documentation-health");
 
         var none = Render<GeneratedDocumentationSourceSummary>(p => p.Add(x => x.Snapshot, new IqrSourceSnapshot { GeneratedDocumentation = new GeneratedDocumentationSnapshot() }));
         none.Find("[data-testid=sa-generated-docs-empty]").TextContent.Should().Be(GeneratedDocumentationText.EmptyState);

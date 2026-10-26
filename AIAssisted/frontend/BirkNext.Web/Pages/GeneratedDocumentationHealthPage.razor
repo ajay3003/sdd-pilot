@@ -1,0 +1,77 @@
+@page "/generated-documentation-health"
+@using BirkNext.GeneratedDocumentation
+@using BirkNext.Web.Components.GeneratedDocumentation
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.Services.ProjectImport
+@inject IArtifactExplorerContext ArtifactContext
+@inject IWorkspaceSessionService Workspace
+@implements IDisposable
+
+<PageTitle>Generated Documentation Health — QA Review Studio</PageTitle>
+
+@* Project analysis of the CURRENT imported project's generated documentation (autodoc …): its target is the imported project and its Source
+   Analysis snapshot — never BirkNext itself, never another project's snapshot. The diagnostics are the existing panel; this page owns the
+   target context. Settings configure analyzers; this page shows what the analyzer found in the target project. *@
+<div class="gdh-page" data-testid="gdh-page">
+    <PageHeader Title="@Title" Description="@Intro" />
+
+    @if (Import is not { } import)
+    {
+        <section class="gdh-target gdh-target-empty" role="status" data-testid="gdh-no-project">
+            <p>@NoProjectMessage</p>
+            <p><a class="btn-secondary" href="project-import">Import Project</a></p>
+        </section>
+    }
+    else
+    {
+        <dl class="gdh-target" data-testid="gdh-target">
+            <div><dt>Target project</dt><dd data-testid="gdh-target-project">@import.ProjectName</dd></div>
+            <div><dt>Source snapshot</dt><dd data-testid="gdh-target-snapshot">@(import.SourceSnapshotId is null ? "Not available for this import" : import.ArchiveFileName)</dd></div>
+            @if (import.SourceSnapshotId is { } snapshotId)
+            {
+                <div><dt>Snapshot ID</dt><dd><code class="gdh-wrap" data-testid="gdh-target-snapshot-id">@snapshotId</code></dd></div>
+                <div><dt>Analyzed</dt><dd>@(import.SourceAnalyzedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "Unknown")</dd></div>
+                <div><dt>Selected by</dt><dd data-testid="gdh-target-basis">Snapshot of the current imported project</dd></div>
+            }
+        </dl>
+        <p class="gdh-boundary" data-testid="gdh-page-boundary">
+            Authored documentation ≠ generated documentation ≠ source evidence ≠ runtime evidence. Source is stronger implementation evidence than
+            generated documentation. A discrepancy is a review candidate, not proof of a defect. A module without generated documentation is shown as
+            “Autodoc: Not configured” — a neutral state, not a failure.
+        </p>
+
+        @if (import.SourceSnapshotId is null)
+        {
+            <p class="gdh-note" role="status" data-testid="gdh-no-snapshot">The current imported project has no Source Analysis snapshot, so its generated documentation cannot be analysed. Snapshots of other projects are not used.</p>
+        }
+        else
+        {
+            <GeneratedDocumentationHealthPanel Embedded="true" RequireImportedProject="true" />
+        }
+
+        <p class="gdh-note">Related: <a href="documentation-drift">Documentation Drift</a> compares documentation artifacts (authored ↔ generated, revision ↔ revision) · <a href="source-analysis">Source Analysis</a> holds the raw source evidence.</p>
+    }
+</div>
+
+@code {
+    public const string NoProjectMessage = "No imported project/source snapshot is currently available for Generated Documentation Health analysis.";
+    public const string IntroText = "Analyse generated project documentation in the current imported project, including generator/workflow evidence, coverage, freshness and source/document discrepancy candidates.";
+
+    private SddProjectImportRecord? Import
+    {
+        get
+        {
+            // The imported project the workspace currently shows; a Demo Project or the manual workspace has no imported source snapshot.
+            var importId = ProjectImportScope.ImportIdOf(ArtifactContext.CurrentScope);
+            return importId is null ? null : Workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId);
+        }
+    }
+
+    private string Title => Import is { ProjectName: { Length: > 0 } name } ? $"Generated Documentation Health — {name}" : "Generated Documentation Health";
+    private static string Intro => IntroText;
+
+    protected override void OnInitialized() => ArtifactContext.Changed += OnContextChanged;
+    private void OnContextChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => ArtifactContext.Changed -= OnContextChanged;
+}

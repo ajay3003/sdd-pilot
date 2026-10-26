@@ -52,7 +52,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("ImplementationReview",       "Implementation Review"),
         ("ImplementationTraceability", "Implementation Traceability"),
         ("SourceAnalysis",             "Source Analysis"),
-        ("AzureEnvironmentAnalysis",   "Azure Environment Analysis")
+        ("AzureEnvironmentAnalysis",   "Azure Environment Analysis"),
+        ("GeneratedDocumentationHealth", "Generated Documentation Health")
     ];
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
@@ -263,6 +264,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             // Missing key (older configuration) resolves to enabled, like every Core feature.
             SourceAnalysis              = s.GetValue("SourceAnalysis",              true),
             AzureEnvironmentAnalysis    = s.GetValue("AzureEnvironmentAnalysis",    true),
+            // Project analysis of the imported project's generated documentation; a configuration without the key shows it (enabled).
+            GeneratedDocumentationHealth = s.GetValue("GeneratedDocumentationHealth", true),
             ConstitutionExplorer        = s.GetValue("ConstitutionExplorer",        true),
             DataModelExplorer           = s.GetValue("DataModelExplorer",           true),
             PlanExplorer                = s.GetValue("PlanExplorer",                true),

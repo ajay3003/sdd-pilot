@@ -1392,10 +1392,6 @@ else if (_settings is not null)
                 </DiagnosticPageRenderer>
             }
             @* â•â• Environment Diagnostics â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
-            @if (_activeSection == "generated-docs-health")
-            {
-                <BirkNext.Web.Components.GeneratedDocumentation.GeneratedDocumentationHealthPanel />
-            }
             @if (_activeSection == "environment-diagnostics")
             {
                 <DiagnosticPageRenderer
@@ -1714,6 +1710,8 @@ else if (_settings is not null)
     // â”€â”€ Section navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private string _activeSection = "general";
+    /// <summary>The former Developer section id of Generated Documentation Health; kept only to redirect old links to the analysis page.</summary>
+    public const string LegacyGeneratedDocumentationHealthSection = "generated-docs-health";
     /// <summary>Inner tab requested by the "tab=" query key, handed to the hosted settings component.</summary>
     private string? _initialTab;
     /// <summary>Optional "profile=" key: the Target Environment to open (e.g. from the Browser Automation Diagnostic).</summary>
@@ -1776,7 +1774,7 @@ else if (_settings is not null)
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SpecDrift", "ImpactAnalysis", "ArtifactTraceability",
-            "ImplementationReview", "ImplementationTraceability", "SourceAnalysis", "AzureEnvironmentAnalysis"
+            "ImplementationReview", "ImplementationTraceability", "SourceAnalysis", "AzureEnvironmentAnalysis", "GeneratedDocumentationHealth"
         };
 
     private static readonly HashSet<string> QualitySectionKeys =
@@ -2334,6 +2332,12 @@ else if (_settings is not null)
                         var value = part.Substring("section=".Length);
                         if (!string.IsNullOrWhiteSpace(value))
                             _activeSection = Uri.UnescapeDataString(value);
+                        // Generated Documentation Health moved to project analysis: old links and bookmarks open its canonical page.
+                        if (_activeSection == LegacyGeneratedDocumentationHealthSection)
+                        {
+                            Navigation.NavigateTo(NavigationCatalog.GeneratedDocumentationHealthRoute, replace: true);
+                            return;
+                        }
                     }
                     // Optional inner tab of the hosted section, e.g. "…&tab=features" for Frontend Review Engines.
                     else if (part.StartsWith("tab="))

@@ -3,12 +3,20 @@
 @using BirkNext.Web.Services.Explorers
 @inject IServiceProvider Services
 
-@* System Settings → Developer → Generated Documentation Health. Reads generated-documentation evidence stored on ONE Source Analysis snapshot;
-   authored artifacts of the current workspace are compared only with the snapshot of the same imported project. No score: counts and states only. *@
+@* Generated Documentation Health (project analysis of the imported project). Reads generated-documentation evidence stored on ONE Source Analysis
+   snapshot; authored artifacts of the current workspace are compared only with the snapshot of the same imported project. No score: counts and
+   states only. Hosted by the /generated-documentation-health page, which owns the heading and the target-project context. *@
 <section class="gdh" aria-labelledby="gdh-title" data-testid="gdh-panel">
     <header class="gdh-header">
-        <h2 id="gdh-title" class="gdh-title">Generated Documentation Health</h2>
-        <p class="gdh-description" data-testid="gdh-description">@GeneratedDocumentationText.Description</p>
+        @if (Embedded)
+        {
+            <h2 id="gdh-title" class="visually-hidden">Generated documentation diagnostics</h2>
+        }
+        else
+        {
+            <h2 id="gdh-title" class="gdh-title">Generated Documentation Health</h2>
+            <p class="gdh-description" data-testid="gdh-description">@GeneratedDocumentationText.Description</p>
+        }
         <p class="gdh-boundary">@GeneratedDocumentationText.Boundary</p>
         <button type="button" class="btn btn-primary gdh-run" data-testid="gdh-run" disabled="@_running" @onclick="RunAsync">
             @(_running ? "Running diagnostics…" : "Run diagnostics")
@@ -229,6 +237,10 @@
 @code {
     /// <summary>Test seam: the API is resolved from DI when not set.</summary>
     [Parameter] public IGeneratedDocumentationApiService? Api { get; set; }
+    /// <summary>Hosted by the analysis page: the page shows the title, the target project and the source snapshot.</summary>
+    [Parameter] public bool Embedded { get; set; }
+    /// <summary>Fail safe: without a current imported project nothing runs — never another project's or the newest snapshot.</summary>
+    [Parameter] public bool RequireImportedProject { get; set; }
 
     private GeneratedDocumentationDiagnosticRun? _run;
     private string? _error;
@@ -252,7 +264,13 @@
                 try { inputs = await TraceabilityInputs.ResolveAsync(context); }
                 catch (Exception) { inputs = null; }
             }
-            _run = await api.RunAsync(GeneratedDocumentationApiService.Request(inputs));
+            var request = GeneratedDocumentationApiService.Request(inputs);
+            if (RequireImportedProject && string.IsNullOrWhiteSpace(request.ProjectImportId))
+            {
+                _error = BirkNext.Web.Pages.GeneratedDocumentationHealthPage.NoProjectMessage;
+                return;
+            }
+            _run = await api.RunAsync(request);
             if (_run is null) _error = "The diagnostic returned no result.";
             _expanded.Clear();
             _filter = GeneratedDocumentationFilter.All;

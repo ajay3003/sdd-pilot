@@ -1,23 +1,32 @@
-using BirkNext.GeneratedDocumentation;
 using BirkNext.Web.Pages.Admin;
+using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Pages;
 
 public partial class SystemSettingsEnvironmentDiagnosticsTests
 {
     [Fact]
-    public void GeneratedDocumentationHealth_IsADeveloperDiagnosticSectionWithARunButton()
+    public void GeneratedDocumentationHealth_IsNoLongerADeveloperSettingsSection()
     {
         var cut = Render<SystemSettings>();
 
-        cut.WaitForAssertion(() => FindButton(cut, "Generated Documentation Health").Should().NotBeNull());
-        FindButton(cut, "Generated Documentation Health")!.Click();
+        cut.WaitForAssertion(() => FindButton(cut, "Environment Diagnostics").Should().NotBeNull());
+        FindButton(cut, "Generated Documentation Health").Should().BeNull("target-project analysis is not a BirkNext developer setting");
+        DocumentationCatalog.SettingsSections.Should().NotContain("Generated Documentation Health");
+    }
 
-        cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain("Generated Documentation Health");
-        cut.Find("[data-testid=gdh-description]").TextContent.Should().Be(GeneratedDocumentationText.Description);
-        FindButton(cut, "Run diagnostics").Should().NotBeNull();
-        cut.FindAll("button").Any(button => button.TextContent.Contains("Edit Settings")).Should().BeFalse();
+    [Fact]
+    public void Old_settings_link_redirects_to_the_canonical_analysis_page()
+    {
+        var navigation = Services.GetRequiredService<NavigationManager>();
+        navigation.NavigateTo("admin/system-settings?section=" + SystemSettings.LegacyGeneratedDocumentationHealthSection);
+
+        Render<SystemSettings>();
+
+        navigation.Uri.Should().EndWith("/" + NavigationCatalog.GeneratedDocumentationHealthRoute);
     }
 }

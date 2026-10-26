@@ -62,6 +62,9 @@ public static class NavigationCatalog
     /// <summary>Route of the Target Environments section of System Settings. The sidebar row is a deep link, not a second page.</summary>
     public const string TargetEnvironmentsRoute = "admin/system-settings?section=target-environments";
 
+    /// <summary>Canonical route of Generated Documentation Health (project analysis). The former System Settings section redirects here.</summary>
+    public const string GeneratedDocumentationHealthRoute = "generated-documentation-health";
+
     /// <summary>
     /// Sections follow how BirkNext gathers and uses evidence: the three project inputs (documents, source, target) first, then
     /// the pages that consume each input, in prerequisite-to-consumer order. A section shows when at least one of its rows is
@@ -120,6 +123,9 @@ public static class NavigationCatalog
                 Hint: "import, inspect, compare and validate generic XSD contracts"),
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always,
                 Hint: "what the source contains and what BirkNext can assess"),
+            // Project analysis of the imported project's generated documentation (autodoc …) — not a BirkNext developer diagnostic.
+            new(GeneratedDocumentationHealthRoute, "Generated Documentation Health", "nav-icon-source-analysis", f => f.GeneratedDocumentationHealth,
+                Hint: "generated documentation in the imported project: coverage, generator evidence, freshness and discrepancy candidates"),
             new("dependency-review", "Dependency Review", "nav-icon-constitution-compliance", Always, ReviewId: "dependency-review"),
             new("pipeline-review", "Pipeline Review", "nav-icon-task-alignment", Always, ReviewId: "pipeline-review"),
             // The page is the Azure provider of environment analysis; the menu stays generic and names the provider in the status.

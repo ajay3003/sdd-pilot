@@ -416,6 +416,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("implementationTraceability")] public bool ImplementationTraceability { get; set; } = true;
     [JsonPropertyName("sourceAnalysis")] public bool SourceAnalysis { get; set; } = true;
     [JsonPropertyName("azureEnvironmentAnalysis")] public bool AzureEnvironmentAnalysis { get; set; } = true;
+    [JsonPropertyName("generatedDocumentationHealth")] public bool GeneratedDocumentationHealth { get; set; } = true;
     [JsonPropertyName("frontendQualityReview")]            public bool FrontendQualityReview           { get; set; } = true;
     [JsonPropertyName("apiQualityReview")]                 public bool ApiQualityReview                 { get; set; } = true;
     [JsonPropertyName("integrationQualityReview")]         public bool IntegrationQualityReview         { get; set; } = true;

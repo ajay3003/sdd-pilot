@@ -49,6 +49,7 @@ public class FeatureVisibilityService
     // Hides the menu entry only; source snapshots, architecture and database analyses are untouched.
     public bool SourceAnalysis              => _flags.SourceAnalysis;
     public bool AzureEnvironmentAnalysis    => _flags.AzureEnvironmentAnalysis;
+    public bool GeneratedDocumentationHealth => _flags.GeneratedDocumentationHealth;
     public bool FrontendQualityReview      => _flags.FrontendQualityReview;
     public bool ApiQualityReview           => _flags.ApiQualityReview;
     public bool IntegrationQualityReview   => _flags.IntegrationQualityReview;
