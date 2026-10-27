@@ -697,7 +697,18 @@
         @* The decision's internal code (A–F, a root-cause order) is not a formal classification, so only its label is shown. *@
         <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code"><span class="snt-dimension-label">TT02 submission readiness</span> <strong>@decision.Label</strong>
             @if (executable) { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
-        @* The Altinn environment is configured once in Target Environment → Altinn and consumed here (manual vs automated readiness apart). *@
+        @* Light mode: one row per dimension with its source and, when unresolved, the single owner that fixes it — no editor here. The Altinn
+           system's manual vs automated readiness come from Target Environment → External Integrations. *@
+        <dl class="snt-light" data-testid="snt-light">
+            @foreach (var row in SkoleNaervaerReadinessPresentation.LightRows(view.Prerequisites, _profile?.Id))
+            {
+                <div data-testid="snt-light-row" data-key="@row.Key" data-state="@row.State">
+                    <dt>@row.Label</dt>
+                    <dd><span class="snt-pill snt-pill-@(row.Tone == "ok" ? "ready" : row.Tone == "warn" ? "attention" : "neutral")">@row.State</span> <span class="snt-muted">@row.Source</span>
+                        @if (row.OwnerHref is { } href) { <a href="@href" data-testid="snt-light-owner" title="@row.Detail">@row.OwnerLabel</a> }</dd>
+                </div>
+            }
+        </dl>
         <AltinnEnvironmentStatus EnvironmentId="@_profile!.Id" />
         @ReadinessDimensions(view.Journey.JourneyId)
         @if (ApplicableSourceValues.Count > 0 && _applyResult is null)
@@ -752,7 +763,7 @@
                             <div class="snt-local-setup" data-testid="snt-local-setup">
                                 <p>The run page stores nothing: it reads each value from its owner when the readiness is loaded.</p>
                                 <ul>
-                                    <li><strong>Target Environment → Altinn:</strong> Altinn environment, app, base URL, form contract, the unattended ID-porten TEST client (client id, registered redirect URI, scopes, enabled) and the client secret for this session. <a href="@AltinnEnvironmentPresentation.AltinnHref(_profile!.Id)" data-testid="snt-local-altinn">View Altinn setup</a></li>
+                                    <li><strong>Target Environment → External Integrations → Altinn:</strong> Altinn environment, app, base URL, form contract, the unattended ID-porten TEST client (client id, registered redirect URI, scopes, enabled) and the client secret for this session. <a href="@AltinnEnvironmentPresentation.AltinnHref(_profile!.Id)" data-testid="snt-local-altinn">View Altinn setup</a></li>
                                     <li><strong>Test Data → Session test identities:</strong> the approved synthetic reporter (with its TT02 profile confirmation) and the synthetic child. <a href="/test-data">Open Test Data</a></li>
                                     <li><strong>Target Environment → Integrations:</strong> the report-intake integration and its Integration Quality Review binding. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
                                     <li><strong>Backend configuration (administrator):</strong> the trusted execution environment and the app-policy confirmation. They are never set from the UI or by setup.</li>

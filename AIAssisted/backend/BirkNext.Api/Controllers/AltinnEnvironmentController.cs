@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// Target Environment → Altinn. Reading and detecting never write and never authenticate: Detect only adds ID-porten TEST's public discovery
+/// Target Environment → External Integrations → Altinn. Reading and detecting never write and never authenticate: Detect only adds ID-porten TEST's public discovery
 /// document, read anonymously and held in memory. Non-secret values are saved only by an explicit save. A client secret and synthetic
 /// identities are accepted by POST only, held in backend memory for the session, and never returned, logged, persisted or exported; their
 /// errors never echo the value. Trust (the trusted execution environment) stays backend configuration and is not writable here.

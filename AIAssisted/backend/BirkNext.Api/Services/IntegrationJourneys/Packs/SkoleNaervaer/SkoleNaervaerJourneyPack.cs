@@ -1060,7 +1060,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     && altinnPolicy.Scopes(config).Contains("openid", StringComparer.Ordinal);
                 var secretState = altinnPolicy.SecretState(config);
                 var redirectConfigured = altinnPolicy.UnattendedRedirect(config) is not null;
-                // The row names where a present value actually comes from; a missing value points to where it is set (Target Environment → Altinn).
+                // The row names where a present value actually comes from; a missing value points to where it is set (Target Environment → External Integrations → Altinn).
                 var saved = altinnPolicy.Saved(config);
                 var redirectSource = saved?.Unattended.RedirectUri is null && redirectConfigured ? LocalSource : AltinnSetupSource;
                 var secretSource = secretState == AltinnSettingState.AvailableToBackend ? LocalSource : AltinnSetupSource;

@@ -35,6 +35,9 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
     public DbSet<IntegrationMessageFlowRecord> IntegrationMessageFlows => Set<IntegrationMessageFlowRecord>();
     public DbSet<AltinnEnvironmentSettingsRecord> AltinnEnvironmentSettings => Set<AltinnEnvironmentSettingsRecord>();
+    public DbSet<ExternalIntegrationRecord> ExternalIntegrations => Set<ExternalIntegrationRecord>();
+    public DbSet<SetupLibraryItemRecord> SetupLibraryItems => Set<SetupLibraryItemRecord>();
+    public DbSet<SetupLibraryVersionRecord> SetupLibraryVersions => Set<SetupLibraryVersionRecord>();
     public DbSet<IntegrationEvidenceBindingRecord> IntegrationEvidenceBindings => Set<IntegrationEvidenceBindingRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
@@ -689,6 +692,44 @@ public class AppDbContext : DbContext
             entity.Property(r => r.SnapshotId).HasColumnName("snapshot_id");
             entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<ExternalIntegrationRecord>(entity =>
+        {
+            entity.ToTable("external_integrations");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+            entity.HasIndex(r => r.EnvironmentId);
+        });
+
+        modelBuilder.Entity<SetupLibraryItemRecord>(entity =>
+        {
+            entity.ToTable("setup_library_items");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Status).HasColumnName("status").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<SetupLibraryVersionRecord>(entity =>
+        {
+            entity.ToTable("setup_library_versions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.ItemId).HasColumnName("item_id");
+            entity.Property(r => r.VersionNumber).HasColumnName("version_number");
+            entity.Property(r => r.SchemaVersion).HasColumnName("schema_version");
+            entity.Property(r => r.Payload).HasColumnName("payload").HasColumnType("text").IsRequired();
+            entity.Property(r => r.ManifestJson).HasColumnName("manifest_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.ChangeSummary).HasColumnName("change_summary").HasMaxLength(500);
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.HasIndex(r => new { r.ItemId, r.VersionNumber }).IsUnique();
         });
 
         modelBuilder.Entity<AltinnEnvironmentSettingsRecord>(entity =>

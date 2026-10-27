@@ -6,7 +6,7 @@ using BirkNext.Integrations;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Target Environment → Altinn. Reading and detecting never write; saving and session values are explicit actions. A secret or identifier is
+/// Target Environment → External Integrations → Altinn. Reading and detecting never write; saving and session values are explicit actions. A secret or identifier is
 /// sent once in a POST body and never comes back: the browser never stores it (no localStorage or sessionStorage) and no response contains it.
 /// </summary>
 public interface IAltinnEnvironmentApiService

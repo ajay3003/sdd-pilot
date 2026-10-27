@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Target Environment → Altinn and its consumers: provenance states as text, manual vs automated readiness apart, Detect never saves, only
+/// Target Environment → External Integrations → Altinn and its consumers: provenance states as text, manual vs automated readiness apart, Detect never saves, only
 /// selected proposals are applied, the secret is a password field sent once and never shown, browser evidence is labelled apart from the
 /// unattended client, and Skolenærvær/Test Data consume the setup without a second editor or any terminal instruction.
 /// </summary>
@@ -122,7 +122,7 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
     {
         var cut = Render<AltinnEnvironmentStatus>(p => p.Add(c => c.EnvironmentId, Env));
         cut.WaitForAssertion(() => cut.Find("[data-testid=aes-manual]"));
-        cut.Find("[data-testid=aes-environment]").TextContent.Should().Contain("Ready").And.Contain("Source: Target Environment → Altinn");
+        cut.Find("[data-testid=aes-environment]").TextContent.Should().Contain("Ready").And.Contain("Source: Target Environment → External Integrations → Altinn");
         cut.Find("[data-testid=aes-manual]").TextContent.Should().Contain("Ready");
         cut.Find("[data-testid=aes-automated]").TextContent.Should().Contain("Blocked");
         cut.Find("[data-testid=aes-open]").GetAttribute("href").Should().Be(AltinnEnvironmentPresentation.AltinnHref(Env));

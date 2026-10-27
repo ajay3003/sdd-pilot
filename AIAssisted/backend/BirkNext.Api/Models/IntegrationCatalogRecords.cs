@@ -141,6 +141,39 @@ public class IntegrationMessageFlowRecord
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>An environment-specific external system instance (JSON of <c>ExternalIntegration</c>). No secret is representable.</summary>
+public class ExternalIntegrationRecord
+{
+    public string Id { get; set; } = string.Empty;
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string DocumentJson { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>A reusable, sanitized setup package in the Setup Library (metadata; payloads live in immutable versions).</summary>
+public class SetupLibraryItemRecord
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Status { get; set; } = "Draft";
+    public string DocumentJson { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>One immutable version of a Setup Library item: the sanitized package payload and its dependency manifest. Never updated.</summary>
+public class SetupLibraryVersionRecord
+{
+    public Guid Id { get; set; }
+    public Guid ItemId { get; set; }
+    public int VersionNumber { get; set; }
+    public int SchemaVersion { get; set; }
+    public string Payload { get; set; } = string.Empty;
+    public string ManifestJson { get; set; } = string.Empty;
+    public string? ChangeSummary { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 /// <summary>A Target Environment's non-secret Altinn configuration (JSON of <c>AltinnEnvironmentSettings</c>). No secret or identifier is representable.</summary>
 public class AltinnEnvironmentSettingsRecord
 {

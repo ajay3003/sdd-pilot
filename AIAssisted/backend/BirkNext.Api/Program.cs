@@ -599,11 +599,17 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCandidateServi
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions.Section)
     .Get<BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions>() ?? new BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions());
-// Target Environment → Altinn: saved non-secret settings (database + in-memory cache for the policy) and session-only values (memory).
+// Target Environment → External Integrations → Altinn: saved non-secret settings (database + in-memory cache for the policy) and session-only values (memory).
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsCache>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnSessionStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentService>();
+// Target Environment → External Integrations: provider handlers (Altinn dedicated, every other provider generic), the generic setup package
+// pipeline (export → preflight → apply) and the Setup Library.
+builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.IExternalProviderHandler, BirkNext.Api.Services.ExternalIntegrations.AltinnProviderHandler>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.ExternalIntegrationService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.EnvironmentSetupService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.SetupLibraryService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestingPolicy>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestSessionCache>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnTestTokens>(sp => sp.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnTestSessionCache>());

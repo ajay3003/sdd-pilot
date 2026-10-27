@@ -6,7 +6,7 @@ using BirkNext.Integrations;
 namespace BirkNext.Api.Services.AltinnTesting;
 
 /// <summary>
-/// Target Environment → Altinn: resolves every Altinn value of one environment with its state and provenance, and assesses manual testing and
+/// Target Environment → External Integrations → Altinn: resolves every Altinn value of one environment with its state and provenance, and assesses manual testing and
 /// automated BirkNext execution separately. Precedence for non-secret values: the Target Environment's saved settings, the backend's own
 /// configuration, the Integration Quality Review binding, Source Analysis, stored public metadata, the test pack's declared default. Explicit
 /// sources that disagree are a Conflict; a declared default never conflicts with or overrides an explicit value. Reading and detecting never

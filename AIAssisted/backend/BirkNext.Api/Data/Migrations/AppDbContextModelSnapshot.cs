@@ -501,6 +501,35 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("dependency_review_runs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ExternalIntegrationRecord", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("id");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("document_json");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("environment_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.ToTable("external_integrations", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.GraphQlSchemaArtifactRecord", b =>
                 {
                     b.Property<string>("EnvironmentId")
@@ -1649,6 +1678,89 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasIndex("EnvironmentId", "CreatedAt");
 
                     b.ToTable("security_expectation_discoveries", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.SetupLibraryItemRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("document_json");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("setup_library_items", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.SetupLibraryVersionRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ChangeSummary")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("change_summary");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("ManifestJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("manifest_json");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("payload");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("schema_version");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("version_number");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId", "VersionNumber")
+                        .IsUnique();
+
+                    b.ToTable("setup_library_versions", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>

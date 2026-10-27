@@ -497,7 +497,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.FindAll("[data-testid=snt-rapport-actions] button, [data-testid=snt-rapport-actions] a").Select(e => e.TextContent)
             .Should().Equal("Prepare Rapportmottak run", "View Altinn setup");
         page.Find("[data-testid=snt-open-run]").ClassList.Should().Contain("btn-secondary", "no strong run action while clearly blocked");
-        page.Find("[data-testid=snt-configure-altinn]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=altinn&profile=dev");
+        page.Find("[data-testid=snt-configure-altinn]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn");
 
         // Tester actions grouped, each with an owner and one action; the raw checks stay behind a disclosure.
         page.FindAll("[data-testid=snt-blocker-group]").Select(group => group.GetAttribute("data-group")).Should().Equal("source", "authentication");
@@ -575,12 +575,12 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("authentication");
         page.Find("[data-testid=snt-blocker-group]").TextContent.Should().Contain("ID-porten test setup").And.Contain("1 check incomplete");
 
-        // The missing secret points to its owner, Target Environment → Altinn — never a terminal or PowerShell helper.
+        // The missing secret points to its owner, Target Environment → External Integrations → Altinn — never a terminal or PowerShell helper.
         var action = page.Find("[data-testid=snt-attention-item] a");
         action.TextContent.Should().Be("View Altinn setup");
-        action.GetAttribute("href").Should().Contain("section=target-environments").And.Contain("tab=altinn");
+        action.GetAttribute("href").Should().Contain("section=target-environments").And.Contain("tab=external").And.Contain("focus=altinn");
         page.Find("[data-testid=snt-group-local-toggle]").Click();
-        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("Target Environment → Altinn").And.Contain("The run page stores nothing")
+        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("Target Environment → External Integrations → Altinn").And.Contain("The run page stores nothing")
             .And.NotContain(".ps1").And.NotContain("PowerShell").And.NotContain("restart the backend from");
     }
 
@@ -635,8 +635,8 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open("rapportmottak");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-attention-item]").Should().ContainSingle());
-        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=altinn&profile=dev",
-            "the Altinn environment is configured once in Target Environment → Altinn, never again on the run page");
+        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn",
+            "the Altinn environment is configured once in Target Environment → External Integrations → Altinn, never again on the run page");
         var outsideRun = page.FindAll("#snt-rapport input, #snt-rapport select, #snt-rapport textarea").Where(field => field.Closest("[data-testid=ijp-panel]") is null && field.Closest("[data-testid=atp-panel]") is null);
         outsideRun.Should().BeEmpty("client id, scopes, redirect, secret, reporter and child are resolved from their owners, never re-entered here");
     }

@@ -131,6 +131,13 @@
                 {
                     <p class="ip-muted" data-testid="ip-active-filter">Active filter: @ActiveFilter() <button type="button" class="ip-link" data-testid="ip-clear-filters" @onclick="ClearFilters">Clear filters</button></p>
                 }
+                @* Light summary: resolved items stay in the list; one click narrows it to what needs a human decision (nothing is hidden by default). *@
+                <p class="ip-muted" data-testid="ip-light-summary">@summary.Configured integration@(summary.Configured == 1 ? "" : "s") · @summary.Ready resolved · @(summary.NeedsConfirmation + summary.NeedsConfiguration) need a decision
+                    @if (summary.NeedsConfirmation + summary.NeedsConfiguration > 0)
+                    {
+                        <button type="button" class="ip-link" data-testid="ip-show-decisions" @onclick="ReviewMappings">Show only what needs a decision</button>
+                    }
+                </p>
                 <p class="ip-sr" role="status" aria-live="polite" data-testid="ip-mapping-announcement">@_mappingAnnouncement</p>
                 @if (filtered.Count == 0)
                 {

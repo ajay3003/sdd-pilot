@@ -7,10 +7,10 @@ ID-porten, Altinn or Storage call. The real run is a separate, explicitly approv
 Never put a real secret, TestID identifier or child identifier in this file, in `appsettings*.json` (including the **tracked**
 `appsettings.Local.json`), in frontend configuration or in a committed `.env`.
 
-## Configure once: Target Environments → Altinn
+## Configure once: Target Environments → External Integrations → Altinn
 
 The Altinn environment is configured once per Target Environment and consumed by Skolenærvær Testing (and IQR). Open
-**Target Environments → select the environment → Altinn**.
+**Target Environments → select the environment → External Integrations → Altinn (Review)**.
 
 1. **Detect Altinn settings.** A discovery action only: it reads the Target Environment's saved values, the backend's own
    configuration, the Integration Quality Review binding, Source Analysis evidence, stored public Altinn metadata, the test pack's
@@ -60,10 +60,20 @@ settings from its own process configuration. Precedence for the secret: a sessio
 For the client id, redirect URI and scopes: the Target Environment's saved value, then the backend configuration, then the IQR binding.
 Two explicit values that disagree are a conflict that blocks automated execution until one is kept.
 
+## Reuse the setup: Setup Library and import/export
+
+Target Environments → External Integrations → **Export setup** writes a sanitized package (YAML or JSON) for one integration, one provider
+(e.g. Altinn) or the whole environment, or saves it to **Setup Library** (versioned, never mutated). **Import setup** (a file or a library
+package) always runs a preflight against the destination first: every dependency — Test Data reporter and child, the IQR integration, the
+form contract, source snapshots, provider capabilities — is resolved against its owner. A required dependency that is Missing, Ambiguous,
+Incompatible or Not approved blocks Apply (with a link to the owner and **Rerun preflight**); optional ones only warn. Conflicts with the
+current values need an explicit *Keep current* / *Apply package* choice. Secrets, raw identities, trust, execution enablement and runtime
+evidence are never exported or imported.
+
 ## Checklist
 
 1. Restart the backend on the current commit (the readiness row *Backend build* shows it).
-2. Target Environments → Altinn → **Detect Altinn settings**, review, **Apply selected**.
+2. Target Environments → External Integrations → Altinn → **Detect Altinn settings**, review, **Apply selected**.
 3. Enter the unattended **client ID**, **registered redirect URI** and **scopes**, and enable automated execution.
 4. **Add secret for this session.**
 5. Test Data → **Session test identities**: reporter (confirm its TT02 profile) and child.

@@ -436,3 +436,9 @@
 .snt-attention-categories p { margin: 0; }
 .snt-attention-owner-list { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; display: grid; gap: .15rem; }
 .snt-attention-owner-list li { overflow-wrap: anywhere; }
+
+/* Light mode: one row per readiness dimension with its source and single owner link (no editors on this page). */
+.snt-light { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: .4rem; margin: .5rem 0; }
+.snt-light div { padding: .45rem .6rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; overflow-wrap: anywhere; }
+.snt-light dt { font-size: .75rem; color: var(--clr-text-muted, #5f6368); }
+.snt-light dd { margin: .15rem 0 0; font-size: .85rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }

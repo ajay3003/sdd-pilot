@@ -300,10 +300,14 @@ if (entra.Configured)
 var altinnTestingClient = builder.Services.AddHttpClient<IAltinnTestingApiService, AltinnTestingApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     altinnTestingClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
-// Target Environment → Altinn: canonical Altinn environment setup (saved non-secret values, detection, session-only secret and identities).
+// Target Environment → External Integrations → Altinn: canonical Altinn environment setup (saved non-secret values, detection, session-only secret and identities).
 var altinnEnvironmentClient = builder.Services.AddHttpClient<IAltinnEnvironmentApiService, AltinnEnvironmentApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     altinnEnvironmentClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Target Environment → External Integrations (provider instances), scope-aware setup import/export and the Setup Library.
+var externalIntegrationsClient = builder.Services.AddHttpClient<IExternalIntegrationsApiService, ExternalIntegrationsApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    externalIntegrationsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Execution access: whether this session may execute active tests (permission or the backend's local trusted execution). A hint for the
 // UI only; the backend enforces ActiveEventExecute on every execution request.
 var executionAccessClient = builder.Services.AddHttpClient<IExecutionAccessApiService, ExecutionAccessApiService>(client => client.BaseAddress = backendBase);

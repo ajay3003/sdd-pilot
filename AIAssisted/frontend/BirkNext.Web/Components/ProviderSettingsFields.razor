@@ -1,0 +1,61 @@
+@using BirkNext.Integrations
+
+@* The fields of ONE provider, rendered from its field definitions: a choice is a select, a boolean a checkbox, everything else a text input.
+   Fields of other providers are never rendered. Secret fields are not inputs here — a secret is added for the session after saving. *@
+<div class="psf" data-testid="psf" data-provider="@Descriptor.Type">
+    @foreach (var group in Descriptor.Fields.Where(field => !field.Secret).GroupBy(field => field.Group))
+    {
+        <fieldset class="psf-group" data-testid="psf-group" data-group="@group.Key">
+            <legend>@group.Key</legend>
+            @foreach (var field in group)
+            {
+                var key = field.Key;
+                var id = $"psf-{Descriptor.Type}-{key}";
+                var current = Values.GetValueOrDefault(key) ?? string.Empty;
+                var on = current == "true";
+                var hint = field.Kind == ProviderFieldKind.Url ? "https://…" : field.Kind == ProviderFieldKind.List ? "space separated" : string.Empty;
+                <div class="psf-field" data-testid="psf-field" data-key="@key">
+                    @if (field.Kind == ProviderFieldKind.Boolean)
+                    {
+                        <label class="psf-check" for="@id"><input id="@id" type="checkbox" checked="@on" disabled="@Disabled"
+                            @onchange="e => Set(key, e.Value is true ? bool.TrueString.ToLowerInvariant() : null)" /> @field.Label</label>
+                    }
+                    else
+                    {
+                        <label for="@id">@field.Label@(field.Required ? " *" : "")</label>
+                        @if (field.Kind == ProviderFieldKind.Choice)
+                        {
+                            <select id="@id" class="form-select" disabled="@Disabled" value="@current" @onchange="e => Set(key, e.Value?.ToString())">
+                                <option value="">—</option>
+                                @foreach (var choice in field.Choices ?? []) { <option value="@choice">@choice</option> }
+                            </select>
+                        }
+                        else
+                        {
+                            <input id="@id" class="form-control" disabled="@Disabled" autocomplete="off" value="@current"
+                                   placeholder="@hint"
+                                   @onchange="e => Set(key, e.Value?.ToString())" />
+                        }
+                    }
+                    @if (field.Help.Length > 0) { <span class="psf-help">@field.Help</span> }
+                </div>
+            }
+        </fieldset>
+    }
+    @if (Descriptor.Fields.Any(field => field.Secret))
+    {
+        <p class="psf-help" data-testid="psf-secret-note">The secret is not entered here: add it for this session after saving. It is never stored or exported.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExternalProviderDescriptor Descriptor { get; set; } = default!;
+    /// <summary>The non-secret settings being edited (key → value); empty values are removed.</summary>
+    [Parameter, EditorRequired] public Dictionary<string, string> Values { get; set; } = [];
+    [Parameter] public bool Disabled { get; set; }
+
+    private void Set(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) Values.Remove(key); else Values[key] = value.Trim();
+    }
+}

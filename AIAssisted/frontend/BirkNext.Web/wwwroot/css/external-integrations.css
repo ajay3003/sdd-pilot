@@ -1,0 +1,40 @@
+/* External Integrations, provider fields, setup import/export, preflight and Setup Library. States are text plus tone, never colour alone. */
+.ei, .slp, .spp, .spv, .psf { display: grid; gap: .75rem; min-width: 0; }
+.ei-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.ei-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.ei-h4, .spp-title, .spv-title { margin: 0; font-size: .95rem; font-weight: 600; }
+.spv-h5 { margin: .5rem 0 .25rem; font-size: .85rem; font-weight: 600; }
+.ei-actions, .ei-card-actions, .spp-actions, .spp-selectors, .spp-source, .spp-save, .slp-filters, .ei-form-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+.spp-selectors label, .spp-source label, .spp-save label, .slp-filters label, .ei-form-row label { display: grid; gap: .2rem; font-size: .82rem; min-width: min(14rem, 100%); }
+.ei-check { display: flex !important; gap: .4rem; align-items: center; }
+.ei-muted, .spp-muted, .spv-muted, .psf-help { color: var(--clr-text-muted, #5f6368); font-size: .82rem; }
+.ei-banner { margin: 0; padding: .5rem .75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; font-size: .85rem; overflow-wrap: anywhere; }
+.ei-banner-error, .spp-error { color: var(--clr-danger, #b42318); }
+.ei-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: .75rem; }
+.ei-card, .ei-add, .ei-proposals, .slp-detail, .spp, .spv { border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; padding: .75rem; min-width: 0; overflow-wrap: anywhere; }
+.ei-card-head { display: grid; gap: .15rem; }
+.ei-card-title { margin: 0; font-size: .95rem; font-weight: 600; }
+.ei-dims, .spv-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr)); gap: .4rem; margin: 0; }
+.ei-dims dt, .spv-summary dt { font-size: .72rem; color: var(--clr-text-muted, #5f6368); }
+.ei-dims dd, .spv-summary dd { margin: .1rem 0 0; font-size: .85rem; }
+.ei-pill, .spv-pill { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.ei-pill-ok, .spv-ok { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
+.ei-pill-warn { background: color-mix(in sRGB, var(--clr-warning, #d97706) 14%, transparent); color: var(--clr-warning, #b45309); }
+.ei-pill-bad, .spv-bad { background: color-mix(in sRGB, var(--clr-danger, #dc2626) 12%, transparent); color: var(--clr-danger, #b42318); }
+.ei-pill-info { background: color-mix(in sRGB, var(--clr-info, #2563eb) 10%, transparent); color: var(--clr-text, #1f2328); }
+.ei-pill-muted, .spv-muted { background: color-mix(in sRGB, var(--clr-text-muted, #5f6368) 12%, transparent); color: var(--clr-text-muted, #5f6368); }
+.spv-status { margin: 0; padding: .4rem .6rem; border-radius: 6px; font-weight: 700; letter-spacing: .03em; }
+.spv-block { margin: 0; font-weight: 600; }
+.ei-proposal { display: grid; gap: .25rem; padding: .4rem 0; border-top: 1px solid var(--clr-border, #d0d7de); }
+.ei-list, .spv-list, .spp-list { margin: .2rem 0; padding-left: 1.2rem; font-size: .85rem; }
+.spv-list li { margin: .2rem 0; }
+.ei-table, .spv-table { width: 100%; border-collapse: collapse; font-size: .82rem; table-layout: fixed; }
+.ei-table th, .ei-table td, .spv-table th, .spv-table td { text-align: left; padding: .3rem .45rem; border-bottom: 1px solid var(--clr-border, #d0d7de); vertical-align: top; overflow-wrap: anywhere; }
+.ei-value, .spv-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: .78rem; }
+.spv-decision { display: grid; gap: .15rem; border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+.spv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.psf-group { border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: .5rem .75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .5rem; min-inline-size: 0; }
+.psf-field { display: grid; gap: .2rem; font-size: .82rem; min-width: 0; }
+.psf-check { display: flex; gap: .4rem; align-items: center; }
+.ei-secret { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+@media (max-width: 640px) { .ei-table thead, .spv-table thead { display: none; } .ei-table tr, .spv-table tr { display: grid; } }

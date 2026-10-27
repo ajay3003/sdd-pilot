@@ -100,10 +100,10 @@ public sealed class SkoleNaervaerReadinessPresentationTests
     }
 
     [Theory]
-    [InlineData("idporten-client", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
-    [InlineData("redirect-uri", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
-    [InlineData("client-secret", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
-    [InlineData("unattended-provider", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
+    [InlineData("idporten-client", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn", null)]
+    [InlineData("redirect-uri", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn", null)]
+    [InlineData("client-secret", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn", null)]
+    [InlineData("unattended-provider", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn", null)]
     [InlineData("reporter-profile", "Open Test Data", "/test-data", null)]
     [InlineData("synthetic-data", "Open Test Data", "/test-data", null)]
     [InlineData("trusted-environment", "Open Target Environment", "/admin/system-settings?section=target-environments", null)]

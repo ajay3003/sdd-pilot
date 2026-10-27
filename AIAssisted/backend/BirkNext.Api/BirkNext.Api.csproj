@@ -73,6 +73,7 @@
     <Compile Include="../../shared/IntegrationContractDiscoveryContracts.cs" Link="Models/IntegrationContractDiscoveryContracts.cs" />
     <Compile Include="../../shared/MessageFlowReviewContracts.cs" Link="Models/MessageFlowReviewContracts.cs" />
     <Compile Include="../../shared/AltinnEnvironmentContracts.cs" Link="Models/AltinnEnvironmentContracts.cs" />
+    <Compile Include="../../shared/ExternalIntegrationContracts.cs" Link="Models/ExternalIntegrationContracts.cs" />
     <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
     <Compile Include="../../shared/ProjectImportContracts.cs" Link="Models/ProjectImportContracts.cs" />

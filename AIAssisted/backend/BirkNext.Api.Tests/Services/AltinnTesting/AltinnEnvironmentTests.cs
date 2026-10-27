@@ -15,7 +15,7 @@ using Moq;
 namespace BirkNext.Api.Tests.Services.AltinnTesting;
 
 /// <summary>
-/// Target Environment → Altinn: precedence, conflicts, browser-vs-unattended separation, manual-vs-automated readiness, detection without
+/// Target Environment → External Integrations → Altinn: precedence, conflicts, browser-vs-unattended separation, manual-vs-automated readiness, detection without
 /// writes or authentication, and session secrets/identities that never leave backend memory. Isolated fakes only — no TT02 or ID-porten call.
 /// </summary>
 public sealed class AltinnEnvironmentTests

@@ -1,0 +1,90 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+
+@* One preflight result, the same for a file import and a Setup Library apply: status, dependency resolution with its canonical owner,
+   the complete change plan and an explicit Keep current / Apply package choice per conflict. Rendering never writes anything. *@
+<section class="spv" data-testid="spv" aria-label="Setup import preflight">
+    @{ var (status, tone) = ExternalIntegrationPresentation.Status(Result); }
+    <h4 class="spv-title">Setup import preflight</h4>
+    <dl class="spv-summary">
+        <div><dt>Package</dt><dd data-testid="spv-package">@(Result.PackageName ?? "—")@(Result.PackageVersion is { } v ? $" v{v}" : "")</dd></div>
+        <div><dt>Schema</dt><dd>@(Result.SchemaVersion is null ? "Unsupported" : $"Supported (v{Result.SchemaVersion})")</dd></div>
+        <div><dt>Detected scope</dt><dd data-testid="spv-scope">@(Result.DetectedScope is { } scope ? ExternalIntegrationPresentation.ScopeLabel(scope) : "—")</dd></div>
+        <div><dt>Detected provider</dt><dd data-testid="spv-provider">@(Result.DetectedProviders.Count == 0 ? "—" : string.Join(", ", Result.DetectedProviders))</dd></div>
+        <div><dt>Configuration changes</dt><dd>@Result.Changes.Count(c => c.Classification != "Same")</dd></div>
+        <div><dt>Already configured</dt><dd>@Result.Changes.Count(c => c.Classification == "Same")</dd></div>
+        <div><dt>Required dependencies</dt><dd data-testid="spv-required">@ExternalIntegrationPresentation.RequiredLine(Result)</dd></div>
+        <div><dt>Optional missing</dt><dd>@Result.OptionalMissing</dd></div>
+        <div><dt>Conflicts</dt><dd data-testid="spv-conflicts">@Result.Conflicts</dd></div>
+        <div><dt>Imported secrets · raw identities · runtime evidence</dt><dd data-testid="spv-never">@Result.SecretsImported · @Result.IdentitiesImported · @Result.RuntimeEvidenceImported</dd></div>
+    </dl>
+    <p class="spv-status spv-@tone" role="status" data-testid="spv-status">@status</p>
+    @foreach (var reason in Result.BlockReasons) { <p class="spv-block" data-testid="spv-block">@reason</p> }
+    @if (ExternalIntegrationPresentation.OptionalLine(Result) is { } optional) { <p class="spv-muted" data-testid="spv-optional">@optional</p> }
+
+    @if (Result.Issues.Count > 0)
+    {
+        <ul class="spv-list" data-testid="spv-issues">
+            @foreach (var issue in Result.Issues) { <li data-severity="@issue.Severity"><strong>@issue.Severity</strong> · @issue.Path · @issue.Message</li> }
+        </ul>
+    }
+
+    @if (Result.Dependencies.Count > 0)
+    {
+        <h5 class="spv-h5">Dependencies</h5>
+        <ul class="spv-list" data-testid="spv-dependencies">
+            @foreach (var d in Result.Dependencies.OrderBy(d => d.State == SetupDependencyState.Resolved).ThenBy(d => !d.Dependency.Required))
+            {
+                <li data-testid="spv-dependency" data-state="@d.State" data-kind="@d.Dependency.Kind">
+                    <span class="spv-pill spv-@ExternalIntegrationPresentation.Tone(d.State)">@ExternalIntegrationPresentation.Label(d.State)</span>
+                    <strong>@ExternalIntegrationPresentation.DependencyLabel(d.Dependency)</strong>@(d.Dependency.Required ? "" : " (optional)") — @d.Detail
+                    @if (d.State != SetupDependencyState.Resolved) { <a href="@d.OwnerHref" data-testid="spv-owner">Open @d.Owner</a> }
+                </li>
+            }
+        </ul>
+    }
+
+    @if (Result.Changes.Count > 0)
+    {
+        <h5 class="spv-h5">Change plan</h5>
+        <table class="spv-table" data-testid="spv-changes">
+            <thead><tr><th scope="col">System</th><th scope="col">Setting</th><th scope="col">Current</th><th scope="col">Package</th><th scope="col">Result</th></tr></thead>
+            <tbody>
+                @foreach (var change in Result.Changes)
+                {
+                    var id = change.Id;
+                    <tr data-testid="spv-change" data-classification="@change.Classification">
+                        <td>@change.System</td><td>@change.Setting</td><td class="spv-value">@(change.Current ?? "—")</td><td class="spv-value">@(change.Proposed ?? "—")</td>
+                        <td>
+                            @if (change.Classification == "Conflict")
+                            {
+                                <fieldset class="spv-decision" data-testid="spv-decision">
+                                    <legend class="spv-sr">Conflict for @change.Setting</legend>
+                                    <label><input type="radio" name="@($"spv-{id}")" checked="@(Decisions.TryGetValue(id, out var keep) && !keep)" @onchange="() => Decide(id, false)" /> Keep current</label>
+                                    <label><input type="radio" name="@($"spv-{id}")" checked="@(Decisions.TryGetValue(id, out var apply) && apply)" @onchange="() => Decide(id, true)" /> Apply package</label>
+                                </fieldset>
+                            }
+                            else { @change.Classification }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SetupPreflightResult Result { get; set; } = default!;
+    /// <summary>Conflict decisions (change id → apply package value); every conflict needs one before Apply.</summary>
+    [Parameter] public Dictionary<string, bool> Decisions { get; set; } = [];
+    [Parameter] public EventCallback DecisionsChanged { get; set; }
+
+    public static bool AllDecided(SetupPreflightResult result, IReadOnlyDictionary<string, bool> decisions) =>
+        result.Changes.Where(change => change.Classification == "Conflict").All(change => decisions.ContainsKey(change.Id));
+
+    private async Task Decide(string id, bool apply)
+    {
+        Decisions[id] = apply;
+        await DecisionsChanged.InvokeAsync();
+    }
+}

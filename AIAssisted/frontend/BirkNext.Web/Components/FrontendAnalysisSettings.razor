@@ -1469,10 +1469,16 @@
                 <IntegrationsPane Profile="profile" Focus="@(InitialTab == "integrations" ? InitialFocus : null)" />
             }
 
-            @* ── Altinn ── the canonical Altinn environment setup consumed by Skolenærvær Testing and IQR. *@
-            @if (_activeTab == "altinn")
+            @* ── External Integrations ── environment-specific external systems; Altinn is one provider (its own setup component). *@
+            @if (_activeTab == "external")
             {
-                <AltinnEnvironmentPane EnvironmentId="@profile.Id" />
+                <ExternalIntegrationsPane EnvironmentId="@profile.Id" Focus="@ExternalFocus" />
+            }
+
+            @* ── Setup Library ── reusable sanitized setup packages for any provider. *@
+            @if (_activeTab == "library")
+            {
+                <SetupLibraryPane EnvironmentId="@profile.Id" />
             }
 
         </div>
@@ -1752,7 +1758,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("General", ["general", "target", "auth"]),
         ("Discovery", ["endpoint", "browser"]),
         ("Quality settings", ["performance", "cwv", "features", "validation"]),
-        ("Integrations", ["integrations", "altinn"]),
+        ("Integrations", ["integrations", "external", "library"]),
     ];
 
     // ── Computed ─────────────────────────────────────────────────────────────
@@ -2098,10 +2104,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         }
     }
 
+    /// <summary>The External Integrations focus from a deep link (an old Altinn-tab link focuses the Altinn system).</summary>
+    private string? ExternalFocus => string.Equals(InitialTab, "altinn", StringComparison.OrdinalIgnoreCase) ? "altinn"
+        : string.Equals(InitialTab, "external", StringComparison.OrdinalIgnoreCase) ? InitialFocus : null;
+
     private static string NormalizeTab(string tab) =>
         string.Equals(tab, "security", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(tab, "security-expectations", StringComparison.OrdinalIgnoreCase)
-            ? "endpoint" : tab;
+            ? "endpoint"
+        // Earlier links opened a separate Altinn tab; Altinn is now a provider under External Integrations.
+        : string.Equals(tab, "altinn", StringComparison.OrdinalIgnoreCase) ? "external" : tab;
 
     // ── Profile selection ────────────────────────────────────────────────────
 

@@ -1,0 +1,193 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+@* Target Environments → Setup Library: reusable, sanitized environment setup packages for any provider (backend persistence, never browser
+   storage). A package is reusable intent, not the source of truth: applying always re-runs the destination preflight, versions are immutable,
+   and archive replaces delete. The last preflight is a hint, never permanent validity, and never runtime verification. *@
+<section class="slp" data-testid="slp" aria-labelledby="slp-title">
+    <header class="ei-head">
+        <h3 id="slp-title" class="ei-title">Setup Library</h3>
+        <a class="btn btn-secondary btn-sm" href="@ExternalIntegrationPresentation.ExternalHref(EnvironmentId)" data-testid="slp-external">External Integrations</a>
+    </header>
+    <div class="slp-filters" role="group" aria-label="Filter the Setup Library">
+        <label>Provider
+            <select class="form-select" data-testid="slp-filter-provider" @onchange="e => FilterAsync(provider: e.Value?.ToString())">
+                <option value="">All</option>
+                @foreach (var type in Enum.GetValues<ExternalProviderType>()) { <option value="@type">@type</option> }
+            </select>
+        </label>
+        <label>Setup type
+            <select class="form-select" data-testid="slp-filter-type" @onchange="e => FilterAsync(setupType: e.Value?.ToString())">
+                <option value="">All</option>
+                @foreach (var scope in Enum.GetValues<SetupScope>()) { <option value="@scope">@ExternalIntegrationPresentation.ScopeLabel(scope)</option> }
+            </select>
+        </label>
+        <label>Status
+            <select class="form-select" data-testid="slp-filter-status" @onchange="e => FilterAsync(status: e.Value?.ToString())">
+                <option value="">Active</option>
+                @foreach (var status in Enum.GetValues<SetupLibraryStatus>()) { <option value="@status">@status</option> }
+            </select>
+        </label>
+        <label>Test pack <input class="form-control" data-testid="slp-filter-pack" @onchange="e => FilterAsync(testPack: e.Value?.ToString())" placeholder="e.g. skolenaervaer" /></label>
+    </div>
+    @if (_error is { } error) { <p class="ei-banner ei-banner-error" role="alert" data-testid="slp-error">@error</p> }
+    @if (_notice is { } notice) { <p class="ei-banner" role="status" data-testid="slp-notice">@notice</p> }
+
+    @if (_items is null) { <p class="ei-muted" role="status">Loading the Setup Library…</p> }
+    else if (_items.Count == 0) { <p class="ei-muted" data-testid="slp-empty">No packages. Save one from External Integrations → Export setup, or import a file there.</p> }
+    else
+    {
+        <table class="ei-table" data-testid="slp-table">
+            <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Providers</th><th scope="col">Latest</th><th scope="col">Required</th><th scope="col">Last preflight</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="spv-sr">Actions</span></th></tr></thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    var latest = item.Versions.FirstOrDefault();
+                    <tr data-testid="slp-item" data-status="@item.Status">
+                        <td>@item.Name</td><td>@ExternalIntegrationPresentation.ScopeLabel(item.SetupType)</td><td>@string.Join(", ", item.Providers)</td>
+                        <td>v@(latest?.VersionNumber)</td><td>@(latest?.Dependencies.Count(d => d.Required) ?? 0)</td><td>@(item.LastPreflight ?? "Not run")</td><td>@item.Status</td>
+                        <td>@item.UpdatedAt.ToString("yyyy-MM-dd")</td>
+                        <td><button type="button" class="btn btn-secondary btn-sm" data-testid="slp-open" @onclick="() => Open(item)">Open</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (_selected is { } selected)
+    {
+        <section class="slp-detail" data-testid="slp-detail" aria-label="@selected.Name">
+            <h4 class="ei-h4">@selected.Name</h4>
+            <p class="ei-muted">@(selected.Description ?? "")@(selected.TestPacks.Count > 0 ? $" · Test packs: {string.Join(", ", selected.TestPacks)}" : "")</p>
+            <div class="ei-card-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-testid="slp-preflight" disabled="@_busy" @onclick="PreflightAsync">@(_preflight is null ? "Preview & preflight for this environment" : "Rerun preflight")</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="slp-export-yaml" disabled="@_busy" @onclick="() => ExportAsync(SetupPackageFormat.Yaml)">Export YAML</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="slp-export-json" disabled="@_busy" @onclick="() => ExportAsync(SetupPackageFormat.Json)">Export JSON</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="slp-new-version" disabled="@(_busy || selected.Status == SetupLibraryStatus.Archived)" @onclick="NewVersionAsync">New version from this environment</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="slp-duplicate" disabled="@_busy" @onclick="DuplicateAsync">Duplicate</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="slp-archive" disabled="@(_busy || selected.Status == SetupLibraryStatus.Archived)" @onclick="ArchiveAsync">Archive</button>
+            </div>
+            <h5 class="spv-h5">Versions</h5>
+            <ul class="ei-list" data-testid="slp-versions">
+                @foreach (var version in selected.Versions)
+                {
+                    <li>v@(version.VersionNumber) · schema v@(version.SchemaVersion) · @version.CreatedAt.ToString("yyyy-MM-dd HH:mm") UTC · @(version.ChangeSummary ?? "") · @version.Dependencies.Count(d => d.Required) required / @version.Dependencies.Count(d => !d.Required) optional</li>
+                }
+            </ul>
+            @if (selected.Versions.Count > 1)
+            {
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="slp-compare" disabled="@_busy" @onclick="CompareAsync">Compare v@(selected.Versions[1].VersionNumber) → v@(selected.Versions[0].VersionNumber)</button>
+                @if (_differences is { } differences)
+                {
+                    <ul class="ei-list" data-testid="slp-differences">
+                        @if (differences.Count == 0) { <li>No differences.</li> }
+                        @foreach (var d in differences) { <li>@d.Area · @d.Item: @(d.Before ?? "—") → @(d.After ?? "—")</li> }
+                    </ul>
+                }
+            }
+            <h5 class="spv-h5">Sanitization</h5>
+            <ul class="ei-list" data-testid="slp-sanitization">@foreach (var item in selected.Sanitization) { <li>@item</li> }</ul>
+            @if (_preflight is { } preflight)
+            {
+                <SetupPreflightView Result="preflight" Decisions="_decisions" DecisionsChanged="StateHasChanged" />
+                <button type="button" class="btn btn-primary btn-sm" data-testid="slp-apply" disabled="@(_busy || !preflight.CanApply || !SetupPreflightView.AllDecided(preflight, _decisions))" @onclick="ApplyAsync">Apply to this environment</button>
+            }
+            @if (_applied is { } applied) { <p role="status" data-testid="slp-apply-result" data-applied="@(applied.Applied ? "true" : "false")">@applied.Outcome</p> }
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+
+    private IExternalIntegrationsApiService? _api;
+    private IReadOnlyList<SetupLibraryItemView>? _items;
+    private SetupLibraryItemView? _selected;
+    private SetupPreflightResult? _preflight;
+    private SetupApplyPackageResult? _applied;
+    private IReadOnlyList<SetupVersionDifference>? _differences;
+    private Dictionary<string, bool> _decisions = [];
+    private string? _error, _notice, _provider, _status, _testPack, _setupType;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _api = Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
+        if (_api is null) { _error = "The Setup Library is not available in this host."; _items = []; return; }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await _api!.LibraryAsync(Enum.TryParse<ExternalProviderType>(_provider, out var p) ? p : null, Enum.TryParse<SetupLibraryStatus>(_status, out var s) ? s : null,
+            string.IsNullOrWhiteSpace(_testPack) ? null : _testPack.Trim(), Enum.TryParse<SetupScope>(_setupType, out var t) ? t : null);
+        (_items, _error) = (result.Value ?? [], result.Error);
+        if (_selected is not null) _selected = _items.FirstOrDefault(item => item.Id == _selected.Id) ?? _selected;
+    }
+
+    private Task FilterAsync(string? provider = null, string? status = null, string? testPack = null, string? setupType = null)
+    {
+        if (provider is not null) _provider = provider;
+        if (status is not null) _status = status;
+        if (testPack is not null) _testPack = testPack;
+        if (setupType is not null) _setupType = setupType;
+        return LoadAsync();
+    }
+
+    private void Open(SetupLibraryItemView item) { _selected = item; _preflight = null; _applied = null; _differences = null; _decisions = []; }
+
+    private async Task Run(Func<Task> action) { _busy = true; _error = null; try { await action(); } finally { _busy = false; } }
+
+    private Task PreflightAsync() => Run(async () =>
+    {
+        var result = await _api!.PreflightLibraryVersionAsync(_selected!.Id, null, EnvironmentId);
+        (_preflight, _error) = (result.Value, result.Error);
+        _applied = null;
+        await LoadAsync();
+    });
+
+    private Task ApplyAsync() => Run(async () =>
+    {
+        var result = await _api!.ApplyLibraryVersionAsync(_selected!.Id, null, EnvironmentId, _decisions);
+        (_applied, _error) = (result.Value, result.Error);
+        if (_applied is { Applied: false } blocked) _preflight = blocked.Preflight; else _preflight = null;
+        await LoadAsync();
+    });
+
+    private Task ExportAsync(SetupPackageFormat format) => Run(async () =>
+    {
+        var result = await _api!.ExportLibraryVersionAsync(_selected!.Id, null, format);
+        if (result.Value is { } export)
+            try { await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, format == SetupPackageFormat.Json ? "application/json" : "application/yaml"); _notice = $"Exported {export.FileName}."; }
+            catch (JSException) { _error = "The file could not be downloaded."; }
+        else _error = result.Error;
+    });
+
+    private Task NewVersionAsync() => Run(async () =>
+    {
+        var item = _selected!;
+        var result = await _api!.NewLibraryVersionAsync(item.Id, new SetupLibrarySaveRequest(item.Name, item.Description, EnvironmentId, item.SetupType,
+            item.SetupType == SetupScope.Environment ? null : item.Providers.FirstOrDefault(), TestPacks: item.TestPacks, ChangeSummary: $"From environment {EnvironmentId}"));
+        if (result.Value is { } updated) { _selected = updated; _notice = $"Saved v{updated.Versions[0].VersionNumber}; earlier versions are unchanged."; await LoadAsync(); } else _error = result.Error;
+    });
+
+    private Task DuplicateAsync() => Run(async () =>
+    {
+        var result = await _api!.DuplicateLibraryItemAsync(_selected!.Id);
+        if (result.Value is { } copy) { _notice = $"Duplicated as {copy.Name}."; await LoadAsync(); } else _error = result.Error;
+    });
+
+    private Task ArchiveAsync() => Run(async () =>
+    {
+        var result = await _api!.ArchiveLibraryItemAsync(_selected!.Id);
+        if (result.Error is null) { _notice = $"{_selected!.Name} archived (kept, hidden from active packages)."; _selected = null; await LoadAsync(); } else _error = result.Error;
+    });
+
+    private Task CompareAsync() => Run(async () =>
+    {
+        var result = await _api!.CompareLibraryVersionsAsync(_selected!.Id, _selected.Versions[1].VersionNumber, _selected.Versions[0].VersionNumber);
+        (_differences, _error) = (result.Value, result.Error);
+    });
+}

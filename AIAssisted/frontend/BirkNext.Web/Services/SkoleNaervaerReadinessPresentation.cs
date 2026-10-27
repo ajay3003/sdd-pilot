@@ -62,6 +62,35 @@ public static class SkoleNaervaerReadinessPresentation
             && AuthenticationParts.Any(key => all.FirstOrDefault(item => item.Key == key) is { } part && part.State != JourneyReadinessState.Ready);
     }
 
+    /// <summary>One light-mode row: a dimension, its state as text, where it comes from, and (when unresolved) the one owner that fixes it.</summary>
+    public sealed record LightRow(string Key, string Label, string State, string Tone, string Source, string? OwnerLabel, string? OwnerHref, string Detail);
+
+    /// <summary>
+    /// Rapportmottak light mode: Environment, Integration, Reporter, Child and Contract from the canonical owners' readiness rows, and the MU
+    /// receipt as downstream verification (never inferred from a submission). Each unresolved dimension names exactly one owner; the page edits
+    /// nothing. Manual vs automated readiness come from Target Environment → External Integrations (shown beside these rows).
+    /// </summary>
+    public static IReadOnlyList<LightRow> LightRows(IReadOnlyList<JourneyPrerequisite> rows, string? profileId)
+    {
+        JourneyPrerequisite? Row(string key) => rows.FirstOrDefault(row => row.Key == key);
+        bool Ready(params string[] keys) => keys.All(key => Row(key) is null or { State: JourneyReadinessState.Ready });
+        string First(params string[] keys) => keys.Select(Row).FirstOrDefault(row => row is { State: not JourneyReadinessState.Ready })?.Detail ?? "";
+        var external = profileId is null ? "/admin/system-settings?section=target-environments" : ExternalIntegrationPresentation.ExternalHref(profileId, "altinn");
+        // Not configured is Missing; configured but not usable yet (e.g. not enabled for active runs) is Partial — never collapsed.
+        LightRow Make(string key, string label, string source, string owner, string href, params string[] keys) => Ready(keys)
+            ? new(key, label, "Ready", "ok", source, null, null, "")
+            : new(key, label, keys.Select(Row).Any(row => row is { State: JourneyReadinessState.NotConfigured }) ? "Missing" : "Partial", "warn", source, owner, href, First(keys));
+        return
+        [
+            Make("environment", "Environment", "Target Environment → External Integrations", "Open External Integration", external, "altinn-environment", "altinn-app"),
+            Make("integration", "Integration", "Integration Quality Review", "Open IQR", profileId is null ? "/integration-quality-review" : IntegrationReviewPresentation.IntegrationsHref(profileId), "integration:report-intake"),
+            Make("reporter", "Reporter", "Test Data", "Open Test Data", "/test-data", "synthetic-reporter", "reporter-profile"),
+            Make("child", "Child", "Test Data", "Open Test Data", "/test-data", "synthetic-data"),
+            Make("contract", "Contract", "IQR / Source Analysis", "Open IQR", "/integration-quality-review?view=evidence", "submission-contract", "process-contract"),
+            new("mu-receipt", "MU receipt", "Not verified", "muted", "Runtime evidence", null, null, "A TT02 submission is not MU receipt; downstream receipt needs runtime evidence."),
+        ];
+    }
+
     /// <summary>Where an unresolved input is resolved: its owner, never the run page (which stores no copy).</summary>
     public static Action ActionFor(JourneyPrerequisite row, string? profileId) => row.Key switch
     {

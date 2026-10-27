@@ -1,0 +1,248 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Target Environment → External Integrations: the canonical environment-specific setup of external systems (provider instances). Light by
+   default — one card per system with the same five dimensions — and Advanced details on request. The Integration Catalog (Target Environment
+   → Integrations) keeps logical producer→consumer integrations; IQR reviews their evidence; this page owns the systems they run against.
+   Detect proposes systems from deterministic evidence and never saves; Add / Accept / Apply are explicit. *@
+<section class="ei" data-testid="ei" aria-labelledby="ei-title">
+    <header class="ei-head">
+        <h3 id="ei-title" class="ei-title">External Integrations</h3>
+        <div class="ei-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)">Add integration</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync">Detect integrations</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-import" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Import)">Import setup</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-export" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Export)">Export setup</button>
+            <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)">Setup Library</a>
+        </div>
+    </header>
+    @if (_error is { } error) { <p class="ei-banner ei-banner-error" role="alert" data-testid="ei-error">@error</p> }
+    @if (_notice is { } notice) { <p class="ei-banner" role="status" data-testid="ei-notice">@notice</p> }
+
+    @if (_view is null)
+    {
+        <p class="ei-muted" role="status" data-testid="ei-loading">@(_error is null ? "Loading external integrations…" : "External integrations are not available.")</p>
+    }
+    else
+    {
+        @if (_mode == Mode.Add)
+        {
+            var descriptor = _view.Providers.First(p => p.Type == _newProvider);
+            <section class="ei-add" data-testid="ei-add-form" aria-label="Add integration">
+                <div class="ei-form-row">
+                    <label>Name <input class="form-control" data-testid="ei-name" @bind="_newName" placeholder="e.g. Altinn – Skolenærvær" /></label>
+                    <label>External integration type
+                        <select class="form-select" data-testid="ei-provider" value="@_newProvider" @onchange="e => { _newProvider = Enum.Parse<ExternalProviderType>(e.Value!.ToString()!); _newSettings = []; }">
+                            @foreach (var provider in _view.Providers) { <option value="@provider.Type">@provider.DisplayName</option> }
+                        </select>
+                    </label>
+                    <label>Environment <input class="form-control" data-testid="ei-environment" @bind="_newEnvironment" placeholder="e.g. TT02, QA" /></label>
+                    <label class="ei-check"><input type="checkbox" @bind="_newEnabled" /> Enabled</label>
+                </div>
+                <p class="ei-muted" data-testid="ei-provider-description">@descriptor.Description</p>
+                <ProviderSettingsFields @key="_newProvider" Descriptor="descriptor" Values="_newSettings" Disabled="_busy" />
+                <button type="button" class="btn btn-primary btn-sm" data-testid="ei-create" disabled="@(_busy || string.IsNullOrWhiteSpace(_newName))" @onclick="CreateAsync">Save integration</button>
+            </section>
+        }
+        @if (_mode is Mode.Import or Mode.Export)
+        {
+            <SetupPackagePanel @key="_mode" EnvironmentId="@EnvironmentId" Import="@(_mode == Mode.Import)" Integrations="@_view.Integrations.Select(i => i.Integration).ToList()"
+                               Providers="_view.Providers" OnApplied="ReloadAsync" />
+        }
+
+        @if (_view.Proposals.Count > 0)
+        {
+            <section class="ei-proposals" data-testid="ei-proposals" aria-label="Detected integrations">
+                <h4 class="ei-h4">Detected integrations</h4>
+                @foreach (var proposal in _view.Proposals)
+                {
+                    <div class="ei-proposal" data-testid="ei-proposal" data-provider="@proposal.ProviderType">
+                        <strong>@proposal.Name</strong> · @ExternalIntegrationPresentation.ProviderLabel(proposal.ProviderType, _view.Providers)
+                        <span class="ei-muted">Detected from: @proposal.DetectedFrom · @proposal.Reason</span>
+                        @if (!proposal.Ambiguous)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-accept" disabled="@_busy" @onclick="() => AcceptAsync(proposal)">Accept detected integration</button>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+        @if (_view.Integrations.Count == 0)
+        {
+            <p class="ei-muted" data-testid="ei-empty">No external integrations in this environment yet. Detect integrations, import a setup, or add one.</p>
+        }
+        <div class="ei-cards">
+            @foreach (var item in _view.Integrations)
+            {
+                var integration = item.Integration;
+                var open = _open.Contains(integration.Id);
+                <article class="ei-card" data-testid="ei-card" data-provider="@integration.ProviderType" aria-label="@integration.Name">
+                    <header class="ei-card-head">
+                        <h4 class="ei-card-title">@integration.Name</h4>
+                        <span class="ei-muted">@ExternalIntegrationPresentation.ProviderLabel(integration.ProviderType, _view.Providers)@(integration.EnvironmentName is { } env ? $" · {env}" : "")@(integration.Enabled ? "" : " · disabled")</span>
+                    </header>
+                    <dl class="ei-dims" data-testid="ei-dims">
+                        @foreach (var dim in ExternalIntegrationPresentation.Dimensions(item.Summary))
+                        {
+                            <div data-key="@dim.Key"><dt>@dim.Label</dt><dd><span class="ei-pill ei-pill-@ExternalIntegrationPresentation.Tone(dim.State)" title="@dim.Reason">@ExternalIntegrationPresentation.Label(dim.State)</span></dd></div>
+                        }
+                    </dl>
+                    <div class="ei-card-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-review" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleOpen(integration.Id)">Review</button>
+                        @if (integration.ProviderType != ExternalProviderType.Altinn)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-detect-one" disabled="@_busy" @onclick="() => DetectOneAsync(integration.Id)">Detect settings</button>
+                        }
+                    </div>
+                    @if (open)
+                    {
+                        <div class="ei-review" data-testid="ei-review-body">
+                            @if (integration.ProviderType == ExternalProviderType.Altinn)
+                            {
+                                @* The Altinn provider's own component: application, browser vs unattended auth, session secret, observations. *@
+                                <AltinnEnvironmentPane EnvironmentId="@EnvironmentId" />
+                            }
+                            else
+                            {
+                                var descriptor = _view.Providers.First(p => p.Type == integration.ProviderType);
+                                var values = Editing(integration);
+                                <ProviderSettingsFields Descriptor="descriptor" Values="values" Disabled="_busy" />
+                                <div class="ei-card-actions">
+                                    <button type="button" class="btn btn-primary btn-sm" data-testid="ei-save" disabled="@_busy" @onclick="() => UpdateAsync(integration, values)">Save</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-delete" disabled="@_busy" @onclick="() => DeleteAsync(integration.Id)">Remove</button>
+                                </div>
+                                @if (descriptor.Fields.Any(field => field.Secret))
+                                {
+                                    <div class="ei-secret" data-testid="ei-secret-form">
+                                        <label>Add secret for this session <input type="password" class="form-control" data-testid="ei-secret" @bind="_secret" autocomplete="new-password" /></label>
+                                        <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-add-secret" disabled="@(_busy || string.IsNullOrEmpty(_secret))" @onclick="() => AddSecretAsync(integration.Id)">Add session secret</button>
+                                    </div>
+                                }
+                                @if (item.Detected)
+                                {
+                                    <ul class="ei-list" data-testid="ei-detected">
+                                        @foreach (var field in item.Fields.Where(f => f.Proposal is { Value: not null })) { <li>@field.Label: @field.Proposal!.Value <span class="ei-muted">· Detected · @field.Proposal.SourceLabel</span></li> }
+                                        @foreach (var note in item.Notes) { <li class="ei-muted">@note</li> }
+                                    </ul>
+                                }
+                            }
+                            <ReviewDisclosure Text="Advanced details" CollapseText="Hide advanced details" TestId="@($"ei-advanced-{integration.ProviderType}")" Class="disclosure-inline disclosure-small">
+                                <table class="ei-table" data-testid="ei-advanced">
+                                    <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">State</th><th scope="col">Source</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var field in item.Fields)
+                                        {
+                                            <tr data-key="@field.Key"><td>@field.Label</td><td class="ei-value">@(field.Value ?? "—")</td><td>@AltinnEnvironmentPresentation.StateLabel(field)</td><td>@field.SourceLabel</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                <p class="ei-muted">Id <code>@integration.Id</code> · updated @integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm") UTC</p>
+                            </ReviewDisclosure>
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    /// <summary>"altinn" opens the Altinn system's review (deep links from consumers such as Skolenærvær).</summary>
+    [Parameter] public string? Focus { get; set; }
+
+    private enum Mode { None, Add, Import, Export }
+    private IExternalIntegrationsApiService? _api;
+    private ExternalIntegrationsView? _view;
+    private Mode _mode;
+    private bool _busy;
+    private string? _error, _notice, _loadedFor, _secret;
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<string, string>> _edits = new(StringComparer.Ordinal);
+    private string? _newName, _newEnvironment;
+    private ExternalProviderType _newProvider = ExternalProviderType.Altinn;
+    private Dictionary<string, string> _newSettings = [];
+    private bool _newEnabled = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        _api = Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
+        if (_api is null) { _error = "External integrations are not available in this host."; return; }
+        await ReloadAsync();
+        if (string.Equals(Focus, "altinn", StringComparison.OrdinalIgnoreCase) && _view?.Integrations.FirstOrDefault(i => i.Integration.ProviderType == ExternalProviderType.Altinn) is { } altinn)
+            _open.Add(altinn.Integration.Id);
+        else if (string.Equals(Focus, "altinn", StringComparison.OrdinalIgnoreCase)) { _mode = Mode.Add; _newProvider = ExternalProviderType.Altinn; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_api is null) return;
+        var result = await _api.ListAsync(EnvironmentId);
+        if (result.Value is { } view) { _view = view with { Proposals = _view?.Proposals ?? [] }; _error = null; } else _error = result.Error;
+        _edits.Clear();
+    }
+
+    private void Toggle(Mode mode) => _mode = _mode == mode ? Mode.None : mode;
+    private void ToggleOpen(string id) { if (!_open.Remove(id)) _open.Add(id); }
+    private Dictionary<string, string> Editing(ExternalIntegration integration) =>
+        _edits.TryGetValue(integration.Id, out var values) ? values : _edits[integration.Id] = new(integration.Settings, StringComparer.Ordinal);
+
+    private async Task Run(Func<Task> action) { _busy = true; _error = null; try { await action(); } finally { _busy = false; } }
+
+    private Task DetectAsync() => Run(async () =>
+    {
+        var result = await _api!.DetectAsync(EnvironmentId);
+        if (result.Value is { } view) { _view = view; _notice = view.Proposals.Count == 0 ? "Nothing new detected. Nothing was saved." : $"{view.Proposals.Count} integration(s) detected. Nothing was saved: review and accept."; }
+        else _error = result.Error;
+    });
+
+    private Task DetectOneAsync(string id) => Run(async () =>
+    {
+        var result = await _api!.DetectOneAsync(EnvironmentId, id);
+        if (result.Value is { } one && _view is not null)
+        {
+            _view = _view with { Integrations = [.. _view.Integrations.Select(i => i.Integration.Id == id ? one : i)] };
+            _open.Add(id);
+            _notice = $"Settings detected: {ExternalIntegrationPresentation.DetectionLine(one.Detection)}. Nothing was saved.";
+        }
+        else _error = result.Error;
+    });
+
+    private Task CreateAsync() => Run(async () =>
+    {
+        var result = await _api!.SaveAsync(EnvironmentId, null, new ExternalIntegrationRequest(_newName!.Trim(), _newProvider, _newEnvironment, _newEnabled, new(_newSettings)));
+        if (result.Value is { } created) { _notice = $"{created.Integration.Name} saved."; _mode = Mode.None; _newName = null; _newSettings = []; await ReloadAsync(); _open.Add(created.Integration.Id); }
+        else _error = result.Error;
+    });
+
+    private Task AcceptAsync(ExternalIntegrationProposal proposal) => Run(async () =>
+    {
+        var result = await _api!.SaveAsync(EnvironmentId, null, new ExternalIntegrationRequest(proposal.Name, proposal.ProviderType, proposal.EnvironmentName, true, proposal.Settings));
+        if (result.Value is { } created) { _view = _view! with { Proposals = [.. _view.Proposals.Where(p => p != proposal)] }; await ReloadAsync(); _notice = $"{created.Integration.Name} accepted · review it."; _open.Add(created.Integration.Id); }
+        else _error = result.Error;
+    });
+
+    private Task UpdateAsync(ExternalIntegration integration, Dictionary<string, string> values) => Run(async () =>
+    {
+        var result = await _api!.SaveAsync(EnvironmentId, integration.Id, new ExternalIntegrationRequest(integration.Name, integration.ProviderType, integration.EnvironmentName, integration.Enabled, new(values)));
+        if (result.Value is not null) { _notice = $"{integration.Name} saved."; await ReloadAsync(); } else _error = result.Error;
+    });
+
+    private Task DeleteAsync(string id) => Run(async () =>
+    {
+        var result = await _api!.DeleteAsync(EnvironmentId, id);
+        if (result.Error is null) { _open.Remove(id); await ReloadAsync(); } else _error = result.Error;
+    });
+
+    private Task AddSecretAsync(string id) => Run(async () =>
+    {
+        var secret = _secret ?? "";
+        _secret = null;
+        var result = await _api!.AddSecretAsync(EnvironmentId, id, secret);
+        if (result.Error is null) { _notice = "Secret available for this session."; await ReloadAsync(); _open.Add(id); } else _error = result.Error;
+    });
+}

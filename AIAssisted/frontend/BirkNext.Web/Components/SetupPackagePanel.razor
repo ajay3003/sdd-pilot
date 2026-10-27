@@ -1,0 +1,206 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject IExternalIntegrationsApiService Api
+@inject IJSRuntime JS
+
+@* Scope-aware, provider-aware setup import/export — one pipeline for a file and a Setup Library package:
+   scope → provider → (integration) → package → preflight (no write) → fix blockers at their owner → Rerun preflight → Apply (all or nothing).
+   Export is sanitized by each provider: no secret, raw identity, trust or runtime evidence. *@
+<section class="spp" data-testid="spp" data-mode="@(Import ? "import" : "export")" aria-label="@(Import ? "Import setup" : "Export setup")">
+    <h4 class="spp-title">@(Import ? "Import setup" : "Export setup")</h4>
+    <div class="spp-selectors">
+        <label>Setup scope
+            <select class="form-select" data-testid="spp-scope" value="@_scope" @onchange="e => { _scope = Enum.Parse<SetupScope>(e.Value!.ToString()!); Reset(); }">
+                @foreach (var scope in Enum.GetValues<SetupScope>()) { <option value="@scope">@ExternalIntegrationPresentation.ScopeLabel(scope)</option> }
+            </select>
+        </label>
+        @if (_scope != SetupScope.Environment)
+        {
+            <label>External integration type
+                <select class="form-select" data-testid="spp-provider" value="@_provider" @onchange="e => { _provider = Enum.Parse<ExternalProviderType>(e.Value!.ToString()!); _integrationId = null; Reset(); }">
+                    @foreach (var provider in Providers) { <option value="@provider.Type">@provider.DisplayName</option> }
+                </select>
+            </label>
+        }
+        @if (_scope == SetupScope.Integration)
+        {
+            <label>Integration
+                <select class="form-select" data-testid="spp-integration" value="@(_integrationId ?? "")" @onchange="e => { _integrationId = e.Value?.ToString() is { Length: > 0 } v ? v : null; Reset(); }">
+                    <option value="">—</option>
+                    @foreach (var integration in Integrations.Where(i => i.ProviderType == _provider)) { <option value="@integration.Id">@integration.Name</option> }
+                </select>
+            </label>
+        }
+    </div>
+
+    @if (!Import)
+    {
+        <div class="spp-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="spp-export-yaml" disabled="@(_busy || !Selectable)" @onclick="() => ExportAsync(SetupPackageFormat.Yaml)">Export YAML</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="spp-export-json" disabled="@(_busy || !Selectable)" @onclick="() => ExportAsync(SetupPackageFormat.Json)">Export JSON</button>
+        </div>
+        <div class="spp-save">
+            <label>Save to Setup Library as <input class="form-control" data-testid="spp-library-name" @bind="_libraryName" placeholder="e.g. Skolenærvær TT02" /></label>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="spp-save-library" disabled="@(_busy || !Selectable || string.IsNullOrWhiteSpace(_libraryName))" @onclick="SaveToLibraryAsync">Save to Setup Library</button>
+        </div>
+        @if (_export is { } export)
+        {
+            <div class="spp-export" data-testid="spp-export-result">
+                <p>Exported <code>@export.FileName</code> with @export.Dependencies.Count(d => d.Required) required and @export.Dependencies.Count(d => !d.Required) optional references.</p>
+                <p class="spp-muted">Excluded:</p>
+                <ul class="spp-list" data-testid="spp-excluded">@foreach (var item in export.Excluded) { <li>@item</li> }</ul>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="spp-source">
+            <label>Package file (YAML or JSON)
+                <InputFile accept=".yaml,.yml,.json" OnChange="ReadFileAsync" data-testid="spp-file" disabled="@_busy" />
+            </label>
+            @if (_library.Count > 0)
+            {
+                <label>or a Setup Library package
+                    <select class="form-select" data-testid="spp-library" @onchange="e => ChooseLibrary(e.Value?.ToString())">
+                        <option value="">—</option>
+                        @foreach (var item in _library) { <option value="@item.Id">@item.Name · v@(item.Versions.FirstOrDefault()?.VersionNumber)</option> }
+                    </select>
+                </label>
+            }
+        </div>
+        @if (_content is not null || _libraryId is not null)
+        {
+            <div class="spp-actions">
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="spp-preflight" disabled="@_busy" @onclick="PreflightAsync">@(_preflight is null ? "Run preflight" : "Rerun preflight")</button>
+                @if (_content is not null)
+                {
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="spp-save-imported" disabled="@(_busy || _preflight is not { Valid: true })" @onclick="SaveImportedAsync">Save to Setup Library</button>
+                }
+            </div>
+        }
+        @if (_preflight is { } preflight)
+        {
+            <SetupPreflightView Result="preflight" Decisions="_decisions" DecisionsChanged="StateHasChanged" />
+            <button type="button" class="btn btn-primary btn-sm" data-testid="spp-apply" disabled="@(_busy || !preflight.CanApply || !SetupPreflightView.AllDecided(preflight, _decisions))" @onclick="ApplyAsync">Apply</button>
+        }
+        @if (_applied is { } applied)
+        {
+            <p class="spp-result" role="status" data-testid="spp-apply-result" data-applied="@(applied.Applied ? "true" : "false")">@applied.Outcome</p>
+        }
+    }
+    @if (_error is { } error) { <p class="spp-error" role="alert" data-testid="spp-error">@error</p> }
+    @if (_notice is { } notice) { <p class="spp-muted" role="status" data-testid="spp-notice">@notice</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter] public bool Import { get; set; }
+    [Parameter] public IReadOnlyList<ExternalIntegration> Integrations { get; set; } = [];
+    [Parameter] public IReadOnlyList<ExternalProviderDescriptor> Providers { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> TestPacks { get; set; } = [];
+    [Parameter] public EventCallback OnApplied { get; set; }
+
+    private SetupScope _scope = SetupScope.Environment;
+    private ExternalProviderType _provider = ExternalProviderType.Altinn;
+    private string? _integrationId, _content, _fileName, _error, _notice, _libraryName;
+    private Guid? _libraryId;
+    private bool _busy;
+    private SetupPackageExport? _export;
+    private SetupPreflightResult? _preflight;
+    private SetupApplyPackageResult? _applied;
+    private Dictionary<string, bool> _decisions = [];
+    private IReadOnlyList<SetupLibraryItemView> _library = [];
+
+    private bool Selectable => _scope != SetupScope.Integration || _integrationId is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Import && (await Api.LibraryAsync()).Value is { } items) _library = items;
+    }
+
+    private void Reset() { _preflight = null; _applied = null; _export = null; _decisions = []; _error = null; }
+
+    private void ChooseLibrary(string? id)
+    {
+        _libraryId = Guid.TryParse(id, out var parsed) ? parsed : null;
+        _content = null; _fileName = null;
+        Reset();
+    }
+
+    private async Task ReadFileAsync(InputFileChangeEventArgs args)
+    {
+        Reset(); _libraryId = null;
+        if (args.File.Size > 256 * 1024) { _error = "A setup package is a small text file (at most 256 KB)."; return; }
+        using var reader = new StreamReader(args.File.OpenReadStream(256 * 1024));
+        _content = await reader.ReadToEndAsync();
+        _fileName = args.File.Name;
+        _notice = $"Read {_fileName}. Nothing is applied until you run preflight and select Apply.";
+    }
+
+    private async Task PreflightAsync()
+    {
+        _busy = true; _applied = null; _error = null;
+        try
+        {
+            var result = _libraryId is { } id ? await Api.PreflightLibraryVersionAsync(id, null, EnvironmentId)
+                : await Api.PreflightAsync(EnvironmentId, new SetupPreflightRequest(_content!, _fileName, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId));
+            (_preflight, _error) = (result.Value, result.Error);
+            foreach (var key in _decisions.Keys.Where(key => _preflight?.Changes.All(change => change.Id != key) ?? true).ToList()) _decisions.Remove(key);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ApplyAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = _libraryId is { } id ? await Api.ApplyLibraryVersionAsync(id, null, EnvironmentId, _decisions)
+                : await Api.ApplyAsync(EnvironmentId, new SetupApplyPackageRequest(_content!, _fileName, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId, _decisions));
+            (_applied, _error) = (result.Value, result.Error);
+            if (_applied is { Applied: true }) { _preflight = null; await OnApplied.InvokeAsync(); }
+            else if (_applied is { } blocked) _preflight = blocked.Preflight;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ExportAsync(SetupPackageFormat format)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Api.ExportAsync(EnvironmentId, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId, format, TestPacks);
+            (_export, _error) = (result.Value, result.Error);
+            if (_export is { } export)
+                await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, format == SetupPackageFormat.Json ? "application/json" : "application/yaml");
+        }
+        catch (JSException) { _error = "The file could not be downloaded."; }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveToLibraryAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = await Api.SaveToLibraryAsync(new SetupLibrarySaveRequest(_libraryName!.Trim(), null, EnvironmentId, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId, TestPacks: TestPacks));
+            _error = result.Error;
+            _notice = result.Value is { } item ? $"Saved to the Setup Library as {item.Name} v1 (sanitized)." : null;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveImportedAsync()
+    {
+        _busy = true;
+        try
+        {
+            var name = _preflight?.PackageName ?? _fileName ?? "Imported setup";
+            var result = await Api.SaveToLibraryAsync(new SetupLibrarySaveRequest(name, null, Content: _content));
+            _error = result.Error;
+            _notice = result.Value is { } item ? $"Saved to the Setup Library as {item.Name} v1. Nothing was applied." : null;
+        }
+        finally { _busy = false; }
+    }
+}

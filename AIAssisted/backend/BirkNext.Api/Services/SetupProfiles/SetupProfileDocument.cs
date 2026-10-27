@@ -215,6 +215,30 @@ public static class SetupProfileSchema
         }
     }
 
+    /// <summary>
+    /// The profile safety rules for one key, reused by any setup package schema: a secret, identity or trust/verification key is rejected
+    /// with its reason (the value is never echoed). Null when the key itself is acceptable.
+    /// </summary>
+    public static SetupProfileIssue? KeyIssue(string key, string path)
+    {
+        var normalized = Normalize(key);
+        if (SecretWords.Any(word => normalized == word || normalized.EndsWith(word, StringComparison.Ordinal) && word.Length >= 5))
+            return new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported because secrets are not allowed in setup packages. A secret is added for the session only.");
+        if (IdentityWords.Contains(normalized))
+            return new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported: personal identifiers are never part of a setup package (use approved Test Data aliases).");
+        if (TrustWords.Contains(normalized))
+            return new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported: trust, approval, confirmation and verification state is decided by people and evidence, never by a package.");
+        return null;
+    }
+
+    /// <summary>The profile value rules (secret-looking or identifier-looking values are rejected whatever the key), reused by setup packages.</summary>
+    public static SetupProfileIssue? ValueIssue(SetupNode node)
+    {
+        var issues = new List<SetupProfileIssue>();
+        CheckValue(node, issues);
+        return issues.FirstOrDefault();
+    }
+
     private static readonly Regex Jwt = new(@"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}", RegexOptions.CultureInvariant);
     private static readonly Regex NationalId = new(@"(?<!\d)\d{11}(?!\d)", RegexOptions.CultureInvariant);
 
