@@ -89,11 +89,15 @@
             @switch (View)
             {
                 case "Forretning":
-                    <p class="sr-note">The message hierarchy as the schema defines it, without XSD syntax. Descriptions are the schema's own documentation.</p>
+                    <p class="sr-note">The message as readable sections: each group, whether it is required, optional or repeating, its key rules in plain language and the schema's own documentation. Types and origin are in Effective structure.</p>
                     @TreeToolbar
                     <article class="sr-business" data-testid="sr-business" @key="_treeGeneration">
-                        <h4>@root.Name</h4>
-                        @if (P.Documentation(root) is { } rootDoc) { @DocBlock(rootDoc.Text, "Show full description") }
+                        <header class="sr-business-root">
+                            <span class="sr-kicker">Message</span>
+                            <h4>@root.Name</h4>
+                            <span class="sr-count">@S.Count(root.Children.Count, "top-level section or field", "top-level sections and fields")</span>
+                            @if (P.Documentation(root) is { } rootDoc) { @DocBlock(rootDoc.Text, "Show full description") }
+                        </header>
                         @BusinessTree((root, root.Name, 0))
                     </article>
                     break;
@@ -108,7 +112,7 @@
                                     var member = field.Member;
                                     <tr data-path="@field.Path">
                                         <th scope="row"><span class="sr-name">@member.Name</span><small class="sr-sub sr-mono">@SchemaText.Breakable(field.Path)</small></th>
-                                        <td>@P.CardinalityLabel(member)<small class="sr-sub sr-mono">@P.ExactCardinality(member)</small></td>
+                                        <td>@Badges(member)<small class="sr-sub sr-mono">@P.ExactCardinality(member)</small></td>
                                         <td>@P.TypeLabel(member)<small class="sr-sub sr-mono">@P.RawType(member)</small></td>
                                         <td>@RulesCell(member)</td>
                                         <td>@if (P.Documentation(member) is { } doc) { @if (doc.FromType) { <small class="sr-sub">From the type:</small> }@DocBlock(doc.Text, "Show full documentation") } else { <span class="sr-muted">—</span> }</td>
@@ -217,27 +221,42 @@
     private string SourceLabel => Package.Provenance is { SourceSnapshotId: { } snapshot } provenance
         ? $"Source Analysis snapshot {snapshot.ToString("D")[..8]} ({provenance.SourceArchiveName})" : "Local import";
 
+    /// <summary>Business structure: groups are section cards, fields are readable rows with occurrence chips and their key rules in plain words.
+    /// No XSD types or origin here — those belong to Effective structure.</summary>
     private RenderFragment<(EffectiveMember Member, string Path, int Depth)> BusinessTree => context =>
-        @<ul class="sr-business-list">
+        @<ul class="sr-business-list sr-depth-@Math.Min(context.Depth, 4)">
             @foreach (var child in context.Member.Children.Take(context.Depth > 30 ? 0 : 500).Where(c => SchemaTreeFilter.Keep(c, _filter, _treeSearch)))
             {
-                <li data-depth="@context.Depth">
+                <li data-depth="@context.Depth" class="@(child.Children.Count > 0 ? "sr-section" : "sr-field")">
                     @if (child.Children.Count > 0)
                     {
-                        <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
-                            <summary><span class="sr-name">@child.Name</span> <small class="sr-occ" data-testid="sr-occurrence">@P.CardinalityLabel(child)</small> <small class="sr-count">@S.Count(child.Children.Count, "field", "fields")</small></summary>
+                        <details class="sr-node sr-section-card" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
+                            <summary><span class="sr-name">@child.Name</span> @Badges(child) <small class="sr-count">@S.Count(child.Children.Count, "field", "fields")</small></summary>
                             @if (child.Documentation is { Length: > 0 } doc) { @DocBlock(P.Normalize(doc), "Show full description") }
                             @BusinessTree((child, context.Path + "/" + child.Name, context.Depth + 1))
                         </details>
                     }
                     else
                     {
-                        <span class="sr-name">@child.Name</span> <small class="sr-occ" data-testid="sr-occurrence">@P.CardinalityLabel(child)</small>
+                        <div class="sr-field-row">
+                            <span class="sr-name">@child.Name</span> @Badges(child)
+                            @if (SchemaStudioVisuals.PlainRules(child) is { Count: > 0 } rules) { <span class="sr-plain-rules" data-testid="sr-plain-rules">@string.Join(" · ", rules)</span> }
+                        </div>
                         @if (child.Documentation is { Length: > 0 } doc) { @DocBlock(P.Normalize(doc), "Show full description") }
                     }
                 </li>
             }
         </ul>;
+
+    /// <summary>Occurrence as chips. The first chip carries the exact plain-language occurrence ("Optional, repeating").</summary>
+    private static RenderFragment Badges(EffectiveMember member) => __builder =>
+    {
+        var chips = SchemaStudioVisuals.OccurrenceChips(member);
+        <span class="sr-chips">
+            <span class="sr-chip sr-chip-@chips[0].Tone" data-testid="sr-occurrence">@P.CardinalityLabel(member)</span>
+            @foreach (var chip in chips.Skip(1).Where(c => c.Tone != "choice" || !P.CardinalityLabel(member).Contains("xs:choice"))) { <span class="sr-chip sr-chip-@chip.Tone">@chip.Label</span> }
+        </span>
+    };
 
     private RenderFragment StructureTree((EffectiveMember Member, int Depth) context) =>
         @<ul>

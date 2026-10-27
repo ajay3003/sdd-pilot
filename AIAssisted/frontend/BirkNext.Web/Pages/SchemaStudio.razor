@@ -107,6 +107,8 @@
                         <span aria-hidden="true">·</span> <span data-testid="ss-resolution">@SchemaStudioPresentation.ResolutionLine(package)</span>
                         <span aria-hidden="true">·</span> <span data-testid="ss-source-kind">@SourceSummary(package)</span>
                     </p>
+                    @{ var origin = SchemaStudioVisuals.Origin(package, SavedReference(package) is not null); }
+                    <p class="ss-origin" data-testid="ss-evidence-origin"><span class="ss-chip ss-chip-@origin.Tone" data-testid="ss-evidence-origin-label">@origin.Label</span> <span class="ss-muted">@origin.Detail</span></p>
                     <p class="ss-scope-line" data-testid="ss-validity-scope">@(package.Validation == "Valid" ? SchemaStudioPresentation.ValidityScope : "Schema validation reported problems; see the details below. Business rules and runtime integration behavior are not verified here.")</p>
                     <dl class="ss-verification" data-testid="ss-verification">
                         <div><dt>Verified here</dt><dd data-testid="ss-verified">@string.Join(" · ", SchemaStudioPresentation.VerifiedHere)</dd></div>
@@ -125,18 +127,20 @@
                     }
                 </div>
                 <div class="ss-package-actions" data-testid="ss-package-actions">
-                    <button type="button" class="btn-primary" data-testid="ss-save" aria-describedby="ss-save-help" @onclick="SaveCurrentSchema">Save analysis</button>
+                    @* Imported analysis is already usable; saving only adds a workspace entry, so it is a secondary action there. *@
+                    <button type="button" class="@(package.Provenance is { SourceSnapshotId: not null } ? "btn-secondary" : "btn-primary")" data-testid="ss-save" aria-describedby="ss-save-help" @onclick="SaveCurrentSchema">@SchemaStudioVisuals.SaveLabel</button>
                     <button type="button" class="btn-secondary" data-testid="ss-change-source" aria-expanded="@(_changeSourceOpen ? "true" : "false")" @onclick="() => { _changeSourceOpen = !_changeSourceOpen; _importOpen = false; }">Change source</button>
                     <button type="button" class="btn-secondary" data-testid="ss-import-another" aria-expanded="@(_importOpen ? "true" : "false")" @onclick="() => { _importOpen = !_importOpen; _changeSourceOpen = false; }">Import another package</button>
                     <ExportMenu Label="More" TestId="ss-more" Options="@MoreOptions(package)" />
                 </div>
-                <p class="ss-muted ss-save-help" id="ss-save-help" data-testid="ss-save-help">Save analysis keeps this package and its source selection in the workspace. It never changes XSD files; drafts and generation profiles are saved separately.</p>
+                <p class="ss-muted ss-save-help" id="ss-save-help" data-testid="ss-save-help">@SchemaStudioVisuals.SaveHelp(package) Saving never changes XSD files.</p>
                 @if (!string.IsNullOrWhiteSpace(_artifactStatus)) { <p class="ss-saved-status" role="status" data-testid="ss-saved-status">@_artifactStatus</p> }
                 @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
             </div>
             @if (_changeSourceOpen) { @SourceSetup(true) }
             @if (_importOpen) { @ImportSetup(true) }
             <div class="ss-secondary-row">
+                @SnapshotHistory(package)
                 @SavedAnalyses(true)
                 <ReviewDisclosure Text="@($"Source provenance · {SourceName(package)}")" CollapseText="Hide source provenance" TestId="ss-provenance" Class="disclosure-small">
                     <dl class="ss-provenance-facts" data-testid="ss-provenance-facts">
@@ -268,7 +272,10 @@
                     @if (package.Files.Count == 1 && package.Files[0].Links.Count == 0)
                     {
                         @* One XSD without imports or includes: a relationship graph would be one lonely node. *@
-                        <p class="ss-muted" data-testid="ss-dependencies-single">This package contains one XSD with no imports or includes, so there is no dependency graph to show.</p>
+                        <div class="ss-info-state" role="status" data-testid="ss-dependencies-single">
+                            <p><strong>@SchemaStudioVisuals.DependenciesEmpty(package)!.Value.Headline</strong></p>
+                            <p>This package contains one XSD with no imports or includes, so there is no dependency graph to show.</p>
+                        </div>
                         break;
                     }
                     <details class="ss-section-details" data-testid="ss-graph-disclosure"><summary>View relationship graph</summary>
@@ -292,18 +299,22 @@
                     </details>
                     break;
                 case "Schema Tree":
-                    <div class="ss-tree-toolbar"><button type="button" class="btn-secondary ss-compact" data-testid="ss-tree-expand" @onclick="() => SetTreeExpanded(true)">Expand all</button><button type="button" class="btn-secondary ss-compact" data-testid="ss-tree-collapse" @onclick="() => SetTreeExpanded(false)">Collapse all</button></div>
-                    <div @key="_treeGeneration" data-testid="ss-schema-tree">
+                    <div class="ss-tree-toolbar"><button type="button" class="btn-secondary ss-compact" data-testid="ss-tree-expand" @onclick="() => SetTreeExpanded(true)">Expand all</button><button type="button" class="btn-secondary ss-compact" data-testid="ss-tree-collapse" @onclick="() => SetTreeExpanded(false)">Collapse all</button>
+                        <label class="ss-check"><input type="checkbox" @bind="_treeCompact" data-testid="ss-tree-compact" /> Compact rows</label></div>
+                    <div @key="_treeGeneration" data-testid="ss-schema-tree" class="ss-explorer @(_treeCompact ? "is-compact" : "")">
                     @foreach (var (f, index) in package.Files.Select((f, i) => (f, i)))
                     {
-                        <details class="ss-file-tree" open="@(_treeExpanded ?? index == 0)">
-                            <summary><strong title="@f.Name">@SchemaStudioPresentation.FileName(f.Name)</strong> <small class="ss-inline ss-muted">@(f.TargetNamespace ?? "no target namespace") · @SchemaStudioPresentation.Count(f.Declarations.Count, "reusable definition", "reusable definitions")</small></summary>
-                            <ul class="ss-tree">
+                        <details class="ss-file-tree ss-file-card" open="@(_treeExpanded ?? index == 0)">
+                            <summary><span class="ss-file-badge" aria-hidden="true">XSD</span><strong title="@f.Name">@SchemaStudioPresentation.FileName(f.Name)</strong> <small class="ss-inline ss-muted">@(f.TargetNamespace ?? "no target namespace") · @SchemaStudioPresentation.Count(f.Declarations.Count, "reusable definition", "reusable definitions")</small></summary>
+                            <ul class="ss-tree ss-explorer-list">
                             @foreach (var d in f.Declarations)
                             {
-                                <li data-testid="ss-tree-node" data-name="@d.Name">
-                                    <details class="ss-node" open="@(_treeExpanded ?? false)">
-                                        <summary><strong>@d.Name</strong> <span class="ss-meaning-label" data-testid="ss-tree-meaning">@SchemaStudioPresentation.DeclarationMeaning(d)</span> <span class="ss-kind">@SchemaStudioPresentation.KindLabel(d.Kind)</span>@if (d.Facets.Count > 0) { <small class="ss-inline ss-muted"> · @SchemaStudioPresentation.RuleSummary(d)</small> }</summary>
+                                var chips = SchemaStudioVisuals.DeclarationChips(d, UsageCount(package, d.Name));
+                                <li data-testid="ss-tree-node" data-name="@d.Name" class="ss-explorer-item ss-explorer-@d.Kind">
+                                    <details class="ss-node ss-def-card" open="@(_treeExpanded ?? false)">
+                                        <summary><strong class="ss-def-name">@d.Name</strong> <span class="ss-meaning-label" data-testid="ss-tree-meaning">@SchemaStudioPresentation.DeclarationMeaning(d)</span>
+                                            <span class="ss-chips" data-testid="ss-tree-chips"><span class="ss-kind ss-chip ss-chip-@chips[0].Tone">@SchemaStudioPresentation.KindLabel(d.Kind)</span>@foreach (var chip in chips.Skip(1)) { <span class="ss-chip ss-chip-@chip.Tone">@chip.Label</span> }</span>
+                                            @if (d.Facets.Count > 0) { <small class="ss-inline ss-muted ss-def-rules">@SchemaStudioPresentation.RuleSummary(d)</small> }</summary>
                                         @if (d.Documentation is not null) { <p class="ss-doc">@SchemaReadablePresentation.Normalize(d.Documentation)</p> }
                                         @if (d.Children.Count > 0)
                                         {
@@ -367,6 +378,7 @@
                         <thead><tr><th class="ss-col-name">Type</th><th class="ss-col-compact">Meaning</th><th class="ss-col-compact">Base</th><th class="ss-col-flex">Rules</th><th class="ss-col-compact">Usage</th></tr></thead>
                         <tbody>@foreach (var (f, d) in types) {
                             <tr data-testid="ss-type-row" data-name="@d.Name"><td><strong>@d.Name</strong>
+                                    <span class="ss-chips ss-type-chips">@foreach (var chip in SchemaStudioVisuals.DeclarationChips(d, UsageCount(package, d.Name)).Where(c => c.Tone is not ("usage" or "muted"))) { <span class="ss-chip ss-chip-@chip.Tone">@chip.Label</span> }</span>
                                     @if (d.Documentation is not null)
                                     {
                                         var (preview, truncated) = SchemaStudioPresentation.DocumentationPreview(d.Documentation);
@@ -388,9 +400,11 @@
                     }
                     @if (package.References.Count == 0)
                     {
-                        <div class="empty-state empty-state-dashed empty-state-compact" data-testid="ss-references-empty">
+                        var referencesEmpty = SchemaStudioVisuals.ReferencesEmpty(package);
+                        <div class="ss-info-state" role="status" data-testid="ss-references-empty">
                             <p><strong>Cross-file references: none</strong></p>
-                            <p>@(package.Files.Count == 1 ? "This package contains one XSD file, so there are no references between schema files." : "No references were resolved between the imported schema files.")</p>
+                            <p>@referencesEmpty.Detail</p>
+                            <p class="ss-muted">This is a property of the package, not a problem. Definitions declared and used within one file are listed in Schema tree.</p>
                         </div>
                     }
                     else
@@ -405,10 +419,11 @@
                     <section class="ss-rule-summary" aria-labelledby="ss-rules-title" data-testid="ss-constraint-summary">
                         <h3 id="ss-rules-title" class="ss-section-title">Schema rules</h3>
                         <p data-testid="ss-constraint-total"><strong>@SchemaStudioPresentation.Count(constraintRows.Count, "rule entry", "rule entries") detected</strong></p>
-                        <dl class="ss-stats ss-stats-compact">@foreach (var rule in SchemaStudioPresentation.RuleCounts(constraintRows.Select(r => r.Category))) { <div data-testid="ss-rule-category" data-category="@rule.Category"><dt>@SchemaStudioPresentation.SummaryLabel(rule.Category)</dt><dd>@rule.Count</dd></div> }</dl>
+                        <dl class="ss-stats ss-stats-compact ss-rule-cards">@foreach (var rule in SchemaStudioPresentation.RuleCounts(constraintRows.Select(r => r.Category))) { var category = rule.Category; <div data-testid="ss-rule-category" data-category="@category" class="ss-rule-card ss-rule-card-@category.ToLowerInvariant() @(_constraintFilter == category ? "is-selected" : "")"><dt><button type="button" class="ss-rule-card-button" aria-pressed="@(_constraintFilter == category ? "true" : "false")" @onclick="() => DrillConstraints(category)">@SchemaStudioPresentation.SummaryLabel(category)</button></dt><dd>@rule.Count</dd></div> }</dl>
+                        <p class="ss-muted">Choose a rule type to list the matching fields and types.</p>
                         <p class="ss-muted" data-testid="ss-constraint-count-note">Allowed-value entries count each allowed value once (one field with 9 allowed values counts 9). The other counts are one per rule.</p>
                     </section>
-                    <ReviewDisclosure Text="@($"View all rules ({constraintRows.Count})")" CollapseText="Hide rules" TestId="ss-constraint-list" Class="disclosure-small">
+                    <ReviewDisclosure Text="@($"View all rules ({constraintRows.Count})")" CollapseText="Hide rules" TestId="ss-constraint-list" Class="disclosure-small" @bind-Expanded="_constraintListOpen">
                         <div class="ss-rule-toolbar">
                             <label class="ss-field">Rule type <select @bind="_constraintFilter" data-testid="ss-constraint-filter"><option value="">All rules</option>@foreach (var category in constraintRows.Select(r => r.Category).Distinct().Order()) { <option value="@category">@SchemaStudioPresentation.CategoryLabel(category)</option> }</select></label>
                             <label class="ss-field">Search rules <input type="search" @bind="_constraintSearch" @bind:event="oninput" data-testid="ss-constraint-search" /></label>
@@ -422,6 +437,7 @@
                 case "Namespaces":
                     var namespaceGroups = package.Files.GroupBy(f => f.TargetNamespace ?? "(no target namespace)").ToList();
                     <p class="ss-muted" role="status" data-testid="ss-namespace-count">@SchemaStudioPresentation.Count(namespaceGroups.Count, "namespace", "namespaces") in this schema package</p>
+                    @if (SchemaStudioVisuals.NamespaceNote(package) is { } namespaceNote) { <p class="ss-info-state" data-testid="ss-namespace-single">@namespaceNote</p> }
                     <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Namespaces"><table class="ss-table ss-table-compact" data-testid="ss-namespaces">
                         <thead><tr><th class="ss-col-name">Namespace</th><th class="ss-col-file">Declared in</th><th class="ss-col-compact">Reusable definitions</th><th class="ss-col-file">Imported by</th><th class="ss-col-compact">Imports/includes</th></tr></thead>
                         <tbody>
@@ -587,7 +603,7 @@
                     var meaningfulRuns = testRuns.Where(r => r.Results.Count > 0).ToArray();
                     var emptyRuns = testRuns.Length - meaningfulRuns.Length;
                     <h3 class="ss-section-title">Generated schema tests</h3>
-                    <p class="ss-muted" data-testid="ss-test-scope">@SchemaStudioPresentation.TestScope</p>
+                    <p class="ss-scope-banner" data-testid="ss-test-scope"><strong>Schema-derived local cases.</strong> @SchemaStudioPresentation.TestScope</p>
                     @if (package.GeneratedTests.Count == 0)
                     {
                         <div class="empty-state empty-state-dashed empty-state-compact" data-testid="ss-tests-empty">
@@ -604,6 +620,13 @@
                         var coverage = SchemaTestDesign.Coverage(package, _testResults);
                         var testProfile = SelectedProfile();
                         var selection = RunSelection(package);
+                        <section class="ss-test-overview" aria-label="Test run summary" data-testid="ss-test-overview">
+                            <div class="ss-overview-tile"><span class="ss-overview-label">Cases run</span><strong data-testid="ss-overview-run">@coverage.Sum(c => c.Executed) of @package.GeneratedTests.Count</strong></div>
+                            <div class="ss-overview-tile"><span class="ss-overview-label">Result</span><span><span class="ss-chip ss-chip-pass" data-testid="ss-overview-passed">@coverage.Sum(c => c.Passed) passed</span> <span class="ss-chip @(coverage.Sum(c => c.Failed) > 0 ? "ss-chip-fail" : "ss-chip-neutral")" data-testid="ss-overview-failed">@coverage.Sum(c => c.Failed) failed</span></span></div>
+                            <div class="ss-overview-tile"><span class="ss-overview-label">Rule categories covered</span><strong data-testid="ss-overview-families">@coverage.Count(c => c.Executed > 0) of @coverage.Count(c => c.Discovered > 0)</strong></div>
+                            <div class="ss-overview-tile"><span class="ss-overview-label">Source schema files</span><strong data-testid="ss-overview-files">@package.Files.Count</strong></div>
+                            <div class="ss-overview-tile ss-overview-wide"><span class="ss-overview-label">Validator mismatch policy</span><span data-testid="ss-overview-policy">The XSD is the oracle. A valid case the local validator rejects is a generator defect candidate; an invalid case it accepts means the mutation missed its rule. Neither is a schema or application defect.</span></div>
+                        </section>
                         <section class="ss-card ss-coverage" aria-labelledby="ss-coverage-title" data-testid="ss-coverage-summary">
                             <h4 id="ss-coverage-title">Schema test coverage</h4>
                             <dl class="ss-stats ss-stats-compact" data-testid="ss-test-candidates">
@@ -1155,7 +1178,7 @@
     {
         var saved = SavedPackages?.Packages.Where(p => p.ProjectScope == ProjectScope()).ToArray() ?? [];
         RenderFragment list = @<div>
-            <p>Save a package to this BirkNext workspace to reopen it later. Source Analysis packages keep an exact snapshot reference instead of copying the XSD files.</p>
+            <p>Packages saved to this workspace, to reopen later. Source Analysis packages keep an exact snapshot reference instead of copying the XSD files; their analysis is usable without saving.</p>
             @if (saved.Length == 0) { <p class="ss-empty">No saved schema analyses in this workspace.</p> }
             else
             {
@@ -1252,6 +1275,56 @@
     private string _xmlArtifactStatus = "", _xmlArtifactError = "";
     private string _graphMode = "Files + namespaces";
     private IReadOnlyList<SourceSchemaSnapshotSummary> _sourceSnapshots = [];
+    private bool _treeCompact;
+    private bool _constraintListOpen;
+    private bool _showAllSnapshots;
+    private const int SnapshotHistorySize = 6;
+
+    /// <summary>Opens the rules list filtered to one category (choosing it again clears the filter).</summary>
+    private void DrillConstraints(string category)
+    {
+        _constraintFilter = _constraintFilter == category ? "" : category;
+        _constraintListOpen = true;
+    }
+
+    /// <summary>Picks a snapshot from the history list and opens Change source on it (the contract choice stays explicit).</summary>
+    private async Task UseSnapshot(Guid snapshotId)
+    {
+        _sourceSnapshotId = snapshotId.ToString();
+        _changeSourceOpen = true; _importOpen = false;
+        await LoadSourceContracts();
+    }
+
+    /// <summary>Available analyses: Source Analysis snapshots with schema evidence, newest first, with the current one marked.</summary>
+    private RenderFragment SnapshotHistory(SchemaPackage package)
+    {
+        var withSchemas = _sourceSnapshots.Where(s => s.HasSchemaArtifact).OrderByDescending(s => s.AnalyzedAt).ToList();
+        var current = package.Provenance?.SourceSnapshotId;
+        var shown = _showAllSnapshots ? withSchemas : withSchemas.Take(SnapshotHistorySize).ToList();
+        return @<ReviewDisclosure Text="@($"Available analyses · {withSchemas.Count} snapshot(s) with XSDs")" CollapseText="Hide available analyses" TestId="ss-snapshot-history" Class="disclosure-small">
+            <p class="ss-muted">Immutable Source Analysis snapshots that retained XSD files. Each one is fixed evidence; switching loads that snapshot's XSDs and never substitutes a newer upload.</p>
+            @if (withSchemas.Count == 0) { <p class="ss-empty" data-testid="ss-snapshot-history-empty">No Source Analysis snapshot in this workspace retained XSD files.</p> }
+            else
+            {
+                <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Available analyses"><table class="ss-table ss-table-compact" data-testid="ss-snapshot-history-table">
+                    <thead><tr><th class="ss-col-name">Source</th><th class="ss-col-compact">Type</th><th class="ss-col-compact">Analyzed</th><th class="ss-col-compact">Snapshot</th><th class="ss-col-compact">Schema fingerprint</th><th class="ss-col-compact">Contract fingerprint</th><th class="ss-col-compact"><span class="visually-hidden">Action</span></th></tr></thead>
+                    <tbody>@foreach (var snapshot in shown)
+                    {
+                        var isCurrent = snapshot.Id == current;
+                        <tr data-testid="ss-snapshot-row" data-current="@(isCurrent ? "true" : "false")" class="@(isCurrent ? "is-current" : "")">
+                            <td>@(snapshot.ArchiveName ?? "Source snapshot")@if (isCurrent) { <span class="ss-chip ss-chip-imported" data-testid="ss-snapshot-current">Current</span> }@if (!snapshot.IsComplete) { <span class="ss-chip ss-chip-muted">Partial capture</span> }</td>
+                            <td>@(string.IsNullOrWhiteSpace(snapshot.ProjectImportId) ? "Source Analysis upload" : "Project Import")</td>
+                            <td>@snapshot.AnalyzedAt.ToLocalTime().ToString("g")</td>
+                            <td><code title="@snapshot.Id">@snapshot.Id.ToString("N")[..8]</code></td>
+                            <td>@if (string.IsNullOrWhiteSpace(snapshot.Fingerprint)) { <span class="ss-muted">—</span> } else { <code title="@snapshot.Fingerprint">@snapshot.Fingerprint[..Math.Min(12, snapshot.Fingerprint.Length)]</code> }</td>
+                            <td>@if (isCurrent && package.Provenance?.ContractFingerprint is { Length: > 0 } contract) { <code title="@contract">@contract[..Math.Min(12, contract.Length)]</code> } else { <span class="ss-muted" title="Known once a contract XSD is opened from this snapshot">—</span> }</td>
+                            <td>@if (!isCurrent) { <button type="button" class="ss-text-button" data-testid="ss-snapshot-use" @onclick="() => UseSnapshot(snapshot.Id)">Use this snapshot</button> }</td>
+                        </tr>
+                    }</tbody></table></div>
+                @if (withSchemas.Count > SnapshotHistorySize) { <button type="button" class="ss-text-button" data-testid="ss-snapshot-history-more" @onclick="() => _showAllSnapshots = !_showAllSnapshots">@(_showAllSnapshots ? "Show fewer" : $"Show all {withSchemas.Count}")</button> }
+            }
+        </ReviewDisclosure>;
+    }
     private bool _sourceSnapshotIndexTruncated;
     private SourceSchemaPackage? _sourcePackage;
     private string _sourceSnapshotId = "", _sourceContractPath = "", _sourceError = "", _draftStatus = "";

@@ -249,3 +249,54 @@ small.ss-tech-term.ss-inline, .ss-inline .ss-tech-term { display: inline; }
 .ss-testdata-form label { display: grid; gap: .2rem; min-width: 0; }
 .ss-testdata-form select, .ss-testdata-form input { width: 100%; min-width: 0; }
 .ss-field select { max-width: 100%; }
+
+/* ── Visual vocabulary: chips (label carries meaning; colour supports it), evidence origin, intentional info states ── */
+.ss-chips { display: inline-flex; flex-wrap: wrap; gap: .25rem; vertical-align: middle; }
+.ss-chip { display: inline-block; padding: 0 .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; line-height: 1.4rem; border: 1px solid var(--clr-border); color: var(--clr-text-muted); background: var(--clr-surface); }
+.ss-chip-complex { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+.ss-chip-object { background: #fae8ff; color: #86198f; border-color: #f5d0fe; }
+.ss-chip-simple { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+.ss-chip-text { background: #ecfeff; color: #155e75; border-color: #a5f3fc; }
+.ss-chip-element { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+.ss-chip-enum { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.ss-chip-pattern { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+.ss-chip-length { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.ss-chip-numeric { background: #ffedd5; color: #9a3412; border-color: #fed7aa; }
+.ss-chip-usage { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+.ss-chip-imported { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.ss-chip-saved { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+.ss-chip-session { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.ss-chip-pass { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.ss-chip-fail { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.ss-origin { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .25rem 0; font-size: .85rem; }
+.ss-info-state { padding: .7rem .9rem; border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-primary); border-radius: var(--radius-md); background: var(--clr-surface); }
+.ss-info-state p { margin: .2rem 0; }
+.ss-scope-banner { padding: .55rem .8rem; border-radius: var(--radius-md); background: var(--clr-surface); border: 1px dashed var(--clr-border); }
+/* Schema tree: a styled explorer of cards, not a bullet list. */
+.ss-explorer .ss-file-card { padding: .5rem .75rem; background: var(--clr-surface-white, #fff); border-left: 4px solid #7c3aed; }
+.ss-file-card > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .95rem; }
+.ss-file-badge { font-size: .65rem; font-weight: 700; letter-spacing: .05em; padding: .1rem .35rem; border-radius: 4px; background: #7c3aed; color: #fff; }
+.ss-explorer-list { list-style: none; padding-left: 0; display: grid; gap: .35rem; }
+.ss-explorer-list > li { margin: 0; }
+.ss-def-card { border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .45rem .65rem; background: var(--clr-surface); }
+.ss-def-card > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
+.ss-def-card[open] { background: var(--clr-surface-white, #fff); box-shadow: 0 1px 2px rgba(16, 24, 40, .06); }
+.ss-def-name { font-size: .92rem; }
+.ss-def-rules { flex-basis: 100%; }
+.ss-explorer-complexType > .ss-def-card { border-left: 3px solid #7c3aed; }
+.ss-explorer-simpleType > .ss-def-card { border-left: 3px solid #0284c7; }
+.ss-explorer-element > .ss-def-card { border-left: 3px solid #2563eb; }
+.ss-explorer .ss-tree-fields { list-style: none; padding-left: .5rem; border-left: 2px solid var(--clr-border); }
+.ss-explorer.is-compact .ss-def-card { padding: .2rem .5rem; }
+.ss-explorer.is-compact .ss-meaning-label, .ss-explorer.is-compact .ss-def-rules { display: none; }
+/* Constraints: category cards that drill into the rules list. */
+.ss-rule-cards > div { border-radius: var(--radius-md); }
+.ss-rule-card.is-selected { outline: 2px solid var(--clr-primary); }
+.ss-rule-card-button { padding: 0; border: 0; background: transparent; color: var(--clr-primary); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; text-align: left; }
+.ss-rule-card-button:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+/* Validate & Test summary tiles. */
+.ss-test-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); gap: .5rem; }
+.ss-overview-tile { display: grid; gap: .2rem; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white, #fff); min-width: 0; }
+.ss-overview-wide { grid-column: 1 / -1; }
+.ss-overview-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); font-weight: 600; }
+.ss-page tr.is-current td { background: var(--clr-surface); }

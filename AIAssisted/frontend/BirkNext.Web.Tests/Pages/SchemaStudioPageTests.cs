@@ -173,6 +173,20 @@ public sealed class SchemaStudioPageTests : BunitContext
         Assert.Equal("CommonCode", code.Type);
         Assert.Equal("schemas/types/common.xsd", code.TypeDeclaredIn);
         Assert.Contains("schemas/main.xsd", page.Markup);
+
+        // Imported analysis is usable as it is: Save is a narrow, secondary workspace action, and the origin says so.
+        Assert.Equal("Imported analysis", page.Find("[data-testid=ss-evidence-origin-label]").TextContent);
+        Assert.Contains("no Save needed", page.Find("[data-testid=ss-evidence-origin]").TextContent);
+        var save = page.Find("[data-testid=ss-save]");
+        Assert.Equal("Save to workspace", save.TextContent);
+        Assert.Contains("btn-secondary", save.ClassList);
+        Assert.Contains("already available without saving", page.Find("[data-testid=ss-save-help]").TextContent);
+        // Snapshot history: the immutable snapshot this package came from is listed and marked current.
+        var row = page.Find("[data-testid=ss-snapshot-row]");
+        Assert.Equal("true", row.GetAttribute("data-current"));
+        Assert.Contains("Current", row.TextContent);
+        Assert.Contains(snapshotId.ToString("N")[..8], row.TextContent);
+        Assert.Empty(page.FindAll("[data-testid=ss-snapshot-use]"));
     }
 
     [Fact]

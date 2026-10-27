@@ -66,3 +66,24 @@
 .sr-doc-details summary, .sr-values-details summary { cursor: pointer; font-size: .82rem; }
 /* Long qualified names ({namespace}Name) in lists must not set the grid min-content width; break them anywhere. */
 .sr-list code, .sr-facts .sr-mono { overflow-wrap: anywhere; }
+
+/* Business structure: readable section cards and field rows (types and origin live in Effective structure). */
+.sr-business-root { padding: .75rem 1rem; border-radius: var(--radius-md, 8px); background: var(--clr-surface-alt, #f5f7fb); border-left: 4px solid var(--clr-primary, #2563eb); margin-bottom: .75rem; }
+.sr-business-root h4 { margin: .1rem 0; font-size: 1.15rem; }
+.sr-kicker { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--clr-text-muted, #475467); font-weight: 600; }
+.sr-business-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.sr-business-list .sr-business-list { margin: .5rem 0 0 .25rem; padding-left: .75rem; border-left: 2px solid var(--clr-border, #e4e7ec); }
+.sr-section-card { border: 1px solid var(--clr-border, #e4e7ec); border-radius: var(--radius-md, 8px); background: var(--clr-surface, #fff); padding: .5rem .75rem; }
+.sr-section-card > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-weight: 600; }
+.sr-section-card[open] > summary { margin-bottom: .35rem; }
+.sr-depth-0 > .sr-section > .sr-section-card { border-left: 4px solid #7c3aed; }
+.sr-depth-1 > .sr-section > .sr-section-card { border-left: 4px solid #0891b2; }
+.sr-depth-2 > .sr-section > .sr-section-card { border-left: 4px solid #059669; }
+.sr-field-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .3rem .5rem; border-radius: 6px; background: var(--clr-surface-alt, #f8fafc); }
+.sr-plain-rules { font-size: .8125rem; color: var(--clr-text-muted, #475467); }
+.sr-chips { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+.sr-chip { display: inline-block; padding: 0 .45rem; border-radius: 999px; font-size: .75rem; font-weight: 600; line-height: 1.5rem; border: 1px solid transparent; }
+.sr-chip-required { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+.sr-chip-optional { background: #f2f4f7; color: #344054; border-color: #e4e7ec; }
+.sr-chip-repeating { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+.sr-chip-choice { background: #fef3c7; color: #92400e; border-color: #fde68a; }

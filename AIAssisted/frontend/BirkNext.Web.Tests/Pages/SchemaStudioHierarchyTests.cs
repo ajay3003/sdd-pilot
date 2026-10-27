@@ -70,7 +70,8 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
         page.Find("[data-testid=ss-validity-scope]").TextContent.Should().Be(SchemaStudioPresentation.ValidityScope, "the scope says the integration is not verified");
         page.Find("[data-testid=ss-source-kind]").TextContent.Should().Be("Source: imported XSD files", "the archive and identifiers are provenance, not the primary line");
         var actions = page.Find("[data-testid=ss-package-actions]");
-        actions.QuerySelectorAll(".btn-primary").Select(a => a.TextContent).Should().Equal(["Save analysis"], "one primary action");
+        actions.QuerySelectorAll(".btn-primary").Select(a => a.TextContent).Should().Equal(["Save to workspace"], "one primary action: a session import is lost unless saved");
+        page.Find("[data-testid=ss-evidence-origin-label]").TextContent.Should().Be("Session import");
         actions.QuerySelectorAll(":scope > .btn-secondary").Select(a => a.TextContent).Should().Equal("Change source", "Import another package");
         page.Find("[data-testid=ss-more-toggle]").TextContent.Should().Contain("More");
         page.Find("[data-testid=ss-more-toggle]").GetAttribute("aria-expanded").Should().Be("false", "export and removal never compete with Save");

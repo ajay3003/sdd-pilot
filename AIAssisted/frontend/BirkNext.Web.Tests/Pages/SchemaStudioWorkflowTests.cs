@@ -363,7 +363,10 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         Assert.Equal(all, page.FindAll("[data-testid=ss-rule-category] dd").Sum(dd => int.Parse(dd.TextContent)));
         Assert.Equal("false", page.Find("[data-testid=ss-constraint-list-toggle]").GetAttribute("aria-expanded"));
         Assert.True(page.Markup.IndexOf("ss-constraint-summary", StringComparison.Ordinal) < page.Markup.IndexOf("data-testid=\"ss-constraints\"", StringComparison.Ordinal));
-        page.Find("[data-testid=ss-constraint-filter]").Change("Enumeration");
+        // A category card drills straight into its rules.
+        page.Find("[data-testid=ss-rule-category][data-category=Enumeration] button").Click();
+        Assert.Equal("true", page.Find("[data-testid=ss-constraint-list-toggle]").GetAttribute("aria-expanded"));
+        Assert.Equal("Enumeration", page.Find("[data-testid=ss-constraint-filter]").GetAttribute("value"));
         var enumerations = page.Find("[data-testid=ss-constraints]").QuerySelectorAll("tbody tr");
         Assert.InRange(enumerations.Length, 1, all - 1);
         // Plain-language rule name first; the exact XSD facet stays available.
@@ -371,8 +374,9 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         Assert.All(enumerations, tr => Assert.DoesNotContain("/", tr.Children[3].TextContent));
 
         OpenView(page, "References");
-        Assert.Contains("one XSD file, so there are no references between schema files", page.Find("[data-testid=ss-references-empty]").TextContent);
+        Assert.Contains("This package contains one XSD file, so there are no cross-file references.", page.Find("[data-testid=ss-references-empty]").TextContent);
         OpenView(page, "Namespaces");
+        Assert.Equal("This package is single-namespace and has no imports or includes.", page.Find("[data-testid=ss-namespace-single]").TextContent);
         Assert.Equal("None in this package", page.Find("[data-testid=ss-imported-by]").TextContent);
     }
 
