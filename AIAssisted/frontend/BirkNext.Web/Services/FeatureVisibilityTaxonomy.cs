@@ -30,7 +30,7 @@ public static class FeatureVisibilityTaxonomy
         // How are lifecycle artifacts and tracked delivery changes linked?
         new("traceability", "Traceability", "traceability", ["ArtifactTraceability", "ImplementationTraceability"]),
         // What does the source/implementation-oriented evidence say?
-        new("source-review", "Source Review", "source-review", ["SourceAnalysis", "AzureEnvironmentAnalysis"]),
+        new("source-review", "Source Review", "source-review", ["SourceAnalysis", "GeneratedDocumentationExplorer", "AzureEnvironmentAnalysis"]),
         new("analysis", "Analysis", "analysis", ["ImpactAnalysis"]),
         // How do we assess or test the solution?
         new("quality-testing", "Quality & Testing", "quality-testing",
@@ -92,6 +92,7 @@ public static class FeatureVisibilityTaxonomy
 
         // Source Review
         ("Source Analysis",                "SourceAnalysis"),
+        ("Generated Documentation Explorer", "GeneratedDocumentationExplorer"),
         ("Azure Environment Analysis",     "AzureEnvironmentAnalysis"),
 
         // Analysis

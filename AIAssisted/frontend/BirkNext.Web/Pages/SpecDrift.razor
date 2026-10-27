@@ -26,7 +26,7 @@
         }
     </div>
 
-    <DocumentationDriftPanel View="@_activeTab" OnViewChange="SetTab" />
+    <DocumentationDriftPanel View="@_activeTab" OnViewChange="SetTab" PreselectImport="@_preImport" PreselectModule="@_preModule" PreselectConcern="@_preConcern" />
 
     @if (_activeTab == "changes")
     {
@@ -70,8 +70,15 @@
     private void ApplyTab(string location)
     {
         var uri = NavigationManager.ToAbsoluteUri(location);
-        _activeTab = QueryHelpers.ParseQuery(uri.Query).TryGetValue("tab", out var tab) ? NormalizeTab(tab!) : "compare";
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        _activeTab = query.TryGetValue("tab", out var tab) ? NormalizeTab(tab!) : "compare";
+        // Context from another page ("Compare in Documentation Drift"): preselects, never runs or saves a comparison.
+        _preImport = query.TryGetValue("import", out var import) ? import.ToString() : null;
+        _preModule = query.TryGetValue("module", out var module) ? module.ToString() : null;
+        _preConcern = query.TryGetValue("concern", out var concern) ? concern.ToString() : null;
     }
+
+    private string? _preImport, _preModule, _preConcern;
 
     public void Dispose() => NavigationManager.LocationChanged -= OnLocationChanged;
 

@@ -1,0 +1,251 @@
+@page "/generated-documentation-explorer"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.WebUtilities
+@using Gde = BirkNext.Web.Services.GeneratedDocumentationExplorer
+@inject IServiceProvider ServiceProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Generated Documentation Explorer — QA Review Studio</PageTitle>
+
+@* Structured, read-only browsing of the generated (implementation-derived) documentation an import captured. Content is resolved by
+   fingerprint from the existing generated-content store; nothing is copied, edited or persisted. Health and freshness belong to Generated
+   Documentation Health, comparison to Documentation Drift, raw source to Source Analysis. *@
+<div class="gde-page" data-testid="gde-page">
+    <PageHeader Title="Generated Documentation Explorer" Description="@Intro" />
+    <p class="gde-boundary" data-testid="gde-boundary">Generated documentation is implementation-derived documentation. It is not source truth, runtime truth, an approved specification or implementation verification.</p>
+
+    @if (_imports.Count == 0)
+    {
+        <section class="gde-empty" role="status" data-testid="gde-no-import">
+            <p>No imported project has generated documentation. Generated documentation is detected when a project is imported with its source.</p>
+            <p><a class="btn-secondary" href="project-import">Import Project</a></p>
+        </section>
+    }
+    else
+    {
+        <div class="gde-selectors" data-testid="gde-selectors">
+            <label class="gde-field">Project / import
+                <select data-testid="gde-import" @onchange="ImportChanged">
+                    @foreach (var i in _imports) { <option value="@i.ImportId" selected="@(i.ImportId == _importId)">@i.Label</option> }
+                </select>
+            </label>
+            <label class="gde-field">Module
+                <select data-testid="gde-module" @onchange="ModuleChanged">
+                    @foreach (var m in Modules) { <option value="@m" selected="@(m == _module)">@m</option> }
+                </select>
+            </label>
+        </div>
+
+        @* Only documents the module actually has: absence of a document type is neutral, never "Missing". *@
+        <section aria-labelledby="gde-docs-h" data-testid="gde-module-documents">
+            <h2 id="gde-docs-h">@_module · generated documentation</h2>
+            <ul class="gde-cards">
+                @foreach (var d in ModuleDocuments)
+                {
+                    var doc = d;
+                    <li class="gde-card @(doc.Path == _selectedPath ? "is-selected" : "")" data-testid="gde-document-card" data-role="@doc.Role">
+                        <p><strong>@doc.RoleLabel</strong></p>
+                        <p class="gde-muted gde-wrap"><code>@doc.Path</code></p>
+                        <p class="gde-muted" data-testid="gde-card-state">@(doc.ContentAvailable ? "Available" : "Content unavailable")</p>
+                        <button type="button" class="btn-secondary btn-small" data-testid="gde-open" @onclick="() => Select(doc.Path)">Open<span class="visually-hidden"> @doc.Path</span></button>
+                    </li>
+                }
+            </ul>
+        </section>
+
+        @if (_view is { } view)
+        {
+            var d = view.Document;
+            <section class="gde-document" aria-labelledby="gde-doc-h" data-testid="gde-document">
+                <h2 id="gde-doc-h">@d.Module · Generated @d.RoleLabel</h2>
+                <dl class="gde-facts">
+                    <div><dt>Source</dt><dd><code class="gde-wrap" data-testid="gde-source-path">@d.Path</code></dd></div>
+                    <div><dt>Origin</dt><dd data-testid="gde-origin">@Gde.Origin</dd></div>
+                    <div><dt>Generator</dt><dd data-testid="gde-generator">@(d.Document.Generator ?? "Generated documentation detected · generator not established")</dd></div>
+                    <div><dt>Content</dt><dd data-testid="gde-parse-state">@view.StateLabel</dd></div>
+                </dl>
+                <p class="gde-actions">
+                    @if (Gde.DriftConcernOf(d.Role) is { } concern && !d.RepositoryLevel)
+                    {
+                        <a class="btn-secondary btn-small" data-testid="gde-compare-drift" href="@($"documentation-drift?tab=compare&import={Uri.EscapeDataString(_importId)}&module={Uri.EscapeDataString(d.Module)}&concern={concern}")">Compare in Documentation Drift</a>
+                    }
+                    <a class="btn-link" data-testid="gde-open-health" href="@NavigationCatalog.GeneratedDocumentationHealthRoute">Open Generated Documentation Health</a>
+                    @if (d.Document.SourceSnapshotId is { } snapshot)
+                    {
+                        <a class="btn-link" data-testid="gde-open-source" href="@($"source-analysis?snapshot={snapshot}")">Related Source Analysis snapshot</a>
+                    }
+                </p>
+                <nav class="gde-tabs" aria-label="Document views" data-testid="gde-tabs">
+                    @foreach (var tab in new[] { "Overview", "Structure", "Source", "Provenance" })
+                    {
+                        var t = tab;
+                        <button type="button" class="@(_tab == t ? "is-current" : "")" aria-pressed="@(_tab == t ? "true" : "false")" data-testid="gde-tab" data-tab="@t" @onclick="() => _tab = t">@t</button>
+                    }
+                </nav>
+                <label class="gde-field gde-search">Search this document <input type="search" @bind="_search" @bind:event="oninput" data-testid="gde-search" /></label>
+                @if (!string.IsNullOrWhiteSpace(_search))
+                {
+                    <ul class="gde-plain" data-testid="gde-search-results">@foreach (var (line, text) in Gde.Search(view.Content, _search)) { <li><span class="gde-muted">L@(line)</span> @text</li> }</ul>
+                }
+                @if (view.State == GeneratedDocumentParseState.ContentUnavailable && _tab is "Structure" or "Source")
+                {
+                    <p class="gde-note" role="status" data-testid="gde-content-unavailable"><strong>Content unavailable for structured view.</strong> @Gde.ContentUnavailableText</p>
+                }
+                else
+                {
+                    @switch (_tab)
+                    {
+                        case "Overview": @Overview(view) break;
+                        case "Structure": @Structure(view) break;
+                        case "Source": @Source(view) break;
+                        default: @Provenance(view) break;
+                    }
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private const string Intro = "Browse generated (implementation-derived) documentation by module, structured by document type. Read-only.";
+    private static readonly DataModelAnalysisService Parser = new();
+    private IReadOnlyList<DriftDocument> _catalog = [];
+    private IReadOnlyList<DriftImport> _imports = [];
+    private string _importId = "", _module = "", _selectedPath = "", _tab = "Overview", _search = "";
+    private GeneratedDocumentView? _view;
+    private bool _showRaw;
+
+    private WorkspaceArtifactRepository? Repository => ServiceProvider.GetService(typeof(IWorkspaceArtifactRepository)) as WorkspaceArtifactRepository
+        ?? ServiceProvider.GetService(typeof(WorkspaceArtifactRepository)) as WorkspaceArtifactRepository;
+
+    private IReadOnlyList<GeneratedExplorerDocument> Documents => Gde.Documents(_catalog, _importId);
+    private IReadOnlyList<string> Modules => Gde.Modules(Documents);
+    private IReadOnlyList<GeneratedExplorerDocument> ModuleDocuments => Documents.Where(d => d.Module == _module).ToList();
+
+    protected override void OnInitialized()
+    {
+        if (Repository?.SddLifecycle is not { } state) return;
+        _catalog = DocumentationDrift.Catalog(state);
+        var withDocs = _catalog.Where(d => d.Origin == DriftOrigin.Generated).Select(d => d.ProjectImportId).ToHashSet();
+        _imports = DocumentationDrift.Imports(state).Where(i => withDocs.Contains(i.ImportId)).ToList();
+        var query = QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(Navigation.Uri).Query);
+        _importId = query.TryGetValue("import", out var import) && _imports.Any(i => i.ImportId == import.ToString()) ? import.ToString()
+            : _imports.FirstOrDefault(i => i.ImportId == state.CurrentProjectImportId)?.ImportId ?? _imports.LastOrDefault()?.ImportId ?? "";
+        _module = query.TryGetValue("module", out var module) && Modules.Contains(module.ToString()) ? module.ToString() : Modules.FirstOrDefault() ?? "";
+        if (query.TryGetValue("document", out var document) && ModuleDocuments.Any(d => d.Path == document.ToString())) Select(document.ToString());
+    }
+
+    private void ImportChanged(ChangeEventArgs e) { _importId = e.Value?.ToString() ?? ""; _module = Modules.FirstOrDefault() ?? ""; _view = null; _selectedPath = ""; }
+    private void ModuleChanged(ChangeEventArgs e) { _module = e.Value?.ToString() ?? ""; _view = null; _selectedPath = ""; }
+
+    private void Select(string path)
+    {
+        if (Repository?.SddLifecycle is not { } state || ModuleDocuments.FirstOrDefault(d => d.Path == path) is not { } doc) return;
+        _selectedPath = path; _tab = "Overview"; _search = "";
+        _view = Gde.View(doc, DocumentationDrift.Text(state, doc.Document), Parser);
+    }
+
+    private RenderFragment Overview(GeneratedDocumentView v) => __builder =>
+    {
+        <dl class="gde-facts" data-testid="gde-overview">
+            <div><dt>Title</dt><dd>@(v.Title ?? "Not stated")</dd></div>
+            <div><dt>Document type</dt><dd>@v.Document.RoleLabel</dd></div>
+            <div><dt>Module</dt><dd>@v.Document.Module</dd></div>
+            <div><dt>Lines</dt><dd>@v.LineCount</dd></div>
+            <div><dt>Size</dt><dd>@v.ByteSize bytes</dd></div>
+            <div><dt>Headings</dt><dd data-testid="gde-heading-count">@v.HeadingCount</dd></div>
+            <div><dt>Structured items</dt><dd data-testid="gde-structured-count">@v.StructuredItems</dd></div>
+            <div><dt>Content captured</dt><dd>@(v.Document.ContentAvailable ? "Yes" : "No")</dd></div>
+            <div><dt>Fingerprint</dt><dd><code>@Short(v.Document.Document.Fingerprint)</code></dd></div>
+            <div><dt>Freshness</dt><dd>See Generated Documentation Health</dd></div>
+        </dl>
+        @if (v.State == GeneratedDocumentParseState.PartiallyParsed) { <p class="gde-note" data-testid="gde-partial">Structured coverage: Partial. @Gde.PartialCoverage</p> }
+    };
+
+    private RenderFragment Structure(GeneratedDocumentView v) => __builder =>
+    {
+        <div data-testid="gde-structure" data-role="@v.Document.Role">
+        @if (v.DataModel is { } model)
+        {
+            <p class="gde-muted" data-testid="gde-dm-summary">@model.Entities.Count entities · @model.Entities.Sum(e => e.Columns.Count) fields · @model.Relationships.Count relationships · @model.Indexes.Count indexes · @model.Constraints.Count constraints</p>
+            @foreach (var e in model.Entities)
+            {
+                <details class="gde-entity" data-testid="gde-entity" data-name="@e.Name"><summary><strong>@e.Name</strong> <span class="gde-muted">@e.Columns.Count fields</span></summary>
+                    <table class="gde-table"><thead><tr><th>Field</th><th>Type</th><th>Nullable</th><th>Key</th></tr></thead><tbody>
+                        @foreach (var c in e.Columns) { <tr><td>@c.Name</td><td>@(c.Type ?? "Not stated")</td><td>@(c.Nullable switch { true => "Yes", false => "No", _ => "Not stated" })</td><td>@(c.IsPrimaryKey ? "PK" : c.IsForeignKey ? "FK" : "—")</td></tr> }
+                    </tbody></table>
+                    @foreach (var r in model.Relationships.Where(r => r.Source.StartsWith(e.Name + ".", StringComparison.OrdinalIgnoreCase) || r.Source == e.Name)) { <p class="gde-muted">→ @r.Target (@r.RelationshipType)</p> }
+                </details>
+            }
+            @if (model.NotStatedInGeneratedDocumentation.Count > 0) { <details><summary>Not stated in the generated documentation (@model.NotStatedInGeneratedDocumentation.Count)</summary><ul class="gde-plain">@foreach (var n in model.NotStatedInGeneratedDocumentation) { <li>@n</li> }</ul></details> }
+        }
+        else if (v.ChangeLog.Count > 0)
+        {
+            @foreach (var version in v.ChangeLog)
+            {
+                <section class="gde-version" data-testid="gde-changelog-version"><h3>@version.Version@(version.Date is { } date ? $" · {date}" : "")</h3>
+                    @foreach (var (category, entries) in version.Groups) { <p><strong data-testid="gde-changelog-category">@category</strong></p><ul class="gde-plain">@foreach (var entry in entries) { <li>@entry</li> }</ul> }
+                </section>
+            }
+        }
+        else
+        {
+            @foreach (var s in v.Sections.Where(s => s.Level > 0))
+            {
+                <section class="gde-section gde-level-@Math.Min(s.Level, 4)" data-testid="gde-section" data-heading="@s.Heading">
+                    <h3>@s.Heading <span class="gde-muted">L@(s.Line)</span></h3>
+                    @if (s.OrderedSteps.Count > 0) { <ol data-testid="gde-steps">@foreach (var step in s.OrderedSteps) { <li>@step</li> }</ol> }
+                    @if (s.Items.Count > 0) { <ul>@foreach (var item in s.Items) { <li>@item</li> }</ul> }
+                    @foreach (var t in s.Tables)
+                    {
+                        <div class="gde-table-wrap" tabindex="0" role="region" aria-label="@s.Heading table"><table class="gde-table" data-testid="gde-table"><thead><tr>@foreach (var h in t.Header) { <th>@h</th> }</tr></thead>
+                            <tbody>@foreach (var row in t.Rows) { <tr>@foreach (var cell in row) { <td>@cell</td> }</tr> }</tbody></table></div>
+                    }
+                    @foreach (var block in s.CodeBlocks) { <pre class="gde-code">@block</pre> }
+                    @if (s.Prose.Count > 0) { <details><summary>Text (@s.Prose.Count)</summary>@foreach (var p in s.Prose) { <p>@p</p> }</details> }
+                </section>
+            }
+        }
+        @if (v.UnmappedLines > 0)
+        {
+            <details class="gde-unmapped" data-testid="gde-unmapped"><summary>Source content not structured (@v.UnmappedLines)</summary>
+                <p class="gde-muted">Informational: content kept as text because it has no structured concept here. Not a defect; all content remains available in Source view.</p>
+            </details>
+        }
+        </div>
+    };
+
+    private RenderFragment Source(GeneratedDocumentView v) => __builder =>
+    {
+        <div data-testid="gde-source">
+            <label class="gde-check"><input type="checkbox" @bind="_showRaw" data-testid="gde-raw-toggle" /> Show raw Markdown</label>
+            @if (_showRaw) { <pre class="gde-code gde-raw" data-testid="gde-raw">@v.Content</pre> }
+            else
+            {
+                <ul class="gde-plain" data-testid="gde-outline">@foreach (var s in v.Sections.Where(s => s.Level > 0)) { <li class="gde-level-@Math.Min(s.Level, 4)">@s.Heading <span class="gde-muted">L@(s.Line)</span></li> }</ul>
+                <pre class="gde-code" data-testid="gde-readable">@v.Content</pre>
+            }
+            <p class="gde-muted">Read-only. Generated documentation is never edited here.</p>
+        </div>
+    };
+
+    private RenderFragment Provenance(GeneratedDocumentView v) => __builder =>
+    {
+        var d = v.Document.Document;
+        <dl class="gde-facts" data-testid="gde-provenance">
+            <div><dt>Project / import</dt><dd>@(d.ProjectRevision ?? "—")</dd></div>
+            <div><dt>Module</dt><dd>@v.Document.Module</dd></div>
+            <div><dt>Generated-document set</dt><dd><code>@d.GeneratedSetId</code></dd></div>
+            <div><dt>Relative path</dt><dd><code class="gde-wrap">@d.Path</code></dd></div>
+            <div><dt>Generated kind</dt><dd>@d.TypeLabel.Replace("Generated · ", "")</dd></div>
+            <div><dt>Generator</dt><dd>@(d.Generator ?? "Not established")</dd></div>
+            <div><dt>Fingerprint</dt><dd><code data-testid="gde-fingerprint">@d.Fingerprint</code></dd></div>
+            <div><dt>Content captured</dt><dd>@(v.Document.ContentAvailable ? "Yes" : "No")</dd></div>
+            <div><dt>Source snapshot</dt><dd><code>@(d.SourceSnapshotId?.ToString() ?? "Not known")</code></dd></div>
+            <div><dt>Imported at</dt><dd>@(d.ImportedAt?.ToLocalTime().ToString("g") ?? "—")</dd></div>
+        </dl>
+    };
+
+    private static string Short(string fingerprint) => fingerprint.Length > 12 ? fingerprint[..12] : fingerprint;
+}

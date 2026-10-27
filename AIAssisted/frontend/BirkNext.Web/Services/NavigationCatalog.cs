@@ -64,6 +64,8 @@ public static class NavigationCatalog
 
     /// <summary>Canonical route of Generated Documentation Health (project analysis). The former System Settings section redirects here.</summary>
     public const string GeneratedDocumentationHealthRoute = "generated-documentation-health";
+    /// <summary>Structured, read-only browsing of an import's generated (implementation-derived) documentation.</summary>
+    public const string GeneratedDocumentationExplorerRoute = "generated-documentation-explorer";
 
     /// <summary>
     /// Sections follow how BirkNext gathers and uses evidence: the three project inputs (documents, source, target) first, then
@@ -126,6 +128,8 @@ public static class NavigationCatalog
                 Hint: "inspect the current source snapshot (from Import Project or a source-only upload)"),
             new("schema-studio", "Schema Studio", "nav-icon-source-analysis", Always,
                 Hint: "import, inspect, compare and validate generic XSD contracts"),
+            new(GeneratedDocumentationExplorerRoute, "Generated Documentation Explorer", "nav-icon-source-analysis", f => f.GeneratedDocumentationExplorer,
+                Hint: "browse generated (implementation-derived) documentation by module, structured by document type", WrapLabel: true),
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always,
                 Hint: "what the source contains and what BirkNext can assess"),
             new("dependency-review", "Dependency Review", "nav-icon-constitution-compliance", Always, ReviewId: "dependency-review"),

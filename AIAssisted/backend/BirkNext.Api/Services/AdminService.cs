@@ -53,7 +53,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("ImplementationTraceability", "Change Traceability"),
         ("SourceAnalysis",             "Source Analysis"),
         ("AzureEnvironmentAnalysis",   "Azure Environment Analysis"),
-        ("GeneratedDocumentationHealth", "Generated Documentation Health")
+        ("GeneratedDocumentationHealth", "Generated Documentation Health"),
+        ("GeneratedDocumentationExplorer", "Generated Documentation Explorer")
     ];
 
     /// <summary>
@@ -277,6 +278,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             AzureEnvironmentAnalysis    = s.GetValue("AzureEnvironmentAnalysis",    true),
             // Project analysis of the imported project's generated documentation; a configuration without the key shows it (enabled).
             GeneratedDocumentationHealth = s.GetValue("GeneratedDocumentationHealth", true),
+            // Structured browsing of generated documentation; a configuration without the key shows it (enabled).
+            GeneratedDocumentationExplorer = s.GetValue("GeneratedDocumentationExplorer", true),
             ConstitutionExplorer        = s.GetValue("ConstitutionExplorer",        true),
             DataModelExplorer           = s.GetValue("DataModelExplorer",           true),
             PlanExplorer                = s.GetValue("PlanExplorer",                true),

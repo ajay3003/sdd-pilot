@@ -276,7 +276,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "generated-documentation-health", "documentation-drift" })]
     [InlineData("traceability", new[] { "artifact-traceability" })]
-    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
+    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("analysis", new[] { "impact-analysis" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "code-risk-review", "test-data" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]

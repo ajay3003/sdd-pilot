@@ -24,6 +24,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         ("BlazorWasmPerformanceReview", "WASM Performance Review", true), ("ImplementationReview", "Task Alignment Review", true),
         ("ImplementationTraceability", "Change Traceability", false), ("SourceAnalysis", "Source Analysis", true),
         ("AzureEnvironmentAnalysis", "Azure Environment Analysis", true), ("GeneratedDocumentationHealth", "Generated Documentation Health", true),
+        ("GeneratedDocumentationExplorer", "Generated Documentation Explorer", true),
     ];
 
     private static readonly (string Key, string Label, bool Value)[] AdvancedFeatures =
@@ -70,7 +71,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         cut.FindAll("[data-testid=fv-section-traceability] .fv-row").Single(r => r.TextContent.Contains("Change Traceability"))
             .QuerySelector(".fv-badge-disabled")!.TextContent.Should().Be("Disabled", "optional Azure DevOps provenance is off by default");
         cut.Find("[data-testid=fv-count-traceability] .fv-count-off").TextContent.Should().Be("1 disabled");
-        SectionLabels(cut, "source-review").Should().Equal("Source Analysis", "Azure Environment Analysis");
+        SectionLabels(cut, "source-review").Should().Equal("Source Analysis", "Generated Documentation Explorer", "Azure Environment Analysis");
         SectionLabels(cut, "analysis").Should().Equal("Impact Analysis");
         SectionLabels(cut, "quality-testing").Should().NotContain("Document Quality Review");
 

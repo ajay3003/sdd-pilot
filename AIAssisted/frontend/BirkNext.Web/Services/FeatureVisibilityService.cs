@@ -50,6 +50,7 @@ public class FeatureVisibilityService
     public bool SourceAnalysis              => _flags.SourceAnalysis;
     public bool AzureEnvironmentAnalysis    => _flags.AzureEnvironmentAnalysis;
     public bool GeneratedDocumentationHealth => _flags.GeneratedDocumentationHealth;
+    public bool GeneratedDocumentationExplorer => _flags.GeneratedDocumentationExplorer;
     public bool FrontendQualityReview      => _flags.FrontendQualityReview;
     public bool ApiQualityReview           => _flags.ApiQualityReview;
     public bool IntegrationQualityReview   => _flags.IntegrationQualityReview;

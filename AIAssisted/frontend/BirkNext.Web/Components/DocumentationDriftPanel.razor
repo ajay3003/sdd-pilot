@@ -36,6 +36,10 @@
     [Parameter] public string View { get; set; } = "compare";
     /// <summary>Asks the page to show another view (e.g. "Open in Compare"); the comparison state stays with this component.</summary>
     [Parameter] public EventCallback<string> OnViewChange { get; set; }
+    /// <summary>Context from another page: the import, module and concern to preselect in the composite comparison. Nothing is run or saved.</summary>
+    [Parameter] public string? PreselectImport { get; set; }
+    [Parameter] public string? PreselectModule { get; set; }
+    [Parameter] public string? PreselectConcern { get; set; }
 
     private IReadOnlyList<DriftDocument> _catalog = [];
     private IReadOnlyList<DriftImport> _imports = [];
@@ -70,6 +74,14 @@
         // Combined authored intent ↔ generated is the recommended default wherever a module + concern candidate exists.
         if (FocusImport is not null && DocumentationDriftComposite.CandidateGroups(_catalog, Saved, FocusImport).Any(g => g.State == DriftGroupState.ComparisonAvailable))
             _mode = DriftIntent.CompositeConsistency;
+        if (PreselectModule is { Length: > 0 } module && Enum.TryParse<DriftConcern>(PreselectConcern, out var concern))
+        {
+            if (PreselectImport is { Length: > 0 } import && _imports.Any(i => i.ImportId == import)) _consistencyImport = import;
+            if (Groups.FirstOrDefault(g => g.Concern == concern && g.Module.Equals(module, StringComparison.OrdinalIgnoreCase)) is { } group)
+            {
+                _mode = DriftIntent.CompositeConsistency; _groupKey = group.Key; PreviewIntent();
+            }
+        }
     }
 
     // ── Compare ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

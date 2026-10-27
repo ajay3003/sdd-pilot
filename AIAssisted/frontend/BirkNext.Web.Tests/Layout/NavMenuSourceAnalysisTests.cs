@@ -28,7 +28,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Demo Projects", "Target Environments");
         entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "§Source Review");
         entries.Should().NotContain("Change Traceability", "optional Azure DevOps provenance is off by default");
-        entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+        entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
     }
@@ -73,7 +73,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
 
         // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
         Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "§Document Review");
-        Entries(cut).Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Technology Coverage");
+        Entries(cut).Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Technology Coverage");
     }
 
     [Fact]

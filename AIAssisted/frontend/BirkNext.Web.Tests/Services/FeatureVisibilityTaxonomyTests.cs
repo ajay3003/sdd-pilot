@@ -46,7 +46,7 @@ public sealed class FeatureVisibilityTaxonomyTests
     public void Sidebar_source_review_keeps_source_features_without_generated_documentation_health()
     {
         SidebarLabels("source-review").Should().Equal(
-            "Source Analysis", "Schema Studio", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+            "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
     }
 
     [Theory]
