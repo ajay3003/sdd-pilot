@@ -89,10 +89,10 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         // The collapsed row, the expanded headline and the active-engine summary all read from this one model.
         summary.AvailableNowCount.Should().Be(5);
         summary.DisabledCount.Should().Be(1, "Browser Runtime is switched off, which is not the same as unavailable");
-        summary.Headline.Should().Contain("2 required available").And.Contain("3 optional ready");
+        summary.Headline.Should().Contain("Required: 2/2 available").And.Contain("Optional: 3 available");
 
         // 27, 40. Three axes, three counts, none of them merged: configuration, capability and the switched-off engine.
-        summary.Collapsed.Should().Be("2 required available · 3 optional ready · 2 optional unavailable · 1 optional disabled");
+        summary.Collapsed.Should().Be("Required: 2/2 available · Optional: 3 available · 2 unavailable (non-blocking) · 1 off");
     }
 
     // 3, 40. The hard invariant: a disabled engine never reaches the unavailable count, on any surface.
@@ -112,7 +112,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         unavailable.Should().Be(2, "Lighthouse and Passive Web Security — not Browser Runtime");
         (summary.EnabledCount - summary.AvailableNowCount).Should().Be(unavailable);
 
-        summary.Collapsed.Should().NotContain("2 unavailable");
+        summary.Collapsed.Should().Contain("2 unavailable (non-blocking)").And.Contain("1 off", "switched off is counted on its own, never as unavailable");
     }
 
     // 6, 7.

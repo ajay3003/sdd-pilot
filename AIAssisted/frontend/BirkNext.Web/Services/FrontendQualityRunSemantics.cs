@@ -50,8 +50,33 @@ public sealed record FrontendQualityRunSemantics(
     int OtherManualItems,
     string DecisionLabel,
     IReadOnlyList<string> DecisionReasons,
-    FrontendQualityAccessibilityResult? Accessibility = null)
+    FrontendQualityAccessibilityResult? Accessibility = null,
+    FrontendQualityAuthenticatedEvidence? Authenticated = null)
 {
+    /// <summary>"Public frontend assessed · authenticated API evidence observed · authenticated UI not assessed" — never "Public + authenticated"
+    /// when only API evidence exists.</summary>
+    public string ReviewScopeSummary
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Surfaces.FirstOrDefault(s => s.Surface == FrontendQualityReviewSurface.Public) is { } pub && pub.State != FrontendQualitySurfaceCoverageState.NotInSelectedScope)
+                parts.Add(pub.State is FrontendQualitySurfaceCoverageState.Assessed or FrontendQualitySurfaceCoverageState.PartiallyAssessed ? "Public frontend assessed" : "Public frontend not assessed");
+            if (Authenticated is { InScope: true } auth)
+            {
+                parts.Add($"authenticated API evidence {auth.Api.ToLowerInvariant()}");
+                parts.Add($"authenticated UI {auth.UiDom.ToLowerInvariant()}");
+            }
+            else if (Authenticated is { Api: FrontendQualityAuthenticatedEvidence.Observed })
+                parts.Add("authenticated API evidence observed");
+            return parts.Count == 0 ? "Not assessed" : string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>"Optional execution: 4 of 6 completed · non-blocking". Optional engines never reduce coverage or the decision by default.</summary>
+    public string OptionalExecutionDetail => OptionalTotal == 0 ? "No optional engines"
+        : $"Optional execution: {OptionalAssessed} of {OptionalTotal} completed · non-blocking";
+
     /// <summary>"Norwegian public-sector requirements — WCAG 2.1 · 48 criteria · automated evidence 35 · manual 15 · issues 6 criteria".</summary>
     public string? AccessibilityDetail => Accessibility is not { } a ? null
         : $"{a.CriteriaInScope} criteria · automated evidence available for {a.WithEvidence} (not a pass count) · manual assessment {a.RequireManualAssessment} · detected issues in {a.WithFailureEvidence}";
@@ -147,8 +172,8 @@ public static class FrontendQualityRunSemanticsProjection
         var coverageReasons = new List<string>();
         foreach (var surface in surfaces.Where(s => s.State is FrontendQualitySurfaceCoverageState.NotAssessed or FrontendQualitySurfaceCoverageState.PartiallyAssessed))
             coverageReasons.Add($"{surface.Label} surface {surface.StateLabel.ToLowerInvariant()}" + (surface.Reason is { Length: > 0 } why ? $": {why}" : ""));
-        if (optionalMissing.Count > 0)
-            coverageReasons.Add($"Optional automation: {optionalMissing.Count} of {optionalTotal} optional engine{(optionalTotal == 1 ? "" : "s")} did not complete ({string.Join(", ", optionalMissing)})");
+        // Optional engines that did not complete are reported (OptionalNotCompleted / OptionalExecutionDetail) but are never a coverage
+        // reason: unless policy makes an engine Required, its absence does not reduce the requested scope.
         foreach (var domain in view.Domains.Where(d => !d.Derived && d.State is FrontendQualityDomainResultState.CompletedWithLimitedEvidence or FrontendQualityDomainResultState.NoEvidence))
             coverageReasons.Add($"{domain.Title}: {FrontendQualityDomainResultStates.Label(domain.State).ToLowerInvariant()}" + (domain.Limitation is { Length: > 0 } l ? $" — {l}" : ""));
 
@@ -185,7 +210,8 @@ public static class FrontendQualityRunSemanticsProjection
             scope, coverage, coverageReasons, surfaces,
             actionable.Count, criticalHigh, view.SourceFindingCount, view.DerivedIndicatorCount,
             manualWcag, report.ManualReviewItems.Count,
-            view.Release?.Label ?? FrontendQualityReviewHistory.DispositionLabel(report.ReleaseDisposition), decisionReasons, view.Accessibility);
+            view.Release?.Label ?? FrontendQualityReviewHistory.DispositionLabel(report.ReleaseDisposition), decisionReasons, view.Accessibility,
+            FrontendQualityAuthenticatedEvidence.From(report, scope, surfaces));
     }
 
     private static bool IsCompleted(string result) =>
@@ -238,4 +264,55 @@ public static class FrontendQualityRunSemanticsProjection
     /// <summary>The plan's own reason an engine could not run on the surface, when the surface result carries none.</summary>
     private static string? NotAssessedReason(FrontendQualityReviewReport report, FrontendQualityReviewSurface surface) =>
         report.ExecutionPlan?.Engines.Select(e => e.For(surface)).FirstOrDefault(p => p is { Decision: not FrontendQualityPlanDecision.Run } && !string.IsNullOrWhiteSpace(p.Reason))?.Reason;
+}
+
+/// <summary>
+/// The three authenticated surfaces FQR keeps apart: authenticated API context (Local HTTPS Proxy or a session's API calls), the authenticated
+/// browser session (a signed-in browser whose sign-in state is actually known) and the authenticated UI/DOM review. API evidence is never
+/// browser or DOM evidence, and a Browser Companion page with unknown sign-in state is never an authenticated session.
+/// </summary>
+public sealed record FrontendQualityAuthenticatedEvidence(bool InScope, string Api, string BrowserSession, string UiDom, string? UiReason)
+{
+    public const string Observed = "Observed";
+    public const string Available = "Available";
+    public const string NotAssessed = "Not assessed";
+    public const string Assessed = "Assessed";
+    public const string Connected = "Connected";
+    public const string NotRecorded = "Not recorded";
+    public const string NotInScope = "Not in selected scope";
+
+    public static FrontendQualityAuthenticatedEvidence From(FrontendQualityReviewReport report, FrontendReviewAccessScope? scope, IReadOnlyList<FrontendQualitySurfaceCoverage> surfaces)
+    {
+        var access = report.TargetAccess;
+        var inScope = scope is { } s && FrontendQualityExecutionPlanner.ScopeSurfaces(s).Contains(FrontendQualityReviewSurface.Authenticated);
+        var api = report.AuthenticatedApiSurface is { ExecutedCount: > 0 } ? Observed
+            : !inScope ? NotInScope
+            : access is { AuthenticatedApiAvailable: true } ? Available : NotAssessed;
+        var session = access is { AuthenticatedBrowserSessionAvailable: true } ? Connected : inScope ? NotRecorded : NotInScope;
+        var authSurface = surfaces.FirstOrDefault(x => x.Surface == FrontendQualityReviewSurface.Authenticated);
+        var uiAssessed = inScope && access is { AuthenticatedBrowserDomAvailable: true } && authSurface is { State: FrontendQualitySurfaceCoverageState.Assessed };
+        var ui = uiAssessed ? Assessed : inScope ? NotAssessed : NotInScope;
+        var reason = ui != NotAssessed ? null
+            : access is { Method: BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy }
+                ? "The Local HTTPS Proxy provides authenticated API context only; reviewing signed-in pages needs a Managed Edge (CDP) browser context."
+                : access is { AuthenticatedBrowserDomAvailable: false } ? "No authenticated browser DOM was available to the review." : authSurface?.Reason;
+        return new(inScope, api, session, ui, reason);
+    }
+}
+
+/// <summary>
+/// Pipeline quality gate states from source evidence. Pass/fail is only ever stated from execution evidence, which source analysis does not
+/// contain: configuration presence is never "not passed".
+/// </summary>
+public static class DeliveryGateStates
+{
+    public const string NoSnapshot = "Not assessed — select a source snapshot";
+    public const string ConfiguredNoExecution = "Configured in source · execution result not available";
+
+    /// <summary>The state for a gate: execution evidence (when present) wins; otherwise configuration or nothing.</summary>
+    public static string For(bool snapshotSelected, bool configured, string? executionResult) =>
+        executionResult is { Length: > 0 } result ? result
+        : !snapshotSelected ? NoSnapshot
+        : configured ? ConfiguredNoExecution
+        : "Not configured in the selected source";
 }

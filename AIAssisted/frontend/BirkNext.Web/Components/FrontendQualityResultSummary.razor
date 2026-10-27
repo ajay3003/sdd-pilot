@@ -36,7 +36,8 @@
         <dl class="fqr-run-dimensions" data-testid="fqr-run-dimensions">
             <div data-testid="fqr-dimension" data-dimension="automation">
                 <dt>Automated execution</dt>
-                <dd><strong data-testid="fqr-dimension-automation">@run.AutomationLabel</strong><span class="fqr-muted"> — @run.AutomationDetail</span></dd>
+                <dd><strong data-testid="fqr-dimension-automation">@run.AutomationLabel</strong><span class="fqr-muted"> — @run.AutomationDetail</span>
+                    @if (run.OptionalTotal > 0) { <span class="fqr-muted" data-testid="fqr-optional-execution"> · @run.OptionalExecutionDetail</span> }</dd>
             </div>
             <div data-testid="fqr-dimension" data-dimension="coverage">
                 <dt>Coverage</dt>
@@ -45,6 +46,15 @@
                     @if (run.SelectedScope is { } selected)
                     {
                         <span class="fqr-muted" data-testid="fqr-dimension-scope"> — selected scope: @FrontendQualityReviewScopes.Label(selected)</span>
+                    }
+                    <span class="fqr-assessed-scope" data-testid="fqr-assessed-scope">Assessed: @run.ReviewScopeSummary</span>
+                    @if (run.Authenticated is { InScope: true } auth)
+                    {
+                        <ul class="fqr-dimension-list" data-testid="fqr-authenticated-surfaces">
+                            <li data-testid="fqr-auth-api">Authenticated API context: <strong>@auth.Api</strong></li>
+                            <li data-testid="fqr-auth-browser">Authenticated browser session: <strong>@auth.BrowserSession</strong></li>
+                            <li data-testid="fqr-auth-ui">Authenticated UI/DOM: <strong>@auth.UiDom</strong>@if (auth.UiReason is { Length: > 0 } uiWhy) {<span class="fqr-muted"> — @uiWhy</span>}</li>
+                        </ul>
                     }
                     @if (run.Surfaces.Count > 0)
                     {
@@ -141,10 +151,8 @@
                     }
                 </ul>
             }
-            @if (Report is not null && FrontendQualityPostRunPresentation.ShowSeverityNote(Report, Result.ActionableIssues))
-            {
-                <p class="fqr-release-severity-note" data-testid="fqr-release-severity-note">@FrontendQualityDecisionSupportService.SeverityNotBlocking</p>
-            }
+            @* Always stated once: severity is technical, release impact is policy. Shown whether or not a critical issue exists. *@
+            <p class="fqr-release-severity-note" data-testid="fqr-release-severity-note">@FrontendQualityDecisionSupportService.SeverityNotBlocking</p>
         </div>
     }
 

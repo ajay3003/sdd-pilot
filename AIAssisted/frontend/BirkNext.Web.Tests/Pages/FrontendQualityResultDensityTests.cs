@@ -549,7 +549,10 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         var page = Result(RealisticReport());
         var note = page.Find("[data-testid=fqr-a11y-overlap-note]");
         note.HasAttribute("hidden").Should().BeFalse();
-        note.TextContent.Should().Contain("a criterion may have automated evidence and still require human assessment");
+        note.TextContent.Should().Contain("A criterion may have automated evidence and still require manual review");
+        // Two axes, never one additive row: evidence coverage (partition of the profile) and assessment state (inside it).
+        page.FindAll("[data-testid=fqr-a11y-axis]").Select(x => x.GetAttribute("data-axis")).Should().Equal("evidence", "assessment");
+        page.Find("[data-testid=fqr-a11y-axis][data-axis=assessment]").TextContent.Should().Contain("Automated issues detected").And.Contain("Manual assessment required");
         page.Find("[data-testid=fqr-accessibility-summary]").TextContent.Should().NotContainAny("criteria failed", "of 48 failed");
         // §20 Automated failure EVIDENCE, never "recorded as failed": partial automation is not a criterion outcome.
         var accessibility = page.FindAll("[data-testid=fqr-domain-result]").Single(d => d.GetAttribute("data-category") == "Accessibility");

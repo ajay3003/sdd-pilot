@@ -97,7 +97,7 @@ public sealed class FrontendQualityScopeDefaultUITests : BunitContext
         page.Find("[data-testid=fqr-scope-recommendation]").TextContent.Should().Be("Recommended because both public and authenticated review access are ready.");
         page.Find("[data-testid=fqr-scope-option-PublicAndAuthenticated] small").TextContent
             .Should().Be("Review both public and authenticated application surfaces for the broadest available coverage.");
-        page.Find("dialog dl").TextContent.Should().Contain("Ready").And.Contain("Microsoft Entra ID");
+        page.Find("dialog dl").TextContent.Should().Contain("Authenticated API context available").And.Contain("Microsoft Entra ID");
     }
 
     [Fact]

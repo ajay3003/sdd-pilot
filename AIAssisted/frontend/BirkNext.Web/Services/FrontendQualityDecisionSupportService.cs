@@ -60,7 +60,8 @@ public static class FrontendQualityDecisionSupportService
             return FrontendQualityReleaseDisposition.Blocked;
 
         var blockingIds = policy.BlockingLogicalIssueIds.ToHashSet(StringComparer.Ordinal);
-        if (issues.Any(issue => blockingIds.Contains(issue.LogicalId)))
+        // Only actionable issues can match a release policy: a derived indicator or informational observation never blocks by itself.
+        if (issues.Any(issue => issue.IsActionable && blockingIds.Contains(issue.LogicalId)))
             return FrontendQualityReleaseDisposition.Blocked;
 
         if (manualItems.Count > 0)
@@ -75,7 +76,7 @@ public static class FrontendQualityDecisionSupportService
     }
 
     public const string IssuePolicyRule = "Target Environment release policy lists this logical issue as release-blocking.";
-    public const string SeverityNotBlocking = "Critical/high findings require attention but do not independently block this review.";
+    public const string SeverityNotBlocking = "Finding severity describes the technical severity of the observation. It does not by itself determine release status.";
 
     /// <summary>
     /// Every exact cause of a Blocked decision, by type: a CONFIGURATION blocker (a Required engine that is disabled), a COVERAGE blocker per
@@ -126,7 +127,7 @@ public static class FrontendQualityDecisionSupportService
         }
 
         var blockingIds = policy.BlockingLogicalIssueIds.ToHashSet(StringComparer.Ordinal);
-        foreach (var issue in issues.Where(issue => blockingIds.Contains(issue.LogicalId)))
+        foreach (var issue in issues.Where(issue => issue.IsActionable && blockingIds.Contains(issue.LogicalId)))
             blockers.Add(new(FrontendQualityBlockerType.IssuePolicy, issue.CanonicalTitle,
                 $"{issue.PrimarySeverity} logical issue matched the release policy.", IssuePolicyRule));
         return blockers;

@@ -42,10 +42,10 @@ public sealed class FrontendQualityPreRunCleanupTests
         var summary = new FrontendQualityPreRunEngineSummary(rows);
         summary.AllRequiredAvailable.Should().BeTrue();
         summary.Limitations.Should().HaveCount(4).And.NotContain(r => r.EngineId == FrontendQualityEngineId.BrowserRuntime);
-        summary.Counts.Should().Be("2 required available · 1 optional ready · 2 optional unavailable · 2 optional not configured · 1 optional disabled");
+        summary.Counts.Should().Be("Required: 2/2 available · Optional: 1 available · 4 unavailable (non-blocking) · 1 off");
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
-        readiness.Message.Should().Be("Lighthouse and Passive Web Security are currently unavailable. Browser Quality and Browser Performance Quality are not configured. All required capabilities are available, so the review can run.");
-        readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
+        readiness.Message.Should().Be("Lighthouse and Passive Web Security are currently unavailable. Browser Quality and Browser Performance Quality are not configured. All required capabilities are available, so the review can run. Unavailable optional capabilities do not block the review, create findings or reduce the result.");
+        readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Ready, "only optional capabilities are unavailable");
     }
 
     [Theory]

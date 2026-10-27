@@ -98,7 +98,7 @@ public sealed class FrontendQualityScopeRecommendationTests
             Method = AuthenticatedTestingMethod.LocalHttpsProxy, ContextStatus = AuthenticatedApiContextStatus.Available, AuthenticatedApi = true,
         }, false, null, LocalHttpsProxyState.Ready);
 
-        FrontendQualityReviewScopes.TestingContextLabel(access).Should().Be("Ready");
+        FrontendQualityReviewScopes.TestingContextLabel(access).Should().Be("Authenticated API context available");
         FrontendQualityReviewScopes.VerificationLabel(access).Should().NotContain("unavailable", "\"Verification: Not needed\" is not authentication unavailable");
         Recommend(context, access).Scope.Should().Be(FrontendReviewAccessScope.PublicAndAuthenticated);
     }

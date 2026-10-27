@@ -62,9 +62,11 @@ public sealed class FrontendQualityReviewHistory(IJSRuntime js)
     {
         ProfileId = profileId,
         CompletedAt = report.CompletedAt is { } completed ? new DateTimeOffset(DateTime.SpecifyKind(completed, DateTimeKind.Utc)) : DateTimeOffset.UtcNow,
-        Scope = report.TargetAccess?.ReviewScope ?? report.ExecutionPlan?.Scope,
+        // The same scope order and logical-issue count as the post-run projection (FrontendQualityRunSemantics), so a history row and the
+        // result page never disagree. The full report is stored, so assessed surfaces and authenticated evidence are re-projected on open.
+        Scope = report.ExecutionPlan?.Scope ?? report.TargetAccess?.ReviewScope,
         Disposition = report.ReleaseDisposition,
-        IssueCount = report.LogicalIssues.Count(i => i.IsActionable),
+        IssueCount = FrontendQualityResultPresentation.Build(report).ActionableIssues.Count,
         RequiredAssessed = report.Coverage?.RequiredAssessed ?? 0,
         RequiredTotal = report.Coverage?.RequiredTotal ?? 0,
         Report = report,

@@ -34,7 +34,7 @@
         }
         else
         {
-            <ReviewDisclosure Text="View limitation details" CollapseText="Hide limitation details" TestId="fqr-readiness-limitations" Class="disclosure-inline disclosure-small">
+            <ReviewDisclosure Text="@(Readiness.Level == FrontendQualityReviewReadinessLevel.Limited ? "View limitation details" : "View capability details")" CollapseText="@(Readiness.Level == FrontendQualityReviewReadinessLevel.Limited ? "Hide limitation details" : "Hide capability details")" TestId="fqr-readiness-limitations" Class="disclosure-inline disclosure-small">
                 <ul class="fqr-readiness-details" data-testid="fqr-readiness-details">
                     @foreach (var detail in Readiness.Details)
                     {

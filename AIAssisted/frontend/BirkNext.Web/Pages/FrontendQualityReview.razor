@@ -183,7 +183,7 @@
                     <FrontendQualityNotAssessedList Items="FrontendQualityLandingPresentation.NotAssessed" />
                 </ReviewDisclosure>
 
-                <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="Configured in pipeline source · not passed"
+                <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="@DeliveryGateStates.NoSnapshot"
                                   TestId="fqr-delivery-gates" Class="fqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
                     @if (_deliveryExpanded)
                     {

@@ -137,8 +137,7 @@ public static class FrontendQualityResultPresentation
             reasons.Add($"{criticalHigh} critical or high logical issue{(criticalHigh == 1 ? "" : "s")} to resolve.");
         if (accessibility is { RequireManualAssessment: > 0 } a)
             reasons.Add($"{a.RequireManualAssessment} WCAG criteria still require manual assessment.");
-        if (completeness.OptionalCoverage is FrontendQualityOptionalCoverageState.Partial or FrontendQualityOptionalCoverageState.None)
-            reasons.Add($"Optional evidence is incomplete ({completeness.OptionalAssessed} of {completeness.OptionalTotal} optional engines completed).");
+        // Optional engines that did not complete are not a reason a person must decide: they are non-blocking unless policy makes them required.
 
         var (label, statement) = disposition switch
         {

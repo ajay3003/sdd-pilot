@@ -1552,3 +1552,9 @@
 /* "Severity: " is read by assistive technology; the badge itself shows the value. */
 ::deep .fqr-sr-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 ::deep .fqr-severity { position: relative; }
+
+/* Accessibility: two axes side by side (evidence coverage | assessment state), never one additive row. */
+::deep .fqr-a11y-axes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .75rem; }
+::deep .fqr-a11y-axis { padding: .5rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+::deep .fqr-a11y-axis h4 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); }
+::deep .fqr-assessed-scope { display: block; margin-top: .25rem; }

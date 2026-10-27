@@ -78,6 +78,9 @@ public static class FrontendQualityLandingPresentation
     public const string ReadyMessage = "The selected target and review configuration are valid. Target reachability is verified when the review starts.";
     public const string LimitedTitle = "Review can run with limitations";
     public const string AllRequiredAvailableSentence = "All required capabilities are available, so the review can run.";
+    /// <summary>All required capabilities are available and only optional ones are not: a neutral scope statement, never a warning.</summary>
+    public const string PartialScopeTitle = "Review scope available: Partial";
+    public const string OptionalNonBlockingSentence = "Unavailable optional capabilities do not block the review, create findings or reduce the result.";
     public const string BlockedTitle = "Review cannot start";
     public const string LoadingTitle = "Loading target environment";
 
@@ -209,6 +212,12 @@ public static class FrontendQualityLandingPresentation
                 message += " " + AllRequiredAvailableSentence;
             else if (requiredUnavailable.Count > 0)
                 message += $" Required coverage will stay incomplete: {Join(requiredUnavailable)}.";
+
+            // Only optional capabilities unavailable, every required one available, no configuration warning: the review runs with its full
+            // required scope. Stated neutrally (Ready level, "Review scope available: Partial") with derived counts — never a warning.
+            if (unavailable.Count > 0 && stateSummary.RequiredLimitations.Count == 0 && stateSummary.AllRequiredAvailable && context.ValidationWarnings.Count == 0)
+                return new(FrontendQualityReviewReadinessLevel.Ready, PartialScopeTitle, message + " " + OptionalNonBlockingSentence,
+                    [stateSummary.RequiredLine, stateSummary.OptionalLine, .. details], "Edit engines", FrontendReviewEnginesHref);
 
             // The action follows the cause: capability limitations are fixed where engines are configured; a configuration
             // warning with nothing unavailable belongs to the Target Environment itself.

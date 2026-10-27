@@ -32,7 +32,7 @@ public sealed class FrontendQualityRunSemanticsTests
     /// <param name="authenticatedApiChecks">Authenticated API checks executed during the run.</param>
     /// <param name="requiredCompleted">Both required engines completed.</param>
     /// <param name="optionalCompleted">The optional Accessibility engine completed.</param>
-    private static FrontendQualityReviewReport Report(
+    internal static FrontendQualityReviewReport Report(
         FrontendReviewAccessScope scope = FrontendReviewAccessScope.PublicAndAuthenticated,
         bool authenticatedDomCompleted = false, int authenticatedApiChecks = 0, bool requiredCompleted = true, bool optionalCompleted = false,
         IReadOnlyList<FrontendQualityFinding>? findings = null, IReadOnlyList<FrontendQualityReleaseBlocker>? blockers = null)
@@ -128,7 +128,9 @@ public sealed class FrontendQualityRunSemanticsTests
         Surface(run, FrontendQualityReviewSurface.Public).State.Should().Be(FrontendQualitySurfaceCoverageState.Assessed);
         Surface(run, FrontendQualityReviewSurface.Authenticated).State.Should().Be(FrontendQualitySurfaceCoverageState.NotAssessed);
         Surface(run, FrontendQualityReviewSurface.Authenticated).Reason.Should().Be(NoAuthDom, "the stored reason, never an invented one");
-        run.CoverageReasons.Should().Contain(r => r.StartsWith("Optional automation: 1 of 1 optional engine did not complete (Accessibility)"));
+        run.CoverageReasons.Should().NotContain(r => r.StartsWith("Optional automation"), "an optional engine is never a coverage reason by default");
+        run.OptionalNotCompleted.Should().Equal("Accessibility");
+        run.OptionalExecutionDetail.Should().Be("Optional execution: 0 of 1 completed · non-blocking");
     }
 
     [Fact]

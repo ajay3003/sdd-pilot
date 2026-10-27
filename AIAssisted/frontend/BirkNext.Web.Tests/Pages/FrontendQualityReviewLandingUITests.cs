@@ -418,9 +418,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready"));
         page.Find("[data-testid=fqr-readiness]").GetAttribute("role").Should().Be("status");
-        page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be("Review can run with limitations");
+        page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be(FrontendQualityLandingPresentation.PartialScopeTitle);
         // 2. The unavailable capability is NAMED in the message itself. "1 enabled optional capability is currently
         // unavailable" is true and useless: the reader still has to expand and scroll to learn which one.
         var message = page.Find("[data-testid=fqr-readiness-message]").TextContent;
@@ -512,11 +512,11 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.WaitForAssertion(() => State(page, FrontendQualityEngineId.Accessibility).Should().Be("Ready"));
+        page.WaitForAssertion(() => State(page, FrontendQualityEngineId.Accessibility).Should().Be("Available"));
         page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Requested but unavailable");
         State(page, FrontendQualityEngineId.StaticSecurity).Should().Be("Available");
         Capability(page, FrontendQualityEngineId.StaticSecurity).QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Contain("public frontend");
-        State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Ready");
+        State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Available");
     }
 
     // 12. Review results are not shown as successful before execution.

@@ -193,10 +193,10 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var page = Page(Context(), [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.PassiveSecurity),
             Engine(FrontendQualityEngineIdDto.Lighthouse, ready: false, reason: "Lighthouse CLI not installed on this host.")]);
 
-        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready", "only optional capabilities are unavailable: a neutral partial scope"));
 
         // One state, one explanation, one action.
-        page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be("Review can run with limitations");
+        page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be(FrontendQualityLandingPresentation.PartialScopeTitle);
         // 2. The unavailable capability is NAMED in the message itself. "1 enabled optional capability is currently
         // unavailable" is true and useless: the reader still has to expand and scroll to learn which one.
         var message = page.Find("[data-testid=fqr-readiness-message]").TextContent;
@@ -382,7 +382,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         summary.DisabledCount.Should().Be(1, "HTTP Performance is switched off");
         // 16, 27. Three axes on the collapsed row — configuration, capability, and what is switched off — plus the
         // Required engine somebody switched off, which is a configuration inconsistency worth seeing without expanding.
-        summary.Collapsed.Should().Be("1 required ready · 1 optional unavailable · 1 optional not configured · 1 required disabled");
+        summary.Collapsed.Should().Be("Required: 1/2 available · 1 required disabled · Optional: 0 available · 2 unavailable (non-blocking)");
     }
 
     // 23. The RequiredButDisabled warning itself survives inside the expanded detail.

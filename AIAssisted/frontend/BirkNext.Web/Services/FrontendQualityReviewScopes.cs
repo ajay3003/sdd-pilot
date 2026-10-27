@@ -34,9 +34,9 @@ public static class FrontendQualityReviewScopes
     public static string TestingContextLabel(FrontendQualityTargetAccessContext? access) => access is null ? "Checking…"
         : access.Method switch
         {
-            AuthenticatedTestingMethod.LocalHttpsProxy => access.AuthenticatedApiAvailable ? "Ready" : "Not ready",
+            AuthenticatedTestingMethod.LocalHttpsProxy => access.AuthenticatedApiAvailable ? "Authenticated API context available" : "Authenticated API context not available",
             AuthenticatedTestingMethod.ManualOnly => "Manual verification only",
-            _ => access.AuthenticatedBrowserSessionAvailable ? "Ready" : "Not ready"
+            _ => access.AuthenticatedBrowserSessionAvailable ? "Authenticated browser session connected" : "Authenticated browser session not available"
         };
 
     public static string VerificationLabel(FrontendQualityTargetAccessContext? access) => access is null ? "Checking…"
@@ -190,15 +190,17 @@ public static class FrontendQualityReviewScopes
     {
         var assessed = (report.CoveragePasses.Count > 0 ? report.CoveragePasses.SelectMany(p => p.Report.EngineOutcomes) : report.EngineOutcomes)
             .Where(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed && o.AccessKind is not null)
-            .Select(o => (o.DisplayName, Path: PathFor(o.AccessKind!.Value)))
+            .Select(o => (o.DisplayName, Path: PathFor(o.AccessKind!.Value), Kind: o.AccessKind!.Value))
             .ToList();
-        List<string> Names(FrontendQualityEngineAccessPath path) => assessed.Where(a => a.Path == path).Select(a => a.DisplayName).ToList();
+        List<string> Names(FrontendQualityEngineAccessPath path) => assessed.Where(a => a.Path == path).Select(a => a.DisplayName).Distinct().ToList();
         var publicEngines = Names(FrontendQualityEngineAccessPath.Public);
-        var authenticatedEngines = Names(FrontendQualityEngineAccessPath.Authenticated);
+        // Signed-in pages are covered only by an authenticated BROWSER session; authenticated HTTP (proxy API context) is API evidence.
+        var authenticatedEngines = assessed.Where(a => a.Kind == FrontendQualityEngineAccessKind.AuthenticatedBrowserSession).Select(a => a.DisplayName).Distinct().ToList();
+        var apiEngines = assessed.Where(a => a.Kind == FrontendQualityEngineAccessKind.AuthenticatedHttp).Select(a => a.DisplayName).Distinct().ToList();
         return new FrontendQualityExecutedScope(
             report.TargetAccess is { } access ? ConfiguredScope(access) : null,
             Combine(publicEngines.Count > 0, authenticatedEngines.Count > 0),
-            publicEngines, authenticatedEngines, Names(FrontendQualityEngineAccessPath.CompanionEvidence));
+            publicEngines, authenticatedEngines, Names(FrontendQualityEngineAccessPath.CompanionEvidence), apiEngines);
     }
 
     /// <summary>"Public + authenticated", or "Public only · authenticated scope unavailable" when the run reaches less.</summary>
@@ -277,8 +279,12 @@ public static class FrontendQualityReviewScopes
     public static string EngineScopeLabel(FrontendQualityEngineScopeEntry entry) =>
         entry.Available ? PathLabel(entry.Path) : $"{PathLabel(entry.Path)} · not available";
 
-    public static string ExecutedLabel(FrontendQualityExecutedScope scope) =>
-        scope.Executed is { } executed ? Label(executed) : "No access path assessed";
+    public static string ExecutedLabel(FrontendQualityExecutedScope scope)
+    {
+        var apiOnly = scope.ApiEngines.Count > 0 && scope.AuthenticatedEngines.Count == 0;
+        var label = scope.Executed is { } executed ? Label(executed) : apiOnly ? "No page surface assessed" : "No access path assessed";
+        return apiOnly ? $"{label} · authenticated API evidence (signed-in pages not assessed)" : label;
+    }
 
     private static FrontendReviewAccessScope? Combine(bool publicPath, bool authenticatedPath) => (publicPath, authenticatedPath) switch
     {

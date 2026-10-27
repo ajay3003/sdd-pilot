@@ -19,7 +19,7 @@
                 <li class="fqr-issue fqr-issue-@issue.PrimarySeverity.ToString().ToLowerInvariant()"
                     data-testid="fqr-logical-issue" data-logical-id="@issue.LogicalId" data-severity="@issue.PrimarySeverity">
                     <div class="fqr-issue-head">
-                        <span class="fqr-severity fqr-severity-@issue.PrimarySeverity.ToString().ToLowerInvariant()" data-testid="fqr-issue-severity"><span class="fqr-sr-label">Severity: </span>@issue.PrimarySeverity</span>
+                        <span class="fqr-severity fqr-severity-@issue.PrimarySeverity.ToString().ToLowerInvariant()" data-testid="fqr-issue-severity"><span class="fqr-sr-label">Technical severity: </span>@issue.PrimarySeverity</span>
                         <span class="fqr-issue-title" data-testid="fqr-issue-title">@issue.CanonicalTitle</span>
                         <span class="fqr-pill fqr-pill-muted" data-testid="fqr-issue-domain">@FrontendQualityCategoryEngines.Label(issue.Category)</span>
                         @* The same problem in another domain, named rather than duplicated into it. *@
@@ -43,7 +43,7 @@
                         {
                             var impact = ImpactOf(issue);
                             <span class="fqr-pill fqr-pill-@(impact == FrontendQualityReleaseImpact.Blocking ? "attention" : "muted") fqr-issue-policy" data-testid="fqr-issue-impact"
-                                  data-impact="@impact">Release policy: @FrontendQualityPostRunPresentation.IssueImpactLabel(impact)</span>
+                                  data-impact="@impact">Release impact: @FrontendQualityPostRunPresentation.IssueImpactLabel(impact)</span>
                             @if (FrontendQualityPostRunPresentation.RequiresHumanReview(issue, impact))
                             {
                                 <span class="fqr-pill fqr-pill-info fqr-issue-policy" data-testid="fqr-issue-human-review">Human review required</span>

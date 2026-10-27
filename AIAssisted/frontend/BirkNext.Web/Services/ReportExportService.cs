@@ -288,20 +288,33 @@ public sealed class ReportExportService : IReportExportService
             sb.Append($"<dt><strong>Result:</strong></dt><dd>{Esc(run.Headline)}</dd>\n");
             sb.Append($"<dt><strong>Automated execution:</strong></dt><dd>{Esc(run.AutomationLabel)} — {Esc(run.AutomationDetail)}</dd>\n");
             sb.Append($"<dt><strong>Required automated engines:</strong></dt><dd>{Esc(completeness.RequiredCoverageLabel)} ({completeness.RequiredAssessed} of {completeness.RequiredTotal})</dd>\n");
-            sb.Append($"<dt><strong>Optional automation coverage:</strong></dt><dd>{Esc(completeness.OptionalCoverageLabel)} ({completeness.OptionalAssessed} of {completeness.OptionalTotal}; non-blocking)</dd>\n");
+            sb.Append($"<dt><strong>Optional automation coverage:</strong></dt><dd>{Esc(run.OptionalExecutionDetail)}</dd>\n");
             sb.Append($"<dt><strong>Coverage:</strong></dt><dd>{Esc(run.CoverageLabel)}"
                 + (run.SelectedScope is { } selected ? $" — selected scope {Esc(FrontendQualityReviewScopes.Label(selected))}" : "") + "</dd>\n");
+            sb.Append($"<dt><strong>Assessed:</strong></dt><dd>{Esc(run.ReviewScopeSummary)}</dd>\n");
+            if (run.Authenticated is { InScope: true } auth)
+            {
+                sb.Append($"<dt>Authenticated API context:</dt><dd>{Esc(auth.Api)}</dd>\n");
+                sb.Append($"<dt>Authenticated browser session:</dt><dd>{Esc(auth.BrowserSession)}</dd>\n");
+                sb.Append($"<dt>Authenticated UI/DOM:</dt><dd>{Esc(auth.UiDom)}{(auth.UiReason is { Length: > 0 } uiWhy ? $" — {Esc(uiWhy)}" : "")}</dd>\n");
+            }
             foreach (var surface in run.Surfaces)
                 sb.Append($"<dt><strong>{Esc(surface.Label)} surface:</strong></dt><dd>{Esc(surface.StateLabel)}{(surface.Reason is { Length: > 0 } why ? $" — {Esc(why)}" : "")}</dd>\n");
             foreach (var reason in run.CoverageReasons.Where(r => !run.Surfaces.Any(s => r.StartsWith(s.Label + " surface", StringComparison.Ordinal))))
                 sb.Append($"<dt>Coverage limitation:</dt><dd>{Esc(reason)}</dd>\n");
             sb.Append($"<dt><strong>Findings:</strong></dt><dd>{Esc(run.FindingsLabel)} — {Esc(run.FindingsDetail)}. {Esc(run.CountRelationship)}</dd>\n");
-            if (run.AccessibilityDetail is { } a11y)
-                sb.Append($"<dt><strong>Accessibility profile:</strong></dt><dd>{Esc(run.Accessibility!.ProfileLabel)} — {Esc(a11y)}</dd>\n");
+            if (run.Accessibility is { } a11y)
+            {
+                // Two axes, as on the result page: evidence coverage partitions the profile; the assessment state describes criteria inside it.
+                sb.Append($"<dt><strong>Accessibility profile:</strong></dt><dd>{Esc(a11y.ProfileLabel)}</dd>\n");
+                sb.Append($"<dt>Accessibility evidence coverage:</dt><dd>Criteria in profile {a11y.CriteriaInScope} · automated evidence available {a11y.WithEvidence} (not a pass count) · no automated evidence {a11y.WithoutExecutionEvidence}</dd>\n");
+                sb.Append($"<dt>Accessibility assessment state:</dt><dd>Automated issues detected {a11y.WithFailureEvidence} · manual assessment required {a11y.RequireManualAssessment}. Automated evidence and manual assessment overlap; a criterion may have automated evidence and still require manual review.</dd>\n");
+            }
             sb.Append($"<dt><strong>Manual assessment:</strong></dt><dd>{Esc(run.ManualAssessmentRequired ? "Required" : "Not required")}{(run.ManualDetail is { Length: > 0 } manual ? $" — {Esc(manual)}" : "")}</dd>\n");
             sb.Append($"<dt><strong>Decision:</strong></dt><dd>{Esc(run.DecisionLabel)}</dd>\n");
             foreach (var reason in run.DecisionReasons)
                 sb.Append($"<dt>Human review remains because:</dt><dd>{Esc(reason)}</dd>\n");
+            sb.Append($"<dt>Severity and release:</dt><dd>{Esc(FrontendQualityDecisionSupportService.SeverityNotBlocking)}</dd>\n");
         }
 
         sb.Append("</dl>\n");
@@ -330,7 +343,7 @@ public sealed class ReportExportService : IReportExportService
         {
             sb.Append($"<section class=\"block\"><h2>{Esc(wcag.TargetLabel)} — Accessibility / WCAG</h2>");
             sb.Append($"<p>{Esc(WcagAssessment.Disclaimer)}</p>");
-            sb.Append($"<p>Profile: {Esc(wcag.Profile?.ProfileId ?? "Unknown (legacy)")} ? Version: {Esc(wcag.Profile?.VersionLabel ?? "Legacy recorded target")} ? Criteria: {wcag.Profile?.CriterionIds.Count ?? wcag.Results.Select(r => r.Definition.CriterionId).Distinct().Count()} ? Assessment timestamp: {Esc(wcag.AssessedAt?.ToString("u") ?? "Unknown (legacy)")} ? Pages with evidence: {wcag.PagesWithEvidence}</p>");
+            sb.Append($"<p>Profile: {Esc(wcag.Profile?.ProfileId ?? "Unknown (legacy)")} ? Version: {Esc(wcag.Profile?.VersionLabel ?? "Legacy recorded target")} · Criteria: {wcag.Profile?.CriterionIds.Count ?? wcag.Results.Select(r => r.Definition.CriterionId).Distinct().Count()} · Assessment timestamp: {Esc(wcag.AssessedAt?.ToString("u") ?? "Unknown (legacy)")} · Pages with evidence: {wcag.PagesWithEvidence}</p>");
             sb.Append("<p>Automatic check evidence and manual decisions are reported separately. Missing evidence is not a pass; partial rule coverage does not establish complete criterion coverage.</p>");
             sb.Append(Table(["Page", "Criterion", "Level", "Title", "Automation", "Result", "Findings", "Confidence", "Evidence", "Last tested", "Manual review"],
                 wcag.Results.Select(r => new[]
@@ -422,7 +435,17 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
 
-        if (report.Recommendations.Count > 0)
+        // Recommendations follow logical issues (as on the result page): one entry per remediation theme, never one per duplicated source finding.
+        var themes = report.LogicalIssues.Count == 0 ? [] : FrontendQualityRecommendationGrouper.Build(FrontendQualityResultPresentation.Build(report).ActionableIssues);
+        if (themes.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n<ul>\n");
+            foreach (var theme in themes)
+                sb.Append($"<li><strong>{Esc(SanitizePassive(theme.Issues[0].Recommendation))}</strong> ({Esc(theme.Title)}) — {theme.SourceFindingCount} source finding{(theme.SourceFindingCount == 1 ? "" : "s")}"
+                    + (theme.AffectedPages.Count > 0 ? $" · {theme.AffectedPages.Count} affected page{(theme.AffectedPages.Count == 1 ? "" : "s")}" : "") + "</li>\n");
+            sb.Append("</ul>\n</section>\n");
+        }
+        else if (report.Recommendations.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
             sb.Append(RecommendationList(report.Recommendations));
@@ -497,7 +520,7 @@ public sealed class ReportExportService : IReportExportService
         var required = report.EngineOutcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Required).ToList();
 
         sb.Append("<section class=\"block\">\n<h2>Release disposition</h2>\n");
-        sb.Append($"<p><strong>{Esc(disposition.ToString())}</strong> — {Esc(dispositionText)}</p>\n");
+        sb.Append($"<p><strong>{Esc(FrontendQualityReviewHistory.DispositionLabel(disposition))}</strong> — {Esc(dispositionText)}</p>\n");
         // The page's count model, not raw list lengths: informational and derived items are neither logical issues nor
         // source findings, and are listed by their own names.
         var view = FrontendQualityResultPresentation.Build(report);
@@ -555,7 +578,9 @@ public sealed class ReportExportService : IReportExportService
             sb.Append($"<dt><strong>Access used:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.ExecutedLabel(executed))}{(executed.Partial ? " (partial: the configured scope was not fully assessed)" : "")}</dd>\n");
             sb.Append($"<dt><strong>Public frontend reviewed by:</strong></dt><dd>{Esc(executed.PublicEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.PublicEngines))}</dd>\n");
             if (access.RequiresAuthentication || executed.AuthenticatedEngines.Count > 0)
-                sb.Append($"<dt><strong>Authenticated coverage reviewed by:</strong></dt><dd>{Esc(executed.AuthenticatedEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.AuthenticatedEngines))}</dd>\n");
+                sb.Append($"<dt><strong>Signed-in pages reviewed by:</strong></dt><dd>{Esc(executed.AuthenticatedEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.AuthenticatedEngines))}</dd>\n");
+            if (executed.ApiEngines.Count > 0)
+                sb.Append($"<dt><strong>Authenticated API checks by:</strong></dt><dd>{Esc(string.Join(", ", executed.ApiEngines))} (API evidence — not signed-in page coverage)</dd>\n");
             sb.Append($"<dt><strong>Testing method:</strong></dt><dd>{Esc(AuthenticatedTestingMethodLabels.Option(access.Method))}</dd>\n");
             sb.Append($"<dt><strong>Access mode:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ModeLabel(access.Mode))}</dd>\n");
             sb.Append($"<dt><strong>Authenticated context:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ApiContextLabel(access))}</dd>\n");
@@ -633,16 +658,26 @@ public sealed class ReportExportService : IReportExportService
         }
 
         sb.Append("<section class=\"block\">\n<h2>Logical issues</h2>\n");
-        if (report.LogicalIssues.Count == 0)
+        // The result page's grouping (regrouped logical issues): actionable issues here; derived indicators and informational observations
+        // after them, labelled as such and never counted as issues or source findings.
+        var exportIssues = report.LogicalIssues.Count == 0 ? [] : FrontendQualityResultPresentation.Build(report).LogicalIssues.OrderBy(i => i.IsActionable ? 0 : 1).ToList();
+        if (exportIssues.Count == 0)
             sb.Append("<p>No automated findings were produced. This does not remove manual review obligations or assessment limitations.</p>\n");
-        foreach (var issue in report.LogicalIssues)
+        sb.Append($"<p>{Esc(FrontendQualityDecisionSupportService.SeverityNotBlocking)}</p>\n");
+        var derivedHeadingWritten = false;
+        foreach (var issue in exportIssues)
         {
-            sb.Append($"<article><h3>{Esc(issue.CanonicalTitle)}</h3><p><strong>Logical ID:</strong> {Esc(issue.LogicalId)}</p><p><strong>Severity:</strong> {Esc(issue.PrimarySeverity.ToString())} &nbsp; <strong>Category:</strong> {Esc(issue.Category.ToString())}</p>\n");
+            if (!issue.IsActionable && !derivedHeadingWritten)
+            {
+                sb.Append("<h3>Derived indicators and observations</h3><p>Derived from evidence elsewhere or informational; not logical issues, not source findings and not release-impacting by themselves.</p>\n");
+                derivedHeadingWritten = true;
+            }
+            sb.Append($"<article><h3>{Esc(issue.CanonicalTitle)}</h3><p><strong>Logical ID:</strong> {Esc(issue.LogicalId)}</p><p><strong>Technical severity:</strong> {Esc(issue.PrimarySeverity.ToString())} &nbsp; <strong>Category:</strong> {Esc(issue.Category.ToString())} &nbsp; {Esc(issue.SourceFindingCount.ToString())} {(issue.Derived ? "derived indicator(s)" : "source finding(s)")}{(issue.AffectedPages.Count > 1 ? $" · {issue.AffectedPages.Count} affected pages" : "")}</p>\n");
             if (issue.IsActionable)
             {
                 // Severity, the automatic release policy and the human decision as three stated facts — as on the result page.
                 var impact = FrontendQualityPostRunPresentation.IssueImpact(report, issue);
-                sb.Append($"<p><strong>Release policy:</strong> {Esc(FrontendQualityPostRunPresentation.IssueImpactLabel(impact))}"
+                sb.Append($"<p><strong>Release impact:</strong> {Esc(FrontendQualityPostRunPresentation.IssueImpactLabel(impact))}"
                     + (FrontendQualityPostRunPresentation.RequiresHumanReview(issue, impact) ? " &nbsp; <strong>Human review required</strong>" : "") + "</p>\n");
             }
             if (FrontendQualityPostRunPresentation.WcagCriteria(issue) is { Count: > 0 } criteria)

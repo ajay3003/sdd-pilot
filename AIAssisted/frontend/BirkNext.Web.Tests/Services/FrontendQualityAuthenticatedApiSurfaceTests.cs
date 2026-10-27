@@ -153,7 +153,8 @@ public sealed class FrontendQualityAuthenticatedApiSurfaceTests : BunitContext
         executed.Configured.Should().Be(scope);
         if (calls > 0)
         {
-            executed.AuthenticatedEngines.Should().NotBeEmpty();
+            executed.ApiEngines.Should().NotBeEmpty("proxy API checks are authenticated API evidence");
+            executed.AuthenticatedEngines.Should().BeEmpty("API context is never signed-in page coverage");
             result.QualityReport!.Findings.Where(f => f.SourceSystem == FrontendQualityAuthenticatedApiSurfaceFindings.SourceSystem)
                 .Should().OnlyContain(f => f.CoverageMode == FrontendReviewAccessScope.AuthenticatedOnly);
         }

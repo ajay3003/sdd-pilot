@@ -19,6 +19,7 @@
                 @foreach (var s in _sources.Snapshots.Where(s => s.Pipelines > 0)) { <option value="@s.Id">@s.ArchiveName · @s.Pipelines pipeline(s) · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
             </select>
         </label>
+        @if (string.IsNullOrEmpty(_selected) && !_loading) { <p class="sd-muted" role="status" data-testid="delivery-gate-state">@DeliveryGateStates.NoSnapshot</p> }
         @if (_loading) { <p class="sd-muted" role="status">Loading delivery evidence…</p> }
         else if (_delivery is { } e)
         {
@@ -53,7 +54,7 @@
                     }
                 </ul>
             }
-            <p class="sd-muted" data-testid="delivery-runtime">Configured in pipeline source — not executed, passed or deployed as far as this evidence shows. @e.RuntimeText</p>
+            <p class="sd-muted" data-testid="delivery-runtime">@DeliveryGateStates.ConfiguredNoExecution — configuration is never a pass or a failure; nothing here shows a gate executed, passed or deployed. @e.RuntimeText</p>
             <p><a class="sd-link" href="pipeline-review" data-testid="delivery-open-review">Open Pipeline Review</a></p>
         }
     }

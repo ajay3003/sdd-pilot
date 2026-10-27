@@ -58,7 +58,7 @@ public sealed class FrontendQualityAccessibilityCoverageTests
 
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         // Limited means automation still runs (through Browser Quality), so it is "available but limited", never absent.
-        readiness.Message.Should().Be("Automated accessibility coverage is available but limited. Lighthouse and Passive Web Security are currently unavailable. All required capabilities are available, so the review can run.");
+        readiness.Message.Should().Be("Automated accessibility coverage is available but limited. Lighthouse and Passive Web Security are currently unavailable. All required capabilities are available, so the review can run. Unavailable optional capabilities do not block the review, create findings or reduce the result.");
         readiness.Details.Should().Contain("Automated accessibility coverage: Available but limited").And.NotContain("Accessibility: Unavailable");
         readiness.Details.Should().Contain(FrontendQualityLandingPresentation.ManualAccessibilityDetail);
 

@@ -393,12 +393,25 @@ public static class FrontendQualityEngineOutcomeNormalizer
             Category = f.Category == "ResourceFailure" ? FrontendQualityCategory.Performance : FrontendQualityCategory.BlazorWasm,
             Description = Safe(f.Description),
             Recommendation = Safe(f.Recommendation),
-            Evidence = (f.Evidence ?? []).Select(Safe).ToList(),
+            Evidence = RuntimeEvidence(f, report),
             SourceSystem = "Browser Runtime",
             EngineId = FrontendQualityEngineId.BrowserRuntime,
-            SourceRuleId = f.Id,
+            // The backend id is unique per observation (console-error-{guid}), so it can never group: the rule is the finding category, and the
+            // logical identity is category + normalized title (FrontendQualityIssueIdentity.DerivedKey). The same COOP console error on two pages
+            // is one logical issue with two source findings and two affected pages.
+            SourceRuleId = $"runtime-{f.Category}",
             Status = CheckExecutionStatus.Failed,
         }).ToList();
+
+    /// <summary>The finding's evidence, plus the page it was observed on (as "Page: …") when the engine did not record one.</summary>
+    private static List<string> RuntimeEvidence(BrowserRuntimeFindingDto finding, BrowserRuntimeResultDto report)
+    {
+        var evidence = (finding.Evidence ?? []).Select(Safe).ToList();
+        var page = SafeNullable(report.FinalUrl) ?? SafeNullable(report.RequestedUrl);
+        if (page is { Length: > 0 } && !evidence.Any(e => e.StartsWith("Page: ", StringComparison.Ordinal)))
+            evidence.Add("Page: " + page);
+        return evidence;
+    }
 
     public static BrowserRuntimeResultDto SanitizeBrowserRuntimeReport(BrowserRuntimeResultDto report) => report with
     {

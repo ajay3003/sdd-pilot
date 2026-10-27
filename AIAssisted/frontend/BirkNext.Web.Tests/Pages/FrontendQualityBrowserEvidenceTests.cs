@@ -64,8 +64,8 @@ public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
             page.Find($"[data-testid={id}-toggle] .disclosure-hint").TextContent.Should().NotBeNullOrWhiteSpace();
         }
         // Concise definitions on the surface; the longer explanation collapsed behind its own disclosure.
-        page.Find("[data-testid=fqr-engine-state-definitions]").TextContent.Should().Contain("Ready").And.Contain("Available")
-            .And.Contain("no known blocker").And.Contain("runtime or evidence confirmed").And.Contain("means assessed");
+        page.Find("[data-testid=fqr-engine-state-definitions]").TextContent.Should().Contain("Available").And.Contain("can run now")
+            .And.Contain("Optional · Unavailable").And.Contain("non-blocking").And.Contain("means assessed").And.NotContain("Ready");
         page.Find("[data-testid=fqr-engine-state-definitions]").TagName.Should().Be("DL", "a text legend, never colour alone");
         page.Find("[data-testid=fqr-availability-help-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.Find("[data-testid=fqr-availability-help-body]").HasAttribute("hidden").Should().BeTrue();

@@ -40,6 +40,10 @@
                     {
                         <div><dt>Signed-in pages reviewed by</dt><dd data-testid="fqr-access-authenticated-engines">@EngineList(executed.AuthenticatedEngines)</dd></div>
                     }
+                    @if (executed.ApiEngines.Count > 0)
+                    {
+                        <div><dt>Authenticated API checks by</dt><dd data-testid="fqr-access-api-engines">@string.Join(", ", executed.ApiEngines) <span class="fqr-muted">(API evidence — not signed-in page coverage)</span></dd></div>
+                    }
                     @if (executed.CompanionEngines.Count > 0)
                     {
                         <div><dt>Browser Companion evidence</dt><dd data-testid="fqr-access-companion-engines">@string.Join(", ", executed.CompanionEngines) <span class="fqr-muted">(sign-in state of captured pages is not recorded)</span></dd></div>

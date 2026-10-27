@@ -10,11 +10,47 @@ public sealed class FrontendQualityPreRunEngineSummary(IReadOnlyList<FrontendQua
         && rows.Where(r => r.Policy == FrontendQualityEngineRequirement.Required)
             .All(r => r.State is FrontendQualityCapabilityState.Enabled or FrontendQualityCapabilityState.Ready);
 
-    public string Counts => string.Join(" · ", rows
-        .GroupBy(r => (r.Policy, r.State))
-        .OrderBy(g => FrontendQualityCapabilityStates.IsDisabled(g.Key.State) ? 1 : 0)
-        .ThenBy(g => g.Key.Policy == FrontendQualityEngineRequirement.Required ? 0 : 1)
-        .Select(g => $"{g.Count()} {(g.Key.Policy == FrontendQualityEngineRequirement.Required ? "required" : "optional")} {FrontendQualityCapabilityStates.Label(g.Key.State).ToLowerInvariant()}"));
+    private static bool Available(FrontendQualityCapabilityRow r) => r.State is FrontendQualityCapabilityState.Enabled or FrontendQualityCapabilityState.Ready;
+
+    /// <summary>Required capabilities that are switched on but cannot run now. Only these (or an explicit policy) make the pre-run state Limited.</summary>
+    public IReadOnlyList<FrontendQualityCapabilityRow> RequiredLimitations => Limitations.Where(r => r.Policy == FrontendQualityEngineRequirement.Required).ToList();
+
+    /// <summary>Optional capabilities that are switched on but cannot run now: neutral, non-blocking.</summary>
+    public IReadOnlyList<FrontendQualityCapabilityRow> OptionalLimitations => Limitations.Where(r => r.Policy != FrontendQualityEngineRequirement.Required).ToList();
+
+    /// <summary>"Required: 2/2 available".</summary>
+    public string RequiredLine
+    {
+        get
+        {
+            var required = rows.Where(r => r.Policy == FrontendQualityEngineRequirement.Required).ToList();
+            var disabled = required.Count(r => FrontendQualityCapabilityStates.IsDisabled(r.State));
+            var checking = required.Count(r => r.State == FrontendQualityCapabilityState.Checking);
+            var unavailable = required.Count(r => r.IsActive && !r.IsAvailable && r.State != FrontendQualityCapabilityState.Checking);
+            return $"Required: {required.Count(Available)}/{required.Count} available"
+                + (checking > 0 ? $" · {checking} checking" : "")
+                + (unavailable > 0 ? $" · {unavailable} unavailable" : "")
+                + (disabled > 0 ? $" · {disabled} required disabled" : "");
+        }
+    }
+
+    /// <summary>"Optional: 4 available · 2 unavailable (non-blocking) · 1 off". Availability, never execution.</summary>
+    public string OptionalLine
+    {
+        get
+        {
+            var optional = rows.Where(r => r.Policy != FrontendQualityEngineRequirement.Required).ToList();
+            var off = optional.Count(r => FrontendQualityCapabilityStates.IsDisabled(r.State));
+            var checking = optional.Count(r => r.State == FrontendQualityCapabilityState.Checking);
+            var unavailable = optional.Count(r => r.IsActive && !r.IsAvailable && r.State != FrontendQualityCapabilityState.Checking);
+            return $"Optional: {optional.Count(Available)} available"
+                + (checking > 0 ? $" · {checking} checking" : "")
+                + (unavailable > 0 ? $" · {unavailable} unavailable (non-blocking)" : "")
+                + (off > 0 ? $" · {off} off" : "");
+        }
+    }
+
+    public string Counts => RequiredLine + " · " + OptionalLine;
 
     public string LimitationCounts => string.Join("; ", Limitations.GroupBy(r => r.State)
         .Select(g => $"{g.Count()} {FrontendQualityCapabilityStates.Label(g.Key).ToLowerInvariant()}: {Names(g)}"));

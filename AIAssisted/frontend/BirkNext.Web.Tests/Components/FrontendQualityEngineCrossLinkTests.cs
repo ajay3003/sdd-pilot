@@ -70,7 +70,7 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
 
         // 16, 17. The three axes, each with its own count: configuration, capability, and what is switched off.
         var summary = cut.Find("[data-testid=fqr-engine-summary]").TextContent;
-        summary.Should().Be("2 required available · 3 optional available · 3 optional disabled");
+        summary.Should().Be("Required: 2/2 available · Optional: 3 available · 3 off");
         // The disabled engines are never folded into the unavailable ones.
         summary.Should().NotContain("unavailable");
         cut.Find("[data-testid=fqr-engine-configuration-note]").TextContent
@@ -162,7 +162,7 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
     [Theory]
     [InlineData(BrowserCompanionState.NotPaired, "Not configured", "Pair the Browser Companion")]
     [InlineData(BrowserCompanionState.Disconnected, "Requires browser session", "not reporting")]
-    [InlineData(BrowserCompanionState.Connected, "Ready", "connected")]
+    [InlineData(BrowserCompanionState.Connected, "Available", "connected")]
     public void BrowserDependentEnginesReportPairingAndEvidenceStatesWithoutFailureWording(
         BrowserCompanionState companion, string expectedState, string expectedSummary)
     {

@@ -212,13 +212,13 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         page.Find("[data-testid=fqr-release-primary]").TextContent.Should().Contain("Release policy blocks a logical issue");
         page.FindAll("[data-testid=fqr-blocker-type]").Select(t => t.GetAttribute("data-type")).Should().Equal("IssuePolicy");
-        page.FindAll("[data-testid=fqr-release-severity-note]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-release-severity-note]").TextContent.Should().Be(FrontendQualityDecisionSupportService.SeverityNotBlocking, "severity and release impact are always stated as separate facts");
 
         var cards = page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]");
         cards.Single(c => c.TextContent.Contains("Content-Security-Policy")).QuerySelector("[data-testid=fqr-issue-impact]")!
-            .TextContent.Trim().Should().Be("Release policy: Blocks release (policy)");
+            .TextContent.Trim().Should().Be("Release impact: Blocks release (policy)");
         cards.Single(c => c.TextContent.Contains("JavaScript payload")).QuerySelector("[data-testid=fqr-issue-impact]")!
-            .TextContent.Trim().Should().Be("Release policy: Not an automatic release blocker");
+            .TextContent.Trim().Should().Be("Release impact: Not an automatic release blocker");
 
         // Release impact filter.
         page.Find("[data-testid=fqr-issue-filter-impact]").Change(nameof(FrontendQualityReleaseImpact.Blocking));

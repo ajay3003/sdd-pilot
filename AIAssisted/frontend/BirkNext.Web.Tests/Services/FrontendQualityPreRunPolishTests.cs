@@ -97,15 +97,15 @@ public sealed class FrontendQualityPreRunPolishTests
     {
         var context = Context();
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), Rows(), false);
-        readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
-        readiness.Title.Should().Be("Review can run with limitations");
-        readiness.Message.Should().Be("Lighthouse and Passive Web Security are currently unavailable. All required capabilities are available, so the review can run.");
+        readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Ready, "optional engines unavailable is a neutral partial scope, not a warning");
+        readiness.Title.Should().Be(FrontendQualityLandingPresentation.PartialScopeTitle);
+        readiness.Message.Should().Be("Lighthouse and Passive Web Security are currently unavailable. All required capabilities are available, so the review can run. Unavailable optional capabilities do not block the review, create findings or reduce the result.");
     }
 
     [Fact]
     public void EngineStateSummaryIsUnchanged() =>
         new FrontendQualityPreRunEngineSummary(Rows()).Counts
-            .Should().Be("2 required available · 3 optional ready · 2 optional unavailable · 1 optional disabled");
+            .Should().Be("Required: 2/2 available · Optional: 3 available · 2 unavailable (non-blocking) · 1 off");
 
     [Fact]
     public void AccessibilityIsIncludedWithManualAssessmentAndNoCausalWording()
@@ -156,7 +156,7 @@ public sealed class FrontendQualityPreRunPolishTests
         performance.Summary.Should().Be("Uses recorded performance evidence (2 pages). Browser Companion is not connected.");
         rows.Should().NotContain(r => r.Summary == "Browser Companion connected.");
         // Ready from evidence is not a limitation, so the banner stays as in the connected case.
-        new FrontendQualityPreRunEngineSummary(rows).Counts.Should().Be("2 required available · 3 optional ready · 2 optional unavailable · 1 optional disabled");
+        new FrontendQualityPreRunEngineSummary(rows).Counts.Should().Be("Required: 2/2 available · Optional: 3 available · 2 unavailable (non-blocking) · 1 off");
     }
 
     [Fact]

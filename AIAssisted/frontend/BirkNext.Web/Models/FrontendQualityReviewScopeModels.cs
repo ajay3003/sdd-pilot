@@ -93,8 +93,12 @@ public sealed record FrontendQualityExecutedScope(
     FrontendReviewAccessScope? Executed,
     IReadOnlyList<string> PublicEngines,
     IReadOnlyList<string> AuthenticatedEngines,
-    IReadOnlyList<string> CompanionEngines)
+    IReadOnlyList<string> CompanionEngines,
+    /// <summary>Engines that used authenticated API context only (Local HTTPS Proxy / authenticated HTTP). Never signed-in page coverage.</summary>
+    IReadOnlyList<string>? AuthenticatedApiEngines = null)
 {
+    public IReadOnlyList<string> ApiEngines => AuthenticatedApiEngines ?? [];
+
     /// <summary>The run covered less than it was configured to.</summary>
     public bool Partial => Configured is { } configured && Executed != configured;
 }

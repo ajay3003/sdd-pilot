@@ -54,7 +54,7 @@ public sealed class DeliveryEvidenceUiTests : BunitContext
         var gates = cut.FindAll("[data-testid=delivery-gate]").Select(g => g.TextContent).ToList();
         gates[0].Should().Contain("shop-qa").And.Contain("API tests — Gate configured").And.Contain("After deployment: Smoke test").And.NotContain("Integration tests", "only the review's categories");
         gates[1].Should().Contain("shop-prod").And.Contain("no such check on the delivery path");
-        cut.Find("[data-testid=delivery-runtime]").TextContent.Should().Contain("not executed, passed or deployed");
+        cut.Find("[data-testid=delivery-runtime]").TextContent.Should().Contain("Configured in source · execution result not available").And.Contain("never a pass or a failure");
         cut.Markup.Should().NotContain("Passed").And.NotContain("Healthy");
     }
 

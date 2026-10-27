@@ -20,15 +20,15 @@
         <p class="fqr-section-note" data-testid="fqr-engine-configuration-note">@FrontendQualityLandingPresentation.EnginesConfigurationNote Availability is re-validated when the review starts.</p>
         @* A two-term legend, in text (badges are never colour-only), and one reminder that neither is a result. *@
         <dl class="fqr-state-legend" data-testid="fqr-engine-state-definitions">
-            <div><dt>Available</dt><dd>no known blocker</dd></div>
-            <div><dt>Ready</dt><dd>runtime or evidence confirmed</dd></div>
+            <div><dt>Available</dt><dd>can run now</dd></div>
+            <div><dt>Optional · Unavailable</dt><dd>neutral, non-blocking</dd></div>
             <div><dt class="fqr-visually-plain">Neither</dt><dd>means assessed</dd></div>
         </dl>
         @* The longer explanation is reference material, not part of the run decision. Collapsed; its state is local to
            the disclosure, so polling rerenders leave it as the reader set it. *@
         <ReviewDisclosure Text="How availability works" CollapseText="Hide how availability works"
                           TestId="fqr-availability-help" Class="fqr-availability-help">
-            <p class="fqr-section-note">Available means no known access blocker; runtime checking may still be pending. Ready means runtime readiness was confirmed, or the evidence the engine reads is present.</p>
+            <p class="fqr-section-note">Available means the capability can execute now in the selected Target Environment (no known access blocker; runtime confirmation may still be pending). Available is not executed: an engine is Completed only after the review ran it. An unavailable optional engine is neutral — it does not block the review, create a finding or reduce the result unless policy makes it Required.</p>
             <p class="fqr-section-note">Browser Quality reads the live Browser Companion session, or pages already captured while the Companion is paired but not reporting. Browser Performance Quality reads recorded performance evidence and does not need a live session.</p>
         </ReviewDisclosure>
     </div>

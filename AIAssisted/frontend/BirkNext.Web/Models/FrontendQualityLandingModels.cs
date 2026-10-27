@@ -69,7 +69,8 @@ public static class FrontendQualityCapabilityStates
 {
     public static string Label(FrontendQualityCapabilityState state) => state switch
     {
-        FrontendQualityCapabilityState.Ready => "Ready",
+        // "Ready" duplicated "Available" for the reviewer; the internal state is kept (persisted/compatibility), the label is one word.
+        FrontendQualityCapabilityState.Ready => "Available",
         // Runtime vocabulary only. Configuration ("Enabled" / "Disabled") is shown separately beside this label, so
         // the same word can never stand for both "switched on in the Target Environment" and "nothing is stopping it".
         FrontendQualityCapabilityState.Enabled => "Available",
