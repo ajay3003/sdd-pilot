@@ -40,8 +40,14 @@ public sealed record ExternalIntegration
     public DateTimeOffset UpdatedAt { get; init; }
 }
 
+/// <summary>
+/// A readiness dimension's state. NotAssessed: the dimension exists but BirkNext has not assessed it. NotVerified: verification is supported
+/// and relevant but no verification evidence exists yet. NoExecutor: BirkNext has no automated executor for the provider, so there is nothing
+/// to verify through execution. NotApplicable: the dimension does not apply. Observed: evidence that is not verification. Verified: runtime
+/// verification evidence exists. Configuration readiness never implies a runtime state.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SetupReadinessState { Ready, Partial, Blocked, NotAssessed, Observed }
+public enum SetupReadinessState { Ready, Partial, Blocked, NotAssessed, Observed, NotVerified, NoExecutor, NotApplicable, Verified }
 
 public sealed record SetupReadinessItem(string Key, string Label, SetupReadinessState State, string Reason);
 

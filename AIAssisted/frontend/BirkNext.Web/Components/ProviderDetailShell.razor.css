@@ -1,7 +1,5 @@
 /* The shared compact detail view of a connected system. Every state is text plus tone, never colour alone. */
 .ps { display: grid; gap: 1rem; min-width: 0; }
-.ps-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
-.ps-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
 .ps-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
 .ps-h4 { margin: 0; font-size: .9rem; font-weight: 600; }
 .ps-muted { color: var(--clr-text-muted, #5f6368); font-size: .82rem; }

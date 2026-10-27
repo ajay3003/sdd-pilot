@@ -251,8 +251,10 @@ public sealed class GenericProviderHandler(ExternalProviderType type, IIntegrati
             : secret is null ? new SetupReadinessItem("authentication", "Authentication", SetupReadinessState.NotAssessed, "No secret is used by this provider.")
             : new SetupReadinessItem("authentication", "Authentication", secret.State == AltinnSettingState.AvailableForSession ? SetupReadinessState.Ready : SetupReadinessState.Partial,
                 secret.State == AltinnSettingState.AvailableForSession ? "Secret available for this session." : "Secret not available — only automated execution needs it.");
-        var runtime = new SetupReadinessItem("runtime", "Runtime", SetupReadinessState.NotAssessed, "Not verified.");
-        var execution = new SetupReadinessItem("execution", "Execution", SetupReadinessState.NotAssessed, "BirkNext has no executor for this provider; it is configuration and evidence only.");
+        // Generic providers have no runtime check and no BirkNext executor: runtime is simply not assessed, execution has no executor —
+        // never "not verified", which would imply a verification BirkNext could run.
+        var runtime = new SetupReadinessItem("runtime", "Runtime", SetupReadinessState.NotAssessed, "No runtime check or observation has been recorded.");
+        var execution = new SetupReadinessItem("execution", "Execution", SetupReadinessState.NoExecutor, "Automated execution is not implemented for this provider.");
         var dimensions = new List<SetupReadinessItem> { configuration, authentication };
         var contractFields = fields.Where(field => field.Group == ExternalProviderCatalog.Contract).ToList();
         if (contractFields.Count > 0)
@@ -360,7 +362,8 @@ public sealed class AltinnProviderHandler(AltinnEnvironmentService altinn, Altin
         var view = await altinn.ViewAsync(integration.TargetEnvironmentId, detect, ct);
         var settings = ToSettings(view.Saved);
         SetupReadinessItem Map(AltinnReadinessItem? item, string key, string label) => item is null ? new(key, label, SetupReadinessState.NotAssessed, "")
-            : new(key, label, item.Key == "runtime" && item.State == AltinnReadinessState.Partial ? SetupReadinessState.Observed : item.State switch
+            // Altinn has runtime verification and automated execution: an unverified runtime is "not verified", observations are "observed".
+            : new(key, label, item.Key == "runtime" ? item.State == AltinnReadinessState.Partial ? SetupReadinessState.Observed : SetupReadinessState.NotVerified : item.State switch
             {
                 AltinnReadinessState.Ready => SetupReadinessState.Ready,
                 AltinnReadinessState.Partial => SetupReadinessState.Partial,

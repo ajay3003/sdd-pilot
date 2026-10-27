@@ -19,7 +19,22 @@ public static class ExternalIntegrationPresentation
         SetupReadinessState.Partial => "Partial",
         SetupReadinessState.Blocked => "Blocked",
         SetupReadinessState.Observed => "Observed",
-        _ => "Not verified",
+        SetupReadinessState.NotVerified => "Not verified",
+        SetupReadinessState.NoExecutor => "No executor",
+        SetupReadinessState.NotApplicable => "Not applicable",
+        SetupReadinessState.Verified => "Verified",
+        _ => "Not assessed",
+    };
+
+    /// <summary>A one-line explanation of a state (tooltip), or null when the label says it all.</summary>
+    public static string? Help(SetupReadinessState state) => state switch
+    {
+        SetupReadinessState.NotAssessed => "No assessment has been performed yet.",
+        SetupReadinessState.NotVerified => "Verification is possible but no verification evidence exists yet.",
+        SetupReadinessState.NoExecutor => "BirkNext does not currently provide automated execution for this provider.",
+        SetupReadinessState.NotApplicable => "This does not apply to this provider.",
+        SetupReadinessState.Observed => "Observed evidence; not a verification.",
+        _ => null,
     };
 
     public static string Tone(SetupReadinessState state) => state switch
@@ -28,6 +43,7 @@ public static class ExternalIntegrationPresentation
         SetupReadinessState.Partial => "warn",
         SetupReadinessState.Blocked => "bad",
         SetupReadinessState.Observed => "info",
+        SetupReadinessState.Verified => "ok",
         _ => "muted",
     };
 

@@ -514,4 +514,24 @@ public sealed class ExternalIntegrationSetupTests
         bus.Fields.Should().NotContain(field => field.Key == "baseUrl" || field.Key == "openApiUrl", "provider fields stay isolated");
         bus.Summary.Configuration.Reason.Should().Contain("Missing: Queue / topic");
     }
+
+    [Fact]
+    public async Task Generic_runtime_is_not_assessed_execution_has_no_executor_and_altinn_keeps_not_verified()
+    {
+        var bed = await ConfiguredAsync();
+        var service = bed.Integrations();
+        (await service.SaveAsync(Env, null, new("Orders API", ExternalProviderType.RestApi, "QA", true, new() { ["baseUrl"] = "https://orders.qa.example/api" }),
+            "Configured manually", CancellationToken.None)).Problems.Should().BeEmpty();
+
+        var views = (await service.ViewAsync(Env, detect: false, CancellationToken.None)).Integrations;
+        var rest = views.Single(view => view.Integration.Name == "Orders API").Dimensions.ToDictionary(item => item.Key, item => item.State);
+        var altinn = views.Single(view => view.Integration.ProviderType == ExternalProviderType.Altinn).Dimensions.ToDictionary(item => item.Key, item => item.State);
+
+        rest["contract"].Should().Be(SetupReadinessState.NotAssessed, "no contract was assessed; contract readiness is not runtime verification");
+        rest["runtime"].Should().Be(SetupReadinessState.NotAssessed, "no runtime check exists for this provider");
+        rest["execution"].Should().Be(SetupReadinessState.NoExecutor);
+        rest.Values.Should().NotContain(SetupReadinessState.NotVerified);
+        altinn["runtime"].Should().Be(SetupReadinessState.NotVerified, "Altinn has runtime verification, still outstanding");
+        altinn["automated"].Should().NotBe(SetupReadinessState.NoExecutor, "Altinn has automated execution");
+    }
 }

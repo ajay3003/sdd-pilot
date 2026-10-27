@@ -4,7 +4,11 @@ using Microsoft.AspNetCore.Components;
 namespace BirkNext.Web.Services;
 
 /// <summary>One summary card of a provider detail view: status as text plus tone, and one short reason when not ready.</summary>
-public sealed record ShellCard(string Key, string Label, string Status, string Tone, string Reason);
+public sealed record ShellCard(string Key, string Label, string Status, string Tone, string Reason)
+{
+    /// <summary>A short explanation of the status (tooltip), e.g. what "No executor" means.</summary>
+    public string? Help { get; init; }
+}
 
 public sealed record ShellFixItem(string Label, string Problem);
 
@@ -52,12 +56,14 @@ public static class ProviderShellPresentation
         view.Dimensions.Count > 0 ? view.Dimensions : ExternalIntegrationPresentation.Dimensions(view.Summary);
 
     public static IReadOnlyList<ShellCard> Cards(ExternalIntegrationView view) =>
-        [.. Dimensions(view).Select(item => new ShellCard(item.Key, item.Label, ExternalIntegrationPresentation.Label(item.State), ExternalIntegrationPresentation.Tone(item.State), CardReason(item, view)))];
+        [.. Dimensions(view).Select(item => new ShellCard(item.Key, item.Label, ExternalIntegrationPresentation.Label(item.State), ExternalIntegrationPresentation.Tone(item.State), CardReason(item, view))
+            { Help = ExternalIntegrationPresentation.Help(item.State) })];
 
     /// <summary>One short phrase under a card; empty when ready or not assessed (the full reason stays in Advanced details).</summary>
     public static string CardReason(SetupReadinessItem item, ExternalIntegrationView view)
     {
-        if (item.State is SetupReadinessState.Ready or SetupReadinessState.NotAssessed) return "";
+        if (item.State is SetupReadinessState.Ready or SetupReadinessState.NotAssessed or SetupReadinessState.NotApplicable or SetupReadinessState.Verified) return "";
+        if (item.State == SetupReadinessState.NoExecutor) return item.Reason;
         if (item.Key == "configuration")
         {
             var open = view.Fields.Where(Required).Where(field => !Saved(field)).ToList();

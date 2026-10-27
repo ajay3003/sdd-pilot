@@ -5,11 +5,8 @@
    click deeper. Providers supply the content (cards, fix groups, proposals, sections, advanced detail) and the shell owns the layout and the
    disclosure state. Every disclosure is a real button with aria-expanded/aria-controls. Apply is always explicit: the shell only reports
    which proposals are selected. Test ids are "{Prefix}-…" so each provider keeps stable hooks. *@
-<section class="ps" data-testid="@Prefix" aria-labelledby="@($"{Prefix}-title")">
-    <header class="ps-head">
-        <h3 id="@($"{Prefix}-title")" class="ps-title" data-testid="@($"{Prefix}-title")">@Title</h3>
-        @if (HeaderActions is not null) { <div class="ps-actions">@HeaderActions</div> }
-    </header>
+<section class="ps" data-testid="@Prefix" aria-label="@Label">
+    @if (HeaderActions is not null) { <div class="ps-actions" data-testid="@($"{Prefix}-actions")">@HeaderActions</div> }
     @Banner
 
     @if (Placeholder is not null)
@@ -24,7 +21,7 @@
                 <div data-key="@card.Key" data-testid="@($"{Prefix}-card")">
                     <dt>@card.Label</dt>
                     <dd>
-                        <span class="ps-pill ps-pill-@card.Tone">@card.Status</span>
+                        <span class="ps-pill ps-pill-@card.Tone" title="@card.Help">@card.Status</span>
                         @if (card.Reason.Length > 0) { <span class="ps-card-reason" data-testid="@($"{Prefix}-card-reason")">@card.Reason</span> }
                     </dd>
                 </div>
@@ -37,7 +34,7 @@
         {
             var count = FixGroups.Sum(group => group.Items.Count);
             <section class="ps-fix" data-testid="@($"{Prefix}-fix")" aria-labelledby="@($"{Prefix}-fix-title")">
-                <h4 id="@($"{Prefix}-fix-title")" class="ps-h4">Things to fix</h4>
+                @Heading($"{Prefix}-fix-title", "Things to fix")
                 <p class="ps-fix-count" data-testid="@($"{Prefix}-fix-count")">@count thing@(count == 1 ? " needs" : "s need") attention</p>
                 <div class="ps-fix-groups">
                     @foreach (var group in FixGroups)
@@ -65,7 +62,7 @@
         @if (Proposals.Count > 0 || DetectionLine is not null || Notes.Count > 0)
         {
             <section class="ps-detected" data-testid="@($"{Prefix}-detection")" aria-labelledby="@($"{Prefix}-detected-title")">
-                <h4 id="@($"{Prefix}-detected-title")" class="ps-h4">Detected settings</h4>
+                @Heading($"{Prefix}-detected-title", "Detected settings")
                 @if (DetectionLine is not null) { <p class="ps-muted" data-testid="@($"{Prefix}-detection-line")">@DetectionLine</p> }
                 @if (Proposals.Count > 0)
                 {
@@ -101,7 +98,7 @@
                 var open = _open.Contains(key);
                 <section class="ps-section" data-testid="@($"{Prefix}-section-{key}")" aria-labelledby="@($"{Prefix}-{key}-title")">
                     <div class="ps-section-head">
-                        <h4 id="@($"{Prefix}-{key}-title")" class="ps-h4">@part.Title</h4>
+                        @Heading($"{Prefix}-{key}-title", part.Title)
                         @if (part.Status is { } status) { <span class="ps-pill ps-pill-@part.Tone" data-testid="@($"{Prefix}-section-status")">@status</span> }
                         <span class="ps-muted ps-line" data-testid="@($"{Prefix}-section-line")">@part.Summary</span>
                         @if (part.Body is not null)
@@ -127,7 +124,7 @@
         {
             <section class="ps-section ps-advanced" data-testid="@($"{Prefix}-advanced")" aria-labelledby="@($"{Prefix}-advanced-title")">
                 <div class="ps-section-head">
-                    <h4 id="@($"{Prefix}-advanced-title")" class="ps-h4">Advanced details</h4>
+                    @Heading($"{Prefix}-advanced-title", "Advanced details")
                     <span class="ps-muted ps-line">Every value with its state, source and candidates; internal references and evidence.</span>
                     <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{Prefix}-advanced-toggle")" aria-expanded="@Expanded(_advanced)"
                             aria-controls="@($"{Prefix}-advanced-body")" @onclick="() => _advanced = !_advanced">@(_advanced ? "Hide advanced details" : "Show advanced details")</button>
@@ -144,7 +141,11 @@
 @code {
     /// <summary>Test-id and element-id prefix (e.g. "ae" for Altinn, "gp" for a generic provider).</summary>
     [Parameter, EditorRequired] public string Prefix { get; set; } = "ps";
-    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    /// <summary>The system's name: an accessible label for the region only. The host (the system's card) shows it as the visible heading,
+    /// so the shell never repeats it.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    /// <summary>The heading level of the shell's own headings (things to fix, sections, advanced details): one below the host's heading.</summary>
+    [Parameter] public int HeadingLevel { get; set; } = 5;
     [Parameter] public RenderFragment? HeaderActions { get; set; }
     /// <summary>Errors and notices shown under the header.</summary>
     [Parameter] public RenderFragment? Banner { get; set; }
@@ -174,6 +175,15 @@
     protected override void OnInitialized() => _open.UnionWith(InitiallyOpen);
 
     private static string Expanded(bool open) => open ? "true" : "false";
+
+    private RenderFragment Heading(string id, string text) => builder =>
+    {
+        builder.OpenElement(0, $"h{Math.Clamp(HeadingLevel, 2, 6)}");
+        builder.AddAttribute(1, "id", id);
+        builder.AddAttribute(2, "class", "ps-h4");
+        builder.AddContent(3, text);
+        builder.CloseElement();
+    };
     private void Toggle(string key) { if (!_open.Remove(key)) _open.Add(key); }
 
     public void OpenSection(string key) { _open.Add(key); StateHasChanged(); }

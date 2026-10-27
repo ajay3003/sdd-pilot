@@ -6,7 +6,7 @@
    the shared compact shell: the provider's own summary cards, required settings that are missing, in conflict or detected but not applied
    (suggested != configured), detected values awaiting an explicit Apply, one section per setting group (only that provider's fields), a
    runtime line and advanced details. Detect never saves; Save and Apply are explicit; a secret is added for the session only. *@
-<ProviderDetailShell @ref="_shell" Prefix="gp" Title="@View.Integration.Name" Busy="_busy" Cards="ProviderShellPresentation.Cards(View)"
+<ProviderDetailShell @ref="_shell" Prefix="gp" Label="@View.Integration.Name" Busy="_busy" Cards="ProviderShellPresentation.Cards(View)"
                      FixGroups="ProviderShellPresentation.ThingsToFix(View, Descriptor)" OnFix="FixAsync" Proposals="ProviderShellPresentation.Proposals(View, Descriptor)"
                      Selected="_selected" OnToggle="Toggle" OnApply="ApplySelectedAsync" DetectionLine="@DetectionLine" Notes="View.Notes" Sections="Sections" Advanced="Advanced">
     <HeaderActions>
@@ -111,7 +111,7 @@
         {
             var fields = View.Fields.Where(field => field.Group == group).ToList();
             if (fields.Count == 0) continue;
-            <h5 class="gp-h5">@ProviderShellPresentation.SectionTitle(group)</h5>
+            <h6 class="gp-h5">@ProviderShellPresentation.SectionTitle(group)</h6>
             <ProviderFieldTable Prefix="gp" Group="@group" Evidence="true" Fields="fields" />
         }
         <ul class="gp-list" data-testid="gp-dimension-reasons">

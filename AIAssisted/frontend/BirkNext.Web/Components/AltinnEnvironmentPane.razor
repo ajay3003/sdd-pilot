@@ -9,7 +9,7 @@
    it: suggested != configured. Detect is discovery only. Browser login evidence never fills BirkNext's unattended client. A secret is
    entered once (POST), held in backend memory for the session and never shown, stored in the browser or returned. Test identities are
    managed in Test Data. *@
-<ProviderDetailShell @ref="_shell" Prefix="ae" Title="@Title" Busy="_busy" Cards="Cards" FixGroups="FixGroups" OnFix="FixAsync"
+<ProviderDetailShell @ref="_shell" Prefix="ae" Label="@Title" Busy="_busy" Cards="Cards" FixGroups="FixGroups" OnFix="FixAsync"
                      Proposals="Proposals" Selected="_selected" OnToggle="Toggle" OnApply="ApplySelectedAsync" DetectionLine="@DetectionLine"
                      Notes="Notes" Sections="Sections" InitiallyOpen="InitiallyOpen" Placeholder="Placeholder" Advanced="Advanced">
     <HeaderActions>
@@ -211,12 +211,12 @@
         @foreach (var (group, label) in AltinnEnvironmentPresentation.Groups)
         {
             if (!view.Fields.Any(field => field.Group == group)) continue;
-            <h5 class="ae-h5">@label</h5>
+            <h6 class="ae-h5">@label</h6>
             @Table(group, evidence: true)
         }
         @if (view.Saved.RuntimeObservations.Count > 0)
         {
-            <h5 class="ae-h5">Runtime observations</h5>
+            <h6 class="ae-h5">Runtime observations</h6>
             <ul class="ae-list" data-testid="ae-observations">
                 @foreach (var observation in view.Saved.RuntimeObservations)
                 {
@@ -226,7 +226,7 @@
         }
         @if (view.AutomatedBlockers.Count > 0)
         {
-            <h5 class="ae-h5">Automated execution blockers</h5>
+            <h6 class="ae-h5">Automated execution blockers</h6>
             <ul class="ae-list">@foreach (var blocker in view.AutomatedBlockers) { <li>@blocker</li> }</ul>
         }
     };

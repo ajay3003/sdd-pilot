@@ -68,7 +68,7 @@ public sealed class GenericProviderShellTests : BunitContext
             new("authentication", "Authentication", SetupReadinessState.Partial, "Secret not available — only automated execution needs it."),
             new("contract", "Contract", SetupReadinessState.NotAssessed, "No contract reference configured (optional)."),
             new("runtime", "Runtime", SetupReadinessState.NotAssessed, "Not verified."),
-            new("execution", "Execution", SetupReadinessState.NotAssessed, "BirkNext has no executor for this provider."),
+            new("execution", "Execution", SetupReadinessState.NoExecutor, "Automated execution is not implemented for this provider."),
         ],
         Detection = new(1, 2, 0, 0, 0, ["Not applied: Base URL"]),
     };
@@ -211,5 +211,47 @@ public sealed class GenericProviderShellTests : BunitContext
         groups.Should().ContainSingle().Which.Items.Should().ContainSingle().Which.Problem.Should().Be("Not applied · Suggested by Test Pack reference · OpenAPI");
         groups[0].ApplyKeys.Should().Equal("baseUrl");
         ProviderShellPresentation.Proposals(view, RestDescriptor).Select(proposal => proposal.State).Should().Equal("Suggested", "Suggested");
+    }
+
+    [Fact]
+    public void Contract_without_assessment_is_not_assessed_and_execution_without_executor_says_so()
+    {
+        var cut = Render(Rest(), RestDescriptor);
+
+        cut.Find("[data-testid=gp-card][data-key=contract]").TextContent.Should().Contain("Not assessed").And.NotContain("Not verified");
+        var execution = cut.Find("[data-testid=gp-card][data-key=execution]");
+        execution.TextContent.Should().Contain("No executor").And.Contain("Automated execution is not implemented for this provider.").And.NotContain("Not verified");
+        execution.QuerySelector(".ps-pill")!.GetAttribute("title").Should().Be("BirkNext does not currently provide automated execution for this provider.");
+        cut.Find("[data-testid=gp-card][data-key=runtime]").TextContent.Should().Contain("Not assessed", "no runtime check exists; configuration readiness never implies a runtime state");
+        cut.Find("[data-testid=gp-card][data-key=configuration]").TextContent.Should().Contain("Partial");
+    }
+
+    [Fact]
+    public void State_labels_keep_not_assessed_not_verified_no_executor_and_not_applicable_apart()
+    {
+        ExternalIntegrationPresentation.Label(SetupReadinessState.NotAssessed).Should().Be("Not assessed");
+        ExternalIntegrationPresentation.Label(SetupReadinessState.NotVerified).Should().Be("Not verified", "a provider with an executor may still be unverified");
+        ExternalIntegrationPresentation.Label(SetupReadinessState.NoExecutor).Should().Be("No executor");
+        ExternalIntegrationPresentation.Label(SetupReadinessState.NotApplicable).Should().Be("Not applicable");
+        ExternalIntegrationPresentation.Label(SetupReadinessState.Observed).Should().Be("Observed");
+        ExternalIntegrationPresentation.Label(SetupReadinessState.Verified).Should().Be("Verified");
+        ExternalIntegrationPresentation.Help(SetupReadinessState.NotAssessed).Should().Be("No assessment has been performed yet.");
+    }
+
+    [Fact]
+    public void An_open_system_shows_its_name_once_as_the_card_heading_with_shell_headings_one_level_below()
+    {
+        _api.Setup(api => api.ListAsync(Env, It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<ExternalIntegrationsView>(
+            new ExternalIntegrationsView(Env, [Rest()], [], [RestDescriptor]), null, HttpStatusCode.OK));
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-card]"));
+
+        cut.Find("[data-testid=ei-review]").Click();
+
+        cut.Find("[data-testid=gp]");
+        cut.FindAll("h1, h2, h3, h4, h5, h6").Where(h => h.TextContent.Trim() == "Person API").Select(h => h.TagName).Should().Equal("H4");
+        cut.Find("[data-testid=gp]").GetAttribute("aria-label").Should().Be("Person API");
+        cut.FindAll("[data-testid=gp] h4").Should().BeEmpty();
+        cut.FindAll("[data-testid=gp] h5").Select(h => h.TextContent.Trim()).Should().Contain(["Things to fix", "Configuration", "Advanced details"]);
     }
 }

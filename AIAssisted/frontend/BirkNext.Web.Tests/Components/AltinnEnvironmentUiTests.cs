@@ -64,7 +64,9 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
         cut.WaitForAssertion(() => cut.Find("[data-testid=ae-summary]"));
 
-        cut.Find("[data-testid=ae-title]").TextContent.Should().Be("Altinn · TT02");
+        cut.Find("[data-testid=ae]").GetAttribute("aria-label").Should().Be("Altinn · TT02", "the region is labelled; the card shows the visible name");
+        cut.FindAll("h1, h2, h3, h4").Should().BeEmpty("the shell never repeats the system name as a heading");
+        cut.FindAll("h5").Select(h => h.TextContent.Trim()).Should().Contain(["Things to fix", "Application", "Advanced details"]);
         cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Ready");
         cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Blocked").And.Contain("redirect URI");
         cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("3 things need attention");
