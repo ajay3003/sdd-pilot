@@ -21,7 +21,6 @@ public static class TaskTopicTaxonomy
         (AffectedArea.HealthMonitoring, ["health", "metric", "telemetry", "opentelemetry", "monitor"]),
         (AffectedArea.Infrastructure, ["csproj", "sln", "appsettings", "configuration", "program.cs", "di registration", "migration", "dbcontext", "key vault", "nuget"]),
         (AffectedArea.Validation, ["validation", "validate", "validator"]),
-        (AffectedArea.Testing, ["test", "xunit", "nsubstitute", "testcontainers", "fixture", "mock", "fake"]),
         (AffectedArea.ExceptionHandling, ["exception", "error", "failure", "fault"]),
     ];
 
@@ -36,7 +35,9 @@ public static class TaskTopicTaxonomy
             .Select(definition => definition.Topic)
             .ToList();
 
-        if (task.IsTestingTask && !topics.Contains(AffectedArea.Testing))
+        // Testing needs actual testing intent (add/write tests, a *Tests class, verify/validate) — a test project or xUnit package in a
+        // setup task is not testing work.
+        if (HasTestIntent(task) && !topics.Contains(AffectedArea.Testing))
             topics.Add(AffectedArea.Testing);
         if (task.IsSecurityTask && !topics.Contains(AffectedArea.Security))
             topics.Add(AffectedArea.Security);
@@ -45,6 +46,13 @@ public static class TaskTopicTaxonomy
 
         return topics;
     }
+
+    private static readonly Regex TestIntent = new(
+        @"\b\w+Tests?\b(?<!\btests?)|\b(add|write|implement|create|extend)\b[^.;]{0,40}\b(unit|integration|contract|regression|performance|e2e|end-to-end|payload)?\s*tests?\b(?!\s*projects?)|\b(unit|integration|contract|regression|performance) tests?\b(?!\s*projects?)|\b(assert|assertion)s?\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>The task's goal is testing work: it adds or names tests (SecurityFilterIntegrationTests, "write integration tests"), not just a test package or project.</summary>
+    public static bool HasTestIntent(TaskItem task) => TestIntent.IsMatch($"{task.Title} {task.Description}");
 
     public static bool HasInfrastructureFile(TaskItem task) =>
         task.RelatedFileIds.Any(file => InfrastructureFileSuffixes.Any(suffix => file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)));

@@ -11,7 +11,7 @@ namespace BirkNext.Web.Services;
 public sealed class TaskSpecAlignmentService
 {
     /// <summary>Bumped whenever classification rules change, so a stored result can say which rules produced it.</summary>
-    public const string RulesVersion = "task-spec-rules-v2";
+    public const string RulesVersion = "task-spec-rules-v3";
 
     private static readonly string[] InfrastructureTerms =
     [
@@ -20,15 +20,12 @@ public sealed class TaskSpecAlignmentService
         "program.cs", "di registration", "service extension", "migration",
         "dbcontext", "healthcheck", "health check", "logging", "telemetry",
         "opentelemetry", "key vault", "managed identity", "pipeline", "dockerfile",
-        "test project", "test fixture", "testcontainers", "fake", "mock",
+        "test project", "test fixture", "testcontainers",
         "options class", "placeholder config", "gitignore"
     ];
 
-    private static readonly string[] GeneratedCodeTerms =
-    [
-        "generated", "scaffold", "stub", "boilerplate", "dto", "record",
-        "enum", "options", "model", "contract", "schema"
-    ];
+    /// <summary>Generated or scaffolding work only. Domain words such as "model", "record" or "schema" are not technical by themselves.</summary>
+    private static readonly string[] GeneratedCodeTerms = ["generated", "scaffold", "stub", "boilerplate", "dto"];
 
     /// <summary>Signals of new externally reachable behavior; they override setup keywords, because an endpoint is never "setup only".</summary>
     private static readonly string[] ExposedBehaviorTerms =
@@ -56,7 +53,9 @@ public sealed class TaskSpecAlignmentService
         {
             TotalTasks = results.Count,
             LinkedTasks = results.Count(f => f.Status == AlignmentStatus.Linked),
+            DesignLinkedTasks = results.Count(f => f.Status == AlignmentStatus.DesignLinked),
             TechnicalOnlyTasks = results.Count(f => f.Status == AlignmentStatus.TechnicalOnly),
+            TestImplementationTasks = results.Count(f => f.Purpose == TaskPurpose.TestImplementation),
             NeedsReviewTasks = results.Count(f => f.Status == AlignmentStatus.NeedsReview),
             PossibleDeviations = results.Count(f => f.Status == AlignmentStatus.PossibleDeviation),
             HighImpactTasks = results.Count(f => f.ImpactLevel == ImpactLevel.High),
@@ -72,22 +71,137 @@ public sealed class TaskSpecAlignmentService
     {
         var (matches, unresolved) = ResolveSpecLinks(task, context);
         var topics = TaskTopicTaxonomy.Detect(task);
+        var design = DesignLinks(task, context);
+        var purpose = TaskPurposeOf(task, design);
+        TaskFinding With(TaskFinding f) => new()
+        {
+            TaskId = f.TaskId, Title = f.Title, TaskText = f.TaskText, Status = f.Status, Risk = f.Risk, Reason = f.Reason, RecommendedAction = f.RecommendedAction,
+            ClassificationBasis = f.ClassificationBasis, ClassificationSignal = f.ClassificationSignal, Matches = f.Matches, UnresolvedReferences = f.UnresolvedReferences,
+            AffectedAreas = f.AffectedAreas, RecommendedTests = f.RecommendedTests, ImpactLevel = f.ImpactLevel, MatchReason = f.MatchReason, RiskReason = f.RiskReason,
+            IsRegressionCandidate = f.IsRegressionCandidate, DesignLinks = design, Purpose = purpose, Deviation = f.Deviation, UnlinkedBusinessTask = f.UnlinkedBusinessTask,
+        };
+
+        // Possible deviation needs an explicit authored reference AND a deterministic conflict between the two authored statements.
+        if (matches.Count > 0 && Conflict(task, matches, context) is { } conflict)
+            return With(BuildDeviationResult(task, matches, conflict, topics));
 
         if (matches.Count > 0)
-            return BuildLinkedResult(task, matches, unresolved, topics);
+            return With(BuildLinkedResult(task, matches, unresolved, topics));
 
         if (unresolved.Count > 0)
-            return BuildUnresolvedResult(task, unresolved, topics);
+            return With(BuildUnresolvedResult(task, unresolved, topics));
+
+        if (design.Count > 0)
+            return With(BuildDesignLinkedResult(task, design, topics));
 
         var technicalSignal = TechnicalSignal(task);
         if (technicalSignal is not null)
-            return BuildTechnicalResult(task, technicalSignal, topics);
+            return With(BuildTechnicalResult(task, technicalSignal, topics));
 
         var behaviorSignal = BehaviorSignal(task);
         if (behaviorSignal is not null)
-            return BuildDeviationResult(task, behaviorSignal, topics);
+            return With(BuildUnlinkedBusinessResult(task, behaviorSignal, topics));
 
-        return BuildNeedsReviewResult(task, topics);
+        return With(BuildNeedsReviewResult(task, topics));
+    }
+
+    // ── Design artifact links ──────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Authored design artifacts the task names exactly: a Data Model structure (whole-word, case-sensitive name) or a Constitution rule ID
+    /// that exists. Exact names only — never a topic or keyword similarity.
+    /// </summary>
+    private static List<DesignArtifactLink> DesignLinks(TaskItem task, ReviewContext context)
+    {
+        var text = $"{task.Title} {task.Description}";
+        var links = new List<DesignArtifactLink>();
+        foreach (var entity in context.GetDataEntities().Where(e => e.Name.Length >= 4).OrderByDescending(e => e.Name.Length))
+        {
+            if (links.Any(l => l.Name.Contains(entity.Name, StringComparison.Ordinal))) continue;
+            if (System.Text.RegularExpressions.Regex.IsMatch(text, $@"(?<![\w.]){System.Text.RegularExpressions.Regex.Escape(entity.Name)}(?![\w])"))
+                links.Add(new("Data Model", entity.Name, (string.IsNullOrWhiteSpace(context.DataModel.Title) ? null : context.DataModel.Title)));
+        }
+        foreach (var rule in context.GetConstitutionRules().Where(r => r.Id.Length > 0))
+            if (System.Text.RegularExpressions.Regex.IsMatch(text, $@"\b{System.Text.RegularExpressions.Regex.Escape(rule.Id)}\b"))
+                links.Add(new("Constitution", rule.Id, (string.IsNullOrWhiteSpace(context.Constitution.Title) ? null : context.Constitution.Title)));
+        return links;
+    }
+
+    private static TaskFinding BuildDesignLinkedResult(TaskItem task, List<DesignArtifactLink> design, List<AffectedArea> topics)
+    {
+        var priority = TopicPriority(AlignmentStatus.DesignLinked, topics);
+        var named = string.Join(", ", design.Select(d => $"{d.Name} ({d.ArtifactType})"));
+        return new TaskFinding
+        {
+            TaskId = task.Id, Title = task.Title, TaskText = task.Description,
+            Status = AlignmentStatus.DesignLinked, Risk = AlignmentRisk.Low,
+            Reason = $"The task names {named}, defined in the selected authored design artifacts. No explicit Requirement/SC reference was found. This is valid design alignment, not requirement coverage.",
+            RecommendedAction = "None for alignment, unless the task should also trace to a Requirement or Success Criterion.",
+            ClassificationBasis = "Exact authored design-artifact name in the task (Data Model structure or Constitution rule)",
+            AffectedAreas = topics, RecommendedTests = BuildTests(topics, 5), ImpactLevel = priority,
+            MatchReason = "Design artifact link", RiskReason = PriorityReason(AlignmentStatus.DesignLinked, priority, topics),
+            IsRegressionCandidate = priority == ImpactLevel.High,
+        };
+    }
+
+    // ── Possible deviation: deterministic conflicting authored statements only ─────────────────────────────────────────
+
+    private static readonly System.Text.RegularExpressions.Regex DeniedContext = new(@"\b(unauthori[sz]ed|not authori[sz]ed|forbidden|denied|without (permission|access))\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex StatusCode = new(@"\b([1-5]\d\d)\b");
+    private static readonly System.Text.RegularExpressions.Regex FailClosed = new(@"\b(fail[- ]closed|deny by default|default deny)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex FailOpen = new(@"\b(fail[- ]open|fallback allow|allow on error|allow by default|grant access on (error|failure))\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex MustNot = new(@"\b(?:MUST|SHALL) NOT ((?:[a-z]+ ){1,3}[a-z]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// A deterministic conflict between the task and a Specification item it references: a different HTTP status for the same denied-access
+    /// case, fail-open against a fail-closed rule, or the task instructing exactly what a MUST NOT forbids. Ambiguity is never a deviation.
+    /// </summary>
+    private static DeviationEvidence? Conflict(TaskItem task, List<SpecMatch> matches, ReviewContext context)
+    {
+        var taskText = $"{task.Title} {task.Description}";
+        foreach (var match in matches.Where(m => m.MatchType is SpecMatchType.Requirement or SpecMatchType.SuccessCriterion))
+        {
+            var authored = match.MatchType == SpecMatchType.Requirement
+                ? (context.GetRequirement(match.ItemId) ?? context.Specification.Requirements.FirstOrDefault(r => r.Id.Equals(match.ItemId, StringComparison.OrdinalIgnoreCase)))?.Text
+                : context.GetSuccessCriteria().FirstOrDefault(sc => sc.Id.Equals(match.ItemId, StringComparison.OrdinalIgnoreCase))?.Text;
+            if (string.IsNullOrWhiteSpace(authored)) continue;
+
+            if (DeniedContext.IsMatch(authored) && DeniedContext.IsMatch(taskText)
+                && StatusCode.Match(authored) is { Success: true } specCode && StatusCode.Match(taskText) is { Success: true } taskCode
+                && specCode.Value != taskCode.Value)
+                return new("Different response for the same denied-access case", taskText.Trim(), match.ItemId, authored.Trim());
+            if (FailClosed.IsMatch(authored) && FailOpen.IsMatch(taskText))
+                return new("Fail-open instruction against a fail-closed requirement", taskText.Trim(), match.ItemId, authored.Trim());
+            foreach (System.Text.RegularExpressions.Match forbidden in MustNot.Matches(authored))
+            {
+                var phrase = forbidden.Groups[1].Value.Trim();
+                var at = taskText.IndexOf(phrase, StringComparison.OrdinalIgnoreCase);
+                if (phrase.Split(' ').Length >= 2 && at >= 0 && !System.Text.RegularExpressions.Regex.IsMatch(taskText[..at], @"\b(not|never|no|without|prevent|ensure no)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    return new($"Task instructs what {match.ItemId} forbids (\"MUST NOT {phrase}\")", taskText.Trim(), match.ItemId, authored.Trim());
+            }
+        }
+        return null;
+    }
+
+    // ── Primary purpose (separate from secondary topics) ────────────────────────────────────────────────────────────
+
+    private static TaskPurpose TaskPurposeOf(TaskItem task, List<DesignArtifactLink> design)
+    {
+        var text = TaskTopicTaxonomy.TaskText(task);
+        bool Has(params string[] terms) => TaskTopicTaxonomy.MatchedTerm(text, terms) is not null;
+        if (TaskTopicTaxonomy.HasTestIntent(task)) return TaskPurpose.TestImplementation;
+        if (System.Text.RegularExpressions.Regex.IsMatch(text, @"\b(stop and validate|checkpoint|verify that|validate that)\b")) return TaskPurpose.Verification;
+        if (System.Text.RegularExpressions.Regex.IsMatch(text, @"\bcreate\b[^.;]{0,30}\bsolution\b|\.sln\b|\.csproj\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            || Has("create solution", "initialize", "initialise", "project setup", "project skeleton", "package reference", "nuget", "csproj", "dockerfile", "pipeline", "scaffold", "gitignore")) return TaskPurpose.InfrastructureSetup;
+        if (Has("migration")) return TaskPurpose.Migration;
+        if (design.Any(d => d.ArtifactType == "Data Model")) return TaskPurpose.DataModel;
+        if (Has("security", "kode 6", "kode 7", "authorization", "authorize", "permission", "access control")) return TaskPurpose.Security;
+        if (Has("event", "publish", "consume", "service bus", "event hub", "cdc", "http client", "integration", "outbox")) return TaskPurpose.Integration;
+        if (Has("logging", "telemetry", "opentelemetry", "health check", "healthcheck", "metric", "monitor")) return TaskPurpose.Observability;
+        if (Has("readme", "documentation", "docs/")) return TaskPurpose.Documentation;
+        if (Has("appsettings", "configuration", "program.cs", "di registration", "dbcontext", "options class")) return TaskPurpose.InfrastructureSetup;
+        if (BehaviorSignal(task) is not null) return TaskPurpose.BusinessBehavior;
+        return TaskPurpose.Unknown;
     }
 
     /// <summary>
@@ -131,7 +245,7 @@ public sealed class TaskSpecAlignmentService
             if (userStory is null)
                 unresolved.Add(task.UserStoryId);
             else
-                matches.Add(new SpecMatch { ItemId = userStory.Id, Title = Shorten(userStory.Title), MatchType = SpecMatchType.UserStory });
+                matches.Add(new SpecMatch { ItemId = AuthoredStoryId(userStory, task.UserStoryId), Title = Shorten(userStory.Title), MatchType = SpecMatchType.UserStory });
         }
 
         return (
@@ -196,7 +310,7 @@ public sealed class TaskSpecAlignmentService
     private static TaskFinding BuildTechnicalResult(TaskItem task, string signal, List<AffectedArea> topics)
     {
         if (!topics.Contains(AffectedArea.Infrastructure) && !topics.Contains(AffectedArea.Testing))
-            topics.Add(task.IsTestingTask ? AffectedArea.Testing : AffectedArea.Infrastructure);
+            topics.Add(TaskTopicTaxonomy.HasTestIntent(task) ? AffectedArea.Testing : AffectedArea.Infrastructure);
 
         return new TaskFinding
         {
@@ -205,9 +319,9 @@ public sealed class TaskSpecAlignmentService
             TaskText = task.Description,
             Status = AlignmentStatus.TechnicalOnly,
             Risk = AlignmentRisk.Low,
-            Reason = "Setup, infrastructure, generated-code or test work. A direct spec link is not expected for this kind of task.",
+            Reason = "Setup, infrastructure, generated-code or test-harness work. No direct Requirement/SC or authored design-artifact link is expected.",
             RecommendedAction = "None, unless the task also introduces user-visible behavior — then link it to the Specification.",
-            ClassificationBasis = "No spec reference; the task matches a setup, infrastructure or test keyword",
+            ClassificationBasis = "No spec or design-artifact reference; the task matches a setup, infrastructure or test-harness keyword",
             ClassificationSignal = signal,
             AffectedAreas = topics,
             RecommendedTests = BuildTests(topics, 5),
@@ -217,24 +331,49 @@ public sealed class TaskSpecAlignmentService
         };
     }
 
-    private static TaskFinding BuildDeviationResult(TaskItem task, string signal, List<AffectedArea> topics) => new()
+    private static TaskFinding BuildDeviationResult(TaskItem task, List<SpecMatch> matches, DeviationEvidence evidence, List<AffectedArea> topics) => new()
     {
         TaskId = task.Id,
         Title = task.Title,
         TaskText = task.Description,
         Status = AlignmentStatus.PossibleDeviation,
         Risk = AlignmentRisk.High,
-        Reason = "The task appears to introduce behavior, but it has no reference to a requirement, success criterion or user story.",
-        RecommendedAction = "Link the task to the requirement it implements, or document the behavior in the Specification.",
-        ClassificationBasis = "No spec reference; the task matches a behavior keyword",
-        ClassificationSignal = signal,
+        Reason = $"Task says: {evidence.TaskSays} — {evidence.AuthoredReference} says: {evidence.AuthoredSays}. These authored statements appear inconsistent and require review.",
+        RecommendedAction = "Review both statements with the author; correct the task or the Specification. Neither side is assumed correct.",
+        ClassificationBasis = $"Deterministic conflict: {evidence.Rule}",
+        Matches = matches,
+        Deviation = evidence,
         AffectedAreas = topics,
         RecommendedTests = BuildTests(topics, 6),
         ImpactLevel = ImpactLevel.High,
-        MatchReason = "No spec reference",
+        MatchReason = "Conflicting authored statements",
         RiskReason = PriorityReason(AlignmentStatus.PossibleDeviation, ImpactLevel.High, topics),
         IsRegressionCandidate = true,
     };
+
+    private static TaskFinding BuildUnlinkedBusinessResult(TaskItem task, string signal, List<AffectedArea> topics)
+    {
+        var priority = TopicPriority(AlignmentStatus.NeedsReview, topics);
+        return new TaskFinding
+        {
+            TaskId = task.Id,
+            Title = task.Title,
+            TaskText = task.Description,
+            Status = AlignmentStatus.NeedsReview,
+            Risk = AlignmentRisk.Medium,
+            Reason = "The task appears to define business behavior, but no explicit authored target (Requirement, Success Criterion, user story or design artifact) could be resolved. The task may be valid; the alignment cannot be established deterministically.",
+            RecommendedAction = "Link the task to the relevant Requirement/SC or authored design artifact if such a relationship is intended.",
+            ClassificationBasis = "Unlinked business task: no authored reference; the task matches a behavior keyword",
+            ClassificationSignal = signal,
+            AffectedAreas = topics,
+            RecommendedTests = BuildTests(topics, 6),
+            ImpactLevel = priority,
+            MatchReason = "Unlinked business task",
+            RiskReason = PriorityReason(AlignmentStatus.NeedsReview, priority, topics),
+            IsRegressionCandidate = priority is ImpactLevel.High or ImpactLevel.Medium,
+            UnlinkedBusinessTask = true,
+        };
+    }
 
     private static TaskFinding BuildNeedsReviewResult(TaskItem task, List<AffectedArea> topics)
     {
@@ -246,7 +385,7 @@ public sealed class TaskSpecAlignmentService
             TaskText = task.Description,
             Status = AlignmentStatus.NeedsReview,
             Risk = AlignmentRisk.Medium,
-            Reason = "The task has no spec reference, and no setup or behavior keyword decides whether it needs one.",
+            Reason = "The task may be valid, but the authored alignment cannot be established deterministically (no spec or design reference, no deciding keyword).",
             RecommendedAction = "Review the task against the Specification: link it, or confirm it is technical work.",
             ClassificationBasis = "No spec reference and no deciding keyword",
             AffectedAreas = topics,
@@ -257,6 +396,10 @@ public sealed class TaskSpecAlignmentService
             IsRegressionCandidate = priority is ImpactLevel.High or ImpactLevel.Medium,
         };
     }
+
+    /// <summary>The authored user-story reference: the Specification's own ID, else the task's authored tag (US1). A generated internal id is never shown.</summary>
+    internal static string AuthoredStoryId(SemanticUserStory story, string authoredTag) =>
+        SpecExplorerService.IsGeneratedUserStoryId(story.Id) ? authoredTag : story.Id;
 
     private static SemanticUserStory? FindUserStory(string? userStoryId, ReviewContext context)
     {
@@ -358,7 +501,7 @@ public sealed class TaskSpecAlignmentService
 
         var reasons = new List<string>();
         if (status == AlignmentStatus.PossibleDeviation)
-            reasons.Add("Behavior without a spec reference.");
+            reasons.Add("Conflicting authored statements.");
 
         var prioritized = topics.Where(t => TaskTopicTaxonomy.TestPriority(t) != ImpactLevel.Low).Take(3).ToList();
         if (prioritized.Count > 0)

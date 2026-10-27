@@ -73,7 +73,7 @@ public sealed class ImplementationReviewPageTests : BunitContext
         cut.Find("[data-testid=ir-card-findings] .ir-card-value").TextContent.Should().Be(report.FindingCount.ToString());
         report.FindingCount.Should().Be(2, "T003 adds an endpoint without a spec reference and T004 references FR-099, which is not in the spec");
         cut.Find("[data-testid=ir-card-linked] .ir-card-hint").TextContent.Should().Contain("not coverage");
-        cut.Find("[data-testid=ir-card-technical] .ir-card-hint").TextContent.Should().Contain("direct spec link not expected");
+        cut.Find("[data-testid=ir-card-technical] .ir-card-hint").TextContent.Should().Contain("no link expected");
         cut.Markup.Should().NotContain("covered by spec").And.NotContain("no spec needed");
         cut.Find("[data-testid=ir-showing]").TextContent.Should().Contain("Showing 4 of 4 task results");
         cut.Markup.Should().NotContain("4 findings");
@@ -166,7 +166,7 @@ public sealed class ImplementationReviewPageTests : BunitContext
         cut.Find("[data-testid=ir-tab-impact]").Click();
 
         cut.Find("[data-testid=ir-risk-scope]").TextContent.Should().Contain("not a measured risk");
-        cut.Find("[data-testid=ir-priority-high] .ir-card-label").TextContent.Should().Be("High test priority");
+        cut.Find("[data-testid=ir-priority-high] .ir-card-label").TextContent.Should().Be("High test focus");
         cut.Markup.Should().NotContain("high risk").And.NotContain("High Risk");
         cut.Find("[data-testid=ir-tab-impact]").GetAttribute("aria-selected").Should().Be("true");
         cut.Find("#ir-panel-impact").GetAttribute("role").Should().Be("tabpanel");

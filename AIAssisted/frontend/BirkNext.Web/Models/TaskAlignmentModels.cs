@@ -6,7 +6,18 @@ public enum AlignmentStatus
     NeedsReview,
     TechnicalOnly,
     Linked,
+    /// <summary>Aligned with an authored design/governance artifact (Data Model structure, Constitution rule) — not requirement coverage.</summary>
+    DesignLinked,
 }
+
+/// <summary>What the task is mainly for, from its wording — separate from its secondary topics.</summary>
+public enum TaskPurpose { BusinessBehavior, DataModel, Security, Integration, TestImplementation, Verification, InfrastructureSetup, Observability, Migration, Documentation, Unknown }
+
+/// <summary>An authored design artifact the task names explicitly: e.g. Data Model structure "BarnStatusHistorikk".</summary>
+public sealed record DesignArtifactLink(string ArtifactType, string Name, string? Source);
+
+/// <summary>The two authored statements behind a possible deviation. Without both sides there is no possible deviation.</summary>
+public sealed record DeviationEvidence(string Rule, string TaskSays, string AuthoredReference, string AuthoredSays);
 
 public enum AlignmentRisk
 {
@@ -80,6 +91,14 @@ public sealed class TaskFinding
     /// <summary>The keyword or file that triggered a Technical-only or behavior classification, when one did.</summary>
     public string? ClassificationSignal { get; init; }
     public List<SpecMatch> Matches { get; init; } = [];
+    /// <summary>Authored design artifacts the task names (Data Model structures, Constitution rules). Context, never requirement coverage.</summary>
+    public List<DesignArtifactLink> DesignLinks { get; init; } = [];
+    /// <summary>Main purpose of the task (primary), independent of the topics (secondary).</summary>
+    public TaskPurpose Purpose { get; init; } = TaskPurpose.Unknown;
+    /// <summary>Both authored sides of a possible deviation; set only for <see cref="AlignmentStatus.PossibleDeviation"/>.</summary>
+    public DeviationEvidence? Deviation { get; init; }
+    /// <summary>True when the task describes business behavior without any authored link (shown as "Unlinked business task · Needs review").</summary>
+    public bool UnlinkedBusinessTask { get; init; }
     /// <summary>FR/SC/user-story references in the task that do not resolve to an item in the Specification.</summary>
     public List<string> UnresolvedReferences { get; init; } = [];
     public List<AffectedArea> AffectedAreas { get; init; } = [];
@@ -99,6 +118,9 @@ public sealed class AlignmentReport
     public int TotalTasks { get; init; }
     public int LinkedTasks { get; init; }
     public int TechnicalOnlyTasks { get; init; }
+    /// <summary>Exclusive primary category: tasks linked only through an authored design artifact.</summary>
+    public int DesignLinkedTasks { get; init; }
+    public int TestImplementationTasks { get; init; }
     public int NeedsReviewTasks { get; init; }
     public int PossibleDeviations { get; init; }
     public int HighImpactTasks { get; init; }

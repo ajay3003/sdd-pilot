@@ -982,7 +982,7 @@ public sealed class ReportExportService : IReportExportService
             sb.Append($"<tr><th>Rules</th><td>Deterministic ({Esc(snapshot.RulesVersion)})</td></tr>\n");
         }
         sb.Append("</tbody>\n</table>\n");
-        sb.Append("<p>Checks whether each task's references resolve to the Specification. A direct spec link is not coverage, and this review does not read source code or verify implementation. Test priority comes from keyword topics and is not a measured risk.</p>\n</section>\n");
+        sb.Append("<p>Reviews how tasks align with authored requirements and related design artifacts. It does not inspect source code, verify implementation, or prove test execution. A direct spec link is an explicit authored reference, not coverage; a design artifact link is design alignment, not requirement coverage. Testing focus comes from task topics and alignment findings and is not a measured risk score.</p>\n</section>\n");
 
         sb.Append("<div class=\"kpi-row\">");
         sb.Append(Kpi(report.TotalTasks.ToString(), "Tasks analyzed"));
@@ -990,43 +990,47 @@ public sealed class ReportExportService : IReportExportService
         sb.Append(Kpi(report.PossibleDeviations.ToString(), "Possible deviation"));
         sb.Append(Kpi(report.NeedsReviewTasks.ToString(), "Needs review"));
         sb.Append(Kpi(report.LinkedTasks.ToString(), "Direct spec link"));
+        sb.Append(Kpi(report.DesignLinkedTasks.ToString(), "Design artifact link"));
         sb.Append(Kpi(report.TechnicalOnlyTasks.ToString(), "Technical only"));
-        sb.Append(Kpi(report.HighImpactTasks.ToString(), "High test priority"));
+        sb.Append(Kpi(report.HighImpactTasks.ToString(), "High test focus"));
         sb.Append(Kpi(report.RegressionCandidates.ToString(), "Regression focus"));
         sb.Append("</div>\n");
 
         var findings = report.Findings.Where(f => f.IsFinding).ToList();
         sb.Append("<section class=\"block\">\n<h2>Findings</h2>\n");
         if (findings.Count == 0)
-            sb.Append("<p>No findings: every task has a direct spec link or is technical work where a direct link is not expected.</p>\n");
+            sb.Append("<p>No findings: every task has a direct spec link, a design artifact link, or is technical work where a link is not expected.</p>\n");
         else
             sb.Append(Table(
                 ["Task ID", "Title", "Result", "Reason", "Next step"],
-                findings.Select(f => new[] { Esc(f.TaskId), Esc(f.Title), Esc(StatusText(f.Status)), Esc(f.Reason), Esc(f.RecommendedAction) })));
+                findings.Select(f => new[] { Esc(f.TaskId), Esc(f.Title), Esc(StatusText(f.Status) + (f.UnlinkedBusinessTask ? " · Unlinked business task" : "")),
+                    Esc(f.Deviation is { } d ? $"Task says: {d.TaskSays} — {d.AuthoredReference} says: {d.AuthoredSays}" : f.Reason), Esc(f.RecommendedAction) })));
         sb.Append("</section>\n");
 
         if (report.Findings.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Task analysis results</h2>\n");
             sb.Append(Table(
-                ["Task ID", "Title", "Result", "Spec links", "Rule", "Test priority"],
+                ["Task ID", "Title", "Result", "Authored links", "Purpose", "Rule", "Testing focus"],
                 report.Findings.Select(f => new[]
                 {
                     Esc(f.TaskId),
                     Esc(f.Title),
                     Esc(StatusText(f.Status)),
-                    Esc(f.Matches.Count > 0 ? string.Join(", ", f.Matches.Select(m => m.ItemId)) : "—"),
+                    Esc(f.Matches.Count + f.DesignLinks.Count > 0 ? string.Join(", ", f.Matches.Select(m => m.ItemId).Concat(f.DesignLinks.Select(d => $"{d.Name} ({d.ArtifactType})"))) : "—"),
+                    Esc(f.Purpose.ToString()),
                     Esc(f.ClassificationBasis),
                     Esc(f.ImpactLevel == ImpactLevel.Unknown ? "Not determined" : f.ImpactLevel.ToString()),
                 })));
             sb.Append("</section>\n");
         }
 
-        return BuildHtml("Implementation Review Report", projectName, null, sb.ToString());
+        return BuildHtml("Task Alignment Review Report", projectName, null, sb.ToString());
 
         static string StatusText(AlignmentStatus status) => status switch
         {
             AlignmentStatus.Linked => "Direct spec link",
+            AlignmentStatus.DesignLinked => "Design artifact link",
             AlignmentStatus.TechnicalOnly => "Technical only",
             AlignmentStatus.NeedsReview => "Needs review",
             AlignmentStatus.PossibleDeviation => "Possible deviation",

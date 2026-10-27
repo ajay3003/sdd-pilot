@@ -122,8 +122,8 @@
         {
             <div class="ir-tabs" role="tablist" aria-label="Implementation Review views">
                 @Tab("alignment", "Spec alignment", report.FindingCount > 0 ? $"{report.FindingCount} finding{(report.FindingCount == 1 ? "" : "s")}" : null)
-                @Tab("impact", "Risk & testing", null)
-                @Tab("explorer", "Task Explorer", null)
+                @Tab("impact", "Testing focus", null)
+                @Tab("explorer", "Task context", null)
             </div>
 
             @if (_activePageTab == "alignment")
@@ -141,21 +141,28 @@
                                 aria-pressed="@(_activeFilter == "findings" ? "true" : "false")" @onclick='() => SetFilter("findings")'>
                             <span class="ir-card-value">@report.FindingCount</span>
                             <span class="ir-card-label">Findings</span>
-                            <span class="ir-card-hint">@(report.FindingCount == 0 ? "No task needs action" : $"{report.PossibleDeviations} possible deviation{(report.PossibleDeviations == 1 ? "" : "s")} · {report.NeedsReviewTasks} needs review")</span>
+                            <span class="ir-card-hint">@(report.FindingCount == 0 ? "No task needs action" : $"{report.PossibleDeviations} possible deviation{(report.PossibleDeviations == 1 ? "" : "s")} · {report.NeedsReviewTasks} review question{(report.NeedsReviewTasks == 1 ? "" : "s")}")</span>
                         </button>
                         <button type="button" class="ir-card ir-card--linked" data-testid="ir-card-linked"
                                 aria-pressed="@(_activeFilter == "Linked" ? "true" : "false")" @onclick='() => SetFilter("Linked")'>
                             <span class="ir-card-value">@report.LinkedTasks</span>
-                            <span class="ir-card-label">Direct spec link</span>
-                            <span class="ir-card-hint">Reference resolves in the Specification — a link, not coverage</span>
+                            <span class="ir-card-label">Direct spec links</span>
+                            <span class="ir-card-hint">Explicit reference resolves in the Specification — a link, not coverage</span>
+                        </button>
+                        <button type="button" class="ir-card ir-card--design" data-testid="ir-card-design"
+                                aria-pressed="@(_activeFilter == "DesignLinked" ? "true" : "false")" @onclick='() => SetFilter("DesignLinked")'>
+                            <span class="ir-card-value">@report.DesignLinkedTasks</span>
+                            <span class="ir-card-label">Design artifact links</span>
+                            <span class="ir-card-hint">Names a Data Model structure or Constitution rule — not requirement coverage</span>
                         </button>
                         <button type="button" class="ir-card ir-card--technical" data-testid="ir-card-technical"
                                 aria-pressed="@(_activeFilter == "TechnicalOnly" ? "true" : "false")" @onclick='() => SetFilter("TechnicalOnly")'>
                             <span class="ir-card-value">@report.TechnicalOnlyTasks</span>
-                            <span class="ir-card-label">Technical only</span>
-                            <span class="ir-card-hint">Setup, infrastructure or test work — direct spec link not expected</span>
+                            <span class="ir-card-label">Technical-only tasks</span>
+                            <span class="ir-card-hint">Setup, infrastructure or test-harness work — no link expected</span>
                         </button>
                     </div>
+                    <p class="ir-scope" data-testid="ir-link-semantics">Categories are exclusive: each task has one primary classification (possible deviation, direct spec link, design artifact link, technical only, or needs review). A <strong>direct spec link</strong> means the task explicitly references a Requirement, Success Criterion or user story that resolves in the selected Specification — it does not prove coverage, correctness, implementation or test execution. A <strong>design artifact link</strong> shows alignment with an authored design or governance artifact; it does not mean the task covers a Specification requirement. Neither counts as a pass.</p>
 
                     @if (report.FindingCount == 0)
                     {
@@ -171,6 +178,7 @@
                             @Chip("PossibleDeviation", "Possible deviation", report.PossibleDeviations, false)
                             @Chip("NeedsReview", "Needs review", report.NeedsReviewTasks, false)
                             @Chip("Linked", "Direct spec link", report.LinkedTasks, false)
+                            @Chip("DesignLinked", "Design artifact link", report.DesignLinkedTasks, false)
                             @Chip("TechnicalOnly", "Technical only", report.TechnicalOnlyTasks, false)
                         </div>
                         @SearchBox()
@@ -198,6 +206,7 @@
                                         <span class="ir-row-title">@result.Title</span>
                                         <span class="ir-row-meta">
                                             <span class="ir-status-badge" data-status="@result.Status">@StatusLabel(result.Status)</span>
+                                            @if (result.UnlinkedBusinessTask) { <span class="ir-status-badge" data-status="Unlinked">Unlinked business task</span> }
                                             @foreach (var match in result.Matches.Take(3))
                                             {
                                                 <span class="ir-ref">@match.ItemId</span>
@@ -214,8 +223,8 @@
                                     {
                                         <div class="ir-detail" id="ir-detail-@key" data-testid="ir-detail">
                                             @TaskTextSection(result)
-                                            <section class="ir-detail-section" aria-label="Spec links">
-                                                <h3>Spec links</h3>
+                                            <section class="ir-detail-section" aria-label="Authored links">
+                                                <h3>Authored links</h3>
                                                 @if (result.Matches.Count > 0)
                                                 {
                                                     <ul class="ir-links">
@@ -233,10 +242,29 @@
                                                 {
                                                     <p class="ir-unresolved" data-testid="ir-unresolved">Not found in the Specification: @string.Join(", ", result.UnresolvedReferences)</p>
                                                 }
+                                                @if (result.DesignLinks.Count > 0)
+                                                {
+                                                    <ul class="ir-links" data-testid="ir-design-links">
+                                                        @foreach (var link in result.DesignLinks)
+                                                        {
+                                                            <li><span class="ir-ref">@link.Name</span> <span class="ir-link-type">@link.ArtifactType link</span>@if (link.Source is { } src) { <span class="ir-link-title">Source: @src</span> }</li>
+                                                        }
+                                                    </ul>
+                                                }
                                             </section>
+                                            @if (result.Deviation is { } deviation)
+                                            {
+                                                <section class="ir-detail-section" aria-label="Possible deviation" data-testid="ir-deviation">
+                                                    <h3>Conflicting authored statements</h3>
+                                                    <p><strong>Task says:</strong> @deviation.TaskSays</p>
+                                                    <p><strong>@deviation.AuthoredReference says:</strong> @deviation.AuthoredSays</p>
+                                                    <p class="ir-muted">These authored statements appear inconsistent and require review. Rule: @deviation.Rule.</p>
+                                                </section>
+                                            }
                                             <section class="ir-detail-section" aria-label="Classification">
                                                 <h3>Why “@StatusLabel(result.Status)”</h3>
                                                 <p>@result.Reason</p>
+                                                <p class="ir-muted" data-testid="ir-purpose">Primary purpose: @PurposeLabel(result.Purpose)</p>
                                                 <p class="ir-muted" data-testid="ir-basis">Rule: @result.ClassificationBasis@(result.ClassificationSignal is { Length: > 0 } signal ? $" (matched “{signal}”)" : "").</p>
                                             </section>
                                             <section class="ir-detail-section" aria-label="Next step">
@@ -263,12 +291,12 @@
                 var impactFiltered = Filtered(report.Findings, ImpactMatches(_activeImpactFilter));
 
                 <div class="ir-panel" role="tabpanel" id="ir-panel-impact" aria-labelledby="ir-tab-impact">
-                    <p class="ir-scope" data-testid="ir-risk-scope">Test priority comes from the topics a task touches, matched by keyword. It points testing effort; it is not a measured risk or a defect. For change-driven impact, use <a href="/impact-analysis">Impact Analysis</a>.</p>
+                    <p class="ir-scope" data-testid="ir-risk-scope">Highlights tasks that may deserve additional testing based on task topics and alignment findings. Derived from authored task topics and alignment findings — this is test-focus guidance, not a measured risk score, and regression focus does not mean regression tests exist. For change-driven impact, use <a href="/impact-analysis">Impact Analysis</a>.</p>
 
                     <div class="ir-cards ir-cards--five" role="group" aria-label="Test priority summary" data-testid="ir-risk-summary">
-                        @PriorityCard("High", report.HighImpactTasks, "High test priority", "Security, authorization, events or audit")
-                        @PriorityCard("Medium", report.MediumImpactTasks, "Medium test priority", "Ingestion, health, validation or errors")
-                        @PriorityCard("Low", report.LowImpactTasks, "Low test priority", "Setup or other topics")
+                        @PriorityCard("High", report.HighImpactTasks, "High test focus", "Security, authorization, events or audit")
+                        @PriorityCard("Medium", report.MediumImpactTasks, "Medium test focus", "Ingestion, health, validation or errors")
+                        @PriorityCard("Low", report.LowImpactTasks, "Low test focus", "Setup or other topics")
                         @PriorityCard("Unknown", report.UnknownImpactTasks, "Not determined", "No topic detected")
                         @PriorityCard("Regression", report.RegressionCandidates, "Regression focus", "High-priority topics, or a finding with test-relevant topics")
                     </div>
@@ -366,8 +394,25 @@
             }
             else if (_activePageTab == "explorer")
             {
-                <div class="ir-panel" role="tabpanel" id="ir-panel-explorer" aria-labelledby="ir-tab-explorer">
-                    <TaskExplorerPanel TasksText="@_tasksText" Report="@_report" />
+                <div class="ir-panel" role="tabpanel" id="ir-panel-explorer" aria-labelledby="ir-tab-explorer" data-testid="ir-task-context">
+                    <p class="ir-scope">Task context for this review: purpose, topics, authored references and classification per task. The full task structure lives in the Task Explorer (same project, module and Artifact Pack scope). <a href="task-explorer" data-testid="ir-open-task-explorer">Open in Task Explorer</a></p>
+                    <div class="ir-table-scroll" tabindex="0" role="region" aria-label="Task context">
+                        <table class="ir-context-table">
+                            <thead><tr><th scope="col">Task</th><th scope="col">Purpose</th><th scope="col">References</th><th scope="col">Classification</th><th scope="col">Topics</th></tr></thead>
+                            <tbody>
+                                @foreach (var result in report.Findings)
+                                {
+                                    <tr data-testid="ir-context-row" data-task="@result.TaskId">
+                                        <th scope="row"><span class="ir-task-id">@result.TaskId</span> @result.Title</th>
+                                        <td>@PurposeLabel(result.Purpose)</td>
+                                        <td>@string.Join(", ", result.Matches.Select(m => m.ItemId).Concat(result.DesignLinks.Select(d => d.Name)).DefaultIfEmpty("—"))</td>
+                                        <td>@StatusLabel(result.Status)</td>
+                                        <td>@TopicChips(result.AffectedAreas, 3)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             }
         }
@@ -662,6 +707,7 @@
         "PossibleDeviation" => f => f.Status == AlignmentStatus.PossibleDeviation,
         "NeedsReview" => f => f.Status == AlignmentStatus.NeedsReview,
         "Linked" => f => f.Status == AlignmentStatus.Linked,
+        "DesignLinked" => f => f.Status == AlignmentStatus.DesignLinked,
         "TechnicalOnly" => f => f.Status == AlignmentStatus.TechnicalOnly,
         _ => _ => true,
     };
@@ -852,6 +898,7 @@
     internal static string StatusLabel(AlignmentStatus s) => s switch
     {
         AlignmentStatus.Linked => "Direct spec link",
+        AlignmentStatus.DesignLinked => "Design artifact link",
         AlignmentStatus.TechnicalOnly => "Technical only",
         AlignmentStatus.NeedsReview => "Needs review",
         AlignmentStatus.PossibleDeviation => "Possible deviation",
@@ -864,6 +911,15 @@
         ImpactLevel.Medium => "Medium test priority",
         ImpactLevel.Low => "Low test priority",
         _ => "Test priority not determined",
+    };
+
+    internal static string PurposeLabel(TaskPurpose p) => p switch
+    {
+        TaskPurpose.BusinessBehavior => "Business behavior",
+        TaskPurpose.DataModel => "Data/model",
+        TaskPurpose.TestImplementation => "Test implementation",
+        TaskPurpose.InfrastructureSetup => "Infrastructure/setup",
+        _ => p.ToString(),
     };
 
     private static string SpecMatchTypeLabel(SpecMatchType t) => t switch

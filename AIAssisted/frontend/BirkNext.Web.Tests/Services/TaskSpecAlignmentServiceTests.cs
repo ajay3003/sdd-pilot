@@ -51,7 +51,7 @@ public sealed class TaskSpecAlignmentServiceTests
     }
 
     [Fact]
-    public void UnlinkedBehavioralTask_IsPossibleDeviation()
+    public void UnlinkedBehavioralTask_IsNeedsReview_NotPossibleDeviation()
     {
         var context = new ReviewContext
         {
@@ -74,7 +74,8 @@ public sealed class TaskSpecAlignmentServiceTests
 
         report.Findings.Should().ContainSingle(f =>
             f.TaskId == "T901" &&
-            f.Status == AlignmentStatus.PossibleDeviation);
+            f.Status == AlignmentStatus.NeedsReview && f.UnlinkedBusinessTask && f.Deviation == null,
+            "unlinked behavior without conflicting authored statements is a review question, not a deviation");
     }
 
     [Fact]
@@ -172,7 +173,7 @@ public sealed class TaskSpecAlignmentServiceTests
 
         var results = new TaskSpecAlignmentService().Analyse(context).Findings;
 
-        results.Single(f => f.TaskId == "T1").Status.Should().Be(AlignmentStatus.PossibleDeviation);
+        results.Single(f => f.TaskId == "T1").Status.Should().Be(AlignmentStatus.NeedsReview, "exposed behavior without a reference is a review question");
         results.Single(f => f.TaskId == "T2").Status.Should().Be(AlignmentStatus.TechnicalOnly);
     }
 
@@ -199,11 +200,106 @@ public sealed class TaskSpecAlignmentServiceTests
     }
 
     [Fact]
-    public void TaskArtifactTestingAndSecurityFlags_AreTopics()
+    public void SecurityFlagIsATopic_TestingNeedsActualTestingIntent()
     {
         TaskTopicTaxonomy.Detect(new TaskItem { Id = "T1", Title = "Do it", IsTestingTask = true, IsSecurityTask = true })
-            .Should().Contain([AffectedArea.Testing, AffectedArea.Security]);
+            .Should().Contain(AffectedArea.Security).And.NotContain(AffectedArea.Testing, "a flag alone is not testing intent");
+        TaskTopicTaxonomy.Detect(new TaskItem { Id = "T2", Title = "Write integration tests for search" }).Should().Contain(AffectedArea.Testing);
     }
+
+    // ── Hardened authored-alignment semantics ────────────────────────────────────────────────────────────────────────
+
+    private static ReviewContext Context(IEnumerable<TaskItem> tasks, string? requirementText = null, IEnumerable<string>? entities = null, IEnumerable<SemanticUserStory>? stories = null) => new()
+    {
+        Specification = new SpecificationSemanticModel
+        {
+            Requirements = requirementText is null ? [] : [new SemanticRequirement { Id = "FR-003", Text = requirementText }],
+            UserStories = [.. stories ?? []],
+        },
+        DataModel = new DataModelSemanticModel { Title = "Data Model: Person Module Core", Entities = [.. (entities ?? []).Select(e => new SemanticDataEntity { Id = e, Name = e })] },
+        Tasks = new TaskSemanticModel { AllTasks = [.. tasks], TotalTasks = tasks.Count() },
+    };
+
+    private static TaskFinding One(ReviewContext context) => new TaskSpecAlignmentService().Analyse(context).Findings.Single();
+
+    [Fact]
+    public void DirectReference_IsALinkNotAPass_AndUnresolvedReferenceNeedsReview()
+    {
+        var linked = One(Context([new TaskItem { Id = "T1", Title = "Implement FR-003 logging rule", LinkedFRIds = ["FR-003"] }], "System MUST log access."));
+        linked.Status.Should().Be(AlignmentStatus.Linked);
+        linked.IsFinding.Should().BeFalse("a direct spec link is neutral — neither a finding nor a pass");
+        linked.RecommendedAction.Should().Contain("does not show the task implements them");
+
+        var unresolved = One(Context([new TaskItem { Id = "T2", Title = "Implement FR-999", LinkedFRIds = ["FR-999"] }]));
+        unresolved.Status.Should().Be(AlignmentStatus.NeedsReview);
+        unresolved.UnresolvedReferences.Should().Equal("FR-999");
+    }
+
+    [Fact]
+    public void DataModelTask_IsADesignArtifactLink_NotRequirementCoverage()
+    {
+        var finding = One(Context([new TaskItem { Id = "T008", Title = "Create BarnStatusHistorikk entity with EF configuration" }], entities: ["BarnStatusHistorikk", "Person"]));
+        finding.Status.Should().Be(AlignmentStatus.DesignLinked);
+        finding.DesignLinks.Should().ContainSingle(d => d.Name == "BarnStatusHistorikk" && d.ArtifactType == "Data Model" && d.Source == "Data Model: Person Module Core");
+        finding.Matches.Should().BeEmpty("no requirement coverage is added");
+        finding.IsFinding.Should().BeFalse();
+        finding.Purpose.Should().Be(TaskPurpose.DataModel);
+    }
+
+    [Fact]
+    public void SetupWithTestProjects_IsInfrastructure_NotTestWork()
+    {
+        var finding = One(Context([new TaskItem { Id = "T001", Title = "Create solution with src and test projects (xUnit, TestContainers)", IsTestingTask = true }]));
+        finding.Status.Should().Be(AlignmentStatus.TechnicalOnly);
+        finding.Purpose.Should().Be(TaskPurpose.InfrastructureSetup);
+        finding.AffectedAreas.Should().NotContain(AffectedArea.Testing, "a test project or package is not testing work");
+        finding.IsFinding.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ActualTestTask_IsTestImplementation_WithItsDirectLink()
+    {
+        var finding = One(Context([new TaskItem { Id = "T030", Title = "Add SecurityClassificationServiceTests for FR-003 kode 6 filtering", LinkedFRIds = ["FR-003"] }], "System MUST hide Kode 6 children."));
+        finding.Purpose.Should().Be(TaskPurpose.TestImplementation);
+        finding.Status.Should().Be(AlignmentStatus.Linked);
+        finding.AffectedAreas.Should().Contain([AffectedArea.Testing, AffectedArea.Security]);
+    }
+
+    [Fact]
+    public void PossibleDeviation_NeedsBothConflictingAuthoredStatements()
+    {
+        var finding = One(Context([new TaskItem { Id = "T019", Title = "Return 200 with empty response for unauthorised access", LinkedFRIds = ["FR-003"] }],
+            "Unauthorised access MUST return 403."));
+        finding.Status.Should().Be(AlignmentStatus.PossibleDeviation);
+        finding.Deviation!.TaskSays.Should().Contain("Return 200");
+        finding.Deviation.AuthoredReference.Should().Be("FR-003");
+        finding.Deviation.AuthoredSays.Should().Contain("403");
+        finding.Reason.Should().Contain("Task says").And.Contain("FR-003 says");
+    }
+
+    [Fact]
+    public void AmbiguousSecurityBehavior_WithoutReference_IsNeedsReview_NotDeviation()
+    {
+        var finding = One(Context([new TaskItem { Id = "T022", Title = "Enforce kode 6 security filter on search results" }]));
+        finding.Status.Should().Be(AlignmentStatus.NeedsReview);
+        finding.UnlinkedBusinessTask.Should().BeTrue();
+        finding.Deviation.Should().BeNull();
+    }
+
+    [Fact]
+    public void UserStoryReferences_ShowAuthoredIds_NeverGeneratedOnes()
+    {
+        SpecExplorerService.AuthoredUserStoryId("User Story 1 — Search for Children (Priority: P1)").Should().Be("US1");
+        SpecExplorerService.AuthoredUserStoryId("Search for children").Should().BeNull("no authored number: no invented id");
+        SpecExplorerService.IsGeneratedUserStoryId("US-ea6").Should().BeTrue();
+        SpecExplorerService.IsGeneratedUserStoryId("US-001").Should().BeFalse();
+
+        var finding = One(Context([new TaskItem { Id = "T010", Title = "Search endpoint", UserStoryId = "US1" }],
+            stories: [new SemanticUserStory { Id = "US-ea6", Title = "Search for Children" }]));
+        finding.Matches.Single().ItemId.Should().Be("US1", "the authored tag, not the internal id");
+        finding.Matches.Single().Title.Should().Be("Search for Children");
+    }
+
 
     private static AlignmentReport AnalysePersonAdapterSample()
     {

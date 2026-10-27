@@ -101,6 +101,18 @@ public static class SpecExplorerService
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    /// <summary>Prefix of an internal user-story identity when the Specification gives none; never shown as an authored ID.</summary>
+    public const string GeneratedUserStoryPrefix = "US-";
+
+    /// <summary>"User Story 1 — Search" → "US1" (the Spec Kit convention tasks use); null when the heading carries no number.</summary>
+    public static string? AuthoredUserStoryId(string title) =>
+        System.Text.RegularExpressions.Regex.Match(title ?? "", @"^\s*User Story\s+(\d+)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } m
+            ? "US" + int.Parse(m.Groups[1].Value) : null;
+
+    /// <summary>True for an internal id generated for a user story without an authored ID (US-ab1), never for US1 or US-001.</summary>
+    public static bool IsGeneratedUserStoryId(string? id) =>
+        id is not null && System.Text.RegularExpressions.Regex.IsMatch(id, @"^US-[0-9a-f]{3}$") && !System.Text.RegularExpressions.Regex.IsMatch(id, @"^US-\d{3}$");
+
     public static SpecTree Parse(string markdown)
     {
         var tokens = MarkdownTokenizer.Tokenize(markdown);
@@ -1430,7 +1442,7 @@ public static class SpecExplorerService
         {
             var story = new SemanticUserStory
             {
-                Id = usNode.SpecItemId ?? $"US-{usNode.Id[..3]}",
+                Id = usNode.SpecItemId ?? AuthoredUserStoryId(usNode.Title) ?? GeneratedUserStoryPrefix + usNode.Id[..3],
                 Title = usNode.Title,
                 Description = usNode.FullContent,
             };
