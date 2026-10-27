@@ -280,6 +280,15 @@ public sealed class FrontendAuthenticationSettings
     [JsonPropertyName("allowedRedirectUrls")]        public List<string>              AllowedRedirectUrls        { get; set; } = [];
 
     /// <summary>
+    /// Which values a person explicitly configured as overrides ("provider", "signInRequired"); every other value is effective from
+    /// observed or source/config evidence (see <c>EffectiveAuthentication</c>) and is never copied here. Null for profiles saved before
+    /// overrides were tracked: their non-default saved values count as configured. Omitted when null so existing manual-verification
+    /// fingerprints stay valid.
+    /// </summary>
+    [JsonPropertyName("configuredOverrides"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ConfiguredOverrides { get; set; }
+
+    /// <summary>
     /// Saved Browser delivery trust policy for managed-Edge authenticated testing. This is the single policy source of truth:
     /// ExactOrigin (default) accepts only a tab at the configured target origin; ApprovedMcasProxyOrigin ALSO accepts a strongly
     /// correlated Microsoft Defender for Cloud Apps proxied delivery while still preferring the exact origin. Legacy profiles without

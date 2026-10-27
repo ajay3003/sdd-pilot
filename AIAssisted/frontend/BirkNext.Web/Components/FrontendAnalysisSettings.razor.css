@@ -1504,3 +1504,10 @@
 .fa-profile-chip { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 
 /* Authentication-specific limitation inside the detection result, with a link-styled action to the Authentication tab. */
+
+/* Effective authentication provenance: each value names its origin as text (never colour alone). */
+.fa-auth-origin { display: inline-block; margin-left: .4rem; padding: 0 .4rem; border: 1px solid var(--clr-border); border-radius: 999px; font-size: .75rem; font-weight: 600; color: var(--clr-text-muted); }
+.fa-auth-origin-observed { color: var(--clr-success); border-color: var(--clr-success-border); background: var(--clr-success-bg-light); }
+.fa-auth-origin-override { color: var(--clr-primary); border-color: currentColor; }
+.fa-auth-observed { display: block; font-size: .8125rem; color: var(--clr-text-muted); }
+.fa-auth-review { margin: .5rem 0 0; padding: .5rem .75rem; border: 1px solid var(--clr-warning-border); border-radius: var(--radius-md); background: var(--clr-warning-bg-light); color: var(--clr-warning); font-size: .875rem; }

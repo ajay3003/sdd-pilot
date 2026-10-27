@@ -34,7 +34,7 @@ public sealed class PlaceholderAuthenticatedBrowserSessionService : IAuthenticat
     public Task<AuthenticatedBrowserSessionStatus> GetStatusAsync()
     {
         var profile = _settings.ActiveProfile;
-        if (profile is null || !profile.Authentication.RequiresAuthentication)
+        if (profile is null || !EffectiveAuthentication.Resolve(profile, _settings.GetDetectionSnapshot(profile.Id)).SignInRequired)
             return Task.FromResult(AuthenticatedBrowserSessionStatus.NotRequired);
 
         return Task.FromResult(AuthenticatedBrowserSessionStatus.RequiredButNotAvailable);
@@ -143,7 +143,7 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
     {
         var profile = settings.ActiveProfile;
         if (profile is null) return AuthenticatedBrowserSessionStatus.NotConfigured;
-        if (!profile.Authentication.RequiresAuthentication) return AuthenticatedBrowserSessionStatus.NotRequired;
+        if (!EffectiveAuthentication.Resolve(profile, settings.GetDetectionSnapshot(profile.Id)).SignInRequired) return AuthenticatedBrowserSessionStatus.NotRequired;
         if (_current is null) return AuthenticatedBrowserSessionStatus.ReadyToStart;
 
         using var response = await http.GetAsync($"api/frontend-quality/auth-session/{Uri.EscapeDataString(_current.SessionId)}?reviewSessionId={Uri.EscapeDataString(_reviewSessionId)}&profileId={Uri.EscapeDataString(profile.Id)}");
@@ -151,7 +151,7 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
         if (!response.IsSuccessStatusCode) return AuthenticatedBrowserSessionStatus.Failed;
         var value = await response.Content.ReadFromJsonAsync<SessionResponse>();
         if (value is null) return AuthenticatedBrowserSessionStatus.Failed;
-        _current = Map(value, profile.Authentication.AuthenticationType.ToString());
+        _current = Map(value, EffectiveAuthentication.Resolve(profile, settings.GetDetectionSnapshot(profile.Id)).Provider.ToString());
         return value.Status;
     }
 
@@ -166,7 +166,7 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
         if (!response.IsSuccessStatusCode) return AuthenticatedBrowserSessionStatus.Failed;
         var value = await response.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: cancellationToken);
         if (value is null) return AuthenticatedBrowserSessionStatus.Failed;
-        _current = Map(value, settings.ActiveProfile?.Authentication.AuthenticationType.ToString() ?? string.Empty);
+        _current = Map(value, settings.ActiveProfile is { } active ? EffectiveAuthentication.Resolve(active, settings.GetDetectionSnapshot(active.Id)).Provider.ToString() : string.Empty);
         return value.Status;
     }
 

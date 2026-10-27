@@ -44,8 +44,9 @@
                 <span class="fa-active-stat-value fa-active-stat-mono">@(ap.TargetUrl ?? "—")</span>
             </div>
             <div class="fa-active-stat">
-                <span class="fa-active-stat-label">Configured authentication</span>
-                <span class="fa-active-stat-value">@ap.Authentication.AuthenticationType</span>
+                <span class="fa-active-stat-label">Authentication</span>
+                @{ var apAuth = EffectiveAuthFor(ap); }
+                <span class="fa-active-stat-value" data-testid="active-authentication">@apAuth.ProviderValue.Value <small class="fa-auth-origin fa-auth-origin-@EffectiveAuthentication.OriginCss(apAuth.ProviderValue.Origin)">@EffectiveAuthentication.OriginLabel(apAuth.ProviderValue.Origin)</small></span>
             </div>
             @{ var _apv = FaSettings.ValidateProfile(ap); }
             <div class="fa-active-stat">
@@ -146,11 +147,12 @@
                     }
                     @if (profile.Id != EffectiveActiveProfile?.Id)
                     {
-                        <SecondaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanSetActiveTarget)">Set as Active</SecondaryButton>
+                        <PrimaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanSetActiveTarget)" data-testid="set-active-target"
+                                       aria-describedby="@(CanSetActiveTarget ? null : "activation-gate-reason")">Set as Active</PrimaryButton>
                     }
                     else
                     {
-                        <span class="fa-active-badge">Active environment</span>
+                        <span class="fa-active-badge" role="status" data-testid="active-target-badge">Active environment</span>
                     }
                 }
             </div>
@@ -587,14 +589,39 @@
                 <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration" aria-labelledby="authentication-configuration-heading">
                 <div class="fa-card-heading">
                     <h3 id="authentication-configuration-heading">Authentication configuration</h3>
-                    <span class="fa-card-status" role="status">@(HasUnsavedAuthenticationChanges ? "Unsaved changes" : _isEditMode ? "Editing draft" : "Saved configuration")</span>
+                    <span class="fa-card-status" role="status" data-testid="authentication-configuration-source">@(HasUnsavedAuthenticationChanges ? "Unsaved changes" : _isEditMode ? "Editing draft" : EffectiveAuth is { } source ? EffectiveAuthentication.SourceLabel(source) : "Not configured")</span>
                 </div>
 
+                @* Effective values: configured override > observed > detected from configuration > unknown. Observed values are used
+                   directly — no Save is needed to repeat them — and an override never erases what is observed. *@
                 <dl class="fa-detail-list">
-                    <div class="fa-dl-row"><dt>Configuration</dt><dd data-testid="authentication-configuration-state">@AuthenticationPaneStates.ConfigurationLabel(AuthPane.Configuration)</dd></div>
-                    <div class="fa-dl-row"><dt>Provider</dt><dd data-testid="authentication-configured-provider">@AuthenticationPresentation.ProviderLabel(CurrentProfile?.Authentication.AuthenticationType ?? FrontendAuthenticationType.None)</dd></div>
-                    <div class="fa-dl-row"><dt>Sign-in required</dt><dd data-testid="authentication-sign-in-required">@BoolLabel(CurrentProfile?.Authentication.RequiresAuthentication ?? false)</dd></div>
+                    <div class="fa-dl-row"><dt>Configuration</dt><dd data-testid="authentication-configuration-state">@ConfigurationStateLabel</dd></div>
+                    @if (EffectiveAuth is { } effective)
+                    {
+                        @foreach (var value in effective.Values)
+                        {
+                            var key = value == effective.ProviderValue ? "authentication-configured-provider" : "authentication-sign-in-required";
+                            <div class="fa-dl-row"><dt>@value.Setting</dt>
+                                <dd><span data-testid="@key">@value.Value</span>
+                                    <small class="fa-auth-origin fa-auth-origin-@EffectiveAuthentication.OriginCss(value.Origin)" data-testid="@(key)-origin">@EffectiveAuthentication.OriginLabel(value.Origin)</small>
+                                    @if (value.ObservedValue is { } observedValue)
+                                    {
+                                        <span class="fa-auth-observed" data-testid="@(key)-observed">@(value.ObservedMatches ? "Observed value matches" : $"Observed value: {observedValue}")</span>
+                                    }
+                                </dd></div>
+                        }
+                    }
                 </dl>
+                @if (EffectiveAuth is { ReviewRequired: true })
+                {
+                    <div class="fa-auth-review" role="status" data-testid="authentication-override-review">
+                        <p>@EffectiveAuthentication.ReviewRequiredText. The configured override stays the expectation; this is a configuration/evidence discrepancy, not a defect.</p>
+                        @if (!_isEditMode)
+                        {
+                            <SecondaryButton OnClick="UseObservedAuthenticationAsync" data-testid="authentication-use-observed">Use observed values</SecondaryButton>
+                        }
+                    </div>
+                }
 
                 <p class="fa-auth-help" data-testid="authentication-no-secrets">Expected authentication settings only. Never enter passwords, tokens or client secrets — BirkNext has no field for them.</p>
 
@@ -624,6 +651,10 @@
                                     <option value="@t">@AuthenticationPresentation.ProviderLabel(t)</option>
                                 }
                             </select>
+                            @if (EffectiveAuth is { } formEffective && formEffective.Values.Where(v => v.Origin is AuthenticationValueOrigin.Observed or AuthenticationValueOrigin.DetectedFromConfiguration).ToList() is { Count: > 0 } fromEvidence)
+                            {
+                                <p class="fa-auth-help" data-testid="configured-authentication-effective">In use without saving: @string.Join(" · ", fromEvidence.Select(v => $"{v.Setting} {v.Value} ({EffectiveAuthentication.OriginLabel(v.Origin)})")). Leave a value unchanged to keep using it; changing it records a configured override.</p>
+                            }
                         </div>
                         <div class="form-field fa-field-checks">
                             <label class="fa-check-row">
@@ -699,7 +730,7 @@
                     var auth = profile.Authentication;
                     @* Read-only mode: the high-level state is stated above and the identifiers live in the one
                        comparison, so this only says where they are edited. *@
-                    <p class="fa-auth-help" data-testid="authentication-configuration-readonly">Authentication settings are edited here. Use Edit Environment to change the provider, sign-in requirement, authenticated testing method or expected identifiers.</p>
+                    <p class="fa-auth-help" data-testid="authentication-configuration-readonly">Observed values are used directly — no Save is needed. Use Edit Environment only to override them or to complete what discovery could not establish (provider, sign-in requirement, authenticated testing method, expected identifiers).</p>
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
                     <div class="fa-field-full fa-state-saved fa-auth-subcard" data-testid="browser-delivery-trust">
@@ -1779,7 +1810,33 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// "No authentication is configured" directly above "Matches saved configuration".
     /// </summary>
     private AuthConfigurationState AuthenticationConfiguration =>
-        AuthenticationPaneStates.Configuration(CurrentProfile?.Authentication);
+        AuthenticationPaneStates.Configuration(EffectiveAuthenticationSettingsForPane);
+
+    /// <summary>What readiness and the pane read: the draft while editing, otherwise the EFFECTIVE settings (override &gt; observed &gt; source/config).</summary>
+    private FrontendAuthenticationSettings? EffectiveAuthenticationSettingsForPane => _isEditMode ? CurrentProfile?.Authentication : EffectiveAuth?.Settings ?? CurrentProfile?.Authentication;
+
+    /// <summary>The source/config sign-in authority declared for this environment's kind (deterministic; never another environment's).</summary>
+    private string? SourceAuthority(FrontendAnalysisProfile profile) =>
+        EnvironmentValue(EnvironmentValueKeys.AuthenticationAuthority, null, profile) is { State: EnvironmentValueState.SourceSuggested, Value: { } value } ? value : null;
+
+    private EffectiveAuthenticationSettings EffectiveAuthFor(FrontendAnalysisProfile profile) =>
+        EffectiveAuthentication.Resolve(profile, FaSettings.GetDetectionSnapshot(profile.Id), SourceAuthority(profile));
+
+    /// <summary>Effective authentication of the selected (saved) environment.</summary>
+    private EffectiveAuthenticationSettings? EffectiveAuth => SelectedProfile is { } profile ? EffectiveAuthFor(profile) : null;
+
+    /// <summary>"Configured" only when a person configured something; evidence-derived completeness says where it came from.</summary>
+    private string ConfigurationStateLabel
+    {
+        get
+        {
+            var state = AuthPane.Configuration;
+            if (_isEditMode || EffectiveAuth is not { } e || e.HasOverride || state is AuthConfigurationState.NotConfigured or AuthConfigurationState.Unknown)
+                return AuthenticationPaneStates.ConfigurationLabel(state);
+            var origin = e.HasObserved ? "observed" : "detected from configuration";
+            return state == AuthConfigurationState.Configured ? char.ToUpperInvariant(origin[0]) + origin[1..] : $"Partially {origin}";
+        }
+    }
 
     /// <summary>The one readiness derivation, fed the state this page already holds. Nothing is recomputed here.</summary>
     private AuthenticationReadinessSummary AuthReadiness => AuthenticationReadinessPresentation.Summarize(
@@ -1797,7 +1854,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// working one out from a neighbouring concept.
     /// </summary>
     private AuthenticationPaneState AuthPane => AuthenticationPaneStates.Derive(
-        CurrentProfile?.Authentication,
+        EffectiveAuthenticationSettingsForPane,
         _detectionResult,
         _detectionResult is not null && HasDetectedAuthSettings(_detectionResult),
         AuthenticationMatch,
@@ -2192,6 +2249,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _saveError = null;
         try
         {
+            // Only what the person changed becomes a configured override; observed values are never copied into configuration.
+            if (SelectedProfile is { } saved) EffectiveAuthentication.ApplyEdit(saved.Authentication, _editProfile.Authentication);
             FaSettings.UpdateProfile(_editProfile);
             await FaSettings.SaveAsync(JS);
             _selectedProfileId = _editProfile.Id;
@@ -2212,6 +2271,17 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     }
 
     // ── Profile operations ───────────────────────────────────────────────────
+
+    /// <summary>Removes the overrides that differ from observation, so the observed values are effective again. An explicit action.</summary>
+    private async Task UseObservedAuthenticationAsync()
+    {
+        if (SelectedProfile is not { } profile || EffectiveAuth is not { ReviewRequired: true } effective) return;
+        if (effective.ProviderValue.ReviewRequired) EffectiveAuthentication.ClearOverride(profile.Authentication, EffectiveAuthentication.ProviderKey);
+        if (effective.SignInValue.ReviewRequired) EffectiveAuthentication.ClearOverride(profile.Authentication, EffectiveAuthentication.SignInRequiredKey);
+        FaSettings.UpdateProfile(profile);
+        await FaSettings.SaveAsync(JS);
+        RecomputeManualReadiness();
+    }
 
     private async Task SetActiveProfileAsync()
     {

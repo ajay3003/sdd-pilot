@@ -93,9 +93,12 @@
     private string? _error;
     private bool _running, _cancelled, _copied, _disposed;
     private bool Eligible => Profile is { TargetUrl.Length: > 0 } && Profile.EnvironmentType is FrontendEnvironmentType.Local or FrontendEnvironmentType.Development or FrontendEnvironmentType.QA or FrontendEnvironmentType.Test or FrontendEnvironmentType.RC;
+    // Effective authentication (override > observed > source/config): the diagnostic describes what reviews use, not only what was saved.
+    private FrontendAuthenticationSettings Auth => Services.GetService<IFrontendAnalysisSettingsService>() is { } settings
+        ? EffectiveAuthentication.Resolve(Profile!, settings.GetDetectionSnapshot(Profile!.Id)).Settings : Profile!.Authentication;
     private HeadlessDiagnosticRequest Request() => new() { TargetEnvironmentId = Profile!.Id, TargetEnvironmentName = Profile.Name,
-        TargetUrl = Profile.TargetUrl ?? "", EnvironmentType = Profile.EnvironmentType.ToString(), Authority = Profile.Authentication.ExpectedAuthority,
-        AuthenticationType = Profile.Authentication.AuthenticationType.ToString(), RequiresAuthentication = Profile.Authentication.RequiresAuthentication };
+        TargetUrl = Profile.TargetUrl ?? "", EnvironmentType = Profile.EnvironmentType.ToString(), Authority = Auth.ExpectedAuthority,
+        AuthenticationType = Auth.AuthenticationType.ToString(), RequiresAuthentication = Auth.RequiresAuthentication };
     protected override void OnParametersSet()
     {
         var binding = $"{Profile?.Id}|{Profile?.TargetUrl}|{Profile?.EnvironmentType}|{Profile?.Authentication.ExpectedAuthority}";

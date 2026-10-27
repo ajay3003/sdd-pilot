@@ -62,7 +62,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
 
     /// <summary>A target that needs no sign-in of its own — but still has no authenticated testing access.</summary>
     private const string NoSignInRequired = """
-        { "authenticationType": "None", "requiresAuthentication": false, "authenticatedTestingMethod": "LocalHttpsProxy" }
+        { "authenticationType": "None", "requiresAuthentication": false, "configuredOverrides": ["signInRequired"], "authenticatedTestingMethod": "LocalHttpsProxy" }
         """;
 
     private IRenderedComponent<Component> Open(string authenticationJson)
@@ -164,9 +164,11 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     [Fact]
     public void ASavedProviderIsConfiguredEvenWhenTheTargetForcesNoSignIn()
     {
-        var cut = Detect(MatchingAuthentication.Replace("\"requiresAuthentication\": true", "\"requiresAuthentication\": false"));
+        // An explicit "No" is a configured override; it stays the expectation even where observation differs.
+        var cut = Detect(MatchingAuthentication.Replace("\"requiresAuthentication\": true", "\"requiresAuthentication\": false, \"configuredOverrides\": [\"provider\", \"signInRequired\"]"));
 
         Row(cut, "authentication-sign-in-required").Should().Be("No");
+        Row(cut, "authentication-sign-in-required-origin").Should().Be("Configured override");
         Row(cut, "authentication-configuration-state").Should().Be("Configured");
         Row(cut, "auth-summary-configuration").Should().Be("Configured");
         VisibleText(cut.Find("[data-testid='fa-auth-panel']"))
@@ -366,7 +368,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         var cut = Detect(MatchingAuthentication);
 
         Row(cut, "auth-status-auth-settings").Should().Be("Matches saved configuration");
-        Testid(cut, "authentication-configuration").TextContent.Should().Contain("edited here");
+        Testid(cut, "authentication-configuration").TextContent.Should().Contain("Use Edit Environment only to override");
 
         // One configuration section, and a match renders no comparison: the provider is named once, as configured.
         cut.FindAll("[data-testid='authentication-configuration']").Should().ContainSingle();

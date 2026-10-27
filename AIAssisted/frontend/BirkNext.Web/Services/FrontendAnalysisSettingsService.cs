@@ -75,6 +75,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     public async Task LoadAsync(IJSRuntime js)
     {
         if (IsLoaded) return;
+        // Observed authentication is part of the effective settings every review reads, so the snapshots load with the settings.
+        if (!_snapshotsLoaded) await LoadDetectionSnapshotsAsync(js);
 
         try
         {
@@ -143,8 +145,11 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         await SaveAsync(js);
     }
 
+    private bool _snapshotsLoaded;
+
     public async Task LoadDetectionSnapshotsAsync(IJSRuntime js)
     {
+        _snapshotsLoaded = true;
         string? json;
         try { json = await js.InvokeAsync<string?>("birkNextStorage.getSnapshots"); }
         catch { return; /* interop unavailable or refused: no restored snapshots. */ }
@@ -500,7 +505,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             ActiveProfileName  = active.Name,
             Environment        = active.EnvironmentType.ToString(),
             TargetUrl          = active.TargetUrl,
-            AuthenticationType = active.Authentication.AuthenticationType.ToString(),
+            AuthenticationType = EffectiveAuthentication.Resolve(active, GetDetectionSnapshot(active.Id)).Provider.ToString(),
             ThresholdMode      = active.Performance.Mode.ToString(),
             EnabledFeatures    = enabled,
             DisabledFeatures   = disabled,

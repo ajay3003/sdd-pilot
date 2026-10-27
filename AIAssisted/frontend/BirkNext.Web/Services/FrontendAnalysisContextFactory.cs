@@ -62,6 +62,11 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             ApiKey = credentials.ApiKey, BasicPassword = credentials.BasicPassword
         };
         var validation = _settings.ValidateProfile(profile);
+        // Reviews read the EFFECTIVE authentication (override > observed > source/config), never only what was manually saved.
+        // Identity/verification digests stay over the SAVED profile, so a recorded manual sign-in check is not invalidated by evidence.
+        var reviewIdentity = ReviewAuthenticationIdentity.For(profile);
+        var manualVerificationFingerprint = ManualAuthenticationVerificationEvidence.Fingerprint(profile);
+        profile.Authentication = EffectiveAuthentication.Resolve(profile, _settings.GetDetectionSnapshot(profile.Id)).Settings;
         var sessionStatus = await _sessionService.GetStatusAsync();
 
         var allowedRestHosts        = (IReadOnlyList<string>) profile.AllowedRestHosts;
@@ -103,8 +108,8 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             Integrations                = profile.Integrations.AsReadOnly(),
             // Identity and verification state are resolved against the SAVED profile (full authentication object), so the
             // digests match the proxy session / manual verification record. Digests only; no configuration values.
-            ReviewIdentity              = ReviewAuthenticationIdentity.For(profile),
-            ManualVerificationFingerprint = ManualAuthenticationVerificationEvidence.Fingerprint(profile),
+            ReviewIdentity              = reviewIdentity,
+            ManualVerificationFingerprint = manualVerificationFingerprint,
             ManualVerificationStatus    = ResolveManualVerificationStatus(profile),
         };
     }
