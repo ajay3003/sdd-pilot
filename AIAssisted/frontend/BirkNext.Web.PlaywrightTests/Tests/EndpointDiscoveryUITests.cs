@@ -74,7 +74,8 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.FillAsync(M2lbDevUrl);
 
             // Click Detect Settings button
-            var detectButton = page.Locator("button:has-text('Detect settings')").First;
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.ClickAsync();
 
             // Wait for detection to complete (should show detection results)
@@ -106,7 +107,9 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.ClearAsync();
             await urlInput.FillAsync(M2lbDevUrl);
 
-            var detectButton = page.Locator("button:has-text('Detect settings')").First;
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.ClickAsync();
 
             // Wait for detection to complete
@@ -150,7 +153,9 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.ClearAsync();
             await urlInput.FillAsync(M2lbDevUrl);
 
-            var detectButton = page.Locator("button:has-text('Detect settings')").First;
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.ClickAsync();
 
             // Wait for detection to complete
@@ -187,7 +192,9 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.ClearAsync();
             await urlInput.FillAsync(M2lbDevUrl);
 
-            var detectButton = page.Locator("button:has-text('Detect settings')").First;
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.ClickAsync();
 
             // Wait for detection to complete
@@ -241,7 +248,9 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.ClearAsync();
             await urlInput.FillAsync(M2lbDevUrl);
 
-            var detectButton = page.Locator("button:has-text('Detect settings')").First;
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.ClickAsync();
 
             // Wait for detection to complete
@@ -293,7 +302,9 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.ClearAsync();
             await urlInput.FillAsync(M2lbDevUrl);
 
-            var detectButton = page.Locator("button:has-text('Detect settings')").First;
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.ClickAsync();
 
             // Wait for detection to complete

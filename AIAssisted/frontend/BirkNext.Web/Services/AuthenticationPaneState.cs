@@ -22,7 +22,7 @@ public enum AuthConfigurationState
 /// <summary>What detection observed about the deployed target. Never a statement about the saved configuration.</summary>
 public enum AuthDetectionState
 {
-    /// <summary>Detect settings has not been run for this environment.</summary>
+    /// <summary>The authentication settings check (target detection) has not been run for this environment.</summary>
     NotRun,
     /// <summary>Detection ran but could not answer — unreachable, blocked, or an error.</summary>
     Unavailable,

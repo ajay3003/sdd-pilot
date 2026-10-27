@@ -69,10 +69,10 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
             .ReturnsAsync(Failure(AuthenticationFailureReason.NavigationTimeout, "Authentication failed: Navigation timeout during authentication"));
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Unknown authentication failure"));
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Retry detection").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
         cut.WaitForAssertion(() =>
         {
@@ -99,7 +99,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -128,7 +128,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -154,7 +154,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -183,8 +183,8 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
 
-        // Click "Detect settings" - this auto-enters edit mode
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        // Click "Check target application" - this auto-enters edit mode
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -229,7 +229,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -270,7 +270,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -307,7 +307,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -366,7 +366,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -407,7 +407,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -440,7 +440,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -471,7 +471,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -519,7 +519,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -567,6 +567,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "General").Click();
         if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.FindAll("input[type=text]")[1].Change("Unsaved change");
+        cut.Find("#target-tab-target").Click();
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
 
         cut.WaitForAssertion(() => persisted.LastDetectionSucceeded.Should().BeTrue());
@@ -649,7 +650,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required"));
         return cut;
     }
@@ -686,7 +687,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -735,7 +736,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -798,7 +799,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -862,7 +863,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {

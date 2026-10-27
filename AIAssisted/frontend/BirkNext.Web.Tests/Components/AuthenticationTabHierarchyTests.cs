@@ -89,7 +89,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         """);
         var cut = Render<Component>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Authentication").Click();
         return cut;

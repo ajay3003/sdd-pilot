@@ -61,7 +61,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
     private IRenderedComponent<Component> Detect()
     {
         var cut = Open();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         return cut;
     }
@@ -99,16 +99,17 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         var result = cut.Find("section.fa-result");
         result.QuerySelector("#detection-result-heading")!.TextContent.Trim().Should().Be("Target detection complete");
 
-        var grid = cut.Find(".fa-result-grid").TextContent;
-        grid.Should().Contain("Reachability").And.Contain("Reachable");
-        grid.Should().Contain("Framework").And.Contain("Blazor WebAssembly");
-        grid.Should().Contain("Environment").And.Contain("Development");
-        grid.Should().Contain("Detected authentication").And.Contain("Configured authentication");
-        grid.Should().Contain("Profile name").And.Contain("M2LB DEV");
+        // A successful check lists its facts once, in "Detected from target"; configured authentication is the Authentication tab's.
+        var facts = cut.Find("[data-testid=target-detected-summary]").TextContent;
+        facts.Should().Contain("Reachability").And.Contain("Reachable");
+        facts.Should().Contain("Framework").And.Contain("Blazor WebAssembly");
+        facts.Should().Contain("Environment type").And.Contain("Development");
+        facts.Should().Contain("Profile name").And.Contain("M2LB DEV");
+        result.TextContent.Should().NotContain("Configured authentication");
 
         // Confidence stays readable text on the card.
         result.TextContent.Should().Contain("Very High");
-        grid.Should().NotContain("Manual authentication verification");
+        facts.Should().NotContain("Manual authentication verification");
     }
 
     // ── 3. The optional manual sign-in check still records a result, on the Authentication tab ──

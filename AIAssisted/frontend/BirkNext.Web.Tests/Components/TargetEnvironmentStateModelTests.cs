@@ -64,13 +64,13 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
         _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(Reachable);
         var cut = Open();
         Chip(cut, "detection").Should().Be("Not checked");
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() => Chip(cut, "detection").Should().Be("Reachable"));
         Chip(cut, "runtime").Should().Be("Not verified", "detection is not runtime verification");
         cut.FindAll("[data-testid=te-state-verification]").Should().BeEmpty();
         cut.FindAll("[data-testid=te-state-trust]").Should().BeEmpty("active execution is an execution gate, not environment health");
-        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Detection", "Runtime evidence");
+        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Target reachability", "Runtime evidence");
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
             OriginalUrl = Url, Success = false, Reachability = TargetReachability.Unreachable, State = DetectionState.Failed, Message = "Connection refused.",
         });
         var cut = Open();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() => Chip(cut, "detection").Should().Be("Unreachable"));
         cut.Markup.Should().NotContain("Mark verification").And.NotContain("sign-in check completed");
@@ -100,7 +100,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
         Arrange(System.Text.Json.JsonSerializer.Serialize(record));
         _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(Reachable);
         var cut = Open();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() => Chip(cut, "detection").Should().Be("Reachable"));
         cut.FindAll("[data-testid=te-state-trust]").Should().BeEmpty("execution permission is not an environment state");

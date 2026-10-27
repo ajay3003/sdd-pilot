@@ -382,7 +382,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     public void DetectionHasOneCompactSummaryAndExplicitApply()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         OpenTab(cut, "Authentication");
         // One configuration section; the settings check is the fourth prerequisite card, not a block or a second full-width card.
         Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication configuration"));

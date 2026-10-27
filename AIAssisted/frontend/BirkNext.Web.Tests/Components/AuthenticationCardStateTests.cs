@@ -93,7 +93,7 @@ public sealed partial class AuthenticationApplyDraftTests
         // The "Discovered API Endpoints" proposal UI (Apply REST/GraphQL/Swagger/Health) was removed entirely; detection still
         // records the endpoints in the result model, but they are no longer surfaced as apply-to-config proposals anywhere.
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         foreach (var tab in new[] { "Target Application", "Endpoint Discovery" })
         {
             OpenTab(cut, tab);

@@ -60,7 +60,7 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
     {
         var cut = Render<TargetSettings>();
         cut.FindAll(".fa-profile-chip").Single(c => c.TextContent.Contains("Dev")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         return cut;
     }

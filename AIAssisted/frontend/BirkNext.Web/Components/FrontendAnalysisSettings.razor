@@ -132,19 +132,11 @@
                 <span class="fa-summary-label">Frontend URL</span>
                 <span class="fa-summary-url">@(CurrentTargetUrl ?? "—")</span>
             </div>
-            <div class="fa-detection-state" role="status">
-                <span class="fa-summary-label">Detection</span>
-                <strong class="fa-detection-value fa-detection-@DetectionStateCss">@DetectionStateBadge</strong>
-            </div>
-            <div class="fa-primary-actions" aria-busy="@_isDetecting.ToString().ToLowerInvariant()">
+            @* No environment-wide detect action or detection status: each tab owns its own check (Target Application checks the
+               target, Authentication checks authentication settings, Endpoint/Browser Discovery and Integrations own their evidence). *@
+            <div class="fa-primary-actions">
                 @if (!_browserDetectionInProgress)
                 {
-                    @if (_activeTab != "auth")
-                    {
-                        <PrimaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(CurrentTargetUrl))">
-                            @(_isDetecting ? "Detecting..." : CurrentDetectionState == DetectionState.Failed ? "Retry detection" : "Detect settings")
-                        </PrimaryButton>
-                    }
                     @if (profile.Id != EffectiveActiveProfile?.Id)
                     {
                         <PrimaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanSetActiveTarget)" data-testid="set-active-target"
@@ -180,75 +172,11 @@
                 </div>
             }
 
-            @if (_activeTab != "auth")
-            {
-                <p class="fa-detection-help">Detect settings checks this Frontend URL and proposes configuration. Nothing is saved automatically.</p>
-            }
             @if (profile.Id != EffectiveActiveProfile?.Id && !CanSetActiveTarget)
             {
                 <p id="activation-gate-reason" class="fa-activation-reason">Save a valid Target Environment with a Frontend URL before setting it active.</p>
             }
-            @if (profile.Id != EffectiveActiveProfile?.Id && !DetectionReady)
-            {
-                <p id="detection-readiness-reason" class="fa-detection-help">@DetectionReadinessReason</p>
-            }
-            @if (_detectionError is not null)
-            {
-                <p class="fa-detection-error" role="alert">@_detectionError</p>
-            }
         </div>
-
-        @if (_detectionResult is not null && _activeTab != "auth")
-        {
-            <section class="fa-result fa-result-@DetectionStateCss" aria-labelledby="detection-result-heading" aria-live="polite">
-                <div class="fa-result-heading">
-                    <div>
-                        <span class="fa-result-kicker">Detection result</span><h3 id="detection-result-heading">@DetectionStateLabel</h3>
-                        @if (_detectionRestored)
-                        {
-                            <span class="fa-card-status" role="status" data-testid="detection-restored">@RestoredDetectionLabel</span>
-                        }
-                    </div>
-                    <span class="fa-result-confidence">Target detection confidence: @DetectionPresentation.ConfidenceLabel(_detectionResult.Confidence)</span>
-                </div>
-                <p class="fa-result-message">@DetectionStateMessage</p>
-                <dl class="fa-result-grid">
-                    <div><dt>Reachability</dt><dd>@_detectionResult.Reachability</dd></div>
-                    <div><dt>Framework</dt><dd>@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd></div>
-                    <div><dt>Environment</dt><dd>@(_detectionResult.SuggestedEnvironmentType?.ToString() ?? "Not detected") <small>Proposed</small></dd></div>
-                    <div><dt>Detected authentication</dt><dd>@DetectedAuthenticationLabel</dd></div>
-                    <div><dt>Profile name</dt><dd>@(_detectionResult.SuggestedProfileName ?? "Not proposed") <small>Proposed</small></dd></div>
-                    @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
-                    {
-                        <div class="fa-configured-auth-draft"><dt>Configured authentication (draft)</dt><dd>@_editProfile.Authentication.AuthenticationType <small>⚠ Unsaved · saved: @profile.Authentication.AuthenticationType</small></dd></div>
-                    }
-                    else
-                    {
-                        <div><dt>Configured authentication</dt><dd>@profile.Authentication.AuthenticationType <small>Configured</small></dd></div>
-                    }
-                </dl>
-                @if (!string.IsNullOrWhiteSpace(_detectionResult.FrameworkEvidence))
-                {
-                    <p class="fa-framework-evidence">Framework evidence: @_detectionResult.FrameworkEvidence · @_detectionResult.FrameworkConfidence</p>
-                }
-                @* Detection owns reachability, framework, environment/profile and declarative authentication only. Whether sign-in works is
-                   owned by runtime/browser verification and the Authentication tab — never stated here. *@
-
-                <div class="fa-result-actions">
-                    @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
-                    {
-                        <div>
-                            <PrimaryButton OnClick="StartBrowserDetectionAsync" Disabled="@_browserDetectionInProgress">Continue detection in browser</PrimaryButton>
-                            <p><small>BirkNext will open a browser for interactive authentication. Complete sign-in in that browser window.</small></p>
-                        </div>
-                    }
-                    @if (_detectionResult.SuggestedEnvironmentType is { } detectedType && profile.EnvironmentType != detectedType)
-                    {
-                        <SecondaryButton OnClick="ApplyDetectedEnvironmentType">Apply detected type</SecondaryButton>
-                    }
-                </div>
-            </section>
-        }
 
         @{ var typeConflict = GetTypeConflict(profile); }
         @if (typeConflict is not null)
@@ -261,9 +189,7 @@
                 </div>
                 @if (!_isEditMode)
                 {
-                    <SecondaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(profile.TargetUrl))" Class="fa-type-conflict-action">
-                        @(_isDetecting ? "Detecting…" : "Review Detect Settings")
-                    </SecondaryButton>
+                    <SecondaryButton OnClick='() => _activeTab = "target"' Class="fa-type-conflict-action">Review on Target Application</SecondaryButton>
                 }
             </div>
         }
@@ -351,6 +277,63 @@
             {
                 @* Detected target identity and runtime facts only. Authentication is configured, verified and
                    used for testing on the Authentication tab; nothing here edits authentication. *@
+
+                @* The target check is this tab's own action: it checks the Frontend URL (reachability, framework, environment
+                   type) and proposes values. Other tabs own their own checks; there is no environment-wide detect. *@
+                <section class="fa-result fa-result-@DetectionStateCss" data-testid="target-check" aria-labelledby="target-check-heading"
+                         aria-live="polite" aria-busy="@_isDetecting.ToString().ToLowerInvariant()">
+                    <div class="fa-result-heading">
+                        <div>
+                            <span class="fa-result-kicker" id="target-check-heading">Target check</span>
+                            <h3 id="detection-result-heading"><span class="fa-detection-value fa-detection-@DetectionStateCss" data-testid="target-check-state">@DetectionStateLabel</span></h3>
+                            @if (_detectionRestored)
+                            {
+                                <span class="fa-card-status" role="status" data-testid="detection-restored">@RestoredDetectionLabel</span>
+                            }
+                        </div>
+                        @if (_detectionResult is not null)
+                        {
+                            <span class="fa-result-confidence">Target detection confidence: @DetectionPresentation.ConfidenceLabel(_detectionResult.Confidence)</span>
+                        }
+                    </div>
+                    <p class="fa-result-message">@DetectionStateMessage</p>
+                    @if (!DetectionReady && CurrentDetectionState != DetectionState.NotChecked && DetectionReadinessReason != DetectionStateMessage)
+                    {
+                        <p id="detection-readiness-reason" class="fa-detection-help">@DetectionReadinessReason</p>
+                    }
+                    @if (_detectionError is not null)
+                    {
+                        <p class="fa-detection-error" role="alert">@_detectionError</p>
+                    }
+                    @* A successful check lists its facts in "Detected from target" below; an unsuccessful one still states how the target answered. *@
+                    @if (_detectionResult is { Success: false } failed)
+                    {
+                        <dl class="fa-result-grid">
+                            <div><dt>Reachability</dt><dd>@failed.Reachability</dd></div>
+                        </dl>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_detectionResult?.FrameworkEvidence))
+                    {
+                        <p class="fa-framework-evidence">Framework evidence: @_detectionResult.FrameworkEvidence · @_detectionResult.FrameworkConfidence</p>
+                    }
+                    <div class="fa-result-actions">
+                        @if (!_browserDetectionInProgress)
+                        {
+                            <PrimaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(CurrentTargetUrl))">
+                                @(_isDetecting ? "Checking…" : "Check target application")
+                            </PrimaryButton>
+                        }
+                        @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
+                        {
+                            <div>
+                                <PrimaryButton OnClick="StartBrowserDetectionAsync" Disabled="@_browserDetectionInProgress">Continue detection in browser</PrimaryButton>
+                                <p><small>BirkNext will open a browser for interactive authentication. Complete sign-in in that browser window.</small></p>
+                            </div>
+                        }
+                    </div>
+                    <p class="fa-detection-help">Checks this Frontend URL and proposes target values. Nothing is saved automatically.</p>
+                </section>
+
                 @if (_detectionResult?.Success == true)
                 {
                     <section class="fa-detected-card" data-testid="target-detected-summary" aria-labelledby="target-detected-heading">
@@ -1399,7 +1382,7 @@
             {
                 var v = FaSettings.ValidateProfile(profile);
                 <dl class="fa-detail-list" style="margin-bottom:1.5rem">
-                    <div class="fa-dl-row"><dt>Detection freshness</dt><dd>@(IsDetectionStale ? "Stale" : _detectionResult is null ? "Not checked" : "Current")</dd></div>
+                    <div class="fa-dl-row"><dt>Target check freshness</dt><dd>@(IsDetectionStale ? "Stale" : _detectionResult is null ? "Not checked" : "Current")</dd></div>
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
                         <div class="fa-dl-row"><dt>Manual sign-in</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Completed - browser access verified" : "Required for authenticated browser access")</dd></div>
@@ -1552,7 +1535,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                     <label class="fa-label" for="fa-create-url">Frontend Base URL</label>
                     <input id="fa-create-url" type="url" class="form-control" @bind="_newProfileUrl" @bind:event="oninput" @bind:after="() => _newUrlFromSource = false"
                            placeholder="@(string.IsNullOrWhiteSpace(_newProfileUrl) ? "https://your-application.example.com/" : null)" aria-describedby="fa-create-url-help fa-create-url-source" data-testid="fa-create-url" />
-                    <small id="fa-create-url-help">Optional. Add the frontend URL to run Detect settings after creation.</small>
+                    <small id="fa-create-url-help">Optional. Add the frontend URL to check the target application after creation.</small>
                     <EnvironmentValueHint Resolution="NewProfileUrlValue" Field="Frontend Base URL" Id="fa-create-url-source" TestId="fa-create-url-source"
                                           Prefilled="_newUrlFromSource" AnySourceValue="AnySourceValue(EnvironmentValueKeys.FrontendOrigin)"
                                           OnUse="value => { _newProfileUrl = value; _newUrlFromSource = false; }" />
@@ -1799,7 +1782,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     /// <summary>Where the detected configuration came from. "Not available" rather than a blank, which reads as a missing value.</summary>
     private string ConfigurationSourceLabel =>
-        _detectionResult?.Success == true ? "Detect Settings" : "Not available";
+        _detectionResult?.Success == true ? "Target detection" : "Not available";
 
     private string LastVerificationLabel =>
         CurrentProfile?.ManualVerification is { VerifiedAt: { } at } ? at.ToLocalTime().ToString("d MMM yyyy HH:mm") : "Never";
@@ -1914,7 +1897,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private async Task RunAuthPrerequisiteActionAsync(string? actionId)
     {
-        // Read-only: the same public target detection Detect settings runs, without leaving this tab. It never writes configuration.
+        // Read-only: the same public target detection the Target Application check runs, without leaving this tab. It never writes configuration.
         if (actionId == AuthenticationSettingsChecks.CheckActionId)
         {
             await DetectConfigurationAsync();
@@ -2771,26 +2754,20 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private string DiscoveryStaleReadinessReason => CurrentDiscoveryStaleReason switch
     {
-        TargetDiscoveryStaleReason.ProfileChanged => "Selected environment changed. Run Detect settings again to refresh detection evidence.",
-        _ => "Frontend URL changed. Run Detect settings again to refresh detection evidence."
+        TargetDiscoveryStaleReason.ProfileChanged => "Selected environment changed. Recheck the target application to refresh detection evidence.",
+        _ => "Frontend URL changed. Recheck the target application to refresh detection evidence."
     };
 
     private string DiscoveryStaleDetail => CurrentDiscoveryStaleReason switch
     {
-        TargetDiscoveryStaleReason.ProfileChanged => "The selected environment changed since detection. Run Detect settings again to refresh discovered endpoints and integrations.",
-        _ => "The target URL changed since detection. Run Detect settings again to refresh discovered endpoints and integrations."
+        TargetDiscoveryStaleReason.ProfileChanged => "The selected environment changed since detection. Recheck the target application to refresh the detected target values.",
+        _ => "The target URL changed since detection. Recheck the target application to refresh the detected target values."
     };
 
     private DetectionState CurrentDetectionState => ComputeDetectionState();
 
     private bool HasCurrentSuccessfulDetection =>
         CurrentDetectionState == DetectionState.Complete;
-
-    /// <summary>
-    /// Compact wording for the summary badge beside the Frontend URL. Every other detection state is already short;
-    /// only manual verification had a full sentence there, which the Detection result card states once on its own.
-    /// </summary>
-    private string DetectionStateBadge => DetectionStateLabel;
 
     private string DetectionStateLabel =>
         CurrentDetectionState switch
@@ -2872,7 +2849,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ManualAuthenticationVerificationStatus.Failed => "Failed (recorded manually)",
         // The recorded check no longer matches the configured expectations. Detection only needs repeating when the profile
         // has diverged from the detection evidence.
-        ManualAuthenticationVerificationStatus.Stale when !ManualVerificationContextCurrent => "Out of date: settings changed. Run Detect settings, then check again",
+        ManualAuthenticationVerificationStatus.Stale when !ManualVerificationContextCurrent => "Out of date: settings changed. Recheck the target application, then check again",
         ManualAuthenticationVerificationStatus.Stale when IsDirty => "Out of date: save changes, then check again",
         ManualAuthenticationVerificationStatus.Stale => "Out of date: settings changed. Check again",
         _ => "Not recorded",
@@ -3046,13 +3023,6 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ? "Authenticated context available"
         : "Authenticated context unavailable";
 
-    private string DetectedAuthenticationLabel => _detectionResult is null ||
-        (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)
-            ? "Not determined"
-            : _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None
-                ? "Authentication required (type not determined)"
-                : _detectionResult.DetectedAuthenticationType.ToString();
-
     private string DetectionStateMessage => CurrentDetectionState switch
     {
         DetectionState.Checking => "Checking target settings…",
@@ -3066,7 +3036,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         DetectionState.NotChecked when SelectedProfile?.LastDetectionSucceeded == true => "Previously detected. Run detection again to refresh.",
         DetectionState.NotChecked when SelectedProfile?.LastDetectionFailure is not null =>
             $"Previous detection failed ({SelectedProfile.LastDetectionFailure}). Run detection again to retry.",
-        DetectionState.NotChecked => "Run Detect settings to check this target.",
+        DetectionState.NotChecked => "Check the target application to see whether it is reachable and what it runs.",
         _ => _detectionResult?.Message ?? ""
     };
 
@@ -3078,16 +3048,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string DetectionReadinessReason =>
         CurrentDetectionState switch
         {
-            DetectionState.NotChecked => "Run Detect settings to verify this environment.",
-            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes, then run Detect settings again.",
-            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Run Detect settings again.",
+            DetectionState.NotChecked => "Check the target application on the Target Application tab.",
+            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes, then recheck the target application.",
+            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Recheck the target application.",
             DetectionState.ManualAuthenticationVerificationRequired => "Detection did not establish the framework, or reported warnings. Review the detection result.",
-            DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Click 'Continue detection in browser' above.",
+            DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Use 'Continue detection in browser' on the Target Application tab.",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Complete the authentication confirmation in the browser and try again.",
             DetectionState.Partial => "Partial detection. Run interactive browser detection again to complete authentication.",
             DetectionState.Stale => DiscoveryStaleReadinessReason,
-            DetectionState.Failed => "Detection failed. Run Detect settings successfully to refresh detection evidence.",
-            _ => "Detection is not complete. Run Detect settings first."
+            DetectionState.Failed => "Detection failed. Recheck the target application to refresh detection evidence.",
+            _ => "Target check is not complete. Check the target application first."
         };
 
     private static bool UrlsMatch(string? left, string? right) => TargetUrlNormalizer.Match(left, right);

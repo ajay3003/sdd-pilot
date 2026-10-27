@@ -470,13 +470,13 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             profile.EnvironmentType != FrontendEnvironmentType.Custom &&
             inferredType.Value != profile.EnvironmentType)
         {
-            warnings.Add($"This target is marked {profile.EnvironmentType}, but the hostname looks like a {inferredType.Value} environment. Use Detect settings to review the suggested type; no changes will be saved automatically.");
+            warnings.Add($"This target is marked {profile.EnvironmentType}, but the hostname looks like a {inferredType.Value} environment. Check the target application on the Target Application tab to review the suggested type; no changes will be saved automatically.");
         }
         else if (profile.EnvironmentType == FrontendEnvironmentType.Local &&
                  !string.IsNullOrWhiteSpace(profile.TargetUrl) &&
                  !TargetEnvironmentTypeClassifier.IsRecognizedLocalUrl(profile.TargetUrl))
         {
-            warnings.Add("This target is marked Local, but its hostname is not a recognized local or loopback address. Use Detect settings to review its environment type; no changes will be saved automatically.");
+            warnings.Add("This target is marked Local, but its hostname is not a recognized local or loopback address. Check the target application on the Target Application tab to review its environment type; no changes will be saved automatically.");
         }
 
         return new ProfileValidationResult { Errors = errors, Warnings = warnings };

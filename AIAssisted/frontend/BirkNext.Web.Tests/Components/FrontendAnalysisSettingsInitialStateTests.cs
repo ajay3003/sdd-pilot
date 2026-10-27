@@ -52,6 +52,7 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
 
         // Select QA profile which has persisted failed detection
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // CRITICAL: Initial status should show historical context, not active failure
         var detectionLabel = cut.Find(".fa-detection-value");
@@ -74,10 +75,12 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
-        // Retry button should be visible (either "Detect settings" or "Retry detection")
+        // The Target Application tab owns the check, so the retry lives there.
+        cut.Find("#target-tab-target").Click();
         var buttons = cut.FindAll("button")
-            .Where(b => b.TextContent.Contains("Detect settings") || b.TextContent.Contains("Retry detection"))
+            .Where(b => b.TextContent.Trim() == "Check target application")
             .ToList();
         buttons.Should().HaveCount(1, "Retry should be available for historical failure");
     }
@@ -91,6 +94,7 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // A historical failure does not prevent explicit target selection
         var activate = cut.FindAll("button").SingleOrDefault(b => b.TextContent.Trim() == "Set as Active");
@@ -99,9 +103,8 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
             activate.HasAttribute("disabled").Should().BeFalse();
         }
 
-        // The blocked reason should reference detection state (historical or current as appropriate)
-        var blockReason = cut.Find("#detection-readiness-reason");
-        blockReason.TextContent.Should().NotBeNullOrEmpty();
+        // The target check explains the historical outcome and how to refresh it
+        cut.Find("[data-testid=target-check] .fa-result-message").TextContent.Should().Contain("Previous detection failed");
     }
 
     /// <summary>
@@ -135,6 +138,7 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Should show historical complete, not active complete
         var detectionLabel = cut.Find(".fa-detection-value");
@@ -152,16 +156,19 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
 
         // QA has failed, switch to it
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
         var qaLabel = cut.Find(".fa-detection-value").TextContent.Trim();
         qaLabel.Should().Contain("Last detection failed");
 
         // Switch to Production (no history)
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Production")).Click();
+        cut.Find("#target-tab-target").Click();
         var prodLabel = cut.Find(".fa-detection-value").TextContent.Trim();
         prodLabel.Should().Be("Not checked");
 
         // Switch back to QA - should still show historical failure, not production state
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
         var qaLabelAgain = cut.Find(".fa-detection-value").TextContent.Trim();
         qaLabelAgain.Should().Contain("Last detection failed");
     }
@@ -182,13 +189,14 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Before detection: historical failure
         var labelBefore = cut.Find(".fa-detection-value").TextContent.Trim();
         labelBefore.Should().Contain("Last detection failed");
 
         // Start new detection
-        cut.FindAll("button").Single(b => b.TextContent.Contains("Detect settings") || b.TextContent.Contains("Retry detection")).Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -230,6 +238,7 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Should show stale state, not historical success
         var detectionLabel = cut.Find(".fa-detection-value").TextContent.Trim();
@@ -245,6 +254,7 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Save button should be disabled (no changes made)
         var saveBtn = cut.FindAll("button").SingleOrDefault(b => b.TextContent.Contains("Save changes"));
@@ -262,6 +272,7 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Access the underlying profile through reflection to verify persisted state
         var settingsService = Services.GetRequiredService<IFrontendAnalysisSettingsService>();

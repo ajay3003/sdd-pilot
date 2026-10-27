@@ -92,7 +92,11 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
     private FrontendAnalysisProfile Persisted() => _settings.Settings.Profiles.Single(x => x.Id == "dev");
 
-    private static string DetectionLabel(IRenderedComponent<Component> cut) => cut.Find(".fa-detection-value").TextContent.Trim();
+    private static string DetectionLabel(IRenderedComponent<Component> cut)
+    {
+        OpenTab(cut, "Target Application");
+        return cut.Find(".fa-detection-value").TextContent.Trim();
+    }
 
     /// <summary>
     /// Target discovery is current: the detection result section (reachability, framework, environment)
@@ -104,7 +108,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         OpenTab(cut, "Target Application");
         DetectionLabel(cut).Should().BeOneOf(["Target detection complete", "Target detected — unsaved changes", "Target detected — recheck after settings change"],
             "discovery is current; only authentication edits keep the sign-in check from matching the detection");
-        cut.Markup.Should().Contain("Detection result");
+        cut.Find("[data-testid=target-check]").TextContent.Should().Contain("Target check");
         cut.Find(".fa-result-message").TextContent.Should().NotContain("changed");
         cut.Markup.Should().Contain("Reachable");
         cut.Markup.Should().Contain("Blazor WebAssembly");
@@ -128,7 +132,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
     private static IRenderedComponent<Component> DetectAndApply(IRenderedComponent<Component> cut)
     {
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         OpenTab(cut, "Authentication");
         UseAllDetected(cut);
@@ -150,7 +154,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     {
         var cut = Open("""{ "authenticationType": "MicrosoftEntraId" }""");
         var original = System.Text.Json.JsonSerializer.Serialize(Persisted());
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         foreach (var tab in new[] { "Target Application", "Authentication", "Endpoint Discovery", "Frontend Review Engines", "Core Web Vitals", "Performance Thresholds", "Integrations" })
         {
@@ -189,7 +193,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     public void ApplyAuthentication_PopulatesDraft_MarksDirty_WithoutSavingActivatingOrStalingDiscovery()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         var savesBeforeApply = SaveCalls();
 
@@ -230,6 +234,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Markup.Should().NotContain("Mark verification", "there is no global verification workflow");
         cut.Markup.Should().NotContain("Completed (recorded manually)");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
+        OpenTab(cut, "Target Application");
         cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Unsaved changes");
 
         // Target discovery remains current — the previous bug produced "Discoveries are stale" here
@@ -326,7 +331,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         { "authenticationType": "MicrosoftEntraId", "expectedAuthority": "{{Authority}}", "expectedTenant": "{{Tenant}}",
           "expectedClientId": "{{ClientId}}", "allowedRedirectUrls": ["{{Redirect}}"] }
         """);
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         OpenTab(cut, "Authentication");
 
@@ -371,7 +376,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     public void AuthChange_MakesARecordedSignInCheckOutOfDate_ButTargetDiscoveryRemainsCurrent()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         OpenTab(cut, "Authentication");
         Click(cut, "Open manual sign-in check");
@@ -437,7 +442,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be("Recheck required");
         ButtonDisabled(cut, "Record sign-in check completed").Should().BeTrue();
         OpenTab(cut, "Target Application");
-        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings again");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Recheck the target application");
         // Discovery itself is still not stale: only the authentication context diverged
         cut.Markup.Should().NotContain("target URL changed");
         AssertDiscoveryCurrent(cut, editing: false);
@@ -454,7 +459,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
             return d;
         });
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         // "Apply detected type" is offered both in the detection result actions and inline in the Target tab
         cut.FindAll("button").First(b => b.TextContent.Trim() == "Apply detected type").Click();
@@ -469,28 +474,25 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
     // ── Defect 2: draft vs persisted authentication must be labelled, never contradictory ──
 
+    /// <summary>The target check owns target facts only. Configured authentication (draft or saved) is stated on the Authentication
+    /// tab, so the target check can never contradict it — before Apply, after Apply and after Save.</summary>
     [Fact]
-    public void ResultGrid_LabelsDraftVersusSavedAuthentication()
+    public void TargetCheck_NeverStatesConfiguredAuthentication_DraftOrSaved()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        var resultGrid = () => cut.Find(".fa-result-grid").TextContent;
+        var targetCheck = () => cut.Find("[data-testid=target-check]").TextContent;
+        targetCheck().Should().NotContain("Configured authentication");
 
-        // Before Apply: persisted None
-        resultGrid().Should().Contain("Configured authentication").And.NotContain("(draft)");
-
-        // After Apply, before Save: draft labelled as draft + unsaved, saved value named explicitly
         OpenTab(cut, "Authentication");
         UseAllDetected(cut);
         OpenTab(cut, "Target Application");
-        resultGrid().Should().Contain("Configured authentication (draft)").And.Contain("Unsaved").And.Contain("saved: None");
+        targetCheck().Should().NotContain("Configured authentication").And.NotContain("(draft)");
 
-        // After Save: single persisted value, no draft wording
         Click(cut, "Save changes");
         cut.WaitForAssertion(() => Persisted().Authentication.AuthenticationType.Should().Be(FrontendAuthenticationType.MicrosoftEntraId));
-        resultGrid().Should().NotContain("(draft)");
-        cut.Find(".fa-result-grid").TextContent.Should().Contain("MicrosoftEntraId");
+        targetCheck().Should().NotContain("Configured authentication");
     }
 
     // ── 27. Target URL change test ─────────────────────────────────────────────
@@ -499,7 +501,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     public void FrontendUrlChange_StillStalesDiscovery_WithTargetUrlChangedReason()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
         Click(cut, "Edit Environment");
@@ -508,7 +510,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         DetectionLabel(cut).Should().Be("Needs re-check");
         cut.Markup.Should().Contain("Discoveries are stale");
         cut.Markup.Should().Contain("The target URL changed since detection.");
-        cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again to refresh detection evidence.");
+        cut.Markup.Should().Contain("Frontend URL changed. Recheck the target application to refresh detection evidence.");
         cut.Markup.Should().NotContain("Apply REST");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
     }
@@ -519,7 +521,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     public void UnrelatedDraftChanges_DoNotStaleDiscovery()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
         Click(cut, "Edit Environment");

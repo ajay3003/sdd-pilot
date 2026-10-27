@@ -16,8 +16,8 @@
       Client secret           (not shown, not stored)
       Approved synthetic child  (optional: alias, label and a synthetic Test-Norge identifier — not shown, not stored; Enter skips it)
 
-    Nothing is persisted: no file, no registry, no user or machine environment variable. Closing the window removes everything.
-    No identifier is embedded in this script, and the script makes no network call.
+    Nothing is persisted to the registry or user/machine environment. Closing the window removes process-scope values.
+    This local helper contains approved synthetic default identifiers for reporter-a and child-a. They are test-only values and the script makes no network call.
 
     What BirkNext discovers from the deployed app (host, process task, data type, endpoints) is NOT configured here: it is read from the app's
     public TT02 metadata ("Read public TT02 metadata") after the backend has started.
@@ -72,6 +72,14 @@ $trusted = 'TargetEnvironments__Trusted__0__'
 $children = 'AltinnTesting__SyntheticChildren__'
 $child = "${children}${ChildIndex}__"
 
+# Local test-only defaults. These are approved synthetic identities, never production identities.
+$defaultReporterAlias = 'reporter-a'
+$defaultReporterLabel = 'Skolenærvær reporter A'
+$defaultReporterIdentifier = '05848597165'
+$defaultChildAlias = 'child-a'
+$defaultChildLabel = 'Skolenærvær test child A'
+$defaultChildIdentifier = '12113802888'
+
 function Set-SessionVariable([string]$Name, [string]$Value) {
     [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
 }
@@ -87,14 +95,25 @@ function Set-SecretVariable([string]$Name, [System.Security.SecureString]$Value)
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
 }
 
-# Synthetic Test-Norge identifier: 11 digits with month + 80 (81–92). The value is checked here and never printed.
-function Test-SyntheticIdentifier([System.Security.SecureString]$Value) {
+# Reporter TestID identifier: 11 digits with the synthetic Test-Norge month + 80 convention (81–92).
+function Test-ReporterSyntheticIdentifier([System.Security.SecureString]$Value) {
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
     try {
         $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
         if ($plain -notmatch '^\d{11}$') { return $false }
         $month = [int]$plain.Substring(2, 2)
         return ($month -ge 81 -and $month -le 92)
+    }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+
+# Approved child identities in Test-Norge can use ordinary-looking 11-digit identifiers.
+# The script cannot prove that such an identifier belongs to Test-Norge; approval/known-to-Person is a test-data trust decision.
+function Test-ChildSyntheticIdentifier([System.Security.SecureString]$Value) {
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try {
+        $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+        return ($plain -match '^\d{11}$')
     }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
 }
@@ -144,15 +163,21 @@ if ($Clear) {
 if ($Status) { Show-Status; return }
 
 # Reporter: an alias (stable) and a synthetic identifier behind it (replaceable).
-$ReporterAlias = Read-Value 'Reporter alias' $ReporterAlias "reporter-$([char](97 + $ReporterIndex))"
+$ReporterAlias = Read-Value 'Reporter alias' $ReporterAlias $(if ($ReporterIndex -eq 0) { $defaultReporterAlias } else { "reporter-$([char](97 + $ReporterIndex))" })
 if ($ReporterAlias -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { throw 'The reporter alias must be lowercase letters, digits and hyphens (e.g. reporter-a).' }
-$ReporterLabel = Read-Value 'Reporter label' $ReporterLabel "Skolenærvær reporter $([char](65 + $ReporterIndex))"
+$ReporterLabel = Read-Value 'Reporter label' $ReporterLabel $(if ($ReporterIndex -eq 0) { $defaultReporterLabel } else { "Skolenærvær reporter $([char](65 + $ReporterIndex))" })
 if (-not $ReporterIdentifier) {
-    if ($NoPrompt) { throw 'No reporter identifier: pass -ReporterIdentifier or run without -NoPrompt.' }
-    Write-Host 'Example synthetic identifier format: 11 digits (a synthetic Test-Norge person, month + 80). It is not shown and not stored.'
-    $ReporterIdentifier = Read-Host "Synthetic TestID identifier for $ReporterAlias" -AsSecureString
+    if ($ReporterIndex -eq 0 -and $ReporterAlias -eq $defaultReporterAlias) {
+        $ReporterIdentifier = ConvertTo-SecureString $defaultReporterIdentifier -AsPlainText -Force
+        Write-Host "Synthetic TestID identifier for ${ReporterAlias}: using approved local default (value not shown)."
+    }
+    elseif ($NoPrompt) { throw 'No reporter identifier: pass -ReporterIdentifier or run without -NoPrompt.' }
+    else {
+        Write-Host 'Example synthetic identifier format: 11 digits (a synthetic Test-Norge person, month + 80). It is not shown.'
+        $ReporterIdentifier = Read-Host "Synthetic TestID identifier for $ReporterAlias" -AsSecureString
+    }
 }
-if (-not (Test-SyntheticIdentifier $ReporterIdentifier)) { throw 'The reporter identifier is not a synthetic Test-Norge identifier (11 digits, month + 80). Real identifiers are never used.' }
+if (-not (Test-ReporterSyntheticIdentifier $ReporterIdentifier)) { throw 'The reporter identifier is not a synthetic Test-Norge TestID identifier (11 digits, month + 80). Real identifiers are never used.' }
 
 # Profile confirmation is a deliberate step: never inferred from the identifier or this script.
 $profileConfirmed = $false
@@ -163,15 +188,21 @@ if ($ReporterProfileConfirmed -or -not $NoPrompt) {
 }
 
 # Approved synthetic child (optional): approved test data the run page resolves by alias. Nothing is generated; reporter ≠ child is enforced by the backend.
-$ChildAlias = Read-Value 'Approved synthetic child alias (Enter to skip)' $ChildAlias ''
+$ChildAlias = Read-Value 'Approved synthetic child alias (Enter to skip)' $ChildAlias $(if ($ChildIndex -eq 0) { $defaultChildAlias } else { '' })
 if ($ChildAlias) {
     if ($ChildAlias -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { throw 'The child alias must be lowercase letters, digits and hyphens (e.g. synthetic-child-1).' }
-    $ChildLabel = Read-Value 'Child label' $ChildLabel $ChildAlias
+    $ChildLabel = Read-Value 'Child label' $ChildLabel $(if ($ChildIndex -eq 0 -and $ChildAlias -eq $defaultChildAlias) { $defaultChildLabel } else { $ChildAlias })
     if (-not $ChildIdentifier) {
-        if ($NoPrompt) { throw 'No child identifier: pass -ChildIdentifier or run without -NoPrompt.' }
-        $ChildIdentifier = Read-Host "Synthetic Test-Norge identifier for $ChildAlias (not shown, not stored)" -AsSecureString
+        if ($ChildIndex -eq 0 -and $ChildAlias -eq $defaultChildAlias) {
+            $ChildIdentifier = ConvertTo-SecureString $defaultChildIdentifier -AsPlainText -Force
+            Write-Host "Synthetic Test-Norge identifier for ${ChildAlias}: using approved local default (value not shown)."
+        }
+        elseif ($NoPrompt) { throw 'No child identifier: pass -ChildIdentifier or run without -NoPrompt.' }
+        else {
+            $ChildIdentifier = Read-Host "Synthetic Test-Norge identifier for $ChildAlias (not shown)" -AsSecureString
+        }
     }
-    if (-not (Test-SyntheticIdentifier $ChildIdentifier)) { throw 'The child identifier is not a synthetic Test-Norge identifier (11 digits, month + 80). Real identifiers are never used.' }
+    if (-not (Test-ChildSyntheticIdentifier $ChildIdentifier)) { throw 'The child identifier must be exactly 11 digits. Only an approved synthetic Test-Norge identity may be used.' }
 }
 
 # Client id: optional here (Integration Quality Review can hold it instead; both set and different is reported as a conflict).

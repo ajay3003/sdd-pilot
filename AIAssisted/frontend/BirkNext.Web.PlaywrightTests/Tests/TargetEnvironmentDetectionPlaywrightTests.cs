@@ -219,7 +219,8 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
                 scrollWidth.Should().Be(documentWidth, $"at viewport {width}x{height}");
 
                 // Verify all controls are accessible
-                var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings" });
+                await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+                var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
                 await detectButton.WaitForAsync();
 
                 var urlInput = page.Locator("input[type='url']").First;
@@ -277,7 +278,9 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             // Tab to Detect button and verify it's accessible
             await page.Keyboard.PressAsync("Tab");
 
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings" });
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             var isDetectVisible = await detectButton.IsVisibleAsync();
             isDetectVisible.Should().BeTrue("Detect button should be accessible via keyboard navigation");
 
@@ -309,8 +312,9 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             var urlInput = page.Locator("input[type='url']").First;
             await urlInput.FillAsync(testUrl);
 
-            // Click Detect settings button
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings" });
+            // Click the Target Application check
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
             await detectButton.ClickAsync();
 

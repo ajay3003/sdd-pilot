@@ -31,6 +31,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Detection state should be "Not checked"
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Not checked");
@@ -41,8 +42,8 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         activate.HasAttribute("disabled").Should().BeFalse();
         activate.GetAttribute("aria-describedby").Should().BeNull();
 
-        // Activation blocked reason should be clear
-        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings");
+        // The target check names its own action
+        cut.Find("[data-testid=target-check] .fa-result-message").TextContent.Should().Contain("Check the target application");
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -89,7 +90,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -120,7 +121,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -148,9 +149,10 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Run detection
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
         // Change URL
@@ -165,9 +167,9 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
         activate.HasAttribute("disabled").Should().BeTrue();
 
-        // Blocked reason should mention URL changed
-        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("URL changed");
-        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings");
+        // The target check says why, once: the URL changed and the target needs rechecking
+        var targetCheck = cut.Find("[data-testid=target-check]").TextContent;
+        targetCheck.Should().Contain("URL changed").And.Contain("Recheck the target application");
     }
 
     [Fact]
@@ -182,7 +184,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -210,9 +212,10 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Run detection with HTTPS
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Detected from target");
@@ -237,6 +240,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         // Select QA but active is still Local
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Active card should show "Local"
         cut.Find(".fa-active-card-name").TextContent.Trim().Should().Be("Local");
@@ -283,10 +287,11 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Click on Target Application tab to enter edit mode
         cut.FindAll("[role=tab]").Single(b => b.TextContent.Trim() == "Target Application").Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -308,7 +313,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -329,9 +334,10 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         // Run detection
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
 
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel");
@@ -340,7 +346,9 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         // "previously detected" result (revalidated against the unchanged QA target) rather than reverting to "Not checked". It still must
         // not enable Save/Cancel or persist any draft configuration.
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Production")).Click();
+        cut.Find("#target-tab-target").Click();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel");

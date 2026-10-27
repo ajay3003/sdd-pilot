@@ -44,9 +44,29 @@ public sealed partial class AuthenticationApplyDraftTests
         cut.Find("[data-testid=auth-card-auth-settings]").TextContent.Should().Contain("Saved configuration").And.Contain(Url);
         _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once);
 
-        // Every other tab keeps generic detection.
+        // There is no environment-wide detect: the Target Application tab owns its own target check.
         OpenTab(cut, "Target Application");
-        cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Detect settings");
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Detect settings");
+        cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Check target application");
+    }
+
+    /// <summary>There is no environment-level detect action or detection status on any tab: each tab owns its own check, and the
+    /// target check lives only on Target Application.</summary>
+    [Fact]
+    public void NoTabOffersAnEnvironmentWideDetectAction_OnlyTargetApplicationOwnsTheTargetCheck()
+    {
+        var cut = Open(MatchingEntra);
+        var tabs = cut.FindAll("[role=tab]").Select(t => t.TextContent.Trim()).ToList();
+        tabs.Should().Contain("Target Application");
+
+        foreach (var tab in tabs)
+        {
+            OpenTab(cut, tab);
+            cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Detect settings", $"{tab} must not offer a generic detect");
+            cut.Markup.Should().NotContain("Detect settings checks this Frontend URL", tab);
+            cut.FindAll(".fa-selected-summary .fa-detection-value").Should().BeEmpty($"{tab} must not show an environment-level detection status");
+            cut.FindAll("[data-testid=target-check]").Should().HaveCount(tab == "Target Application" ? 1 : 0, tab);
+        }
     }
 
     /// <summary>The acceptance fixture: Entra ID saved, the same Entra ID detected — no differences panel and no Apply.</summary>

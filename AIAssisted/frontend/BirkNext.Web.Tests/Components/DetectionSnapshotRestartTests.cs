@@ -87,7 +87,8 @@ public sealed class DetectionSnapshotRestartTests
         api.Setup(x => x.DetectFromUrlAsync(It.IsAny<string>(), default)).ReturnsAsync(Detection());
         Configure(a, svc, api.Object, targetUrl, snapshotsJson: null);
         var cut = a.Render<Component>();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => svc.GetDetectionSnapshot("dev").Should().NotBeNull());
         return a.JSInterop.Invocations
             .Where(i => i.Identifier == "birkNextStorage.setSnapshots")
@@ -105,12 +106,13 @@ public sealed class DetectionSnapshotRestartTests
         var svcB = new FrontendAnalysisSettingsService();
         Configure(b, svcB, new Mock<ITargetEnvironmentDetectionApiService>().Object, Url, persisted);
         var cut = b.Render<Component>();
+        cut.Find("#target-tab-target").Click();
 
         // The snapshot must be restored into the actual detection state the UI reads.
         cut.FindAll("[data-testid='detection-restored']").Should().NotBeEmpty("a fresh instance must restore the previous detection");
         cut.Find("[data-testid='detection-restored']").TextContent.Should().Contain("Previously detected — current");
         cut.Markup.Should().Contain("Reachable");
-        cut.FindAll("button").Should().NotContain(bn => bn.TextContent.Trim() == "Detect settings" && false); // Detect is not forced
+        cut.FindAll("button").Should().NotContain(bn => bn.TextContent.Trim() == "Check target application" && false); // Detect is not forced
     }
 
     [Fact]
@@ -123,6 +125,7 @@ public sealed class DetectionSnapshotRestartTests
         var svcB = new FrontendAnalysisSettingsService();
         Configure(b, svcB, new Mock<ITargetEnvironmentDetectionApiService>().Object, "https://changed.example.com/", persisted);
         var cut = b.Render<Component>();
+        cut.Find("#target-tab-target").Click();
 
         cut.FindAll("[data-testid='detection-restored']").Should().NotBeEmpty();
         cut.Find("[data-testid='detection-restored']").TextContent.Should().Contain("stale, re-detect required");
@@ -204,12 +207,15 @@ public sealed class DetectionSnapshotRestartTests
         Configure(ctx, svc, new Mock<ITargetEnvironmentDetectionApiService>().Object, Url, persisted);
 
         var first = ctx.Render<Component>();
+
+        first.Find("#target-tab-target").Click();
         first.FindAll("[data-testid='detection-restored']").Should().NotBeEmpty();
         // Navigate away: the component is disposed.
         await first.InvokeAsync(() => first.Instance.DisposeAsync());
 
         // Navigate back: a fresh component instance over the same app-scoped services restores detection again (no forced Detect).
         var second = ctx.Render<Component>();
+        second.Find("#target-tab-target").Click();
         second.FindAll("[data-testid='detection-restored']").Should().NotBeEmpty("navigation within BirkNext must not clear restored detection");
         second.Find("[data-testid='detection-restored']").TextContent.Should().Contain("Previously detected — current");
     }

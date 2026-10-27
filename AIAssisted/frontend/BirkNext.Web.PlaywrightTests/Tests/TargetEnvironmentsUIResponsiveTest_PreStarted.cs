@@ -269,14 +269,14 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await sectionButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
 
         var detectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true });
-        var reviewDetectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Review Detect Settings", Exact = true });
+        var reviewDetectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Review on Target Application", Exact = true });
         var generalTab = page.GetByRole(AriaRole.Tab, new() { Name = "General", Exact = true });
         var diagnosticsTab = page.GetByRole(AriaRole.Tab, new() { Name = "Diagnostics", Exact = true });
 
         await SelectProfileWithWarningAsync(page, reviewDetectSettings);
         var selectedProfile = page.Locator(".fa-profile-chip-selected");
 
-        (await detectSettings.CountAsync()).Should().Be(1, "Detect settings must have its own accessible name");
+        (await detectSettings.CountAsync()).Should().Be(0, "there is no environment-wide detect; Target Application owns its own check");
         (await reviewDetectSettings.CountAsync()).Should().Be(1, "the warning action must have its distinct accessible name");
         (await generalTab.GetAttributeAsync("aria-selected")).Should().Be("true", "General is the selected tab on initial render");
         (await generalTab.InnerTextAsync()).Should().NotBeNullOrWhiteSpace("the selected tab must have an accessible name");
@@ -284,8 +284,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         if (width == 1440)
         {
             await AssertCanReceiveFocusAsync(selectedProfile, "the selected target control");
-            await AssertCanReceiveFocusAsync(detectSettings, "Detect settings");
-            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review Detect Settings");
+            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review on Target Application");
             await AssertCanReceiveFocusAsync(generalTab, "the General section tab");
 
             var editEnvironment = page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment", Exact = true });
@@ -293,7 +292,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         }
         else
         {
-            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review Detect Settings");
+            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review on Target Application");
             await page.Keyboard.PressAsync("Tab");
             (await IsActiveElementAsync(generalTab)).Should().BeTrue("Tab must leave the warning action and reach the wrapped tab set without a focus trap");
 

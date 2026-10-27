@@ -1,13 +1,13 @@
 @using BirkNext.Web.Models
 
 @* The Target Environment's separate state dimensions, never one badge: environment state (active or not), configuration (a target is set),
-   detection (reachability as Detect settings established it) and runtime evidence (an authenticated context observed now). There is no global
+   target reachability (as the Target Application check established it) and runtime evidence (an authenticated context observed now). There is no global
    "verified" state: a manual sign-in check is an authentication fact on the Authentication tab. Whether active execution is allowed is not
    environment health: the backend's trusted-environment gate is shown only where something can execute (journey runs, active tests). *@
 <dl class="tes" aria-label="Target Environment state" data-testid="te-state">
     <div data-dimension="environment"><dt>Environment state</dt><dd><span class="tes-pill tes-@(IsActive ? "ok" : "muted")" data-testid="te-state-environment">@(IsActive ? "Active" : "Not active")</span></dd></div>
     <div data-dimension="configuration"><dt>Configuration</dt><dd><span class="tes-pill tes-@(Configured ? "ok" : "attention")" data-testid="te-state-configuration">@(Configured ? "Configured" : "Not configured")</span></dd></div>
-    <div data-dimension="detection"><dt>Detection</dt><dd><span class="tes-pill tes-@DetectionTone" data-testid="te-state-detection">@Detection</span></dd></div>
+    <div data-dimension="detection"><dt>Target reachability</dt><dd><span class="tes-pill tes-@DetectionTone" data-testid="te-state-detection">@Detection</span></dd></div>
     <div data-dimension="runtime"><dt>Runtime evidence</dt><dd><span class="tes-pill tes-@(RuntimeObserved ? "ok" : "muted")" data-testid="te-state-runtime">@(RuntimeObserved ? "Observed" : "Not verified")</span></dd></div>
 </dl>
 

@@ -128,7 +128,7 @@ public sealed class ReconciliationSemanticsTests : BunitContext
         var cut = Render<TargetEnvironmentStateSummary>(p => p.Add(x => x.Profile, new FrontendAnalysisProfile { Id = "dev", TargetUrl = "https://example.invalid" })
             .Add(x => x.IsActive, true).Add(x => x.Detection, "Reachable"));
 
-        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Detection", "Runtime evidence");
+        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Target reachability", "Runtime evidence");
         cut.Find("[data-testid=te-state-environment]").TextContent.Should().Be("Active");
         cut.Find("[data-testid=te-state-configuration]").TextContent.Should().Be("Configured");
         cut.Find("[data-testid=te-state-detection]").TextContent.Should().Be("Reachable");

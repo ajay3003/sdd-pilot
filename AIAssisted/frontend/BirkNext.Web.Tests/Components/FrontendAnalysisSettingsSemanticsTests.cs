@@ -31,7 +31,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.Markup.Should().Contain("fa-active-card");
         cut.Markup.Should().Contain("Local"); // Active target name
         cut.Markup.Should().Contain("Local with auth");
-        cut.Markup.Should().Contain("Review Detect Settings");
+        cut.Markup.Should().Contain("Review on Target Application");
         cut.Markup.Should().NotContain("Active Environment");
         cut.Markup.Should().NotContain("Active target environment"); // Removed redundant label
     }
@@ -78,7 +78,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
             });
 
         var cut = Render<TargetSettingsComponent>();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Apply detected type"));
         _detection.Verify(x => x.DetectFromUrlAsync("https://application-dev.example.test", It.IsAny<CancellationToken>()), Times.Once);
@@ -104,15 +104,15 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
 
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Trim() == "QA").Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.Find("input[type=url]").Change("https://application-qa-b.example.test");
 
-        cut.Markup.Should().Contain("Detection result");
+        cut.Find("[data-testid=target-check]").TextContent.Should().Contain("Target check");
         cut.Markup.Should().Contain("Needs re-check");
-        cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again to refresh detection evidence.");
+        cut.Markup.Should().Contain("Frontend URL changed. Recheck the target application to refresh detection evidence.");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeTrue();
         _settings.Settings.ActiveProfileId.Should().Be("local");
     }
@@ -136,12 +136,13 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.Find("#target-tab-target").Click();
 
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Not checked");
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
         activate.HasAttribute("disabled").Should().BeFalse();
         activate.GetAttribute("aria-describedby").Should().BeNull();
-        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings");
+        cut.Find("[data-testid=target-check] .fa-result-message").TextContent.Should().Contain("Check the target application");
     }
 
     [Fact]
@@ -151,7 +152,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
             .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = true, State = DetectionState.Complete, IsActivationReady = true, Reachability = TargetReachability.Reachable });
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeFalse();
@@ -165,7 +166,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
             .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = false, Message = "Target could not be reached safely." });
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
 
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed"));
         cut.Markup.Should().Contain("Target could not be reached safely.");
@@ -213,7 +214,8 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         if (url.Length > 0)
         {
             cut.Find(".fa-summary-url").TextContent.Should().Be(url);
-            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").HasAttribute("disabled").Should().BeFalse();
+            cut.Find("#target-tab-target").Click();
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").HasAttribute("disabled").Should().BeFalse();
             JSInterop.Invocations["birkNextStorage.setItem"].Single().Arguments[1]!.ToString().Should().Contain(url);
         }
     }
@@ -244,7 +246,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         _detection.Setup(x => x.DetectFromUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = false, State = DetectionState.Failed, Reachability = reachability, Message = reason });
         var cut = Render<TargetSettingsComponent>();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Should().Contain("Detection failed"));
         cut.Markup.Should().Contain(reason).And.Contain($">{reachability}</");
         if (reachability == TargetReachability.Unreachable)

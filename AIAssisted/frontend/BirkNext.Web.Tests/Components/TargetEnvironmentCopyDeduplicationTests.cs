@@ -243,7 +243,7 @@ public sealed class DetectionVerificationCopyTests : BunitContext
     {
         var cut = Render<BirkNext.Web.Components.FrontendAnalysisSettings>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         return cut;
     }

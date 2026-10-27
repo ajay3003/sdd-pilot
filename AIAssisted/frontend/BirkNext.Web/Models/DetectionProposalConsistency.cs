@@ -9,7 +9,7 @@ namespace BirkNext.Web.Models;
 /// detection ran. A later edit only invalidates that context when it diverges from the detection
 /// evidence. Copying the detector's own proposal (authentication type, authority, tenant, client ID,
 /// redirect URLs, suggested environment type) into the draft keeps the profile consistent with the
-/// evidence that produced it, so it must not demand another Detect settings run.
+/// evidence that produced it, so it must not demand another target check.
 ///
 /// This helper produces a copy of the current profile in which every field that exactly equals the
 /// detector's proposal is reset to its detection-time value. Fingerprinting that copy yields the

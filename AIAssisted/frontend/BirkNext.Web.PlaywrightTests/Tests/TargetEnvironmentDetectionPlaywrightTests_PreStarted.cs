@@ -238,7 +238,8 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
                 scrollWidth.Should().Be(documentWidth, $"no horizontal overflow at viewport {width}x{height}");
 
                 // Verify all controls are accessible
-                await page.GetByRole(AriaRole.Button, new() { Name = "Detect settings" }).WaitForAsync();
+                await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true }).WaitForAsync();
                 await page.Locator("input[type='url']").First.WaitForAsync();
             }
             finally
@@ -288,7 +289,9 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             // Tab to Detect button and verify it's accessible
             await page.Keyboard.PressAsync("Tab");
 
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings" });
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             var isDetectVisible = await detectButton.IsVisibleAsync();
             isDetectVisible.Should().BeTrue("Detect button should be accessible via keyboard navigation");
 
@@ -321,8 +324,9 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             var urlInput = page.Locator("input[type='url']").First;
             await urlInput.FillAsync(testUrl);
 
-            // Click Detect settings button
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings" });
+            // Click the Target Application check
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
             await detectButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
             await detectButton.ClickAsync();
 
@@ -361,7 +365,8 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
                 response.Url == "http://localhost:5000/api/frontend-target/detect" &&
                 response.Request.Method == "POST",
                 new() { Timeout = 30000 });
-            await page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true }).ClickAsync();
             var response = await responseTask;
             var responseBody = await response.TextAsync();
 

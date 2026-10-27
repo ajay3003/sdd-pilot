@@ -106,7 +106,7 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
             {"activeProfileId":"dev","profiles":[{"id":"dev","name":"Dev","targetUrl":"https://m2lbdev.bufetat.no/"}]}
             """);
         var cut = Render<Component>();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         Click(cut, "Authentication");
         var persisted = JsonSerializer.Serialize(settings.Settings);

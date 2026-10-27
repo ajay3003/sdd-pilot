@@ -61,7 +61,8 @@ public sealed class TargetEnvironmentBrowserContinuationPlaywrightTests_PreStart
         await page.Locator(".fa-profile-chip").Filter(new() { HasText = "QA" }).ClickAsync();
         var activeBefore = await page.Locator(".fa-active-card-name").InnerTextAsync();
         var selectedUrl = await page.Locator(".fa-selected-url .fa-summary-url").InnerTextAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true }).ClickAsync();
         await page.GetByText("Auth required", new() { Exact = true }).WaitForAsync();
 
         continuationCalls.Should().Be(0, "rendering AuthenticationRequired must not auto-launch a browser");

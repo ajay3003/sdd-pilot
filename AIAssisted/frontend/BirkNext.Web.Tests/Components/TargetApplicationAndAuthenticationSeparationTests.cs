@@ -87,7 +87,7 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
     private IRenderedComponent<Component> Detect(string authenticationJson = NoAuthentication)
     {
         var cut = Open(authenticationJson);
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         return cut;
     }

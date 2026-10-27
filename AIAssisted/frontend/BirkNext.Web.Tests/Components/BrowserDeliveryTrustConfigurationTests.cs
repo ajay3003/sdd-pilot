@@ -220,7 +220,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
     public void ChangingTrustPolicyKeepsPublicDetectionCurrentButStalesTheRuntimeSession()
     {
         var cut = Open();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         OpenTab(cut, "Authentication");
         Click(cut, "Connect to existing Edge");
@@ -234,7 +234,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         Assert.DoesNotContain("Discoveries are stale", cut.Markup);
         Assert.DoesNotContain("target URL changed", cut.Markup);
         OpenTab(cut, "Validation");
-        var freshness = cut.FindAll(".fa-dl-row").Single(r => r.TextContent.Contains("Detection freshness")).TextContent;
+        var freshness = cut.FindAll(".fa-dl-row").Single(r => r.TextContent.Contains("Target check freshness")).TextContent;
         Assert.Contains("Current", freshness);
         Assert.DoesNotContain("Stale", freshness);
     }
@@ -246,7 +246,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
     {
         var cut = Open("""{ "authenticationType": "MicrosoftEntraId", "browserDeliveryTrust": "ApprovedMcasProxyOrigin" }""");
         var persisted = JsonSerializer.Serialize(_settings.Settings);
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         OpenTab(cut, "Authentication");
         foreach (var action in new[] { "Connect to existing Edge", "Verify authenticated access", "Disconnect BirkNext from Edge" })

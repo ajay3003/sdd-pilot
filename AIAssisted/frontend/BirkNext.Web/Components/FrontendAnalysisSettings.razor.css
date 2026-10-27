@@ -1023,7 +1023,6 @@
     .fa-threshold-row { grid-template-columns: 1fr 70px auto; }
     .fa-active-card-grid { grid-template-columns: 1fr 1fr; }
     .fa-selected-summary { grid-template-columns: 1fr; }
-    .fa-detection-state { grid-column: 1; }
     .fa-detection-help { font-size: 0.75rem; }
     .fa-primary-actions { flex-direction: column; }
     .fa-form-row-compact { grid-template-columns: 1fr; }

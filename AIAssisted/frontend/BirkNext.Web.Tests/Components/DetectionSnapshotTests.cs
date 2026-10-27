@@ -39,6 +39,7 @@ public sealed partial class AuthenticationApplyDraftTests
         SetupSnapshotStore(snapshotMapJson);
         var cut = Render<Component>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click();
+        cut.Find("#target-tab-target").Click();
         return cut;
     }
 
@@ -48,7 +49,7 @@ public sealed partial class AuthenticationApplyDraftTests
         SetupSnapshotStore(null);
         var cut = Open();
         var profileBefore = System.Text.Json.JsonSerializer.Serialize(Persisted());
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => _settings.GetDetectionSnapshot("dev").Should().NotBeNull());
         var snap = _settings.GetDetectionSnapshot("dev")!;
         snap.DetectedProfileId.Should().Be("dev");

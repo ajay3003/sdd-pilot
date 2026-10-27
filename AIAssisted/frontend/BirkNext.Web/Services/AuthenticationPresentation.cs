@@ -180,7 +180,7 @@ public static class AuthenticationPresentation
     /// <summary>Short badge wording next to the card heading.</summary>
     public static string StateLabel(AuthenticationMatchState state) => state switch
     {
-        AuthenticationMatchState.Stale => "Detection stale — run Detect settings again",
+        AuthenticationMatchState.Stale => "Detection stale — recheck authentication settings",
         AuthenticationMatchState.MatchesSaved => "Matches saved configuration",
         AuthenticationMatchState.AppliedToDraft => "Applied to draft — Save changes to persist",
         AuthenticationMatchState.Detected => "Detected — proposal available",
@@ -190,7 +190,7 @@ public static class AuthenticationPresentation
     /// <summary>The one-sentence status line inside the card.</summary>
     public static string StateSummary(AuthenticationMatchState state) => state switch
     {
-        AuthenticationMatchState.Stale => "Detection no longer describes the current settings. Run Detect settings again.",
+        AuthenticationMatchState.Stale => "Detection no longer describes the current settings. Recheck authentication settings.",
         AuthenticationMatchState.MatchesSaved => "Detected authentication matches saved configuration",
         AuthenticationMatchState.AppliedToDraft => "Detected authentication applied to the draft. It is not saved yet.",
         AuthenticationMatchState.Detected => "Detected authentication differs from saved configuration",
@@ -211,7 +211,7 @@ public static class AuthenticationPresentation
     /// </summary>
     public static string ApplyExplanation(AuthenticationMatchState state, IReadOnlyList<AuthenticationComparisonRow> comparison) => state switch
     {
-        AuthenticationMatchState.Stale => "Detection is stale. Run Detect settings again before applying detected values.",
+        AuthenticationMatchState.Stale => "Detection is stale. Recheck authentication settings before applying detected values.",
         AuthenticationMatchState.MatchesSaved => "Detected values already match saved configuration.",
         AuthenticationMatchState.AppliedToDraft => "Save changes to persist this configuration.",
         AuthenticationMatchState.Detected => ChangeList(comparison) is { Length: > 0 } changes

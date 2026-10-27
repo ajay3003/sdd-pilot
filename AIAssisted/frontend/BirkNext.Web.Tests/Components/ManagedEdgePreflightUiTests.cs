@@ -166,7 +166,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             {"activeProfileId":"dev","profiles":[{"id":"dev","name":"Dev","targetUrl":"https://m2lbdev.bufetat.no/"}]}
             """);
         var cut = Render<Settings>();
-        Click(cut, "Detect settings");
+        cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         Click(cut, "Authentication");
         var persisted = JsonSerializer.Serialize(settings.Settings);
@@ -190,7 +190,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         }
         Assert.Contains("Edge started by BirkNext", cut.Markup);
         Click(cut, "Validation");
-        var freshness = cut.FindAll(".fa-dl-row").Single(r => r.TextContent.Contains("Detection freshness")).TextContent;
+        var freshness = cut.FindAll(".fa-dl-row").Single(r => r.TextContent.Contains("Target check freshness")).TextContent;
         Assert.Contains("Current", freshness);
         Assert.DoesNotContain("Stale", freshness);
         Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel");
