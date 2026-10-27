@@ -225,7 +225,10 @@ public sealed class ArtifactTraceabilityServiceTests
             + report.PlanToTask.Count(row => row.Status == TraceabilityStatus.Missing)
             + report.TaskCoverage.OrphanedItems;
 
-        report.Gaps.Should().HaveCount(expected);
+        report.Gaps.Count(g => TraceabilityLabels.CategoryOf(g) != TraceabilityObservationCategory.BrokenReference).Should().Be(expected);
+        // T002 cites FR-002, which this Specification does not define: a broken reference, separate from "no explicit reference".
+        report.Gaps.Where(g => TraceabilityLabels.CategoryOf(g) == TraceabilityObservationCategory.BrokenReference)
+            .Should().ContainSingle(g => g.ItemId == "T002" && g.Description.Contains("FR-002"));
         report.ConstitutionCoverage.TotalItems.Should().Be(report.ConstitutionToSpec.Count);
         report.SpecificationCoverage.TotalItems.Should().Be(report.SpecToPlan.Count);
         report.PlanCoverage.TotalItems.Should().Be(report.PlanToTask.Count);

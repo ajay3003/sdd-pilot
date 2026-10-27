@@ -911,17 +911,19 @@ public sealed class ReportExportService : IReportExportService
         // Coverage KPIs
         sb.Append("<div class=\"kpi-row\">");
         if (report.HasConstitution && report.HasSpecification)
-            sb.Append(Kpi(CoverageLabel(report.ConstitutionCoverage), "Authored Constitution → Specification"));
+            sb.Append(Kpi(CoverageLabel(report.ConstitutionCoverage), "Constitution → Specification · Explicit reference coverage"));
         if (report.HasSpecification && report.HasPlan)
-            sb.Append(Kpi(CoverageLabel(report.SpecificationCoverage), "Requirement → Plan"));
+            sb.Append(Kpi(CoverageLabel(report.SpecificationCoverage), "Specification → Plan · Explicit reference coverage"));
         if (report.HasPlan && report.HasTasks)
-            sb.Append(Kpi("Not assessed", "Plan → Tasks (no stable direct relation)"));
+            sb.Append(Kpi("Not assessed", "Plan → Tasks · No stable Plan→Task identity available"));
         if (report.HasTasks && report.HasSpecification)
-            sb.Append(Kpi(CoverageLabel(report.TaskCoverage), "Tasks with Requirement/SC references"));
-        sb.Append(Kpi(report.Health.GapCount.ToString(), "Missing explicit references"));
-        sb.Append(Kpi(report.PolicyRequiredGapCount.ToString(), "Required traceability gaps"));
+            sb.Append(Kpi(CoverageLabel(report.TaskCoverage), "Tasks → Requirement/SC · Explicit reference coverage"));
+        sb.Append(Kpi(report.NoExplicitReferenceCount.ToString(), "No explicit document reference (informational)"));
+        sb.Append(Kpi(report.PolicyRequiredGapCount.ToString(), "Policy-required trace issues"));
         sb.Append("</div>\n");
-        sb.Append($"<p class=\"meta\">Explicit authored-document references only. Missing references are not automatically quality defects; this review does not verify implementation or test execution. {Esc(report.Policy.Description)}</p>\n");
+        sb.Append($"<p class=\"meta\">{Esc(TraceabilityLabels.Semantics)} {Esc(report.Policy.Description)}</p>\n");
+        sb.Append($"<p class=\"meta\">Assessment coverage: {report.AssessedTransitionCount} of {report.Transitions.Count} transitions assessed — "
+            + string.Join("; ", report.Transitions.Select(t => Esc($"{t.Name}: {(t.Assessed ? "Assessed" : "Not assessed")}"))) + ". No combined traceability score.</p>\n");
 
         // Artifacts loaded
         var loaded = new List<string>();
@@ -938,37 +940,43 @@ public sealed class ReportExportService : IReportExportService
         if (report.ConstitutionToSpec.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Authored Constitution rules → Specification</h2>\n");
-            sb.Append(ChainTable(report.ConstitutionToSpec, 100));
+            sb.Append($"<p class=\"meta\">{Esc(TraceabilityLabels.ImplicitApplicability)}</p>\n");
+            sb.Append(TraceChainTable(report.ConstitutionToSpec, ArtifactType.Constitution, 100));
             sb.Append("</section>\n");
         }
 
         if (report.SpecToPlan.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Specification → Plan</h2>\n");
-            sb.Append(ChainTable(report.SpecToPlan, 100));
+            sb.Append(TraceChainTable(report.SpecToPlan, ArtifactType.Specification, 100));
             sb.Append("</section>\n");
         }
 
         if (report.PlanToTask.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Plan → Tasks</h2>\n");
-            sb.Append(ChainTable(report.PlanToTask, 100));
+            sb.Append(TraceChainTable(report.PlanToTask, ArtifactType.Plan, 100));
             sb.Append("</section>\n");
+        }
+        else if (report.HasPlan && report.HasTasks)
+        {
+            sb.Append($"<section class=\"block\">\n<h2>Plan → Tasks</h2>\n<p>{TraceBadge("Not assessed", "notassessed")}</p>\n<p class=\"meta\">{Esc(TraceabilityLabels.PlanToTaskNotAssessed)}</p>\n</section>\n");
         }
 
         if (report.Gaps.Count > 0)
         {
-            sb.Append("<section class=\"block\">\n<h2>Missing explicit references</h2>\n");
+            sb.Append("<section class=\"block\">\n<h2>Reference observations</h2>\n");
+            sb.Append($"<p class=\"meta\">{report.Gaps.Count} informational or policy-evaluated reference observations. Most are simply items with no explicit document reference; the count is not a quality score.</p>\n");
             sb.Append(Table(
-                ["Artifact", "Item ID", "Title", "Evidence", "Policy significance", "Description"],
+                ["Artifact", "Item ID", "Title", "Category", "State", "Explanation"],
                 report.Gaps.Select(g => new[]
                 {
                     Esc(g.GapIn.ToString()),
                     Esc(g.ItemId),
                     Esc(g.ItemTitle),
-                    Esc(TraceabilityLabels.Evidence(g.Status, g.GapIn)),
-                    Esc(TraceabilityLabels.Significance(g)),
-                    Esc(g.Description)
+                    Esc(TraceabilityLabels.Category(g)),
+                    TraceBadge(TraceabilityLabels.Significance(g), TraceabilityLabels.Tone(g)),
+                    Esc(g.Description + (g.RequiredBy is { } by ? $" Required by: {by}" : ""))
                 })));
             sb.Append("</section>\n");
         }
@@ -977,19 +985,20 @@ public sealed class ReportExportService : IReportExportService
         {
             var cap = 200;
             sb.Append("<section class=\"block\">\n<h2>Traceability Matrix</h2>\n");
+            sb.Append($"<p class=\"meta\">{Esc(TraceabilityLabels.MatrixScope)}</p>\n");
             if (report.Matrix.Count > cap)
                 sb.Append($"<p class=\"meta\"><span>Showing {cap} of {report.Matrix.Count} rows</span></p>\n");
             sb.Append(Table(
-                ["Constitution", "Specification", "Plan", "Task reference", "Constitution→Spec", "Spec→Plan", "Plan→Task"],
+                ["Constitution", "Specification", "Authored plan location", "Task reference", "Constitution → Spec", "Spec → Plan", "Plan → Tasks"],
                 report.Matrix.Take(cap).Select(r => new[]
                 {
                     Esc(r.ConstitutionRuleId + (r.ConstitutionRuleTitle.Length > 0 ? $" — {r.ConstitutionRuleTitle}" : "")),
                     Esc(r.SpecRequirementId ?? ""),
                     Esc(r.PlanItemId is null ? "" : $"{r.PlanItemId} ({r.PlanItemKind})"),
                     Esc(r.TaskId ?? ""),
-                    Esc(r.SpecEdge),
-                    Esc(r.PlanEdge ?? "—"),
-                    Esc(r.TaskEdge)
+                    TraceBadge(r.SpecEdge, TraceabilityLabels.EdgeTone(r.SpecEdge)),
+                    TraceBadge(r.PlanEdge ?? TraceabilityLabels.NoReferenceCell, TraceabilityLabels.EdgeTone(r.PlanEdge)),
+                    TraceBadge(r.TaskEdge, TraceabilityLabels.EdgeTone(r.TaskEdge))
                 })));
             sb.Append("</section>\n");
         }
@@ -998,7 +1007,30 @@ public sealed class ReportExportService : IReportExportService
     }
 
     private static string CoverageLabel(TraceabilityCoverageStats stats) =>
-        stats.HasApplicablePopulation ? $"{stats.CoveragePercentage:0.#}% ({stats.CoveredItems + stats.PartialItems} of {stats.TotalItems})" : "Not assessed";
+        stats.HasApplicablePopulation ? $"{stats.CoveredItems + stats.PartialItems} / {stats.TotalItems} · {stats.CoveragePercentage:0.#}%" : "Not assessed";
+
+    /// <summary>Traceability evidence badge: green explicit, blue-grey no explicit reference, grey not assessed, amber review, red broken only.</summary>
+    private static string TraceBadge(string text, string tone) => $"<span class=\"badge badge-trace-{tone}\">{Esc(text)}</span>";
+
+    /// <summary>Authored reference rows with neutral evidence labels (never "Missing" or "Orphaned").</summary>
+    private static string TraceChainTable(IEnumerable<ChainCoverage> chain, ArtifactType type, int cap)
+    {
+        var items = chain.ToList();
+        var sb = new StringBuilder();
+        if (items.Count > cap)
+            sb.Append($"<p class=\"meta\"><span>Showing {cap} of {items.Count} items</span></p>\n");
+        sb.Append(Table(
+            ["Item ID", "Title", "Type", "Explicit references", "Evidence"],
+            items.Take(cap).Select(c => new[]
+            {
+                Esc(c.ItemId),
+                Esc(c.ItemTitle),
+                Esc(c.ItemSubType ?? c.ItemType.ToString()),
+                c.Links.Count.ToString(),
+                TraceBadge(TraceabilityLabels.Evidence(c.Status, type), c.Status is TraceabilityStatus.Covered or TraceabilityStatus.Partial ? "explicit" : "info")
+            })));
+        return sb.ToString();
+    }
 
     public string ExportImplementationReview(AlignmentReport report, string? projectName, TaskAlignmentSnapshot? snapshot = null, TaskAlignmentCurrentness currentness = TaskAlignmentCurrentness.Current)
     {
@@ -1371,25 +1403,6 @@ public sealed class ReportExportService : IReportExportService
         return sb.ToString();
     }
 
-    private static string ChainTable(IEnumerable<ChainCoverage> chain, int cap)
-    {
-        var items = chain.ToList();
-        var sb = new StringBuilder();
-        if (items.Count > cap)
-            sb.Append($"<p class=\"meta\"><span>Showing {cap} of {items.Count} items</span></p>\n");
-        sb.Append(Table(
-            ["Item ID", "Title", "Type", "Links", "Status"],
-            items.Take(cap).Select(c => new[]
-            {
-                Esc(c.ItemId),
-                Esc(c.ItemTitle),
-                Esc(c.ItemSubType ?? c.ItemType.ToString()),
-                c.Links.Count.ToString(),
-                Badge(c.Status.ToString())
-            })));
-        return sb.ToString();
-    }
-
     private static string GateCard(string name, string state, double score)
     {
         var stateClass = state.ToLowerInvariant().Replace(" ", "");
@@ -1520,6 +1533,11 @@ tr:last-child td{border-bottom:none}
 .badge-failed{background:#fee2e2;color:#991b1b}
 .badge-notapplicable{background:#f3f4f6;color:#4b5563}
 .badge-orphaned{background:#f3e8ff;color:#6b21a8}
+.badge-trace-explicit{background:#dcfce7;color:#166534}
+.badge-trace-info{background:#e0e7ef;color:#334155}
+.badge-trace-notassessed{background:#f3f4f6;color:#4b5563}
+.badge-trace-warning{background:#fef3c7;color:#92400e}
+.badge-trace-error{background:#fee2e2;color:#991b1b}
 .badge-linked{background:#dcfce7;color:#166534}
 .badge-technicalonly{background:#dbeafe;color:#1e40af}
 .badge-needsreview{background:#fef9c3;color:#713f12}

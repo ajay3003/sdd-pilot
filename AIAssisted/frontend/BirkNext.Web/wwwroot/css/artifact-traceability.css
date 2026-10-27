@@ -641,3 +641,39 @@
 
 /* Bootstrap's .text-warning (#ffc107, !important) fails contrast on white; the report's metric cards use the design-token warning text. */
 .at-page .metric-value.text-warning { color: var(--clr-warning) !important; }
+
+/* ── Reference semantics (explicit / no explicit reference / not assessed / review / broken) ─────────────
+   Green = explicit reference, blue-grey = no explicit reference (informational), grey = not assessed,
+   amber = ambiguous or policy-required, red = broken reference only. Every state also carries text. */
+
+.at-status-noref,
+.at-status-info        { background: color-mix(in sRGB, var(--clr-info, #2563eb) 10%, transparent); color: var(--clr-text-muted); border: 1px solid color-mix(in sRGB, var(--clr-info, #2563eb) 25%, transparent); }
+.at-status-assessed    { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
+.at-status-notassessed { background: color-mix(in sRGB, var(--clr-text-muted) 12%, transparent); color: var(--clr-text-muted); }
+.at-status-warning     { background: color-mix(in sRGB, var(--clr-warning, #d97706) 14%, transparent); color: var(--clr-warning, #d97706); }
+.at-status-error       { background: color-mix(in sRGB, var(--clr-danger, #dc2626) 12%, transparent); color: var(--clr-danger, #dc2626); }
+
+.at-coverage-stat-card.is-noref { border-top: 3px solid color-mix(in sRGB, var(--clr-info, #2563eb) 45%, var(--clr-border)); }
+.at-coverage-bar { background: color-mix(in sRGB, var(--clr-info, #2563eb) 18%, var(--clr-border)); }
+.at-coverage-bar.at-coverage-bar-notassessed { background: var(--clr-border); margin: .5rem 0; height: 6px; }
+
+.at-assessment { margin-bottom: 1.25rem; }
+.at-assessment-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.at-assessment-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .85rem; }
+.at-transition-name { font-weight: 600; min-width: 13rem; }
+.at-transition-detail { color: var(--clr-text-muted); font-size: .8rem; }
+
+.at-observations { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.at-obs { background: var(--clr-bg-card); border: 1px solid var(--clr-border); border-radius: var(--radius-md, 6px); padding: .6rem .8rem; }
+.at-obs-warning { border-left: 3px solid var(--clr-warning, #d97706); }
+.at-obs-error   { border-left: 3px solid var(--clr-danger, #dc2626); }
+.at-obs-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.at-obs-category { font-size: .8rem; font-weight: 600; color: var(--clr-text); }
+.at-obs-title { margin-top: .3rem; font-size: .85rem; color: var(--clr-text); overflow-wrap: anywhere; }
+.at-obs-text { margin: .25rem 0 0; font-size: .8rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+
+.at-edges { display: flex; flex-direction: column; gap: .2rem; }
+.at-edge { display: inline-block; font-size: .72rem; padding: .05rem .4rem; border-radius: 999px; white-space: nowrap; }
+.at-edge-explicit    { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
+.at-edge-info        { background: color-mix(in sRGB, var(--clr-info, #2563eb) 10%, transparent); color: var(--clr-text-muted); }
+.at-edge-notassessed { background: color-mix(in sRGB, var(--clr-text-muted) 12%, transparent); color: var(--clr-text-muted); }

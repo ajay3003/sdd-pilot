@@ -156,14 +156,15 @@
 
         <!-- Health summary bar -->
         <div class="at-health-bar">
-            <MetricCard Value="@LinkedValue(_report.ConstitutionCoverage)" Label="@CoverageLabel("Constitution → Specification · explicitly linked", _report.ConstitutionCoverage, _report.HasConstitution && _report.HasSpecification)" Sublabel="@PercentText(_report.ConstitutionCoverage)" Variant="@CoverageVariant(_report.ConstitutionCoverage)" />
-            <MetricCard Value="@LinkedValue(_report.SpecificationCoverage)" Label="@CoverageLabel("Specification → Plan · explicitly referenced", _report.SpecificationCoverage, _report.HasSpecification && _report.HasPlan)" Sublabel="@PercentText(_report.SpecificationCoverage)" Variant="@CoverageVariant(_report.SpecificationCoverage)" />
+            <MetricCard Value="@LinkedValue(_report.ConstitutionCoverage)" Label="@CoverageLabel("Constitution → Specification · Explicitly referenced", _report.ConstitutionCoverage, _report.HasConstitution && _report.HasSpecification)" Sublabel="@PercentText(_report.ConstitutionCoverage)" Variant="@CoverageVariant(_report.ConstitutionCoverage)" />
+            <MetricCard Value="@LinkedValue(_report.SpecificationCoverage)" Label="@CoverageLabel("Specification → Plan · Explicitly referenced", _report.SpecificationCoverage, _report.HasSpecification && _report.HasPlan)" Sublabel="@PercentText(_report.SpecificationCoverage)" Variant="@CoverageVariant(_report.SpecificationCoverage)" />
             <MetricCard Value="Not assessed" Label="Plan → Tasks" Sublabel="No stable Plan→Task identity available" />
-            <MetricCard Value="@LinkedValue(_report.TaskCoverage)" Label="@CoverageLabel("Tasks → Requirement/SC · explicitly referenced", _report.TaskCoverage, _report.HasTasks && _report.HasSpecification)" Sublabel="@PercentText(_report.TaskCoverage)" Variant="@CoverageVariant(_report.TaskCoverage)" />
-            <MetricCard Value="@_report.Health.GapCount.ToString()" Label="Missing explicit references" Sublabel="Informational unless project policy requires these links." />
-            <MetricCard Value="@_report.PolicyRequiredGapCount.ToString()" Label="Required traceability gaps" Sublabel="@_report.Policy.Description" Variant="@(_report.PolicyRequiredGapCount > 0 ? "warning" : "")" />
+            <MetricCard Value="@LinkedValue(_report.TaskCoverage)" Label="@CoverageLabel("Tasks → Requirement/SC · Explicitly referenced", _report.TaskCoverage, _report.HasTasks && _report.HasSpecification)" Sublabel="@PercentText(_report.TaskCoverage)" Variant="@CoverageVariant(_report.TaskCoverage)" />
+            @* Neutral aggregate across different transitions: informational observations, never a defect count. *@
+            <MetricCard Value="@_report.NoExplicitReferenceCount.ToString()" Label="No explicit document reference" Sublabel="Informational reference observations across assessed transitions." />
+            <MetricCard Value="@_report.PolicyRequiredGapCount.ToString()" Label="Policy-required trace issues" Sublabel="@PolicySublabel" Variant="@(_report.PolicyRequiredGapCount > 0 ? "warning" : "")" />
         </div>
-        <p class="at-neutral-note" data-testid="at-semantics">Shows explicit authored-document references and supported deterministic document relationships. Missing references are not automatically quality defects. This review does not verify implementation or test execution. @_report.Policy.Description</p>
+        <p class="at-neutral-note" data-testid="at-semantics">@TraceabilityLabels.Semantics @_report.Policy.Description</p>
 
         <!-- Tab bar -->
         <div class="at-tab-bar" role="tablist">
@@ -177,8 +178,9 @@
             <button class='at-tab-btn @(_tab == "plan-task"    ? "is-active" : "")' role="tab" aria-selected="@(_tab == "plan-task")"    @onclick='() => SetTab("plan-task")'>
                 Plan → Tasks @PlanTaskBadge
             </button>
-            <button class='at-tab-btn @(_tab == "gaps"         ? "is-active" : "")' role="tab" aria-selected="@(_tab == "gaps")"         @onclick='() => SetTab("gaps")'>
-                Reference gaps @GapsBadge
+            <button class='at-tab-btn @(_tab == "gaps"         ? "is-active" : "")' role="tab" aria-selected="@(_tab == "gaps")"         @onclick='() => SetTab("gaps")'
+                    data-testid="at-tab-observations" title="@ObservationsTitle">
+                Reference observations @GapsBadge
             </button>
             <button class='at-tab-btn @(_tab == "matrix"       ? "is-active" : "")' role="tab" aria-selected="@(_tab == "matrix")"       @onclick='() => SetTab("matrix")'>
                 Matrix @MatrixBadge
@@ -203,25 +205,31 @@
             </div>
         }
 
-        <!-- Status filter (chain tabs + matrix + gaps) -->
-        @if (_tab is "const-spec" or "spec-plan" or "plan-task" or "matrix")
+        <!-- Evidence filter (assessed chain tabs + matrix). Plan → Tasks is Not assessed: no linked/no-reference filters there. -->
+        @if (_tab is "const-spec" or "spec-plan" or "matrix" || (_tab == "plan-task" && _report.PlanToTask.Count > 0))
         {
-            <div class="at-filter-strip" role="group" aria-label="Filter by status">
+            <div class="at-filter-strip" role="group" aria-label="Filter by evidence" data-testid="at-evidence-filters">
                 <button class='at-filter-chip @(_statusFilter is null ? "is-active" : "")' @onclick='() => _statusFilter = null'>All</button>
                 <button class='at-filter-chip @(_statusFilter == TraceabilityStatus.Covered ? "is-active" : "")' @onclick='() => _statusFilter = TraceabilityStatus.Covered'>Explicitly linked</button>
-                <button class='at-filter-chip @(_statusFilter == TraceabilityStatus.Missing ? "is-active" : "")' @onclick='() => _statusFilter = TraceabilityStatus.Missing'>No explicit link</button>
+                <button class='at-filter-chip @(_statusFilter == TraceabilityStatus.Missing ? "is-active" : "")' @onclick='() => _statusFilter = TraceabilityStatus.Missing'>No explicit reference</button>
             </div>
         }
         @if (_tab == "gaps")
         {
-            <p class="at-neutral-note" data-testid="at-gaps-semantics">This tab lists missing explicit document references. Entries are informational unless project policy requires the relationship.</p>
-            <div class="at-filter-strip" role="group" aria-label="Filter gaps by artifact">
+            <p class="at-neutral-note" data-testid="at-gaps-semantics">@ObservationsTitle Absence of an explicit reference is informational unless project policy requires that relationship; only broken, ambiguous and policy-required references are traceability issues.</p>
+            <div class="at-filter-strip" role="group" aria-label="Filter observations by category" data-testid="at-observation-filters">
+                <button class='at-filter-chip @(_categoryFilter is null && !_policyOnly ? "is-active" : "")' @onclick='() => { _categoryFilter = null; _policyOnly = false; }'>All</button>
+                <button class='at-filter-chip @(_categoryFilter == TraceabilityObservationCategory.NoExplicitReference ? "is-active" : "")' @onclick='() => { _categoryFilter = TraceabilityObservationCategory.NoExplicitReference; _policyOnly = false; }'>No explicit reference</button>
+                <button class='at-filter-chip @(_categoryFilter == TraceabilityObservationCategory.BrokenReference ? "is-active" : "")' @onclick='() => { _categoryFilter = TraceabilityObservationCategory.BrokenReference; _policyOnly = false; }'>Broken reference</button>
+                <button class='at-filter-chip @(_categoryFilter == TraceabilityObservationCategory.AmbiguousReference ? "is-active" : "")' @onclick='() => { _categoryFilter = TraceabilityObservationCategory.AmbiguousReference; _policyOnly = false; }'>Ambiguous reference</button>
+                <button class='at-filter-chip @(_policyOnly ? "is-active" : "")' @onclick='() => { _policyOnly = !_policyOnly; _categoryFilter = null; }'>Policy-required only</button>
+            </div>
+            <div class="at-filter-strip" role="group" aria-label="Filter observations by artifact">
                 <button class='at-filter-chip @(_gapArtifactFilter is null ? "is-active" : "")' @onclick='() => _gapArtifactFilter = null'>All Artifacts</button>
                 <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Constitution ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Constitution'>Constitution</button>
                 <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Specification ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Specification'>Specification</button>
                 <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Plan ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Plan'>Plan</button>
                 <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Task ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Task'>Tasks</button>
-                <button class='at-filter-chip @(_policyOnly ? "is-active" : "")' @onclick='() => _policyOnly = !_policyOnly'>Policy-required only (@_report.PolicyRequiredGapCount)</button>
             </div>
         }
 
@@ -250,16 +258,31 @@
                         {
                             <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.TotalTasks</span> tasks</span>
                         }
-                        @if (_report.Health.GapCount > 0)
+                        @if (_report.NoExplicitReferenceCount > 0)
                         {
-                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.GapCount</span> missing explicit references</span>
+                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.NoExplicitReferenceCount</span> with no explicit document reference (informational)</span>
                         }
                     </div>
+
+                    <!-- Transition assessment state: no combined traceability score -->
+                    <section class="at-assessment" aria-labelledby="at-assessment-title" data-testid="at-assessment">
+                        <h3 class="at-coverage-section-title" id="at-assessment-title">Assessment coverage: @_report.AssessedTransitionCount of @_report.Transitions.Count transitions assessed</h3>
+                        <ul class="at-assessment-list">
+                            @foreach (var t in _report.Transitions)
+                            {
+                                <li data-testid="at-transition" data-key="@t.Key" data-assessed="@(t.Assessed ? "true" : "false")">
+                                    <span class="at-transition-name">@t.Name</span>
+                                    <span class="at-status-badge @(t.Assessed ? "at-status-assessed" : "at-status-notassessed")">@(t.Assessed ? "Assessed" : "Not assessed")</span>
+                                    <span class="at-transition-detail">@t.Detail</span>
+                                </li>
+                            }
+                        </ul>
+                    </section>
 
                     <!-- Coverage sections -->
                     @if (_report.HasConstitution && _report.HasSpecification)
                     {
-                        @RenderCoverageSection("Constitution → Specification (authored rules)", _report.ConstitutionCoverage, "const-spec")
+                        @RenderCoverageSection("Constitution → Specification (authored rules)", _report.ConstitutionCoverage, ArtifactType.Constitution)
                         @if (_report.ReferenceOnlyConstitutionEntries > 0)
                         {
                             <p class="at-neutral-note">@_report.ReferenceOnlyConstitutionEntries reference-only catalog entries are excluded from authored-rule coverage.</p>
@@ -267,16 +290,27 @@
                     }
                     @if (_report.HasSpecification && _report.HasPlan)
                     {
-                        @RenderCoverageSection("Specification → Plan", _report.SpecificationCoverage, "spec-plan")
+                        @RenderCoverageSection("Specification → Plan", _report.SpecificationCoverage, ArtifactType.Specification)
                     }
                     @if (_report.HasPlan && _report.HasTasks)
                     {
-                        @RenderCoverageSection("Plan → Tasks", _report.PlanCoverage, "plan-task")
-                        <p class="at-neutral-note">Plan → Tasks is not assessed because the current Plan and Task artifacts do not share a stable authored identifier. Task → Requirement/SC references are reported independently.</p>
+                        @if (_report.PlanCoverage.HasApplicablePopulation)
+                        {
+                            @RenderCoverageSection("Plan → Tasks", _report.PlanCoverage, ArtifactType.Plan)
+                        }
+                        else
+                        {
+                            <div class="at-coverage-section" data-testid="at-plan-task-overview">
+                                <div class="at-coverage-section-title">Plan → Tasks</div>
+                                <span class="at-status-badge at-status-notassessed">Not assessed</span>
+                                <div class="at-coverage-bar at-coverage-bar-notassessed" aria-hidden="true"></div>
+                                <p class="at-neutral-note">@TraceabilityLabels.PlanToTaskNotAssessed</p>
+                            </div>
+                        }
                     }
                     @if (_report.HasTasks && _report.HasSpecification)
                     {
-                        @RenderCoverageSection("Tasks → Requirement / Success Criterion references", _report.TaskCoverage, "plan-task")
+                        @RenderCoverageSection("Tasks → Requirement / Success Criterion references", _report.TaskCoverage, ArtifactType.Task)
                     }
 
                     <!-- Health indicators -->
@@ -323,7 +357,7 @@
                         {
                             <button class="at-nav-card" @onclick='() => SetTab("gaps")'>
                                 <div class="at-nav-card-count">@_report.Gaps.Count</div>
-                                <div class="at-nav-card-label">Missing explicit references</div>
+                                <div class="at-nav-card-label">Reference observations</div>
                                 <div class="at-nav-card-arrow">→</div>
                             </button>
                         }
@@ -354,8 +388,9 @@
                 }
                 else
                 {
+                    <p class="at-neutral-note" data-testid="at-implicit-applicability">@TraceabilityLabels.ImplicitApplicability</p>
                     <div class="at-chain-table-wrap">
-                        <table class="at-chain-table" aria-label="Constitution to Specification coverage">
+                        <table class="at-chain-table" aria-label="Constitution to Specification references">
                             <thead>
                                 <tr>
                                     <th>Rule ID</th>
@@ -386,7 +421,7 @@
                                                 </div>
                                             }
                                             else
-                                            { <span class="at-matrix-blank">—</span> }
+                                            { <span class="at-matrix-blank" title="@TraceabilityLabels.NoReferenceCell">—</span> }
                                         </td>
                                         <td>@StatusBadge(entry.Status, ArtifactType.Constitution)</td>
                                     </tr>
@@ -413,7 +448,8 @@
                 else
                 {
                     <div class="at-chain-table-wrap">
-                        <table class="at-chain-table" aria-label="Specification to Plan coverage">
+                        <p class="at-neutral-note" data-testid="at-plan-location-note">Plan locations are authored Plan sections, phases or decisions that cite the requirement explicitly — not implementation evidence and not policy satisfaction.</p>
+                        <table class="at-chain-table" aria-label="Specification to Plan references">
                             <thead>
                                 <tr>
                                     <th>Requirement</th>
@@ -438,12 +474,12 @@
                                             {
                                                 <div class="at-link-chips">
                                                     @foreach (var link in entry.Links.Take(4))
-                                                    { <span class="at-link-chip" title="Explicit reference">@PlanTraceabilityNodes.KindOf(link.TargetId): @link.TargetTitle</span> }
+                                                    { <span class="at-link-chip" title="Explicit reference in an authored Plan location">@PlanTraceabilityNodes.KindOf(link.TargetId): @link.TargetTitle</span> }
                                                     @if (entry.Links.Count > 4) { <span class="at-link-chip">+@(entry.Links.Count - 4) more</span> }
                                                 </div>
                                             }
                                             else
-                                            { <span class="at-matrix-blank">—</span> }
+                                            { <span class="at-matrix-blank" title="@TraceabilityLabels.NoReferenceCell">—</span> }
                                         </td>
                                         <td>@StatusBadge(entry.Status, ArtifactType.Specification)</td>
                                     </tr>
@@ -463,11 +499,11 @@
                 }
                 else if (!_report.HasTasks && _report.PlanToTask.Count == 0)
                 {
-                    <EmptyState Icon="📭" Title="Plan → Tasks is not assessed." Description="The current Plan and Tasks models do not provide a stable direct relation. Task-to-Requirement and Task-to-Success-Criterion references are reported separately." />
+                    <div data-testid="at-plan-task-not-assessed"><EmptyState Icon="ℹ️" Title="Not assessed" Description="@TraceabilityLabels.PlanToTaskNotAssessed" /></div>
                 }
                 else if (_report.PlanToTask.Count == 0)
                 {
-                    <EmptyState Icon="ℹ️" Title="Plan → Tasks is not assessed." Description="Plan phases contain descriptive action text, not stable Task IDs. Task-to-Requirement and Task-to-Success-Criterion references are reported separately." />
+                    <div data-testid="at-plan-task-not-assessed"><EmptyState Icon="ℹ️" Title="Not assessed" Description="@TraceabilityLabels.PlanToTaskNotAssessed" /></div>
                 }
                 else
                 {
@@ -519,14 +555,12 @@
                             <div class="at-gaps-section" style="margin-top:1.5rem;">
                                 <SectionHeader Title="Tasks without explicit Requirement/SC references" />
                                 <p class="at-neutral-note"><a href="task-alignment">Review task alignment</a> — Task Alignment Review determines whether tasks without direct Requirement/SC references are technical-only, design-linked or need review.</p>
-                                <div class="issue-cards">
+                                <ul class="at-observations">
                                     @foreach (var gap in _report.Gaps.Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
                                     {
-                                        <IssueCard Severity="@TraceabilityLabels.Significance(gap)"
-                                                   Component="@gap.ItemId"
-                                                   Description="@(string.IsNullOrEmpty(gap.ItemTitle) ? gap.Description : (string.IsNullOrEmpty(gap.Description) ? gap.ItemTitle : $"{gap.ItemTitle} — {gap.Description}"))" />
+                                        @Observation(gap)
                                     }
-                                </div>
+                                </ul>
                             </div>
                         }
                     }
@@ -538,13 +572,13 @@
                 <!-- ── Gaps ───────────────────────────────────────────────── -->
                 @if (!VisibleGaps.Any())
                 {
-                    @if (_gapArtifactFilter is not null || !string.IsNullOrWhiteSpace(_search))
+                    @if (_gapArtifactFilter is not null || _categoryFilter is not null || _policyOnly || !string.IsNullOrWhiteSpace(_search))
                     {
-                        <EmptyState Title="No missing explicit references match the current filter." />
+                        <EmptyState Title="No reference observations match the current filter." />
                     }
                     else
                     {
-                        <EmptyState Icon="✓" Title="No missing explicit references." Description="Every assessed item has an explicit authored reference." />
+                        <EmptyState Icon="✓" Title="No reference observations." Description="Every assessed item has an explicit authored reference." />
                     }
                 }
                 else
@@ -555,14 +589,12 @@
                     {
                         <div class="at-gaps-section">
                             <SectionHeader Title="@GapGroupTitle(artifactGroup.Key)" />
-                            <div class="issue-cards">
+                            <ul class="at-observations">
                                 @foreach (var gap in artifactGroup.OrderBy(g => g.Severity))
                                 {
-                                    <IssueCard Severity="@TraceabilityLabels.Significance(gap)"
-                                               Component="@gap.ItemId"
-                                               Description="@(string.IsNullOrEmpty(gap.ItemTitle) ? gap.Description : (string.IsNullOrEmpty(gap.Description) ? gap.ItemTitle : $"{gap.ItemTitle} — {gap.Description}"))" />
+                                    @Observation(gap)
                                 }
-                            </div>
+                            </ul>
                         </div>
                     }
                 }
@@ -582,14 +614,14 @@
                 }
                 else
                 {
-                    <p class="at-neutral-note" data-testid="at-matrix-semantics">Authored traceability only: each column holds evidence owned by that artifact. Plan nodes are typed authored Plan locations; repository layout and Source Analysis evidence are never Plan nodes. Task references are shown independently; no Plan→Task edge is inferred.</p>
+                    <p class="at-neutral-note" data-testid="at-matrix-semantics">@TraceabilityLabels.MatrixScope A dash means no explicit reference is represented — not missing implementation.</p>
                     <div class="at-matrix-table-wrap">
                         <table class="at-matrix-table" aria-label="Full traceability matrix">
                             <thead>
                                 <tr>
                                     <th>Constitution</th>
                                     <th>Specification</th>
-                                    <th>Plan (typed authored node)</th>
+                                    <th title="Typed authored Plan node: Plan phase, Plan section, Architecture decision or Supporting plan document">Authored plan location</th>
                                     <th>Task reference</th>
                                     <th>Edge evidence</th>
                                 </tr>
@@ -609,14 +641,14 @@
                                               @if (!string.IsNullOrEmpty(row.SpecRequirementTitle))
                                               { <span style="margin-left:.4rem;font-size:.78rem;color:var(--clr-text-muted);" title="@row.SpecRequirementTitle">@Shorten(CleanTitle(row.SpecRequirementId!, row.SpecRequirementTitle), 90)</span> } }
                                             else
-                                            { <span class="at-matrix-blank">—</span> }
+                                            { <span class="at-matrix-blank" title="@TraceabilityLabels.NoReferenceCell" aria-label="@TraceabilityLabels.NoReferenceCell">—</span> }
                                         </td>
                                         <td>
                                             @if (!string.IsNullOrEmpty(row.PlanItemId))
                                             { <span class="at-rule-type-badge">@row.PlanItemKind</span>
                                               <span style="margin-left:.4rem;font-size:.78rem;">@(row.PlanItemTitle ?? row.PlanItemId)</span> }
                                             else
-                                            { <span class="at-matrix-blank">—</span> }
+                                            { <span class="at-matrix-blank" title="@TraceabilityLabels.NoReferenceCell" aria-label="@TraceabilityLabels.NoReferenceCell">—</span> }
                                         </td>
                                         <td>
                                             @if (!string.IsNullOrEmpty(row.TaskId))
@@ -624,12 +656,12 @@
                                               @if (!string.IsNullOrEmpty(row.TaskTitle))
                                               { <span style="margin-left:.4rem;font-size:.78rem;color:var(--clr-text-muted);">@row.TaskTitle</span> } }
                                             else
-                                            { <span class="at-matrix-blank">—</span> }
+                                            { <span class="at-matrix-blank" title="@TraceabilityLabels.NoReferenceCell" aria-label="@TraceabilityLabels.NoReferenceCell">—</span> }
                                         </td>
                                         <td class="at-edges">
-                                            <span title="Constitution → Specification">C→S: @row.SpecEdge</span><br />
-                                            <span title="Specification → Plan">S→P: @(row.PlanEdge ?? "—")</span><br />
-                                            <span title="Plan → Task">P→T: @row.TaskEdge</span>
+                                            @Edge("Constitution → Spec", row.SpecEdge)
+                                            @Edge("Spec → Plan", row.PlanEdge)
+                                            @Edge("Plan → Tasks", row.TaskEdge)
                                         </td>
                                     </tr>
                                 }
@@ -665,6 +697,7 @@
 
     private TraceabilityStatus? _statusFilter;
     private bool _policyOnly;
+    private TraceabilityObservationCategory? _categoryFilter;
     private ArtifactType? _gapArtifactFilter;
 
     // ── Computed filtered views ───────────────────────────────────────────
@@ -690,7 +723,9 @@
     private IEnumerable<TraceabilityGap> VisibleGaps =>
         _report is null ? [] :
         TraceabilityService.SearchGaps(
-            TraceabilityService.FilterGapsByArtifact(_policyOnly ? _report.Gaps.Where(g => g.PolicyRequired) : _report.Gaps, _gapArtifactFilter),
+            TraceabilityService.FilterGapsByArtifact(_report.Gaps.Where(g =>
+                (!_policyOnly || TraceabilityLabels.CategoryOf(g) == TraceabilityObservationCategory.PolicyRequiredTraceNotEstablished)
+                && (_categoryFilter is null || TraceabilityLabels.CategoryOf(g) == _categoryFilter)), _gapArtifactFilter),
             _search);
 
     private IEnumerable<TraceabilityMatrixRow> VisibleMatrix =>
@@ -712,6 +747,14 @@
     private string MatrixBadge =>
         _report?.Matrix.Count > 0 ? $"({_report.Matrix.Count})" : string.Empty;
 
+    /// <summary>What the Reference observations count means: never a quality score.</summary>
+    private string ObservationsTitle => _report is null ? "" :
+        $"{_report.Gaps.Count} informational or policy-evaluated reference observation{(_report.Gaps.Count == 1 ? "" : "s")}. Most are simply items with no explicit document reference.";
+
+    private string PolicySublabel => _report is null ? "" :
+        !_report.Policy.Configured ? _report.Policy.Description
+        : _report.PolicyRequiredGapCount == 0 ? "No explicit traceability policy violations." : _report.Policy.Description;
+
     private static string CoverageValue(TraceabilityCoverageStats stats) =>
         stats.HasApplicablePopulation ? $"{stats.CoveragePercentage:0.#}%" : "—";
 
@@ -731,6 +774,7 @@
         text = System.Text.RegularExpressions.Regex.Replace(text, $@"^\s*{System.Text.RegularExpressions.Regex.Escape(id)}\s*[:—–-]?\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         text = System.Text.RegularExpressions.Regex.Replace(text, $@"\s*\({System.Text.RegularExpressions.Regex.Escape(id)}\)\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         text = System.Text.RegularExpressions.Regex.Replace(text, @"^[IVXLC]+\.\s+", "");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"^[—–:-]\s*", "");
         return text.Trim();
     }
 
@@ -738,9 +782,9 @@
 
     private static string GapGroupTitle(ArtifactType type) => type switch
     {
-        ArtifactType.Constitution => "Constitution → Specification · No explicit link",
-        ArtifactType.Specification => "Specification → Plan · No explicit plan reference",
-        ArtifactType.Task => "Tasks → Requirement/SC · No explicit Requirement/SC reference",
+        ArtifactType.Constitution => "Constitution → Specification",
+        ArtifactType.Specification => "Specification → Plan",
+        ArtifactType.Task => "Tasks → Requirement/SC",
         _ => ArtifactLabel(type),
     };
 
@@ -752,7 +796,7 @@
         "const-spec" => "Search by rule ID (PP-01), title, or status…",
         "spec-plan"  => "Search by requirement ID (FR-001) or title…",
         "plan-task"  => "Search by plan item or task ID…",
-        "gaps"       => "Search gaps by ID, title, or description…",
+        "gaps"       => "Search observations by ID, title, or description…",
         "matrix"     => "Search matrix by rule, requirement, plan item, or task…",
         _            => "Search…",
     };
@@ -871,6 +915,8 @@
             _search         = string.Empty;
             _statusFilter   = null;
             _gapArtifactFilter = null;
+            _categoryFilter = null;
+            _policyOnly     = false;
             _inputExpanded  = false;
         }
         catch (Exception ex)
@@ -913,6 +959,7 @@
         HasPlan = report.HasPlan,
         HasTasks = report.HasTasks,
         ReferenceOnlyConstitutionEntries = report.ReferenceOnlyConstitutionEntries,
+        Policy = report.Policy ?? TraceabilityPolicy.None,
     };
 
     private void SetTab(string tab)
@@ -933,7 +980,8 @@
 
     // ── Renderers ─────────────────────────────────────────────────────────
 
-    private RenderFragment RenderCoverageSection(string title, TraceabilityCoverageStats stats, string navTab) => __builder =>
+    /// <summary>One transition: explicit (green) and no explicit reference (blue-grey). A low percentage is never red.</summary>
+    private RenderFragment RenderCoverageSection(string title, TraceabilityCoverageStats stats, ArtifactType chain) => __builder =>
     {
         __builder.OpenElement(0, "div");
         __builder.AddAttribute(1, "class", "at-coverage-section");
@@ -971,29 +1019,28 @@
             __builder.CloseElement();
         }
 
-        AddCard("Explicitly linked", stats.CoveredItems, "covered");
+        AddCard("Explicitly referenced", stats.CoveredItems, "covered");
         if (stats.PartialItems > 0) AddCard("Partially linked", stats.PartialItems, "partial");
-        AddCard("No explicit link", stats.MissingItems + stats.OrphanedItems, "orphaned");
+        AddCard($"With {TraceabilityLabels.NoReference(chain).Replace("No explicit", "no explicit")}", stats.MissingItems + stats.OrphanedItems, "noref");
 
         __builder.CloseElement();
 
         // Coverage bar
         var pct         = stats.CoveragePercentage;
-        var barVariant  = pct >= 80 ? string.Empty : pct >= 50 ? "is-warning" : "is-error";
         __builder.OpenElement(40, "div");
         __builder.AddAttribute(41, "class", "at-coverage-bar-wrap");
 
         __builder.OpenElement(42, "div");
         __builder.AddAttribute(43, "class", "at-coverage-bar");
         __builder.OpenElement(44, "div");
-        __builder.AddAttribute(45, "class", $"at-coverage-bar-fill {barVariant}");
+        __builder.AddAttribute(45, "class", "at-coverage-bar-fill");
         __builder.AddAttribute(46, "style", $"width:{pct}%");
         __builder.CloseElement();
         __builder.CloseElement();
 
         __builder.OpenElement(47, "span");
         __builder.AddAttribute(48, "class", "at-coverage-pct");
-        __builder.AddContent(49, $"{pct:0.#}% ({stats.CoveredItems + stats.PartialItems} of {stats.TotalItems})");
+        __builder.AddContent(49, $"Explicit reference coverage: {pct:0.#}% ({stats.CoveredItems + stats.PartialItems} of {stats.TotalItems})");
         __builder.CloseElement();
 
         __builder.CloseElement(); // bar-wrap
@@ -1008,7 +1055,7 @@
         {
             TraceabilityStatus.Covered  => ("at-status-covered",  "✓"),
             TraceabilityStatus.Partial  => ("at-status-partial",  "◐"),
-            _                           => ("at-status-orphaned", "○"),
+            _                           => ("at-status-noref",    "○"),
         };
         __builder.OpenElement(0, "span");
         __builder.AddAttribute(1, "class", $"at-status-badge {css}");
@@ -1016,8 +1063,31 @@
         __builder.CloseElement();
     };
 
-    private static string HealthStatLevel(double pct) =>
-        pct >= 80 ? "is-good" : pct >= 50 ? "is-warning" : pct > 0 ? "is-error" : string.Empty;
+    /// <summary>
+    /// One reference observation: category and state as text, explanation without a "Problem:" prefix. No explicit reference is neutral
+    /// (blue-grey, no warning stripe); only ambiguous/policy-required (amber) and broken (red) references look like issues.
+    /// </summary>
+    private RenderFragment Observation(TraceabilityGap gap) =>
+        @<li class="at-obs at-obs-@TraceabilityLabels.Tone(gap)" data-testid="at-observation" data-category="@TraceabilityLabels.CategoryOf(gap)">
+            <div class="at-obs-head">
+                <span class="at-rule-id">@gap.ItemId</span>
+                <span class="at-obs-category" data-testid="at-observation-category">@TraceabilityLabels.Category(gap)</span>
+                <span class="at-status-badge at-status-@TraceabilityLabels.Tone(gap)" data-testid="at-observation-state">@TraceabilityLabels.Significance(gap)</span>
+            </div>
+            @if (!string.IsNullOrEmpty(gap.ItemTitle))
+            {
+                <div class="at-obs-title">@(gap.GapIn == ArtifactType.Constitution ? "Rule: " : "")@CleanTitle(gap.ItemId, gap.ItemTitle)</div>
+            }
+            <p class="at-obs-text">@gap.Description</p>
+            @if (gap.RequiredBy is { } requiredBy)
+            {
+                <p class="at-obs-text" data-testid="at-observation-required-by">Required by: @requiredBy</p>
+            }
+        </li>;
+
+    /// <summary>Readable edge evidence: full transition names, text state plus tone (never colour alone).</summary>
+    private static RenderFragment Edge(string name, string? edge) =>
+        @<span class="at-edge at-edge-@TraceabilityLabels.EdgeTone(edge)" data-testid="at-edge">@name: @(edge ?? TraceabilityLabels.NoReferenceCell)</span>;
 
     private static string ArtifactLabel(ArtifactType type) => type switch
     {

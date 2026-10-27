@@ -31,11 +31,13 @@ public sealed class RequirementsTraceabilityEvidenceTests
     {
         var report = Analyze();
         var pp02 = report.ConstitutionToSpec.Single(r => r.ItemId == "PP-02");
-        TraceabilityLabels.Evidence(pp02.Status, ArtifactType.Constitution).Should().Be("No explicit link");
+        TraceabilityLabels.Evidence(pp02.Status, ArtifactType.Constitution).Should().Be("No explicit Specification reference");
         var gap = report.Gaps.Single(g => g.ItemId == "PP-02");
         gap.Severity.Should().Be(GapSeverity.Informational, "no policy requires the link");
         gap.PolicyRequired.Should().BeFalse();
-        gap.Description.Should().StartWith("PP-02 has no explicit reference in the selected Specification").And.NotContain("no coverage");
+        gap.Description.Should().Be("No explicit reference to this Constitution rule was found in the selected Specification. This does not establish that the principle is absent or inapplicable.");
+        TraceabilityLabels.CategoryOf(gap).Should().Be(TraceabilityObservationCategory.NoExplicitReference);
+        TraceabilityLabels.Category(gap).Should().Be("No explicit Specification reference");
         report.PolicyRequiredGapCount.Should().Be(0);
         report.Health.Indicators.Should().OnlyContain(i => i.Level == TraceabilityHealthLevel.Info || i.Level == TraceabilityHealthLevel.Good);
     }
@@ -56,7 +58,7 @@ public sealed class RequirementsTraceabilityEvidenceTests
         TraceabilityLabels.Evidence(fr033.Status, ArtifactType.Specification).Should().Be("Explicitly referenced");
         fr033.Links.Select(l => PlanTraceabilityNodes.KindOf(l.TargetId)).Should().Contain("Plan phase");
         var fr001 = report.SpecToPlan.Single(r => r.ItemId == "FR-001");
-        TraceabilityLabels.Evidence(fr001.Status, ArtifactType.Specification).Should().Be("No explicit plan reference",
+        TraceabilityLabels.Evidence(fr001.Status, ArtifactType.Specification).Should().Be("No explicit Plan reference",
             "its only mention is in the Plan's source-code file tree, which is not a Plan traceability node");
         report.Gaps.Single(g => g.ItemId == "FR-001").Description.Should().StartWith("No explicit Plan reference to FR-001 was found").And.NotContain("implementation strategy");
     }
@@ -97,8 +99,11 @@ public sealed class RequirementsTraceabilityEvidenceTests
         var report = Analyze(new TraceabilityPolicy(RequireConstitutionToSpec: true));
         var gap = report.Gaps.Single(g => g.ItemId == "PP-02");
         gap.PolicyRequired.Should().BeTrue();
-        TraceabilityLabels.Significance(gap).Should().Be("Required link missing (policy)");
-        TraceabilityLabels.Evidence(gap.Status, ArtifactType.Constitution).Should().Be("No explicit link", "evidence state is unchanged by policy");
+        TraceabilityLabels.Significance(gap).Should().Be("Required trace not established");
+        TraceabilityLabels.Category(gap).Should().Be("Policy-required trace not established");
+        gap.RequiredBy.Should().Contain("Project traceability policy").And.Contain("Constitution→Specification");
+        TraceabilityLabels.Tone(gap).Should().Be("warning", "amber by default; red is reserved for a broken reference");
+        TraceabilityLabels.Evidence(gap.Status, ArtifactType.Constitution).Should().Be("No explicit Specification reference", "evidence state is unchanged by policy");
         report.Gaps.Single(g => g.ItemId == "FR-001").PolicyRequired.Should().BeFalse("only the configured relation is required");
         report.PolicyRequiredGapCount.Should().Be(1);
     }

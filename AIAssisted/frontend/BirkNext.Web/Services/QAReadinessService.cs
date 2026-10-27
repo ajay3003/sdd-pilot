@@ -308,21 +308,21 @@ public sealed class QAReadinessService : IQAReadinessService
             return new ReadinessScore
             {
                 Category = cat, IsAssessed = false, Score = 0, Status = ReadinessStatus.NotReady,
-                Signals = [.. signals.Select(s => s.Replace(" covered", " explicitly linked")), $"Informational: {trace.Gaps.Count} missing explicit reference(s); {trace.Policy.Description}"],
+                Signals = [.. signals.Select(s => s.Replace(" covered", " explicitly linked")), $"Informational: {trace.NoExplicitReferenceCount} item(s) with no explicit document reference; {trace.Policy.Description}"],
                 Weaknesses = [],
             };
 
-        // 75% from chain coverage average, 25% from gap-free status
-        double gapCount = trace.Gaps.Count;
+        // 75% from chain coverage average, 25% from issue-free status (broken, ambiguous or policy-required references only)
+        double gapCount = trace.ReferenceIssueCount;
         double gapScore = Math.Max(0.0, 25.0 - gapCount * 2.5);
         double score    = chainAvg * 0.75 + gapScore;
 
         if (gapCount == 0)
-            signals.Add("No traceability gaps");
+            signals.Add("No traceability reference issues");
         else if (gapCount <= 3)
-            weak.Add($"{gapCount} traceability gap(s)");
+            weak.Add($"{gapCount} traceability reference issue(s)");
         else
-            weak.Add($"{gapCount} traceability gaps — significant coverage missing");
+            weak.Add($"{gapCount} traceability reference issues");
 
         return Scored(cat, Math.Min(100, Math.Max(0, score)), signals, weak);
     }
@@ -479,13 +479,13 @@ public sealed class QAReadinessService : IQAReadinessService
         AddCategoryGaps(gaps, trace, "Traceability");
         AddCategoryGaps(gaps, comp,  "Compliance");
 
-        // Traceability gaps from the report: only those a configured policy requires (missing explicit references are informational).
-        foreach (var g in traceReport.Gaps.Where(g => g.PolicyRequired).Take(5))
+        // Traceability issues from the report: only broken, ambiguous or policy-required references (no explicit reference is informational).
+        foreach (var g in traceReport.Gaps.Where(g => TraceabilityLabels.CategoryOf(g) != TraceabilityObservationCategory.NoExplicitReference).Take(5))
         {
             gaps.Add(new ReadinessGap
             {
                 Category    = "Traceability",
-                Description = $"{g.GapIn} gap: {g.ItemTitle} — {g.Description}",
+                Description = $"{g.GapIn} · {TraceabilityLabels.Category(g)}: {g.ItemTitle} — {g.Description}",
                 Severity    = GapSev(g.Severity),
             });
         }

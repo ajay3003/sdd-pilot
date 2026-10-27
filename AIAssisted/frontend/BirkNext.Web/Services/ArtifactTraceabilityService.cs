@@ -25,7 +25,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         ReviewContext reviewContext) => Analyze(constitution, spec, plan, tasks, reviewContext, TraceabilityPolicy.None);
 
     /// <summary>
-    /// Authored-document reference evidence only. Missing explicit references are informational unless <paramref name="policy"/> requires the
+    /// Authored-document reference evidence only. Absence of an explicit reference is informational unless <paramref name="policy"/> requires the
     /// relation; Source Analysis evidence is never used to fill an authored link, and no Plan→Task edge is inferred.
     /// </summary>
     public ArtifactTraceabilityReport Analyze(
@@ -62,7 +62,8 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
 
         // Gaps (sorted by severity desc)
         var gaps = BuildGaps(constToSpec, specToPlan, planToTask, orphanTasks, policy)
-            .GroupBy(g => (g.GapIn, g.ItemId, g.Status))
+            .Concat(spec is not null && tasks is not null ? BuildReferenceIssues(allTaskNodes, reviewContext, spec) : [])
+            .GroupBy(g => (g.GapIn, g.ItemId, g.Status, TraceabilityLabels.CategoryOf(g), g.Description))
             .Select(group => group.First())
             .OrderBy(g => g.Severity)
             .ToList();
@@ -366,7 +367,10 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
     {
         var gaps = new List<TraceabilityGap>();
 
-        // Missing explicit references are evidence, not defects: Informational unless a configured policy requires the relation.
+        // No explicit reference is evidence, not a defect: Informational unless a configured policy requires the relation.
+        TraceabilityObservationCategory Category(bool required) => required ? TraceabilityObservationCategory.PolicyRequiredTraceNotEstablished : TraceabilityObservationCategory.NoExplicitReference;
+        string? RequiredBy(bool required, string relation) => required ? $"Project traceability policy: explicit {relation} references required" : null;
+
         foreach (var c in constToSpec.Where(c => c.Status == TraceabilityStatus.Missing))
             gaps.Add(new TraceabilityGap
             {
@@ -374,9 +378,11 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = c.ItemId,
                 ItemTitle   = c.ItemTitle,
                 Status      = TraceabilityStatus.Missing,
-                Description = $"{c.ItemId} has no explicit reference in the selected Specification. This does not prove that the principle is absent from the Specification.",
+                Description = "No explicit reference to this Constitution rule was found in the selected Specification. This does not establish that the principle is absent or inapplicable.",
                 Severity    = policy.RequireConstitutionToSpec ? GapSeverity.High : GapSeverity.Informational,
                 PolicyRequired = policy.RequireConstitutionToSpec,
+                Category    = Category(policy.RequireConstitutionToSpec),
+                RequiredBy  = RequiredBy(policy.RequireConstitutionToSpec, "Constitution→Specification"),
             });
 
         // Partial constitution coverage (only plan/non-req) → Medium
@@ -390,6 +396,8 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 Description = $"{c.ItemId} is partially linked — not referenced by a formal requirement.",
                 Severity    = policy.RequireConstitutionToSpec ? GapSeverity.Medium : GapSeverity.Informational,
                 PolicyRequired = policy.RequireConstitutionToSpec,
+                Category    = Category(policy.RequireConstitutionToSpec),
+                RequiredBy  = RequiredBy(policy.RequireConstitutionToSpec, "Constitution→Specification"),
             });
 
         // Missing spec requirements in plan → High
@@ -403,6 +411,8 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 Description = $"No explicit Plan reference to {c.ItemId} was found. A Plan may still address this requirement without using its explicit ID.",
                 Severity    = policy.RequireSpecToPlan ? GapSeverity.High : GapSeverity.Informational,
                 PolicyRequired = policy.RequireSpecToPlan,
+                Category    = Category(policy.RequireSpecToPlan),
+                RequiredBy  = RequiredBy(policy.RequireSpecToPlan, "Specification→Plan"),
             });
 
         // Missing plan items (no task coverage) → Medium
@@ -428,9 +438,56 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 Description = $"Task {t.TaskId ?? t.Title} has no explicit Requirement/Success Criterion reference. Use Task Alignment Review to determine whether a direct requirement link is expected.",
                 Severity    = policy.RequireTaskReferences ? GapSeverity.Medium : GapSeverity.Informational,
                 PolicyRequired = policy.RequireTaskReferences,
+                Category    = Category(policy.RequireTaskReferences),
+                RequiredBy  = RequiredBy(policy.RequireTaskReferences, "Task→Requirement/SC"),
             });
 
         return gaps;
+    }
+
+    /// <summary>
+    /// Explicit Task references that do not resolve deterministically: an id found nowhere in the selected Specification is a broken
+    /// reference; an id defined more than once is ambiguous and no candidate is chosen. Task reference counts are unchanged.
+    /// </summary>
+    private static List<TraceabilityGap> BuildReferenceIssues(List<TaskNode> tasks, ReviewContext context, SpecTree spec)
+    {
+        var definitions = context.Specification.Requirements.Select(r => r.Id)
+            .Concat(context.Specification.SuccessCriteria.Select(c => c.Id))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        if (definitions.Count == 0) return [];
+        // An id written anywhere in the Specification (also outside parsed requirement lists) is never reported as broken.
+        var specText = string.Join("\n", FlattenSpec(spec.Roots).Select(n => $"{n.SpecItemId} {n.Title} {n.FullContent ?? n.Excerpt}"));
+
+        var issues = new List<TraceabilityGap>();
+        foreach (var task in tasks)
+        {
+            var id = task.TaskId ?? task.Title;
+            foreach (var reference in task.ReferencedFrIds.Concat(task.ReferencedScIds).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (definitions.TryGetValue(reference, out var count))
+                {
+                    if (count > 1)
+                        issues.Add(new TraceabilityGap
+                        {
+                            GapIn = ArtifactType.Task, ItemId = id, ItemTitle = task.ShortTitle ?? task.Title, Status = TraceabilityStatus.Covered,
+                            Description = $"{reference} is defined {count} times in the selected Specification; the reference is not resolved to one candidate automatically.",
+                            Severity = GapSeverity.Medium, Category = TraceabilityObservationCategory.AmbiguousReference,
+                        });
+                }
+                else if (!Regex.IsMatch(specText, $@"(?<![A-Za-z0-9-]){Regex.Escape(reference)}(?![0-9])", RegexOptions.IgnoreCase))
+                {
+                    issues.Add(new TraceabilityGap
+                    {
+                        GapIn = ArtifactType.Task, ItemId = id, ItemTitle = task.ShortTitle ?? task.Title, Status = TraceabilityStatus.Covered,
+                        Description = $"Task {id} explicitly references {reference}, which does not exist in the selected Specification.",
+                        Severity = GapSeverity.High, Category = TraceabilityObservationCategory.BrokenReference,
+                    });
+                }
+            }
+        }
+        return issues;
     }
 
     // ── Matrix ────────────────────────────────────────────────────────────────
@@ -644,7 +701,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             indicators.Add(new TraceabilityHealthIndicator
             {
                 Icon  = "ℹ",
-                Message = $"{gapCount} missing explicit reference{(gapCount != 1 ? "s" : "")} — {(policy.Configured ? "see policy significance per item" : "informational; no explicit traceability policy configured")}",
+                Message = $"{gapCount} reference observation{(gapCount != 1 ? "s" : "")} — {(policy.Configured ? "see the state of each observation" : "informational; no explicit traceability policy configured")}",
                 Level = policy.Configured ? TraceabilityHealthLevel.Warning : TraceabilityHealthLevel.Info,
             });
         }

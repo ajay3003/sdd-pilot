@@ -473,7 +473,7 @@
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
                             <span class="db-tl-action">Requirements Traceability completed</span>
-                            <span class="db-tl-meta">@(Snapshot.TraceabilityReport.Health.HasAssessedCoverage ? $"{Snapshot.TraceabilityReport.Health.CoveragePercentage:0}% across assessed transitions" : "No transition coverage assessed")</span>
+                            <span class="db-tl-meta">@($"{Snapshot.TraceabilityReport.AssessedTransitionCount} of {Snapshot.TraceabilityReport.Transitions.Count} transitions assessed")</span>
                         </div>
                     </div>
                 }
@@ -537,19 +537,24 @@
                 </div>
                 @if (Snapshot.TraceabilityReport is { } tr)
                 {
-                    @if (tr.Health.HasAssessedCoverage)
+                    @* Explicit-reference evidence per transition; no combined score, and no-reference observations never lower quality. *@
+                    @if (tr.AssessedTransitionCount > 0)
                     {
-                        <div class="db-analysis-score @ScoreClass(tr.Health.CoveragePercentage)">@tr.Health.CoveragePercentage.ToString("0")%</div>
-                        <span class="db-analysis-status @KpiStatusClass(tr.Health.CoveragePercentage, true)">@KpiStatusLabel(tr.Health.CoveragePercentage, true) across assessed transitions</span>
+                        <span class="db-analysis-status" data-testid="db-traceability-assessment">@tr.AssessedTransitionCount of @tr.Transitions.Count transitions assessed</span>
+                        <ul class="db-traceability-transitions">
+                            @foreach (var t in tr.Transitions.Where(t => t.Assessed))
+                            {
+                                <li>@t.Name: @t.Detail</li>
+                            }
+                        </ul>
                     }
                     else
                     {
                         <span class="db-analysis-status">Not assessed — no traceability transitions could be checked</span>
                     }
                     <div class="db-analysis-chips">
-                        <span class="db-count-chip db-count-good">@tr.Health.CoveredCount covered</span>
-                        @if (tr.Health.PartialCount > 0) { <span class="db-count-chip db-count-warn">@tr.Health.PartialCount partial</span> }
-                        @if (tr.Health.MissingCount > 0) { <span class="db-count-chip db-count-poor">@tr.Health.MissingCount missing</span> }
+                        @if (tr.NoExplicitReferenceCount > 0) { <span class="db-count-chip">@tr.NoExplicitReferenceCount no explicit reference (informational)</span> }
+                        @if (tr.ReferenceIssueCount > 0) { <span class="db-count-chip db-count-warn" data-testid="db-traceability-issues">@tr.ReferenceIssueCount reference issue@(tr.ReferenceIssueCount == 1 ? "" : "s") to review</span> }
                     </div>
                 }
                 else
@@ -873,7 +878,9 @@
         QaAssessed = _qaAssessed,
         QaScore = _qaScore,
         TraceabilityRun = Snapshot.TraceabilityReport is not null,
-        TraceabilityCoverage = Snapshot.TraceabilityReport is { Health.HasAssessedCoverage: true } tr ? tr.Health.CoveragePercentage : null,
+        TraceabilityTransitionsAssessed = Snapshot.TraceabilityReport?.AssessedTransitionCount ?? 0,
+        TraceabilityTransitionsTotal = Snapshot.TraceabilityReport?.Transitions.Count ?? 0,
+        TraceabilityReferenceIssues = Snapshot.TraceabilityReport?.ReferenceIssueCount ?? 0,
         ComplianceRun = Snapshot.ComplianceReport is not null,
         ComplianceScore = _complianceScore,
         DeliveryRun = Snapshot.DeliveryReport is not null,
@@ -1003,10 +1010,6 @@
 
     // ── Pre-computed health scores (numeric) ──────────────────────────────────
 
-    private bool _traceabilityHasData => Snapshot.TraceabilityReport is not null;
-    private double _traceabilityScore => Snapshot.TraceabilityReport is { } tr
-        ? tr.Health.CoveragePercentage
-        : 0;
 
     private bool _complianceHasData => Snapshot.ComplianceReport is not null;
     private double _complianceScore => Snapshot.ComplianceReport?.Health.CompliancePercentage ?? 0;
@@ -1029,10 +1032,12 @@
         Available(WorkspaceArtifactType.Specification) && (QualitySession.Report is not { AssessedPacks: 0 }),
         Snapshot.AuditReport?.HasSpecification, Snapshot.ReadinessReport?.HasSpecification);
 
-    /// <summary>The six dashboard quality areas: (assessed?, score). Not-assessed areas lower coverage, never quality.</summary>
+    /// <summary>
+    /// The dashboard quality areas: (assessed?, score). Not-assessed areas lower coverage, never quality. Requirements Traceability is
+    /// explicit-reference evidence, not a quality score: absence of an explicit reference never lowers quality or marks the project at risk.
+    /// </summary>
     private IReadOnlyList<(bool Assessed, double Score)> _qualityAreas =>
     [
-        (Snapshot.TraceabilityReport is not null, _traceabilityScore),
         (Snapshot.ComplianceReport is not null, _complianceScore),
         (_qaAssessed, _qaScore),
         (Snapshot.DeliveryReport is not null, _deliveryScore),

@@ -72,7 +72,11 @@ public sealed record DashboardReviewFacts
     public double QaScore { get; init; }
 
     public bool TraceabilityRun { get; init; }
-    public double? TraceabilityCoverage { get; init; }
+    /// <summary>Assessed document transitions; Plan → Tasks without stable identity is Not assessed, never 0%.</summary>
+    public int TraceabilityTransitionsAssessed { get; init; }
+    public int TraceabilityTransitionsTotal { get; init; }
+    /// <summary>Broken, ambiguous and policy-required reference observations only; "no explicit reference" is informational and never counted.</summary>
+    public int TraceabilityReferenceIssues { get; init; }
     public bool ComplianceRun { get; init; }
     public double ComplianceScore { get; init; }
     public bool DeliveryRun { get; init; }
@@ -530,10 +534,13 @@ public static class DashboardPresentation
     private static DashboardHealthArea Traceability(CurrentWorkspaceSnapshot workspace, DashboardReviewFacts r)
     {
         if (r.TraceabilityRun)
-            return r.TraceabilityCoverage is { } coverage
-                ? Area("traceability", ByScore(coverage), coverage >= 80 ? "Analyzed: most assessed requirements have explicit references." : "Analyzed: some requirements have no explicit plan or task reference.",
-                    "Open Requirements Traceability", TraceabilityRoute, $"{coverage:0}% explicit reference coverage across assessed links")
-                : Area("traceability", DashboardStatus.NotAssessed, "Traceability ran, but no requirement links could be assessed.", "Open Traceability", TraceabilityRoute);
+            return r.TraceabilityTransitionsAssessed == 0
+                ? Area("traceability", DashboardStatus.NotAssessed, "Traceability ran, but no requirement links could be assessed.", "Open Traceability", TraceabilityRoute)
+                : r.TraceabilityReferenceIssues > 0
+                    ? Area("traceability", DashboardStatus.AttentionNeeded, $"{r.TraceabilityReferenceIssues} broken, ambiguous or policy-required reference{S(r.TraceabilityReferenceIssues)} to review.",
+                        "Open Requirements Traceability", TraceabilityRoute, $"{r.TraceabilityTransitionsAssessed} of {r.TraceabilityTransitionsTotal} transitions assessed")
+                    : Area("traceability", DashboardStatus.Passed, "Analyzed: no broken, ambiguous or policy-required references. Absence of an explicit reference is informational.",
+                        "Open Requirements Traceability", TraceabilityRoute, $"{r.TraceabilityTransitionsAssessed} of {r.TraceabilityTransitionsTotal} transitions assessed");
         if (!HasRole(workspace, WorkspaceArtifactType.Specification))
             return Area("traceability", DashboardStatus.NeedsSetup, "No specification found — traceability needs requirements.", "Explore specifications", "specification-explorer");
         var o = workspace.Overview;
