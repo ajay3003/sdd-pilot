@@ -13,6 +13,14 @@ public interface IFrontendAnalysisSettingsService
     Task LoadAsync(IJSRuntime js);
     Task SaveAsync(IJSRuntime js);
 
+    /// <summary>False while the settings are the built-in seed profiles held only in memory (nothing stored yet), so their ids would be
+    /// minted again on the next load.</summary>
+    bool IsMaterialized => true;
+
+    /// <summary>Stores the current settings when they exist only in memory, so the built-in profiles keep their ids from now on. Called
+    /// the first time backend-owned configuration is attached to one of them; a no-op once stored.</summary>
+    Task MaterializeAsync(IJSRuntime js) => Task.CompletedTask;
+
     /// <summary>Raised after the Target Environments were persisted (created, edited, deleted, active one switched, reset), so readers
     /// such as project applicability and Recommended Workflow follow without polling or navigation.</summary>
     event Action? Changed;
@@ -64,6 +72,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public FrontendAnalysisSettings  Settings      => _settings;
     public bool                      IsLoaded      { get; private set; }
+    public bool                      IsMaterialized { get; private set; }
     public FrontendAnalysisProfile?  ActiveProfile =>
         _settings.ActiveResolutionError is not null || string.IsNullOrWhiteSpace(_settings.ActiveProfileId)
             ? null
@@ -95,6 +104,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
                     _settings = loaded;
                     MigrateLegacyAuthenticationExpectations(loaded);
                     IsLoaded  = true;
+                    IsMaterialized = true;
                     return;
                 }
             }
@@ -105,6 +115,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             return;
         }
 
+        // Seed profiles get fresh random ids and are not stored until saved or until backend configuration is attached to one of them
+        // (see MaterializeAsync); ids are never fixed or shared, because backend records are keyed by environment id alone.
         _settings = BuildSeedSettings();
         IsLoaded  = true;
     }
@@ -130,7 +142,13 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     {
         var json = JsonSerializer.Serialize(_settings, JsonOptions);
         await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
+        IsMaterialized = true;
         Changed?.Invoke();
+    }
+
+    public async Task MaterializeAsync(IJSRuntime js)
+    {
+        if (!IsMaterialized) await SaveAsync(js);
     }
 
     // ── Detection snapshots (separate evidence store, never part of the saved profile) ──────────

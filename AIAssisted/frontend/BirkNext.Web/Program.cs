@@ -166,6 +166,9 @@ builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
     client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+// Every backend client stores a never-saved built-in Target Environment before the first write that attaches configuration to it.
+builder.Services.AddTransient<TargetEnvironmentMaterializationHandler>();
+builder.Services.ConfigureHttpClientDefaults(http => http.AddHttpMessageHandler<TargetEnvironmentMaterializationHandler>());
 builder.Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
 builder.Services.AddSingleton<IApiReviewHistoryService, ApiReviewHistoryService>();
 builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();
