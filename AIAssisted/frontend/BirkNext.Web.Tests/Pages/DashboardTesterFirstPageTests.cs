@@ -48,13 +48,14 @@ public class DashboardTesterFirstPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=db-next-step]"));
         cut.Find("[data-testid=db-import-success]").TextContent.Should().Contain("Project imported successfully").And.Contain("Nothing has been reviewed or tested yet");
         cut.Find("[data-testid=db-workspace-name]").TextContent.Trim().Should().Be("M2LB");
-        cut.Find("[data-testid=db-test-environment]").TextContent.Should().Be("Test environment: Development");
+        cut.Find("[data-testid=db-test-environment]").TextContent.Should().Be("Target Environment: Development");
 
         cut.Find("[data-testid=db-next-title]").TextContent.Should().Be("Review imported documents");
         cut.Find("[data-testid=db-next-reason]").TextContent.Should().Contain("has not been reviewed yet");
         cut.Find("[data-testid=db-next-action]").TextContent.Should().Be("Review requirements");
         cut.FindAll("[data-testid=db-found-fact]").Should().NotBeEmpty();
-        cut.FindAll("[data-testid=db-attention-item][data-key=dqr-not-run]").Should().ContainSingle();
+        cut.FindAll("[data-testid=db-attention-item][data-key=dqr-not-run]").Should().BeEmpty("not run is not a problem");
+        cut.FindAll("[data-testid=db-next-review][data-key=dqr-not-run]").Should().ContainSingle();
 
         // The recommended step comes before the found/attention panels and the health areas.
         var markup = cut.Markup;
@@ -62,10 +63,10 @@ public class DashboardTesterFirstPageTests : BunitContext
         markup.IndexOf("db-attention", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-health", StringComparison.Ordinal));
 
         cut.Find("[data-testid=db-readiness-row][data-key=runtime]").TextContent.Should().Contain("Not assessed");
-        cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("Risks have not been assessed yet");
+        cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("No review findings are available yet");
         cut.Markup.Should().NotContain("No risks detected");
         cut.FindAll("[data-testid=db-health-status]").Should().OnlyContain(s => s.TextContent.Trim().Length > 2, "never a bare dash");
-        cut.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Recommended next step", "What BirkNext found", "Needs attention", "Review readiness", "Project Health", "Project Artifacts"]);
+        cut.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Recommended next step", "Evidence inventory", "Needs attention", "Review availability", "Assessment status", "Project Artifacts"]);
     }
 
     [Fact]
@@ -74,9 +75,8 @@ public class DashboardTesterFirstPageTests : BunitContext
         var workspace = WorkspaceSnapshots.AllRoles();
         var cut = Render(workspace, Imported(workspace, null));
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=db-test-environment]").TextContent.Should().Be("Test environment: Not selected"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=db-test-environment]").TextContent.Should().Be("Target Environment: Not configured"));
         cut.FindAll("[data-testid=db-import-success]").Should().BeEmpty("only an imported project is confirmed as imported");
-        cut.FindAll("[data-testid=db-attention-item][data-key=target-missing]").Should().ContainSingle()
-            .Which.ClassList.Should().Contain("is-info", "a missing test environment is a note for later runtime testing, not a problem");
+        cut.FindAll("[data-testid=db-attention-item][data-key=target-missing]").Should().BeEmpty("an absent Target Environment is not a problem");
     }
 }

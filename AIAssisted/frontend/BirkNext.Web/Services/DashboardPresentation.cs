@@ -113,7 +113,7 @@ public static class DashboardPresentation
         DashboardStatus.Failed => "Failed to load",
         DashboardStatus.NeedsSetup => "Needs setup",
         DashboardStatus.NotAssessed => "Not assessed",
-        DashboardStatus.ReadyToReview => "Ready to review",
+        DashboardStatus.ReadyToReview => "Available",
         DashboardStatus.Available => "Available",
         DashboardStatus.Partial => "Partial",
         DashboardStatus.InProgress => "In progress",
@@ -196,18 +196,18 @@ public static class DashboardPresentation
         return string.Join(" · ", parts);
     }
 
-    /// <summary>"Test environment: Development" (configured is not tested), or why there is none.</summary>
+    /// <summary>"Target Environment: Development" (configured is not tested), or why there is none. Absent is neutral: runtime reviews only.</summary>
     public static (DashboardStatus Status, string Text) TestEnvironment(WorkflowReadiness? workflow)
     {
-        if (workflow is null) return (DashboardStatus.Loading, "Test environment: Loading…");
+        if (workflow is null) return (DashboardStatus.Loading, "Target Environment: Loading…");
         var target = workflow.Inputs.Target;
         var name = target.Facts.FirstOrDefault();
         return target.Status switch
         {
-            ProjectInputStatus.Ready => (DashboardStatus.Available, $"Test environment: {name}"),
-            ProjectInputStatus.Partial => (DashboardStatus.NeedsSetup, $"Test environment: {name} ({target.StatusLabel.ToLowerInvariant()})"),
-            ProjectInputStatus.Unknown => (DashboardStatus.Unavailable, "Test environment: Unavailable"),
-            _ => (DashboardStatus.NeedsSetup, "Test environment: Not selected"),
+            ProjectInputStatus.Ready => (DashboardStatus.Available, $"Target Environment: {name}"),
+            ProjectInputStatus.Partial => (DashboardStatus.NeedsSetup, $"Target Environment: {name} ({target.StatusLabel.ToLowerInvariant()})"),
+            ProjectInputStatus.Unknown => (DashboardStatus.Unavailable, "Target Environment: Unavailable"),
+            _ => (DashboardStatus.NotAssessed, "Target Environment: Not configured"),
         };
     }
 
@@ -259,7 +259,8 @@ public static class DashboardPresentation
             var text = n == 1
                 ? $"{Cap(ambiguities[0].Where)} has {ambiguities[0].Candidates.Count} possible {Singular(role)} files"
                 : $"{n} places have more than one possible {Singular(role)} file";
-            items.Add(new($"ambiguous-{role}", text, "Reviews read one file per feature pack. Choose which one to use.", "Resolve",
+            items.Add(new($"ambiguous-{role}", $"Artifact selection ambiguity: {char.ToLowerInvariant(text[0])}{text[1..]}",
+                "BirkNext cannot deterministically choose the primary artifact until this is resolved.", "Resolve",
                 ProjectInputPresentation.ExplorerRoute(role),
                 Items: [.. ambiguities.Select(a => $"{Cap(a.Where)}: {string.Join(", ", a.Candidates)}")]));
         }
@@ -272,7 +273,7 @@ public static class DashboardPresentation
                 if (missing.Count == 0) continue;
                 items.Add(new($"missing-{role}", $"{missing.Count} feature pack{S(missing.Count)} {(missing.Count == 1 ? "is" : "are")} missing a {Singular(role)}",
                     $"{missing.Count} of {o.PackCount} packs have no {Singular(role)} of their own and no shared one applies.",
-                    $"Explore {Plural(role)}", ProjectInputPresentation.ExplorerRoute(role),
+                    $"Explore {Plural(role)}", ProjectInputPresentation.ExplorerRoute(role), Informational: true,
                     Items: [.. missing.Select(p => $"{ProjectPackOverview.PackName(p)}{(o.HasModules ? $" · module {ArtifactModules.Label(p.Module)}" : "")}")]));
             }
         }
@@ -293,15 +294,34 @@ public static class DashboardPresentation
 
         if (workflow?.Inputs.Source is { Status: ProjectInputStatus.NeedsAttention } source)
             items.Add(new("source", "Source analysis is out of date", source.Detail, "Analyze source", ProjectInputPresentation.SourceAnalysisRoute));
-        if (workflow?.Inputs.Target is { Status: ProjectInputStatus.Partial } partial)
-            items.Add(new("target-incomplete", "The test environment is not fully set up", partial.Detail, "Finish setup", partial.Route));
+        if (workflow is { SourceBinding: SourceBindingState.NotEstablished })
+            items.Add(new("source-binding", $"Source binding not established for {workspace.PackLabel ?? workspace.ModuleLabel ?? "the selected scope"}",
+                "Source is analyzed, but the selected Artifact Pack is not mapped to source evidence; source-backed implementation review cannot be interpreted yet.",
+                "Review source binding", WorkflowReadinessService.ImplementationEvidenceRoute));
+        // Optional reviews not yet run and an absent Target Environment are not problems: see AvailableNextReviews.
+        return items;
+    }
 
-        if (HasDocuments(workspace) && reviews.DocumentReview == AnalysisSessionStatus.NotRun)
-            items.Add(new("dqr-not-run", "Document Quality Review has not been run", "Nothing has been reviewed yet; import does not assess quality.",
-                "Start review", DocumentReviewRoute, Informational: true));
-        if (workflow?.Inputs.Target is { Status: ProjectInputStatus.Absent })
-            items.Add(new("target-missing", "No test environment selected", "Needed later for runtime testing (frontend, API, integrations, performance).",
-                "Set up test environment", NavigationCatalog.TargetEnvironmentsRoute, Informational: true));
+    /// <summary>
+    /// Reviews that can be opened or set up next — never problems. From the shared review navigator (feature visibility respected), plus
+    /// Document Quality Review when it has not run and runtime reviews waiting for a Target Environment.
+    /// </summary>
+    public static IReadOnlyList<DashboardAttentionItem> AvailableNextReviews(CurrentWorkspaceSnapshot workspace, WorkflowReadiness? workflow, DashboardReviewFacts reviews)
+    {
+        var items = new List<DashboardAttentionItem>();
+        if (!workspace.WorkspaceLoaded || workflow is null) return items;
+        if (HasDocuments(workspace) && reviews.DocumentReview == AnalysisSessionStatus.NotRun
+            && (workflow.Capabilities.Count == 0 || workflow.Capabilities.Any(c => c.Route == DocumentReviewRoute)))
+            items.Add(new("dqr-not-run", "Document Quality Review has not been run", "Available: evaluates the quality and documented standards coverage of the authored documentation.",
+                "Run Document Quality Review", DocumentReviewRoute, Informational: true));
+        foreach (var c in workflow.Capabilities.Where(c => c.IsActionable && c.Decision != ReviewDecisionState.Reviewed && c.Route != DocumentReviewRoute
+                     && c.Route != workflow.NextRecommendedAction?.Route && c.Section is not ReviewSection.Documentation || c.Id == "generated-documentation-health" && c.IsActionable).Take(5))
+            items.Add(new($"available-{c.Id}", $"{c.DisplayName} available", c.Note ?? ReviewNavigator.SectionLabel(c.Section), $"Open {c.DisplayName}", c.Route, Informational: true));
+        var runtime = workflow.Capabilities.Where(c => c.Section == ReviewSection.Runtime && c.MissingPrerequisites.Contains(ReviewNavigator.TargetEnvironment)).ToList();
+        if (runtime.Count > 0)
+            items.Add(new("runtime-setup", "Runtime reviews available after Target Environment setup",
+                $"Target Environment is optional until a runtime-dependent review is needed. Required by: {string.Join(", ", runtime.Select(c => c.DisplayName))}.",
+                "Configure Target Environment", NavigationCatalog.TargetEnvironmentsRoute, Informational: true));
         return items;
     }
 
@@ -369,10 +389,12 @@ public static class DashboardPresentation
                 "Reviews read exactly the file you choose.", "Resolve", next.Route, then);
         }
 
+        if (key == WorkflowReadinessService.EstablishSourceBindingKey && workflow.Recommendation is { } binding)
+            return new(key, next.Title, binding.Why, binding.Unlocks, next.ActionLabel, next.Route, then);
         if (key == WorkflowReadinessService.RefreshSourceKey)
             return new(key, "Analyze the source again", next.Description, "Source-based reviews then use current evidence.", "Analyze source", next.Route, then);
         if (key == WorkflowReadinessService.CompleteTargetKey)
-            return new(key, "Finish setting up the test environment", next.Description,
+            return new(key, "Finish setting up the Target Environment", next.Description,
                 "Runtime reviews can then test the real application.", "Finish setup", next.Route, then);
 
         if (key.StartsWith(WorkflowReadinessService.OpenReviewKeyPrefix, StringComparison.Ordinal))
@@ -461,19 +483,20 @@ public static class DashboardPresentation
             return [.. Areas.Select(a => new DashboardHealthArea(a.Key, a.Area, a.Help, DashboardStatus.NeedsSetup, "Import a project to see this area.",
                 "Import project", ProjectInputPresentation.ProjectImportRoute, Secondary: a.Secondary))];
 
-        return [Governance(workspace, workflow), Traceability(workspace, r), Compliance(workspace, r), Qa(workspace, r), Delivery(workspace, r),
+        return [Governance(workspace, workflow), Traceability(workspace, r), Source(workflow), Compliance(workspace, r), Qa(workspace, r), Delivery(workspace, r),
             Performance(workflow, r), Workflow(workflow)];
     }
 
     private static readonly (string Key, string Area, string Help, bool Secondary)[] Areas =
     [
-        ("governance", "Governance", "Documentation rules and project policies", false),
-        ("traceability", "Traceability", "Requirement coverage and links", false),
-        ("compliance", "Compliance", "Required standards and checks", false),
-        ("qa", "QA", "Testing and quality evidence", false),
-        ("delivery", "Delivery", "Delivery and release evidence", true),
-        ("performance", "Performance", "Performance test evidence", true),
-        ("workflow", "Workflow", "Recommended workflow progress", false),
+        ("governance", "Governance documentation", "Manual review decisions on the authored documents", false),
+        ("traceability", "Requirements Traceability", "Explicit document references across Constitution, Specification, Plan and Tasks", false),
+        ("source", "Source evidence", "Source Analysis snapshot and Artifact Pack source binding", false),
+        ("compliance", "Standards documentation", "Documentation coverage against selected standards/checklists; not legal or regulatory compliance", false),
+        ("qa", "Document quality", "Document Quality Review of the authored documentation", false),
+        ("delivery", "Delivery readiness", "Owned by the readiness review; not calculated here", true),
+        ("performance", "Performance (runtime)", "Performance test evidence; needs a Target Environment to execute", true),
+        ("workflow", "Workflow guidance", "Recommended Workflow: current recommendation and recorded manual reviews", false),
     ];
 
     private static DashboardHealthArea Area(string key, DashboardStatus status, string explanation, string? action, string? href, string? result = null)
@@ -501,15 +524,15 @@ public static class DashboardPresentation
         if (stale > 0) return Area("governance", DashboardStatus.AttentionNeeded, $"{stale} review{S(stale)} out of date — the document changed since.", "Review again", WorkflowRoute, result);
         if (approved == gates.Count) return Area("governance", DashboardStatus.Passed, $"All {gates.Count} document reviews approved on the current documents.", "Open Recommended Workflow", WorkflowRoute, result);
         if (decided) return Area("governance", DashboardStatus.InProgress, $"{approved} of {gates.Count} document reviews approved so far.", "Continue reviewing", WorkflowRoute, result);
-        return Area("governance", DashboardStatus.ReadyToReview, $"{gates.Count} document{S(gates.Count)} can be reviewed. None reviewed yet.", "Review documents", WorkflowRoute);
+        return Area("governance", DashboardStatus.NotAssessed, $"Evidence: Available · {gates.Count} document{S(gates.Count)} can be reviewed · Assessment: Not reviewed.", "Review documents", WorkflowRoute);
     }
 
     private static DashboardHealthArea Traceability(CurrentWorkspaceSnapshot workspace, DashboardReviewFacts r)
     {
         if (r.TraceabilityRun)
             return r.TraceabilityCoverage is { } coverage
-                ? Area("traceability", ByScore(coverage), coverage >= 80 ? "Most requirements are linked to plans and tasks." : "Some requirements are not linked to plans or tasks.",
-                    "Open Traceability", TraceabilityRoute, $"{coverage:0}% coverage across assessed links")
+                ? Area("traceability", ByScore(coverage), coverage >= 80 ? "Analyzed: most assessed requirements have explicit references." : "Analyzed: some requirements have no explicit plan or task reference.",
+                    "Open Requirements Traceability", TraceabilityRoute, $"{coverage:0}% explicit reference coverage across assessed links")
                 : Area("traceability", DashboardStatus.NotAssessed, "Traceability ran, but no requirement links could be assessed.", "Open Traceability", TraceabilityRoute);
         if (!HasRole(workspace, WorkspaceArtifactType.Specification))
             return Area("traceability", DashboardStatus.NeedsSetup, "No specification found — traceability needs requirements.", "Explore specifications", "specification-explorer");
@@ -517,17 +540,17 @@ public static class DashboardPresentation
         var text = o is { PackCount: > 0 }
             ? $"{o.Role(WorkspaceArtifactType.Specification).PacksWithRole} of {Packs(o.PackCount)} contain a specification. Not checked yet."
             : "Specifications were found. Their links have not been checked yet.";
-        return Area("traceability", DashboardStatus.ReadyToReview, text, "Review requirements", TraceabilityRoute);
+        return Area("traceability", DashboardStatus.NotAssessed, $"Evidence: Available · Assessment: Not analyzed. {text}", "Open Requirements Traceability", TraceabilityRoute);
     }
 
     private static DashboardHealthArea Compliance(CurrentWorkspaceSnapshot workspace, DashboardReviewFacts r)
     {
         if (r.ComplianceRun)
             return Area("compliance", ByScore(r.ComplianceScore), r.ComplianceScore >= 80 ? "Documents follow most project rules." : "Documents break some project rules.",
-                "Open results", DocumentReviewRoute, $"{r.ComplianceScore:0}% compliant with the constitution");
+                "Open results", DocumentReviewRoute, $"{r.ComplianceScore:0}% standards documentation coverage (not legal compliance)");
         if (!HasRole(workspace, WorkspaceArtifactType.Constitution))
             return Area("compliance", DashboardStatus.NotApplicable, "No constitution found, so there are no project rules to check against.", null, null);
-        return Area("compliance", DashboardStatus.ReadyToReview, "A constitution was found. Document Quality Review checks the documents against it.",
+        return Area("compliance", DashboardStatus.NotAssessed, "Evidence: Available (constitution) · Assessment: Not run. Document Quality Review checks documented standards coverage.",
             "Run Document Quality Review", DocumentReviewRoute);
     }
 
@@ -548,7 +571,7 @@ public static class DashboardPresentation
             return Area("qa", DashboardStatus.NotAssessed, "The latest review had nothing it could assess (no specification in scope).", "Open Document Quality Review", DocumentReviewRoute);
         if (!HasRole(workspace, WorkspaceArtifactType.Specification))
             return Area("qa", DashboardStatus.NeedsSetup, "No specification found to review.", "Explore specifications", "specification-explorer");
-        return Area("qa", DashboardStatus.ReadyToReview, "Document Quality Review has not been run.", "Run Document Quality Review", DocumentReviewRoute);
+        return Area("qa", DashboardStatus.NotAssessed, "Evidence: Available · Assessment: Not run. Document Quality Review has not been run.", "Run Document Quality Review", DocumentReviewRoute);
     }
 
     private static DashboardHealthArea Delivery(CurrentWorkspaceSnapshot workspace, DashboardReviewFacts r)
@@ -561,7 +584,7 @@ public static class DashboardPresentation
                 "Open results", DocumentReviewRoute);
         if (!HasRole(workspace, WorkspaceArtifactType.Plan) && !HasRole(workspace, WorkspaceArtifactType.Tasks))
             return Area("delivery", DashboardStatus.NotApplicable, "No plan or tasks found, so there is no delivery evidence to assess.", null, null);
-        return Area("delivery", DashboardStatus.NotAssessed, "Delivery readiness has not been assessed yet.", "Run Document Quality Review", DocumentReviewRoute);
+        return Area("delivery", DashboardStatus.NotAssessed, "Release readiness: Not assessed. It is owned by the readiness review and never calculated by the Dashboard.", "Run Document Quality Review", DocumentReviewRoute);
     }
 
     private static DashboardHealthArea Performance(WorkflowReadiness? workflow, DashboardReviewFacts r)
@@ -580,18 +603,36 @@ public static class DashboardPresentation
         }
         return workflow?.Inputs.Target.Status == ProjectInputStatus.Ready
             ? Area("performance", DashboardStatus.NotAssessed, "No performance review has been run.", "Open Performance Test Review", PerformanceRoute)
-            : Area("performance", DashboardStatus.NeedsSetup, "Needs a test environment before performance can be tested.", "Set up test environment", NavigationCatalog.TargetEnvironmentsRoute);
+            : Area("performance", DashboardStatus.NeedsSetup, "Needs setup: Target Environment required for execution. Optional until a runtime review is needed.", "Configure Target Environment", NavigationCatalog.TargetEnvironmentsRoute);
     }
 
     private static DashboardHealthArea Workflow(WorkflowReadiness? workflow)
     {
         if (workflow is null) return Area("workflow", DashboardStatus.Loading, "Loading the recommended workflow…", null, null);
+        var core = workflow.CoreManualReviews;
+        var recorded = core.Count(c => c.Decision == ReviewDecisionState.Reviewed);
         if (workflow.ReleaseReadinessPercent is not { } percent)
-            return Area("workflow", DashboardStatus.NotAssessed, "Recommended workflow not started.", "Start recommended workflow", WorkflowRoute);
+            return Area("workflow", DashboardStatus.Available, workflow.Recommendation is { } rec ? $"Current recommendation available: {rec.Title}." : "Workflow guidance available.",
+                "Open Recommended Workflow", WorkflowRoute, $"Core manual reviews: {recorded} / {core.Count} recorded");
         var result = $"{workflow.DecidedReviewCount} of {workflow.RequiredReviewCount} required review decisions recorded ({percent}%)";
         return percent == 100
             ? Area("workflow", DashboardStatus.Passed, "Every required review decision is recorded on the current documents.", "Open Recommended Workflow", WorkflowRoute, result)
-            : Area("workflow", DashboardStatus.InProgress, "The recommended workflow has started.", "Continue recommended workflow", WorkflowRoute, result);
+            : Area("workflow", DashboardStatus.InProgress, workflow.Recommendation is { } next ? $"Current recommendation: {next.Title}." : "Review decisions in progress.", "Open Recommended Workflow", WorkflowRoute, result);
+    }
+
+    /// <summary>Source evidence as a first-class area: analysis state and Artifact Pack binding, never a quality score.</summary>
+    private static DashboardHealthArea Source(WorkflowReadiness? workflow)
+    {
+        if (workflow is null) return Area("source", DashboardStatus.Loading, "Loading source evidence…", null, null);
+        var source = workflow.Inputs.Source;
+        return source.Status switch
+        {
+            ProjectInputStatus.NeedsAttention => Area("source", DashboardStatus.AttentionNeeded, $"Evidence: Available · Assessment: Analyzed (outdated). {source.Detail}", "Analyze source", ProjectInputPresentation.SourceAnalysisRoute),
+            ProjectInputStatus.Ready => workflow.SourceBinding == SourceBindingState.Established
+                ? Area("source", DashboardStatus.Available, "Evidence: Available · Assessment: Analyzed · Artifact Pack source binding established.", "Open Implementation Evidence Review", WorkflowReadinessService.ImplementationEvidenceRoute, "Source binding established")
+                : Area("source", DashboardStatus.NeedsSetup, "Evidence: Available · Assessment: Analyzed · Artifact Pack source binding not established.", "Review source binding", WorkflowReadinessService.ImplementationEvidenceRoute, "Source binding required"),
+            _ => Area("source", DashboardStatus.NotAssessed, "Source evidence not provided. Documentation reviews do not need it.", "Open Source Analysis", ProjectInputPresentation.SourceAnalysisRoute),
+        };
     }
 
     private static string Readiness(ReadinessState? state) => state switch
@@ -639,26 +680,38 @@ public static class DashboardPresentation
                 var c = o.Role(role);
                 var all = c.PacksWithRole == o.PackCount;
                 var shared = role == WorkspaceArtifactType.Constitution && c.SharedDocuments > 0 && all;
-                rows.Add(new(role.ToString(), label, all ? DashboardStatus.Available : DashboardStatus.Partial, all ? "Ready" : "Partial",
+                rows.Add(new(role.ToString(), label, all ? DashboardStatus.Available : DashboardStatus.Partial, all ? "Available" : "Partial",
                     shared ? $"Shared · applies to all {Packs(o.PackCount)}" : $"In {c.PacksWithRole} of {Packs(o.PackCount)}{(optional && !all ? " (optional)" : "")}"));
             }
             else
             {
-                rows.Add(new(role.ToString(), label, DashboardStatus.Available, "Ready", $"{Count(o?.Role(role).Documents ?? workspace.Role(role).ArtifactCount, role)} found"));
+                rows.Add(new(role.ToString(), label, DashboardStatus.Available, "Available", $"{Count(o?.Role(role).Documents ?? workspace.Role(role).ArtifactCount, role)} found"));
             }
         }
 
         var (envStatus, envText) = TestEnvironment(workflow);
-        rows.Add(new("target", "Test environment", envStatus, envStatus switch
+        if (workflow is not null)
+        {
+            var source = workflow.Inputs.Source;
+            rows.Add(new("source", "Source", source.Status is ProjectInputStatus.Ready or ProjectInputStatus.NeedsAttention ? DashboardStatus.Available : DashboardStatus.NotAssessed,
+                source.Status switch { ProjectInputStatus.Ready => "Analyzed", ProjectInputStatus.NeedsAttention => "Analyzed (outdated)", _ => "Not provided" },
+                workflow.SourceBinding switch
+                {
+                    SourceBindingState.Established => "Current project · Artifact Pack source binding established",
+                    SourceBindingState.NotEstablished => "Current project · Artifact Pack source binding not established",
+                    _ => "Source reviews need a source snapshot; documentation reviews do not.",
+                }));
+        }
+        rows.Add(new("target", "Target Environment", envStatus, envStatus switch
         {
             DashboardStatus.Available => "Configured",
             DashboardStatus.Loading => "Loading…",
             DashboardStatus.Unavailable => "Unavailable",
-            _ => workflow?.Inputs.Target.Status == ProjectInputStatus.Partial ? "Incomplete" : "Not selected",
-        }, envStatus == DashboardStatus.Available ? $"{envText["Test environment: ".Length..]} — configured, not yet tested" : NotBlank(workflow?.Inputs.Target.Detail, "")));
+            _ => workflow?.Inputs.Target.Status == ProjectInputStatus.Partial ? "Incomplete" : "Not configured",
+        }, envStatus == DashboardStatus.Available ? $"{envText["Target Environment: ".Length..]} — configured, not yet tested" : "Required only for runtime-dependent reviews."));
         rows.Add(new("runtime", "Runtime evidence", r.RuntimeEvidence ? DashboardStatus.Available : DashboardStatus.NotAssessed,
             r.RuntimeEvidence ? "Captured" : "Not assessed",
-            r.RuntimeEvidence ? "A runtime review has results in this session." : "No runtime review has run against the test environment yet."));
+            r.RuntimeEvidence ? "A runtime review has results in this session." : "No runtime review has run against a Target Environment yet."));
         rows.Add(DocumentReviewRow(r));
         return rows;
     }
@@ -669,13 +722,13 @@ public static class DashboardPresentation
             "Latest review", $"{(r.DocumentReviewAt is { } at ? $"Run {at.ToLocalTime():d MMM HH:mm}" : "Run this session")}{(r.DocumentReviewScope is { } s ? $" · {s}" : "")} · {r.DocumentReviewFindings} finding{S(r.DocumentReviewFindings)}"),
         AnalysisSessionStatus.Running => new("dqr", "Document Quality Review", DashboardStatus.InProgress, "Running", "The review is running."),
         AnalysisSessionStatus.Failed => new("dqr", "Document Quality Review", DashboardStatus.Failed, "Failed", "The latest review failed."),
-        _ => new("dqr", "Document Quality Review", DashboardStatus.NotAssessed, "Not run", "No document review has been run yet."),
+        _ => new("dqr", "Document Quality Review", DashboardStatus.NotAssessed, "Not run", "Available · not run yet. Not run is not a problem."),
     };
 
     // ── Risks ─────────────────────────────────────────────────────────────────
 
     public static DashboardRiskState Risks(DashboardReviewFacts r) => !r.RisksAssessed
-        ? new(false, 0, "Risks have not been assessed yet.")
+        ? new(false, 0, "No review findings are available yet. Deterministic project risks are shown when available; additional risks may appear after reviews run.")
         : r.RiskCount == 0
             ? new(true, 0, "No significant risks found in the latest review.")
             : new(true, r.RiskCount, $"{r.RiskCount} risk{S(r.RiskCount)} found in the latest review.");
@@ -748,16 +801,17 @@ public static class DashboardPresentation
 
         DashboardStatus state;
         string stateLabel;
-        if (ambiguities.Count > 0) (state, stateLabel) = (DashboardStatus.AttentionNeeded, "Needs attention");
+        if (ambiguities.Count > 0) (state, stateLabel) = (DashboardStatus.AttentionNeeded, "Ambiguous selection");
         else if (review is { State: ArtifactReviewState.Approved }) (state, stateLabel) = (DashboardStatus.Passed, "Approved");
         else if (review is { State: ArtifactReviewState.NeedsChanges }) (state, stateLabel) = (DashboardStatus.AttentionNeeded, "Needs changes");
-        else if (review is { State: ArtifactReviewState.Stale }) (state, stateLabel) = (DashboardStatus.AttentionNeeded, "Review out of date");
+        else if (review is { State: ArtifactReviewState.Stale }) (state, stateLabel) = (DashboardStatus.AttentionNeeded, "Evidence changed");
         else if (review is { State: ArtifactReviewState.Reviewed or ArtifactReviewState.InReview }) (state, stateLabel) = (DashboardStatus.InProgress, review.Label);
-        else (state, stateLabel) = (DashboardStatus.ReadyToReview, "Ready to review");
+        else (state, stateLabel) = (DashboardStatus.ReadyToReview, "Available · Not reviewed");
 
-        var meta = new List<string> { "Available" };
+        var meta = new List<string> { "Availability: Available", ambiguities.Count > 0 ? "Selection: Ambiguous" : "Selection: Resolved" };
         if (packLine.Length > 0) meta.Add(packLine);
-        meta.Add(review is { IsDecided: true } or { State: ArtifactReviewState.Stale } ? $"Review: {review.Label.ToLowerInvariant()}" : "Review not run");
+        meta.Add(review is { State: ArtifactReviewState.Stale } ? "Manual review: Evidence changed"
+            : review is { IsDecided: true } ? $"Manual review: {review.Label}" : "Manual review: Not reviewed");
         if (analyzed) meta.Add("Checked by Document Quality Review");
         if (reviewFacts is not null) meta.AddRange(reviewFacts);
 

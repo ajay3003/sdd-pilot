@@ -52,7 +52,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("SDD Governance Dashboard");
-            cut.Markup.Should().Contain("Project Health");
+            cut.Markup.Should().Contain("Assessment status");
             cut.Markup.Should().Contain("Workflow");
             cut.Markup.Should().Contain("Needs setup", "without a project every area needs a project first");
             cut.Markup.Should().NotContain(">—<", "no area shows a bare dash as its state");
@@ -71,10 +71,10 @@ public class DashboardPageTests : BunitContext
             cut.Markup.Should().NotContain(">0%<", "nothing is assessed without a workspace");
             cut.Markup.Should().Contain("Needs setup");
             cut.Markup.Should().Contain("No workspace loaded");
-            cut.Markup.Should().Contain("Project Health");
+            cut.Markup.Should().Contain("Assessment status");
             cut.Markup.Should().Contain("Traceability");
-            cut.Markup.Should().Contain("Top Risks");
-            cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("Risks have not been assessed yet").And.NotContain("No risks detected");
+            cut.Markup.Should().Contain("Current review risks");
+            cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("No review findings are available yet").And.NotContain("No risks detected");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -331,8 +331,8 @@ public class DashboardPageTests : BunitContext
         foreach (var card in cards)
         {
             // One primary status; availability and "review not run" are secondary metadata, not three equal badges.
-            card.QuerySelector("[data-testid=db-artifact-status]")!.TextContent.Should().EndWith("Ready to review");
-            card.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().StartWith("Available").And.Contain("Review not run");
+            card.QuerySelector("[data-testid=db-artifact-status]")!.TextContent.Should().EndWith("Available · Not reviewed");
+            card.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().StartWith("Availability: Available").And.Contain("Manual review: Not reviewed");
             card.TextContent.Should().NotContain("Not loaded");
             card.TextContent.Should().NotContain("Not found");
             card.TextContent.Should().NotContain("healthy", "import metadata is not a review result");
@@ -365,8 +365,8 @@ public class DashboardPageTests : BunitContext
         governance.GetAttribute("data-status").Should().Be(nameof(DashboardStatus.AttentionNeeded));
         governance.TextContent.Should().Contain("1 of 5 document reviews approved").And.Contain("1 document review needs changes");
         var plan = cut.Find("[data-testid=db-artifact-card][data-role=Plan]");
-        plan.QuerySelector("[data-testid=db-artifact-status]")!.TextContent.Should().EndWith("Review out of date");
-        plan.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().StartWith("Available").And.Contain("Review: review stale");
+        plan.QuerySelector("[data-testid=db-artifact-status]")!.TextContent.Should().EndWith("Evidence changed");
+        plan.QuerySelector("[data-testid=db-artifact-meta]")!.TextContent.Should().StartWith("Availability: Available").And.Contain("Manual review: Evidence changed");
     }
 
     [Fact]

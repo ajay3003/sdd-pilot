@@ -75,7 +75,7 @@ public class DashboardPresentationTests
         constitution.PacksWithRole.Should().Be(2);
         DashboardPresentation.NeedsAttention(snapshot, null, NoReviews).Should().NotContain(i => i.Key.StartsWith("missing-"));
         DashboardPresentation.Card(WorkspaceArtifactType.Constitution, snapshot, null, false).Meta.Should().Contain("Shared · applies to all 2 feature packs");
-        DashboardPresentation.ReviewReadiness(snapshot, null, NoReviews).Single(r => r.Key == "Constitution").StatusLabel.Should().Be("Ready");
+        DashboardPresentation.ReviewReadiness(snapshot, null, NoReviews).Single(r => r.Key == "Constitution").StatusLabel.Should().Be("Available", "available input, never a quality result");
     }
 
     [Fact]
@@ -141,10 +141,15 @@ public class DashboardPresentationTests
 
         workspace.IsImportedProject.Should().BeTrue();
         DashboardPresentation.Found(workspace, readiness).Should().NotBeEmpty();
-        DashboardPresentation.NeedsAttention(workspace, readiness, NoReviews).Select(i => i.Key).Should().Contain(["dqr-not-run", "target-missing"]);
+        DashboardPresentation.NeedsAttention(workspace, readiness, NoReviews).Select(i => i.Key).Should().NotContain(["dqr-not-run", "target-missing"],
+            "an optional review not run and an absent Target Environment are not problems");
+        DashboardPresentation.AvailableNextReviews(workspace, readiness, NoReviews).Select(i => i.Key).Should().Contain("dqr-not-run");
         var health = DashboardPresentation.Health(workspace, readiness, NoReviews);
         health.Should().NotContain(a => a.Status == DashboardStatus.Passed, "import is never a review result");
-        health.Single(a => a.Key == "qa").Status.Should().Be(DashboardStatus.ReadyToReview);
+        health.Single(a => a.Key == "qa").Status.Should().Be(DashboardStatus.NotAssessed, "not run is not a result");
+        health.Single(a => a.Key == "qa").Explanation.Should().Contain("Evidence: Available").And.Contain("Assessment: Not run");
+        health.Single(a => a.Key == "compliance").Area.Should().Be("Standards documentation");
+        health.Single(a => a.Key == "workflow").Explanation.Should().NotContain("not started");
         health.Should().OnlyContain(a => !string.IsNullOrWhiteSpace(a.Explanation) && a.Explanation != "—");
         DashboardPresentation.ReviewReadiness(workspace, readiness, NoReviews).Single(r => r.Key == "dqr").StatusLabel.Should().Be("Not run");
     }
@@ -173,7 +178,7 @@ public class DashboardPresentationTests
     [Fact]
     public void Risks_NotAssessed_IsNeverNoRisksDetected()
     {
-        DashboardPresentation.Risks(NoReviews).Should().Be(new DashboardRiskState(false, 0, "Risks have not been assessed yet."));
+        DashboardPresentation.Risks(NoReviews).Should().Match<DashboardRiskState>(s => !s.Assessed && s.Count == 0 && s.Message.StartsWith("No review findings are available yet"));
         DashboardPresentation.Risks(new DashboardReviewFacts { RisksAssessed = true }).Message.Should().Be("No significant risks found in the latest review.");
         DashboardPresentation.Risks(new DashboardReviewFacts { RisksAssessed = true, RiskCount = 3 }).Message.Should().Be("3 risks found in the latest review.");
     }
@@ -188,7 +193,7 @@ public class DashboardPresentationTests
 
         var all = WorkspaceSnapshots.AllRoles();
         var full = DashboardPresentation.Health(all, Readiness(all), NoReviews);
-        full.Single(a => a.Key == "compliance").Status.Should().Be(DashboardStatus.ReadyToReview);
+        full.Single(a => a.Key == "compliance").Status.Should().Be(DashboardStatus.NotAssessed);
         full.Single(a => a.Key == "delivery").Status.Should().Be(DashboardStatus.NotAssessed);
         full.Single(a => a.Key == "performance").Status.Should().Be(DashboardStatus.NeedsSetup, "no test environment yet");
         full.Single(a => a.Key == "delivery").Prominent.Should().BeFalse("unrun delivery is a compact row, not a large empty card");
@@ -203,7 +208,7 @@ public class DashboardPresentationTests
         var workspace = WorkspaceSnapshots.AllRoles();
         var readiness = Readiness(workspace, environment: new FrontendAnalysisProfile { Name = "Development", TargetUrl = "https://dev.birk.example.no" });
 
-        DashboardPresentation.TestEnvironment(readiness).Should().Be((DashboardStatus.Available, "Test environment: Development"));
+        DashboardPresentation.TestEnvironment(readiness).Should().Be((DashboardStatus.Available, "Target Environment: Development"));
         var rows = DashboardPresentation.ReviewReadiness(workspace, readiness, NoReviews);
         rows.Single(r => r.Key == "target").Text.Should().Contain("configured, not yet tested");
         rows.Single(r => r.Key == "runtime").Should().Match<DashboardReadinessRow>(r => r.Status == DashboardStatus.NotAssessed && r.StatusLabel == "Not assessed");
@@ -215,7 +220,7 @@ public class DashboardPresentationTests
     public void NoEnvironment_SaysNotSelected()
     {
         var workspace = WorkspaceSnapshots.AllRoles();
-        DashboardPresentation.TestEnvironment(Readiness(workspace)).Should().Be((DashboardStatus.NeedsSetup, "Test environment: Not selected"));
+        DashboardPresentation.TestEnvironment(Readiness(workspace)).Should().Be((DashboardStatus.NotAssessed, "Target Environment: Not configured"), "absence is neutral: runtime reviews only");
     }
 
     // ── Recommended next step ─────────────────────────────────────────────────
@@ -247,5 +252,42 @@ public class DashboardPresentationTests
         dqrStep.Achieves.Should().Contain("within each feature pack");
 
         new[] { moduleStep.Title, docStep.Title, dqrStep.Title }.Should().OnlyHaveUniqueItems();
+    }
+    // ── Evidence-aware semantics (shared with Recommended Workflow) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void Dashboard_and_workflow_share_the_recommendation_and_source_binding_is_attention()
+    {
+        var workspace = WorkspaceSnapshots.AllRoles();
+        var binding = new WorkflowStepViewModel
+        {
+            Key = WorkflowReadinessService.EstablishSourceBindingKey, Title = "Establish source binding for Person Module Core",
+            Description = "Source has already been analyzed, but the selected Artifact Pack is not yet mapped to source evidence.",
+            Route = WorkflowReadinessService.ImplementationEvidenceRoute, ActionLabel = "Review source binding",
+        };
+        var readiness = Readiness(workspace, binding) with { SourceBinding = SourceBindingState.NotEstablished };
+
+        var next = DashboardPresentation.NextStep(workspace, readiness)!;
+        next.Key.Should().Be(readiness.NextRecommendedAction!.Key, "one recommendation engine for both pages");
+        next.Achieves.Should().Be(readiness.Recommendation!.Unlocks);
+        readiness.Recommendation.ReasonCode.Should().Be("SOURCE_BINDING_MISSING");
+
+        var attention = DashboardPresentation.NeedsAttention(workspace, readiness, NoReviews);
+        attention.Should().Contain(i => i.Key == "source-binding" && !i.Informational);
+        attention.Should().NotContain(i => i.Key == "dqr-not-run" || i.Key == "target-missing", "optional reviews not run and an absent target are not problems");
+        DashboardPresentation.Health(workspace, readiness, NoReviews).Single(a => a.Key == "source").Status.Should().NotBe(DashboardStatus.Failed, "source is a first-class, neutral evidence area");
+    }
+
+    [Fact]
+    public void Available_is_not_reviewed_and_analyzed_is_not_verified()
+    {
+        var workspace = WorkspaceSnapshots.AllRoles();
+        var health = DashboardPresentation.Health(workspace, Readiness(workspace), NoReviews);
+        health.Should().NotContain(a => a.Status == DashboardStatus.ReadyToReview, "available input is never shown as a review status");
+        health.Single(a => a.Key == "governance").Status.Should().NotBe(DashboardStatus.Passed, "available documents are not reviewed documents");
+        health.Single(a => a.Key == "delivery").Explanation.Should().Contain("Release readiness: Not assessed");
+        DashboardPresentation.ReviewReadiness(workspace, Readiness(workspace), NoReviews).Single(r => r.Key == "target").Text
+            .Should().Be("Required only for runtime-dependent reviews.");
+        DashboardPresentation.Label(DashboardStatus.ReadyToReview).Should().Be("Available");
     }
 }

@@ -34,7 +34,7 @@
     </div>
 }
 
-    <PageHeader Title="SDD Governance Dashboard" Description="What BirkNext found in your project, what needs attention, and what to do next.">
+    <PageHeader Title="SDD Governance Dashboard" Description="A cross-review governance overview: evidence availability, analysis state, manual reviews and actual results — reported separately.">
         @if (_hasAnyScore)
         {
             <span class="db-pill is-@(_overallScore >= 80 ? "good" : "attention")" data-testid="db-quality-among-assessed">@_overallScoreLabel</span>
@@ -144,7 +144,8 @@
         @* ══ 3 · What BirkNext found · 4 · Needs attention ══════════════════════ *@
         <div class="db-overview-grid">
             <section class="db-panel" aria-labelledby="db-found-heading" data-testid="db-found">
-                <h2 id="db-found-heading" class="db-h2">What BirkNext found</h2>
+                <h2 id="db-found-heading" class="db-h2">Evidence inventory</h2>
+                <p class="db-muted" data-testid="db-inventory-note">Inventory only — presence does not mean reviewed or verified.</p>
                 @if (_found.Count == 0)
                 {
                     <p class="db-muted">No project documents were found.</p>
@@ -188,7 +189,7 @@
                 <h2 id="db-attention-heading" class="db-h2">Needs attention</h2>
                 @if (_attention.Count == 0)
                 {
-                    <p class="db-muted" data-testid="db-attention-none">Nothing needs attention right now.</p>
+                    <p class="db-muted" data-testid="db-attention-none">Nothing needs attention right now. Optional reviews that have not run are listed under Available next reviews.</p>
                 }
                 else
                 {
@@ -218,10 +219,28 @@
             </section>
         </div>
 
-        @* ══ 5 · Review readiness (to start reviewing) ════════════════════════════ *@
+        @* Available next reviews: not problems — optional reviews, applicable reviews, runtime reviews waiting for setup. *@
+        @if (_nextReviews.Count > 0)
+        {
+            <section class="db-section" aria-labelledby="db-next-reviews-heading" data-testid="db-next-reviews">
+                <h2 id="db-next-reviews-heading" class="db-h2">Available next reviews</h2>
+                <ul class="db-attention-list">
+                    @foreach (var item in _nextReviews)
+                    {
+                        <li class="db-attention-item is-info" data-testid="db-next-review" data-key="@item.Key">
+                            <span class="db-attention-kind">Available</span>
+                            <div class="db-attention-body"><span class="db-attention-text">@item.Text</span>@if (item.Detail is { Length: > 0 } d) { <span class="db-attention-detail">@d</span> }</div>
+                            <a href="@item.Href" class="db-attention-action">@item.ActionLabel</a>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @* ══ 5 · Review availability ════════════════════════════ *@
         <section class="db-section" aria-labelledby="db-readiness-heading" data-testid="db-review-readiness">
-            <h2 id="db-readiness-heading" class="db-h2">Review readiness</h2>
-            <p class="db-section-lead">Can reviews and tests start? This is about available inputs — not a quality result and not a release decision.</p>
+            <h2 id="db-readiness-heading" class="db-h2">Review availability</h2>
+            <p class="db-section-lead">Shows whether required input exists for a review. Available does not mean reviewed, passed, verified or release-ready.</p>
             <ul class="db-readiness-list">
                 @foreach (var row in _readiness)
                 {
@@ -237,7 +256,7 @@
 
     @* ══ 6 · Project Health ═══════════════════════════════════════════════════════ *@
     <section class="db-section" aria-labelledby="db-health-heading" data-testid="db-health">
-        <h2 id="db-health-heading" class="db-h2">Project Health</h2>
+        <h2 id="db-health-heading" class="db-h2">Assessment status</h2>
         @{
             var prominent = _health.Where(a => a.Prominent).ToList();
             var compact = _health.Where(a => !a.Prominent).ToList();
@@ -349,7 +368,7 @@
 
     @* ══ Top Risks: "no risks" only after an assessment ═══════════════════════ *@
     <section class="db-section" aria-labelledby="db-risks-heading" data-testid="db-risks" data-assessed="@(_risks.Assessed ? "true" : "false")">
-        <h2 id="db-risks-heading" class="db-h2">Top Risks</h2>
+        <h2 id="db-risks-heading" class="db-h2">Current review risks</h2>
         @{
             var topRisks = _topRisks.ToList();
         }
@@ -834,6 +853,7 @@
     private DashboardNextStep? _nextStep => _workspace is null ? null : DashboardPresentation.NextStep(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardFoundFact> _found => _workspace is null ? [] : DashboardPresentation.Found(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? [] : DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews);
+    private IReadOnlyList<DashboardAttentionItem> _nextReviews => _workspace is null ? [] : DashboardPresentation.AvailableNextReviews(_workspace, _workflowReadiness, _reviews);
     private IReadOnlyList<DashboardReadinessRow> _readiness => _workspace is null ? [] : DashboardPresentation.ReviewReadiness(_workspace, _workflowReadiness, _reviews);
     private IReadOnlyList<DashboardHealthArea> _health => DashboardPresentation.Health(_workspace, _workflowReadiness, _reviews);
     private DashboardRiskState _risks => DashboardPresentation.Risks(_reviews);
@@ -1029,7 +1049,7 @@
 
     private string _assessmentCoverageLabel => _quality.CoverageLabel;
 
-    private string _overallScoreLabel => "Quality among assessed: " + (_overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk");
+    private string _overallScoreLabel => "Quality status for assessed areas only: " + (_overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk");
 
     // ── Top risks ─────────────────────────────────────────────────────────────
 
