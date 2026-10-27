@@ -94,7 +94,7 @@ public sealed class ApiReviewAccessThresholdCleanupTests
     {
         var targets = new[] { Target("rest", ApiReviewTargetType.Rest, true), Target("gql", ApiReviewTargetType.GraphQl, true) };
         var rows = ApiReviewPresentation.TargetAccess(targets, ["rest", "gql"], ApiReviewAccessAvailability.Available);
-        rows.Should().HaveCount(2).And.OnlyContain(r => r.Ready && r.Requirement == "Authenticated" && r.State == "Ready");
+        rows.Should().HaveCount(2).And.OnlyContain(r => r.Ready && r.Requirement == "Authenticated" && r.State == "Authenticated API context available");
         rows.Select(r => r.Type).Should().BeEquivalentTo(["REST", "GraphQL"]);
     }
 
@@ -106,7 +106,7 @@ public sealed class ApiReviewAccessThresholdCleanupTests
         rows.Single(r => r.Requirement == "Public").Ready.Should().BeTrue();
         var authenticated = rows.Single(r => r.Requirement == "Authenticated");
         authenticated.Ready.Should().BeFalse();
-        authenticated.State.Should().Be("Authenticated context unavailable");
+        authenticated.State.Should().Be("Authenticated API context unavailable");
         // Unselected targets are not counted.
         ApiReviewPresentation.TargetAccess(targets, ["rest"], ApiReviewAccessAvailability.Available).Should().ContainSingle();
     }

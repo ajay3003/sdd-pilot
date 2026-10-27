@@ -43,7 +43,7 @@
         var targetAccess = ApiReviewPresentation.TargetAccess(_targets, _selected, access.Availability);
         var readyTargets = targetAccess.Count(t => t.Ready);
         var targetSummary = _context is null ? null : ApiReviewPresentation.TargetSummary(_context, _capabilities, _targets);
-        var targetReviews = ApiReviewPreRunPresentation.TargetReviews(_targets, _selected, access.Availability, _schemaArtifacts, _history?.LastReport);
+        var targetReviews = ApiReviewPreRunPresentation.TargetReviews(_targets, _selected, access.Availability, _schemaArtifacts, _history?.LastReport, _contractBindings);
     }
 
     @if (_report is null)
@@ -159,7 +159,7 @@
                 <div data-testid="aqr-access">
                     <dt>Access</dt>
                     <dd>
-                        <strong class="aqr-access-count" data-testid="aqr-target-access-summary" data-ready="@readyTargets" data-count="@targetAccess.Count">@readyTargets/@targetAccess.Count ready</strong>
+                        <strong class="aqr-access-count" data-testid="aqr-target-access-summary" data-ready="@readyTargets" data-count="@targetAccess.Count">@readyTargets/@targetAccess.Count available</strong>
                         <span class="aqr-muted aqr-strip-note" data-testid="aqr-access-mode">@(targetAccess.Count == 0 ? "No API targets selected" : ApiReviewPresentation.ApiAccessLabel(access.Availability, targetAccess.Any(t => t.Requirement == "Authenticated")))</span>
                     </dd>
                 </div>
@@ -184,13 +184,22 @@
                         <p class="aqr-mono aqr-target-review-endpoint" data-testid="aqr-target-review-endpoint">@(ApiReviewPresentation.SafeEndpointUrl(review.Target) ?? ApiReviewPresentation.SafeEndpointPath(review.Target))</p>
                         <dl class="aqr-target-facts">
                             <div><dt>Type</dt><dd>@review.Type</dd></div>
-                            <div><dt>Runtime review</dt><dd data-testid="aqr-target-review-runtime">@(review.AccessReady ? "Ready" : "Blocked — access unavailable")</dd></div>
+                            <div><dt>Runtime review</dt><dd data-testid="aqr-target-review-runtime">@(review.AccessReady ? "Available" : "Blocked — access unavailable")</dd></div>
                             <div><dt>Access</dt><dd data-testid="aqr-target-review-access">@review.Access@(review.AccessReady ? "" : " · unavailable")</dd></div>
                             <div><dt>Operations</dt><dd>@review.Operations</dd></div>
                             <div><dt>@review.ContractLabel</dt><dd data-testid="aqr-target-review-contract">@review.ContractValue</dd></div>
                             @if (review.FallbackValue is { } fallback)
                             {
-                                <div><dt>Fallback schema</dt><dd data-testid="aqr-target-review-fallback">@fallback</dd></div>
+                                <div><dt>Published schema</dt><dd data-testid="aqr-target-review-fallback">@fallback</dd></div>
+                                <div><dt>Contract compatibility</dt><dd data-testid="aqr-target-review-compatibility">@(fallback == "Configured" ? "Available to assess" : "Not assessed until schema evidence exists")</dd></div>
+                            }
+                            else if (review.Binding is { } binding)
+                            {
+                                <div><dt>Contract compatibility</dt><dd data-testid="aqr-target-review-compatibility">@binding.CompatibilityLabel</dd></div>
+                                @if (binding.SnapshotId is { } snapshotId && binding.State == ApiReviewContractBindingState.SourceBound)
+                                {
+                                    <div><dt>Contract provenance</dt><dd data-testid="aqr-target-review-contract-provenance">@binding.File · @binding.SnapshotSource · snapshot <code title="@snapshotId">@snapshotId.ToString("N")[..8]</code></dd></div>
+                                }
                             }
                         </dl>
                         @if (review.ContractNote is { } note) { <p class="aqr-muted aqr-target-review-note" data-testid="aqr-target-review-note">@note</p> }
@@ -209,7 +218,7 @@
                             case ApiReviewTargetAction.ConfigureContract:
                                 @if (_context?.ActiveProfileOrNull is { } contractProfile)
                                 {
-                                    <a class="aqr-link" data-testid="aqr-target-configure-contract" href="@ContractConfigurationHref(contractProfile.Id)">Configure OpenAPI contract</a>
+                                    <a class="aqr-link" data-testid="aqr-target-configure-contract" href="@ContractConfigurationHref(contractProfile.Id)">Choose contract (override)</a>
                                 }
                                 break;
                             case ApiReviewTargetAction.ConfigureFallback:
@@ -333,7 +342,7 @@
                 <ReviewDisclosure Text="Source contract evidence" CollapseText="Hide source contract evidence" Hint="Published contract in a Source Analysis snapshot · separate from runtime behaviour" TestId="aqr-source-contracts" Class="aqr-detail-disclosure" @bind-Expanded="_sourceContractsExpanded">
                     @if (_sourceContractsExpanded) { <BirkNext.Web.Components.SourceDomains.SourceContractEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" /> }
                 </ReviewDisclosure>
-                <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="API, security and smoke checks configured in pipeline source · not passed" TestId="aqr-delivery-gates" Class="aqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
+                <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="@DeliveryGateStates.NoSnapshot" TestId="aqr-delivery-gates" Class="aqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
                     @if (_deliveryExpanded) { <BirkNext.Web.Components.DeliveryEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" Categories="@([BirkNext.PipelineReview.ValidationCategory.Api, BirkNext.PipelineReview.ValidationCategory.Security, BirkNext.PipelineReview.ValidationCategory.Smoke, BirkNext.PipelineReview.ValidationCategory.HealthCheck, BirkNext.PipelineReview.ValidationCategory.Contract])" /> }
                 </ReviewDisclosure>
                 <ReviewDisclosure Text="Test data readiness" CollapseText="Hide test data readiness" Hint="Shared Test Data catalog · aliases and approval only, never values" TestId="aqr-test-data" Class="aqr-detail-disclosure" @bind-Expanded="_testDataExpanded">
@@ -516,9 +525,9 @@
 
                 @* Obligations, not defects: never added to issue or finding counts, never a warning or failure. *@
                 <section class="aqr-overview-section aqr-manual" data-testid="aqr-manual-review" aria-labelledby="aqr-manual-heading">
-                    <h3 id="aqr-manual-heading">@(report.ManualReviewItems.Count > 0 ? $"Manual review required — {report.ManualReviewItems.Count} {(report.ManualReviewItems.Count == 1 ? "area" : "areas")}" : "Manual review not required")</h3>
-                    <p class="aqr-muted" data-testid="aqr-manual-count">@report.ManualReviewItems.Count @(report.ManualReviewItems.Count == 1 ? "area remains" : "areas remain") outside the automated, read-only review. These are residual review obligations, not findings.</p>
-                    <ul class="aqr-manual-areas" data-testid="aqr-manual-areas">@foreach (var m in report.ManualReviewItems) { <li>@m</li> }</ul>
+                    <h3 id="aqr-manual-heading">@ApiReviewPostRunPresentation.ManualReviewLabel(report)</h3>
+                    <p class="aqr-muted" data-testid="aqr-manual-count">@ApiReviewPresentation.ManualReviewAreas.Count areas remain outside the automated, read-only review. These are residual review obligations, not findings. @ApiReviewPostRunPresentation.ManualReviewAreasNote</p>
+                    <ul class="aqr-manual-areas" data-testid="aqr-manual-areas">@foreach (var m in ApiReviewPresentation.ManualReviewAreas) { <li>@m</li> }</ul>
                     <ReviewDisclosure Text="View manual review details" CollapseText="Hide manual review details" TestId="aqr-limitations" Class="disclosure-inline disclosure-small">
                         <p class="aqr-muted">This review is intentionally read-only. These areas are not automatically assessed:</p>
                         <ul class="aqr-list" data-testid="aqr-limitation-areas">
@@ -725,6 +734,22 @@
     private AuthenticatedReviewCapabilities? _capabilities;
     private List<ApiReviewTarget> _targets = [];
     private IReadOnlyDictionary<string, GraphQlSchemaArtifact> _schemaArtifacts = new Dictionary<string, GraphQlSchemaArtifact>();
+    /// <summary>REST contract per target, resolved from existing evidence (configured URL, then Source Analysis contract evidence). Never copied.</summary>
+    private IReadOnlyDictionary<string, ApiReviewContractBinding> _contractBindings = new Dictionary<string, ApiReviewContractBinding>();
+
+    /// <summary>Resolves REST contracts from this environment's Source Analysis snapshots (read-only); failure leaves configured/none bindings.</summary>
+    private async Task LoadContractBindingsAsync()
+    {
+        var snapshots = (IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot>)[];
+        if (_context is not null && _targets.Any(t => t.ApiType == ApiReviewTargetType.Rest)
+            && ServiceProvider.GetService<IIntegrationCatalogApiService>() is { } api)
+        {
+            try { snapshots = await api.ListSourceSnapshotsAsync(_context.ActiveProfile.Id); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException) { snapshots = []; }
+        }
+        _contractBindings = _targets.Where(t => t.ApiType == ApiReviewTargetType.Rest)
+            .ToDictionary(t => t.TargetId, t => ApiReviewContractBindings.Resolve(t, snapshots), StringComparer.Ordinal);
+    }
     private string? _schemaArtifactsError;
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedServices = new(StringComparer.Ordinal);
@@ -812,6 +837,7 @@
         _report ??= _history.LastReport is { } last && last.Environment.EnvironmentId == _context.ActiveProfile.Id ? last : null;
         _targets = ApiReviewTargetResolver.Resolve(_context, Discovery.GetSnapshot(_context.ActiveProfile.Id));
         await LoadSchemaArtifactsAsync();
+        await LoadContractBindingsAsync();
         _selected.Clear();
         // A selection carried in the URL (returning from a deep link, or browser Back) wins over the default selection.
         var restored = _requestedSelection?.Where(id => _targets.Any(t => t.TargetId == id)).ToList();

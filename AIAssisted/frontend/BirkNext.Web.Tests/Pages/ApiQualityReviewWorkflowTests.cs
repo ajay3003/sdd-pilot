@@ -199,7 +199,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 selected");
         page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL · 1 authenticated");
-        page.Find("[data-testid=aqr-decision-counts]").TextContent.Should().Be("2 API targets selected · 2/2 access ready");
+        page.Find("[data-testid=aqr-decision-counts]").TextContent.Should().Be("2 API targets selected · 2/2 access available");
         page.FindAll("[data-testid=aqr-target-review]").Select(r => r.QuerySelector("[data-testid=aqr-target-review-access]")!.TextContent.Trim())
             .Should().BeEquivalentTo(["Authenticated", "Public"], "access requirements are stated per target");
 
@@ -251,11 +251,11 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         var accessCard = page.Find("[data-testid=aqr-access]");
         // Mixed scope: the public target is ready, the authenticated one is not — public reachability never makes it ready.
-        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("1/2 ready");
+        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("1/2 available");
         var rows = page.FindAll("[data-testid=aqr-targets-table] tbody tr[data-testid=aqr-target]");
         rows.Single(r => r.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.StartsWith("Public", StringComparison.Ordinal)).QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Public · Ready");
         rows.Single(r => r.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.StartsWith("Authenticated", StringComparison.Ordinal)).QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Authenticated · Not ready");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Unavailable");
         accessCard.TextContent.Should().NotContain("Not connected", "there is no connection concept behind this state");
         page.FindAll("[data-testid=aqr-target-review][data-state=Blocked]").Should().ContainSingle()
             .Which.QuerySelector("[data-testid=aqr-target-fix-access]").Should().NotBeNull("the blocked target carries its one corrective action");
@@ -309,7 +309,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: false);
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready to run with limitations");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready for read-only review · authenticated access unavailable for some targets");
         page.Find("[data-testid=aqr-run]").HasAttribute("disabled").Should().BeFalse();
         page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated API context unavailable");
         page.Find("[data-testid=aqr-run-action]").TextContent.Should().Be("Open Authentication setup");
@@ -382,11 +382,11 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
             .Should().Be("Structural review available. Published contract comparison unavailable.");
 
         var rest = page.Find("[data-testid=aqr-target-review][data-type=REST]");
-        rest.GetAttribute("data-state").Should().Be("Limited");
-        rest.QuerySelector("[data-testid=aqr-target-review-contract]")!.TextContent.Should().Be("Not configured");
+        rest.GetAttribute("data-state").Should().Be("Ready", "a missing contract never makes a target's read-only review limited");
+        rest.QuerySelector("[data-testid=aqr-target-review-contract]")!.TextContent.Should().Be("Not available");
         rest.QuerySelector("[data-testid=aqr-target-review-runs]")!.TextContent.Should().Contain("Structural response review");
-        rest.QuerySelector("[data-testid=aqr-target-review-not-runs]")!.TextContent.Should().Contain("Contract compatibility validation");
-        rest.QuerySelector("[data-testid=aqr-target-configure-contract]").Should().NotBeNull();
+        rest.QuerySelector("[data-testid=aqr-target-review-not-runs]")!.TextContent.Should().Contain("Contract compatibility (not assessed)");
+        rest.QuerySelector("[data-testid=aqr-target-configure-contract]").Should().BeNull("a contract is chosen only to resolve ambiguity or to override");
     }
 
     // 27. GraphQL stays in the review; only its schema evidence is limited.
@@ -463,7 +463,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         var manual = page.Find("[data-testid=aqr-manual-review]");
         manual.TextContent.Should().Contain("review obligations, not findings");
-        manual.TextContent.Should().Contain("Write operations").And.Contain("Access control between roles/tenants");
+        manual.TextContent.Should().Contain("Write operations").And.Contain("Authorization between roles and tenants").And.Contain("individual check");
         page.Find("[data-testid=aqr-manual-count]").TextContent.Should().StartWith("3 areas remain");
 
         // 38. The finding total counts findings only; the three obligations are not added to it.
@@ -495,7 +495,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         // Execution state and manual-review obligation are separate badges: the execution state alone must still be exact.
         // Task 10 §6: execution is its own fact — and a run where a service was never executed says so.
         page.Find("[data-testid=aqr-outcome-execution] dd").TextContent.Trim().Should().Be("Completed — partial coverage");
-        page.Find("[data-testid=aqr-outcome-coverage] dd").TextContent.Trim().Should().Be("Limited");
+        page.Find("[data-testid=aqr-outcome-coverage] dd").TextContent.Trim().Should().Be("Partial");
         page.Find("[data-testid=aqr-result-manual]").TextContent.Should().Contain("Manual review required");
         page.Find("[data-testid=aqr-result-summary-text]").TextContent
             .Should().Contain("could not be reached").And.Contain("never as a pass");

@@ -124,7 +124,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
 
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy");
         page.FindAll("[data-testid=aqr-target]").Should().HaveCount(2).And.OnlyContain(t => t.GetAttribute("data-auth") == "true");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Unavailable");
         page.Find("[data-testid=aqr-decide]").TextContent.Should().NotContain("Not connected");
     }
 
@@ -135,7 +135,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         var review = Register(context, authenticated: true, Ep("/api/children", auth: true), Ep("/api/graphql-v2", auth: true, ObservedTrafficCategory.GraphQl, GraphQlOperationType.Query, "GetChildren"));
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Available");
 
         await page.InvokeAsync(() => RunButton(page).Click());
 
@@ -144,7 +144,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.Find("[data-testid=aqr-result-env]").TextContent.Should().Be("M2LB DEV");
         page.FindAll("[data-testid=aqr-service-row]").Should().HaveCount(2);
         // The stub report records no contract: reviewed, with that limitation stated — never "Reviewed" as if validated.
-        page.FindAll("[data-testid=aqr-service-status]").Should().OnlyContain(e => e.TextContent == "Reviewed with limitation");
+        page.FindAll("[data-testid=aqr-service-status]").Should().OnlyContain(e => e.TextContent.StartsWith("Runtime ") && !e.TextContent.Contains("Reviewed"), "never a generic Reviewed");
         page.FindAll("[data-testid=aqr-service-findings]").Should().OnlyContain(e => e.TextContent == "0");
         page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("None executed", "the stub report carries no coverage counters; the label never infers execution from the access mode");
         page.Find("[data-testid=aqr-tab-findings]").Click();
@@ -160,7 +160,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain("1 of 2");
         await page.InvokeAsync(() => RunButton(page).Click());
         page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-service-status]").Should().HaveCount(2));
-        page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).Should().BeEquivalentTo(["Reviewed with limitation", "Authentication required"]);
+        page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).Should().BeEquivalentTo(["Runtime review completed · contract validation unavailable", "Authentication required"]);
         page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["0", "Not tested"]);
     }
 

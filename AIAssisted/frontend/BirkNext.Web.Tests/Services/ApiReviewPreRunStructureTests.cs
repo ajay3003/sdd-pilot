@@ -39,19 +39,22 @@ public sealed class ApiReviewPreRunStructureTests : BunitContext
     {
         var review = ApiReviewPreRunPresentation.Review(Rest(), ApiReviewAccessAvailability.Available, hasFallback: false, schemaUnavailablePreviously: false);
         review.AccessReady.Should().BeTrue("a missing contract never makes the runtime review unavailable");
-        review.StatusLine.Should().Be("Runtime ready · Contract limited");
-        review.WillRun.Should().Contain(["Security", "Error handling", "Performance"]);
+        review.StatusLine.Should().Be("Runtime review available · Not available");
+        review.State.Should().Be(ApiReviewTargetReviewState.Ready, "a missing contract is a coverage note, not a limitation");
+        review.Binding!.CompatibilityLabel.Should().Be("Not assessed");
+        review.WillRun.Should().Contain(["Security", "Error handling", "Response timing"]);
     }
 
     [Fact]
     public void GraphQlRuntimeSchema_IsLabelledRuntime_AndAMissingSchemaIsExplicit()
     {
         ApiReviewPreRunPresentation.Review(GraphQl(), ApiReviewAccessAvailability.Available, false, false).StatusLine
-            .Should().Be("Runtime ready · Runtime schema");
+            .Should().Be("Runtime review available · Published schema not available · runtime schema via introspection", "never a schema claim before it is observed");
         var unavailableBefore = ApiReviewPreRunPresentation.Review(GraphQl(), ApiReviewAccessAvailability.Available, false, schemaUnavailablePreviously: true);
-        unavailableBefore.StatusLine.Should().Be("Runtime ready · Runtime schema · limited (unavailable previously)");
+        unavailableBefore.ContractValue.Should().Be("Unavailable previously — introspection attempted again during review");
+        unavailableBefore.State.Should().Be(ApiReviewTargetReviewState.Ready);
         ApiReviewPreRunPresentation.KnownLimitations([unavailableBefore], new AuthorizationCheckSummary([]))
-            .Should().ContainSingle(l => l.Area.EndsWith("GraphQL schema") && l.Text.Contains("unavailable previously"));
+            .Should().ContainSingle(l => l.Area.EndsWith("GraphQL schema") && l.Text.Contains("Published schema: Not available") && l.Text.Contains("not a published contract"));
     }
 
     [Fact]
@@ -75,9 +78,9 @@ public sealed class ApiReviewPreRunStructureTests : BunitContext
         var summary = ApiReviewPreRunPresentation.AuthorizationBlockerSummary(authorization);
         summary.Should().Contain("1 ").And.Contain("No approved test identity is mapped for role reader").And.Contain("not permitted for this Target Environment");
         var limitations = ApiReviewPreRunPresentation.KnownLimitations(reviews, authorization);
-        limitations.Should().Contain(l => l.Area == "Authorization checks" && l.Text == summary);
+        limitations.Should().Contain(l => l.Area == "Authorization checks" && l.Text == "Optional · not ready — non-blocking. " + summary);
         ApiReviewPreRunPresentation.ReadinessSummary(reviews, limitations)
-            .Should().Be("1 API target is ready for read-only review. Needs attention: 1 known limitation and optional authorization checks — none of them blocks the read-only review.");
+            .Should().Be("1 API target is ready for read-only review. Contract coverage: partial (1 coverage note). Optional active checks unavailable — non-blocking.");
     }
 
     /// <summary>A blank reason from the shared catalog is never rendered as "— ."; unknown permission says it could not be confirmed.</summary>

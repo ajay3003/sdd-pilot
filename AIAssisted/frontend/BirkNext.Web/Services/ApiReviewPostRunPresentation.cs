@@ -32,6 +32,8 @@ public static class ApiReviewStatusTaxonomy
     private static readonly HashSet<string> ObservationalWhenPassing = new(StringComparer.Ordinal)
     {
         "cors-preflight", "cors-policy", "gql-introspection", "errors-leak", "gql-error-leak",
+        // A lightweight __typename reachability query asserts nothing about the API's quality: it was reached.
+        "gql-reachability",
     };
 
     public static ApiReviewCanonicalStatus Of(ApiReviewCheck check, ApiReviewPolicy policy) => check.Result switch
@@ -63,7 +65,18 @@ public static class ApiReviewStatusTaxonomy
         var status = Of(check, policy);
         // A drift comparison that ran and found nothing is said as exactly that — never "Passed", which reads as contract coverage.
         if (check.Area == ApiReviewFindingType.Drift && status == ApiReviewCanonicalStatus.Passed) return "No changes detected";
-        if (check.CheckId is "rest-latency" or "gql-latency" or "rest-payload" or "gql-payload" && check.Area == ApiReviewFindingType.Performance)
+        // Timing is the review's own bounded requests against an AQR warning threshold — never a performance pass.
+        if (check.CheckId is "rest-latency" or "gql-latency" && check.Area == ApiReviewFindingType.Performance)
+        {
+            if (status == ApiReviewCanonicalStatus.Passed) return "Within configured single-request threshold";
+            if (status == ApiReviewCanonicalStatus.IssueDetected) return "Above configured single-request threshold";
+        }
+        if (check.CheckId is "rest-average-latency" or "gql-average-latency")
+        {
+            if (status == ApiReviewCanonicalStatus.Passed) return "Observed average within configured review threshold";
+            if (status == ApiReviewCanonicalStatus.IssueDetected) return "Observed average above configured review threshold";
+        }
+        if (check.CheckId is "rest-payload" or "gql-payload" && check.Area == ApiReviewFindingType.Performance)
         {
             if (status == ApiReviewCanonicalStatus.Passed) return "Within configured review threshold";
             if (status == ApiReviewCanonicalStatus.IssueDetected) return "Exceeded configured review threshold";
@@ -140,8 +153,8 @@ public static class ApiReviewPostRunPresentation
             },
             result.State == ApiReviewResultState.FailedToRun ? "Incomplete"
                 : result.IssueCount > 0 ? "Issues identified" : "No automated issues identified",
-            report.ManualReviewItems.Count > 0 ? $"Manual review required — {report.ManualReviewItems.Count} area{(report.ManualReviewItems.Count == 1 ? "" : "s")}" : "Not required",
-            coverage.Any(c => c.Limited) ? "Limited" : "Complete",
+            ManualReviewLabel(report),
+            coverage.Any(c => c.Limited) ? "Partial" : "Complete",
             coverage.Any(c => c.Limited),
             result.IssueCount,
             result.FindingCount,
@@ -168,34 +181,40 @@ public static class ApiReviewPostRunPresentation
             var executed = rest.Any(t => t.Operations.Any(o => o.Executed));
             var contract = rest.All(t => t.Contract is { Available: true });
             rows.Add(!executed ? new("rest", "REST", "Not assessed", NotExecutedReason(rest), true, "REST")
-                : contract ? new("rest", "REST", "Reviewed", null, false, "REST")
-                : new("rest", "REST", "Reviewed — contract validation unavailable", "No OpenAPI contract was configured.", true, "REST"));
+                : contract ? new("rest", "REST", "Runtime review completed", null, false, "REST")
+                : new("rest", "REST", "Runtime review completed · contract validation unavailable", "No REST contract was available to validate against.", true, "REST"));
         }
         if (gql.Count > 0)
         {
             var executed = gql.Any(t => t.Operations.Any(o => o.Executed));
             var schema = gql.All(t => t.Contract is { Available: true } || t.GraphQlCompatibility?.SchemaSource is not null and not GraphQlSchemaSource.None);
+            var systemOnly = gql.SelectMany(t => t.Operations.Where(o => o.Executed)).All(IsSystemQuery);
             rows.Add(!executed ? new("graphql", "GraphQL", "Not assessed", NotExecutedReason(gql), true, "GraphQL")
-                : schema ? new("graphql", "GraphQL", "Reviewed", null, false, "GraphQL")
-                : new("graphql", "GraphQL", "Reviewed — runtime schema unavailable", SchemaReason(gql), true, "GraphQL"));
+                : systemOnly ? new("graphql", "GraphQL", schema ? "Runtime reachability reviewed · business operations not executed" : "Runtime reachability reviewed · runtime schema unavailable",
+                    schema ? "Only a lightweight system query was executed; observed business operations were not executed." : SchemaReason(gql), true, "GraphQL")
+                : schema ? new("graphql", "GraphQL", "Runtime review completed", null, false, "GraphQL")
+                : new("graphql", "GraphQL", "Runtime review completed · runtime schema unavailable", SchemaReason(gql), true, "GraphQL"));
         }
 
-        var contractsComplete = report.Targets.Count > 0 && report.Targets.All(t => t.Contract is { Available: true }) && DriftCompared(report);
-        rows.Add(contractsComplete ? new("contracts", "Contracts", "Assessed", null, false, "Contracts")
-            : new("contracts", "Contracts", "Incomplete", ContractsReason(report), true, "Contracts"));
+        // A first run has no baseline to compare against: that is not yet applicable, never a coverage reduction (as before the run).
+        var contractsAvailable = report.Targets.Count > 0 && report.Targets.All(t => t.Contract is { Available: true });
+        rows.Add(contractsAvailable && DriftCompared(report) ? new("contracts", "Contracts", "Assessed", null, false, "Contracts")
+            : contractsAvailable ? new("contracts", "Contracts", "Assessed · no previous baseline to compare", ContractsReason(report), false, "Contracts")
+            : new("contracts", "Contracts", "Not fully assessed", ContractsReason(report), true, "Contracts"));
 
         var security = checks.Where(c => c.Area is ApiReviewFindingType.Security or ApiReviewFindingType.AccessControl).ToList();
-        rows.Add(security.Any(Decided) ? new("security", "Security", "Reviewed", null, false, "Security")
+        rows.Add(security.Any(Decided) ? new("security", "Security", "Assessed", null, false, "Security")
             : new("security", "Security", "Not assessed", "No security check could run on the reviewed responses.", true, "Security"));
 
         var errors = checks.Where(c => c.Area == ApiReviewFindingType.Errors).ToList();
-        rows.Add(errors.Any(Decided) ? new("errors", "Error handling", "Reviewed", null, false, "Errors")
+        rows.Add(errors.Any(Decided) ? new("errors", "Error handling", "Assessed", null, false, "Errors")
             : new("errors", "Error handling", "Not assessed", "No error response could be requested with a safe request.", true, "Errors"));
 
         // Authentication enforcement (an anonymous request refused) is not authorization correctness, which needs identity expectations.
         if (report.Targets.Any(t => t.Target.AuthRequired))
-            rows.Add(new("authorization", "Authorization correctness", "Not assessed — manual / active checks required",
-                "Requires identity expectations and dedicated authorization checks.", true, "Security"));
+            // Inherent to a read-only review without (optional) authorization checks: listed, never a coverage reduction or a decision input.
+            rows.Add(new("authorization", "Authorization correctness", "Not assessed — optional authorization checks or manual review required",
+                "Requires identity expectations and dedicated authorization checks.", false, "Security"));
 
         var measured = Measured(report);
         var legacy = ApiReviewPresentation.Summary(report).Coverage.ToDictionary(r => r.Label, r => string.Join(" · ", new[] { r.Value, r.Detail }.Where(x => !string.IsNullOrWhiteSpace(x))));
@@ -205,10 +224,26 @@ public static class ApiReviewPostRunPresentation
             rows.Add(new("writes", "Write operations", "Observed — not executed", $"{report.Coverage.UnsafeOperationsNotExecuted} write operation{(report.Coverage.UnsafeOperationsNotExecuted == 1 ? "" : "s")} observed; the read-only review policy never executes them.", false, "REST"));
         rows.Add(measured == 0
             ? new("performance", "Performance", "Not assessed", "No review request was measured.", true, "Performance")
-            : new("performance", "Performance", $"Observed — limited sample ({measured} request{(measured == 1 ? "" : "s")})",
-                $"Only the review's own {measured} read-only request{(measured == 1 ? "" : "s")} {(measured == 1 ? "was" : "were")} measured; this is not load testing.", true, "Performance"));
+            : new("performance", "Performance", $"Response timing observed ({measured} bounded request{(measured == 1 ? "" : "s")}) · representative performance not assessed",
+                PerformanceScope, false, "Performance"));
         return rows;
     }
+
+    public const string PerformanceScope = "This is API response timing from the review's own bounded requests. It is not load, stress, browser, production or representative end-user performance testing.";
+
+    /// <summary>"Manual review required — 3 areas (8 individual checks/obligations)". Areas group obligations; they are never the check count.</summary>
+    public static string ManualReviewLabel(ApiReviewReport report)
+    {
+        var areas = ApiReviewPresentation.ManualReviewAreas.Count;
+        var checks = ManualReviewChecks(report);
+        return areas == 0 ? "Not required" : $"Manual review required — {areas} area{(areas == 1 ? "" : "s")} · {checks} individual check{(checks == 1 ? "" : "s")}/obligation{(checks == 1 ? "" : "s")}";
+    }
+
+    /// <summary>Individual manual-review items: the obligations under the areas, plus checks the review itself marked for manual review.</summary>
+    public static int ManualReviewChecks(ApiReviewReport report) =>
+        ApiReviewPresentation.LimitationSummary.Count + ApiReviewEvidencePresentation.Checks(report).Count(c => c.Result == ApiReviewCheckResult.ManualReview);
+
+    public const string ManualReviewAreasNote = "Areas group related manual-review obligations; the number of areas is not the number of individual checks.";
 
     public const string NoComparableRuntimeBaseline = "No previous comparable runtime baseline";
     public const string FirstRuntimeBaseline = "This run recorded the first runtime structural baseline (source: runtime observation). It is not a contract baseline.";
@@ -233,8 +268,8 @@ public static class ApiReviewPostRunPresentation
             rows.Add(new("graphql-schema", "GraphQL compatibility not assessed", SchemaReason(gqlWithout) + " The endpoint itself responded; this may be an intentional security posture.")
                 { Category = "Schema / compatibility", Tab = "GraphQL" });
         if (Measured(report) is var measured and > 0)
-            rows.Add(new("performance", "Performance: limited sample",
-                $"{measured} request{(measured == 1 ? "" : "s")} measured — insufficient for representative performance conclusions; this is not load, stress or end-user performance testing.")
+            rows.Add(new("performance", "Representative performance: Not assessed",
+                $"{measured} bounded review request{(measured == 1 ? "" : "s")} measured. {PerformanceScope}")
                 { Category = "Performance evidence", Tab = "Performance" });
         if (!DriftCompared(report) && report.Targets.Count > 0)
             rows.Add(new("baseline", NoComparableRuntimeBaseline, FirstRuntimeBaseline) { Category = "Historical comparison", Tab = "Contracts" });
@@ -256,10 +291,12 @@ public static class ApiReviewPostRunPresentation
             "baseline" => "historical comparison",
             _ => null,
         }).Where(a => a is not null).Distinct().ToList();
-        var execution = outcome.Execution == "Failed" ? "Automated review failed to run." : "Automated review completed.";
-        var found = outcome.LogicalIssues > 0 ? "Issues were identified" : "No issues were identified";
-        return areas.Count == 0 ? $"{execution} {found}; coverage is complete for the reviewed scope."
-            : $"{execution} {found}, and coverage remains limited in {Join(areas!)}.";
+        var execution = outcome.Execution == "Failed" ? "Automated review failed to run."
+            : $"Automated runtime review completed for {outcome.ServicesReviewed}/{outcome.Services} selected service{(outcome.Services == 1 ? "" : "s")}.";
+        var found = outcome.LogicalIssues > 0 ? "Issues were identified." : "No automated issues were identified.";
+        // Says exactly what was not fully assessed — additional evidence classes, never a statement that the review was unsuccessful.
+        return areas.Count == 0 ? $"{execution} {found} Coverage is complete for the reviewed scope."
+            : $"{execution} {found} Not fully assessed: {Join(areas!)}.";
     }
 
     private static string Join(IReadOnlyList<string?> parts) => parts.Count switch
@@ -280,14 +317,19 @@ public static class ApiReviewPostRunPresentation
             : $"{executed}";
         var status = ApiReviewStatusLabels.Of(t);
         var reviewed = status is ApiReviewTargetPresentationStatus.Assessed or ApiReviewTargetPresentationStatus.PartiallyAssessed;
-        var contractLimited = t.Contract is not { Available: true };
+        var schema = t.Contract is { Available: true } || t.GraphQlCompatibility?.SchemaSource is not null and not GraphQlSchemaSource.None;
+        var systemOnly = graphQl && t.Operations.Where(o => o.Executed).All(IsSystemQuery);
+        // The service state says what automated scope actually completed — never a generic "Reviewed".
         var state = !reviewed ? ApiReviewStatusLabels.Label(status)
-            : contractLimited || status == ApiReviewTargetPresentationStatus.PartiallyAssessed ? "Reviewed with limitation" : "Reviewed";
+            : graphQl && systemOnly ? schema ? "Runtime reachability reviewed · business operations not executed" : "Runtime reachability reviewed · schema unavailable"
+            : graphQl ? schema ? "Runtime review completed" : "Runtime review completed · schema unavailable"
+            : t.Contract is not { Available: true } ? "Runtime review completed · contract validation unavailable"
+            : status == ApiReviewTargetPresentationStatus.PartiallyAssessed ? "Runtime review completed · partial" : "Runtime review completed";
         return new ApiReviewServiceSummaryRow(t, ApiReviewPresentation.DisplayName(t.Target), graphQl ? "GraphQL" : "REST",
             ApiReviewStatusLabels.AccessLabel(t.AccessMode), operations,
-            graphQl ? (t.Contract is { Available: true } ? "Runtime schema" : "Runtime schema unavailable")
-                : t.Contract is { Available: true } ? "OpenAPI contract" : "No OpenAPI contract",
-            state, state != "Reviewed");
+            graphQl ? (schema ? "Runtime schema observed" : "Runtime schema unavailable")
+                : t.Contract is { Available: true } ? "OpenAPI contract" : "Contract not available",
+            state, state != "Runtime review completed");
     }).ToList();
 
     // ── Protocol tab summaries ──────────────────────────────────────────────────────────────────────────────────────────────────

@@ -24,8 +24,8 @@ public sealed partial class ApiQualityReviewLandingUITests
             .Should().Contain(["Copy REST endpoint URL", "Copy GraphQL endpoint URL"]);
         page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(e => e.TextContent.Contains("Authenticated · Ready"));
         page.Find("[data-testid=aqr-target-authentication]").TextContent.Should().Be("Required (Microsoft Entra ID)");
-        page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("Ready to run with limitations").And.Contain("2 known limitations");
-        page.Find("[data-testid=aqr-known-limitations]").TextContent.Should().Contain("Autorisasjon API REST contract").And.Contain("Contract validation unavailable");
+        page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("Ready for read-only review · partial contract coverage").And.Contain("Contract coverage: partial (2 coverage notes)").And.NotContain("Needs attention");
+        page.Find("[data-testid=aqr-known-limitations]").TextContent.Should().Contain("Autorisasjon API REST contract").And.Contain("Not available");
         page.Find("[data-testid=aqr-domain][data-domain=contracts] [data-testid=aqr-domain-state]").TextContent.Should().Be("Limited");
         page.Find("[data-testid=aqr-domain-detail][data-domain=contracts] [data-testid=aqr-domain-limitation]").TextContent.Should().Contain("OpenAPI");
         page.Find("[data-testid=aqr-add-openapi]").TextContent.Should().Be("Configure contract");

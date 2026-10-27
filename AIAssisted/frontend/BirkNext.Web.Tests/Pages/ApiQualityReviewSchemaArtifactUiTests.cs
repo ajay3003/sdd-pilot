@@ -69,7 +69,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-schema-artifacts-disclosure]"));
         page.Find("[data-testid=aqr-schema-artifacts-disclosure] .disclosure-hint").TextContent.Should().Be("Not configured");
-        page.Find("[data-testid=aqr-target-review][data-type=GraphQL] [data-testid=aqr-target-review-fallback]").TextContent.Should().Be("Not configured");
+        page.Find("[data-testid=aqr-target-review][data-type=GraphQL] [data-testid=aqr-target-review-fallback]").TextContent.Should().Be("Not available");
         page.Find("[data-testid=aqr-schema-artifacts-disclosure] button").Click();
         page.FindAll("[data-testid=gsa-load-error]").Should().BeEmpty("a successful load shows no error");
         var target = page.Find("[data-testid=gsa-target]");

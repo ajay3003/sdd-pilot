@@ -142,7 +142,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy").And.Contain("authenticated action");
 
         // Not a network state, not a failure.
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Unavailable");
         // Per-target readiness, never a constant "Public access: Available" standing in for an authenticated target.
         page.FindAll("[data-testid=aqr-public-access]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-target-access-row]").Should().OnlyContain(r => r.GetAttribute("data-ready") == "false" && r.TextContent.Contains("Authenticated context unavailable"));
@@ -155,18 +155,18 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(AuthenticatedApiContextStatus.Available);
 
-        page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited");
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready to run with limitations");
+        page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready", "only contract coverage remains partial");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready for read-only review · partial contract coverage");
         Run(page).HasAttribute("disabled").Should().BeFalse();
         Run(page).HasAttribute("aria-describedby").Should().BeFalse();
 
         var message = page.Find("[data-testid=aqr-run-reason]").TextContent;
-        message.Should().Be("2 targets ready. REST contract validation is unavailable.");
+        message.Should().Be("2 targets ready.", "a missing contract is a coverage note, never a run limitation");
         message.Should().NotContain("Authenticated API access is required", "no stale blocker once the context exists");
         page.FindAll("[data-testid=aqr-readiness-help]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-run-action]").Should().BeEmpty();
 
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Available");
         var manage = page.Find("[data-testid=aqr-access-action]");
         manage.TextContent.Should().Be("Manage authentication");
         manage.GetAttribute("href").Should().Be(AuthHref);
@@ -183,7 +183,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(status);
 
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Unavailable");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain(reason);
         Toggle(page, "aqr-access-details").TextContent.Should().Contain(label);
         page.Markup.Should().NotContain("Not connected");
@@ -439,12 +439,11 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(AuthenticatedApiContextStatus.Available, introspectionRejectedPreviously: true);
 
-        page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
-            "2 targets ready. REST contract validation is unavailable. GraphQL schema retrieval will be retried during the review.");
+        page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be("2 targets ready.", "contract and schema gaps are coverage notes, not run limitations");
 
         var items = page.Find("[data-testid=aqr-readiness-items]").TextContent;
-        items.Should().Contain("REST contract validation unavailable — responses reviewed structurally");
-        items.Should().Contain("GraphQL schema unavailable on the previous attempt").And.Contain("retried during this review");
+        items.Should().Contain("REST contract: Not available — runtime API review still runs; contract compatibility is not assessed");
+        items.Should().Contain("GraphQL runtime schema unavailable on the previous attempt").And.Contain("introspection is attempted again");
         page.FindAll("[data-testid=aqr-readiness-limitations-toggle]").Should().BeEmpty();
     }
 
@@ -518,8 +517,8 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(AuthenticatedApiContextStatus.Available);
         page.Find("[data-testid=aqr-frontend-signin-help]").TextContent.Should().Contain("selected APIs may still require authenticated access");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
-        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("2/2 ready");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated API context: Available");
+        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("2/2 available");
     }
 }
 

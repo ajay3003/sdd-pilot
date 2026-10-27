@@ -157,9 +157,10 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
     public void CanRunWithLimitations_SeparatesReadyLimitationsAndInformational_AndRunSitsInTheDecision()
     {
         var page = Landing(authenticated: true);
-        page.WaitForAssertion(() => page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready to run with limitations"));
-        Groups(page).Should().Contain(["ready", "limitation"]).And.NotContain("blocking");
-        page.Find("[data-testid=aqr-decision-group][data-group=limitation]").TextContent.Should().Contain("REST contract validation unavailable");
+        page.WaitForAssertion(() => page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready for read-only review · partial contract coverage"));
+        // A missing contract is a neutral coverage note, never a limitation group or a blocker.
+        Groups(page).Should().Contain("ready").And.NotContain("limitation").And.NotContain("blocking");
+        page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("REST contract: Not available");
         page.Find("[data-testid=aqr-decision-group][data-group=ready]").TextContent.Should().Contain("selected");
         page.Find("[data-testid=aqr-readiness] [data-testid=aqr-run]").HasAttribute("disabled").Should().BeFalse();
         page.Find("[data-testid=aqr-run-row]").TextContent.Should().Contain("Runs the read-only review").And.Contain("Optional active checks run only when explicitly enabled and ready");

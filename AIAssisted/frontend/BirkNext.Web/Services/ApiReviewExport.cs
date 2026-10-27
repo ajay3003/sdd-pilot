@@ -37,9 +37,13 @@ public static class ApiReviewExport
         sb.Append($"<dt>Automated review</dt><dd>{esc(outcome.Execution)}</dd>");
         sb.Append($"<dt>Review outcome</dt><dd>{esc(outcome.Assessment)} ({outcome.LogicalIssues} logical issues · {outcome.SourceFindings} source findings)</dd>");
         sb.Append($"<dt>Coverage</dt><dd>{esc(outcome.Coverage)}</dd>");
+        // The same per-domain coverage rows as the page; gaps are coverage, never findings.
+        foreach (var row in ApiReviewPostRunPresentation.Coverage(report))
+            sb.Append($"<dt>Coverage · {esc(row.Domain)}</dt><dd>{esc(row.State)}</dd>");
+        sb.Append($"<dt>Performance scope</dt><dd>{esc(ApiReviewPostRunPresentation.PerformanceScope)}</dd>");
         foreach (var limitation in limitations)
             sb.Append($"<dt>Coverage gap · {esc(limitation.Category)}</dt><dd>{esc(limitation.Title)} — {esc(limitation.Reason)}</dd>");
-        sb.Append($"<dt>Manual review</dt><dd>{esc(outcome.ManualReview)} (residual obligations, not findings)</dd>");
+        sb.Append($"<dt>Manual review</dt><dd>{esc(outcome.ManualReview)} (residual obligations, not findings). {esc(ApiReviewPostRunPresentation.ManualReviewAreasNote)}</dd>");
         sb.Append($"<dt>Read-only requests executed</dt><dd>{outcome.RequestsExecuted} across {outcome.ServicesReviewed}/{outcome.Services} services</dd></dl></section>\n");
 
         var c = report.Coverage;
@@ -56,13 +60,14 @@ public static class ApiReviewExport
         sb.Append("</div>\n");
 
         sb.Append("<section class=\"block\"><h2>API services</h2>");
-        sb.Append(table(["Service", "Type", "Endpoint", "Source", "Access", "Status", "Contract", "Findings"], report.Targets.Select(t => new[]
+        // The page's service rows (ApiReviewPostRunPresentation.Services), so the export states the same review state and contract/schema facts.
+        var serviceRows = ApiReviewPostRunPresentation.Services(report);
+        sb.Append(table(["Service", "Type", "Endpoint", "Source", "Access", "Review state", "Contract / schema", "Findings"], serviceRows.Select(row => new[]
         {
-            // The same derivation the page renders, so the export cannot say "Assessed" while the UI says "Reviewed".
-            esc(t.Target.ServiceName), esc(t.Target.ApiType.ToString()), esc(t.Target.Url), esc(t.Target.Source.ToString()), esc(t.AccessMode.ToString()),
-            esc(ApiReviewStatusLabels.Label(ApiReviewStatusLabels.Of(t))),
-            esc(t.Contract is null ? "—" : $"{t.Contract.Kind}: {t.Contract.Status} {(t.Contract.Version is null ? "" : t.Contract.Version)} {(t.Contract.Hash is null ? "" : "hash " + t.Contract.Hash)}"),
-            esc(t.FindingCount is null ? "Not tested" : t.FindingCount.Value.ToString()),
+            esc(row.Result.Target.ServiceName), esc(row.Type), esc(row.Result.Target.Url), esc(row.Result.Target.Source.ToString()), esc(row.Access),
+            esc(row.ReviewState),
+            esc(row.ContractOrSchema + (row.Result.Contract is { Version: { } version } ? $" · version {version}" : "") + (row.Result.Contract is { Hash: { } hash } ? $" · hash {hash}" : "")),
+            esc(row.Result.FindingCount is null ? "Not assessed" : row.Result.FindingCount.Value.ToString()),
         })));
         sb.Append("</section>\n");
 
@@ -83,7 +88,7 @@ public static class ApiReviewExport
                     return new[]
                     {
                         esc(o.Display), esc(o.AccessMode.ToString()), o.Executed ? "yes" : "no", o.Executed ? o.StatusCode.ToString() : "—", esc(o.ContentType ?? "—"),
-                        o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—", esc(payload.Secondary is null ? payload.Primary : $"{payload.Primary} ({payload.Secondary})"), badge(o.Result.ToString()), esc(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "matched" : "not documented"), esc(o.Note ?? ""),
+                        o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—", esc(payload.Secondary is null ? payload.Primary : $"{payload.Primary} ({payload.Secondary})"), badge(ApiReviewStatusLabels.ResultLabel(o.Result)), esc(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "matched" : "not documented"), esc(o.Note ?? ""),
                     };
                 })));
                 // Detailed body evidence only where it matters: encoded responses and bodies that could not be evaluated.
@@ -172,12 +177,11 @@ public static class ApiReviewExport
 
         if (fuzzing is not null && fuzzing.EnvironmentId == env.EnvironmentId) sb.Append(ApiFuzzingExport.Section(fuzzing, table, badge, esc));
 
-        if (report.ManualReviewItems.Count > 0)
-        {
-            sb.Append("<section class=\"block\"><h2>Manual review</h2><ul>");
-            foreach (var m in report.ManualReviewItems) sb.Append($"<li>{esc(m)}</li>");
-            sb.Append("</ul></section>\n");
-        }
+        // Manual review as the page states it: areas (grouped obligations) with their individual obligations — never a second count.
+        sb.Append($"<section class=\"block\"><h2>{esc(ApiReviewPostRunPresentation.ManualReviewLabel(report))}</h2><p>{esc(ApiReviewPostRunPresentation.ManualReviewAreasNote)}</p><ul>");
+        foreach (var obligation in ApiReviewPresentation.ManualReviewObligations)
+            sb.Append($"<li><strong>{esc(obligation.Area)}</strong>: {esc(string.Join("; ", obligation.Details))}</li>");
+        sb.Append("</ul></section>\n");
         if (report.Limitations.Count > 0)
         {
             sb.Append("<section class=\"block\"><h2>Limitations</h2><ul>");

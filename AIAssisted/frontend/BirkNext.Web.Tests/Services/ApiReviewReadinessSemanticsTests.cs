@@ -69,7 +69,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: true, history);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Ready);
-        readiness.Title.Should().Be("Ready to run");
+        readiness.Title.Should().Be("Ready for read-only review");
         readiness.SelectedCount.Should().Be(2);
         readiness.CanRun.Should().BeTrue();
     }
@@ -86,11 +86,11 @@ public sealed class ApiReviewReadinessSemanticsTests
 
         var readiness = Readiness(targets, authenticated: true);
 
-        readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
-        readiness.Title.Should().Be("Ready to run with limitations");
-        readiness.Message.Should().Contain("REST contract validation is unavailable");
-        readiness.CanRun.Should().BeTrue("a missing contract limits the review, it does not block it");
-        readiness.Items.Should().Contain(i => i.Label.Contains("responses reviewed structurally") && i.State == ApiReviewReadinessItemState.Warning);
+        readiness.Level.Should().Be(ApiReviewReadinessLevel.Ready, "a missing contract is partial contract coverage, not a run limitation");
+        readiness.Title.Should().Be("Ready for read-only review · partial contract coverage");
+        readiness.Items.Select(i => i.Label).Should().Contain(t => t.StartsWith("REST contract: Not available"));
+        readiness.CanRun.Should().BeTrue("a missing contract never blocks the read-only review");
+        readiness.Items.Should().Contain(i => i.Label.Contains("runtime API review still runs") && i.State == ApiReviewReadinessItemState.Missing, "neutral, never a warning");
 
         // REST is Limited, never Unavailable: routes, statuses, headers and structure are still reviewable.
         var contracts = ApiReviewPresentation.Contracts(targets, targets.Select(t => t.TargetId).ToList(), null, null);
@@ -128,7 +128,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: false);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
-        readiness.Title.Should().Be("Ready to run with limitations");
+        readiness.Title.Should().Be("Ready for read-only review · authenticated access unavailable for some targets");
         readiness.Message.Should().Contain("Authenticated requests cannot be sent");
         readiness.ActionText.Should().Be("Open Authentication setup");
         readiness.ActionHref.Should().Be("/admin/system-settings?section=target-environments&tab=auth&profile=dev");
@@ -148,7 +148,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: false);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
-        readiness.Message.Should().Contain("Authenticated requests cannot be sent").And.Contain("REST contract validation is unavailable");
+        readiness.Message.Should().Contain("Authenticated requests cannot be sent").And.NotContain("contract", "contract coverage is never a run limitation");
         readiness.CanRun.Should().BeTrue();
     }
 

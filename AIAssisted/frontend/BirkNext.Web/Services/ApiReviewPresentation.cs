@@ -72,7 +72,7 @@ public static class ApiReviewPresentation
             var ready = !t.AuthRequired || availability == ApiReviewAccessAvailability.Available;
             return new ApiReviewTargetAccessRow(DisplayName(t), t.ApiType == ApiReviewTargetType.GraphQl ? "GraphQL" : "REST",
                 t.AuthRequired ? "Authenticated" : "Public", ready,
-                ready ? "Ready" : availability == ApiReviewAccessAvailability.Loading ? "Checking…" : "Authenticated context unavailable");
+                ready ? (t.AuthRequired ? "Authenticated API context available" : "Public access available") : availability == ApiReviewAccessAvailability.Loading ? "Checking…" : "Authenticated API context unavailable");
         }).ToList();
 
     /// <summary>The frontend entry point's sign-in rule — a fact about the frontend, never about the APIs.</summary>
@@ -148,9 +148,9 @@ public static class ApiReviewPresentation
     public static string ApiAccessLabel(ApiReviewAccessAvailability availability, bool anyTargetRequiresAuth) => availability switch
     {
         ApiReviewAccessAvailability.Loading => "Resolving…",
-        ApiReviewAccessAvailability.Available => "Authenticated available",
+        ApiReviewAccessAvailability.Available => "Authenticated API context: Available",
         _ when !anyTargetRequiresAuth => "Public only",
-        _ => "Authenticated unavailable",
+        _ => "Authenticated API context: Unavailable",
     };
 
     public static ApiReviewTargetSummaryModel TargetSummary(FrontendAnalysisContext context, AuthenticatedReviewCapabilities? capabilities, IReadOnlyList<ApiReviewTarget> targets)
@@ -306,18 +306,20 @@ public static class ApiReviewPresentation
         if (authTargets > 0 && !authenticated)
             limitations.Add($"Authenticated requests cannot be sent to {authTargets} selected {(authTargets == 1 ? "target" : "targets")}");
         // Only the limiting facts, one short clause each; the domain cards and Review details carry the explanation.
+        // Contract/schema evidence that is not available is partial contract COVERAGE, never a limitation of the read-only review.
+        var partialContract = false;
         if (restContract == ApiReviewContractState.NotConfigured)
         {
-            limitations.Add("REST contract validation is unavailable");
-            items.Add(new("REST contract validation unavailable — responses reviewed structurally", ApiReviewReadinessItemState.Warning));
+            partialContract = true;
+            items.Add(new("REST contract: Not available — runtime API review still runs; contract compatibility is not assessed", ApiReviewReadinessItemState.Missing));
         }
         if (gqlContract == ApiReviewContractState.IntrospectionUnavailable)
         {
             // The previous attempt, not this review: nothing has been retrieved or refused yet.
-            limitations.Add("GraphQL schema retrieval will be retried during the review");
+            partialContract = true;
             // Narrow on purpose: with a schema only unmatched operations become manual review; without one, schema-dependent
             // checks are simply not performed (observed operations are recorded as not matched, not as manual review).
-            items.Add(new("GraphQL schema unavailable on the previous attempt — retried during this review; if it is still unavailable, schema-dependent checks are not performed, and with a schema only unmatched operations need manual review", ApiReviewReadinessItemState.Warning));
+            items.Add(new("GraphQL runtime schema unavailable on the previous attempt — introspection is attempted again; if it is still unavailable, schema-dependent checks are not assessed (not a defect), and with a schema only unmatched operations need manual review", ApiReviewReadinessItemState.Missing));
         }
         // Whether client/server compatibility CAN be assessed for the selected GraphQL targets (never a result pre-run).
         items.AddRange(ApiReviewGraphQlCompatibilityPresentation.Readiness(
@@ -328,11 +330,12 @@ public static class ApiReviewPresentation
 
         var authMissing = authTargets > 0 && !authenticated;
         return limitations.Count > 0
-            ? new(ApiReviewReadinessLevel.Limited, "Ready to run with limitations",
+            ? new(ApiReviewReadinessLevel.Limited, "Ready for read-only review · authenticated access unavailable for some targets",
                 $"{eligibility.Reason} {string.Join(". ", limitations)}.".Trim(), chosen.Count, items,
                 authMissing ? ApiReviewRunEligibility.NoAuthContextAction : null,
                 authMissing ? AuthenticationHref(context) : null)
-            : new(ApiReviewReadinessLevel.Ready, "Ready to run", eligibility.Reason, chosen.Count, items, null, null);
+            : new(ApiReviewReadinessLevel.Ready, partialContract ? "Ready for read-only review · partial contract coverage" : "Ready for read-only review",
+                eligibility.Reason, chosen.Count, items, null, null);
     }
 
     // ── Targets ───────────────────────────────────────────────────────────────────────────────────────────────────────

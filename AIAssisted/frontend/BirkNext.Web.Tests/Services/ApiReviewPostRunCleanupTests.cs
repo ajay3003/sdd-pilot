@@ -248,8 +248,8 @@ public sealed class ApiReviewPostRunCleanupTests
     {
         var policy = new ApiReviewPolicy();
         // §43: a review threshold, never an SLA "Pass".
-        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Within configured review threshold");
-        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Warning }, policy).Should().Be("Exceeded configured review threshold", "a threshold warning keeps its real meaning");
+        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Within configured single-request threshold");
+        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Warning }, policy).Should().Be("Above configured single-request threshold", "a threshold warning keeps its real meaning");
         ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-unknown-route", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Passed");
         // §39: no indicators in the sampled response is an observation, not a major status category.
         ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "errors-leak", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Observed");

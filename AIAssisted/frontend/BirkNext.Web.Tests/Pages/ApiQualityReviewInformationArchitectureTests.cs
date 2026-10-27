@@ -108,7 +108,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         // Overview says the same thing.
         page.Find("[data-testid=aqr-tab-overview]").Click();
         page.Find("[data-testid=aqr-coverage-row][data-coverage='GraphQL']").TextContent
-            .Should().Contain("Reviewed — runtime schema unavailable").And.Contain("HTTP 400")
+            .Should().Contain("Runtime reachability reviewed · runtime schema unavailable").And.NotContain("Reviewed —").And.Contain("HTTP 400")
             .And.Contain("6 observed operations").And.Contain("Compatibility not assessed — schema unavailable").And.NotContain("0 / 6");
         page.Find("[data-testid=aqr-tab-graphql]").Click();
         var summary = page.Find("[data-testid=aqr-protocol-summary]");

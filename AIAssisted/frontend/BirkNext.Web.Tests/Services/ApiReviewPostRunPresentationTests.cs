@@ -26,7 +26,7 @@ public sealed class ApiReviewPostRunPresentationTests
         Description = title, Recommendation = $"Fix: {title}", Result = ApiReviewCheckResult.Warning,
     };
 
-    private static ApiReviewReport Fixture(bool findings = true, bool baseline = false)
+    internal static ApiReviewReport Fixture(bool findings = true, bool baseline = false)
     {
         var rest = new ApiReviewTargetResult
         {
@@ -85,8 +85,8 @@ public sealed class ApiReviewPostRunPresentationTests
         var outcome = ApiReviewPostRunPresentation.Outcome(Fixture());
         outcome.Execution.Should().Be("Completed");
         outcome.Assessment.Should().Be("Issues identified");
-        outcome.ManualReview.Should().Be("Manual review required — 3 areas");
-        outcome.Coverage.Should().Be("Limited");
+        outcome.ManualReview.Should().StartWith("Manual review required — 3 areas · ").And.Contain("individual check");
+        outcome.Coverage.Should().Be("Partial");
         outcome.ServicesReviewed.Should().Be(2);
         outcome.RequestsExecuted.Should().Be(3);
         outcome.AuthenticatedAccess.Should().Be("Used for 2/2 authentication-required services");
@@ -99,7 +99,7 @@ public sealed class ApiReviewPostRunPresentationTests
         var outcome = ApiReviewPostRunPresentation.Outcome(Fixture(findings: false));
         outcome.Assessment.Should().Be("No automated issues identified");
         outcome.ManualReview.Should().StartWith("Manual review required");
-        outcome.Coverage.Should().Be("Limited", "a missing contract and schema still limit coverage");
+        outcome.Coverage.Should().Be("Partial", "a missing contract and schema leave contract coverage partial");
     }
 
     // §71, §88 Counts reconcile: one logical issue per rule/endpoint/severity, its observations counted separately.
@@ -121,22 +121,24 @@ public sealed class ApiReviewPostRunPresentationTests
     public void CoverageIsEvidenceAccurate_WithExactReasons()
     {
         var rows = ApiReviewPostRunPresentation.Coverage(Fixture()).ToDictionary(r => r.Domain);
-        rows["REST"].State.Should().Be("Reviewed — contract validation unavailable");
-        rows["REST"].Reason.Should().Be("No OpenAPI contract was configured.");
-        rows["GraphQL"].State.Should().Be("Reviewed — runtime schema unavailable");
+        rows["REST"].State.Should().Be("Runtime review completed · contract validation unavailable");
+        rows["REST"].Reason.Should().Be("No REST contract was available to validate against.");
+        rows["GraphQL"].State.Should().StartWith("Runtime ").And.EndWith("runtime schema unavailable").And.NotContain("Reviewed —");
         rows["GraphQL"].Reason.Should().Contain("HTTP 400");
-        rows["Contracts"].State.Should().Be("Incomplete");
-        rows["Security"].State.Should().Be("Reviewed");
-        rows["Error handling"].State.Should().Be("Reviewed");
-        rows["Performance"].State.Should().Be("Observed — limited sample (3 requests)");
-        rows["Authorization correctness"].State.Should().Be("Not assessed — manual / active checks required");
-        rows["Performance"].Reason.Should().Contain("not load testing");
+        rows["Contracts"].State.Should().Be("Not fully assessed");
+        rows["Security"].State.Should().Be("Assessed");
+        rows["Error handling"].State.Should().Be("Assessed");
+        rows["Performance"].State.Should().Be("Response timing observed (3 bounded requests) · representative performance not assessed");
+        rows["Performance"].Limited.Should().BeFalse("a small sample is inherent to a read-only review, never a coverage reduction");
+        rows["Authorization correctness"].State.Should().Be("Not assessed — optional authorization checks or manual review required");
+        rows["Authorization correctness"].Limited.Should().BeFalse("authentication enforcement is not authorization correctness, and its absence is not a coverage reduction");
+        rows["Performance"].Reason.Should().Contain("It is not load, stress, browser, production or representative end-user performance testing");
         rows["Write operations"].State.Should().Be("Observed — not executed");
         rows.Values.Should().NotContain(r => r.State.Contains("Blocked"));
 
         var limitations = ApiReviewPostRunPresentation.Limitations(Fixture());
         limitations.Select(l => l.Title).Should().Equal(
-            "REST contract validation unavailable", "GraphQL compatibility not assessed", "Performance: limited sample",
+            "REST contract validation unavailable", "GraphQL compatibility not assessed", "Representative performance: Not assessed",
             ApiReviewPostRunPresentation.NoComparableRuntimeBaseline, "Authorization correctness not assessed");
         // Classified coverage gaps, each linked to the tab holding its evidence — never findings.
         limitations.Select(l => (l.Category, l.Tab)).Should().Equal(
@@ -152,9 +154,9 @@ public sealed class ApiReviewPostRunPresentationTests
         var outcome = ApiReviewPostRunPresentation.Outcome(report);
         outcome.Execution.Should().Be("Completed");
         outcome.Assessment.Should().Be("No automated issues identified");
-        outcome.Coverage.Should().Be("Limited");
+        outcome.Coverage.Should().Be("Partial");
         ApiReviewPostRunPresentation.Headline(outcome, ApiReviewPostRunPresentation.Limitations(report))
-            .Should().Be("Automated review completed. No issues were identified, and coverage remains limited in contracts, representative performance, historical comparison and authorization.");
+            .Should().Be("Automated runtime review completed for 2/2 selected services. No automated issues were identified. Not fully assessed: contracts, representative performance, historical comparison and authorization.");
     }
 
     [Fact]
@@ -162,7 +164,7 @@ public sealed class ApiReviewPostRunPresentationTests
     {
         var report = Fixture();
         ApiReviewPostRunPresentation.Headline(ApiReviewPostRunPresentation.Outcome(report), ApiReviewPostRunPresentation.Limitations(report))
-            .Should().StartWith("Automated review completed. Issues were identified, and coverage remains limited in contracts");
+            .Should().StartWith("Automated runtime review completed for").And.Contain("Issues were identified. Not fully assessed: contracts");
         ApiReviewPostRunPresentation.Limitations(report).Should().NotContain(l => l.Category.Contains("Severity"), "coverage gaps carry no severity");
     }
 
@@ -231,8 +233,8 @@ public sealed class ApiReviewPostRunPresentationTests
     [InlineData("errors-method", ApiReviewFindingType.Errors, ApiReviewCheckResult.Blocked, ApiReviewCanonicalStatus.NotAssessed, "Not assessed")]
     [InlineData("gql-x", ApiReviewFindingType.Contract, ApiReviewCheckResult.NotApplicable, ApiReviewCanonicalStatus.NotApplicable, "Not applicable")]
     [InlineData("gql-observed-mutation", ApiReviewFindingType.Contract, ApiReviewCheckResult.ManualReview, ApiReviewCanonicalStatus.ManualReview, "Manual review")]
-    [InlineData("rest-latency", ApiReviewFindingType.Performance, ApiReviewCheckResult.Pass, ApiReviewCanonicalStatus.Passed, "Within configured review threshold")]
-    [InlineData("rest-latency", ApiReviewFindingType.Performance, ApiReviewCheckResult.Warning, ApiReviewCanonicalStatus.IssueDetected, "Exceeded configured review threshold")]
+    [InlineData("rest-latency", ApiReviewFindingType.Performance, ApiReviewCheckResult.Pass, ApiReviewCanonicalStatus.Passed, "Within configured single-request threshold")]
+    [InlineData("rest-latency", ApiReviewFindingType.Performance, ApiReviewCheckResult.Warning, ApiReviewCanonicalStatus.IssueDetected, "Above configured single-request threshold")]
     [InlineData("drift-shape", ApiReviewFindingType.Drift, ApiReviewCheckResult.Pass, ApiReviewCanonicalStatus.Passed, "No changes detected")]
     public void StatusMapping_IsCanonical(string id, ApiReviewFindingType area, ApiReviewCheckResult result, ApiReviewCanonicalStatus status, string label)
     {
