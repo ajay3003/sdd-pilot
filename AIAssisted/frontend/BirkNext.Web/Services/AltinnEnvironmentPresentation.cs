@@ -123,6 +123,151 @@ public static class AltinnEnvironmentPresentation
         return update;
     }
 
+    // ── Compact tester view: what is ready, what is missing, what to click ──
+
+    /// <summary>Where a "things to fix" group sends the tester. Each maps to one control on the page (or the Test Data link).</summary>
+    public enum FixAction { Detect, Application, Automated, Safety, TestData, Contract }
+
+    public sealed record FixItem(string Label, string Problem);
+
+    /// <summary>One owner's unresolved required items with the single action that resolves them.</summary>
+    public sealed record FixGroup(string Key, string Title, string Owner, string Action, FixAction Kind, IReadOnlyList<FixItem> Items);
+
+    /// <summary>The value a tester reads: a reference's display name (e.g. an integration's name) before its raw id.</summary>
+    public static string Display(AltinnSettingField field) => field.DisplayValue ?? field.Value ?? "—";
+    public static string Display(AltinnSettingCandidate candidate) => candidate.DisplayValue ?? candidate.Value ?? "—";
+
+    private static bool Unresolved(AltinnSettingField field) => field.State is AltinnSettingState.Missing or AltinnSettingState.Conflict or AltinnSettingState.Unknown;
+    private static bool AutomatedOpen(AltinnSettingField field) =>
+        field.State is not (AltinnSettingState.Configured or AltinnSettingState.Confirmed or AltinnSettingState.Verified or AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend);
+    private static string Problem(AltinnSettingField field) => field.State switch
+    {
+        AltinnSettingState.Conflict => "Conflict",
+        AltinnSettingState.Detected or AltinnSettingState.Declared => "Not applied",
+        _ => "Missing",
+    };
+    private static string ShortLabel(AltinnSettingField field) => field.Key switch
+    {
+        "enabled" => "Enabled",
+        "redirect-uri" => "Redirect URI",
+        _ => field.Label,
+    };
+
+    /// <summary>Every required unresolved item, grouped by the owner that resolves it, each group with one action. Manual and automated
+    /// requirements both appear (the requirement decides only which readiness they block).</summary>
+    public static IReadOnlyList<FixGroup> ThingsToFix(AltinnEnvironmentView view)
+    {
+        var groups = new List<FixGroup>();
+        var application = view.Fields.Where(field => field.Group == "Application" && field.Requirement != AltinnRequirement.Optional && Unresolved(field))
+            .Select(field => new FixItem(field.Label, Problem(field))).ToList();
+        if (application.Count > 0)
+        {
+            var detect = !view.Detected && application.Any(item => item.Problem == "Missing");
+            groups.Add(new("application", "Application", "Target Environment · Altinn", detect ? "Detect settings" : "Review application",
+                detect ? FixAction.Detect : FixAction.Application, application));
+        }
+        var automated = view.Fields.Where(field => field.Group == "Automated execution" && AutomatedOpen(field)).Select(field => new FixItem(ShortLabel(field), Problem(field))).ToList();
+        if (automated.Count > 0) groups.Add(new("automated", "Automated authentication", "Target Environment · Altinn (unattended client)", "Configure automated execution", FixAction.Automated, automated));
+        var safety = view.Fields.Where(field => field.Group == "Execution safety" && Unresolved(field)).Select(field => new FixItem(field.Label, Problem(field))).ToList();
+        if (safety.Count > 0) groups.Add(new("safety", "Execution safety", "Backend execution policy", "Review execution safety", FixAction.Safety, safety));
+        var identities = IdentityGaps(view).Select(gap => new FixItem(gap.Role, gap.Problem)).ToList();
+        if (identities.Count > 0) groups.Add(new("identities", "Test identities", "Test Data", "Manage test identities", FixAction.TestData, identities));
+        if (view.Contract.State is AltinnReadinessState.Partial or AltinnReadinessState.Blocked)
+            groups.Add(new("contract", "Report contract", "Altinn contract evidence", "Review contract", FixAction.Contract,
+                [new("Report contract", view.Contract.State == AltinnReadinessState.Partial ? "Incomplete" : "Missing")]));
+        return groups;
+    }
+
+    public static int FixCount(IReadOnlyList<FixGroup> groups) => groups.Sum(group => group.Items.Count);
+
+    /// <summary>"7 things need attention" (null when nothing does).</summary>
+    public static string? FixLine(IReadOnlyList<FixGroup> groups) =>
+        FixCount(groups) is var count && count == 0 ? null : $"{count} thing{(count == 1 ? " needs" : "s need")} attention";
+
+    private static List<(string Role, string Problem)> IdentityGaps(AltinnEnvironmentView view)
+    {
+        var gaps = new List<(string, string)>();
+        var reporters = view.Identities.Where(item => item.Role == "reporter" && item.State is not AltinnSettingState.Missing).ToList();
+        if (reporters.Count == 0) gaps.Add(("Reporter", "Missing"));
+        else if (reporters.All(item => item.State != AltinnSettingState.Confirmed)) gaps.Add(("Reporter", "TT02 profile not confirmed"));
+        if (!view.Identities.Any(item => item.Role == "child" && item.State is not AltinnSettingState.Missing)) gaps.Add(("Child", "Missing"));
+        return gaps;
+    }
+
+    /// <summary>The short reason under a summary card: empty when ready, otherwise one phrase (details live in the sections below).</summary>
+    public static string CardReason(AltinnReadinessItem item, AltinnEnvironmentView view)
+    {
+        if (item.State == AltinnReadinessState.Ready) return "";
+        var fix = ThingsToFix(view);
+        int Count(string key) => fix.FirstOrDefault(group => group.Key == key)?.Items.Count ?? 0;
+        static string Settings(int n, string kind) => $"{n} {kind}setting{(n == 1 ? "" : "s")} missing";
+        var gaps = IdentityGaps(view);
+        var observations = view.Saved.RuntimeObservations.Count;
+        return item.Key switch
+        {
+            "app" => Count("application") > 0 ? Settings(Count("application"), "") : item.Reason,
+            "authentication" => Count("automated") > 0 ? Settings(Count("automated"), "automated ") : "",
+            "identities" => gaps.Count == 2 && gaps.All(gap => gap.Problem == "Missing") ? "Reporter and child missing"
+                : string.Join(" · ", gaps.Select(gap => $"{gap.Role} {gap.Problem.ToLowerInvariant()}")),
+            "runtime" => item.State == AltinnReadinessState.Partial ? $"{observations} observation{(observations == 1 ? "" : "s")} · not verified" : "",
+            "automated" => view.AutomatedBlockers.Count > 0 ? $"{view.AutomatedBlockers.Count} requirement{(view.AutomatedBlockers.Count == 1 ? "" : "s")}" : "",
+            _ => "",
+        };
+    }
+
+    /// <summary>The manual readiness line: "Missing: Form data type, Reporter, Child" (the backend reason when nothing is missing).</summary>
+    public static string ManualLine(AltinnEnvironmentView view) =>
+        view.ManualMissing.Count > 0 ? $"Missing: {string.Join(", ", view.ManualMissing)}" : view.ManualReadiness.Reason;
+
+    /// <summary>The automated readiness line: "12 requirements unresolved" (the backend reason when ready).</summary>
+    public static string AutomatedLine(AltinnEnvironmentView view) =>
+        view.AutomatedBlockers.Count > 0 ? $"{view.AutomatedBlockers.Count} requirement{(view.AutomatedBlockers.Count == 1 ? "" : "s")} unresolved" : view.AutomatedReadiness.Reason;
+
+    /// <summary>Application section summary: "TT02 · buf/skolenaervaer · 2 settings missing".</summary>
+    public static string ApplicationLine(AltinnEnvironmentView view)
+    {
+        string? V(string key) => view.Fields.FirstOrDefault(field => field.Key == key)?.Value;
+        var environment = V("environment") is { } env && env.StartsWith("Test", StringComparison.Ordinal) ? "TT02" : V("environment");
+        var missing = ThingsToFix(view).FirstOrDefault(group => group.Key == "application")?.Items.Count ?? 0;
+        return string.Join(" · ", new[] { environment, V("app"), missing == 0 ? "Complete" : $"{missing} setting{(missing == 1 ? "" : "s")} missing" }.Where(part => !string.IsNullOrEmpty(part)));
+    }
+
+    /// <summary>Browser authentication summary from public metadata (descriptive platform evidence, never client configuration).</summary>
+    public static string BrowserLine(AltinnEnvironmentView view)
+    {
+        var metadata = view.Fields.Where(field => field.Key.StartsWith("idporten-", StringComparison.Ordinal)).ToList();
+        if (metadata.Count == 0) return "ID-porten TEST · public metadata not read yet (Detect settings reads it)";
+        var pkce = metadata.FirstOrDefault(field => field.Key == "idporten-pkce")?.Value?.Split(' ').Contains("S256") == true ? " · PKCE S256" : "";
+        return $"ID-porten TEST · Detected from public metadata{pkce}";
+    }
+
+    public static string BrowserObservationLine(AltinnEnvironmentView view) =>
+        view.Fields.Any(field => field.Group == "Browser authentication" && field.State == AltinnSettingState.Observed) ? "Recorded" : "Not recorded";
+
+    /// <summary>Automated execution summary: "5 settings missing: Client ID, Redirect URI, Scopes, Enabled, Client secret" or "Complete".</summary>
+    public static string AutomatedSettingsLine(AltinnEnvironmentView view)
+    {
+        var open = view.Fields.Where(field => field.Group == "Automated execution" && AutomatedOpen(field)).Select(ShortLabel).ToList();
+        return open.Count == 0 ? "Complete" : $"{open.Count} setting{(open.Count == 1 ? "" : "s")} missing: {string.Join(", ", open)}";
+    }
+
+    public static AltinnReadinessState SafetyState(AltinnEnvironmentView view) =>
+        view.Fields.Where(field => field.Group == "Execution safety").Any(Unresolved) ? AltinnReadinessState.Blocked : AltinnReadinessState.Ready;
+
+    /// <summary>"App approved: Yes · Trusted target: Missing".</summary>
+    public static string SafetyLine(AltinnEnvironmentView view)
+    {
+        string State(string key) => view.Fields.FirstOrDefault(field => field.Key == key) is { } field ? Unresolved(field) ? "Missing" : "Yes" : "Unknown";
+        return $"App approved: {State("app-approval")} · Trusted target: {State("trusted-environment")}";
+    }
+
+    /// <summary>"reporter-a (Confirmed)" per configured identity of a role, or "Missing".</summary>
+    public static string IdentityLine(AltinnEnvironmentView view, string role)
+    {
+        var items = view.Identities.Where(item => item.Role == role).ToList();
+        return items.Count == 0 ? "Missing" : string.Join(" · ", items.Select(item => $"{item.Alias} ({StateLabel(item.State)})"));
+    }
+
     public static readonly (string Key, string Label)[] Groups =
     [
         ("Application", "Application"),

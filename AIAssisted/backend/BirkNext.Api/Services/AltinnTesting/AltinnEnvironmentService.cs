@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BirkNext.Api.Services.ActiveEventTesting;
+using BirkNext.Api.Services.IntegrationJourneys;
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Integrations;
 
@@ -12,10 +13,17 @@ namespace BirkNext.Api.Services.AltinnTesting;
 /// sources that disagree are a Conflict; a declared default never conflicts with or overrides an explicit value. Reading and detecting never
 /// write; Detect additionally reads ID-porten TEST's public discovery document in memory (no authentication, no persistence). Browser login
 /// observations are evidence of Altinn's own portal client and never fill the unattended client. No secret, token or identifier is returned.
+/// Form data type and content type may also be suggested by a test pack's built-in reference whose scope is exactly the resolved app (e.g.
+/// the Skolenærvær pack's OpenAPI facts for buf/skolenaervaer): a suggestion with provenance, never an override, and nothing when the app
+/// is unresolved, the references disagree or the app's own contract evidence is ambiguous.
 /// </summary>
 public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore store, IIntegrationMessageFlowStore messageFlows, AltinnTestingPolicy policy,
-    AltinnAppContractService contracts, IIntegrationCatalogService catalog, ITrustedExecutionEnvironmentRegistry trusted, IHttpClientFactory http)
+    AltinnAppContractService contracts, IIntegrationCatalogService catalog, ITrustedExecutionEnvironmentRegistry trusted, IHttpClientFactory http,
+    IEnumerable<IIntegrationJourneyPack>? packs = null)
 {
+    public const string FormDataTypeKey = "Application.FormDataType";
+    public const string ContentTypeKey = "Payload.ContentType";
+
     public const string ApplicationGroup = "Application";
     public const string BrowserGroup = "Browser authentication";
     public const string AutomatedGroup = "Automated execution";
@@ -59,14 +67,26 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             "Where the app is served. Configured or derived, not verified: reachability is a separate runtime verification."));
 
         var contract = contracts.Evaluate(environmentId, app.Value, record);
-        fields.Add(Resolve("form-data-type", ApplicationGroup, "Form data type", AltinnRequirement.Manual,
+        // The app's own contract evidence names several form data types without choosing one: ambiguous, so no suggestion may paper over it.
+        var ambiguousForm = new[] { record?.SourceAnalysis, record?.PublicMetadata }
+            .Any(snapshot => snapshot is { FormDataTypeId: null, FormDataTypeCandidates.Count: > 1 });
+        var appResolved = app.State != AltinnSettingState.Conflict ? app.Value : null;
+        var formReference = ambiguousForm ? null : ReferenceFact(appResolved, FormDataTypeKey, notes);
+        var contentReference = ambiguousForm ? null : ReferenceFact(appResolved, ContentTypeKey, notes);
+        var form = Resolve("form-data-type", ApplicationGroup, "Form data type", AltinnRequirement.Manual,
             [Candidate(saved.FormDataType, AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment),
              Candidate(record?.SourceAnalysis?.FormDataTypeId, AltinnSettingState.Detected, AltinnSettingSource.SourceAnalysis),
-             Candidate(record?.PublicMetadata?.FormDataTypeId, AltinnSettingState.Detected, AltinnSettingSource.PublicMetadata)],
-            "The form contract the report is written against. Detected from source is not verified in TT02."));
-        fields.Add(Resolve("content-type", ApplicationGroup, "Content type", AltinnRequirement.Optional,
+             Candidate(record?.PublicMetadata?.FormDataTypeId, AltinnSettingState.Detected, AltinnSettingSource.PublicMetadata),
+             Candidate(formReference?.Value, AltinnSettingState.Declared, AltinnSettingSource.TestPack, formReference?.Label)],
+            "The form contract the report is written against. Detected or suggested values are not verified in TT02.");
+        if (ambiguousForm && form.State == AltinnSettingState.Missing)
+            form = form with { Detail = "The app's contract evidence names several form data types and does not choose one. Choose one deliberately (nothing is selected automatically)." };
+        fields.Add(form);
+        fields.Add(Resolve("content-type", ApplicationGroup, "Content type", AltinnRequirement.Automated,
             [Candidate(saved.ContentType, AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment),
-             Candidate(contract.SubmissionContentType, AltinnSettingState.Detected, record?.PublicMetadata is not null ? AltinnSettingSource.PublicMetadata : AltinnSettingSource.SourceAnalysis)], ""));
+             Candidate(contract.SubmissionContentType, AltinnSettingState.Detected, record?.PublicMetadata is not null ? AltinnSettingSource.PublicMetadata : AltinnSettingSource.SourceAnalysis),
+             Candidate(contentReference?.Value, AltinnSettingState.Declared, AltinnSettingSource.TestPack, contentReference?.Label)],
+            "How BirkNext writes the form data when it submits automatically. A manual browser submission does not need it."));
 
         var integrations = await IntegrationsAsync(environmentId, ct);
         var bound = integrations.FirstOrDefault(item => item.DisplayName == IntegrationName || item.Id.Contains("report-intake", StringComparison.Ordinal));
@@ -76,7 +96,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             $"{IntegrationName}: Altinn → Meldingsutveksleren (MU). Referenced from Target Environment → Integrations, never copied.");
         if (integration.Value is { } integrationId && integrations.Count > 0 && integrations.All(item => item.Id != integrationId))
             integration = integration with { State = AltinnSettingState.Missing, Detail = $"The integration {integrationId} is not configured in this environment (Target Environment → Integrations)." };
-        fields.Add(integration);
+        fields.Add(IntegrationReferenceNames.Apply(integration, integrations));
 
         // ── Browser authentication: evidence of Altinn's own login client (observed), plus ID-porten public metadata on Detect ──
         if (saved.BrowserAuthentication is { } browser)
@@ -158,7 +178,44 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
 
         var identities = Identities();
         var view = Assess(environmentId, saved, fields, identities, config, contract, targetBlock, approved is not null, clientProblem);
-        return view with { Detected = detect, Notes = notes };
+        return view with { Detected = detect, Notes = notes, Contract = ContractItem(contract) };
+    }
+
+    /// <summary>The value one semantic key has in the built-in test pack references scoped exactly to <paramref name="appId"/>, with a provenance
+    /// label. Null when the app is unresolved, no reference covers it, or references disagree (noted, never chosen).</summary>
+    private (string Value, string Label)? ReferenceFact(string? appId, string semanticKey, List<string> notes)
+    {
+        if (string.IsNullOrWhiteSpace(appId) || packs is null) return null;
+        var facts = new List<(string Value, string Label)>();
+        foreach (var reference in packs.SelectMany(pack => pack.References).Where(reference => string.Equals(reference.Scope, appId, StringComparison.OrdinalIgnoreCase)))
+        {
+            var (view, loaded) = TestPackReferences.Load(reference);
+            if (!loaded) continue;
+            facts.AddRange(view.Facts.Where(fact => fact.SemanticKey == semanticKey && !string.IsNullOrWhiteSpace(fact.Value))
+                .Select(fact => (fact.Value.Trim(), $"{TestPackReferences.ProvenanceLabel} · {reference.Kind}")));
+        }
+        var values = facts.Select(fact => fact.Value).Distinct(StringComparer.Ordinal).ToList();
+        if (values.Count > 1)
+        {
+            notes.Add($"Test Pack references disagree on {semanticKey} for {appId} ({string.Join(", ", values)}); nothing is suggested.");
+            return null;
+        }
+        return values.Count == 1 ? facts[0] : null;
+    }
+
+    private static AltinnReadinessItem ContractItem(AltinnAppContractView contract)
+    {
+        var sources = contract.Sources.Select(source => source.Source switch
+        {
+            AltinnContractSourceKind.SourceAnalysisSnapshot => "Source Analysis",
+            AltinnContractSourceKind.PublicTt02Metadata => "Public TT02 metadata",
+            AltinnContractSourceKind.DeployedOpenApi => "Deployed OpenAPI",
+            _ => "Imported OpenAPI",
+        }).Distinct().ToList();
+        var from = sources.Count == 0 ? "No contract evidence" : string.Join(" · ", sources);
+        return contract.Complete ? new("contract", "Report contract", AltinnReadinessState.Ready, from)
+            : sources.Count > 0 ? new("contract", "Report contract", AltinnReadinessState.Partial, $"{from} · missing: {string.Join("; ", contract.Missing.DefaultIfEmpty("not confirmed"))}")
+            : new("contract", "Report contract", AltinnReadinessState.Blocked, "No contract evidence yet. Read the public TT02 metadata or use the app's Source Analysis.");
     }
 
     private AltinnEnvironmentView Assess(string environmentId, AltinnEnvironmentSettings saved, List<AltinnSettingField> fields, IReadOnlyList<AltinnIdentitySummary> identities,
@@ -173,11 +230,15 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
 
         // Manual testing needs the TT02 app, a reporter, a child, the integration and the contract — never the unattended client.
         var manualGaps = new List<string>();
+        var manualMissing = new List<string>();
         foreach (var key in new[] { "environment", "app", "form-data-type", "integration" })
             if (F(key) is { State: AltinnSettingState.Missing or AltinnSettingState.Conflict or AltinnSettingState.Unknown } || F(key).Value is null)
+            {
                 manualGaps.Add($"{F(key).Label}: {(F(key).State == AltinnSettingState.Conflict ? "conflict" : "missing")}");
-        if (!reporter) manualGaps.Add("Reporter: missing");
-        if (!child) manualGaps.Add("Synthetic child: missing");
+                manualMissing.Add(F(key).State == AltinnSettingState.Conflict ? $"{F(key).Label} (conflict)" : F(key).Label);
+            }
+        if (!reporter) { manualGaps.Add("Reporter: missing"); manualMissing.Add("Reporter"); }
+        if (!child) { manualGaps.Add("Synthetic child: missing"); manualMissing.Add("Child"); }
         var manual = production
             ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Blocked, "The environment is Production; Altinn testing never runs there.")
             : manualGaps.Count == 0
@@ -229,6 +290,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         {
             EnvironmentId = environmentId, Saved = saved, Fields = fields, Identities = identities, Summary = summary,
             ManualReadiness = manual, AutomatedReadiness = automated, AutomatedBlockers = blockers, Detection = detection,
+            ManualMissing = production ? [] : manualMissing,
         };
     }
 

@@ -114,7 +114,11 @@ public sealed record AltinnRuntimeObservation
 }
 
 /// <summary>A candidate value from one source (shown when sources disagree or a detected value can be applied).</summary>
-public sealed record AltinnSettingCandidate(string? Value, AltinnSettingState State, AltinnSettingSource Source, string SourceLabel);
+public sealed record AltinnSettingCandidate(string? Value, AltinnSettingState State, AltinnSettingSource Source, string SourceLabel)
+{
+    /// <summary>A human-readable name for <see cref="Value"/> when the value is a reference (e.g. an integration id); null otherwise.</summary>
+    public string? DisplayValue { get; init; }
+}
 
 /// <summary>One resolved Altinn value with its state, provenance, who needs it and — when sources disagree — every candidate.</summary>
 public sealed record AltinnSettingField
@@ -124,6 +128,9 @@ public sealed record AltinnSettingField
     public string Label { get; init; } = "";
     /// <summary>Null for secrets and identities (never returned) and for unresolved values.</summary>
     public string? Value { get; init; }
+    /// <summary>A human-readable name for <see cref="Value"/> when the value is a reference (e.g. an integration's display name for its id);
+    /// null when the value is already readable. The raw value stays available for advanced details.</summary>
+    public string? DisplayValue { get; init; }
     public AltinnSettingState State { get; init; }
     public AltinnSettingSource Source { get; init; }
     public string SourceLabel { get; init; } = "";
@@ -152,6 +159,10 @@ public sealed record AltinnEnvironmentView
     public AltinnReadinessItem ManualReadiness { get; init; } = new("manual", "Manual test readiness", AltinnReadinessState.NotAssessed, "");
     public AltinnReadinessItem AutomatedReadiness { get; init; } = new("automated", "Automated BirkNext execution", AltinnReadinessState.NotAssessed, "");
     public IReadOnlyList<string> AutomatedBlockers { get; init; } = [];
+    /// <summary>What manual testing still lacks, as short labels ("Form data type", "Reporter", "Child"); empty when manual testing is ready.</summary>
+    public IReadOnlyList<string> ManualMissing { get; init; } = [];
+    /// <summary>The report contract: Ready when complete, Partial when some contract evidence exists, Blocked when none does. The reason names the sources.</summary>
+    public AltinnReadinessItem Contract { get; init; } = new("contract", "Report contract", AltinnReadinessState.NotAssessed, "");
     public AltinnDetectionSummary Detection { get; init; } = new(0, 0, 0, 0, 0, []);
     /// <summary>True when this view includes a Detect run (public metadata read in memory); false for an ordinary read.</summary>
     public bool Detected { get; init; }

@@ -67,13 +67,14 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Find("[data-testid=ae-title]").TextContent.Should().Be("Altinn · TT02");
         cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Ready");
         cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Blocked").And.Contain("redirect URI");
-        cut.Find("[data-testid=ae-missing-line]").TextContent.Should().Be("1 required setting missing or in conflict");
+        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("2 things need attention");
+        foreach (var toggle in new[] { "ae-toggle-application", "ae-toggle-browser", "ae-toggle-automated" }) cut.Find($"[data-testid={toggle}]").Click();
         State(cut, "environment").Should().Be("Suggested", "a test-pack default is a suggestion, never 'configured'");
         State(cut, "form-data-type").Should().Be("Detected from source", "source evidence is not deployed runtime");
         State(cut, "browser-redirect").Should().Be("Observed");
         State(cut, "client-secret").Should().Be("Available for this session");
         cut.Find("[data-testid=ae-field][data-key=client-secret] .ae-value").TextContent.Should().Be("—", "a secret value is never shown");
-        cut.Find("[data-testid=ae-browser-note]").TextContent.Should().Contain("never configures BirkNext's unattended client");
+        cut.Find("[data-testid=ae-browser-note]").TextContent.Should().Contain("never configures BirkNext unattended execution");
         cut.Find("[data-testid=ae-manage-identities]").GetAttribute("href").Should().Be("/test-data");
         cut.Markup.Should().NotContain("PowerShell").And.NotContain(".ps1");
         _api.Calls.Should().Equal("get");
@@ -105,14 +106,16 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
     public void Session_secret_is_a_password_field_sent_once_and_never_shown()
     {
         var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-secret]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-secret-reveal]"));
+        cut.FindAll("[data-testid=ae-secret]").Should().BeEmpty("the secret input is hidden until requested");
+        cut.Find("[data-testid=ae-secret-reveal]").Click();
         var input = cut.Find("[data-testid=ae-secret]");
         input.GetAttribute("type").Should().Be("password");
         input.Change(Secret);
         cut.Find("[data-testid=ae-add-secret]").Click();
 
         cut.WaitForAssertion(() => _api.Secrets.Should().Equal(Secret));
-        cut.Find("[data-testid=ae-secret]").GetAttribute("value").Should().BeNullOrEmpty("the field is cleared after sending");
+        cut.FindAll("[data-testid=ae-secret]").Should().BeEmpty("the form closes after sending and keeps nothing");
         cut.Markup.Should().NotContain(Secret);
         JSInterop.Invocations.Should().NotContain(call => call.Arguments.Any(argument => argument != null && argument.ToString()!.Contains(Secret)), "never written to browser storage");
     }
@@ -162,15 +165,145 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         }).Should().BeEmpty("a secret is never an applicable proposal");
     }
 
+    // ── Compact tester view ──
+
+    private const string IntegrationRef = "15550bccc6b34a9e8118a99dc4e1fd82:httpapi:skolen-rv-r-altinn-report-intake";
+
+    /// <summary>The Skolenærvær shape: app ready, unattended client empty, no identities, no trust, contract partial, public metadata read.</summary>
+    internal static AltinnEnvironmentView Skolenaervaer() => new()
+    {
+        EnvironmentId = Env, Detected = true,
+        Fields =
+        [
+            F("environment", "Application", "Altinn environment", "Test (TT02)", AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment),
+            F("app", "Application", "App identifier", "buf/skolenaervaer", AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment),
+            F("form-data-type", "Application", "Form data type", null, AltinnSettingState.Missing, AltinnSettingSource.None),
+            F("content-type", "Application", "Content type", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
+            F("integration", "Application", "Integration", IntegrationRef, AltinnSettingState.Detected, AltinnSettingSource.IntegrationBinding) with
+            {
+                DisplayValue = "Skolenærvær – Altinn report intake",
+                Proposal = new(IntegrationRef, AltinnSettingState.Detected, AltinnSettingSource.IntegrationBinding, "Integration Quality Review") { DisplayValue = "Skolenærvær – Altinn report intake" },
+            },
+            F("idporten-token", "Browser authentication", "Token endpoint", "https://test.idporten.no/token", AltinnSettingState.Detected, AltinnSettingSource.PublicMetadata, AltinnRequirement.Optional),
+            F("idporten-pkce", "Browser authentication", "Supported PKCE methods", "S256", AltinnSettingState.Detected, AltinnSettingSource.PublicMetadata, AltinnRequirement.Optional),
+            F("client-id", "Automated execution", "Client ID", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
+            F("redirect-uri", "Automated execution", "Registered redirect URI", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
+            F("scopes", "Automated execution", "Scopes", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
+            F("enabled", "Automated execution", "Automated execution", "Not enabled", AltinnSettingState.Missing, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
+            F("client-secret", "Automated execution", "Client secret", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
+            F("trusted-environment", "Execution safety", "Trusted execution environment", null, AltinnSettingState.Missing, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
+            F("app-approval", "Execution safety", "App approved for testing", "buf/skolenaervaer", AltinnSettingState.Configured, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
+        ],
+        Summary =
+        [
+            new("app", "App", AltinnReadinessState.Ready, "Test (TT02) · buf/skolenaervaer"),
+            new("authentication", "Authentication", AltinnReadinessState.Blocked, "Unattended client incomplete."),
+            new("identities", "Test identities", AltinnReadinessState.Blocked, "Reporter missing · child missing"),
+            new("runtime", "Runtime", AltinnReadinessState.NotAssessed, "Not verified."),
+            new("automated", "Automated execution", AltinnReadinessState.Blocked, "Blocked"),
+        ],
+        ManualReadiness = new("manual", "Manual test readiness", AltinnReadinessState.Partial, "Form data type: missing · Reporter: missing · Synthetic child: missing"),
+        ManualMissing = ["Form data type", "Reporter", "Child"],
+        AutomatedReadiness = new("automated", "Automated BirkNext execution", AltinnReadinessState.Blocked, "Blocked by 12 requirements"),
+        AutomatedBlockers = [.. Enumerable.Range(1, 12).Select(i => $"Blocker {i}")],
+        Contract = new("contract", "Report contract", AltinnReadinessState.Partial, "Public TT02 metadata · missing: form schema"),
+    };
+
+    private IRenderedComponent<AltinnEnvironmentPane> RenderSkolenaervaer()
+    {
+        _api.Next = Skolenaervaer();
+        var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-summary]"));
+        return cut;
+    }
+
+    [Fact]
+    public void Default_view_is_summary_things_to_fix_and_detected_values_with_technical_detail_collapsed()
+    {
+        var cut = RenderSkolenaervaer();
+
+        cut.FindAll("[data-testid=ae-card]").Select(card => card.GetAttribute("data-key")).Should().Equal("app", "authentication", "identities", "runtime", "automated");
+        cut.FindAll("[data-testid=ae-card-reason]").Select(reason => reason.TextContent).Should().Equal("5 automated settings missing", "Reporter and child missing", "12 requirements");
+        cut.Find("[data-key=runtime]").TextContent.Should().Contain("Not verified");
+        cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Missing: Form data type, Reporter, Child");
+        cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("12 requirements unresolved").And.NotContain("Blocker 1");
+        cut.FindAll("[data-testid=ae-blockers]").Should().BeEmpty();
+
+        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("11 things need attention");
+        cut.FindAll("[data-testid=ae-fix-group]").Select(group => group.GetAttribute("data-key")).Should().Equal("application", "automated", "safety", "identities", "contract");
+        cut.Find("[data-testid=ae-fix-group][data-key=identities]").TextContent.Should().Contain("Owner: Test Data").And.Contain("Manage test identities");
+        cut.Find("[data-testid=ae-fix-group][data-key=identities] [data-testid=ae-fix-action]").GetAttribute("href").Should().Be("/test-data");
+
+        cut.Find("[data-testid=ae-proposals] [data-key=integration] [data-testid=ae-proposal-value]").TextContent.Should().Be("Skolenærvær – Altinn report intake");
+        cut.Find("[data-testid=ae-proposals]").TextContent.Should().Contain("Source: Integration Quality Review");
+        cut.Markup.Should().NotContain(IntegrationRef, "the internal id is only in advanced details");
+        cut.Markup.Should().NotContain("https://test.idporten.no/token", "public endpoints are collapsed");
+        cut.Find("[data-testid=ae-section-browser]").TextContent.Should().Contain("Detected from public metadata · PKCE S256");
+        cut.FindAll("[data-testid=ae-field-table]").Should().BeEmpty("every technical table is collapsed by default");
+        cut.FindAll("[data-testid=ae-secret]").Should().BeEmpty();
+        cut.FindAll("[data-testid=ae-observe-form]").Should().BeEmpty();
+        cut.FindAll("[data-testid=ae-advanced-body]").Should().BeEmpty();
+        foreach (var toggle in cut.FindAll("button[aria-controls]")) toggle.GetAttribute("aria-expanded").Should().Be("false");
+    }
+
+    [Fact]
+    public void Every_summary_drills_down_to_its_evidence()
+    {
+        var cut = RenderSkolenaervaer();
+
+        cut.Find("[data-testid=ae-blockers-toggle]").Click();
+        cut.FindAll("[data-testid=ae-blockers] li").Should().HaveCount(12);
+        cut.Find("[data-testid=ae-toggle-browser]").Click();
+        cut.Find("[data-testid=ae-toggle-browser]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Markup.Should().Contain("https://test.idporten.no/token");
+        cut.Find("[data-testid=ae-fix-group][data-key=automated] [data-testid=ae-fix-action]").Click();
+        cut.Find("[data-testid=ae-client-form]").TextContent.Should().Contain("Never the browser login client");
+        cut.Find("[data-testid=ae-observe-toggle]").Click();
+        cut.Find("[data-testid=ae-observe-form]");
+        cut.Find("[data-testid=ae-advanced-toggle]").Click();
+        cut.Find("[data-testid=ae-evidence-field][data-key=integration] [data-testid=ae-raw-reference]").TextContent.Should().Contain(IntegrationRef);
+        cut.Find("[data-testid=ae-section-application] [data-testid=ae-section-line]").TextContent.Should().Be("TT02 · buf/skolenaervaer · 2 settings missing");
+    }
+
+    [Fact]
+    public void Secret_reveal_can_be_cancelled_without_sending_anything()
+    {
+        var cut = RenderSkolenaervaer();
+        cut.Find("[data-testid=ae-secret-state]").TextContent.Should().Be("Missing");
+        cut.Find("[data-testid=ae-secret-reveal]").Click();
+        cut.Find("[data-testid=ae-secret]").Change(Secret);
+        cut.Find("[data-testid=ae-secret-cancel]").Click();
+
+        cut.FindAll("[data-testid=ae-secret]").Should().BeEmpty();
+        _api.Secrets.Should().BeEmpty();
+        cut.Find("[data-testid=ae-secret-reveal]").Click();
+        cut.Find("[data-testid=ae-secret]").GetAttribute("value").Should().BeNullOrEmpty("a cancelled value is not kept");
+    }
+
+    [Fact]
+    public void Things_to_fix_separates_manual_from_unattended_only_items()
+    {
+        var view = Skolenaervaer();
+        var groups = AltinnEnvironmentPresentation.ThingsToFix(view);
+
+        groups.Single(group => group.Key == "application").Items.Select(item => item.Label).Should().Equal("Form data type", "Content type");
+        groups.Single(group => group.Key == "automated").Items.Select(item => item.Label).Should().Equal("Client ID", "Redirect URI", "Scopes", "Enabled", "Client secret");
+        groups.Single(group => group.Key == "application").Kind.Should().Be(AltinnEnvironmentPresentation.FixAction.Application, "Detect already ran");
+        AltinnEnvironmentPresentation.ThingsToFix(view with { Detected = false }).First().Action.Should().Be("Detect settings");
+        AltinnEnvironmentPresentation.ManualLine(view).Should().NotContain("Client").And.NotContain("secret").And.NotContain("Trusted");
+        AltinnEnvironmentPresentation.CardReason(view.Summary.Single(item => item.Key == "runtime"), view).Should().BeEmpty("runtime Not verified is its own state, not a configuration gap");
+    }
+
     private sealed class FakeApi : IAltinnEnvironmentApiService
     {
+        public AltinnEnvironmentView? Next { get; set; }
         public List<string> Calls { get; } = [];
         public List<AltinnEnvironmentSettingsUpdate> Saved { get; } = [];
         public List<string> Secrets { get; } = [];
         public List<AltinnSessionIdentityRequest> Identities { get; } = [];
 
         private static ActiveEventApiResult<AltinnEnvironmentView> Ok(AltinnEnvironmentView view) => new(view, null, HttpStatusCode.OK);
-        public Task<ActiveEventApiResult<AltinnEnvironmentView>> GetAsync(string environmentId, CancellationToken ct = default) { Calls.Add("get"); return Task.FromResult(Ok(View())); }
+        public Task<ActiveEventApiResult<AltinnEnvironmentView>> GetAsync(string environmentId, CancellationToken ct = default) { Calls.Add("get"); return Task.FromResult(Ok(Next ?? View())); }
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> DetectAsync(string environmentId, CancellationToken ct = default) { Calls.Add("detect"); return Task.FromResult(Ok(View(detected: true))); }
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> SaveAsync(string environmentId, AltinnEnvironmentSettingsUpdate update, CancellationToken ct = default) { Saved.Add(update); return Task.FromResult(Ok(View())); }
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> RecordObservationAsync(string environmentId, AltinnRuntimeObservationRequest request, CancellationToken ct = default) => Task.FromResult(Ok(View()));

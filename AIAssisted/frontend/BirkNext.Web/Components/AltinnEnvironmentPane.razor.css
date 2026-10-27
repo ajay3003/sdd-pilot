@@ -38,3 +38,25 @@
 .ae-inline { grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); align-items: end; max-width: none; }
 .ae-list { margin: .3rem 0; padding-left: 1.2rem; font-size: .85rem; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .ae-table thead { display: none; } .ae-table tr { display: grid; } }
+.ae-summary dd { display: grid; gap: .15rem; }
+.ae-card-reason { font-size: .78rem; color: var(--clr-text-muted, #5f6368); overflow-wrap: anywhere; }
+.ae-link { justify-self: start; padding: 0; border: 0; background: none; color: var(--clr-link, #0b5cad); text-decoration: underline; font-size: .82rem; cursor: pointer; }
+.ae-fix { display: grid; gap: .5rem; padding: .75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; }
+.ae-fix-count { margin: 0; font-weight: 600; font-size: .9rem; }
+.ae-fix-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: .6rem; }
+.ae-fix-group { display: grid; gap: .3rem; align-content: start; min-width: 0; }
+.ae-fix-group .btn { justify-self: start; }
+.ae-fix-head { display: grid; gap: .1rem; font-size: .85rem; }
+.ae-sections { display: grid; gap: 0; }
+.ae-section { display: grid; gap: .4rem; padding: .6rem 0; border-top: 1px solid var(--clr-border, #d0d7de); min-width: 0; }
+.ae-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; min-width: 0; }
+.ae-section-head .ae-h4 { margin: 0; min-width: 11rem; }
+.ae-section-head .ae-muted { flex: 1 1 14rem; overflow-wrap: anywhere; }
+.ae-section > .ae-muted { margin: 0; }
+.ae-h5 { margin: .6rem 0 .3rem; font-size: .82rem; font-weight: 600; }
+.ae-secret-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .85rem; }
+.ae-proposal-body { display: grid; gap: .1rem; min-width: 0; }
+.ae-proposal-label { font-weight: 600; font-size: .85rem; }
+.ae-proposal-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; overflow-wrap: anywhere; }
+.ae-summary .ae-pill, .ae-readiness-card .ae-pill, .ae-proposals .btn { justify-self: start; }
+.ae-proposals legend { float: none; width: auto; margin: 0 0 .2rem; padding: 0; font-size: .82rem; font-weight: 600; line-height: 1.3; }

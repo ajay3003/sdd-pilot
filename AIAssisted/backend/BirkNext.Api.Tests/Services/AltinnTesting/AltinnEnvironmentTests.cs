@@ -5,6 +5,7 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.AltinnTesting;
 using BirkNext.Api.Services.Integrations;
+using BirkNext.Api.Services.IntegrationJourneys;
 using BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 using BirkNext.Api.Tests.Services.IntegrationJourneys;
 using BirkNext.Integrations;
@@ -33,6 +34,9 @@ public sealed class AltinnEnvironmentTests
         public AltinnSessionStore Session { get; }
         public List<IntegrationDefinition> Integrations { get; } = [];
         public TrustedExecutionEnvironment? Trusted { get; set; }
+        /// <summary>Test packs whose built-in references may suggest form data type / content type (none unless a test adds one).</summary>
+        public List<IIntegrationJourneyPack> Packs { get; } = [];
+        public SkoleNaervaerJourneyPack SkoleNaervaerPack() => new(Flows, Policy, Kit.Contracts(Flows));
 
         public Bed() => Session = new AltinnSessionStore(Kit.Options, Clock);
 
@@ -47,7 +51,7 @@ public sealed class AltinnEnvironmentTests
             var trusted = new Mock<ITrustedExecutionEnvironmentRegistry>();
             string reason = "This environment is not a trusted execution environment in backend configuration (TargetEnvironments:Trusted).";
             trusted.Setup(t => t.Resolve(It.IsAny<string>(), out reason)).Returns(() => Trusted);
-            return new AltinnEnvironmentService(Store, Flows, Policy, Kit.Contracts(Flows), catalog.Object, trusted.Object, Kit.Factory);
+            return new AltinnEnvironmentService(Store, Flows, Policy, Kit.Contracts(Flows), catalog.Object, trusted.Object, Kit.Factory, Packs);
         }
 
         public Task<AltinnEnvironmentView> View(bool detect = false) => Service().ViewAsync(Env, detect, CancellationToken.None);
@@ -317,5 +321,151 @@ public sealed class AltinnEnvironmentTests
         var view = await bed.View();
         view.ManualReadiness.State.Should().Be(AltinnReadinessState.Blocked);
         view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked);
+    }
+    // ── Form data type / content type detection ──
+
+    private static IIntegrationJourneyPack ReferencePack(string scope, params (string Key, string Value)[] facts)
+    {
+        var pack = new Mock<IIntegrationJourneyPack>();
+        pack.SetupGet(p => p.References).Returns([new TestPackReference("altinn-app", "OpenAPI", "Fixture reference",
+            () => new TestPackReferenceDocument([.. facts.Select(fact => new TestPackReferenceFact(fact.Key, fact.Value) { SemanticKey = fact.Key })])) { Scope = scope }]);
+        return pack.Object;
+    }
+
+    [Fact]
+    public async Task Skolenaervaer_form_data_type_and_content_type_are_suggested_from_the_test_pack_reference_without_saving()
+    {
+        var bed = new Bed();
+        bed.Packs.Add(bed.SkoleNaervaerPack());
+
+        var view = await bed.View(detect: true);
+
+        Field(view, "form-data-type").Should().Match<AltinnSettingField>(f => f.Value == AltinnTestKit.RealFormDataType && f.State == AltinnSettingState.Declared
+            && f.Source == AltinnSettingSource.TestPack && f.SourceLabel == "Test Pack reference · OpenAPI" && f.Proposal!.Value == AltinnTestKit.RealFormDataType);
+        Field(view, "content-type").Should().Match<AltinnSettingField>(f => f.Value == "application/xml" && f.State == AltinnSettingState.Declared && f.Proposal!.Value == "application/xml");
+        (await bed.Db.AltinnEnvironmentSettings.CountAsync()).Should().Be(0, "detection never saves");
+    }
+
+    [Fact]
+    public async Task Contract_evidence_wins_over_the_reference_and_the_reference_never_conflicts_with_it()
+    {
+        var bed = new Bed();
+        bed.Packs.Add(ReferencePack(AltinnTestKit.AppId, (AltinnEnvironmentService.FormDataTypeKey, "reference-type")));
+        bed.Flows.Contract = new AltinnAppContractRecord(new AltinnContractSnapshot { AppId = AltinnTestKit.AppId, FormDataTypeId = AltinnTestKit.RealFormDataType }, null);
+
+        Field(await bed.View(), "form-data-type").Should().Match<AltinnSettingField>(f =>
+            f.Value == AltinnTestKit.RealFormDataType && f.State == AltinnSettingState.Detected && f.Source == AltinnSettingSource.SourceAnalysis);
+    }
+
+    [Fact]
+    public async Task Another_app_gets_no_suggestion_the_altinn_provider_is_not_hardcoded_to_skolenaervaer_or_xml()
+    {
+        var bed = new Bed();
+        bed.Packs.Add(bed.SkoleNaervaerPack());
+        (await bed.Store.UpdateAsync(Env, new() { AppIdentifier = "buf/another-app", Environment = "Test" })).Problems.Should().BeEmpty();
+
+        var view = await bed.View(detect: true);
+
+        Field(view, "form-data-type").State.Should().Be(AltinnSettingState.Missing);
+        Field(view, "content-type").State.Should().Be(AltinnSettingState.Missing);
+        Field(await new Bed().View(detect: true), "content-type").State.Should().Be(AltinnSettingState.Missing, "without a pack reference nothing suggests XML");
+    }
+
+    [Fact]
+    public async Task Ambiguous_evidence_stays_unresolved()
+    {
+        var bed = new Bed();
+        bed.Packs.Add(bed.SkoleNaervaerPack());
+        bed.Flows.Contract = new AltinnAppContractRecord(new AltinnContractSnapshot { AppId = AltinnTestKit.AppId, FormDataTypeCandidates = ["model-a", "model-b"] }, null);
+        Field(await bed.View(), "form-data-type").Should().Match<AltinnSettingField>(f => f.State == AltinnSettingState.Missing && f.Detail.Contains("several form data types"));
+
+        var disagreeing = new Bed();
+        disagreeing.Packs.Add(disagreeing.SkoleNaervaerPack());
+        disagreeing.Packs.Add(ReferencePack(AltinnTestKit.AppId, (AltinnEnvironmentService.ContentTypeKey, "application/json")));
+        var view = await disagreeing.View();
+        Field(view, "content-type").State.Should().Be(AltinnSettingState.Missing);
+        view.Notes.Should().Contain(note => note.Contains("disagree"));
+    }
+
+    [Fact]
+    public async Task An_explicit_value_is_never_replaced_and_disagreeing_detected_evidence_is_a_conflict()
+    {
+        var bed = new Bed();
+        bed.Packs.Add(bed.SkoleNaervaerPack());
+        (await bed.Store.UpdateAsync(Env, new() { FormDataType = "explicit-model", ContentType = "application/json" })).Problems.Should().BeEmpty();
+
+        var suggestedOnly = await bed.View();
+        Field(suggestedOnly, "form-data-type").Should().Match<AltinnSettingField>(f => f.Value == "explicit-model" && f.State == AltinnSettingState.Configured && f.Proposal == null);
+        Field(suggestedOnly, "content-type").Should().Match<AltinnSettingField>(f => f.Value == "application/json" && f.State == AltinnSettingState.Configured);
+
+        bed.Flows.Contract = new AltinnAppContractRecord(new AltinnContractSnapshot { AppId = AltinnTestKit.AppId, FormDataTypeId = AltinnTestKit.RealFormDataType }, null);
+        Field(await bed.View(), "form-data-type").Should().Match<AltinnSettingField>(f =>
+            f.State == AltinnSettingState.Conflict && f.Value == "explicit-model" && f.Proposal!.Value == AltinnTestKit.RealFormDataType);
+    }
+
+    [Fact]
+    public async Task Applying_the_suggestions_saves_them_as_configured_and_portable_settings()
+    {
+        var bed = new Bed();
+        bed.Packs.Add(bed.SkoleNaervaerPack());
+        var detected = await bed.View(detect: true);
+
+        (await bed.Store.UpdateAsync(Env, new()
+        {
+            FormDataType = Field(detected, "form-data-type").Proposal!.Value, ContentType = Field(detected, "content-type").Proposal!.Value,
+        })).Problems.Should().BeEmpty();
+
+        var view = await bed.View();
+        Field(view, "form-data-type").Should().Match<AltinnSettingField>(f => f.State == AltinnSettingState.Configured && f.Value == AltinnTestKit.RealFormDataType);
+        Field(view, "content-type").Should().Match<AltinnSettingField>(f => f.State == AltinnSettingState.Configured && f.Value == "application/xml");
+        BirkNext.Api.Services.ExternalIntegrations.AltinnProviderHandler.ToSettings(view.Saved).Should()
+            .Contain("formDataType", AltinnTestKit.RealFormDataType).And.Contain("contentType", "application/xml");
+    }
+
+    [Fact]
+    public async Task Integration_reference_shows_the_display_name_and_keeps_the_raw_id()
+    {
+        var bed = new Bed();
+        const string id = "15550bccc6b34a9e8118a99dc4e1fd82:httpapi:skolen-rv-r-altinn-report-intake";
+        bed.Integrations.Add(new IntegrationDefinition { Id = id, EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });
+
+        var integration = Field(await bed.View(), "integration");
+
+        integration.Value.Should().Be(id);
+        integration.DisplayValue.Should().Be(AltinnEnvironmentService.IntegrationName);
+        integration.Proposal!.DisplayValue.Should().Be(AltinnEnvironmentService.IntegrationName);
+    }
+
+    [Fact]
+    public async Task Manual_readiness_ignores_unattended_only_blockers_and_runtime_stays_separate()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+
+        var view = await bed.View();
+
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready);
+        view.ManualMissing.Should().BeEmpty();
+        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked);
+        view.AutomatedBlockers.Should().Contain(blocker => blocker.Contains("client", StringComparison.OrdinalIgnoreCase) || blocker.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        view.Summary.Single(item => item.Key == "runtime").State.Should().Be(AltinnReadinessState.NotAssessed, "runtime is never configuration readiness");
+
+        var noReporter = new Bed();
+        noReporter.Flows.Configuration = noReporter.Flows.Configuration with { Environment = ExternalTestEnvironment.Test, AppIdentifier = AltinnTestKit.AppId };
+        var missing = await noReporter.View();
+        missing.ManualMissing.Should().Contain(["Reporter", "Child"]);
+        missing.AutomatedBlockers.Should().Contain("Reporter: missing");
+    }
+
+    [Fact]
+    public async Task Report_contract_readiness_names_its_sources()
+    {
+        (await new Bed().View()).Contract.State.Should().Be(AltinnReadinessState.Blocked);
+
+        var bed = new Bed();
+        ManualReady(bed);
+        var contract = (await bed.View()).Contract;
+        contract.State.Should().NotBe(AltinnReadinessState.Blocked);
+        contract.Reason.Should().NotContain("No contract evidence");
     }
 }
