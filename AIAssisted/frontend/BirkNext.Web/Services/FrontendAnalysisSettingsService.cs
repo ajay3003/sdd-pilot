@@ -17,9 +17,10 @@ public interface IFrontendAnalysisSettingsService
     /// minted again on the next load.</summary>
     bool IsMaterialized => true;
 
-    /// <summary>Stores the current settings when they exist only in memory, so the built-in profiles keep their ids from now on. Called
-    /// the first time backend-owned configuration is attached to one of them; a no-op once stored.</summary>
-    Task MaterializeAsync(IJSRuntime js) => Task.CompletedTask;
+    /// <summary>Stores the canonical built-in defaults, exactly as seeded, when <paramref name="environmentId"/> is one of them and nothing
+    /// is stored yet, so their ids survive a reload. Called before an operation that attaches backend-owned state to that environment. Any
+    /// other in-memory change (an unsaved profile, an unsaved edit) is not stored. A no-op once stored or for any other id.</summary>
+    Task MaterializeAsync(IJSRuntime js, string environmentId) => Task.CompletedTask;
 
     /// <summary>Raised after the Target Environments were persisted (created, edited, deleted, active one switched, reset), so readers
     /// such as project applicability and Recommended Workflow follow without polling or navigation.</summary>
@@ -73,6 +74,10 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     public FrontendAnalysisSettings  Settings      => _settings;
     public bool                      IsLoaded      { get; private set; }
     public bool                      IsMaterialized { get; private set; }
+
+    // The built-in defaults as seeded on this load, kept until stored: what MaterializeAsync stores and which ids it accepts.
+    private string? _seedJson;
+    private HashSet<string> _seedProfileIds = new(StringComparer.Ordinal);
     public FrontendAnalysisProfile?  ActiveProfile =>
         _settings.ActiveResolutionError is not null || string.IsNullOrWhiteSpace(_settings.ActiveProfileId)
             ? null
@@ -118,6 +123,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         // Seed profiles get fresh random ids and are not stored until saved or until backend configuration is attached to one of them
         // (see MaterializeAsync); ids are never fixed or shared, because backend records are keyed by environment id alone.
         _settings = BuildSeedSettings();
+        _seedJson = JsonSerializer.Serialize(_settings, JsonOptions);
+        _seedProfileIds = new(_settings.Profiles.Select(profile => profile.Id), StringComparer.Ordinal);
         IsLoaded  = true;
     }
 
@@ -142,13 +149,23 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     {
         var json = JsonSerializer.Serialize(_settings, JsonOptions);
         await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
-        IsMaterialized = true;
+        MarkMaterialized();
         Changed?.Invoke();
     }
 
-    public async Task MaterializeAsync(IJSRuntime js)
+    public async Task MaterializeAsync(IJSRuntime js, string environmentId)
     {
-        if (!IsMaterialized) await SaveAsync(js);
+        if (IsMaterialized || _seedJson is null || !_seedProfileIds.Contains(environmentId)) return;
+        await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, _seedJson);
+        MarkMaterialized();
+        Changed?.Invoke();
+    }
+
+    private void MarkMaterialized()
+    {
+        IsMaterialized = true;
+        _seedJson = null;
+        _seedProfileIds = new(StringComparer.Ordinal);
     }
 
     // ── Detection snapshots (separate evidence store, never part of the saved profile) ──────────

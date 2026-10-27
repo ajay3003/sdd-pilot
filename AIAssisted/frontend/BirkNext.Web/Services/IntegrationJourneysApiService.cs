@@ -74,7 +74,7 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public async Task<ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>> ApplySourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default)
     {
-        using var response = await http.PostAsync($"api/integration-journeys/packs/{E(packId)}/source-guidance/apply?environmentId={E(environmentId)}", null, ct);
+        using var response = await http.SendForEnvironmentAsync(HttpMethod.Post, $"api/integration-journeys/packs/{E(packId)}/source-guidance/apply?environmentId={E(environmentId)}", null, environmentId, ct);
         return await ReadAsync<BirkNext.SourceDomains.SourceConfigurationApplyResult>(response, ct);
     }
 
@@ -86,7 +86,7 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public async Task<ActiveEventApiResult<SetupApplyResult>> ApplySetupProfileAsync(string environmentId, string packId, SetupApplyRequest request, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync($"api/setup-profiles/{E(packId)}/apply?environmentId={E(environmentId)}", request, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/setup-profiles/{E(packId)}/apply?environmentId={E(environmentId)}", request, Json, environmentId, ct);
         return await ReadAsync<SetupApplyResult>(response, ct);
     }
 

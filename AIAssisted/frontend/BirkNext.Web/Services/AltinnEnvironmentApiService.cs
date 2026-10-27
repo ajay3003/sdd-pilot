@@ -35,13 +35,16 @@ public sealed class AltinnEnvironmentApiService(HttpClient http) : IAltinnEnviro
         SendAsync<AltinnEnvironmentView>(HttpMethod.Post, $"{Base}/detect?environmentId={E(environmentId)}", null, ct);
 
     public Task<ActiveEventApiResult<AltinnEnvironmentView>> SaveAsync(string environmentId, AltinnEnvironmentSettingsUpdate update, CancellationToken ct = default) =>
-        SendAsync<AltinnEnvironmentView>(HttpMethod.Put, $"{Base}/settings?environmentId={E(environmentId)}", JsonContent.Create(update, options: Json), ct);
+        SendAsync<AltinnEnvironmentView>(HttpMethod.Put, $"{Base}/settings?environmentId={E(environmentId)}", JsonContent.Create(update, options: Json), ct,
+            environment: environmentId);
 
     public Task<ActiveEventApiResult<AltinnEnvironmentView>> RecordObservationAsync(string environmentId, AltinnRuntimeObservationRequest request, CancellationToken ct = default) =>
-        SendAsync<AltinnEnvironmentView>(HttpMethod.Post, $"{Base}/observations?environmentId={E(environmentId)}", JsonContent.Create(request, options: Json), ct);
+        SendAsync<AltinnEnvironmentView>(HttpMethod.Post, $"{Base}/observations?environmentId={E(environmentId)}", JsonContent.Create(request, options: Json), ct,
+            environment: environmentId);
 
     public Task<ActiveEventApiResult<AltinnEnvironmentView>> RecordBrowserObservationAsync(string environmentId, AltinnBrowserObservationRequest request, CancellationToken ct = default) =>
-        SendAsync<AltinnEnvironmentView>(HttpMethod.Post, $"{Base}/browser-observation?environmentId={E(environmentId)}", JsonContent.Create(request, options: Json), ct);
+        SendAsync<AltinnEnvironmentView>(HttpMethod.Post, $"{Base}/browser-observation?environmentId={E(environmentId)}", JsonContent.Create(request, options: Json), ct,
+            environment: environmentId);
 
     public Task<ActiveEventApiResult<bool>> AddSessionSecretAsync(string environmentId, string secret, CancellationToken ct = default) =>
         SendNoContentAsync(HttpMethod.Post, $"{Base}/session/secret?environmentId={E(environmentId)}", JsonContent.Create(new AltinnSessionSecretRequest(secret), options: Json), ct);
@@ -61,11 +64,12 @@ public sealed class AltinnEnvironmentApiService(HttpClient http) : IAltinnEnviro
         return result.Error is null ? new(true, null, result.Status) : new(false, result.Error, result.Status);
     }
 
-    private async Task<ActiveEventApiResult<T>> SendAsync<T>(HttpMethod method, string url, HttpContent? content, CancellationToken ct, bool expectBody = true)
+    /// <param name="environment">Declared only by operations that attach backend-owned state to that Target Environment.</param>
+    private async Task<ActiveEventApiResult<T>> SendAsync<T>(HttpMethod method, string url, HttpContent? content, CancellationToken ct, bool expectBody = true, string? environment = null)
     {
         try
         {
-            using var request = new HttpRequestMessage(method, url) { Content = content };
+            using var request = new HttpRequestMessage(method, url) { Content = content }.RequiresPersistentEnvironment(environment);
             using var response = await http.SendAsync(request, ct);
             if (response.IsSuccessStatusCode) return new(expectBody ? await response.Content.ReadFromJsonAsync<T>(Json, ct) : default, null, response.StatusCode);
             string? message = response.StatusCode switch
@@ -81,6 +85,7 @@ public sealed class AltinnEnvironmentApiService(HttpClient http) : IAltinnEnviro
             }
             return new(default, message ?? $"The backend refused the request (HTTP {(int)response.StatusCode}).", response.StatusCode);
         }
+        catch (TargetEnvironmentNotSavedException ex) { return new(default, ex.Message, null); }
         catch (HttpRequestException)
         {
             // Never the request content: an exception detail must not carry a secret or identifier back into the UI.

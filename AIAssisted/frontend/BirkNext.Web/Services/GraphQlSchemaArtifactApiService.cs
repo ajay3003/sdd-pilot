@@ -24,7 +24,7 @@ public sealed class GraphQlSchemaArtifactApiService(HttpClient http) : IGraphQlS
 
     public async Task<GraphQlSchemaArtifactSaveResult> SaveAsync(GraphQlSchemaArtifactUpload upload, CancellationToken ct = default)
     {
-        using var response = await http.PutAsJsonAsync("api/graphql-schema-artifacts", upload, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Put, "api/graphql-schema-artifacts", upload, Json, upload.EnvironmentId, ct);
         if (response.IsSuccessStatusCode) return new(await response.Content.ReadFromJsonAsync<GraphQlSchemaArtifact>(Json, ct), null);
         if ((int)response.StatusCode == 400)
         {

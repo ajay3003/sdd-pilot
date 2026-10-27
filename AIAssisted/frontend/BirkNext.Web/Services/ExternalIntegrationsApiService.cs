@@ -49,7 +49,8 @@ public sealed class ExternalIntegrationsApiService(HttpClient http) : IExternalI
     public Task<ActiveEventApiResult<ExternalIntegrationView>> DetectOneAsync(string environmentId, string id, CancellationToken ct = default) =>
         Send<ExternalIntegrationView>(HttpMethod.Post, $"{Base}/{E(id)}/detect?environmentId={E(environmentId)}", null, ct);
     public Task<ActiveEventApiResult<ExternalIntegrationView>> SaveAsync(string environmentId, string? id, ExternalIntegrationRequest request, CancellationToken ct = default) =>
-        Send<ExternalIntegrationView>(id is null ? HttpMethod.Post : HttpMethod.Put, id is null ? $"{Base}?environmentId={E(environmentId)}" : $"{Base}/{E(id)}?environmentId={E(environmentId)}", Body(request), ct);
+        Send<ExternalIntegrationView>(id is null ? HttpMethod.Post : HttpMethod.Put, id is null ? $"{Base}?environmentId={E(environmentId)}" : $"{Base}/{E(id)}?environmentId={E(environmentId)}", Body(request), ct,
+            environment: environmentId);
     public Task<ActiveEventApiResult<bool>> DeleteAsync(string environmentId, string id, CancellationToken ct = default) =>
         NoContent(HttpMethod.Delete, $"{Base}/{E(id)}?environmentId={E(environmentId)}", null, ct);
     public Task<ActiveEventApiResult<bool>> AddSecretAsync(string environmentId, string id, string secret, CancellationToken ct = default) =>
@@ -61,7 +62,7 @@ public sealed class ExternalIntegrationsApiService(HttpClient http) : IExternalI
     public Task<ActiveEventApiResult<SetupPreflightResult>> PreflightAsync(string environmentId, SetupPreflightRequest request, CancellationToken ct = default) =>
         Send<SetupPreflightResult>(HttpMethod.Post, $"{Base}/setup/preflight?environmentId={E(environmentId)}", Body(request), ct);
     public Task<ActiveEventApiResult<SetupApplyPackageResult>> ApplyAsync(string environmentId, SetupApplyPackageRequest request, CancellationToken ct = default) =>
-        Send<SetupApplyPackageResult>(HttpMethod.Post, $"{Base}/setup/apply?environmentId={E(environmentId)}", Body(request), ct);
+        Send<SetupApplyPackageResult>(HttpMethod.Post, $"{Base}/setup/apply?environmentId={E(environmentId)}", Body(request), ct, environment: environmentId);
 
     public Task<ActiveEventApiResult<IReadOnlyList<SetupLibraryItemView>>> LibraryAsync(ExternalProviderType? provider = null, SetupLibraryStatus? status = null, string? testPack = null,
         SetupScope? setupType = null, CancellationToken ct = default) =>
@@ -83,7 +84,8 @@ public sealed class ExternalIntegrationsApiService(HttpClient http) : IExternalI
     public Task<ActiveEventApiResult<SetupPreflightResult>> PreflightLibraryVersionAsync(Guid id, int? version, string environmentId, CancellationToken ct = default) =>
         Send<SetupPreflightResult>(HttpMethod.Post, $"{Library}/{id}/preflight?environmentId={E(environmentId)}" + (version is { } v ? $"&version={v}" : ""), null, ct);
     public Task<ActiveEventApiResult<SetupApplyPackageResult>> ApplyLibraryVersionAsync(Guid id, int? version, string environmentId, Dictionary<string, bool>? decisions, CancellationToken ct = default) =>
-        Send<SetupApplyPackageResult>(HttpMethod.Post, $"{Library}/{id}/apply?environmentId={E(environmentId)}" + (version is { } v ? $"&version={v}" : ""), Body(decisions ?? []), ct);
+        Send<SetupApplyPackageResult>(HttpMethod.Post, $"{Library}/{id}/apply?environmentId={E(environmentId)}" + (version is { } v ? $"&version={v}" : ""), Body(decisions ?? []), ct,
+            environment: environmentId);
 
     private async Task<ActiveEventApiResult<bool>> NoContent(HttpMethod method, string url, HttpContent? content, CancellationToken ct)
     {
@@ -91,11 +93,12 @@ public sealed class ExternalIntegrationsApiService(HttpClient http) : IExternalI
         return result.Error is null ? new(true, null, result.Status) : new(false, result.Error, result.Status);
     }
 
-    private async Task<ActiveEventApiResult<T>> Send<T>(HttpMethod method, string url, HttpContent? content, CancellationToken ct, bool body = true)
+    /// <param name="environment">Declared only by operations that attach backend-owned state to that Target Environment.</param>
+    private async Task<ActiveEventApiResult<T>> Send<T>(HttpMethod method, string url, HttpContent? content, CancellationToken ct, bool body = true, string? environment = null)
     {
         try
         {
-            using var request = new HttpRequestMessage(method, url) { Content = content };
+            using var request = new HttpRequestMessage(method, url) { Content = content }.RequiresPersistentEnvironment(environment);
             using var response = await http.SendAsync(request, ct);
             if (response.IsSuccessStatusCode) return new(body ? await response.Content.ReadFromJsonAsync<T>(Json, ct) : default, null, response.StatusCode);
             string? message = response.StatusCode switch
@@ -112,6 +115,7 @@ public sealed class ExternalIntegrationsApiService(HttpClient http) : IExternalI
             }
             return new(default, message ?? $"The backend refused the request (HTTP {(int)response.StatusCode}).", response.StatusCode);
         }
+        catch (TargetEnvironmentNotSavedException ex) { return new(default, ex.Message, null); }
         catch (HttpRequestException) { return new(default, "The BirkNext backend could not be reached.", null); }
     }
 }

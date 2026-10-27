@@ -180,7 +180,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetEvidenceBindingAsync(string environmentId, string integrationId, Guid? snapshotId, CancellationToken ct = default)
     {
-        using var response = await http.PutAsJsonAsync($"api/integration-review/evidence-bindings?{Env(environmentId)}", new IntegrationEvidenceBindingRequest(integrationId, snapshotId), Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/integration-review/evidence-bindings?{Env(environmentId)}", new IntegrationEvidenceBindingRequest(integrationId, snapshotId), Json, environmentId, ct);
         if (response.IsSuccessStatusCode)
             return (response.Content.Headers.ContentLength == 0 ? null : await response.Content.ReadFromJsonAsync<IntegrationEvidenceBinding?>(Json, ct), null);
         return (null, response.StatusCode == System.Net.HttpStatusCode.Forbidden ? "Binding evidence requires the integration-configuration permission." : "The evidence binding could not be saved.");
@@ -191,14 +191,14 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         return (snapshot, failure?.Message);
     }
     public Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> AnalyzeSourceSnapshotDetailedAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
-        UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, ct);
+        UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, environmentId, ct);
     public async Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<ReviewSourceOptions>($"api/integration-review/source/scope?{Env(environmentId)}{(primary is { } id ? $"&primary={id}" : "")}", Json, ct) ?? new();
-    private async Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> UploadSource(string route, string fileName, Stream content, CancellationToken ct)
+    private async Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> UploadSource(string route, string fileName, Stream content, string environmentId, CancellationToken ct)
     {
         using var body = new MultipartFormDataContent();
         body.Add(new StreamContent(content), "file", fileName);
-        using var response = await http.PostAsync(route, body, ct);
+        using var response = await http.SendForEnvironmentAsync(HttpMethod.Post, route, body, environmentId, ct);
         if (!response.IsSuccessStatusCode) return (null, await ReadSourceUploadFailure(response, ct));
         var snapshot = await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>(Json, ct);
         return snapshot is null
@@ -388,7 +388,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> UseApplicationMessagingSourceAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync($"api/integrations/application-messaging/source-scope?{Env(environmentId)}", scope, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/integrations/application-messaging/source-scope?{Env(environmentId)}", scope, Json, environmentId, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
@@ -415,7 +415,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<(ScimSourceEvidence? Evidence, string? Error)> UseScimSourceAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync($"api/integrations/scim/source-scope?{Env(environmentId)}", scope, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/integrations/scim/source-scope?{Env(environmentId)}", scope, Json, environmentId, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ScimSourceEvidence>(Json, ct), null);
@@ -441,7 +441,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         await Read<ServiceBusEvidenceCheck>(await http.PostAsync($"api/integrations/platforms/{Uri.EscapeDataString(platformId)}/servicebus-evidence?{Env(environmentId)}", null, ct), ct);
 
     public async Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default) =>
-        await Read<ApplicationMessagingEvidenceSet>(await http.PutAsJsonAsync($"api/integrations/application-messaging/{Uri.EscapeDataString(applicationId)}/binding?{Env(environmentId)}", new { consumer }, Json, ct), ct);
+        await Read<ApplicationMessagingEvidenceSet>(await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/integrations/application-messaging/{Uri.EscapeDataString(applicationId)}/binding?{Env(environmentId)}", new { consumer }, Json, environmentId, ct), ct);
 
     /// <summary>Environment identity plus the two facts the backend uses to decide whether the known M2LB DEV seed applies.</summary>
     private static string Scope(FrontendAnalysisProfile profile) =>
@@ -454,7 +454,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<IntegrationCatalog> ApplyTemplateAsync(FrontendAnalysisProfile profile, string templateId, CancellationToken ct = default)
     {
-        using var response = await http.PostAsync($"api/integrations/templates/{Uri.EscapeDataString(templateId)}/apply?{Scope(profile)}", null, ct);
+        using var response = await http.SendForEnvironmentAsync(HttpMethod.Post, $"api/integrations/templates/{Uri.EscapeDataString(templateId)}/apply?{Scope(profile)}", null, profile.Id, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
         {
             var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Json, ct);
@@ -464,26 +464,26 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     }
 
     public async Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default) =>
-        await Read<IntegrationDefinition>(await http.PostAsJsonAsync($"api/integrations?{Env(environmentId)}", definition, Json, ct), ct);
+        await Read<IntegrationDefinition>(await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/integrations?{Env(environmentId)}", definition, Json, environmentId, ct), ct);
 
     public async Task<IntegrationDefinition> UpdateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default) =>
-        await Read<IntegrationDefinition>(await http.PutAsJsonAsync($"api/integrations/{Uri.EscapeDataString(definition.Id)}?{Env(environmentId)}", definition, Json, ct), ct);
+        await Read<IntegrationDefinition>(await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/integrations/{Uri.EscapeDataString(definition.Id)}?{Env(environmentId)}", definition, Json, environmentId, ct), ct);
 
     public async Task<IntegrationDefinition> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default) =>
-        await Read<IntegrationDefinition>(await http.PostAsync($"api/integrations/{Uri.EscapeDataString(id)}/enabled?{Env(environmentId)}&enabled={(enabled ? "true" : "false")}", null, ct), ct);
+        await Read<IntegrationDefinition>(await http.SendForEnvironmentAsync(HttpMethod.Post, $"api/integrations/{Uri.EscapeDataString(id)}/enabled?{Env(environmentId)}&enabled={(enabled ? "true" : "false")}", null, environmentId, ct), ct);
 
     public async Task DeleteAsync(string environmentId, string id, CancellationToken ct = default) =>
         (await http.DeleteAsync($"api/integrations/{Uri.EscapeDataString(id)}?{Env(environmentId)}", ct)).EnsureSuccessStatusCode();
 
     public async Task<IntegrationPlatform> UpdatePlatformAsync(string environmentId, IntegrationPlatform platform, CancellationToken ct = default) =>
-        await Read<IntegrationPlatform>(await http.PutAsJsonAsync($"api/integrations/platforms/{Uri.EscapeDataString(platform.Id)}?{Env(environmentId)}", platform, Json, ct), ct);
+        await Read<IntegrationPlatform>(await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/integrations/platforms/{Uri.EscapeDataString(platform.Id)}?{Env(environmentId)}", platform, Json, environmentId, ct), ct);
 
     public async Task<IReadOnlyList<IntegrationContractArtifact>> ContractsAsync(string environmentId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<IntegrationContractArtifact>>($"api/integrations/contracts?{Env(environmentId)}", Json, ct) ?? [];
 
     public async Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveContractAsync(IntegrationContractUpload upload, CancellationToken ct = default)
     {
-        using var response = await http.PutAsJsonAsync("api/integrations/contracts", upload, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Put, "api/integrations/contracts", upload, Json, upload.EnvironmentId, ct);
         if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<IntegrationContractArtifact>(Json, ct), null);
         if ((int)response.StatusCode == 400)
         {
@@ -507,7 +507,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<(IntegrationContractArtifact? Artifact, string? Error)> SelectSourceContractAsync(IntegrationContractSourceSelectionRequest request, CancellationToken ct = default)
     {
-        using var response = await http.PutAsJsonAsync("api/integrations/contracts/source-selection", request, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Put, "api/integrations/contracts/source-selection", request, Json, request.EnvironmentId, ct);
         if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<IntegrationContractArtifact>(Json, ct), null);
         if ((int)response.StatusCode == 400)
         {
@@ -520,7 +520,7 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     public async Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
     {
         if (profile.Integrations.Count == 0) return 0;
-        var response = await http.PostAsJsonAsync($"api/integrations/import-legacy?{Env(profile.Id)}", profile.Integrations, Json, ct);
+        var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/integrations/import-legacy?{Env(profile.Id)}", profile.Integrations, Json, profile.Id, ct);
         return await Read<int>(response, ct);
     }
 
@@ -568,11 +568,11 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         ?? new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = environmentId, Name = "Message flow review" }, new(), new(false, 0, 0, [], []), [], []);
 
     public async Task<IntegrationMessageFlowPackage> SaveMessageFlowReviewAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default) =>
-        await Read<IntegrationMessageFlowPackage>(await http.PutAsJsonAsync($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, ct), ct);
+        await Read<IntegrationMessageFlowPackage>(await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, environmentId, ct), ct);
 
     public async Task<(IntegrationMessageFlowPackage? Package, MessageFlowSaveProblem? Problem)> SaveMessageFlowReviewDetailedAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default)
     {
-        using var response = await http.PutAsJsonAsync($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, environmentId, ct);
         if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<IntegrationMessageFlowPackage>(Json, ct), null);
         MessageFlowSaveProblem? problem = null;
         try { problem = await response.Content.ReadFromJsonAsync<MessageFlowSaveProblem>(Json, ct); } catch (System.Text.Json.JsonException) { }

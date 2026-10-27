@@ -39,14 +39,14 @@ public sealed class AltinnTestingApiService(HttpClient http) : IAltinnTestingApi
         SendAsync<AltinnAppContractView>(HttpMethod.Get, $"api/altinn-testing/contract?environmentId={E(environmentId)}", null, ct);
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> ReadPublicMetadataAsync(string environmentId, CancellationToken ct = default) =>
-        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/public-metadata?environmentId={E(environmentId)}", null, ct);
+        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/public-metadata?environmentId={E(environmentId)}", null, ct, environmentId);
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> ReadSkoleNaervaerPublicMetadataAsync(string environmentId, CancellationToken ct = default) =>
-        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/public-metadata?environmentId={E(environmentId)}&skoleNaervaerDefaults=true", null, ct);
+        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/public-metadata?environmentId={E(environmentId)}&skoleNaervaerDefaults=true", null, ct, environmentId);
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> UseSourceAnalysisAsync(string environmentId, Guid? snapshotId, CancellationToken ct = default) =>
         SendAsync<AltinnAppContractView>(HttpMethod.Post,
-            $"api/altinn-testing/contract/source-analysis?environmentId={E(environmentId)}" + (snapshotId is { } id ? $"&snapshotId={id}" : ""), null, ct);
+            $"api/altinn-testing/contract/source-analysis?environmentId={E(environmentId)}" + (snapshotId is { } id ? $"&snapshotId={id}" : ""), null, ct, environmentId);
 
     public Task<ActiveEventApiResult<AltinnSignInStatus>> SignInStatusAsync(string environmentId, CancellationToken ct = default) =>
         SendAsync<AltinnSignInStatus>(HttpMethod.Get, $"api/altinn-testing/sign-in/status?environmentId={E(environmentId)}", null, ct);
@@ -58,11 +58,11 @@ public sealed class AltinnTestingApiService(HttpClient http) : IAltinnTestingApi
         SendAsync<AltinnConfigurationOverview>(HttpMethod.Get, $"api/altinn-testing/configuration?environmentId={E(environmentId)}", null, ct);
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> AcceptContractChangesAsync(string environmentId, CancellationToken ct = default) =>
-        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/accept-changes?environmentId={E(environmentId)}", null, ct);
+        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/accept-changes?environmentId={E(environmentId)}", null, ct, environmentId);
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> ImportOpenApiAsync(string environmentId, string json, CancellationToken ct = default) =>
         SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/import-openapi?environmentId={E(environmentId)}",
-            new StringContent(json, System.Text.Encoding.UTF8, "application/json"), ct);
+            new StringContent(json, System.Text.Encoding.UTF8, "application/json"), ct, environmentId);
 
     public async Task<ActiveEventApiResult<bool>> SignOutAsync(string environmentId, CancellationToken ct = default)
     {
@@ -71,9 +71,10 @@ public sealed class AltinnTestingApiService(HttpClient http) : IAltinnTestingApi
         return response.IsSuccessStatusCode ? new(true, null, response.StatusCode) : new(false, Message(response.StatusCode) ?? "Sign-out failed.", response.StatusCode);
     }
 
-    private async Task<ActiveEventApiResult<T>> SendAsync<T>(HttpMethod method, string url, HttpContent? content, CancellationToken ct)
+    /// <param name="environment">Declared only by operations that store contract evidence or configuration for that Target Environment.</param>
+    private async Task<ActiveEventApiResult<T>> SendAsync<T>(HttpMethod method, string url, HttpContent? content, CancellationToken ct, string? environment = null)
     {
-        using var request = new HttpRequestMessage(method, url) { Content = content };
+        using var request = new HttpRequestMessage(method, url) { Content = content }.RequiresPersistentEnvironment(environment);
         using var response = await http.SendAsync(request, ct);
         if (response.IsSuccessStatusCode) return new(await response.Content.ReadFromJsonAsync<T>(Json, ct), null, response.StatusCode);
         var message = Message(response.StatusCode);
