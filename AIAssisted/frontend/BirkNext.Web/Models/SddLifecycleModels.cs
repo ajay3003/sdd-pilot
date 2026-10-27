@@ -92,7 +92,10 @@ public sealed class SddDriftSide
     /// <summary>The artifact revision number as compared ("rev 2"); null for generated documents and comparisons saved before it was kept.</summary>
     public int? RevisionNumber { get; set; }
     public string? ProjectImportId { get; set; }
+    /// <summary>The import label as compared ("M2LB · Import 2"); comparisons saved before lineages show their global "R4".</summary>
     public string? ProjectRevision { get; set; }
+    /// <summary>The project lineage of the import as compared; null for manual documents and comparisons saved before lineages.</summary>
+    public string? LineageKey { get; set; }
     public string? GeneratedSetId { get; set; }
     public Guid? SourceSnapshotId { get; set; }
     public string? Generator { get; set; }

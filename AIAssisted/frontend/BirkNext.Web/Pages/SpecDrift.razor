@@ -6,12 +6,13 @@
 @using Microsoft.AspNetCore.Components.Routing
 @implements IDisposable
 @inject NavigationManager NavigationManager
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Documentation Drift</PageTitle>
 
 @* Documentation Drift compares documentation artifacts — authored ↔ authored, generated ↔ generated, authored ↔ generated. Compare is the
-   workspace; Overview, Changes and Drift are views over the same comparison model. Requirement coverage belongs to Traceability & Coverage,
-   generated-document freshness to Generated Documentation Health, raw source to Source Analysis. *@
+   workspace; Overview, Changes and Drift are views over the same comparison model. Requirement coverage belongs to Requirements
+   Traceability, generated-document freshness to Generated Documentation Health, raw source to Source Analysis. *@
 <div class="drift-page">
     <PageHeader Title="Documentation Drift"
                 Description="@DocumentationDrift.Description" />
@@ -29,11 +30,19 @@
 
     @if (_activeTab == "changes")
     {
-        <details class="drift-legacy" data-testid="dd-spec-reviews">
-            <summary>Saved specification reviews (requirement-level comparisons)</summary>
-            <p class="drift-legacy-note">Specification comparisons saved from Compare Specs, with their requirement-level impact. An existing feature, kept here as secondary history.</p>
-            <SpecChangesPanel />
-        </details>
+        @* Requirement-level reviews are stored per Sample Project; another workspace never reads them (no cross-project history). *@
+        @if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
+        {
+            <details class="drift-legacy" data-testid="dd-spec-reviews">
+                <summary>Saved specification reviews (requirement-level comparisons)</summary>
+                <p class="drift-legacy-note">Requirement-level comparisons saved for this workspace from Compare Specs. Secondary history — not the same as imported document revisions.</p>
+                <SpecChangesPanel />
+            </details>
+        }
+        else
+        {
+            <p class="drift-legacy-note" data-testid="dd-spec-reviews-none">No saved specification reviews for this workspace.</p>
+        }
     }
 </div>
 

@@ -11,10 +11,9 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Documentation Drift in the browser: symmetrical Left/Right selectors with compact empty states, separate project revision / imported source /
-/// source snapshot / generated set facts, the comparison type following the pair, neutral authored ↔ generated results, saving with exact
-/// identities, reopening as computed, the Overview (revision availability, generated history collapsed and explained as inventory), Changes
-/// (versions of one document, same engine) and Drift (deterministic candidates only). Generic fixtures only.
+/// Documentation Drift in the browser: the comparison mode decides the selectors (version within one project, authored ↔ generated within one
+/// import, manual for anything else); imported projects are listed, never chained into revisions; Changes walks one document within its
+/// project; Drift separates equivalent-scope pairs from related documentation. Generic fixtures only.
 /// </summary>
 public sealed class DocumentationDriftPanelTests : BunitContext
 {
@@ -32,6 +31,7 @@ public sealed class DocumentationDriftPanelTests : BunitContext
             Artifacts = [new SddGeneratedDocumentArtifact { ModuleId = "module:cart", ModuleRoot = "cart/src/Cart.Api", RelativePath = "cart/src/Cart.Api/autodoc/architecture.md", Kind = "Architecture", Fingerprint = "bbb222", Generator = "maintain-docs", ContentCaptured = true }],
         });
         state.GeneratedDocumentContents["bbb222"] = "# Architecture\n\n## Requirements\n\n- Cart API serves HTTP\n";
+        state.CurrentProjectImportId = "import-a";
         Services.AddSingleton(_repository);
         Services.AddSingleton<IWorkspaceArtifactRepository>(_repository);
         Services.AddSingleton(Mock.Of<IWorkspaceAutoSaveService>(s => s.SaveNowAsync() == Task.FromResult(true)));
@@ -39,8 +39,8 @@ public sealed class DocumentationDriftPanelTests : BunitContext
 
     private IReadOnlyList<DriftDocument> Catalog() => DocumentationDrift.Catalog(_repository.SddLifecycle);
 
-    /// <summary>A second import (R2) with a changed spec and no generated documentation.</summary>
-    private void SecondRevision()
+    /// <summary>A second import of the same project "cart" with a changed spec and no generated documentation.</summary>
+    private void SecondImportOfCart()
     {
         var state = _repository.SddLifecycle;
         state.ProjectImports.Add(new SddProjectImportRecord { ImportId = "import-b", ProjectName = "cart", ProjectNameBasis = "ArchiveRoot", ArchiveFileName = "cart-r17.zip", ImportedAt = DateTimeOffset.UnixEpoch.AddDays(1) });
@@ -48,112 +48,95 @@ public sealed class DocumentationDriftPanelTests : BunitContext
         state.GeneratedDocumentationSets.Add(new SddGeneratedDocumentationSet { SetId = "genset-import-b", ProjectImportId = "import-b", State = "NotPresent" });
     }
 
-    [Fact]
-    public void Left_and_right_share_one_structure_with_a_compact_empty_state()
+    /// <summary>An unrelated project imported later, with the same relative spec path.</summary>
+    private void UnrelatedImport()
     {
-        var cut = Render<DocumentationDriftPanel>();
-        foreach (var side in new[] { "left", "right" })
-        {
-            var fieldset = cut.Find($"[data-testid=dd-side-{side}]");
-            fieldset.QuerySelectorAll("select").Select(s => s.GetAttribute("data-testid")).Should().Equal($"dd-{side}-revision", $"dd-{side}-document");
-            cut.Find($"[data-testid=dd-{side}-empty]").TextContent.Should().Be("Select a document to compare.");
-        }
-        cut.FindAll("[data-testid=dd-left-provenance], [data-testid=dd-right-provenance]").Should().BeEmpty();
-        cut.Find("[data-testid=dd-no-result]").TextContent.Should().Be("Select two documents and run Compare.");
-        cut.Find("[data-testid=dd-scope]").TextContent.Should().Be("Scope: Whole document", "only the supported scope is shown, never a fake option");
-        cut.FindAll("[data-testid=dd-sets]").Should().BeEmpty("generated documentation sets no longer sit in Compare");
-
-        var generated = Catalog().Single(d => d.Origin == DriftOrigin.Generated);
-        cut.Find("[data-testid=dd-right-document]").Change(generated.Id);
-        cut.Find("[data-testid=dd-left-empty]");
-        cut.Find("[data-testid=dd-right-provenance]");
-        cut.Find("[data-testid=dd-side-left]").QuerySelectorAll("select").Length.Should().Be(cut.Find("[data-testid=dd-side-right]").QuerySelectorAll("select").Length);
+        var state = _repository.SddLifecycle;
+        state.ProjectImports.Add(new SddProjectImportRecord { ImportId = "import-t", ProjectName = "terraform", ProjectNameBasis = "ArchiveRoot", ArchiveFileName = "terraform.zip", ImportedAt = DateTimeOffset.UnixEpoch.AddDays(2) });
+        state.Revisions.Add(new SddArtifactRevision { Role = "Specification", FileName = "terraform/specs/001-cart/spec.md", SourceReference = "terraform/specs/001-cart/spec.md", Content = "# Other\n", Fingerprint = "DDD444", Revision = 1, WorkspaceScope = "import:import-t", ProjectImportId = "import-t" });
     }
 
     [Fact]
-    public async Task Authored_vs_generated_is_a_neutral_consistency_comparison_saved_with_exact_identities()
+    public async Task Consistency_mode_compares_authored_and_generated_of_one_import_neutrally_and_saves_exact_identities()
     {
         var cut = Render<DocumentationDriftPanel>();
+        cut.Find("[data-testid=dd-mode] option[selected]").GetAttribute("value").Should().Be(nameof(DriftIntent.ConsistencyDrift), "no same-project revision exists yet");
         cut.Find("[data-testid=dd-run]").HasAttribute("disabled").Should().BeTrue();
         var authored = Catalog().Single(d => d.Origin == DriftOrigin.Authored);
+        var generated = Catalog().Single(d => d.Origin == DriftOrigin.Generated);
 
         cut.Find("[data-testid=dd-left-document]").Change(authored.Id);
-        var left = cut.Find("[data-testid=dd-left-provenance]").TextContent;
-        cut.Find("[data-testid=dd-left-project-revision]").TextContent.Should().Be("R1", "the revision label is not concatenated with the archive name");
+        cut.Find("[data-testid=dd-right-document]").Change(generated.Id);
+        cut.Find("[data-testid=dd-left-project-revision]").TextContent.Should().Be("cart · Import 1");
         cut.Find("[data-testid=dd-left-imported-source]").TextContent.Should().Be("cart-r16.zip");
-        left.Should().Contain("Authored").And.Contain("AAA111").And.Contain("rev 1").And.Contain("001-cart").And.Contain(Snapshot.ToString());
-        cut.Find("[data-testid=dd-left-document] option[value='" + authored.Id + "']").TextContent.Should().Be("Authored · Specification · cart/specs/001-cart/spec.md · R1 · rev 1");
-        cut.FindAll("[data-testid=dd-suggestion]").Should().ContainSingle().Which.TextContent.Should().StartWith("Suggested comparison");
-        cut.Find("[data-testid=dd-suggestion]").Click();
-
-        var right = cut.Find("[data-testid=dd-right-provenance]").TextContent;
-        right.Should().Contain("genset-import-a").And.Contain("maintain-docs").And.Contain(Snapshot.ToString()).And.Contain("Unknown — imported with project revision R1").And.Contain("implementation-derived");
-        cut.Find("[data-testid=dd-intent] option[selected]").GetAttribute("value").Should().Be(nameof(DriftIntent.ConsistencyDrift));
-        cut.FindAll("[data-testid=dd-intent] option").Select(o => o.GetAttribute("value")).Should().Equal([nameof(DriftIntent.ConsistencyDrift)], "version drift does not apply to authored ↔ generated");
-        cut.Find("[data-testid=dd-revision-context]").TextContent.Should().StartWith(DocumentationDrift.SameRevision).And.Contain("Content changed");
-        cut.Find("[data-testid=dd-right-gdh]").TextContent.Should().Be("View generated documentation health");
+        cut.Find("[data-testid=dd-pairing-relationship]").TextContent.Should().Be("Manual relationship — not a deterministic pair");
+        cut.Find("[data-testid=dd-revision-context]").TextContent.Should().StartWith(DocumentationDrift.SameRevision);
 
         cut.Find("[data-testid=dd-run]").Click();
         cut.Find("[data-testid=dd-result]").GetAttribute("data-intent").Should().Be(nameof(DriftIntent.ConsistencyDrift));
-        cut.FindAll("[data-testid=dd-item]").Should().Contain(i => i.GetAttribute("data-kind") == "ConsistencyDiscrepancy");
-        cut.Find("[data-testid=dd-neutral]").TextContent.Should().Contain("Neither side is assumed correct");
-        cut.Find("[data-testid=dd-source-boundary]").TextContent.Should().Contain("Use Source Analysis for raw source evidence");
-        cut.Find("[data-testid=dd-basis]").TextContent.Should().Contain("not assessed");
-        cut.Find("[data-testid=dd-result]").TextContent.Should().NotContainAny("defect", "is wrong", "is correct", "Passed", "Failed");
+        cut.Find("[data-testid=dd-neutral]").TextContent.Should().Contain("neither side is automatically authoritative");
+        cut.Find("[data-testid=dd-result]").TextContent.Should().NotContainAny("defect", "is wrong", "Passed", "Failed");
 
         await cut.Find("[data-testid=dd-save]").ClickAsync(new());
         var saved = _repository.SddLifecycle.DocumentationDriftComparisons.Should().ContainSingle().Subject;
-        saved.Left.RevisionId.Should().Be(authored.RevisionId);
-        saved.Left.RevisionNumber.Should().Be(1);
+        (saved.Left.RevisionId, saved.Left.Fingerprint, saved.Left.LineageKey).Should().Be((authored.RevisionId, "AAA111", "project:cart"));
         saved.Right.GeneratedSetId.Should().Be("genset-import-a");
-        saved.Right.SourceSnapshotId.Should().Be(Snapshot);
-        saved.Scope.Should().Be("Whole document");
-        cut.Find("[data-testid=dd-saved]").TextContent.Should().Contain("exact artifact revisions");
+        saved.Intent.Should().Be(nameof(DriftIntent.ConsistencyDrift));
         _repository.SddLifecycle.Revisions.Should().ContainSingle("comparing never edits or adds artifact revisions");
     }
 
     [Fact]
-    public void The_same_document_on_both_sides_is_refused()
+    public void Version_mode_offers_only_same_project_revisions()
     {
+        SecondImportOfCart();
+        UnrelatedImport();
         var cut = Render<DocumentationDriftPanel>();
-        var authored = Catalog().Single(d => d.Origin == DriftOrigin.Authored);
-        cut.Find("[data-testid=dd-left-document]").Change(authored.Id);
-        cut.Find("[data-testid=dd-right-document]").Change(authored.Id);
-        cut.Find("[data-testid=dd-guard]").TextContent.Should().Be(DocumentationDrift.SelectDifferent);
-        cut.Find("[data-testid=dd-run]").HasAttribute("disabled").Should().BeTrue();
-    }
-
-    [Fact]
-    public void Authored_versions_compare_as_version_drift_without_generated_documentation()
-    {
-        SecondRevision();
-        var cut = Render<DocumentationDriftPanel>();
-        var specs = Catalog().Where(d => d.Origin == DriftOrigin.Authored).ToList();
-        cut.Find("[data-testid=dd-left-document]").Change(specs[0].Id);
-        cut.Find("[data-testid=dd-previous-current]").Click();
-        cut.Find("[data-testid=dd-intent] option[selected]").GetAttribute("value").Should().Be(nameof(DriftIntent.VersionDrift));
-        cut.Find("[data-testid=dd-revision-context]").TextContent.Should().Contain("R1 ↔ R2");
+        cut.Find("[data-testid=dd-mode] option[selected]").GetAttribute("value").Should().Be(nameof(DriftIntent.VersionDrift));
+        var identity = DocumentationDrift.Identities(Catalog()).Single(i => i.Versions.Count > 1);
+        cut.FindAll("[data-testid=dd-version-identity] option").Should().HaveCount(2, "the terraform spec is not a revision of cart's spec");
+        cut.Find("[data-testid=dd-version-identity]").Change(identity.LogicalKey);
+        cut.FindAll("[data-testid=dd-version-from] option").Select(o => o.TextContent).Should().OnlyContain(t => t.StartsWith("cart · Import"));
         cut.Find("[data-testid=dd-run]").Click();
-        cut.Find("[data-testid=dd-counts]").TextContent.Should().Contain("Changed between R1 and R2");
+        cut.Find("[data-testid=dd-counts]").TextContent.Should().Contain("Changed between cart · Import 1 and cart · Import 2");
         cut.FindAll("[data-testid=dd-neutral]").Should().BeEmpty();
-
-        cut.Find("[data-testid=dd-right-revision]").Change("R2");
-        cut.Find("[data-testid=dd-right-no-generated]").TextContent.Should().Be("Generated documentation not present for this project revision.");
     }
 
     [Fact]
-    public void Changing_the_pair_updates_the_selected_comparison_type_visibly()
+    public void Manual_mode_allows_any_pair_labelled_manual_and_refuses_the_same_document()
     {
-        SecondRevision();
+        UnrelatedImport();
         var cut = Render<DocumentationDriftPanel>();
-        var catalog = Catalog();
-        var specs = catalog.Where(d => d.Origin == DriftOrigin.Authored).ToList();
-        cut.Find("[data-testid=dd-left-document]").Change(specs[0].Id);
-        cut.Find("[data-testid=dd-right-document]").Change(catalog.Single(d => d.Origin == DriftOrigin.Generated).Id);
-        cut.FindAll("[data-testid=dd-intent] option[selected]").Select(o => o.GetAttribute("value")).Should().Equal(nameof(DriftIntent.ConsistencyDrift));
-        cut.Find("[data-testid=dd-right-document]").Change(specs[1].Id);
-        cut.FindAll("[data-testid=dd-intent] option").Should().HaveCount(2);
-        cut.FindAll("[data-testid=dd-intent] option[selected]").Select(o => o.GetAttribute("value")).Should().Equal(nameof(DriftIntent.VersionDrift));
+        cut.Find("[data-testid=dd-mode]").Change(nameof(DriftIntent.Manual));
+        var cart = Catalog().Single(d => d.ProjectImportId == "import-a" && d.Origin == DriftOrigin.Authored);
+        var terraform = Catalog().Single(d => d.ProjectImportId == "import-t");
+        cut.Find("[data-testid=dd-left-document]").Change(cart.Id);
+        cut.Find("[data-testid=dd-right-document]").Change(cart.Id);
+        cut.Find("[data-testid=dd-guard]").TextContent.Should().Be("Select two different document versions or artifacts.");
+        cut.Find("[data-testid=dd-run]").HasAttribute("disabled").Should().BeTrue();
+
+        cut.Find("[data-testid=dd-right-document]").Change(terraform.Id);
+        cut.Find("[data-testid=dd-revision-context]").TextContent.Should().StartWith(DocumentationDrift.UnrelatedImports);
+        cut.Find("[data-testid=dd-manual-note]").TextContent.Should().Contain("not assumed to describe equivalent scope");
+        cut.Find("[data-testid=dd-run]").Click();
+        cut.Find("[data-testid=dd-result-manual]").TextContent.Should().Contain("Manual document comparison");
+        cut.Find("[data-testid=dd-outcome]").TextContent.Should().StartWith("Document differences");
+    }
+
+    [Fact]
+    public void Overview_lists_imported_projects_not_a_revision_chain_and_links_generated_documentation_health()
+    {
+        SecondImportOfCart();
+        UnrelatedImport();
+        var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "overview"));
+        cut.Find("[data-testid=dd-sum-imports]").TextContent.Should().Be("3");
+        cut.Find("[data-testid=dd-sum-lineages]").TextContent.Should().Be("1", "only cart was imported twice");
+        cut.Find("[data-testid=dd-sum-versioned]").TextContent.Should().Be("1");
+        var rows = cut.FindAll("[data-testid=dd-revision-row]");
+        rows.Select(r => r.GetAttribute("data-import")).Should().Equal("cart · Import 1", "cart · Import 2", "terraform · Import 1");
+        rows[1].GetAttribute("data-generated").Should().Be("Not present");
+        cut.Markup.Should().NotContain("Project revisions").And.NotContain("R1 → R2").And.NotContain("Generated documentation history");
+        cut.Find("[data-testid=dd-gdh-link] a").GetAttribute("href").Should().Be(NavigationCatalog.GeneratedDocumentationHealthRoute);
+        cut.Find("[data-testid=dd-lineage-rule]").TextContent.Should().Contain("never treated as revisions of each other");
     }
 
     [Fact]
@@ -165,7 +148,7 @@ public sealed class DocumentationDriftPanelTests : BunitContext
         DocumentationDrift.Save(_repository.SddLifecycle, left, right, new DriftComparisonResult(DriftIntent.ConsistencyDrift, DocumentationDrift.SameRevision, "stored outcome", [], new Dictionary<string, int>()), null, DateTimeOffset.UnixEpoch);
         string? requested = null;
         var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "overview").Add(x => x.OnViewChange, (string v) => requested = v));
-        cut.FindAll("[data-testid=dd-history-row]").Should().ContainSingle().Which.TextContent.Should().Contain("R1").And.Contain("rev 1");
+        cut.FindAll("[data-testid=dd-history-row]").Should().ContainSingle().Which.TextContent.Should().Contain("cart · Import 1").And.Contain("rev 1");
         cut.Find("[data-testid=dd-history-open]").Click();
         requested.Should().Be("compare");
         cut.Render(p => p.Add(x => x.View, "compare"));
@@ -174,63 +157,54 @@ public sealed class DocumentationDriftPanelTests : BunitContext
     }
 
     [Fact]
-    public void Overview_shows_revision_availability_neutrally_and_keeps_generated_history_collapsed()
+    public void Changes_walks_one_document_within_its_project_only()
     {
-        SecondRevision();
-        var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "overview"));
-        var rows = cut.FindAll("[data-testid=dd-revision-row]");
-        rows.Select(r => r.GetAttribute("data-revision")).Should().Equal("R1", "R2");
-        rows[0].TextContent.Should().Contain("cart-r16.zip").And.Contain(Snapshot.ToString());
-        rows[1].GetAttribute("data-generated").Should().Be("Not present");
-        rows[1].TextContent.Should().Contain("Not present").And.NotContain("Error").And.NotContain("Missing");
-        cut.Find("[data-testid=dd-not-present-meaning]").TextContent.Should().Contain("neutral");
-
-        var history = cut.Find("[data-testid=dd-generated-history]");
-        history.HasAttribute("open").Should().BeFalse("inventory history is collapsed by default");
-        history.TextContent.Should().Contain("inventory, not drift");
-        cut.Find("[data-testid=dd-coverage-text]").TextContent.Should().Be("Generated documentation coverage decreased from 1 module / 1 document to 0 modules / 0 documents.");
-        cut.Find("[data-testid=dd-inventory-counts]").TextContent.Should().Contain("1 generated artifact(s) present in R1 that are not present in R2");
-        cut.FindAll("[data-testid=dd-inventory-list]").Should().OnlyContain(d => !d.HasAttribute("open"), "artifact rows are never listed open by default");
-    }
-
-    [Fact]
-    public void Changes_lists_versions_per_revision_and_compares_them_with_the_same_engine()
-    {
-        SecondRevision();
+        SecondImportOfCart();
+        UnrelatedImport();
         var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "changes"));
-        var spec = DocumentationDrift.Identities(Catalog()).Single(i => i.Origin == DriftOrigin.Authored);
+        cut.Find("[data-testid=dd-changes-project]").Change("project:cart");
+        var spec = DocumentationDrift.Identities(Catalog()).Single(i => i.LineageKey == "project:cart" && i.Origin == DriftOrigin.Authored);
         cut.Find("[data-testid=dd-changes-identity]").Change(spec.LogicalKey);
-        cut.FindAll("[data-testid=dd-changes-version]").Should().HaveCount(2);
-        cut.Find("[data-testid=dd-changes-run]").TextContent.Should().Be("Compare R1 → R2");
+        cut.FindAll("[data-testid=dd-changes-version]").Select(r => r.QuerySelector("th")!.TextContent).Should().Equal("cart · Import 1", "cart · Import 2");
         cut.Find("[data-testid=dd-changes-run]").Click();
         cut.Find("[data-testid=dd-result]").GetAttribute("data-intent").Should().Be(nameof(DriftIntent.VersionDrift));
-        cut.Find("[data-testid=dd-counts]").TextContent.Should().Contain("Changed between R1 and R2");
 
         var generated = DocumentationDrift.Identities(Catalog()).Single(i => i.Origin == DriftOrigin.Generated);
         cut.Find("[data-testid=dd-changes-identity]").Change(generated.LogicalKey);
-        cut.Find("[data-testid=dd-changes-no-earlier]").TextContent.Should().Be("No earlier revision of this document is available.");
-        cut.FindAll("[data-testid=dd-changes-version]").Should().Contain(r => r.GetAttribute("data-present") == "false" && r.TextContent.Contains("R2"), "a missing version is stated, never substituted");
+        cut.Find("[data-testid=dd-changes-no-earlier]").TextContent.Should().Be("Observed in 1 import of cart. No earlier comparable revision is available.");
+        cut.FindAll("[data-testid=dd-changes-version]").Should().Contain(r => r.GetAttribute("data-present") == "false" && r.TextContent.Contains("cart · Import 2"),
+            "absence is stated only within the same project");
+
+        cut.Find("[data-testid=dd-changes-project]").Change("project:terraform");
+        cut.Find("[data-testid=dd-changes-identity]").Change(DocumentationDrift.Identities(Catalog()).Single(i => i.LineageKey == "project:terraform").LogicalKey);
+        cut.FindAll("[data-testid=dd-changes-version]").Should().ContainSingle("cart imports are not earlier terraform revisions");
     }
 
     [Fact]
-    public void Drift_lists_no_candidate_without_a_deterministic_pair()
+    public void Drift_separates_equivalent_pairs_from_related_documentation_and_compares_nothing_automatically()
     {
+        var state = _repository.SddLifecycle;
+        state.Revisions.Add(new SddArtifactRevision { Role = "DataModel", FileName = "cart/specs/001-cart/data-model.md", SourceReference = "cart/specs/001-cart/data-model.md", Content = "# DM\n\n## Cart\n- id\n", Fingerprint = "EEE555", Revision = 1, WorkspaceScope = "import:import-a", ProjectImportId = "import-a" });
+        state.GeneratedDocumentationSets[0].Artifacts.Add(new SddGeneratedDocumentArtifact { ModuleId = "module:cart", ModuleRoot = "cart/src/Cart.Api", RelativePath = "cart/src/Cart.Api/autodoc/data-model.md", Kind = "DataModel", Fingerprint = "fff666", ContentCaptured = true });
+        state.GeneratedDocumentContents["fff666"] = "# DM\n\n## Cart\n- id\n- expires\n";
         var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "drift"));
-        cut.FindAll("[data-testid=dd-candidate]").Should().BeEmpty("a specification is never paired with generated architecture automatically");
-        cut.Find("[data-testid=dd-no-candidates]").TextContent.Should().Contain("Select any two documents in Compare");
-        cut.Find("[data-testid=dd-drift-intro]").TextContent.Should().Contain("Neither side is assumed correct");
+        cut.FindAll("[data-testid=dd-candidates] [data-testid=dd-candidate]").Should().BeEmpty();
+        cut.Find("[data-testid=dd-no-candidates]").TextContent.Should().Contain("No authored ↔ generated pair with proven equivalent scope");
+        cut.Find("[data-testid=dd-drift-intro]").TextContent.Should().Contain("neither side is automatically authoritative");
+        state.DocumentationDriftComparisons.Should().BeEmpty("page load never runs comparisons");
     }
 }
 
-/// <summary>The Documentation Drift page: four views (Compare default), legacy tab links, both routes.</summary>
+/// <summary>The Documentation Drift page: four views (Compare default), legacy tab links, both routes, no cross-workspace review history.</summary>
 public sealed class DocumentationDriftPageTests : BunitContext
 {
+    private readonly WorkspaceArtifactRepository _repository = new();
+
     public DocumentationDriftPageTests()
     {
-        var repository = new WorkspaceArtifactRepository();
-        Services.AddSingleton(repository);
-        Services.AddSingleton<IWorkspaceArtifactRepository>(repository);
-        Services.AddSingleton<IWorkspaceSessionService>(repository);
+        Services.AddSingleton(_repository);
+        Services.AddSingleton<IWorkspaceArtifactRepository>(_repository);
+        Services.AddSingleton<IWorkspaceSessionService>(_repository);
         Services.AddSingleton(Mock.Of<BirkNext.Web.GraphQL.IBirkNextClient>());
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -249,7 +223,6 @@ public sealed class DocumentationDriftPageTests : BunitContext
         cut.FindAll("[role=tab]").Select(t => t.TextContent.Trim()).Should().Equal("Overview", "Compare", "Changes", "Drift");
         cut.Find("[role=tab][aria-selected=true]").TextContent.Trim().Should().Be(char.ToUpperInvariant(view[0]) + view[1..]);
         cut.Find("[data-testid=dd-panel]").GetAttribute("data-view").Should().Be(view);
-        cut.Markup.Should().NotContain("Recommended Actions").And.NotContain("Requirements at Risk");
     }
 
     [Fact]
@@ -266,10 +239,16 @@ public sealed class DocumentationDriftPageTests : BunitContext
     }
 
     [Fact]
-    public void Changes_keeps_saved_specification_reviews_as_collapsed_secondary_history()
+    public void Saved_specification_reviews_appear_only_for_a_sample_project_workspace()
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo("/documentation-drift?tab=changes");
-        var cut = Render<SpecDrift>();
-        cut.Find("[data-testid=dd-spec-reviews]").HasAttribute("open").Should().BeFalse();
+        var imported = Render<SpecDrift>();
+        imported.FindAll("[data-testid=dd-spec-reviews]").Should().BeEmpty("an imported workspace never reads Sample Project review history");
+        imported.Find("[data-testid=dd-spec-reviews-none]").TextContent.Should().Be("No saved specification reviews for this workspace.");
+        imported.Markup.Should().NotContain("stored for a Sample Project");
+
+        _repository.CurrentProject = "sample-cart";
+        var sample = Render<SpecDrift>();
+        sample.Find("[data-testid=dd-spec-reviews]").HasAttribute("open").Should().BeFalse();
     }
 }

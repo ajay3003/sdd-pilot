@@ -6,80 +6,87 @@ namespace BirkNext.Web.Services;
 
 public enum DriftOrigin { Authored, Generated }
 
-public enum DriftIntent { VersionDrift, ConsistencyDrift, AuthoredVsGenerated }
+/// <summary>
+/// The comparison mode. <see cref="VersionDrift"/>: the same document identity in two imports/revisions of one project lineage.
+/// <see cref="ConsistencyDrift"/>: authored ↔ generated in the same import (consistency, never history). <see cref="Manual"/>: any two
+/// documents the user chose, not assumed equivalent. <see cref="AuthoredVsGenerated"/> is kept only so older saved comparisons load.
+/// </summary>
+public enum DriftIntent { VersionDrift, ConsistencyDrift, AuthoredVsGenerated, Manual }
 
 /// <summary>Deterministic result kinds. Nothing here claims a semantic contradiction or names which side is wrong.</summary>
 public enum DriftItemKind { Added, Removed, Changed, OnlyInLeft, OnlyInRight, StructureOnly, ConsistencyDiscrepancy, Unchanged }
 
+/// <summary>How an authored and a generated document relate. No numeric confidence: equivalent scope needs deterministic evidence.</summary>
+public enum DriftPairing { Equivalent, RelatedScopeDiffers }
+
 /// <summary>
 /// A comparable documentation artifact as Documentation Drift sees it — a reference into the existing history, never a copy: an authored
-/// artifact revision (Specification, Constitution, Plan, Tasks, Data Model, authored Markdown) or a generated document of an import's
-/// Generated Documentation Set. <see cref="LogicalKey"/> is the stable identity across revisions (role/kind + path, archive root removed);
-/// <see cref="Fingerprint"/> is the content identity.
+/// artifact revision or a generated document of an import's Generated Documentation Set. <see cref="LogicalKey"/> is the stable identity
+/// within one project lineage (origin, lineage, role/module and archive-root-relative path); <see cref="Fingerprint"/> is the content
+/// identity. <see cref="ProjectRevision"/> is the user-facing import label ("M2LB · Import 2"); <see cref="GlobalRevision"/> is the
+/// workspace-wide import order ("R4"), kept for technical details only — it is never version history.
 /// </summary>
 public sealed record DriftDocument(
     string Id, DriftOrigin Origin, string LogicalKey, string DisplayName, string Path, string TypeLabel, string Fingerprint,
     string? ProjectImportId, string? ProjectRevision, string? ArchiveName, Guid? RevisionId, int? RevisionNumber, string? GeneratedSetId,
-    Guid? SourceSnapshotId, string? Module, string? Generator, bool ContentAvailable, bool Supported, string? WorkspaceScope);
+    Guid? SourceSnapshotId, string? Module, string? Generator, bool ContentAvailable, bool Supported, string? WorkspaceScope,
+    string? LineageKey = null, DateTimeOffset? ImportedAt = null, string? GlobalRevision = null);
 
 public sealed record DriftComparisonResult(
     DriftIntent Intent, string RevisionContext, string Outcome, IReadOnlyList<SddDriftItem> Items, IReadOnlyDictionary<string, int> Counts);
 
-public sealed record GeneratedSetComparison(int Unchanged, int Changed, int Added, int Removed,
-    IReadOnlyList<(string Key, string State, DriftDocument? Left, DriftDocument? Right)> Rows);
-
 /// <summary>
-/// One project revision (an import) for the Overview: imported source, its source snapshot and generated documentation availability. A
-/// revision without a generated set reads "Not present" — neutral, never an error or a missing requirement.
+/// One import as Documentation Drift presents it. <see cref="LineageKey"/> groups imports of one logical project; <see cref="Number"/> is
+/// the import's position within that lineage only ("Import 2"), never across unrelated projects.
 /// </summary>
-public sealed record DriftRevisionSummary(string Revision, string ImportId, string ArchiveName, Guid? SourceSnapshotId, int AuthoredDocuments,
-    string GeneratedState, int GeneratedDocuments, int GeneratedModules);
-
-/// <summary>Generated documentation inventory between two consecutive project revisions: coverage first, then the inventory difference.</summary>
-public sealed record GeneratedInventoryChange(string LeftRevision, string RightRevision, int LeftDocuments, int RightDocuments, int LeftModules, int RightModules,
-    GeneratedSetComparison? Inventory)
+public sealed record DriftImport(string ImportId, string LineageKey, string ProjectName, int Number, string GlobalRevision, string ArchiveName,
+    Guid? SourceSnapshotId, DateTimeOffset ImportedAt)
 {
-    public bool CoverageChanged => LeftDocuments != RightDocuments || LeftModules != RightModules;
-
-    /// <summary>"Generated documentation coverage increased from 1 module / 2 documents to 15 modules / 91 documents."</summary>
-    public string CoverageText => !CoverageChanged
-        ? $"Generated documentation coverage unchanged: {RightModules} module(s) / {RightDocuments} document(s)."
-        : $"Generated documentation coverage {(RightDocuments >= LeftDocuments ? "increased" : "decreased")} from {LeftModules} module{(LeftModules == 1 ? "" : "s")} / {LeftDocuments} document{(LeftDocuments == 1 ? "" : "s")} to {RightModules} module{(RightModules == 1 ? "" : "s")} / {RightDocuments} document{(RightDocuments == 1 ? "" : "s")}.";
+    public string Label => $"{ProjectName} · Import {Number}";
 }
 
-/// <summary>A deterministic authored ↔ generated pairing for the Drift tab, with its review status from saved comparisons (exact fingerprints).</summary>
-public sealed record DriftCandidate(string Title, DriftDocument Authored, DriftDocument Generated, string Status);
+/// <summary>An imported project/source for the Overview: authored documents and generated documentation availability (neutral when absent).</summary>
+public sealed record DriftImportSummary(DriftImport Import, int AuthoredDocuments, string GeneratedState, int GeneratedDocuments, int GeneratedModules);
 
-/// <summary>One document identity (same origin, type and stable path) and its versions per project revision, for the Changes tab.</summary>
-public sealed record DriftIdentity(string LogicalKey, string Label, DriftOrigin Origin, IReadOnlyList<DriftDocument> Versions);
+/// <summary>An authored ↔ generated pairing in one import, with the scope of each side, the basis and the status from saved comparisons.</summary>
+public sealed record DriftCandidate(string Title, DriftDocument Authored, DriftDocument Generated, string Status, DriftPairing Pairing,
+    string AuthoredScope, string GeneratedScope, string Basis);
+
+/// <summary>One document identity (same lineage, origin, type and stable path) and its versions in that lineage's imports, oldest first.</summary>
+public sealed record DriftIdentity(string LogicalKey, string Label, DriftOrigin Origin, IReadOnlyList<DriftDocument> Versions, string? LineageKey = null);
 
 /// <summary>
 /// Documentation Drift: compares documentation artifacts by version and by consistency. It consumes the existing provenance — Project Import
-/// records (a project revision is an import), append-only authored artifact revisions, and each import's Generated Documentation Set linked
-/// to its source snapshot — and owns only artifact selection, intent, the comparison and its saved results. Authored documents are intent and
-/// design evidence, generated documents are implementation-derived documentation; neither is implementation truth, raw source stays the
-/// Source Analysis authority, and a comparison never declares a winner.
+/// records, append-only authored artifact revisions, and each import's Generated Documentation Set linked to its source snapshot — and owns
+/// only artifact selection, comparison mode, the comparison and its saved results. Different imported projects are never revisions of each
+/// other: version history exists only inside one project lineage. Authored documents are intent and design evidence, generated documents are
+/// implementation-derived documentation; neither is implementation truth, raw source stays the Source Analysis authority, and a comparison
+/// never declares a winner. Generated documentation coverage and freshness belong to Generated Documentation Health.
 /// </summary>
 public static class DocumentationDrift
 {
-    public const int AnalysisVersion = 1;
-    public const string Description = "Compare authored and generated documentation artifacts to identify version and consistency drift.";
-    public const string SameRevision = "Same project revision";
-    public const string DifferentRevisions = "Different project revisions";
-    public const string UnknownRevision = "No shared project revision";
-    public const string SelectDifferent = "Select two different document versions/artifacts.";
+    public const int AnalysisVersion = 2;
+    public const string Description = "Compare versions of the same documentation and review authored ↔ generated consistency.";
+    public const string SameRevision = "Same import";
+    public const string DifferentRevisions = "Different imports of the same project";
+    public const string UnrelatedImports = "Different imported projects — not revisions of each other";
+    public const string UnknownRevision = "No shared import";
+    public const string SelectDifferent = "Select two different document versions or artifacts.";
     public const string Unsupported = "This artifact type is not supported by Documentation Drift yet.";
     public const string NoContentChange = "No content change";
-    public const string Neutral = "The authored and generated documentation describe this differently.";
-    public const string NeutralReview = "This may indicate documentation drift and requires review. Neither side is assumed correct.";
+    public const string Neutral = "The authored documentation and generated documentation describe this differently.";
+    public const string NeutralReview = "Authored documentation represents intent/design. Generated documentation is implementation-derived. A discrepancy requires review; neither side is automatically authoritative.";
     public const string SourceBoundary = "Generated documentation is implementation-derived. Use Source Analysis for raw source evidence.";
-    public const string CoverageExpansionNote = "Most differences are due to generated-document coverage changing between project revisions, not necessarily content drift in equivalent documents.";
+    public const string ManualNote = "Manual document comparison — these artifacts are not assumed to describe equivalent scope. The result lists document differences only.";
     public const string NotPresent = "Not present";
     public const string SelectDocument = "Select a document to compare.";
     public const string NoResult = "Select two documents and run Compare.";
-    public const string NoEarlierRevision = "No earlier revision of this document is available.";
-    public const string GeneratedNotPresent = "Generated documentation not present for this project revision.";
-    public const string NotPresentMeaning = "Not present means no generated documentation set was present for that imported project revision. It is neutral — not an error, an unhealthy state, a missing requirement or an import failure. An earlier set is never reused for a later revision.";
+    public const string NoEarlierRevision = "No earlier comparable revision is available.";
+    public const string NoOtherRevision = "No earlier/later revision of this document is available.";
+    public const string GeneratedNotPresent = "Generated documentation not present for this import.";
+    public const string NotPresentMeaning = "Generated documentation not present means no generated documentation set was present for that import. It is neutral — not an error, an unhealthy state, a missing requirement or an import failure. A set from another import is never reused.";
+    public const string LineageRule = "Imports belong to the same project only when they share the authored project root folder. Different imported projects are never treated as revisions of each other; import order alone never creates version history.";
+    public const string GeneratedReviewNote = "Generated documentation coverage, freshness and generator diagnostics are reviewed separately.";
     public const string ComparisonBasis = "Deterministic text and structure comparison: sections by heading, normalized lines. Semantic change, possible contradiction and terminology drift are not assessed.";
     public const string WholeDocument = "Whole document";
     private const int MaxItems = 300;
@@ -88,10 +95,39 @@ public static class DocumentationDrift
 
     public static bool IsMarkdown(string path) => path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Project revisions are the workspace's imports, numbered R1… in import order (one record per exact archive).</summary>
+    // ── Imports and lineages ────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The project lineage of an import. Only the authored project root folder (the archive's single top-level folder, recorded as the
+    /// project name with basis ArchiveRoot) identifies a project across imports — an exact name, never a similar one. Without it the import
+    /// is its own lineage: losing a comparison is better than fabricating version history.
+    /// </summary>
+    public static string LineageKeyOf(SddProjectImportRecord record) =>
+        record.ProjectNameBasis == "ArchiveRoot" && !string.IsNullOrWhiteSpace(record.ProjectName)
+            ? "project:" + record.ProjectName.Trim().ToLowerInvariant()
+            : "import:" + record.ImportId;
+
+    /// <summary>Workspace-wide import order ("R1"…): storage/technical order only, never a project revision.</summary>
     public static IReadOnlyDictionary<string, string> RevisionLabels(SddLifecycleState state) =>
         state.ProjectImports.OrderBy(i => i.ImportedAt).ThenBy(i => i.ImportId, StringComparer.Ordinal)
             .Select((i, n) => (i.ImportId, Label: $"R{n + 1}")).ToDictionary(x => x.ImportId, x => x.Label, StringComparer.Ordinal);
+
+    /// <summary>Every import with its lineage and lineage-local number, oldest first.</summary>
+    public static IReadOnlyList<DriftImport> Imports(SddLifecycleState state)
+    {
+        var global = RevisionLabels(state);
+        return [.. state.ProjectImports.GroupBy(LineageKeyOf).SelectMany(lineage => lineage
+                .OrderBy(i => i.ImportedAt).ThenBy(i => i.ImportId, StringComparer.Ordinal)
+                .Select((i, n) => new DriftImport(i.ImportId, lineage.Key, ProjectNameOf(i), n + 1, global[i.ImportId], i.ArchiveFileName, i.SourceSnapshotId, i.ImportedAt)))
+            .OrderBy(i => i.ImportedAt).ThenBy(i => i.ImportId, StringComparer.Ordinal)];
+    }
+
+    private static string ProjectNameOf(SddProjectImportRecord record) =>
+        !string.IsNullOrWhiteSpace(record.ProjectName) ? record.ProjectName
+        : System.IO.Path.GetFileNameWithoutExtension(record.ArchiveFileName) is { Length: > 0 } name ? name : record.ImportId;
+
+    /// <summary>Lineages with more than one import: the only places version comparison can exist.</summary>
+    public static int VersionComparableLineages(IReadOnlyList<DriftImport> imports) => imports.GroupBy(i => i.LineageKey).Count(g => g.Count() > 1);
 
     /// <summary>The path without the archive's single top-level folder (when the project name came from it), so versions of a project match.</summary>
     public static string StablePath(SddLifecycleState state, string? importId, string path)
@@ -106,11 +142,12 @@ public static class DocumentationDrift
         return normalized;
     }
 
+    // ── Catalog ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     /// <summary>Every comparable artifact in the workspace history: authored revisions and generated documents of every import's set.</summary>
     public static IReadOnlyList<DriftDocument> Catalog(SddLifecycleState state)
     {
-        var labels = RevisionLabels(state);
-        var imports = state.ProjectImports.ToDictionary(i => i.ImportId, StringComparer.Ordinal);
+        var imports = Imports(state).ToDictionary(i => i.ImportId, StringComparer.Ordinal);
         var documents = new List<DriftDocument>();
         // A document the import's generated-documentation evidence identified is generated, even when Project Import also kept it as an
         // artifact revision (e.g. autodoc/data-model.md under the Data Model role): it is listed once, as generated, never on both sides.
@@ -121,27 +158,33 @@ public static class DocumentationDrift
             var importId = revision.ProjectImportId ?? ProjectImportScope.ImportIdOf(revision.WorkspaceScope);
             var path = revision.SourceReference ?? revision.FileName;
             if (importId is not null && generatedPaths.Contains((importId, path.Replace('\\', '/')))) continue;
+            var import = importId is null ? null : imports.GetValueOrDefault(importId);
             var stable = StablePath(state, importId, path);
             var supported = IsMarkdown(path) || !System.IO.Path.HasExtension(path);
+            // Identity within the lineage; manual workspace documents keep their workspace scope as their own lineage.
+            var lineage = import?.LineageKey ?? "workspace:" + revision.WorkspaceScope;
             documents.Add(new DriftDocument("rev:" + revision.RevisionId, DriftOrigin.Authored,
-                $"authored|{revision.Role}|{(importId is null ? revision.WorkspaceScope + "|" : "")}{stable.ToLowerInvariant()}", Display(revision.Role) + " · " + System.IO.Path.GetFileName(path),
-                path, Display(revision.Role), revision.Fingerprint, importId, importId is null ? null : labels.GetValueOrDefault(importId), importId is null ? null : imports.GetValueOrDefault(importId)?.ArchiveFileName,
-                revision.RevisionId, revision.Revision, null, importId is null ? null : imports.GetValueOrDefault(importId)?.SourceSnapshotId, null, null, true, supported, revision.WorkspaceScope));
+                $"authored|{lineage}|{revision.Role}|{stable.ToLowerInvariant()}", Display(revision.Role) + " · " + System.IO.Path.GetFileName(path),
+                path, Display(revision.Role), revision.Fingerprint, importId, import?.Label, import?.ArchiveName,
+                revision.RevisionId, revision.Revision, null, import?.SourceSnapshotId, null, null, true, supported, revision.WorkspaceScope,
+                lineage, import?.ImportedAt, import?.GlobalRevision));
         }
         foreach (var set in state.GeneratedDocumentationSets)
         {
-            var label = labels.GetValueOrDefault(set.ProjectImportId);
+            var import = imports.GetValueOrDefault(set.ProjectImportId);
+            var lineage = import?.LineageKey ?? "import:" + set.ProjectImportId;
             foreach (var artifact in set.Artifacts)
             {
                 var stable = StablePath(state, set.ProjectImportId, artifact.RelativePath);
                 var module = ModuleName(state, set.ProjectImportId, artifact.ModuleRoot);
-                documents.Add(new DriftDocument($"gen:{set.SetId}|{artifact.RelativePath}", DriftOrigin.Generated, $"generated|{module.ToLowerInvariant()}|{stable.ToLowerInvariant()}",
-                    $"{module} · {System.IO.Path.GetFileName(artifact.RelativePath)}", artifact.RelativePath, "Generated · " + artifact.Kind, artifact.Fingerprint, set.ProjectImportId, label,
-                    imports.GetValueOrDefault(set.ProjectImportId)?.ArchiveFileName, null, null, set.SetId, set.SourceSnapshotId, module, artifact.Generator,
-                    artifact.ContentCaptured && state.GeneratedDocumentContents.ContainsKey(artifact.Fingerprint), IsMarkdown(artifact.RelativePath), ProjectImportScope.For(set.ProjectImportId)));
+                documents.Add(new DriftDocument($"gen:{set.SetId}|{artifact.RelativePath}", DriftOrigin.Generated, $"generated|{lineage}|{module.ToLowerInvariant()}|{stable.ToLowerInvariant()}",
+                    $"{module} · {System.IO.Path.GetFileName(artifact.RelativePath)}", artifact.RelativePath, "Generated · " + artifact.Kind, artifact.Fingerprint, set.ProjectImportId, import?.Label,
+                    import?.ArchiveName, null, null, set.SetId, set.SourceSnapshotId, module, artifact.Generator,
+                    artifact.ContentCaptured && state.GeneratedDocumentContents.ContainsKey(artifact.Fingerprint), IsMarkdown(artifact.RelativePath), ProjectImportScope.For(set.ProjectImportId),
+                    lineage, import?.ImportedAt, import?.GlobalRevision));
             }
         }
-        return [.. documents.OrderBy(d => d.Origin).ThenBy(d => d.LogicalKey, StringComparer.Ordinal).ThenBy(d => d.ProjectRevision ?? "", StringComparer.Ordinal)];
+        return [.. documents.OrderBy(d => d.Origin).ThenBy(d => d.LogicalKey, StringComparer.Ordinal).ThenBy(d => d.ImportedAt ?? DateTimeOffset.MaxValue).ThenBy(d => d.RevisionNumber ?? 0)];
     }
 
     private static string ModuleName(SddLifecycleState state, string importId, string moduleRoot)
@@ -171,7 +214,7 @@ public static class DocumentationDrift
         return path.EndsWith(stable, StringComparison.OrdinalIgnoreCase) ? path[^stable.Length..] : stable;
     }
 
-    /// <summary>"Authored · Specification · specs/001-x/spec.md · R4 · rev 2" / "Generated · Data Model · Person/autodoc/data-model.md · R4".</summary>
+    /// <summary>"Authored · Specification · specs/001-x/spec.md · M2LB · Import 1 · rev 2" / "Generated · Data Model · Person/autodoc/data-model.md · M2LB · Import 1".</summary>
     public static string OptionText(DriftDocument d) =>
         $"{d.Origin} · {KindLabel(d)} · {d.Path.Replace('\\', '/')} · {d.ProjectRevision ?? "manual"}{(d.RevisionNumber is { } n ? $" · rev {n}" : "")}";
 
@@ -190,12 +233,19 @@ public static class DocumentationDrift
         return specs > 0 ? string.Join('/', stable[..specs]) : Explorers.ArtifactModules.ProjectLevelLabel;
     }
 
-    /// <summary>Document identities with their versions (oldest first) — the same identity rule as Version drift, never a name-similarity guess.</summary>
+    /// <summary>"Artifact Pack 001-person-module", "Module Person", "Repository" or "Project-level": the scope a document describes.</summary>
+    public static string ScopeOf(DriftDocument d) =>
+        d.Origin == DriftOrigin.Generated
+            ? d.Module is null or "(repository)" ? "Repository" : $"Module {d.Module}"
+            : Explorers.ArtifactModules.FeatureOf(d.Path) is { } pack ? $"Artifact Pack {pack}"
+            : ModuleOf(d) is var m && m != Explorers.ArtifactModules.ProjectLevelLabel ? $"Module {m}" : "Project-level";
+
+    /// <summary>Document identities with their versions (oldest first) — the same lineage, origin, type and path; never a name-similarity guess.</summary>
     public static IReadOnlyList<DriftIdentity> Identities(IReadOnlyList<DriftDocument> catalog) =>
         [.. catalog.Where(d => d.Supported).GroupBy(d => d.LogicalKey).Select(g =>
         {
             var first = g.First();
-            return new DriftIdentity(g.Key, $"{first.Origin} · {KindLabel(first)} · {StablePathOf(first)}", first.Origin, Versions(catalog, first));
+            return new DriftIdentity(g.Key, $"{first.Origin} · {KindLabel(first)} · {StablePathOf(first)}", first.Origin, Versions(catalog, first), first.LineageKey);
         }).OrderBy(i => i.Origin).ThenBy(i => i.Label, StringComparer.OrdinalIgnoreCase)];
 
     private static string Display(string role) => role switch
@@ -211,70 +261,38 @@ public static class DocumentationDrift
         ? state.Revisions.FirstOrDefault(r => r.RevisionId == document.RevisionId)?.Content
         : state.GeneratedDocumentContents.GetValueOrDefault(document.Fingerprint);
 
-    /// <summary>
-    /// The default intent for a pair: authored ↔ generated → Consistency drift; the same document identity (authored ↔ authored or generated ↔
-    /// generated) → Version drift; two different documents of one origin → Consistency drift (they are not versions of one artifact).
-    /// </summary>
+    // ── Modes ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Same identity → Version comparison; authored ↔ generated in one import → consistency; anything else → Manual comparison.</summary>
     public static DriftIntent SuggestIntent(DriftDocument left, DriftDocument right) =>
-        left.Origin != right.Origin ? DriftIntent.ConsistencyDrift
-        : left.LogicalKey == right.LogicalKey ? DriftIntent.VersionDrift
-        : DriftIntent.ConsistencyDrift;
+        Eligibility(DriftIntent.VersionDrift, left, right) is null ? DriftIntent.VersionDrift
+        : Eligibility(DriftIntent.ConsistencyDrift, left, right) is null ? DriftIntent.ConsistencyDrift
+        : DriftIntent.Manual;
 
-    /// <summary>
-    /// Intents that mean something for the pair: authored ↔ generated is a consistency comparison only (they are never versions of each other);
-    /// documents of the same origin may be compared as versions or for consistency.
-    /// </summary>
+    /// <summary>Modes that mean something for the pair; Manual is always possible.</summary>
     public static IReadOnlyList<DriftIntent> AllowedIntents(DriftDocument? left, DriftDocument? right) =>
-        left is not null && right is not null && left.Origin != right.Origin ? [DriftIntent.ConsistencyDrift] : [DriftIntent.VersionDrift, DriftIntent.ConsistencyDrift];
+        left is null || right is null ? [DriftIntent.VersionDrift, DriftIntent.ConsistencyDrift, DriftIntent.Manual]
+        : [.. new[] { DriftIntent.VersionDrift, DriftIntent.ConsistencyDrift, DriftIntent.Manual }.Where(i => Eligibility(i, left, right) is null)];
 
-    /// <summary>"Version comparison" or "Consistency comparison" — what the selected pair is.</summary>
-    public static string ComparisonType(DriftIntent intent) => intent == DriftIntent.VersionDrift ? "Version comparison" : "Consistency comparison";
-
-    /// <summary>Identity note for two documents of one origin that are not the same artifact: never silently treated as versions.</summary>
-    public static string? IdentityNote(DriftDocument? left, DriftDocument? right) =>
-        left is not null && right is not null && left.Origin == right.Origin && left.LogicalKey != right.LogicalKey
-            ? "Possible equivalent document — review required. Different paths or types are never treated as versions of one artifact; compared for consistency only."
-            : null;
-
-    public static string Label(DriftIntent intent) => intent switch
+    /// <summary>Why the pair does not fit the mode, or null.</summary>
+    public static string? Eligibility(DriftIntent intent, DriftDocument left, DriftDocument right) => intent switch
     {
-        DriftIntent.VersionDrift => "Version drift",
-        // Saved comparisons from before the intents were merged keep reading correctly.
-        _ => "Consistency drift",
+        DriftIntent.VersionDrift when left.LogicalKey != right.LogicalKey || left.LineageKey != right.LineageKey =>
+            "Version comparison needs the same document identity in two imports or revisions of one project. Use Manual comparison for other documents.",
+        DriftIntent.ConsistencyDrift or DriftIntent.AuthoredVsGenerated when left.Origin == right.Origin || left.ProjectImportId is null || left.ProjectImportId != right.ProjectImportId =>
+            "Authored ↔ generated consistency compares an authored and a generated document of the same import.",
+        _ => null,
     };
 
-    /// <summary>
-    /// A result kind in the words of the compared pair: "Added in R4" / "Removed since R3" / "Changed between R3 and R4" for versions;
-    /// "Only in authored documentation" / "Only in generated documentation" for authored ↔ generated. Never names a correct side.
-    /// </summary>
-    public static string Label(DriftItemKind kind, DriftDocument? left, DriftDocument? right)
+    /// <summary>"Version comparison", "Authored ↔ generated consistency" or "Manual comparison".</summary>
+    public static string ComparisonType(DriftIntent intent) => intent switch
     {
-        var (l, r) = (left?.ProjectRevision, right?.ProjectRevision);
-        var crossOrigin = left is not null && right is not null && left.Origin != right.Origin;
-        return kind switch
-        {
-            DriftItemKind.Added when r is not null => $"Added in {r}",
-            DriftItemKind.Removed when l is not null => $"Removed since {l}",
-            DriftItemKind.Changed when l is not null && r is not null && l != r => $"Changed between {l} and {r}",
-            DriftItemKind.OnlyInLeft when crossOrigin => $"Only in {left!.Origin.ToString().ToLowerInvariant()} documentation",
-            DriftItemKind.OnlyInRight when crossOrigin => $"Only in {right!.Origin.ToString().ToLowerInvariant()} documentation",
-            _ => Label(kind),
-        };
-    }
-
-    public static string Label(DriftItemKind kind) => kind switch
-    {
-        DriftItemKind.OnlyInLeft => "Only in left",
-        DriftItemKind.OnlyInRight => "Only in right",
-        DriftItemKind.StructureOnly => "Structure-only difference",
-        DriftItemKind.ConsistencyDiscrepancy => "Consistency discrepancy",
-        _ => kind.ToString(),
+        DriftIntent.VersionDrift => "Version comparison",
+        DriftIntent.Manual => "Manual comparison",
+        _ => "Authored ↔ generated consistency",
     };
 
-    /// <summary>Context only: same import, different imports, or no shared revision (manual documents). Never a staleness verdict.</summary>
-    public static string RevisionContext(DriftDocument left, DriftDocument right) =>
-        left.ProjectImportId is null || right.ProjectImportId is null ? UnknownRevision
-        : left.ProjectImportId == right.ProjectImportId ? SameRevision : DifferentRevisions;
+    public static string Label(DriftIntent intent) => ComparisonType(intent);
 
     /// <summary>
     /// "Cross-pack comparison" when the two authored documents belong to different artifact packs (feature folders): allowed only because the
@@ -289,7 +307,39 @@ public static class DocumentationDrift
             : null;
     }
 
-    /// <summary>Why a pair cannot be compared, or null. The same artifact at the same revision and fingerprint is never compared with itself.</summary>
+    /// <summary>A result kind in the words of the compared pair. Never names a correct side.</summary>
+    public static string Label(DriftItemKind kind, DriftDocument? left, DriftDocument? right)
+    {
+        var (l, r) = (left?.ProjectRevision, right?.ProjectRevision);
+        var crossOrigin = left is not null && right is not null && left.Origin != right.Origin;
+        return kind switch
+        {
+            DriftItemKind.Added when r is not null => $"Added in {r}",
+            DriftItemKind.Removed when l is not null => $"Not present in {r ?? "the later version"}",
+            DriftItemKind.Changed when l is not null && r is not null && l != r => $"Changed between {l} and {r}",
+            DriftItemKind.OnlyInLeft when crossOrigin => $"Only in {left!.Origin.ToString().ToLowerInvariant()} documentation",
+            DriftItemKind.OnlyInRight when crossOrigin => $"Only in {right!.Origin.ToString().ToLowerInvariant()} documentation",
+            DriftItemKind.ConsistencyDiscrepancy => "Described differently",
+            _ => Label(kind),
+        };
+    }
+
+    public static string Label(DriftItemKind kind) => kind switch
+    {
+        DriftItemKind.OnlyInLeft => "Only in left",
+        DriftItemKind.OnlyInRight => "Only in right",
+        DriftItemKind.StructureOnly => "Structure-only difference",
+        DriftItemKind.ConsistencyDiscrepancy => "Consistency discrepancy",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>Context only: same import, imports of one project, unrelated imported projects, or manual documents. Never a staleness verdict.</summary>
+    public static string RevisionContext(DriftDocument left, DriftDocument right) =>
+        left.ProjectImportId is null || right.ProjectImportId is null ? UnknownRevision
+        : left.ProjectImportId == right.ProjectImportId ? SameRevision
+        : left.LineageKey == right.LineageKey ? DifferentRevisions : UnrelatedImports;
+
+    /// <summary>Why a pair cannot be compared at all, or null. The same artifact revision is never compared with itself.</summary>
     public static string? Guard(DriftDocument? left, DriftDocument? right)
     {
         if (left is null || right is null) return "Select a document for each side.";
@@ -300,56 +350,42 @@ public static class DocumentationDrift
         return null;
     }
 
-    /// <summary>Other versions of the same logical artifact, newest project revision last (for "Previous revision" / "Current revision").</summary>
-    public static IReadOnlyList<DriftDocument> Versions(IReadOnlyList<DriftDocument> catalog, DriftDocument document) =>
-        [.. catalog.Where(d => d.LogicalKey == document.LogicalKey).OrderBy(d => d.ProjectRevision is { } r ? int.Parse(r[1..]) : 0).ThenBy(d => d.RevisionNumber ?? 0)];
+    /// <summary>Guard plus the mode's eligibility: what Compare checks before it runs.</summary>
+    public static string? Guard(DriftIntent intent, DriftDocument? left, DriftDocument? right) =>
+        Guard(left, right) ?? Eligibility(intent, left!, right!);
 
-    /// <summary>
-    /// Suggested generated documents for an authored one: those of the Generated Documentation Set of the same project revision, ranked by
-    /// document kind for the role. "Suggested comparison" only — never an equivalent document, never selected automatically.
-    /// </summary>
-    public static IReadOnlyList<DriftDocument> SuggestedGenerated(IReadOnlyList<DriftDocument> catalog, DriftDocument authored)
-    {
-        if (authored.Origin != DriftOrigin.Authored || authored.ProjectImportId is null) return [];
-        string[] preferred = authored.TypeLabel switch
-        {
-            "Specification" => ["Overview", "Architecture", "DataFlow", "ApiContract"],
-            "Data model" => ["DataModel"],
-            "Plan" => ["Architecture", "Overview"],
-            "Constitution" => ["Architecture", "Overview"],
-            _ => ["Overview"],
-        };
-        return [.. catalog.Where(d => d.Origin == DriftOrigin.Generated && d.ProjectImportId == authored.ProjectImportId && d.Supported)
-            .OrderBy(d => Array.FindIndex(preferred, k => d.TypeLabel.EndsWith(k, StringComparison.Ordinal)) is var i && i < 0 ? int.MaxValue : i)
-            .ThenBy(d => d.Path, StringComparer.Ordinal).Take(10)];
-    }
+    /// <summary>Versions of the same document identity in its own lineage, oldest import first.</summary>
+    public static IReadOnlyList<DriftDocument> Versions(IReadOnlyList<DriftDocument> catalog, DriftDocument document) =>
+        [.. catalog.Where(d => d.LogicalKey == document.LogicalKey).OrderBy(d => d.ImportedAt ?? DateTimeOffset.MaxValue).ThenBy(d => d.RevisionNumber ?? 0)];
+
+    // ── Comparison ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Structure-aware comparison of two Markdown documents with the shared tokenizer: sections by heading path (heading text, levels ignored),
-    /// each section's normalized lines (list items, table rows, prose, code) compared as sets. Identical content → "No content change".
-    /// Version drift reports Added/Removed/Changed; the other intents report Only in left/right and, for authored vs generated, a neutral
-    /// consistency discrepancy. A line diff never becomes a claimed contradiction.
+    /// each section's normalized lines compared as sets. Identical content → "No content change". Version comparison reports Added/Removed/
+    /// Changed; authored ↔ generated reports a neutral "described differently"; Manual reports document differences only.
     /// </summary>
     public static DriftComparisonResult Compare(DriftDocument left, string leftText, DriftDocument right, string rightText, DriftIntent intent)
     {
         var context = RevisionContext(left, right);
         var items = new List<SddDriftItem>();
-        // Authored ↔ generated is always a neutral consistency comparison (also for comparisons saved as "Authored vs generated").
-        var neutral = intent == DriftIntent.AuthoredVsGenerated || intent == DriftIntent.ConsistencyDrift && left.Origin != right.Origin;
+        var version = intent == DriftIntent.VersionDrift;
+        var neutral = !version && intent != DriftIntent.Manual && left.Origin != right.Origin;
         if (left.Origin == right.Origin && left.Fingerprint == right.Fingerprint || Normalize(leftText) == Normalize(rightText))
             return new(intent, context, NoContentChange, [], new Dictionary<string, int>());
         var a = Sections(leftText);
         var b = Sections(rightText);
         var unchanged = 0;
+        string Side(DriftDocument d) => neutral ? d.Origin.ToString().ToLowerInvariant() : d == left ? "left" : "right";
         foreach (var key in a.Keys.Union(b.Keys).OrderBy(k => (a.TryGetValue(k, out var x) ? x.Order : int.MaxValue, b.TryGetValue(k, out var y) ? y.Order : int.MaxValue)))
         {
             var inLeft = a.TryGetValue(key, out var l);
             var inRight = b.TryGetValue(key, out var r);
             var heading = (l ?? r)!.Heading;
             if (inLeft && !inRight)
-                items.Add(new SddDriftItem { Kind = (intent == DriftIntent.VersionDrift ? DriftItemKind.Removed : DriftItemKind.OnlyInLeft).ToString(), Section = heading, Detail = neutral ? $"Section present only in the {left.Origin.ToString().ToLowerInvariant()} document." : "Section present only in the left document.", Left = [.. l!.Lines.Take(5)] });
+                items.Add(new SddDriftItem { Kind = (version ? DriftItemKind.Removed : DriftItemKind.OnlyInLeft).ToString(), Section = heading, Detail = $"Section present only in the {Side(left)} document.", Left = [.. l!.Lines.Take(5)] });
             else if (!inLeft && inRight)
-                items.Add(new SddDriftItem { Kind = (intent == DriftIntent.VersionDrift ? DriftItemKind.Added : DriftItemKind.OnlyInRight).ToString(), Section = heading, Detail = neutral ? $"Section present only in the {right.Origin.ToString().ToLowerInvariant()} document." : "Section present only in the right document.", Right = [.. r!.Lines.Take(5)] });
+                items.Add(new SddDriftItem { Kind = (version ? DriftItemKind.Added : DriftItemKind.OnlyInRight).ToString(), Section = heading, Detail = $"Section present only in the {Side(right)} document.", Right = [.. r!.Lines.Take(5)] });
             else
             {
                 var removed = l!.Lines.Except(r!.Lines, StringComparer.Ordinal).ToList();
@@ -361,12 +397,12 @@ public static class DocumentationDrift
                     else unchanged++;
                     continue;
                 }
-                var kind = intent == DriftIntent.VersionDrift ? DriftItemKind.Changed : neutral ? DriftItemKind.ConsistencyDiscrepancy : DriftItemKind.Changed;
                 items.Add(new SddDriftItem
                 {
-                    Kind = kind.ToString(), Section = heading,
-                    Detail = neutral ? $"{Neutral} {removed.Count} line(s) only in the {left.Origin.ToString().ToLowerInvariant()} document, {added.Count} only in the {right.Origin.ToString().ToLowerInvariant()} document."
-                        : $"{removed.Count} line(s) removed, {added.Count} added.",
+                    Kind = (neutral ? DriftItemKind.ConsistencyDiscrepancy : DriftItemKind.Changed).ToString(), Section = heading,
+                    Detail = neutral ? $"{Neutral} {removed.Count} line(s) only in the authored document, {added.Count} only in the generated document."
+                        : version ? $"{removed.Count} line(s) removed, {added.Count} added."
+                        : $"{removed.Count} line(s) only in the left document, {added.Count} only in the right document.",
                     Left = [.. removed.Take(8)], Right = [.. added.Take(8)],
                 });
             }
@@ -376,62 +412,49 @@ public static class DocumentationDrift
         var counts = items.GroupBy(i => i.Kind).ToDictionary(g => g.Key, g => g.Count());
         if (unchanged > 0) counts[DriftItemKind.Unchanged.ToString()] = unchanged;
         var same = unchanged > 0 ? $" {unchanged} unchanged." : "";
-        var outcome = neutral
-            ? $"{items.Count} section(s) differ.{same} Consistency discrepancies need review; neither side is assumed correct."
+        var outcome = intent == DriftIntent.Manual ? $"Document differences: {items.Count} section(s) differ.{same}"
+            : neutral ? $"{items.Count} section(s) differ.{same} Consistency discrepancies need review; neither side is assumed correct."
             : $"{items.Count} section(s) differ.{same}";
         return new(intent, context, outcome, items, counts);
     }
 
-    /// <summary>Every project revision with its imported source, source snapshot and generated documentation availability, oldest first.</summary>
-    public static IReadOnlyList<DriftRevisionSummary> Revisions(SddLifecycleState state, IReadOnlyList<DriftDocument> catalog)
-    {
-        var labels = RevisionLabels(state);
-        return [.. state.ProjectImports.OrderBy(i => i.ImportedAt).ThenBy(i => i.ImportId, StringComparer.Ordinal).Select(i =>
+    // ── Overview ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Every imported project/source with its authored documents and generated documentation availability, oldest first.</summary>
+    public static IReadOnlyList<DriftImportSummary> ImportSummaries(SddLifecycleState state, IReadOnlyList<DriftDocument> catalog) =>
+        [.. Imports(state).Select(i =>
         {
             var set = state.GeneratedDocumentationSets.FirstOrDefault(s => s.ProjectImportId == i.ImportId);
-            var generated = set?.State == "Present" ? set.Artifacts.Count : 0;
-            return new DriftRevisionSummary(labels[i.ImportId], i.ImportId, i.ArchiveFileName, i.SourceSnapshotId,
+            var present = set?.State == "Present";
+            return new DriftImportSummary(i,
                 catalog.Count(d => d.Origin == DriftOrigin.Authored && d.ProjectImportId == i.ImportId),
                 set?.State switch { "Present" => "Present", "NotPresent" => NotPresent, _ => "Not evaluated (no source snapshot)" },
-                generated, set?.State == "Present" ? set.Artifacts.Select(a => a.ModuleId).Distinct().Count() : 0);
+                present ? set!.Artifacts.Count : 0, present ? set!.Artifacts.Select(a => a.ModuleId).Distinct().Count() : 0);
         })];
-    }
+
+    /// <summary>The import Drift and Overview focus on: the workspace's current import, else the most recent one.</summary>
+    public static string? FocusImportId(SddLifecycleState state) =>
+        state.CurrentProjectImportId is { } id && state.ProjectImports.Any(i => i.ImportId == id) ? id
+        : state.ProjectImports.OrderBy(i => i.ImportedAt).LastOrDefault()?.ImportId;
+
+    // ── Pairing ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Generated documentation history: each consecutive pair of project revisions — coverage (documents and modules) first, then the inventory
-    /// difference (an inventory change, never drift defects). A revision without a set counts 0, never an earlier set.
+    /// Authored ↔ generated pairs in one import. A Data Model and a generated Data Model, or an architecture document and the generated
+    /// architecture, of the same module are related — but the same module and type are not evidence of equivalent scope. A pair is
+    /// <see cref="DriftPairing.Equivalent"/> only when the generated documentation is rooted at the authored document's own folder (the
+    /// generated set describes exactly that scope). Nothing is compared automatically; status comes from saved comparisons of exactly these
+    /// fingerprints.
     /// </summary>
-    public static IReadOnlyList<GeneratedInventoryChange> GeneratedHistory(SddLifecycleState state, IReadOnlyList<DriftDocument> catalog)
+    public static IReadOnlyList<DriftCandidate> Candidates(IReadOnlyList<DriftDocument> catalog, IReadOnlyList<SddDocumentationDriftComparison> saved, string? importId)
     {
-        var revisions = Revisions(state, catalog);
-        var changes = new List<GeneratedInventoryChange>();
-        for (var i = 1; i < revisions.Count; i++)
-        {
-            var (a, b) = (revisions[i - 1], revisions[i]);
-            if (a.GeneratedDocuments == 0 && b.GeneratedDocuments == 0) continue;
-            var inventory = CompareSets(catalog, SetIdFor(a.ImportId), SetIdFor(b.ImportId));
-            changes.Add(new GeneratedInventoryChange(a.Revision, b.Revision, a.GeneratedDocuments, b.GeneratedDocuments, a.GeneratedModules, b.GeneratedModules, inventory));
-        }
-        return changes;
-    }
-
-    /// <summary>
-    /// Deterministic authored ↔ generated candidates in the same project revision: an authored data model and the generated data model of
-    /// its module; an authored architecture document and the generated architecture document of its module. Nothing is paired by a similar
-    /// name, and nothing is compared automatically. Status comes from saved comparisons of exactly these fingerprints.
-    /// </summary>
-    public static IReadOnlyList<DriftCandidate> Candidates(IReadOnlyList<DriftDocument> catalog, IReadOnlyList<SddDocumentationDriftComparison> saved)
-    {
-        var latestImport = catalog.Where(d => d.ProjectRevision is not null).OrderBy(d => int.Parse(d.ProjectRevision![1..])).LastOrDefault()?.ProjectImportId;
-        if (latestImport is null) return [];
-        var current = catalog.Where(d => d.ProjectImportId == latestImport && d.Supported && d.ContentAvailable).ToList();
+        if (importId is null) return [];
+        var current = catalog.Where(d => d.ProjectImportId == importId && d.Supported && d.ContentAvailable).ToList();
+        var moduleRoots = current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null and not "(repository)").Select(d => d.Module! + "/").Distinct().ToList();
         var candidates = new List<DriftCandidate>();
         foreach (var generated in current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null))
         {
             var kind = generated.TypeLabel.Replace("Generated · ", "");
-            // Module membership by the stable path's leading folders; a repository-level generated document pairs only with authored
-            // documents outside every module that has its own generated documentation.
-            var moduleRoots = current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null and not "(repository)").Select(d => d.Module! + "/").Distinct().ToList();
             bool Under(DriftDocument d, string root) => StablePathOf(d).StartsWith(root, StringComparison.OrdinalIgnoreCase);
             bool InModule(DriftDocument d) => generated.Module == "(repository)" ? !moduleRoots.Any(r => Under(d, r)) : Under(d, generated.Module + "/");
             var authored = kind switch
@@ -441,60 +464,40 @@ public static class DocumentationDrift
                     && System.IO.Path.GetFileName(d.Path).Contains("architecture", StringComparison.OrdinalIgnoreCase)),
                 _ => [],
             };
+            var label = kind == "DataModel" ? "Data Model" : "architecture";
             foreach (var a in authored)
             {
-                var pairSaved = saved.FirstOrDefault(s => s.Left.Fingerprint == a.Fingerprint && s.Right.Fingerprint == generated.Fingerprint
-                                                          || s.Left.Fingerprint == generated.Fingerprint && s.Right.Fingerprint == a.Fingerprint);
-                var status = pairSaved is null ? "Not compared" : pairSaved.Items.Count == 0 ? "No deterministic discrepancy detected" : "Differences found — needs review";
-                candidates.Add(new DriftCandidate($"Authored {(kind == "DataModel" ? "Data Model" : "architecture")} ↔ Generated {(kind == "DataModel" ? "Data Model" : "architecture")} · {generated.Module}",
-                    a, generated, status));
+                var authoredFolder = System.IO.Path.GetDirectoryName(StablePathOf(a))?.Replace('\\', '/') ?? "";
+                var equivalent = generated.Module is { } m && m != "(repository)" && string.Equals(authoredFolder, m, StringComparison.OrdinalIgnoreCase);
+                var (authoredScope, generatedScope) = (ScopeOf(a), ScopeOf(generated));
+                var basis = equivalent
+                    ? "The generated documentation is rooted at the authored document's own folder: both describe the same scope."
+                    : $"Same module and document type, but the authored document is scoped to {authoredScope} and the generated document to {generatedScope}. Not assumed equivalent.";
+                candidates.Add(new DriftCandidate($"Authored {label} ↔ Generated {label} · {generated.Module}", a, generated, Status(saved, a, generated),
+                    equivalent ? DriftPairing.Equivalent : DriftPairing.RelatedScopeDiffers, authoredScope, generatedScope, basis));
             }
         }
         return candidates;
     }
 
-    /// <summary>Generated set ↔ generated set: unchanged, changed, added and removed documents by module + path (fingerprint decides change).</summary>
-    public static GeneratedSetComparison CompareSets(IReadOnlyList<DriftDocument> catalog, string leftSetId, string rightSetId)
+    /// <summary>"Comparison candidate" until a saved comparison of exactly these fingerprints exists; then its outcome.</summary>
+    public static string Status(IReadOnlyList<SddDocumentationDriftComparison> saved, DriftDocument a, DriftDocument b)
     {
-        var left = catalog.Where(d => d.GeneratedSetId == leftSetId).ToDictionary(d => d.LogicalKey, StringComparer.Ordinal);
-        var right = catalog.Where(d => d.GeneratedSetId == rightSetId).ToDictionary(d => d.LogicalKey, StringComparer.Ordinal);
-        var rows = left.Keys.Union(right.Keys).Order(StringComparer.Ordinal).Select(key =>
-        {
-            var l = left.GetValueOrDefault(key);
-            var r = right.GetValueOrDefault(key);
-            var state = l is null ? "Added" : r is null ? "Removed" : l.Fingerprint == r.Fingerprint ? "Unchanged" : "Changed";
-            return (key, state, l, r);
-        }).ToList();
-        return new(rows.Count(x => x.state == "Unchanged"), rows.Count(x => x.state == "Changed"), rows.Count(x => x.state == "Added"), rows.Count(x => x.state == "Removed"), rows);
+        var pairSaved = saved.FirstOrDefault(s => s.Left.Fingerprint == a.Fingerprint && s.Right.Fingerprint == b.Fingerprint
+                                                  || s.Left.Fingerprint == b.Fingerprint && s.Right.Fingerprint == a.Fingerprint);
+        return pairSaved is null ? "Comparison candidate" : pairSaved.Items.Count == 0 ? "No material difference" : "Differences found";
     }
 
-    /// <summary>Documentation changes in a project revision against the previous one: authored and generated artifacts (by logical key).</summary>
-    public static IReadOnlyList<(string Key, string Origin, string State)> RevisionChanges(SddLifecycleState state, IReadOnlyList<DriftDocument> catalog, string importId)
-    {
-        var ordered = state.ProjectImports.OrderBy(i => i.ImportedAt).ThenBy(i => i.ImportId, StringComparer.Ordinal).Select(i => i.ImportId).ToList();
-        var index = ordered.IndexOf(importId);
-        if (index <= 0) return [];
-        var previous = ordered[index - 1];
-        IEnumerable<DriftDocument> Of(string id) => catalog.Where(d => d.ProjectImportId == id);
-        var before = Of(previous).GroupBy(d => d.LogicalKey).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
-        var after = Of(importId).GroupBy(d => d.LogicalKey).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
-        return [.. before.Keys.Union(after.Keys).Order(StringComparer.Ordinal).Select(key =>
-        {
-            var b = before.GetValueOrDefault(key);
-            var a = after.GetValueOrDefault(key);
-            var stateText = b is null ? "Added" : a is null ? "Removed" : b.Fingerprint == a.Fingerprint ? "Unchanged" : "Changed";
-            return (key, (a ?? b)!.Origin.ToString(), stateText);
-        })];
-    }
+    // ── Saved comparisons ───────────────────────────────────────────────────────────────────────────────────────────────
 
     public static SddDriftSide Side(DriftDocument d) => new()
     {
         DocumentId = d.Id, Origin = d.Origin.ToString(), LogicalKey = d.LogicalKey, DisplayName = d.DisplayName, Path = d.Path, Fingerprint = d.Fingerprint,
-        RevisionId = d.RevisionId, RevisionNumber = d.RevisionNumber, ProjectImportId = d.ProjectImportId, ProjectRevision = d.ProjectRevision, GeneratedSetId = d.GeneratedSetId,
-        SourceSnapshotId = d.SourceSnapshotId, Generator = d.Generator,
+        RevisionId = d.RevisionId, RevisionNumber = d.RevisionNumber, ProjectImportId = d.ProjectImportId, ProjectRevision = d.ProjectRevision, LineageKey = d.LineageKey,
+        GeneratedSetId = d.GeneratedSetId, SourceSnapshotId = d.SourceSnapshotId, Generator = d.Generator,
     };
 
-    /// <summary>Saves a comparison with exact identities and the result as computed; later imports never change it.</summary>
+    /// <summary>Saves a comparison with exact identities, mode and the result as computed; later imports never change it.</summary>
     public static SddDocumentationDriftComparison Save(SddLifecycleState state, DriftDocument left, DriftDocument right, DriftComparisonResult result, string? scope, DateTimeOffset now)
     {
         var saved = new SddDocumentationDriftComparison
@@ -507,10 +510,16 @@ public static class DocumentationDrift
         return saved;
     }
 
-    /// <summary>The documents a saved comparison referenced, resolved by their exact ids — or null when that revision is no longer in the workspace.</summary>
+    /// <summary>The documents a saved comparison referenced, resolved by their exact ids and fingerprints — or null when that revision is gone.</summary>
     public static (DriftDocument? Left, DriftDocument? Right) Resolve(IReadOnlyList<DriftDocument> catalog, SddDocumentationDriftComparison saved) =>
         (catalog.FirstOrDefault(d => d.Id == saved.Left.DocumentId && d.Fingerprint == saved.Left.Fingerprint),
          catalog.FirstOrDefault(d => d.Id == saved.Right.DocumentId && d.Fingerprint == saved.Right.Fingerprint));
+
+    /// <summary>The saved mode; comparisons saved before modes existed: authored ↔ generated stays consistency, same-origin version stays version.</summary>
+    public static DriftIntent SavedIntent(SddDocumentationDriftComparison saved) =>
+        Enum.TryParse<DriftIntent>(saved.Intent, out var intent) ? intent == DriftIntent.AuthoredVsGenerated ? DriftIntent.ConsistencyDrift : intent : DriftIntent.Manual;
+
+    // ── Markdown sections ───────────────────────────────────────────────────────────────────────────────────────────────
 
     private sealed record Section(string Heading, int Level, int Order, List<string> Lines);
 
