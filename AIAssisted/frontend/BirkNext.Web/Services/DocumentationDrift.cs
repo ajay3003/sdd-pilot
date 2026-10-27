@@ -11,7 +11,9 @@ public enum DriftOrigin { Authored, Generated }
 /// <see cref="ConsistencyDrift"/>: authored ↔ generated in the same import (consistency, never history). <see cref="Manual"/>: any two
 /// documents the user chose, not assumed equivalent. <see cref="AuthoredVsGenerated"/> is kept only so older saved comparisons load.
 /// </summary>
-public enum DriftIntent { VersionDrift, ConsistencyDrift, AuthoredVsGenerated, Manual }
+/// <see cref="CompositeConsistency"/>: combined authored intent of a module + concern ↔ its generated document (structured).
+/// <see cref="ContributionConsistency"/>: one authored contribution ↔ the generated document, only on the concepts that contribution states.
+public enum DriftIntent { VersionDrift, ConsistencyDrift, AuthoredVsGenerated, Manual, CompositeConsistency, ContributionConsistency }
 
 /// <summary>Deterministic result kinds. Nothing here claims a semantic contradiction or names which side is wrong.</summary>
 public enum DriftItemKind { Added, Removed, Changed, OnlyInLeft, OnlyInRight, StructureOnly, ConsistencyDiscrepancy, Unchanged }
@@ -287,9 +289,11 @@ public static class DocumentationDrift
     /// <summary>"Version comparison", "Authored ↔ generated consistency" or "Manual comparison".</summary>
     public static string ComparisonType(DriftIntent intent) => intent switch
     {
-        DriftIntent.VersionDrift => "Version comparison",
+        DriftIntent.VersionDrift => "Version comparison (same document across imports)",
         DriftIntent.Manual => "Manual comparison",
-        _ => "Authored ↔ generated consistency",
+        DriftIntent.CompositeConsistency => "Authored intent ↔ generated documentation",
+        DriftIntent.ContributionConsistency => "Specific authored document ↔ generated documentation",
+        _ => "Authored ↔ generated consistency (document text)",
     };
 
     public static string Label(DriftIntent intent) => ComparisonType(intent);

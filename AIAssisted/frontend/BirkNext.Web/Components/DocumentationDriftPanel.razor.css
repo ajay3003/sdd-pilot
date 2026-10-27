@@ -61,3 +61,12 @@
 .dd > *, .dd-result > * { min-width: 0; }
 .dd-result, .dd-item, .dd-quick, .dd-context, .dd-card { overflow-wrap: anywhere; }
 .dd-quick button, .dd-quick .btn-link, .dd-quick-list .btn-link { white-space: normal; max-width: 100%; text-align: left; }
+
+/* Composite authored intent ↔ generated: grouped module cards, neutral by default; authored conflicts stand apart from generated drift. */
+.dd-kicker { margin: .2rem 0 0; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; color: var(--clr-text-muted, #475467); }
+.dd-group-card { border-left: 4px solid var(--clr-primary, #2563eb); }
+.dd-contributors { gap: .1rem; }
+.dd-composite { display: grid; gap: .6rem; min-width: 0; }
+.dd-side { border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 8px); padding: .5rem .75rem; min-width: 0; }
+.dd-summary { grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.dd-conflicts { border: 1px solid var(--clr-warning-border, #fde68a); background: var(--clr-warning-bg-light, #fefce8); border-radius: var(--radius-md, 8px); padding: .5rem .75rem; }

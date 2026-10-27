@@ -124,6 +124,14 @@ public sealed class SddDocumentationDriftComparison
     public List<SddDriftItem> Items { get; set; } = [];
     public int AnalysisVersion { get; set; }
     public string? WorkspaceScope { get; set; }
+    /// <summary>Composite comparisons: every authored contributor exactly as compared (ids + fingerprints). Empty for two-document comparisons.</summary>
+    public List<SddDriftSide> Contributors { get; set; } = [];
+    public string? Module { get; set; }
+    public string? Concern { get; set; }
+    /// <summary>"Text" (section diff) or "StructuredDataModel". Null for comparisons saved before structured comparison existed (= Text).</summary>
+    public string? ComparisonKind { get; set; }
+    public string? CompositeFingerprint { get; set; }
+    public int? AlgorithmVersion { get; set; }
 }
 
 /// <summary>

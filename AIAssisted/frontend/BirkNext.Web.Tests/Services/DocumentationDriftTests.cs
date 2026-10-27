@@ -167,7 +167,8 @@ public sealed class DocumentationDriftTests
         DocumentationDrift.SuggestIntent(s1, g2).Should().Be(DriftIntent.Manual);
         DocumentationDrift.SuggestIntent(g2, Generated("README.md", "cart · Import 2")).Should().Be(DriftIntent.Manual, "different documents of one origin are not versions");
         DocumentationDrift.SuggestIntent(g1, g2).Should().Be(DriftIntent.VersionDrift);
-        DocumentationDrift.ComparisonType(DriftIntent.ConsistencyDrift).Should().Be("Authored ↔ generated consistency");
+        DocumentationDrift.ComparisonType(DriftIntent.ConsistencyDrift).Should().Be("Authored ↔ generated consistency (document text)");
+        DocumentationDrift.ComparisonType(DriftIntent.CompositeConsistency).Should().Be("Authored intent ↔ generated documentation");
     }
 
     [Fact]
