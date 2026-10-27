@@ -31,13 +31,13 @@ public static class SourceArchitectureExport
               esc(ArchitecturePresentation.StateLabel(d.EvidenceState)), esc(d.Confidence), esc(string.Join("; ", d.Evidence.Take(4).Select(e => $"{e.Kind} {e.File}:{e.Line}"))) })));
         sb.Append("</section>\n<section class=\"block\"><h2>Messaging</h2>");
         sb.Append(table(["Channel", "Type", "Producers", "Consumers", "Subscription / consumer group", "Per environment", "Confidence"], a.MessagingChannels.Select(c => new[]
-            { esc(c.Name), esc(ArchitecturePresentation.ChannelLabel(c.Type)), esc(c.Producers.Count == 0 ? "None found in source" : string.Join(", ", c.Producers.Select(p => Name(p.ComponentId)))),
-              esc(c.Consumers.Count == 0 ? "None found in source" : string.Join(", ", c.Consumers.Select(p => Name(p.ComponentId)))), esc(c.Subscription ?? c.ConsumerGroup ?? "—"),
+            { esc(c.Name), esc(ArchitecturePresentation.ChannelLabel(c.Type)), esc(c.Producers.Count == 0 ? "Producer not resolved" : string.Join(", ", c.Producers.Select(p => Name(p.ComponentId)))),
+              esc(c.Consumers.Count == 0 ? "Consumer not resolved" : string.Join(", ", c.Consumers.Select(p => Name(p.ComponentId)))), esc(c.Subscription ?? c.ConsumerGroup ?? "—"),
               esc(string.Join("; ", c.EnvironmentVariants.Select(v => $"{v.Key}: {v.Value}"))), esc(c.NameUnresolved ? "Name unresolved — not paired" : ArchitecturePresentation.StateLabel(c.Confidence)) })));
         sb.Append("</section>\n<section class=\"block\"><h2>Datastores (no tables — see the Database report)</h2>");
         sb.Append(table(["Datastore", "Type", "Usage", "Used by", "Connection reference", "Database analysis"], a.DataStores.Select(s => new[]
             { esc(s.LogicalName), esc(ArchitecturePresentation.StoreLabel(s.StoreType)), esc(s.Usage), esc(string.Join(", ", s.ReferencedByComponents.Select(Name))), esc(s.ConnectionReference ?? "—"),
-              esc(s.DatabaseModelId is null ? "Not linked" : "Available") })));
+              esc(s.DatabaseModelId is null ? "Not linked to structured analysis" : "Available") })));
         sb.Append("</section>\n<section class=\"block\"><h2>External systems</h2>");
         sb.Append(table(["External system", "Type", "Protocol", "Configuration"], a.ExternalSystems.Select(e => new[] { esc(e.Name), esc(e.Type), esc(e.Protocol), esc(e.ConfigurationReference ?? "—") })));
         sb.Append("</section>\n<section class=\"block\"><h2>Unresolved items</h2><ul>");

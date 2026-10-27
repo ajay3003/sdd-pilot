@@ -43,20 +43,20 @@ public static class SourceAnalysisOverview
     public static string StatusLabel(ArchitectureStatus status) => status == ArchitectureStatus.NeedsReview ? "Needs review" : status.ToString();
     public static string StatusLabel(DatabaseAnalysisStatus status) => status == DatabaseAnalysisStatus.NeedsReview ? "Needs review" : status.ToString();
 
-    private static string Tone(string status) => status switch { "Complete" => "complete", "Partial" or "Needs review" => "partial", _ => "muted" };
+    private static string Tone(string status) => status switch { "Complete" => "complete", "Partial" or "Needs review" or "Partial evidence" or "Evidence review · deterministic conflict" => "partial", _ => "muted" };
 
     public static SourceAreaCard Architecture(IqrSourceSnapshot source)
     {
         const string title = "Architecture", description = "Source-derived topology: components, dependencies, messaging and data stores.", action = "Open Architecture";
         if (source.Architecture is not { } a)
             return new("Architecture", title, description, "Not analyzed", "muted", "This source snapshot predates architecture extraction.", [], "View architecture details", ArchitectureCardLimitation, null);
-        var status = StatusLabel(a.Status);
+        var status = a.Status == ArchitectureStatus.Unsupported ? StatusLabel(a.Status) : ArchitectureReview.StatusText(a);
         if (a.Status == ArchitectureStatus.Unsupported)
             return new("Architecture", title, description, status, Tone(status), a.Limitations.FirstOrDefault(x => x != ArchitectureSnapshot.SourceLimitation) ?? "No supported project type was found in this source snapshot.", [], "View architecture details", ArchitectureCardLimitation, a.SnapshotId);
         // Overview is a summary: the size of the system, its messaging surface and where it is unresolved. The full counts live in the area.
         List<SourceAreaMetric> metrics =
         [
-            new("Components", a.Components.Count), new("Messaging channels", a.MessagingChannels.Count), new("Unresolved dependencies", a.UnresolvedItems.Count()),
+            new("Components", a.Components.Count), new("Messaging channels", a.MessagingChannels.Count), new("Targets not resolved from source", a.UnresolvedItems.Count()),
         ];
         return new("Architecture", title, description, status, Tone(status), null, metrics, action, ArchitectureCardLimitation, a.SnapshotId);
     }

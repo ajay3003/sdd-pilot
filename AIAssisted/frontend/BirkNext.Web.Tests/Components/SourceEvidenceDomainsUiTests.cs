@@ -223,7 +223,7 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     {
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, Evidence(infrastructure: false)));
         cut.Find("[data-testid=sd-infra-status]").TextContent.Should().Contain("Not detected");
-        cut.Find("[data-testid=sd-infra-not-assessed]").TextContent.Should().Contain("Not detected in this source").And.Contain("may exist in another source package or repository");
+        cut.Find("[data-testid=sd-infra-not-assessed]").TextContent.Should().Contain("No infrastructure evidence detected in this snapshot").And.Contain("may exist in another source package or repository");
         cut.Find("[data-testid=sd-infra-coverage-link]").GetAttribute("href").Should().Be("technology-coverage");
         cut.FindAll("[data-testid=sd-infra-overview]").Should().BeEmpty();
         cut.FindAll("[data-testid^=sd-infra-tab-]").Should().BeEmpty();

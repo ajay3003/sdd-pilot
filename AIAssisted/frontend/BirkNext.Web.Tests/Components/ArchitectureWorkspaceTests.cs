@@ -66,7 +66,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         var cut = RenderModel();
         cut.Find("[data-testid=arch-limitation]").TextContent.Should().Be(SourceBoundary.Architecture, "the area names its own limitation; the generic source-only note is stated once on the page");
         cut.Find("[data-testid=arch-limitation-full]").TextContent.Should().Be(ArchitectureSnapshot.SourceLimitation, "the full boundary stays one click away");
-        cut.Find("[data-testid=arch-status]").TextContent.Should().Be("Partial");
+        cut.Find("[data-testid=arch-status]").TextContent.Should().Be("Partial evidence");
         var overview = cut.Find("[data-testid=arch-overview]").TextContent;
         overview.Should().Contain("Components3").And.Contain("Messaging channels1").And.Contain("Datastores1");
         cut.Find("[data-testid=arch-dependency-summary]").TextContent.Should().Contain("unresolved");
@@ -213,6 +213,54 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         var changes = with.FindAll("[data-testid=arch-changes] li");
         changes.Should().Contain(li => li.GetAttribute("data-kind") == "Added" && li.ParentElement!.GetAttribute("data-area")!.StartsWith("Component") && li.TextContent.Contains("Search.Worker"));
         changes.Should().Contain(li => li.GetAttribute("data-kind") == "Added" && li.ParentElement!.GetAttribute("data-area")!.StartsWith("Dependenc"));
+        with.Find("[data-testid=arch-change-summary]").GetAttribute("data-comparable").Should().Be("true", "two of three components are shared");
+        with.FindAll("[data-testid=arch-coverage-difference]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Changes_between_snapshots_with_little_shared_scope_are_a_coverage_difference_not_drift()
+    {
+        var other = Model() with
+        {
+            SnapshotId = Guid.NewGuid(),
+            Components = [new() { Id = "component:Payments.Api", Name = "Payments.Api", ComponentType = ArchitectureComponentType.Api }, new() { Id = "component:Ledger.Worker", Name = "Ledger.Worker", ComponentType = ArchitectureComponentType.Worker },
+                new() { Id = "component:Audit.Worker", Name = "Audit.Worker", ComponentType = ArchitectureComponentType.Worker }],
+            Dependencies = [], MessagingChannels = [], DataStores = [],
+        };
+        var cut = RenderModel([("other-scope.zip", other)]);
+        Tab(cut, "changes");
+        cut.Find("[data-testid=arch-change-summary]").GetAttribute("data-comparable").Should().Be("false");
+        cut.Find("[data-testid=arch-coverage-difference]").TextContent.Should().Be(ArchitectureComparability.WeakCoverageNote);
+        cut.Find("[data-testid=arch-comparability]").TextContent.Should().Contain("Comparable components: 0").And.Contain("coverage-only additions");
+    }
+
+    [Fact]
+    public void Unresolved_targets_and_unresolved_channel_endpoints_read_as_not_resolved_never_missing()
+    {
+        var cut = RenderModel();
+        Tab(cut, "integrations");
+        cut.Find("[data-testid=arch-unresolved-targets] h3").TextContent.Should().Be("1 integration target could not be resolved from source");
+        cut.Find("[data-testid=arch-unresolved-meaning]").TextContent.Should().Contain("This is not a missing integration");
+        cut.Find("[data-testid=arch-unresolved-targets]").TextContent.Should().NotContainEquivalentOf("none found").And.NotContainEquivalentOf("missing dependency");
+
+        var orphanChannel = Model() with { MessagingChannels = [Model().MessagingChannels[0] with { Producers = [], Consumers = [] }] };
+        var messaging = Render<ArchitectureWorkspace>(p => p.Add(c => c.Snapshot, orphanChannel));
+        Tab(messaging, "messaging");
+        messaging.Find("[data-testid=arch-messaging-table]").TextContent.Should().Contain("Producer not resolved").And.Contain("Consumer not resolved").And.NotContain("None found");
+        var html = new ReportExportService().ExportSourceArchitecture(orphanChannel);
+        html.Should().Contain("Producer not resolved").And.NotContain("None found in source");
+    }
+
+    [Fact]
+    public void Datastore_without_structured_analysis_is_a_neutral_not_linked_state()
+    {
+        var unlinked = Model() with { DataStores = [Model().DataStores[0] with { DatabaseModelId = null }] };
+        var cut = Render<ArchitectureWorkspace>(p => p.Add(c => c.Snapshot, unlinked));
+        Tab(cut, "data");
+        cut.Find("[data-testid=arch-data-table] button").Click();
+        var state = cut.Find("[data-testid=arch-db-link-state]");
+        state.TextContent.Should().Be("Not linked to structured analysis");
+        state.GetAttribute("title").Should().Contain("Neutral").And.Contain("not missing");
     }
 
     [Fact]

@@ -91,13 +91,35 @@ public static class ArchitectureReview
     /// scope are not mixed. Unknown kinds fall under "Other analyzer evidence".</summary>
     public static string CauseGroup(string kind) => kind switch
     {
-        "Unresolved target" or "Producer not found" or "Consumer not found" => "Missing relationship evidence",
-        "Channel name unresolved" or "Conflict" => "Ambiguous configuration",
-        "Deployment not assessed" or "Local orchestration only" => "Outside Source Analysis runtime scope",
+        "Unresolved target" or "Producer not found" or "Consumer not found" or "Channel name unresolved" => ResolutionLimitations,
+        "Deployment not assessed" or "Local orchestration only" or "Compose evidence only" => ScopeLimitations,
+        "Conflict" => DeterministicConflicts,
         _ => "Other analyzer evidence",
     };
 
-    public static readonly IReadOnlyList<string> CauseGroups = ["Missing relationship evidence", "Ambiguous configuration", "Outside Source Analysis runtime scope", "Other analyzer evidence"];
+    /// <summary>Analyzer could not resolve an identity (target, base URL, channel, producer/consumer correlation): neutral, never a defect.</summary>
+    public const string ResolutionLimitations = "Resolution limitations";
+    /// <summary>Outside what source analysis can establish (deployment, runtime, local orchestration only): neutral.</summary>
+    public const string ScopeLimitations = "Scope / runtime limitations";
+    /// <summary>Contradictory deterministic source evidence: the only category eligible for higher review attention.</summary>
+    public const string DeterministicConflicts = "Deterministic conflicts";
+
+    public static readonly IReadOnlyList<string> CauseGroups = [DeterministicConflicts, ResolutionLimitations, ScopeLimitations, "Other analyzer evidence"];
+
+    /// <summary>Count of dependencies with contradictory deterministic targets.</summary>
+    public static int Conflicts(ArchitectureSnapshot a) => a.Dependencies.Count(d => d.ConflictingTargets.Count > 0);
+
+    /// <summary>
+    /// Reviewer status: unresolved evidence alone is "Partial evidence" (analyzer limitation, not an architecture-quality failure); only a
+    /// deterministic conflict makes it "Evidence review · deterministic conflict". Deployment state is never verified by Source Analysis.
+    /// </summary>
+    public static string StatusText(ArchitectureSnapshot a) => a.Status switch
+    {
+        ArchitectureStatus.Complete => "Complete",
+        ArchitectureStatus.Unsupported => "Not assessed",
+        _ when Conflicts(a) > 0 => "Evidence review · deterministic conflict",
+        _ => "Partial evidence",
+    };
 
     /// <summary>The primary reason for a non-complete architecture status (actual data).</summary>
     public static string? StatusReason(ArchitectureSnapshot a)
@@ -105,8 +127,12 @@ public static class ArchitectureReview
         if (a.Status is ArchitectureStatus.Complete) return null;
         if (a.Status is ArchitectureStatus.Unsupported) return "Not assessed: no supported project type was found in this source.";
         var dep = ArchitectureEvidenceSummary.Dependencies(a);
-        return dep.Unresolved > 0 ? SourceAnalysisReview.Plural(dep.Unresolved, "dependency target unresolved", "dependency targets unresolved")
-            : a.Diagnostics.Count > 0 ? SourceAnalysisReview.Plural(a.Diagnostics.Count, "evidence item needs review", "evidence items need review")
+        var conflicts = Conflicts(a);
+        var parts = new List<string>();
+        if (dep.Unresolved > 0) parts.Add(SourceAnalysisReview.Plural(dep.Unresolved, "relationship target could not be resolved from source", "relationship targets could not be resolved from source"));
+        if (conflicts > 0) parts.Add(SourceAnalysisReview.Plural(conflicts, "deterministic conflict requires review", "deterministic conflicts require review"));
+        return parts.Count > 0 ? string.Join(" · ", parts)
+            : a.Diagnostics.Count > 0 ? SourceAnalysisReview.Plural(a.Diagnostics.Count, "evidence item to review", "evidence items to review")
             : "Some source constructs could not be interpreted";
     }
 }
@@ -136,12 +162,13 @@ public sealed record SourceChangeGroup(string Label, int Added, int Removed, int
 /// </summary>
 public static class SourceAnalysisReview
 {
-    public const string NotDetectedText = "Not detected in this source";
+    /// <summary>The analyzer found no evidence in this snapshot — never "the project has none".</summary>
+    public const string NotDetectedText = "Not detected in this snapshot";
 
     public static SourceSummaryRow Architecture(IqrSourceSnapshot s)
     {
         if (s.Architecture is not { } a) return new("architecture", "Architecture", "Not assessed", "This snapshot predates architecture extraction.", SourceAnalysisAreas.Architecture, null);
-        var status = SourceAnalysisOverview.StatusLabel(a.Status);
+        var status = ArchitectureReview.StatusText(a);
         if (a.Status == ArchitectureStatus.Unsupported) return new("architecture", "Architecture", "Not assessed", "No supported project type was found in this source.", SourceAnalysisAreas.Architecture, null);
         var reason = ArchitectureReview.StatusReason(a);
         return new("architecture", "Architecture", status, reason, SourceAnalysisAreas.Architecture, null,
@@ -250,7 +277,7 @@ public static class SourceAnalysisReview
     {
         var items = new List<SourceAttentionItem>();
         if (s.Architecture is { } a && a.Status != ArchitectureStatus.Unsupported && ArchitectureEvidenceSummary.Dependencies(a) is { Unresolved: > 0 } dep)
-            items.Add(new("architecture-unresolved", dep.Unresolved, Plural(dep.Unresolved, "dependency detected with an unresolved target", "dependencies detected with unresolved targets"), SourceAnalysisAreas.Architecture, null, "Dependencies"));
+            items.Add(new("architecture-unresolved", dep.Unresolved, Plural(dep.Unresolved, "relationship detected · target could not be resolved from source", "relationships detected · targets could not be resolved from source"), SourceAnalysisAreas.Architecture, null, "Dependencies"));
         if (s.DatabaseArchitecture is { } d && d.Status != DatabaseAnalysisStatus.Unsupported)
         {
             if (d.UnresolvedEvidence.Count > 0) items.Add(new("data-unresolved", d.UnresolvedEvidence.Count, NotFullyResolved(d.UnresolvedEvidence.Count), SourceAnalysisAreas.Data, null));
@@ -361,4 +388,34 @@ public static class SourceAnalysisReview
     public static string FileName(string? path) => string.IsNullOrEmpty(path) ? "—" : path.Replace('\\', '/').Split('/')[^1];
 
     public static string Plural(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
+}
+
+/// <summary>One comparison's split: changes of identities present in both snapshots vs items present in only one (coverage).</summary>
+public sealed record ArchitectureComparison(bool Comparable, int CommonComponents, int ComparableChanges, int CoverageAdditions, int CoverageRemovals,
+    IReadOnlyList<ArchitectureChange> Changes)
+{
+    public string Summary => Comparable
+        ? $"Comparable components: {CommonComponents} · {ComparableChanges} changed comparable entit{(ComparableChanges == 1 ? "y" : "ies")} · {CoverageAdditions} added · {CoverageRemovals} removed"
+        : $"Comparable components: {CommonComponents} · {ComparableChanges} changed comparable entit{(ComparableChanges == 1 ? "y" : "ies")} · coverage-only additions: {CoverageAdditions} · coverage-only removals: {CoverageRemovals}";
+}
+
+/// <summary>
+/// Separates comparable architecture change from snapshot coverage/scope difference, deterministically: the snapshots are comparable when
+/// they share component identities (at least half of the smaller snapshot's components, and at least one). Changed items always concern an
+/// identity present in both snapshots; when comparability is weak, added/removed items reflect different analyzed scope, not drift.
+/// </summary>
+public static class ArchitectureComparability
+{
+    public const string WeakCoverageNote = "Snapshot coverage differs significantly. Added/removed items primarily reflect different analyzed scope and must not be interpreted as architecture drift.";
+
+    public static ArchitectureComparison Classify(ArchitectureSnapshot previous, ArchitectureSnapshot current, IReadOnlyList<ArchitectureChange> changes)
+    {
+        static HashSet<string> Names(ArchitectureSnapshot s) => s.Components.Select(c => c.Name.Trim().ToLowerInvariant()).ToHashSet();
+        var (a, b) = (Names(previous), Names(current));
+        var common = a.Intersect(b).Count();
+        var smaller = Math.Min(a.Count, b.Count);
+        var comparable = common > 0 && common * 2 >= smaller;
+        return new(comparable, common, changes.Count(c => c.Kind == ArchitectureChangeKind.Changed),
+            changes.Count(c => c.Kind == ArchitectureChangeKind.Added), changes.Count(c => c.Kind == ArchitectureChangeKind.Removed), changes);
+    }
 }

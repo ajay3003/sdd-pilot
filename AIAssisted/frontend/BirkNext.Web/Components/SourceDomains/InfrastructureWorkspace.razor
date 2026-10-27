@@ -11,7 +11,7 @@
         @* Neutral and compact: no supported IaC in this source is not "no infrastructure". *@
         <h2 id="sd-infra-heading" tabindex="-1">Infrastructure <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="Not detected" HiddenPrefix="Analysis status: " TestId="sd-infra-status" /></h2>
         <div class="sd-neutral" data-testid="sd-infra-not-assessed">
-            <p><strong>Not detected in this source.</strong> This source does not contain supported Infrastructure as Code files or infrastructure automation scripts. Infrastructure may exist in another source package or repository.</p>
+            <p><strong>No infrastructure evidence detected in this snapshot.</strong> This analyzer found no supported Infrastructure as Code files or infrastructure automation scripts. It does not mean the project has no infrastructure — it may exist in another source package or repository.</p>
             <p class="sd-muted">Supported: Terraform · Bicep · ARM · Kubernetes · Helm (partial) · infrastructure scripts (Python, shell, PowerShell; read statically, never run)</p>
             @if (!I.AutomationAnalyzed) { <p class="sd-muted" data-testid="sd-infra-automation-version">@InfrastructureAutomationText.NotAvailableInVersion</p> }
             else if (I.OtherScriptCount > 0) { <p class="sd-muted" data-testid="sd-infra-other-scripts-note">@I.OtherScriptCount script(s) were read; none is infrastructure automation.</p> }

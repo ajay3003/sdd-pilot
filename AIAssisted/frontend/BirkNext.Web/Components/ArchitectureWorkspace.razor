@@ -11,7 +11,7 @@
    Everything shown is source-derived design evidence — never deployed topology, never runtime traffic. *@
 <section class="arch" aria-labelledby="arch-heading" data-testid="architecture-workspace">
     <div class="sa-section-head">
-        <h2 id="arch-heading">Architecture <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceAnalysisOverview.StatusLabel(Snapshot.Status)" TestId="arch-status" /></h2>
+        <h2 id="arch-heading">Architecture <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@ArchitectureReview.StatusText(Snapshot)" TestId="arch-status" /></h2>
         <div class="sa-section-actions" data-testid="arch-actions">
             <ExportMenu TestId="arch-export-menu" Options="ExportOptions" />
         </div>
@@ -161,10 +161,13 @@
             {
                 @if (previous.AnalyzerVersion != Snapshot.AnalyzerVersion) { <p class="arch-muted">Analyzer versions differ; changes may reflect extraction coverage rather than changed source.</p> }
                 var changes = ArchitectureDiff.Compare(previous, Snapshot);
+                var comparison = ArchitectureComparability.Classify(previous, Snapshot, changes);
                 @if (changes.Count == 0) { <p class="sa-empty-line" data-testid="arch-no-changes">No source architecture change between these snapshots.</p> }
                 else
                 {
-                    <dl class="sa-change-summary" data-testid="arch-change-summary">
+                    @if (!comparison.Comparable) { <p class="arch-limitation" role="note" data-testid="arch-coverage-difference">@ArchitectureComparability.WeakCoverageNote</p> }
+                    <p class="arch-muted" data-testid="arch-comparability">@comparison.Summary</p>
+                    <dl class="sa-change-summary" data-testid="arch-change-summary" data-comparable="@(comparison.Comparable ? "true" : "false")">
                         @foreach (var g in SourceAnalysisReview.ArchitectureChanges(changes)) { <div data-testid="arch-change-group" data-area="@g.Label"><dt>@g.Label</dt><dd>@SourceAnalysisReview.ChangeText(g)</dd></div> }
                     </dl>
                     <ReviewDisclosure Text="@($"View detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="arch-change-details" Class="disclosure-small">
@@ -215,7 +218,8 @@
         @if (View == SourceArchitectureView.Integrations && UnresolvedTargets.Count > 0)
         {
             <section class="arch-panel arch-unresolved-targets" aria-labelledby="arch-unresolved-targets-heading" data-testid="arch-unresolved-targets">
-                <h3 id="arch-unresolved-targets-heading">@SourceAnalysisReview.Plural(UnresolvedTargets.Count, "unresolved target", "unresolved targets")</h3>
+                <h3 id="arch-unresolved-targets-heading">@SourceAnalysisReview.Plural(UnresolvedTargets.Count, "integration target could not be resolved from source", "integration targets could not be resolved from source")</h3>
+                <p class="arch-muted" data-testid="arch-unresolved-meaning">Relationship detected · target unresolved. The integration itself was found in source; only its target identity could not be established. This is not a missing integration.</p>
                 <ul class="arch-list">@foreach (var d in UnresolvedTargets.Take(8)) { <li data-testid="arch-unresolved-target"><strong>@ArchitectureReview.TargetLabel(d)</strong> <span class="arch-muted">@Name(d.FromComponentId) · @ArchitectureReview.UnresolvedReason(d)</span></li> }</ul>
                 <button type="button" class="btn-secondary" data-testid="arch-integrations-review" @onclick="ReviewUnresolvedDependencies">Review unresolved dependencies</button>
             </section>
@@ -246,9 +250,9 @@
                         <div class="arch-table" tabindex="0" role="region" aria-label="Messaging channels"><table data-testid="arch-messaging-table"><thead><tr><th scope="col">Producers</th><th scope="col">Channel</th><th scope="col">Consumers</th><th scope="col">Evidence state</th></tr></thead><tbody>
                         @foreach (var ch in Snapshot.MessagingChannels.Where(c => Graph.Nodes.Any(n => n.Id == c.Id)))
                         {
-                            <tr><td>@(ch.Producers.Count == 0 ? "None found in source" : string.Join(", ", ch.Producers.Select(p => $"{Name(p.ComponentId)} ({ArchitecturePresentation.StateLabel(p.State)}{(p.Framework is { } f ? ", " + f : "")})")))</td>
+                            <tr><td>@(ch.Producers.Count == 0 ? "Producer not resolved" : string.Join(", ", ch.Producers.Select(p => $"{Name(p.ComponentId)} ({ArchitecturePresentation.StateLabel(p.State)}{(p.Framework is { } f ? ", " + f : "")})")))</td>
                                 <td><button type="button" class="arch-link" @onclick="() => SelectNodeAsync(ch.Id)">@ch.Name</button><span class="arch-context">@ArchitecturePresentation.ChannelLabel(ch.Type)@((ch.Subscription ?? ch.ConsumerGroup) is { } sub ? $" · {sub}" : "")</span>@if (ch.EnvironmentVariants.Count > 0) { <span class="arch-context">@string.Join("; ", ch.EnvironmentVariants.Select(v => $"{v.Key}: {v.Value}"))</span> }</td>
-                                <td>@(ch.Consumers.Count == 0 ? "None found in source" : string.Join(", ", ch.Consumers.Select(p => $"{Name(p.ComponentId)} ({ArchitecturePresentation.StateLabel(p.State)}{(p.Framework is { } f ? ", " + f : "")})")))</td>
+                                <td>@(ch.Consumers.Count == 0 ? "Consumer not resolved" : string.Join(", ", ch.Consumers.Select(p => $"{Name(p.ComponentId)} ({ArchitecturePresentation.StateLabel(p.State)}{(p.Framework is { } f ? ", " + f : "")})")))</td>
                                 <td>@(ch.NameUnresolved ? "Name unresolved — not paired" : ArchitecturePresentation.StateLabel(ch.Confidence))</td></tr>
                         }
                         </tbody></table></div>
@@ -391,13 +395,6 @@
         _highlight = null;
         _pathResult = null;
     }
-
-    private static string StatusLabel(ArchitectureStatus status) => status switch
-    {
-        ArchitectureStatus.Complete => "Complete (all supported sources analyzed — not a claim of correctness)",
-        ArchitectureStatus.NeedsReview => "Needs review",
-        _ => status.ToString(),
-    };
 
     private static RenderFragment Options(IEnumerable<string> values) => builder =>
     {
@@ -542,8 +539,8 @@
                 <div><dt>Entity</dt><dd>@(ch.EntityName ?? "Name computed at runtime — not paired")</dd></div>
                 @if (ch.EnvironmentVariants.Count > 0) { <div><dt>Per environment</dt><dd>@string.Join("; ", ch.EnvironmentVariants.Select(v => $"{v.Key}: {v.Value}"))</dd></div> }
                 <div><dt>Subscription / consumer group</dt><dd>@(ch.Subscription ?? ch.ConsumerGroup ?? "—")</dd></div>
-                <div><dt>Producers</dt><dd>@(ch.Producers.Count == 0 ? "None found in source" : string.Join(", ", ch.Producers.Select(p => Name(p.ComponentId))))</dd></div>
-                <div><dt>Consumers</dt><dd>@(ch.Consumers.Count == 0 ? "None found in source" : string.Join(", ", ch.Consumers.Select(p => Name(p.ComponentId))))</dd></div>
+                <div><dt>Producers</dt><dd>@(ch.Producers.Count == 0 ? "No producer relationship resolved from source" : string.Join(", ", ch.Producers.Select(p => Name(p.ComponentId))))</dd></div>
+                <div><dt>Consumers</dt><dd>@(ch.Consumers.Count == 0 ? "No consumer relationship resolved from source" : string.Join(", ", ch.Consumers.Select(p => Name(p.ComponentId))))</dd></div>
             </dl>
             <p class="arch-muted">@node.Subtitle · @node.State</p>
             <p class="arch-muted">A channel in source is not a deployed entity, and producers and consumers are paired only on the same entity name — never by similar names.</p>
@@ -557,7 +554,7 @@
                 <div><dt>Used by</dt><dd>@string.Join(", ", s.ReferencedByComponents.Select(Name))</dd></div>
                 <div><dt>Connection reference</dt><dd><code>@(s.ConnectionReference ?? "—")</code> (value never shown)</dd></div>
                 @if (s.DbContext is { } ctx) { <div><dt>DbContext</dt><dd>@ctx</dd></div> }
-                <div><dt>Database analysis</dt><dd data-testid="arch-db-link-state">@(s.DatabaseModelId is null ? "Not linked" : "Available")</dd></div>
+                <div><dt>Database analysis</dt><dd data-testid="arch-db-link-state" title="@(s.DatabaseModelId is null ? "Datastore detected in source, but no structured data-analysis record is linked. Neutral — not missing, not a failure." : "Linked structured data-analysis evidence")">@(s.DatabaseModelId is null ? "Not linked to structured analysis" : "Available")</dd></div>
             </dl>
             @if (s.DatabaseModelId is { } model) { <button type="button" data-testid="arch-open-database" @onclick="() => OpenDatabase.InvokeAsync(model)">Open Database Diagram</button> }
             <p class="arch-muted">Tables are shown only in the separate Database area; a datastore reference is not a verified physical database.</p>

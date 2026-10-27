@@ -126,14 +126,42 @@ public sealed class SourceAnalysisStatusSemanticsTests : BunitContext
         ArchitectureReview.ReasonCategory(Dep(ArchitectureDependencyType.ServiceBusPublish, ArchitectureEvidenceKind.ApplicationSource) with { ToId = "channel:unnamed" })
             .Should().Be(ArchitectureReview.ReasonChannel);
 
-        ArchitectureReview.CauseGroup("Unresolved target").Should().Be("Missing relationship evidence");
-        ArchitectureReview.CauseGroup("Producer not found").Should().Be("Missing relationship evidence");
-        ArchitectureReview.CauseGroup("Consumer not found").Should().Be("Missing relationship evidence");
-        ArchitectureReview.CauseGroup("Channel name unresolved").Should().Be("Ambiguous configuration");
-        ArchitectureReview.CauseGroup("Conflict").Should().Be("Ambiguous configuration");
-        ArchitectureReview.CauseGroup("Deployment not assessed").Should().Be("Outside Source Analysis runtime scope");
-        ArchitectureReview.CauseGroup("Local orchestration only").Should().Be("Outside Source Analysis runtime scope");
+        ArchitectureReview.CauseGroup("Unresolved target").Should().Be(ArchitectureReview.ResolutionLimitations, "an unresolved target is an analyzer resolution limit, not missing evidence");
+        ArchitectureReview.CauseGroup("Producer not found").Should().Be(ArchitectureReview.ResolutionLimitations);
+        ArchitectureReview.CauseGroup("Consumer not found").Should().Be(ArchitectureReview.ResolutionLimitations);
+        ArchitectureReview.CauseGroup("Channel name unresolved").Should().Be(ArchitectureReview.ResolutionLimitations);
+        ArchitectureReview.CauseGroup("Conflict").Should().Be(ArchitectureReview.DeterministicConflicts, "only disagreeing evidence is a deterministic conflict");
+        ArchitectureReview.CauseGroup("Deployment not assessed").Should().Be(ArchitectureReview.ScopeLimitations);
+        ArchitectureReview.CauseGroup("Local orchestration only").Should().Be(ArchitectureReview.ScopeLimitations);
         ArchitectureReview.CauseGroup("Compose evidence").Should().Be("Other analyzer evidence");
+        ArchitectureReview.CauseGroups[0].Should().Be(ArchitectureReview.DeterministicConflicts, "conflicts are the only group needing an evidence decision");
+    }
+
+    [Fact]
+    public void Architecture_status_separates_partial_evidence_from_deterministic_conflict()
+    {
+        var partial = ArchitectureWorkspaceTests.Model() with { Status = ArchitectureStatus.NeedsReview };
+        ArchitectureReview.StatusText(partial).Should().Be("Partial evidence", "an unresolved HttpClient base URL is partial evidence, not a defect");
+        ArchitectureReview.Conflicts(partial).Should().Be(0);
+        ArchitectureReview.StatusReason(partial).Should().Contain("could not be resolved from source").And.NotContain("conflict");
+
+        var conflict = partial with { Dependencies = [.. partial.Dependencies, new() { Id = "d-c", FromComponentId = "component:Storefront", DependencyType = ArchitectureDependencyType.Http,
+            EvidenceState = ArchitectureEvidenceState.Conflict, ConflictingTargets = ["component:Catalog.Api", "component:Search.Worker"] }] };
+        ArchitectureReview.StatusText(conflict).Should().Be("Evidence review · deterministic conflict");
+        ArchitectureReview.StatusReason(conflict).Should().Contain("1 deterministic conflict");
+        ArchitectureReview.StatusText(partial with { Status = ArchitectureStatus.Complete }).Should().Be("Complete");
+        ArchitectureReview.StatusText(partial with { Status = ArchitectureStatus.Unsupported }).Should().Be("Not assessed");
+    }
+
+    [Fact]
+    public void Unresolved_http_base_url_keeps_its_reason_and_evidence_strength_is_preserved()
+    {
+        var model = ArchitectureWorkspaceTests.Model();
+        var unresolved = model.Dependencies.Single(d => d.Id == "d-unres");
+        ArchitectureReview.UnresolvedReason(unresolved).Should().NotBeNullOrEmpty().And.NotContainEquivalentOf("missing");
+        ArchitectureEvidenceSummary.Dependencies(model).Unresolved.Should().Be(1);
+        model.Dependencies.Select(d => ArchitecturePresentation.StateLabel(d.EvidenceState)).Should().Contain(["Confirmed in source", "Strongly supported", "Inferred"],
+            "Confirmed / Strongly supported / Inferred are separate evidence strengths, never collapsed");
     }
 
     [Fact]
@@ -241,7 +269,7 @@ public sealed class SourceAnalysisStatusSemanticsTests : BunitContext
         var evidence = SourceEvidenceDomainsUiTests.Evidence(infrastructure: false);
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, evidence));
         var text = cut.Find("[data-testid=sd-infra-not-assessed]").TextContent;
-        text.Should().Contain("Not detected in this source").And.Contain("may exist in another source package or repository");
+        text.Should().Contain("No infrastructure evidence detected in this snapshot").And.Contain("may exist in another source package or repository");
         cut.FindAll("[data-testid=sd-infra-unresolved]").Should().BeEmpty("no fake issue count");
         cut.Find("[data-testid=sd-infra-coverage-link]").TextContent.Should().Be("Check infrastructure source coverage");
     }

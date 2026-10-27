@@ -186,7 +186,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.FindAll("[data-testid=sa-snapshot-facts] dt").Select(d => d.TextContent).Should().StartWith(["Fingerprint", "Commit", "Created by"]);
 
         cut.FindAll("[data-testid=sa-summary-rows] > [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("architecture", "data", "observability");
-        Status(cut, "architecture").Should().Be("Partial");
+        Status(cut, "architecture").Should().Be("Partial evidence");
         Status(cut, "data").Should().Be("Partial", "Partial is never Failed");
         cut.Find("[data-testid=sa-overview-summary]").TextContent.Should().NotContain("Failed");
         Reason(cut, "architecture").Should().NotBeNullOrEmpty("every Partial status shows its reason");
@@ -272,7 +272,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     public void Presentation_UsesModelLabelsOnly()
     {
         var snapshot = Snapshot("x.zip", "abc", DateTimeOffset.UnixEpoch, Arch(ArchitectureStatus.NeedsReview, 1), Db(DatabaseAnalysisStatus.NeedsReview, 1, 0), SourceAnalysisStatus.Failed);
-        SourceAnalysisOverview.Architecture(snapshot).Status.Should().Be("Needs review");
+        SourceAnalysisOverview.Architecture(snapshot).Status.Should().Be("Partial evidence", "unresolved targets without a deterministic conflict are partial evidence, not a review failure");
         SourceAnalysisOverview.Database(snapshot).Status.Should().Be("Needs review");
         SourceAnalysisOverview.ShortFingerprint("abc").Should().Be("abc");
         var limitationOnly = Snapshot("y.zip", "abc", DateTimeOffset.UnixEpoch, Arch(ArchitectureStatus.Complete, 1), Db(DatabaseAnalysisStatus.Unsupported, 0, 0));

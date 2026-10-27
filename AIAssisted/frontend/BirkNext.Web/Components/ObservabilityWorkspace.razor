@@ -112,7 +112,7 @@
                                 <th role="rowheader" scope="row">@c.Name <span class="obs-context">@c.ComponentType</span></th>
                                 <td role="cell" data-label="Tracing"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Correlation)" /></td>
                                 <td role="cell" data-label="Logging"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Logging)" /><span class="obs-context" data-testid="obs-component-log-calls">@SourceAnalysisReview.Plural(c.LogCalls, "call", "calls")</span></td>
-                                <td role="cell" data-label="Exporters">@(c.TelemetryExporters.Count == 0 ? "None found in source" : SourceAnalysisReview.Plural(c.TelemetryExporters.Count, "exporter", "exporters"))</td>
+                                <td role="cell" data-label="Exporters">@(c.TelemetryExporters.Count == 0 ? "Not detected in this snapshot" : SourceAnalysisReview.Plural(c.TelemetryExporters.Count, "exporter", "exporters"))</td>
                                 <td role="cell" data-label="Runtime" class="obs-muted">Not assessed in Source Analysis</td>
                                 <td role="cell"><button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" data-testid="obs-component-evidence-toggle" @onclick="() => ToggleComponent(c.ComponentId)">@(open ? "Hide evidence" : "View evidence")<span class="visually-hidden"> for @c.Name</span></button></td>
                             </tr>
