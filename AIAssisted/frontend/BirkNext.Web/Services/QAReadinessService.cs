@@ -303,6 +303,15 @@ public sealed class QAReadinessService : IQAReadinessService
 
         double chainAvg = chainSum / chainCount;
 
+        // Without a traceability policy explicit-link percentages are informational evidence: they never lower readiness or gate testing.
+        if (!trace.Policy.Configured)
+            return new ReadinessScore
+            {
+                Category = cat, IsAssessed = false, Score = 0, Status = ReadinessStatus.NotReady,
+                Signals = [.. signals.Select(s => s.Replace(" covered", " explicitly linked")), $"Informational: {trace.Gaps.Count} missing explicit reference(s); {trace.Policy.Description}"],
+                Weaknesses = [],
+            };
+
         // 75% from chain coverage average, 25% from gap-free status
         double gapCount = trace.Gaps.Count;
         double gapScore = Math.Max(0.0, 25.0 - gapCount * 2.5);
@@ -470,8 +479,8 @@ public sealed class QAReadinessService : IQAReadinessService
         AddCategoryGaps(gaps, trace, "Traceability");
         AddCategoryGaps(gaps, comp,  "Compliance");
 
-        // Traceability-specific gaps from AT report
-        foreach (var g in traceReport.Gaps.Take(5))
+        // Traceability gaps from the report: only those a configured policy requires (missing explicit references are informational).
+        foreach (var g in traceReport.Gaps.Where(g => g.PolicyRequired).Take(5))
         {
             gaps.Add(new ReadinessGap
             {

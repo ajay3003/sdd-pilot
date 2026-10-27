@@ -312,7 +312,7 @@ public class QAReadinessServiceTests
     }
 
     [Fact]
-    public void TraceScore_FullChain_IsAssessedAndPositive()
+    public void TraceScore_WithoutTraceabilityPolicy_IsInformational_AndCreatesNoReadinessGap()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(FullSpec);
@@ -322,8 +322,10 @@ public class QAReadinessServiceTests
         var report     = _sut.Assess(constitution, spec, plan, tasks);
         var traceScore = report.Scores.First(s => s.Category == "Traceability");
 
-        traceScore.IsAssessed.Should().BeTrue();
-        traceScore.Score.Should().BeGreaterThan(0);
+        traceScore.IsAssessed.Should().BeFalse("explicit-link percentages are evidence, not a readiness score, without a policy");
+        traceScore.Weaknesses.Should().BeEmpty();
+        traceScore.Signals.Should().Contain(s => s.StartsWith("Informational:"));
+        report.Gaps.Should().NotContain(g => g.Category == "Traceability", "missing explicit references are not readiness gaps by themselves");
     }
 
     // ── Compliance scoring ────────────────────────────────────────────────────

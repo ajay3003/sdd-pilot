@@ -883,8 +883,10 @@ public sealed class ReportExportService : IReportExportService
             sb.Append(Kpi("Not assessed", "Plan → Tasks (no stable direct relation)"));
         if (report.HasTasks && report.HasSpecification)
             sb.Append(Kpi(CoverageLabel(report.TaskCoverage), "Tasks with Requirement/SC references"));
-        sb.Append(Kpi(report.Health.GapCount.ToString(), "Gaps"));
+        sb.Append(Kpi(report.Health.GapCount.ToString(), "Missing explicit references"));
+        sb.Append(Kpi(report.PolicyRequiredGapCount.ToString(), "Required traceability gaps"));
         sb.Append("</div>\n");
+        sb.Append($"<p class=\"meta\">Explicit authored-document references only. Missing references are not automatically quality defects; this review does not verify implementation or test execution. {Esc(report.Policy.Description)}</p>\n");
 
         // Artifacts loaded
         var loaded = new List<string>();
@@ -921,16 +923,16 @@ public sealed class ReportExportService : IReportExportService
 
         if (report.Gaps.Count > 0)
         {
-            sb.Append("<section class=\"block\">\n<h2>Traceability Gaps</h2>\n");
+            sb.Append("<section class=\"block\">\n<h2>Missing explicit references</h2>\n");
             sb.Append(Table(
-                ["Artifact", "Item ID", "Title", "Status", "Severity", "Description"],
+                ["Artifact", "Item ID", "Title", "Evidence", "Policy significance", "Description"],
                 report.Gaps.Select(g => new[]
                 {
                     Esc(g.GapIn.ToString()),
                     Esc(g.ItemId),
                     Esc(g.ItemTitle),
-                    Badge(g.Status.ToString()),
-                    Badge(g.Severity.ToString()),
+                    Esc(TraceabilityLabels.Evidence(g.Status, g.GapIn)),
+                    Esc(TraceabilityLabels.Significance(g)),
                     Esc(g.Description)
                 })));
             sb.Append("</section>\n");
@@ -943,14 +945,16 @@ public sealed class ReportExportService : IReportExportService
             if (report.Matrix.Count > cap)
                 sb.Append($"<p class=\"meta\"><span>Showing {cap} of {report.Matrix.Count} rows</span></p>\n");
             sb.Append(Table(
-                ["Constitution", "Specification", "Plan", "Task", "Status"],
+                ["Constitution", "Specification", "Plan", "Task reference", "Constitution→Spec", "Spec→Plan", "Plan→Task"],
                 report.Matrix.Take(cap).Select(r => new[]
                 {
                     Esc(r.ConstitutionRuleId + (r.ConstitutionRuleTitle.Length > 0 ? $" — {r.ConstitutionRuleTitle}" : "")),
                     Esc(r.SpecRequirementId ?? ""),
-                    Esc(r.PlanItemId ?? ""),
+                    Esc(r.PlanItemId is null ? "" : $"{r.PlanItemId} ({r.PlanItemKind})"),
                     Esc(r.TaskId ?? ""),
-                    Badge(r.Status.ToString())
+                    Esc(r.SpecEdge),
+                    Esc(r.PlanEdge ?? "—"),
+                    Esc(r.TaskEdge)
                 })));
             sb.Append("</section>\n");
         }

@@ -341,7 +341,7 @@ public static class ReviewContextFactory
                 .Select(d => d.Id)
                 .ToList();
             if (mentions.TryGetValue(id, out var places))
-                architectureDecisions.AddRange(places.Where(p => !architectureDecisions.Contains(p)));
+                architectureDecisions.AddRange(places.Where(p => !architectureDecisions.Contains(p) && !BirkNext.Web.Services.PlanTraceabilityNodes.IsStructureListing(p)));
 
             if (architectureDecisions.Count > 0)
             {

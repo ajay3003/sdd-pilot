@@ -36,11 +36,11 @@ public sealed class QaTraceabilityRulePack : IRulePack
                     RulePackId     = RulePackId,
                     RuleId         = "TRACE-001",
                     Category       = "Traceability",
-                    Title          = $"Documentation gap — {missing} constitution rule(s) not referenced by ID in the specification",
+                    Title          = $"{missing} Constitution rule(s) without an explicit Specification reference",
                     Description    = $"{missing} constitution rule(s) with an ID are not cited by any requirement of this Artifact Pack's specification ({string.Join(", ", trace.ConstitutionToSpec.Where(r => r.Status == TraceabilityStatus.Missing).Select(r => r.ItemId).Take(12))}). Rules without an ID are not counted.",
-                    Severity       = missing > 3 ? "Medium" : "Low",
+                    Severity       = "Low",
                     Status         = "Failed",
-                    Recommendation = "Add references to the missing constitution rules in specification requirements.",
+                    Recommendation = "Informational unless project policy requires explicit Constitution→Specification references. A missing ID does not prove the principle is absent.",
                 });
         }
 
@@ -55,11 +55,11 @@ public sealed class QaTraceabilityRulePack : IRulePack
                     RulePackId     = RulePackId,
                     RuleId         = "TRACE-002",
                     Category       = "Traceability",
-                    Title          = $"Plan coverage gap — {missing} requirement(s) have no explicit Plan reference",
+                    Title          = $"{missing} requirement(s) without an explicit Plan reference",
                     Description    = $"Checked: requirement IDs written in the plan (any section) or in its architecture decisions. Not referenced: {string.Join(", ", trace.SpecToPlan.Where(r => r.Status == TraceabilityStatus.Missing).Select(r => r.ItemId))}. Similar wording is never counted as a link.",
-                    Severity       = missing > 3 ? "Medium" : "Low",
+                    Severity       = "Low",
                     Status         = "Failed",
-                    Recommendation = "Ensure the plan explicitly addresses all specification requirements.",
+                    Recommendation = "Informational unless project policy requires explicit Requirement→Plan references. A Plan may address a requirement without its ID.",
                 });
         }
 

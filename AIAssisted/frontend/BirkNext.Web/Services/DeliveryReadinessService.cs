@@ -264,8 +264,10 @@ public sealed class DeliveryReadinessService : IDeliveryReadinessAssessmentServi
             passed.Add(readiness.HasSpecification && readiness.HasPlan
                 ? "Traceability check skipped — no applicable Requirements were available"
                 : "Traceability check skipped — need Spec + Plan");
-        else if (tracePct >= 60)
-            passed.Add($"Spec→Plan traceability: {tracePct:0.#}%");
+        else if (tracePct >= 60 || !traceReport.Policy.RequireSpecToPlan)
+            passed.Add(traceReport.Policy.RequireSpecToPlan
+                ? $"Spec→Plan explicit references: {tracePct:0.#}%"
+                : $"Spec→Plan explicit references: {tracePct:0.#}% (informational — no traceability policy requires them)");
         else
         {
             failed.Add($"Spec→Plan traceability low ({tracePct:0.#}% — need ≥60%)");

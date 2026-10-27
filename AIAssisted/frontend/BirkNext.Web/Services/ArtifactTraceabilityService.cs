@@ -22,7 +22,19 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         SpecTree? spec,
         PlanDocument? plan,
         TaskTree? tasks,
-        ReviewContext reviewContext)
+        ReviewContext reviewContext) => Analyze(constitution, spec, plan, tasks, reviewContext, TraceabilityPolicy.None);
+
+    /// <summary>
+    /// Authored-document reference evidence only. Missing explicit references are informational unless <paramref name="policy"/> requires the
+    /// relation; Source Analysis evidence is never used to fill an authored link, and no Plan→Task edge is inferred.
+    /// </summary>
+    public ArtifactTraceabilityReport Analyze(
+        ConstitutionDocument? constitution,
+        SpecTree? spec,
+        PlanDocument? plan,
+        TaskTree? tasks,
+        ReviewContext reviewContext,
+        TraceabilityPolicy policy)
     {
         // Flatten all nodes (used for matrix and gap detection)
         var allTaskNodes = tasks is not null ? FlattenTasks(tasks.Roots) : [];
@@ -49,7 +61,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             : new TraceabilityCoverageStats();
 
         // Gaps (sorted by severity desc)
-        var gaps = BuildGaps(constToSpec, specToPlan, planToTask, orphanTasks)
+        var gaps = BuildGaps(constToSpec, specToPlan, planToTask, orphanTasks, policy)
             .GroupBy(g => (g.GapIn, g.ItemId, g.Status))
             .Select(group => group.First())
             .OrderBy(g => g.Severity)
@@ -62,7 +74,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             constitution, spec, plan, tasks,
             reviewContext,
             constCoverage, specCoverage, planCoverage, taskCoverage,
-            gaps.Count, allTaskNodes.Count, orphanTasks.Count);
+            gaps.Count, allTaskNodes.Count, orphanTasks.Count, policy);
 
         return new ArtifactTraceabilityReport
         {
@@ -81,6 +93,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             HasPlan               = plan is not null,
             HasTasks              = tasks is not null,
             ReferenceOnlyConstitutionEntries = constitution?.RuleCatalog.Count(r => r.IsReferenceOnly) ?? 0,
+            Policy                = policy,
         };
     }
 
@@ -173,7 +186,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 planIds = [];
 
             var links = new List<TraceabilityLink>();
-            foreach (var planId in planIds)
+            foreach (var planId in planIds.Where(id => !PlanTraceabilityNodes.IsStructureListing(id)))
             {
                 // A decision, or a plan location ("§ Heading") where the requirement id is written explicitly.
                 var planItem = context.Plan.ArchitectureDecisions
@@ -348,11 +361,12 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         List<ChainCoverage> constToSpec,
         List<ChainCoverage> specToPlan,
         List<ChainCoverage> planToTask,
-        List<TaskNode> orphanTasks)
+        List<TaskNode> orphanTasks,
+        TraceabilityPolicy policy)
     {
         var gaps = new List<TraceabilityGap>();
 
-        // Missing constitution rules → High
+        // Missing explicit references are evidence, not defects: Informational unless a configured policy requires the relation.
         foreach (var c in constToSpec.Where(c => c.Status == TraceabilityStatus.Missing))
             gaps.Add(new TraceabilityGap
             {
@@ -360,8 +374,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = c.ItemId,
                 ItemTitle   = c.ItemTitle,
                 Status      = TraceabilityStatus.Missing,
-                Description = $"Constitution rule {c.ItemId} ({c.ItemTitle}) has no coverage in the specification.",
-                Severity    = GapSeverity.High,
+                Description = $"{c.ItemId} has no explicit reference in the selected Specification. This does not prove that the principle is absent from the Specification.",
+                Severity    = policy.RequireConstitutionToSpec ? GapSeverity.High : GapSeverity.Informational,
+                PolicyRequired = policy.RequireConstitutionToSpec,
             });
 
         // Partial constitution coverage (only plan/non-req) → Medium
@@ -372,8 +387,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = c.ItemId,
                 ItemTitle   = c.ItemTitle,
                 Status      = TraceabilityStatus.Partial,
-                Description = $"Constitution rule {c.ItemId} is partially covered — not referenced by a formal requirement.",
-                Severity    = GapSeverity.Medium,
+                Description = $"{c.ItemId} is partially linked — not referenced by a formal requirement.",
+                Severity    = policy.RequireConstitutionToSpec ? GapSeverity.Medium : GapSeverity.Informational,
+                PolicyRequired = policy.RequireConstitutionToSpec,
             });
 
         // Missing spec requirements in plan → High
@@ -384,8 +400,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = c.ItemId,
                 ItemTitle   = c.ItemTitle,
                 Status      = TraceabilityStatus.Missing,
-                Description = $"Requirement {c.ItemId} ({c.ItemTitle}) has no corresponding implementation strategy in the plan.",
-                Severity    = GapSeverity.High,
+                Description = $"No explicit Plan reference to {c.ItemId} was found. A Plan may still address this requirement without using its explicit ID.",
+                Severity    = policy.RequireSpecToPlan ? GapSeverity.High : GapSeverity.Informational,
+                PolicyRequired = policy.RequireSpecToPlan,
             });
 
         // Missing plan items (no task coverage) → Medium
@@ -408,8 +425,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = t.TaskId ?? t.Title,
                 ItemTitle   = t.ShortTitle ?? t.Title,
                 Status      = TraceabilityStatus.Orphaned,
-                Description = "Task has no direct Requirement or Success Criterion reference.",
-                Severity    = GapSeverity.Medium,
+                Description = $"Task {t.TaskId ?? t.Title} has no explicit Requirement/Success Criterion reference. Use Task Alignment Review to determine whether a direct requirement link is expected.",
+                Severity    = policy.RequireTaskReferences ? GapSeverity.Medium : GapSeverity.Informational,
+                PolicyRequired = policy.RequireTaskReferences,
             });
 
         return gaps;
@@ -443,12 +461,13 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         {
             if (ruleEntry.Links.Count == 0)
             {
-                // No spec coverage — emit a single Missing row
+                // No explicit Specification reference: one row, edge evidence only (never "missing coverage").
                 rows.Add(new TraceabilityMatrixRow
                 {
                     ConstitutionRuleId    = ruleEntry.ItemId,
                     ConstitutionRuleTitle = ruleEntry.ItemTitle,
                     Status                = TraceabilityStatus.Missing,
+                    SpecEdge              = "No explicit reference",
                 });
                 continue;
             }
@@ -466,14 +485,16 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 if (!specToFrLinks.TryGetValue(specId.ToUpperInvariant(), out var planLinks)
                     || planLinks.Count == 0)
                 {
-                    // Spec covered but no plan reference
+                    // Explicit Constitution→Specification link; no explicit Plan reference to the requirement.
                     rows.Add(new TraceabilityMatrixRow
                     {
                         ConstitutionRuleId    = ruleEntry.ItemId,
                         ConstitutionRuleTitle = ruleEntry.ItemTitle,
                         SpecRequirementId     = specId,
                         SpecRequirementTitle  = specTitle,
-                        Status                = TraceabilityStatus.Partial,
+                        Status                = TraceabilityStatus.Covered,
+                        SpecEdge              = "Explicit",
+                        PlanEdge              = "No explicit reference",
                     });
                     continue;
                 }
@@ -487,6 +508,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                     if (!planItemToTaskLinks.TryGetValue(planId, out var taskLinks)
                         || taskLinks.Count == 0)
                     {
+                        // Plan→Task is not assessed (no stable shared identifier); it never turns the row partial.
                         rows.Add(new TraceabilityMatrixRow
                         {
                             ConstitutionRuleId    = ruleEntry.ItemId,
@@ -495,7 +517,10 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                             SpecRequirementTitle  = specTitle,
                             PlanItemId            = planId,
                             PlanItemTitle         = planTitle,
-                            Status                = TraceabilityStatus.Partial,
+                            PlanItemKind          = PlanTraceabilityNodes.KindOf(planId),
+                            Status                = TraceabilityStatus.Covered,
+                            SpecEdge              = "Explicit",
+                            PlanEdge              = "Explicit",
                         });
                         continue;
                     }
@@ -513,7 +538,11 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                             PlanItemTitle         = planTitle,
                             TaskId                = taskLink.TargetId,
                             TaskTitle             = taskLink.TargetTitle,
+                            PlanItemKind          = PlanTraceabilityNodes.KindOf(planId),
                             Status                = TraceabilityStatus.Covered,
+                            SpecEdge              = "Explicit",
+                            PlanEdge              = "Explicit",
+                            TaskEdge              = "Explicit",
                         });
                     }
                 }
@@ -566,9 +595,13 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         TraceabilityCoverageStats taskCov,
         int gapCount,
         int totalTaskCount,
-        int orphanTaskCount)
+        int orphanTaskCount,
+        TraceabilityPolicy policy)
     {
         var indicators = new List<TraceabilityHealthIndicator>();
+        // Evidence is neutral; only a configured policy may turn low explicit linkage into attention.
+        TraceabilityHealthLevel Level(bool required, double pct) =>
+            !required ? TraceabilityHealthLevel.Info : pct >= 80 ? TraceabilityHealthLevel.Good : pct >= 50 ? TraceabilityHealthLevel.Warning : TraceabilityHealthLevel.Error;
 
         // Constitution coverage
         if (constitution is not null && spec is not null && constCov.HasApplicablePopulation)
@@ -576,11 +609,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             var pct = constCov.CoveragePercentage;
             indicators.Add(new TraceabilityHealthIndicator
             {
-                Icon  = pct >= 80 ? "✓" : pct >= 50 ? "⚠" : "✗",
-                Message = $"Constitution coverage: {pct:0.#}% ({constCov.CoveredItems} of {constCov.TotalItems} authored rules linked to Specification)",
-                Level = pct >= 80 ? TraceabilityHealthLevel.Good
-                      : pct >= 50 ? TraceabilityHealthLevel.Warning
-                      : TraceabilityHealthLevel.Error,
+                Icon  = "ℹ",
+                Message = $"Constitution → Specification: {constCov.CoveredItems} of {constCov.TotalItems} Constitution rules explicitly linked ({pct:0.#}% explicit reference coverage)",
+                Level = Level(policy.RequireConstitutionToSpec, pct),
             });
         }
 
@@ -590,11 +621,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             var pct = specCov.CoveragePercentage;
             indicators.Add(new TraceabilityHealthIndicator
             {
-                Icon  = pct >= 80 ? "✓" : pct >= 50 ? "⚠" : "✗",
-                Message = $"Specification coverage: {pct:0.#}% ({specCov.CoveredItems} of {specCov.TotalItems} requirements addressed in plan)",
-                Level = pct >= 80 ? TraceabilityHealthLevel.Good
-                      : pct >= 50 ? TraceabilityHealthLevel.Warning
-                      : TraceabilityHealthLevel.Error,
+                Icon  = "ℹ",
+                Message = $"Specification → Plan: {specCov.CoveredItems} of {specCov.TotalItems} requirements explicitly referenced in the Plan ({pct:0.#}% explicit reference coverage)",
+                Level = Level(policy.RequireSpecToPlan, pct),
             });
         }
 
@@ -603,9 +632,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         {
             indicators.Add(new TraceabilityHealthIndicator
             {
-                Icon  = "⚠",
-                Message = $"{orphanTaskCount} task{(orphanTaskCount != 1 ? "s" : "")} without a Requirement or Success Criterion reference",
-                Level = TraceabilityHealthLevel.Warning,
+                Icon  = "ℹ",
+                Message = $"{orphanTaskCount} task{(orphanTaskCount != 1 ? "s" : "")} without an explicit Requirement/SC reference — Task Alignment Review classifies them (technical, design-linked or needs review)",
+                Level = policy.RequireTaskReferences ? TraceabilityHealthLevel.Warning : TraceabilityHealthLevel.Info,
             });
         }
 
@@ -614,9 +643,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         {
             indicators.Add(new TraceabilityHealthIndicator
             {
-                Icon  = gapCount > 10 ? "✗" : "⚠",
-                Message = $"{gapCount} traceability gap{(gapCount != 1 ? "s" : "")} detected",
-                Level = gapCount > 10 ? TraceabilityHealthLevel.Error : TraceabilityHealthLevel.Warning,
+                Icon  = "ℹ",
+                Message = $"{gapCount} missing explicit reference{(gapCount != 1 ? "s" : "")} — {(policy.Configured ? "see policy significance per item" : "informational; no explicit traceability policy configured")}",
+                Level = policy.Configured ? TraceabilityHealthLevel.Warning : TraceabilityHealthLevel.Info,
             });
         }
         else if (constitution is not null && spec is not null && plan is not null && tasks is not null &&
@@ -625,7 +654,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             indicators.Add(new TraceabilityHealthIndicator
             {
                 Icon  = "✓",
-                Message = "Full chain traced — no gaps detected",
+                Message = "Every assessed item has an explicit authored reference",
                 Level = TraceabilityHealthLevel.Good,
             });
         }
@@ -653,4 +682,24 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             Indicators        = indicators,
         };
     }
+}
+
+/// <summary>
+/// Plan nodes for authored traceability. A Plan location is typed from its own heading; project-structure listings (the Plan's
+/// "Source Code (repository root)", "Project Structure" or documentation file trees) describe repository layout, not planning statements,
+/// and never become traceability nodes. Source Analysis evidence is never a Plan node.
+/// </summary>
+public static class PlanTraceabilityNodes
+{
+    private static readonly Regex StructureListing = new(
+        @"^§\s*(source code|project structure|repository (root|layout|structure)|directory structure|folder structure|documentation \(this feature\)|file structure)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex Phase = new(@"^§\s*(phase|step|stage)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static bool IsStructureListing(string planId) => StructureListing.IsMatch(planId.Trim());
+
+    public static string KindOf(string planId) =>
+        planId.StartsWith("§ ", StringComparison.Ordinal) ? Phase.IsMatch(planId) ? "Plan phase" : "Plan section"
+        : planId.Contains(".md", StringComparison.OrdinalIgnoreCase) ? "Supporting plan document"
+        : "Architecture decision";
 }
