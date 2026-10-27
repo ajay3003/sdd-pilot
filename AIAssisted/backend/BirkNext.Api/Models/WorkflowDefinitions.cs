@@ -146,9 +146,10 @@ public static class WorkflowDefinitions
             ActionLabel = "Open Requirements Traceability",
             StepType = WorkflowStepType.Analysis,
             SortOrder = 7,
-            // The Constitution is read when present (Constitution → Specification); the binding sorts roles, so decisions keep their identity.
-            RequiredArtifacts = new() { "Specification", "Plan", "Tasks" },
-            OptionalArtifacts = new() { "Constitution" },
+            // A cross-document analysis: the Specification is the only engine prerequisite; Constitution, Plan and Tasks are read when present
+            // (a pack without a Plan or Constitution still has Specification ↔ Tasks linkage). The binding sorts roles, so decisions keep identity.
+            RequiredArtifacts = new() { "Specification" },
+            OptionalArtifacts = new() { "Constitution", "Plan", "Tasks" },
             RequiresManualReview = true,
             RequiresApproval = false,
             Color = "#2563eb"
@@ -163,9 +164,8 @@ public static class WorkflowDefinitions
             ActionLabel = "Open Task Alignment Review",
             StepType = WorkflowStepType.Analysis,
             SortOrder = 8,
+            // Engine prerequisites only. A Requirements Traceability review decision is recommended context (governance), never a lock.
             RequiredArtifacts = new() { "Specification", "Tasks" },
-            // A recorded Requirements Traceability review decision (reviewed, with or without gaps) — never a pass.
-            RequiredPreviousApprovals = new() { "ArtifactTraceability" },
             RequiresManualReview = true,
             RequiresApproval = false,
             Color = "#c2410c"

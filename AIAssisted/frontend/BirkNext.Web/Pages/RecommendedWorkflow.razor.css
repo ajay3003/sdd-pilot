@@ -1459,3 +1459,20 @@
 .rw-branch-purpose, .rw-branch-detail { margin: .25rem 0; overflow-wrap: anywhere; }
 .rw-branch-detail { font-size: .85rem; color: var(--clr-text-muted, #475569); }
 .rw-source-binding { margin: .25rem 0; font-size: .85rem; }
+
+/* Evidence-aware sections: capability rows carry their status as text (never colour alone). */
+.rw-cap-list { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .35rem; }
+.rw-cap { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline; padding: .4rem .6rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; min-width: 0; }
+.rw-cap-name { font-weight: 600; overflow-wrap: anywhere; }
+.rw-cap-status { font-size: .82rem; font-weight: 600; }
+.rw-cap-required { font-size: .78rem; color: var(--clr-text-muted, #475569); }
+.rw-cap-reason { flex-basis: 100%; font-size: .8rem; color: var(--clr-text-muted, #475569); overflow-wrap: anywhere; }
+.rw-cap.is-needssetup .rw-cap-status { color: #92400e; }
+.rw-cap.is-notapplicable { opacity: .75; }
+.rw-binding-card { border: 1px solid var(--clr-border, #e2e8f0); border-inline-start: 3px solid #2563eb; border-radius: 6px; padding: .5rem .75rem; margin-bottom: .5rem; }
+.rw-binding-title { margin: 0 0 .25rem; }
+.rw-binding-facts { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin: 0 0 .25rem; }
+.rw-binding-facts dt { font-size: .75rem; color: var(--clr-text-muted, #475569); }
+.rw-binding-facts dd { margin: 0; font-weight: 600; }
+.rw-other-actions { margin: .25rem 0 0; padding-left: 1.1rem; }
+.rw-step-note { font-size: .82rem; color: var(--clr-text-muted, #475569); }

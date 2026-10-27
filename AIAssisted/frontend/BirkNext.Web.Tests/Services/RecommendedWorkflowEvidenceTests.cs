@@ -92,7 +92,8 @@ public sealed class RecommendedWorkflowEvidenceTests : BunitContext
         r.Inputs.Source.Status.Should().Be(ProjectInputStatus.Ready, "the snapshot is analyzed");
         r.SourceBinding.Should().Be(SourceBindingState.NotEstablished, "an analyzed snapshot never binds a pack by itself");
         r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.EstablishSourceBindingKey);
-        r.NextRecommendedAction.Description.Should().StartWith("Source snapshot is available, but this Artifact Pack is not yet mapped to source evidence.");
+        r.NextRecommendedAction.Description.Should().StartWith("Source has already been analyzed, but the selected Artifact Pack is not yet mapped to source evidence.");
+        r.Recommendation!.ReasonCode.Should().Be("SOURCE_BINDING_MISSING");
         var source = r.EvidenceBranches.Single(b => b.Key == "source");
         source.State.Should().Be("Source analyzed · Artifact Pack source binding not established");
         source.Detail.Should().Contain("Not assessed").And.NotContain("Source unavailable").And.NotContain("failed");

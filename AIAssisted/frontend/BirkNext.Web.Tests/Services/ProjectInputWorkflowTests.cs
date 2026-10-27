@@ -107,7 +107,7 @@ public sealed class ProjectInputWorkflowTests
         r.AlternativeActions.Select(a => a.Route).Should().Equal("specification-explorer", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute);
         r.Inputs.Documents.Requirement.Should().Be("Recommended start");
         r.Inputs.Source.Requirement.Should().StartWith("Optional");
-        r.Inputs.Target.Requirement.Should().Be("Required for runtime reviews");
+        r.Inputs.Target.Requirement.Should().Be("Optional until a runtime review is needed");
         r.ReleaseReadinessPercent.Should().BeNull("nothing is assessed: no 0%");
         VerifyNoDocumentSteps();
     }
@@ -182,7 +182,7 @@ public sealed class ProjectInputWorkflowTests
     }
 
     [Fact]
-    public async Task DocumentsAndSource_DocumentStepFirst_SourceReviewsListed_TargetOptional()
+    public async Task DocumentsAndSource_SourceBindingFirst_DocumentsStayAvailable_TargetOptional()
     {
         Documents(AllRoles);
         DocumentStepsOpen();
@@ -190,7 +190,7 @@ public sealed class ProjectInputWorkflowTests
 
         var r = await ReadinessAsync();
 
-        r.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.EstablishSourceBindingKey, "source is analyzed but the pack is unbound");
         r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain(["quality-review", "dependency-review"]);
         r.Inputs.Target.Status.Should().Be(ProjectInputStatus.Partial);
     }
@@ -208,6 +208,113 @@ public sealed class ProjectInputWorkflowTests
         r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Document Review", "Quality & Testing"]);
         r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain(["quality-review", "api-quality-review"]);
         r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review", "Document Review appears before runtime reviews in the sidebar");
+    }
+
+    // ── Evidence-aware navigator ─────────────────────────────────────────────────────────────────────────────────────────
+
+    private static WorkflowStepViewModel Review(string key, string type, WorkflowStepStatus status, params string[] roles)
+    {
+        var step = Step(key, status);
+        step.StepType = type;
+        step.RequiresApproval = false;
+        step.ArtifactRoles = [.. roles];
+        step.RequiredArtifacts = [.. roles];
+        step.ArtifactReferences = status == WorkflowStepStatus.NotApplicable ? null : string.Join(", ", roles.Select(r => r + ".md"));
+        step.Route = key switch { "ArtifactTraceability" => "artifact-traceability", "ImplementationReview" => "task-alignment", _ => step.Route };
+        return step;
+    }
+
+    private void PersonModuleCoreSteps() => _steps =
+    [
+        Review("ConstitutionExplorer", "Explorer", WorkflowStepStatus.Available, "Constitution"),
+        Review("SpecificationExplorer", "Explorer", WorkflowStepStatus.Available, "Specification"),
+        Review("PlanExplorer", "Explorer", WorkflowStepStatus.Available, "Plan"),
+        Review("TaskExplorer", "Explorer", WorkflowStepStatus.Available, "Tasks"),
+        Review("DataModelExplorer", "Explorer", WorkflowStepStatus.Available, "DataModel"),
+        Review("ArtifactTraceability", "Analysis", WorkflowStepStatus.Available, "Specification"),
+        Review("ImplementationReview", "Analysis", WorkflowStepStatus.Available, "Specification", "Tasks"),
+    ];
+
+    [Fact]
+    public async Task ScreenshotScenario_RecommendsSourceBinding_DocumentsAndTraceabilityAvailable_RuntimeOnlyNeedsSetup()
+    {
+        Documents(AllRoles);
+        PersonModuleCoreSteps();
+        Source(detected: [Nuget]);   // analyzed; no Target Environment URL
+
+        var r = await ReadinessAsync();
+
+        r.Recommendation!.ReasonCode.Should().Be("SOURCE_BINDING_MISSING");
+        r.Recommendation.Unlocks.Should().Contain("Implementation Evidence Review");
+        foreach (var explorer in new[] { "ConstitutionExplorer", "SpecificationExplorer", "PlanExplorer", "TaskExplorer", "DataModelExplorer", "ArtifactTraceability" })
+            r.Capabilities.Single(c => c.Id == explorer).StatusLabel.Should().Be("Available", explorer);
+        var alignment = r.Capabilities.Single(c => c.Id == "ImplementationReview");
+        alignment.Readiness.Should().Be(ReviewReadiness.Ready, "a missing Requirements Traceability decision never blocks Task Alignment");
+        alignment.Note.Should().Be("Recommended after Requirements Traceability, but can be run independently.");
+        r.Capabilities.Single(c => c.Id == "implementation-evidence").StatusLabel.Should().Be("Needs setup: Source binding");
+        r.Capabilities.Where(c => c.Section != ReviewSection.Runtime).Should().NotContain(c => c.MissingPrerequisites.Contains(ReviewNavigator.TargetEnvironment),
+            "no document or source review needs a Target Environment");
+        r.CoreManualReviews.Should().HaveCount(7);
+        r.CoreManualReviews.Should().OnlyContain(c => c.Decision == ReviewDecisionState.NotReviewed);
+    }
+
+    [Fact]
+    public async Task DocumentOnly_PartialPack_WorkflowStaysValid()
+    {
+        Documents(WorkspaceArtifactType.Specification, WorkspaceArtifactType.Tasks);
+        _steps =
+        [
+            Review("ConstitutionExplorer", "Explorer", WorkflowStepStatus.NotApplicable, "Constitution"),
+            Review("SpecificationExplorer", "Explorer", WorkflowStepStatus.Available, "Specification"),
+            Review("PlanExplorer", "Explorer", WorkflowStepStatus.NotApplicable, "Plan"),
+            Review("TaskExplorer", "Explorer", WorkflowStepStatus.Available, "Tasks"),
+            Review("ImplementationReview", "Analysis", WorkflowStepStatus.Available, "Specification", "Tasks"),
+        ];
+
+        var r = await ReadinessAsync();
+
+        r.Capabilities.Single(c => c.Id == "ConstitutionExplorer").Applicability.Should().Be(ReviewApplicabilityState.NotApplicable);
+        r.Capabilities.Single(c => c.Id == "PlanExplorer").StatusLabel.Should().Be("Not applicable");
+        r.Capabilities.Single(c => c.Id == "ImplementationReview").Readiness.Should().Be(ReviewReadiness.Ready, "no Plan is needed for Task Alignment");
+        r.Capabilities.Single(c => c.Id == "implementation-evidence").Readiness.Should().Be(ReviewReadiness.WaitingForEvidence, "no source: neutral, not a failure");
+        r.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
+    }
+
+    [Fact]
+    public async Task EvidenceChanged_IsNotReviewed_AndIsRecommendedAgain()
+    {
+        Documents(AllRoles);
+        var spec = Review("SpecificationExplorer", "Explorer", WorkflowStepStatus.Stale, "Specification");
+        spec.PreviousDecision = "Reviewed";
+        _steps = [spec];
+
+        var r = await ReadinessAsync();
+
+        var capability = r.Capabilities.Single(c => c.Id == "SpecificationExplorer");
+        capability.Decision.Should().Be(ReviewDecisionState.EvidenceChanged);
+        capability.StatusLabel.Should().Be("Evidence changed — review again");
+        r.Recommendation!.ReasonCode.Should().Be("EVIDENCE_CHANGED");
+    }
+
+    [Fact]
+    public async Task HiddenFeatures_AreNeverRecommendedOrCounted()
+    {
+        Documents(AllRoles);
+        PersonModuleCoreSteps();
+        foreach (var step in _steps) step.Route = step.Key switch
+        {
+            "ConstitutionExplorer" => "constitution-explorer", "SpecificationExplorer" => "specification-explorer", "PlanExplorer" => "plan-explorer",
+            "TaskExplorer" => "task-explorer", "DataModelExplorer" => "data-model-explorer", _ => step.Route,
+        };
+        var features = new FeatureVisibilityService();
+        features.ApplyLocalFlags(new FeatureVisibilityDto { ConstitutionExplorer = false });
+
+        var r = await ReadinessAsync(features);
+
+        r.Steps.Should().NotContain(s => s.Key == "ConstitutionExplorer");
+        r.Capabilities.Should().NotContain(c => c.Id == "ConstitutionExplorer");
+        r.CoreManualReviews.Should().HaveCount(6);
+        r.NextRecommendedAction!.Key.Should().NotBe("ConstitutionExplorer");
     }
 
     [Fact]
@@ -273,12 +380,12 @@ public sealed class ProjectInputWorkflowTests
         Source(detected: [Nuget]);
 
         var r = await ReadinessAsync();
-        r.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.EstablishSourceBindingKey,
+            "evidence owner present but unusable (source analyzed, pack unbound) outranks the next unreviewed document");
 
         DocumentStepsApproved();
         r = await ReadinessAsync();
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.EstablishSourceBindingKey,
-            "the source is analyzed but this Artifact Pack is not mapped to source evidence: the binding comes before optional reviews");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.EstablishSourceBindingKey);
         r.SourceBinding.Should().Be(SourceBindingState.NotEstablished);
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Ready);
     }

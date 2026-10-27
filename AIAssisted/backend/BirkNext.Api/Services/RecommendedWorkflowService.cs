@@ -102,11 +102,9 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         { "Dashboard", Array.Empty<string>() }
     };
 
-    // Approval dependencies per step (steps that must be approved first)
-    private static readonly Dictionary<string, List<string>> ApprovalDependencies = new()
-    {
-        { "ImplementationReview", new[] { "ArtifactTraceability" }.ToList() }
-    };
+    // Approval dependencies per step (steps that must be decided first). Empty: a manual review decision is governance evidence, not an
+    // engine prerequisite — no analysis waits for another review's decision unless an explicit project policy requires it.
+    private static readonly Dictionary<string, List<string>> ApprovalDependencies = new();
 
     public RecommendedWorkflowService(AppDbContext db, ILogger<RecommendedWorkflowService> logger)
     {

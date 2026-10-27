@@ -127,7 +127,7 @@ public static class ProjectInputPresentation
     public static ProjectInput Target(FrontendAnalysisProfile? environment, bool environmentKnown = true)
     {
         const string title = "Target environment";
-        const string requirement = "Required for runtime reviews";
+        const string requirement = "Optional until a runtime review is needed";
         var route = NavigationCatalog.TargetEnvironmentsRoute;
         if (!environmentKnown)
             return new(ProjectInputKind.Target, ProjectInputStatus.Unknown, title, requirement, "Unknown",

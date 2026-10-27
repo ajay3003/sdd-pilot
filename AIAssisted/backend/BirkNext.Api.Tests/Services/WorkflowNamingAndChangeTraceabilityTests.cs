@@ -24,8 +24,8 @@ public sealed class WorkflowNamingAndChangeTraceabilityTests
         var traceability = WorkflowDefinitions.GetDefinition("ArtifactTraceability")!;
         traceability.Title.Should().Be("Requirements Traceability");
         traceability.ActionLabel.Should().Be("Open Requirements Traceability");
-        traceability.RequiredArtifacts.Should().BeEquivalentTo(["Specification", "Plan", "Tasks"]);
-        traceability.OptionalArtifacts.Should().Equal("Constitution");
+        traceability.RequiredArtifacts.Should().BeEquivalentTo(["Specification"], "a cross-document analysis reads Constitution, Plan and Tasks when present");
+        traceability.OptionalArtifacts.Should().BeEquivalentTo(["Constitution", "Plan", "Tasks"]);
 
         var alignment = WorkflowDefinitions.GetDefinition("ImplementationReview")!;
         alignment.Title.Should().Be("Task Alignment Review");

@@ -136,28 +136,31 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(WorkflowStepStatus.Available, traceability.Status);
     }
 
-    // Test 7: Implementation Review locked until Artifact Traceability approved on its current revisions
+    // Test 7: Task Alignment Review is never locked by a missing Requirements Traceability decision (governance ≠ engine prerequisite)
     [Fact]
-    public async Task BuildWorkflowSteps_LocksImplementationReviewUntilTraceabilityApproved()
+    public async Task BuildWorkflowSteps_TaskAlignmentRunsWithoutATraceabilityDecision()
     {
         var implReview = Step(await BuildAsync(), "ImplementationReview");
         Assert.Equal("Task Alignment Review", implReview.Title);
-        Assert.Equal(WorkflowStepStatus.Locked, implReview.Status);
-        Assert.Equal("Requirements Traceability review decision required", implReview.DisabledReason);
+        Assert.Equal(WorkflowStepStatus.Available, implReview.Status);
+        Assert.Equal("", implReview.DisabledReason);
 
-        // A review with known gaps is a recorded decision: it satisfies the dependency (no pass is required).
-        await _service.RejectStepAsync(_workspaceId, "ArtifactTraceability", Current, comment: "66 coverage gaps");
-        Assert.Equal(WorkflowStepStatus.Available, Step(await BuildAsync(), "ImplementationReview").Status);
-
+        // A new Plan revision makes the traceability decision stale; Task Alignment stays available (it reads Specification and Tasks).
         await _service.ApproveStepAsync(_workspaceId, "ArtifactTraceability", Current);
-
-        Assert.Equal(WorkflowStepStatus.Available, Step(await BuildAsync(), "ImplementationReview").Status);
-
-        // A new Plan revision makes the traceability approval stale, so Implementation Review is blocked again.
-        var changedPlan = Revisions(Ref("Plan", "B2B2B2B2B2"));
-        var steps = await BuildAsync(artifacts: changedPlan);
+        var steps = await BuildAsync(artifacts: Revisions(Ref("Plan", "B2B2B2B2B2")));
         Assert.Equal(WorkflowStepStatus.Stale, Step(steps, "ArtifactTraceability").Status);
-        Assert.Equal(WorkflowStepStatus.Locked, Step(steps, "ImplementationReview").Status);
+        Assert.Equal(WorkflowStepStatus.Available, Step(steps, "ImplementationReview").Status);
+    }
+
+    // Test 7b: Requirements Traceability needs only the Specification; a pack without Plan or Constitution still analyses
+    [Fact]
+    public async Task BuildWorkflowSteps_TraceabilityNeedsOnlyTheSpecification()
+    {
+        var steps = await _service.BuildWorkflowStepsAsync(_workspaceId, hasConstitution: false, hasSpecification: true, hasPlan: false, hasTasks: true, hasDataModel: false,
+            Revisions().Where(r => r.Role is "Specification" or "Tasks").ToList());
+        Assert.NotEqual(WorkflowStepStatus.NotApplicable, Step(steps, "ArtifactTraceability").Status);
+        Assert.Equal(WorkflowStepStatus.Available, Step(steps, "ImplementationReview").Status);
+        Assert.Equal(WorkflowStepStatus.NotApplicable, Step(steps, "PlanExplorer").Status);
     }
 
     // Test 8: Reject marks step as NeedsChanges, and it stays the current step

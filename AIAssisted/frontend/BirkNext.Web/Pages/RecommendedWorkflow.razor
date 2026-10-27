@@ -46,7 +46,7 @@
         <section class="rw-inputs" aria-labelledby="rw-inputs-heading" data-testid="rw-inputs">
             <div class="rw-inputs-header">
                 <h2 id="rw-inputs-heading" class="rw-inputs-title">Project inputs</h2>
-                <p class="rw-inputs-lead">Documents, source and target environment unlock different reviews. A project does not need every input for every review.</p>
+                <p class="rw-inputs-lead">BirkNext uses different evidence depending on the review. Documentation, source and runtime configuration are independent inputs; not every review requires all three. Project context is the only universal starting point.</p>
             </div>
             <div class="rw-input-grid" role="status" aria-live="polite">
                 @foreach (var input in _readiness.Inputs.All)
@@ -88,134 +88,95 @@
 
         <div class="rw-layout">
             <main class="rw-main" aria-label="Recommended workflow">
-        @if (_readiness.NextRecommendedAction is not null)
+        @if (_readiness.Recommendation is { } recommendation)
         {
-            <div class="rw-next-action" data-testid="rw-next-action">
+            <div class="rw-next-action" data-testid="rw-next-action" data-reason="@recommendation.ReasonCode">
                 <div class="rw-next-action-header">
-                    <span class="rw-next-action-icon">▶</span>
+                    <span class="rw-next-action-icon" aria-hidden="true">▶</span>
                     <div>
-                        <div class="rw-next-action-label">Recommended next review</div>
-                        <div class="rw-next-action-title">@_readiness.NextRecommendedAction.Title</div>
+                        <div class="rw-next-action-label">Recommended next action</div>
+                        <div class="rw-next-action-title" data-testid="rw-next-action-title">@_readiness.NextRecommendedAction!.Title</div>
                     </div>
                 </div>
-                <div class="rw-next-action-label">Why</div>
-                <p class="rw-next-action-desc">@_readiness.NextRecommendedAction.Description</p>
-                @if (_readiness.RecommendationIsListedStep)
+                <div class="rw-next-action-label">Why this is recommended</div>
+                <p class="rw-next-action-desc" data-testid="rw-next-action-why">@_readiness.NextRecommendedAction.Description</p>
+                <div class="rw-next-action-label">What this unlocks</div>
+                <p class="rw-next-action-desc" data-testid="rw-next-action-unlocks">@recommendation.Unlocks</p>
+                <div class="rw-next-action-buttons">
+                    @RenderQuickAction(_readiness.NextRecommendedAction)
+                    @foreach (var alternative in _readiness.AlternativeActions)
+                    {
+                        <a href="@alternative.Route" class="rw-next-action-alt" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
+                    }
+                </div>
+                @if (_readiness.OtherActions.Count > 0)
                 {
-                    <p class="rw-next-action-step" data-testid="rw-next-action-step">Step @_readiness.NextRecommendedAction.Number below.</p>
-                }
-                else
-                {
-                    <div class="rw-next-action-buttons">
-                        @RenderQuickAction(_readiness.NextRecommendedAction)
-                        @foreach (var alternative in _readiness.AlternativeActions)
+                    <div class="rw-next-action-label">Other useful actions</div>
+                    <ul class="rw-other-actions" data-testid="rw-other-actions">
+                        @foreach (var other in _readiness.OtherActions)
                         {
-                            <a href="@alternative.Route" class="rw-next-action-alt" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
+                            <li><a href="@other.Route" data-testid="rw-other-action" data-review="@other.Id">@other.DisplayName</a> <span class="rw-cap-status">@other.StatusLabel</span></li>
                         }
-                    </div>
+                    </ul>
                 }
             </div>
         }
         else if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
         {
-            <p class="rw-no-next-action" data-testid="rw-no-next-action">@(_readiness.RequiredDecisionsComplete ? "Required review decisions complete." : "No open recommendation.") Open the Dashboard for an overview, or an applicable review below.</p>
+            <p class="rw-no-next-action" data-testid="rw-no-next-action">No open recommendation. Open any available review below, or the Dashboard for an overview.</p>
         }
 
-        @if (_readiness.Steps.Count > 0)
+        @if (_readiness.Steps.Any(IsLoadWorkspaceStep))
         {
-            <h2 class="rw-section-heading">Core review path</h2>
-            <p class="rw-reviews-lead" data-testid="rw-core-lead">The usual document and alignment order. Open any available review independently; a step is complete when a review decision is recorded on the documents it reads — opening it records nothing.</p>
+            @* Project context: the only universal prerequisite. *@
+            <div class="rw-phases" data-testid="rw-section-context">@foreach (var step in _readiness.Steps.Where(IsLoadWorkspaceStep)) { @StepCard(step, null) }</div>
         }
 
-        <div class="rw-phases">
-            @foreach (var step in _readiness.Steps)
-            {
-                var review = IsReviewGate(step) ? ArtifactReviewPresentation.Of(step) : null;
-                <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "")" style="--rw-phase-color: @GetStepColor(step);"
-                     data-testid="rw-step" data-step="@step.Key" data-state="@GetStepStateLabel(step)" data-review="@review?.State" aria-current="@(step.IsCurrent ? "step" : null)">
-                    <div class="rw-phase-header">
-                        <div class="rw-phase-num" aria-hidden="true">
-                            @if (review is { State: ArtifactReviewState.NeedsChanges or ArtifactReviewState.Stale })
-                            {
-                                <span class="rw-phase-num-warning">@review.Icon</span>
-                            }
-                            else
-                            {
-                                @(review?.State switch
-                                {
-                                    ArtifactReviewState.Approved => "✓",
-                                    ArtifactReviewState.Blocked => "🔒",
-                                    ArtifactReviewState.NotApplicable => "–",
-                                    _ => IsLoadWorkspaceStep(step) && _readiness.ArtifactLoad != ArtifactLoadState.Required ? "✓" : step.Number.ToString(),
-                                })
-                            }
-                        </div>
-                        <div class="rw-phase-titles">
-                            <div class="rw-phase-label">Step @step.Number</div>
-                            <div class="rw-phase-name">@step.Title</div>
-                        </div>
-                        <span class="badge rw-step-badge @GetStepBadgeClass(step)" data-testid="rw-step-state">@GetStepStateLabel(step)</span>
-                    </div>
-                    <div class="rw-phase-body">
-                        <p class="rw-goal">@step.Description</p>
-                        @if (review is not null)
-                        {
-                            <p class="rw-step-status is-@review.State.ToString().ToLowerInvariant()" data-testid="rw-step-status"><span class="rw-step-status-icon" aria-hidden="true">@review.Icon</span>@review.Summary</p>
-                        }
-                        <div class="rw-phase-footer">
-                            @RenderAction(step)
-                        </div>
-                    </div>
+        @{ var documentSteps = _readiness.Steps.Where(s => s.StepType == "Explorer").ToList(); }
+        @if (documentSteps.Count > 0)
+        {
+            <section class="rw-reviews" aria-labelledby="rw-docs-heading" data-testid="rw-section-documentation">
+                <h2 id="rw-docs-heading" class="rw-section-heading">Documentation reviews</h2>
+                <p class="rw-reviews-lead" data-testid="rw-core-lead">Review authored intent, requirements, plans, tasks and data models. Only artifacts present in the current Artifact Pack are available. Suggested document review order — open any available Explorer independently; a review is recorded only when you record a decision.</p>
+                <div class="rw-phases">
+                    @for (var i = 0; i < documentSteps.Count; i++) { @StepCard(documentSteps[i], i + 1) }
                 </div>
-
-                @if (step.Number < _readiness.Steps.Count)
-                {
-                    <div class="rw-phase-connector" aria-hidden="true">↓</div>
-                }
-            }
-        </div>
-
-        @if (_readiness.EvidenceBranches.Count > 0 && _readiness.WorkspaceLoaded)
-        {
-            @* Evidence branches after the core path: independent of each other, never a chain, never a step of the core path. *@
-            <section class="rw-reviews" aria-labelledby="rw-evidence-heading" data-testid="rw-evidence-branches">
-                <h2 id="rw-evidence-heading" class="rw-section-heading">Evidence-based reviews</h2>
-                <p class="rw-reviews-lead">Each branch depends only on its own evidence: source evidence does not need Azure DevOps, and neither needs a Target Environment.</p>
-                <ul class="rw-branch-list">
-                    @foreach (var branch in _readiness.EvidenceBranches)
-                    {
-                        <li class="rw-branch" data-testid="rw-evidence-branch" data-branch="@branch.Key" data-ready="@branch.Ready.ToString().ToLowerInvariant()">
-                            <div class="rw-branch-head"><strong>@branch.Title</strong> <span class="rw-branch-state" data-testid="rw-branch-state">@branch.State</span></div>
-                            <p class="rw-branch-purpose">@branch.Purpose</p>
-                            <p class="rw-branch-detail">@branch.Detail</p>
-                            <a href="@branch.Route" class="rw-input-action">@branch.ActionLabel →</a>
-                        </li>
-                    }
-                </ul>
+                @CapabilityList(_readiness.Capabilities.Where(c => c.Section == ReviewSection.Documentation && !c.IsCore).ToList())
             </section>
         }
 
-        @if (_readiness.ApplicableReviews.Count > 0)
+        @{ var traceSteps = _readiness.Steps.Where(s => s.StepType == "Analysis").ToList(); }
+        @if (traceSteps.Count > 0)
         {
-            <section class="rw-reviews" aria-labelledby="rw-reviews-heading" data-testid="rw-applicable-reviews">
-                <h2 id="rw-reviews-heading" class="rw-section-heading">Applicable reviews</h2>
-                <p class="rw-reviews-lead">Applicable means the current workspace contains enough relevant input to open this review. It does not mean the review has passed or is required.</p>
-                @foreach (var lane in _readiness.ApplicableReviews.GroupBy(r => r.Lane))
-                {
-                    <div class="rw-review-lane">
-                        <h3 class="rw-review-lane-title">@lane.Key</h3>
-                        <ul class="rw-review-list">
-                            @foreach (var review in lane)
-                            {
-                                <li data-testid="rw-applicable-review" data-review="@review.ReviewId">
-                                    <a href="@review.Route">@review.Label</a>
-                                    @if (review.Status == BirkNext.Applicability.ApplicabilityStatus.PartiallyApplicable) { <span class="rw-review-partial">Partial</span> }
-                                </li>
-                            }
-                        </ul>
-                    </div>
-                }
+            <section class="rw-reviews" aria-labelledby="rw-trace-heading" data-testid="rw-section-traceability">
+                <h2 id="rw-trace-heading" class="rw-section-heading">Traceability</h2>
+                <p class="rw-reviews-lead">Requirements Traceability measures documented linkage across Constitution, Specification, Plan and Tasks — not implementation verification or test execution. Task Alignment Review reads Specification and Tasks and can run independently.</p>
+                <div class="rw-phases">@foreach (var step in traceSteps) { @StepCard(step, null) }</div>
             </section>
+        }
+
+        @{ var otherSteps = _readiness.Steps.Where(s => !IsLoadWorkspaceStep(s) && s.StepType is not ("Explorer" or "Analysis")).ToList(); }
+        @if (otherSteps.Count > 0)
+        {
+            <section class="rw-reviews" aria-labelledby="rw-other-heading" data-testid="rw-section-other">
+                <h2 id="rw-other-heading" class="rw-section-heading">Other workflow steps</h2>
+                <div class="rw-phases">@foreach (var step in otherSteps) { @StepCard(step, null) }</div>
+            </section>
+        }
+
+        @if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
+        {
+            @foreach (var branch in new[] { ReviewSection.Source, ReviewSection.Runtime, ReviewSection.Change, ReviewSection.QualityTesting, ReviewSection.Extensions })
+            {
+                var items = _readiness.Capabilities.Where(c => c.Section == branch && (branch != ReviewSection.Extensions || c.Applicability == ReviewApplicabilityState.Applicable)).ToList();
+                if (items.Count == 0) continue;
+                <section class="rw-reviews" aria-labelledby="rw-sec-@branch" data-testid="rw-section-@branch.ToString().ToLowerInvariant()">
+                    <h2 id="rw-sec-@branch" class="rw-section-heading">@ReviewNavigator.SectionLabel(branch)</h2>
+                    <p class="rw-reviews-lead">@SectionLead(branch)</p>
+                    @if (branch == ReviewSection.Source) { @SourceBindingCard() }
+                    @CapabilityList(items)
+                </section>
+            }
         }
 
         @* The Dashboard is an overview, not a review step: it never counts toward review decisions. *@
@@ -289,9 +250,10 @@
 
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
                         <div class="rw-metric" data-testid="rw-manual-review-card">
-                            <MetricCard Value="@ManualApprovalValue" Label="Review decisions" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
+                            <MetricCard Value="@ManualApprovalValue" Label="Core manual reviews recorded" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
                         </div>
                     </div>
+                    <p class="rw-gates-lead" data-testid="rw-manual-review-note">Review decisions support governance and readiness; analyses may still run independently.</p>
                     <p class="rw-gates-lead" data-testid="rw-release-note">Release readiness: not assessed here — @WorkflowReadinessService.NoReleasePolicy</p>
 
                     @if (_readiness.ReviewGates.Count > 0)
@@ -469,7 +431,7 @@
     private string GetStepStateLabel(WorkflowStepViewModel step)
     {
         if (IsLoadWorkspaceStep(step))
-            return _readiness?.ArtifactLoad == ArtifactLoadState.Required ? "Action required" : "Done";
+            return _readiness?.ArtifactLoad == ArtifactLoadState.Required ? "Action required" : "Imported";
         return IsReviewGate(step) ? ArtifactReviewPresentation.Of(step).Label : step.Status == WorkflowStepStatus.Locked ? "Blocked" : "Available";
     }
 
@@ -477,7 +439,7 @@
         IsReviewGate(step) ? ArtifactReviewPresentation.Of(step).State : null;
 
     private string GetStepBadgeClass(WorkflowStepViewModel step) => IsLoadWorkspaceStep(step)
-        ? (GetStepStateLabel(step) == "Done" ? "rw-badge-approved" : "rw-badge-action")
+        ? (GetStepStateLabel(step) == "Imported" ? "rw-badge-approved" : "rw-badge-action")
         : GateState(step) switch
         {
             ArtifactReviewState.Approved => "rw-badge-approved",
@@ -490,7 +452,7 @@
         };
 
     private string GetStepCardClass(WorkflowStepViewModel step) => IsLoadWorkspaceStep(step)
-        ? (GetStepStateLabel(step) == "Done" ? "is-approved" : "")
+        ? (GetStepStateLabel(step) == "Imported" ? "is-approved" : "")
         : GateState(step) switch
         {
             ArtifactReviewState.Approved => "is-approved",
@@ -502,7 +464,7 @@
         };
 
     private string GetStepColor(WorkflowStepViewModel step) =>
-        GetStepStateLabel(step) is "Approved" or "Done" ? "#15803d" : step.Color;
+        GetStepStateLabel(step) is "Approved" or "Imported" ? "#15803d" : step.Color;
 
     private RenderFragment RenderQuickAction(WorkflowStepViewModel step) => builder =>
     {
@@ -518,6 +480,84 @@
         builder.CloseElement();
     };
 
+    /// <summary>A review card. <paramref name="order"/> is a small suggested-order marker inside one section — never a global step number.</summary>
+    private RenderFragment StepCard(WorkflowStepViewModel step, int? order) => __builder =>
+    {
+        var review = IsReviewGate(step) ? ArtifactReviewPresentation.Of(step) : null;
+        var capability = _readiness?.Capabilities.FirstOrDefault(c => c.Id == step.Key);
+        <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "")" style="--rw-phase-color: @GetStepColor(step);"
+             data-testid="rw-step" data-step="@step.Key" data-state="@GetStepStateLabel(step)" data-review="@review?.State" aria-current="@(step.IsCurrent ? "step" : null)">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num" aria-hidden="true">@(review?.Icon ?? (order?.ToString() ?? "•"))</div>
+                <div class="rw-phase-titles">
+                    @if (order is { } n) { <div class="rw-phase-label" data-testid="rw-step-order">Suggested @n</div> }
+                    <div class="rw-phase-name">@step.Title</div>
+                </div>
+                <span class="badge rw-step-badge @GetStepBadgeClass(step)" data-testid="rw-step-state">@GetStepStateLabel(step)</span>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal">@step.Description</p>
+                @if (review is not null)
+                {
+                    <p class="rw-step-status is-@review.State.ToString().ToLowerInvariant()" data-testid="rw-step-status"><span class="rw-step-status-icon" aria-hidden="true">@review.Icon</span>@review.Summary</p>
+                }
+                @if (capability?.Note is { } note) { <p class="rw-step-note" data-testid="rw-step-note">@note</p> }
+                <div class="rw-phase-footer">@RenderAction(step)</div>
+            </div>
+        </div>
+    };
+
+    /// <summary>Capabilities as a compact list: name, status (Available / Needs setup / Reviewed …) and requiredness, each as text.</summary>
+    private RenderFragment CapabilityList(IReadOnlyList<ReviewCapability> items) => __builder =>
+    {
+        if (items.Count == 0) return;
+        <ul class="rw-cap-list">
+            @foreach (var c in items)
+            {
+                <li class="rw-cap is-@c.Readiness.ToString().ToLowerInvariant()" data-testid="rw-capability" data-review="@c.Id" data-readiness="@c.Readiness" data-applicability="@c.Applicability" data-requiredness="@c.Requiredness">
+                    @if (c.Applicability == ReviewApplicabilityState.NotApplicable) { <span class="rw-cap-name">@c.DisplayName</span> }
+                    else { <a class="rw-cap-name" href="@c.Route">@c.DisplayName</a> }
+                    <span class="rw-cap-status" data-testid="rw-capability-status">@c.StatusLabel</span>
+                    <span class="rw-cap-required">@c.RequirednessLabel</span>
+                    @if (!string.IsNullOrWhiteSpace(c.Reason)) { <span class="rw-cap-reason">@c.Reason</span> }
+                </li>
+            }
+        </ul>
+    };
+
+    /// <summary>Artifact Pack → Source: a first-class fact, not small print.</summary>
+    private RenderFragment SourceBindingCard() => __builder =>
+    {
+        var binding = _readiness!.SourceBinding;
+        <div class="rw-binding-card" data-testid="rw-binding-card" data-state="@binding">
+            <p class="rw-binding-title"><strong>Artifact Pack → Source</strong></p>
+            <dl class="rw-binding-facts">
+                <div><dt>Artifact Pack</dt><dd>@(Workspace?.PackLabel ?? Workspace?.ModuleLabel ?? "—")</dd></div>
+                <div><dt>Source</dt><dd>@_readiness.Inputs.Source.StatusLabel</dd></div>
+                <div><dt>Binding</dt><dd data-testid="rw-binding-state">@(binding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", _ => "No source snapshot" })</dd></div>
+            </dl>
+            @if (binding == SourceBindingState.NotEstablished)
+            {
+                <a class="rw-input-action" href="@WorkflowReadinessService.ImplementationEvidenceRoute" data-testid="rw-binding-action">Review source binding →</a>
+            }
+        </div>
+    };
+
+    private string SectionLead(ReviewSection section) => section switch
+    {
+        ReviewSection.Source => "Source Analysis owns source/code evidence. Source-backed reviews apply only where the analyzed snapshot provides their evidence; implementation evidence also needs the Artifact Pack bound to source.",
+        ReviewSection.Runtime => _readiness?.Inputs.Target.Status == ProjectInputStatus.Ready
+            ? "A Target Environment is configured: runtime reviews can execute or observe the deployed system according to their own prerequisites."
+            : "A Target Environment is required only for reviews that execute or observe the deployed system. It is optional until a runtime review is needed.",
+        ReviewSection.Change => "Optional change provenance. Not configured is neutral and never blocks source-backed reviews.",
+        ReviewSection.QualityTesting => "Applicable quality and testing capabilities, based on current evidence. Available does not mean reviewed, passed or required.",
+        _ => "Domain-specific reviews, shown only when they apply to this project. Not part of the core review path.",
+    };
+
+    /// <summary>The recommendation card carries the one primary action; the same step's own button is secondary.</summary>
+    private string PrimaryUnlessRecommended(WorkflowStepViewModel step) =>
+        _readiness?.NextRecommendedAction?.Key == step.Key ? "rw-cta rw-cta-secondary" : "rw-cta";
+
     private RenderFragment RenderAction(WorkflowStepViewModel step) => __builder =>
     {
         if (IsLoadWorkspaceStep(step))
@@ -526,7 +566,7 @@
             <div class="rw-step-actions">
                 @if (_readiness?.ArtifactLoad == ArtifactLoadState.Required)
                 {
-                    <a href="@step.Route" class="rw-cta" data-testid="rw-load-artifacts">@step.ActionLabel</a>
+                    <a href="@step.Route" class="@PrimaryUnlessRecommended(step)" data-testid="rw-load-artifacts">@step.ActionLabel</a>
                 }
                 @foreach (var alternative in _readiness?.AlternativeActions ?? [])
                 {
@@ -545,7 +585,7 @@
 
         if (step.CanOpen)
         {
-            <a href="@step.Route" class="@(step.IsCurrent ? "rw-cta" : "rw-cta rw-cta-secondary")">@step.ActionLabel →</a>
+            <a href="@step.Route" class="@(step.IsCurrent ? PrimaryUnlessRecommended(step) : "rw-cta rw-cta-secondary")">@step.ActionLabel →</a>
         }
 
         if (review is not null && !string.IsNullOrWhiteSpace(step.ArtifactReferences))

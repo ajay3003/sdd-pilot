@@ -73,6 +73,21 @@ public sealed record WorkflowReadiness(
     /// <summary>Evidence-based reviews after the core path: source evidence, change provenance, runtime evidence.</summary>
     public IReadOnlyList<WorkflowEvidenceBranch> EvidenceBranches { get; init; } = [];
 
+    /// <summary>Every review with independent applicability, readiness, requiredness and decision state (shared with the Dashboard).</summary>
+    public IReadOnlyList<ReviewCapability> Capabilities { get; init; } = [];
+
+    /// <summary>The primary recommendation with its reason code, why and what it unlocks; null when nothing is recommended.</summary>
+    public WorkflowRecommendation? Recommendation => NextRecommendedAction is { } next ? ReviewNavigator.Explain(next, Workspace.PackLabel ?? Workspace.ModuleLabel ?? "the selected scope") : null;
+
+    /// <summary>Up to three other useful, actionable reviews (never the primary one, never a review that needs setup).</summary>
+    public IReadOnlyList<ReviewCapability> OtherActions =>
+        [.. Capabilities.Where(c => c.IsActionable && c.Route != NextRecommendedAction?.Route && c.Decision != ReviewDecisionState.Reviewed)
+            .OrderBy(c => c.Decision is ReviewDecisionState.NotReviewed or ReviewDecisionState.EvidenceChanged ? 0 : 1).ThenBy(c => c.IsCore ? 0 : 1).Take(3)];
+
+    /// <summary>Core manual reviews that apply and are visible: the denominator of "Core manual reviews: n / N recorded".</summary>
+    public IReadOnlyList<ReviewCapability> CoreManualReviews =>
+        [.. Capabilities.Where(c => c.Decision != ReviewDecisionState.NoDecisionTracked && c.Applicability == ReviewApplicabilityState.Applicable && c.Requiredness != ReviewRequiredness.Optional)];
+
     /// <summary>Required gates with a review decision recorded on their current revisions: reviewed, reviewed with gaps or approved.</summary>
     public int DecidedReviewCount => RequiredReviewGates.Count(step => ArtifactReviewPresentation.Of(step).IsDecided);
 
@@ -198,6 +213,8 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         var change = await ChangeProvenanceAsync();
         var reviews = ApplicableReviews(change);
         var branches = EvidenceBranches(inputs, binding, change);
+        IReadOnlyList<ReviewCapability> CapabilitiesFor(IReadOnlyList<WorkflowStepViewModel> s) =>
+            ReviewNavigator.Build(s, inputs, binding, change, id => _applicability.For(id), _features, GeneratedDocumentationPresent(), ComparableDocuments());
 
         if (workspace.State == CurrentWorkspaceState.Error)
             return Empty(workspace, null, "The workspace could not be read, so release readiness cannot be evaluated.") with { Inputs = inputs };
@@ -211,6 +228,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                     NoReleasePolicy) with
                 {
                     Inputs = inputs, ApplicableReviews = reviews, SourceBinding = binding, ChangeProvenance = change, EvidenceBranches = branches,
+                    Capabilities = CapabilitiesFor([]),
                 };
             var load = LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), ArtifactLoadState.Required, [], workspace);
             return Empty(workspace, load, NoReleasePolicy) with
@@ -218,6 +236,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 Inputs = inputs,
                 ApplicableReviews = reviews,
                 SourceBinding = binding, ChangeProvenance = change, EvidenceBranches = branches,
+                Capabilities = CapabilitiesFor([]),
                 Steps = [load],
                 AlternativeActions = [ImportDocuments([]), AddSource(inputs.Source), ConfigureTarget(inputs.Target)],
             };
@@ -233,6 +252,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             workspace.Has(WorkspaceArtifactType.DataModel),
             workspace.ArtifactRevisions) ?? [])
             .Where(IsVisibleWorkflowStep)
+            .Where(step => FeatureVisible(step.Route))
             .ToList();
 
         // Step 1 is complete when document artifacts are available — not because a workspace exists. A role a review step reads
@@ -292,6 +312,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             SourceBinding = binding,
             ChangeProvenance = change,
             EvidenceBranches = branches,
+            Capabilities = CapabilitiesFor(steps),
             ArtifactLoad = artifactLoad,
             RequiredRoles = requiredRoles,
             MissingRoles = missingRoles,
@@ -403,6 +424,13 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         if (inputs.Source.Status == ProjectInputStatus.NeedsAttention)
             return Synthetic(RefreshSourceKey, "Analyze the source again", inputs.Source.Detail, ProjectInputPresentation.SourceAnalysisRoute, "Open Source Analysis");
 
+        // Source is analyzed but the selected Artifact Pack has no source scope: the evidence owner is present but unusable for
+        // source-backed review, which is more actionable than the next unreviewed document (documents stay independently available).
+        if (workspace.WorkspaceLoaded && steps.Count > 0 && binding == SourceBindingState.NotEstablished)
+            return Synthetic(EstablishSourceBindingKey, $"Establish source binding for {workspace.PackLabel ?? workspace.ModuleLabel ?? "the selected scope"}",
+                "Source has already been analyzed, but the selected Artifact Pack is not yet mapped to source evidence. Establish the binding before source-backed implementation review; documentation reviews remain available.",
+                ImplementationEvidenceRoute, "Review source binding");
+
         // The first applicable review gate without a review decision on its current revisions (open, in review or stale). Reviewed, reviewed
         // with gaps and approved are decisions: the recommendation moves on. A low traceability coverage is never a blocker by itself.
         var documentStep = steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step) && !ArtifactReviewPresentation.Of(step).IsDecided)
@@ -412,10 +440,6 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         // Source-backed evidence after the core path: analyzed source is not yet implementation evidence — the pack needs an explicit binding.
         if (workspace.WorkspaceLoaded && steps.Count > 0)
         {
-            if (binding == SourceBindingState.NotEstablished)
-                return Synthetic(EstablishSourceBindingKey, "Establish source evidence binding",
-                    "Source snapshot is available, but this Artifact Pack is not yet mapped to source evidence. Bind explicit CodeLinks in Implementation Evidence Review; implementation stays Not assessed until then.",
-                    ImplementationEvidenceRoute, "Open Implementation Evidence Review");
             if (binding == SourceBindingState.Established)
                 return Synthetic(OpenReviewKeyPrefix + "implementation-evidence", "Open Implementation Evidence Review",
                     "This Artifact Pack is bound to source evidence: review its source-backed implementation and test evidence.",
@@ -455,6 +479,20 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         return lifecycle.ImplementationEvidence.Any(e => RequirementScopes.Matches(e.RequirementScope, lifecycle.ActiveRequirementScope))
             ? SourceBindingState.Established : SourceBindingState.NotEstablished;
     }
+
+    /// <summary>A route hidden by Feature & Menu Visibility is never recommended or counted; routes without a sidebar row stay visible.</summary>
+    private bool FeatureVisible(string? route) => _features is null || string.IsNullOrEmpty(route)
+        || NavigationCatalog.Sections.SelectMany(s => s.Items).FirstOrDefault(i => string.Equals(i.Route, route, StringComparison.OrdinalIgnoreCase)) is not { } item
+        || item.Visible(_features);
+
+    private bool GeneratedDocumentationPresent() =>
+        _session?.SddLifecycle is { CurrentProjectImportId: { } importId } lifecycle
+        && lifecycle.GeneratedDocumentationSets.Any(s => s.ProjectImportId == importId && s.State == "Present");
+
+    /// <summary>Documentation Drift has something to compare: authored ↔ generated in the current import, or a project imported more than once.</summary>
+    private bool ComparableDocuments() =>
+        GeneratedDocumentationPresent()
+        || _session?.SddLifecycle is { } lifecycle && lifecycle.ProjectImports.GroupBy(DocumentationDrift.LineageKeyOf).Any(g => g.Count() > 1);
 
     /// <summary>Azure DevOps change provenance from the backend status. Unknown when it cannot be read — never a blocker either way.</summary>
     private async Task<ChangeProvenanceState> ChangeProvenanceAsync()
@@ -535,7 +573,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private IReadOnlyList<WorkflowReviewOption> ApplicableReviews(ChangeProvenanceState change)
     {
         var reviews = NavigationCatalog.Sections
-            .SelectMany(section => section.Items.Where(item => item.ReviewId is not null).Select(item => (section, item)))
+            .SelectMany(section => section.Items.Where(item => item.ReviewId is not null && FeatureVisible(item.Route)).Select(item => (section, item)))
             .Select(x => (x.section, x.item, applicability: _applicability.For(x.item.ReviewId!)))
             .Where(x => x.applicability?.Status is ApplicabilityStatus.Applicable or ApplicabilityStatus.PartiallyApplicable)
             .Select(x => new WorkflowReviewOption(x.item.ReviewId!, x.item.Label, x.item.Route, x.section.Label, x.applicability!.Status, x.applicability.Reason))

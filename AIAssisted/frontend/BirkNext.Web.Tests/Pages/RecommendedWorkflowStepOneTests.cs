@@ -226,16 +226,17 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         var card = cut.Find("[data-testid=rw-next-action]");
         card.QuerySelector(".rw-next-action-title")!.TextContent.Should().Be("Load project artifacts");
         card.TextContent.Should().Contain("No project artifacts are available yet.").And.NotContain("Constitution Explorer");
-        card.QuerySelector("[data-testid=rw-next-action-step]")!.TextContent.Should().Be("Step 1 below.");
+        card.QuerySelector("a.rw-next-action-btn")!.GetAttribute("href").Should().Be("project-import", "the card carries the one primary action; no global step numbers");
+        card.QuerySelector("[data-testid=rw-next-action-unlocks]")!.TextContent.Should().NotBeEmpty();
     }
 
     [Fact]
-    public async Task Page_StepOneDone_SaysDone_NotReviewed_AndHasNoAction()
+    public async Task Page_StepOneImported_SaysImported_NotReviewed_AndHasNoAction()
     {
         var cut = RenderPage(await ReadinessAsync(PersonModule([.. CurrentWorkspaceSnapshot.WorkflowRoles])));
 
         var stepOne = cut.Find("[data-testid=rw-step][data-step=LoadSampleProject]");
-        stepOne.GetAttribute("data-state").Should().Be("Done");
+        stepOne.GetAttribute("data-state").Should().Be("Imported", "an import is not a review result");
         stepOne.QuerySelectorAll("a, button").Should().BeEmpty();
         cut.Find("[data-testid=rw-step][aria-current=step]").GetAttribute("data-step").Should().Be("ConstitutionExplorer");
         cut.Find("[data-testid=rw-step][data-step=ConstitutionExplorer] [data-testid=rw-step-state]").TextContent.Should().Be("Ready to review");
