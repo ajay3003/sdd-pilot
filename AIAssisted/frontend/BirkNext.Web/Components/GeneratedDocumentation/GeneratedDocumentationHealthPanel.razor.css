@@ -101,3 +101,14 @@
 .gdh ::deep .gdh-autodoc-scope select { max-width: 100%; }
 .gdh ::deep .gdh-h4 { font-size: 1rem; font-weight: 700; margin: 1rem 0 .4rem; }
 .gdh ::deep .gdh-autodoc .btn-link { color: var(--clr-primary-hover, #1d4ed8); }
+
+/* Summary groups and module dimensions: health and consistency read as separate facts, never one alarm. */
+.gdh-h4 { margin: 1rem 0 .4rem; font-size: .95rem; font-weight: 600; }
+.gdh-h6 { margin: .9rem 0 .35rem; font-size: .85rem; font-weight: 600; }
+.gdh-dims { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .35rem .9rem; margin: .5rem 0; }
+.gdh-dims div { min-width: 0; }
+.gdh-dims dt { font-size: .75rem; color: var(--clr-text-muted, #475569); }
+.gdh-dims dd { margin: 0; overflow-wrap: anywhere; }
+.gdh-consistency { margin-top: 1.25rem; padding-top: .75rem; border-top: 1px solid var(--clr-border, #e2e8f0); }
+.gdh-unresolved { margin-top: .6rem; }
+.gdh-unresolved > summary { cursor: pointer; }

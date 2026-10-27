@@ -141,11 +141,13 @@ public static class GeneratedDocumentationAnalyzer
             }
             var supporting = SupportingSignals(group.Select(g => g.Detected).ToList(), textFiles.Where(f => InScope(f.Path) && (f.Path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith("Directory.Build.props", StringComparison.OrdinalIgnoreCase))).ToList(),
                 workspace.Files.Where(f => InScope(f.Path) && f.Path.EndsWith("Directory.Build.props", StringComparison.OrdinalIgnoreCase)).ToList());
+            // Archive (ZIP/copy) times are not scope- or document-relevant change evidence: shown as context only, never used for freshness.
+            if (sourceTime is not null) supporting.Add(GeneratedDocumentationSemantics.ArchiveSignal(sourceTime));
 
             var evidenceList = new List<GeneratedDocumentationEvidence>();
             foreach (var (detected, evidence, _) in group)
             {
-                var (status, reason, relevant) = Freshness(detected, evidence, migrations, sourceTime, snapshot.Commit);
+                var (status, reason, relevant) = Freshness(detected, evidence, migrations, snapshot.Commit);
                 var updated = evidence with
                 {
                     SourceLastModified = relevant, FreshnessStatus = status, FreshnessReason = reason,
@@ -154,24 +156,10 @@ public static class GeneratedDocumentationAnalyzer
                 evidenceList.Add(updated);
                 evidenceById[updated.EvidenceId] = updated;
             }
-            var generated = evidenceList.Where(e => e.Origin == DocumentationOrigin.Generated).ToList();
-            var assessed = generated.Where(e => e.FreshnessStatus != GeneratedDocumentationFreshnessStatus.NotApplicable).ToList();
-            var moduleFreshness = assessed.Count == 0 ? GeneratedDocumentationFreshnessStatus.NotApplicable
-                : assessed.Any(e => e.FreshnessStatus == GeneratedDocumentationFreshnessStatus.Stale) ? GeneratedDocumentationFreshnessStatus.Stale
-                : assessed.All(e => e.FreshnessStatus == GeneratedDocumentationFreshnessStatus.Current) ? GeneratedDocumentationFreshnessStatus.Current
-                : assessed.Any(e => e.FreshnessStatus == GeneratedDocumentationFreshnessStatus.Current || e.FreshnessStatus == GeneratedDocumentationFreshnessStatus.NotEnoughEvidence) && assessed.All(e => e.LastModified is not null)
-                    ? GeneratedDocumentationFreshnessStatus.NotEnoughEvidence : GeneratedDocumentationFreshnessStatus.Unknown;
-            var stale = assessed.Where(e => e.FreshnessStatus == GeneratedDocumentationFreshnessStatus.Stale).ToList();
-            var moduleReason = moduleFreshness switch
-            {
-                GeneratedDocumentationFreshnessStatus.Stale => $"{stale.Count} generated document(s) predate relevant source evidence of this scope: {string.Join("; ", stale.Take(3).Select(e => $"{System.IO.Path.GetFileName(e.SafeRelativePath)} ({e.FreshnessReason})"))}",
-                GeneratedDocumentationFreshnessStatus.Current => "Every assessed generated document is at least as new as the relevant dated source evidence of this scope.",
-                GeneratedDocumentationFreshnessStatus.NotEnoughEvidence => $"Generation dates are declared, but this scope has no trustworthy dated source evidence for {assessed.Count(e => e.FreshnessStatus != GeneratedDocumentationFreshnessStatus.Current)} document(s). Not stale — not established.",
-                GeneratedDocumentationFreshnessStatus.NotApplicable => "No generated document with a source scope to compare (history records and documents of unknown origin are not assessed).",
-                _ => "The generation time of at least one document could not be established (no declared date, and archive times are not trustworthy).",
-            };
+            var (moduleFreshness, moduleReason) = GeneratedDocumentationSemantics.ModuleFreshness(evidenceList);
 
-            // Expected outputs: only what a detected workflow declares for this scope's generated folder, and only where the module shows the capability.
+            // Declared outputs (what the generator can produce for this scope's folder), each classified: required only when a workflow declares it
+            // required, expected by profile only when a workflow maps a capability to it AND the module shows that capability.
             var expected = new List<ExpectedGeneratedDocument>();
             foreach (var dir in dirs)
                 foreach (var file in dir.DeclaredFiles)
@@ -180,10 +168,11 @@ public static class GeneratedDocumentationAnalyzer
                     var kind = GeneratedDocumentationDetector.KindFromName(file);
                     var capability = CapabilityFor(kind);
                     var capable = capability is null || sourceKeys.Capabilities.Contains(capability);
-                    expected.Add(new ExpectedGeneratedDocument(file, kind, present, capable,
-                        $"Declared by {string.Join(", ", dir.DeclaringWorkflowIds.Select(id => detection.Generators.First(g => g.Id == id).Path))}{(capability is null ? "" : capable ? $"; module shows {capability}" : $"; module shows no {capability} evidence — not expected")}"));
+                    expected.Add(GeneratedDocumentationSemantics.Expected(new ExpectedGeneratedDocument(file, kind, present, capable,
+                        $"Declared by {string.Join(", ", dir.DeclaringWorkflowIds.Select(id => detection.Generators.First(g => g.Id == id).Path))}{(capability is null ? "" : capable ? $"; module shows {capability}" : $"; module shows no {capability} evidence")}"),
+                        [.. dir.DeclaringWorkflowIds.Select(id => detection.Generators.First(g => g.Id == id))], sourceKeys.Capabilities));
                 }
-            var missing = expected.Where(e => !e.Present && e.CapabilityPresent).Select(e => e.FileName).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            var missing = expected.Where(GeneratedDocumentationSemantics.CountsAsMissing).Select(e => e.FileName).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
             var declaredNames = dirs.SelectMany(d => d.DeclaredFiles).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var additional = evidenceList.Where(e => dirs.Any(d => d.DeclaredFiles.Count > 0) && !declaredNames.Contains(System.IO.Path.GetFileName(e.SafeRelativePath))).Select(e => e.SafeRelativePath).ToList();
 
@@ -193,6 +182,8 @@ public static class GeneratedDocumentationAnalyzer
             var moduleDrift = new List<CrossArtifactDriftCandidate>();
             CompareDocumentation(snapshot, moduleId, root, moduleDocs, sourceKeys, contracts, generatedDirs, sourceText.Where(f => InScope(f.Path)).ToList(), comparisons, moduleDrift);
             CompareSpecificationContracts(snapshot, moduleId, root, moduleDocs, contracts, allPaths, comparisons, moduleDrift);
+            moduleDrift = [.. moduleDrift.Select(GeneratedDocumentationSemantics.Classified)];
+            comparisons = [.. comparisons.Select(c => GeneratedDocumentationSemantics.Reclassify(c, moduleDrift))];
             drift.AddRange(moduleDrift);
 
             modules.Add(new GeneratedDocumentationModule
@@ -203,7 +194,7 @@ public static class GeneratedDocumentationAnalyzer
                 DocumentIds = evidenceList.Select(e => e.EvidenceId).ToList(),
                 GeneratorIds = dirs.SelectMany(d => d.DeclaringWorkflowIds).Distinct(StringComparer.Ordinal).ToList(),
                 Freshness = moduleFreshness, FreshnessReason = moduleReason,
-                LatestSourceEvidence = new[] { migrations, sourceTime }.Where(x => x is not null).OrderByDescending(x => x!.At).FirstOrDefault(),
+                LatestSourceEvidence = migrations,
                 LatestGeneratedEvidence = evidenceList.Where(e => e.LastModified is not null).Select(e => e.LastModified!).OrderByDescending(x => x.At).FirstOrDefault(),
                 SupportingFreshnessSignals = supporting, ExpectedDocuments = expected, MissingExpectedDocs = missing, AdditionalDocs = additional,
                 Comparisons = comparisons, SourceKeys = sourceKeys,
@@ -245,7 +236,10 @@ public static class GeneratedDocumentationAnalyzer
         return (true, $"Entry times vary ({times.Values.Select(t => t.UtcDateTime.Date).Distinct().Count():N0} distinct days); used as supporting file modification evidence.");
     }
 
-    private static (GeneratedDocumentationFreshnessStatus, string, DatedEvidence?) Freshness(DetectedDocument doc, GeneratedDocumentationEvidence evidence, DatedEvidence? migration, DatedEvidence? sourceTime, string commit)
+    /// <summary>Potentially stale needs a trustworthy generation time AND later source evidence of the same scope that is relevant to the document type
+    /// (EF migration identifiers of the module for a data model). Archive/import times, other modules and a different repository commit never make a
+    /// document stale; without relevant evidence the result is "Not enough evidence" (unknown is valid evidence semantics).</summary>
+    private static (GeneratedDocumentationFreshnessStatus, string, DatedEvidence?) Freshness(DetectedDocument doc, GeneratedDocumentationEvidence evidence, DatedEvidence? migration, string commit)
     {
         if (doc.Origin != DocumentationOrigin.Generated) return (GeneratedDocumentationFreshnessStatus.NotApplicable, "Not a declared generated output; freshness is not assessed.", null);
         if (doc.Kind == GeneratedDocumentKind.Changelog) return (GeneratedDocumentationFreshnessStatus.NotApplicable, "A changelog is a history record; its versions are supporting metadata only.", null);
@@ -257,18 +251,19 @@ public static class GeneratedDocumentationAnalyzer
             var r = reference.Groups[1].Value.ToLowerInvariant(); var c = commit.ToLowerInvariant();
             return c.StartsWith(r, StringComparison.Ordinal) || r.StartsWith(c, StringComparison.Ordinal)
                 ? (GeneratedDocumentationFreshnessStatus.Current, $"Declares the snapshot's own source commit ({r[..Math.Min(7, r.Length)]}).", null)
-                : (GeneratedDocumentationFreshnessStatus.Stale, $"Declares source commit {r[..Math.Min(7, r.Length)]}; the snapshot is commit {c[..Math.Min(7, c.Length)]}.", null);
+                : (GeneratedDocumentationFreshnessStatus.NotEnoughEvidence, $"Declares source commit {r[..Math.Min(7, r.Length)]}; the snapshot is commit {c[..Math.Min(7, c.Length)]}. A different commit does not show that source relevant to this document changed. Not stale — not established.", null);
         }
         if (evidence.LastModified is not { } generatedAt)
             return (GeneratedDocumentationFreshnessStatus.Unknown, "No trustworthy generation time: the document declares no date and archive times are not trustworthy.", null);
-        // Relevance: a data model is dated by schema migrations as well as files; other kinds only by file times of the scope.
-        var relevant = doc.Kind == GeneratedDocumentKind.DataModel
-            ? new[] { migration, sourceTime }.Where(x => x is not null).OrderByDescending(x => x!.At).FirstOrDefault()
-            : sourceTime;
+        // Relevance: only evidence of this module that can affect this document type. A data model is dated by the module's schema migrations;
+        // no other document type has deterministic, type-relevant dated source evidence in the snapshot.
+        var relevant = doc.Kind == GeneratedDocumentKind.DataModel ? migration : null;
         if (relevant is null)
             return (GeneratedDocumentationFreshnessStatus.NotEnoughEvidence, doc.Kind == GeneratedDocumentKind.DataModel
-                ? "Generation date known; no migration identifier or trustworthy file time dates this scope's data model."
-                : "Generation date known; no trustworthy dated source evidence in this scope (archive times are uniform).", null);
+                ? "Generation date known; no migration identifier of this module dates its data model (archive and import times are not freshness evidence). Not stale — not established."
+                : $"Generation date known; no trustworthy source evidence of this scope relevant to {GeneratedDocumentationText.Label(doc.Kind).ToLowerInvariant()} documentation is dated (archive and import times are not freshness evidence). Not stale — not established.", null);
+        if (generatedAt.Basis == GeneratedDocumentationSemantics.ArchiveTimeBasis)
+            return (GeneratedDocumentationFreshnessStatus.NotEnoughEvidence, "The generation time comes only from an archive modification time (ZIP/copy time), which is not trustworthy freshness evidence. Not stale — not established.", relevant);
         var dayPrecision = generatedAt.Precision == "Day" || relevant.Precision == "Day";
         var newer = dayPrecision ? relevant.At.UtcDateTime.Date > generatedAt.At.UtcDateTime.Date : relevant.At > generatedAt.At;
         var genText = generatedAt.At.ToString(dayPrecision ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
@@ -598,11 +593,31 @@ public static class GeneratedDocumentationAnalyzer
                     return sourceKeys.Contains(normalized) || sourceKeys.Any(k => k.StartsWith(normalized + ":", StringComparison.Ordinal)) || LiteralInSource(key, scopeSource)
                         || LiteralInSource(key.Replace(":", "__"), scopeSource);
                 }
+                // A deeper documented key under a key the configuration declares as a single value is a comparable structure conflict.
+                string? ScalarParent(string key)
+                {
+                    var parts = StructuredKeys.ConfigurationKey(key).Split(':');
+                    for (var i = parts.Length - 1; i >= 1; i--)
+                    {
+                        var parent = string.Join(':', parts[..i]);
+                        if (sourceKeys.Contains(parent) && !sourceKeys.Any(k => k.StartsWith(parent + ":", StringComparison.OrdinalIgnoreCase))) return parent;
+                    }
+                    return null;
+                }
                 foreach (var group in docKeys.GroupBy(x => StructuredKeys.ConfigurationKey(x.Key)).Where(g => !Known(g.First().Key)).Take(MaxCandidatesPerFamily))
-                    sink.Add(drift, "Configuration keys", group.First().Key, DriftDifferenceKind.MissingOnRight, ArchitectureEvidenceState.Inferred,
-                        group.Select(x => Doc(x.Evidence)).DistinctBy(x => x.Path).ToList(), [new("Configuration evidence", $"{sourceKeys.Count} key(s) in {sourceScope}", GeneratedDocumentationDetector.Safe(root))],
-                        $"Generated documentation names configuration key '{group.First().Key}'; no configuration file of {sourceScope} declares it and no source file reads it literally.",
-                        "The key may be optional, read through a section/options binding, supplied by the environment, or outdated. Values are never compared or shown.", Worst(group.Select(x => x.Evidence)));
+                {
+                    var key = group.First().Key;
+                    if (ScalarParent(key) is { } parent)
+                        sink.Add(drift, "Configuration keys", key, DriftDifferenceKind.StructureMismatch, ArchitectureEvidenceState.StronglySupported,
+                            group.Select(x => Doc(x.Evidence)).DistinctBy(x => x.Path).ToList(), [new("Configuration evidence", $"{parent} (single value)", GeneratedDocumentationDetector.Safe(root))],
+                            $"Generated documentation names configuration key '{key}', which makes '{parent}' a section; configuration of {sourceScope} declares '{parent}' as a single value without children.",
+                            "Two comparable claims about the same configuration structure differ; either may be outdated. Values are never compared or shown.", Worst(group.Select(x => x.Evidence)));
+                    else
+                        sink.Add(drift, "Configuration keys", key, DriftDifferenceKind.MissingOnRight, ArchitectureEvidenceState.Inferred,
+                            group.Select(x => Doc(x.Evidence)).DistinctBy(x => x.Path).ToList(), [new("Configuration evidence", $"{sourceKeys.Count} key(s) in {sourceScope}", GeneratedDocumentationDetector.Safe(root))],
+                            $"'{key}': {GeneratedDocumentationText.UnresolvedConfigurationKey}",
+                            "Configuration is often bound indirectly — IOptions<T>/typed options, section binding, environment variables, Key Vault, App Configuration, Terraform, a shared configuration package or dynamic keys. No literal read is not evidence of absence. Values are never compared or shown.", Worst(group.Select(x => x.Evidence)));
+                }
                 comparisons.Add(new("Configuration keys", sink.Count > before ? GeneratedComparisonState.PotentiallyDrifted : GeneratedComparisonState.Equivalent,
                     $"{docKeys.Select(k => k.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count()} documented key(s) checked against {sourceKeys.Count} configuration key(s) and literal reads.", sink.Count - before));
             }

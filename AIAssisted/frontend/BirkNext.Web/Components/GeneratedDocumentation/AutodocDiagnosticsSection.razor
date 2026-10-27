@@ -20,8 +20,8 @@
         <div class="gdh-card" data-metric="fresh"><dt>Fresh</dt><dd>@Diagnostics.Fresh</dd></div>
         <div class="gdh-card" data-metric="stale"><dt>Potentially stale</dt><dd>@Diagnostics.PotentiallyStale</dd></div>
         <div class="gdh-card" data-metric="unknown"><dt>Freshness unknown</dt><dd>@Diagnostics.FreshnessUnknown</dd></div>
-        <div class="gdh-card" data-metric="missing"><dt>Missing expected generated docs</dt><dd>@Diagnostics.MissingExpectedDocs</dd></div>
-        <div class="gdh-card" data-metric="discrepancies"><dt>Source/doc discrepancy candidates</dt><dd>@Diagnostics.DiscrepancyCandidates</dd></div>
+        <div class="gdh-card" data-metric="missing"><dt>Required generated docs missing</dt><dd>@Diagnostics.MissingExpectedDocs</dd></div>
+        <div class="gdh-card" data-metric="discrepancies"><dt>Source consistency candidates</dt><dd>@Diagnostics.DiscrepancyCandidates</dd></div>
         <div class="gdh-card" data-metric="errors"><dt>Parse/errors</dt><dd data-testid="gdh-autodoc-errors">@Diagnostics.ParseErrors</dd></div>
     </dl>
     <p class="gdh-note" data-testid="gdh-autodoc-snapshot">Source snapshot: <span class="gdh-wrap">@(Snapshot?.ArchiveName ?? "Unknown")</span>@(Snapshot is { } s ? $" · {s.SnapshotId}" : "") · inventory from @Diagnostics.InventoryBasis. Repository-level workflow ≠ module usage: a module counts as using autodoc only with module-specific generated output.</p>
@@ -90,8 +90,8 @@
                                     <div><dt>Last generated</dt><dd class="gdh-wrap">@(m.LastGenerated is null ? "Unknown" : GeneratedDocumentationPresentation.Date(m.LastGenerated))</dd></div>
                                     @if (m.Usage != AutodocUsage.NotConfigured)
                                     {
-                                        <div><dt>Missing expected docs</dt><dd>@m.MissingExpectedDocs</dd></div>
-                                        <div><dt>Discrepancy candidates</dt><dd>@(m.DiscrepancyCandidates == 0 ? "0" : $"{m.DiscrepancyCandidates} — Needs review, not a failure")</dd></div>
+                                        <div><dt>Required docs missing</dt><dd>@m.MissingExpectedDocs</dd></div>
+                                        <div><dt>Source consistency candidates</dt><dd>@(m.DiscrepancyCandidates == 0 ? "0" : $"{m.DiscrepancyCandidates} — review suggested, not a failure")</dd></div>
                                         <div><dt>Parse/errors</dt><dd>@m.ParseErrors</dd></div>
                                     }
                                     <div><dt>Project</dt><dd class="gdh-wrap"><code>@m.ProjectPath</code></dd></div>

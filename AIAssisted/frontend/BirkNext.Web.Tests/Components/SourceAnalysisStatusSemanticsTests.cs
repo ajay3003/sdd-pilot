@@ -324,10 +324,12 @@ public sealed class SourceAnalysisStatusSemanticsTests : BunitContext
         {
             Documents = [new GeneratedDocumentationEvidence { EvidenceId = "d", Origin = DocumentationOrigin.Generated }],
             Modules = [new GeneratedDocumentationModule { ModuleId = "m", GeneratorIds = ["w"] }],
-            Drift = [new CrossArtifactDriftCandidate { Id = "x", DriftType = CrossArtifactDriftType.DocumentationDrift, ModuleId = "m" }],
+            Drift = [new CrossArtifactDriftCandidate { Id = "x", DriftType = CrossArtifactDriftType.DocumentationDrift, ModuleId = "m", DifferenceKind = DriftDifferenceKind.ValueMismatch }],
         };
         var cut = Render<GeneratedDocumentationSourceSummary>(p => p.Add(x => x.Snapshot, new IqrSourceSnapshot { GeneratedDocumentation = generated }));
-        cut.Find("[data-testid=sa-generated-docs-differences]").TextContent.Should().Contain("Candidate differences").And.Contain("1").And.Contain("need review");
-        cut.Markup.Should().NotContain("discrepancies").And.Contain("not confirmed defects");
+        // Only comparable conflicting claims count as consistency candidates; the wording never calls them drift or defects.
+        cut.Find("[data-testid=sa-generated-docs-differences]").TextContent.Should().Contain("Source consistency candidates").And.Contain("1");
+        cut.Find("[data-testid=sa-generated-docs-status]").TextContent.Should().Be("Review suggested");
+        cut.Markup.Should().NotContain("discrepancies").And.Contain("not a confirmed defect");
     }
 }

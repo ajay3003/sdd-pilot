@@ -14,14 +14,16 @@
     }
     else
     {
+        var read = GeneratedDocumentationSemantics.Reinterpret(g);
         <dl class="gds-metrics">
             <div><dt>Modules</dt><dd>@g.Modules.Count</dd></div>
             <div><dt>Generated documents</dt><dd>@g.Documents.Count(d => d.Origin == DocumentationOrigin.Generated)</dd></div>
             <div><dt>Generator traced</dt><dd>@g.Modules.Count(m => m.GeneratorIds.Count > 0) of @g.Modules.Count</dd></div>
-            <div><dt>Potentially stale</dt><dd>@g.Modules.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale)</dd></div>
-            <div data-testid="sa-generated-docs-differences"><dt>Candidate differences</dt><dd>@g.Drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift) <span class="gds-muted">need review</span></dd></div>
+            <div><dt>Potentially stale</dt><dd>@read.Modules.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale)</dd></div>
+            <div data-testid="sa-generated-docs-differences"><dt>Source consistency candidates</dt><dd>@read.Drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift && GeneratedDocumentationSemantics.IsReviewCandidate(d))</dd></div>
+            <div data-testid="sa-generated-docs-unresolved"><dt>Source correlation unresolved</dt><dd>@read.Drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift && !GeneratedDocumentationSemantics.IsReviewCandidate(d)) <span class="gds-muted">not drift</span></dd></div>
         </dl>
-        <p class="gds-muted">Generated documentation is its own evidence type — never authored documentation, never source evidence. Differences between source and generated documents are candidates for review, not confirmed defects.</p>
+        <p class="gds-muted">Generated documentation is implementation-derived evidence — never authored documentation, never source evidence. A consistency candidate needs comparable source and generated claims that differ; it is a candidate for review, not a confirmed defect.</p>
     }
     <a class="gds-link" href="generated-documentation-health" data-testid="sa-generated-docs-link">Open Generated Documentation Health</a>
 </section>
@@ -34,8 +36,9 @@
         null => "Not available",
         { Documents.Count: 0 } => "None detected",
         var g when g.Documents.Any(d => d.StructurallyInvalid) => "Structural failure",
-        // Wording only: staleness and drift are candidates for review, never a verdict (the underlying states are unchanged).
-        var g when g.Modules.Any(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale) || g.Drift.Count > 0 => "Review recommended",
+        // Trustworthy staleness or a comparable inconsistency only suggests review; unresolved correlation and unknown freshness stay neutral.
+        var g when GeneratedDocumentationSemantics.Reinterpret(g) is var read && (read.Modules.Any(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale)
+            || read.Drift.Any(GeneratedDocumentationSemantics.IsReviewCandidate)) => "Review suggested",
         _ => "Detected",
     };
 }

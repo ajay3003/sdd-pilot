@@ -22,7 +22,7 @@ public static class AutodocPresentation
         AutodocFilter.Partial => "Partial",
         AutodocFilter.PotentiallyStale => "Potentially stale",
         AutodocFilter.UnknownFreshness => "Unknown freshness",
-        AutodocFilter.NeedsReview => "Needs review",
+        AutodocFilter.NeedsReview => "Review suggested",
         _ => "Parse/errors",
     };
 

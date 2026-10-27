@@ -61,7 +61,7 @@ public static class AiCodeReviewEngine
         ("AIC-DRIFT-001", AiCodeReviewCategory.ConfigurationDrift, "Security-relevant configuration changed", [AiEvidenceSource.Configuration, AiEvidenceSource.SnapshotDiff]),
         ("AIC-DRIFT-002", AiCodeReviewCategory.ConfigurationDrift, "Configuration, pipeline and infrastructure changes", [AiEvidenceSource.Configuration, AiEvidenceSource.SnapshotDiff]),
         ("AIC-DOC-001", AiCodeReviewCategory.GeneratedDocumentation, "Generated documentation not refreshed", [AiEvidenceSource.GeneratedDocumentation, AiEvidenceSource.SnapshotDiff]),
-        ("AIC-DOC-002", AiCodeReviewCategory.GeneratedDocumentation, "Generated documentation drift candidates", [AiEvidenceSource.GeneratedDocumentation]),
+        ("AIC-DOC-002", AiCodeReviewCategory.GeneratedDocumentation, "Generated documentation consistency candidates", [AiEvidenceSource.GeneratedDocumentation]),
         ("AIC-CHANGE-001", AiCodeReviewCategory.ChangeRisk, "Snapshot change summary", [AiEvidenceSource.SnapshotDiff]),
     ];
 
@@ -638,11 +638,12 @@ public static class AiCodeReviewEngine
                 return;
             }
             State("AIC-DOC-002", AiRuleExecutionState.Executed);
-            var open = docs.Drift.Where(d => d.ReviewRequired).ToList();
+            // Only comparable conflicting claims; an unresolved source correlation is a diagnostic, never a finding.
+            var open = docs.Drift.Where(BirkNext.GeneratedDocumentation.GeneratedDocumentationSemantics.IsReviewCandidate).ToList();
             if (open.Count > 0)
-                Add("AIC-DOC-002", "doc|drift", AiFindingSeverity.Info, $"{open.Count} generated-documentation drift candidate(s) need review",
+                Add("AIC-DOC-002", "doc|drift", AiFindingSeverity.Info, $"{open.Count} generated-documentation consistency candidate(s) — review suggested",
                     string.Join("; ", open.Take(6).Select(d => d.Explanation)), "Generated-documentation evidence (structured comparisons with source).",
-                    "Generated documentation is not truth; a drift candidate is a difference, not a defect.", "Review the candidates in Source Analysis → Generated documentation.",
+                    "Generated documentation is not truth; a consistency candidate is a difference between comparable claims, not a defect.", "Review the candidates in Generated Documentation Health.",
                     open.SelectMany(d => d.LeftEvidence.Concat(d.RightEvidence)).Where(e => e.Path.Length > 0).Take(30).Select(e => new AiFindingLocation(e.Path, e.Line, e.Label)), related: open.Select(d => d.Id));
 
             if (!ChangeMode) { State("AIC-DOC-001", AiRuleExecutionState.NotApplicable, "Needs a baseline snapshot."); return; }

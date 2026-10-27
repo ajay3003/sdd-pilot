@@ -121,7 +121,7 @@ public sealed class GeneratedDocumentationEvidenceTests
     }
 
     [Fact]
-    public async Task Varied_archive_times_are_used_and_scoped_to_the_module()
+    public async Task Varied_archive_times_are_supporting_context_only_and_never_make_any_module_stale()
     {
         using var db = Db();
         var files = Orders(generatedDate: "2026-03-01");
@@ -136,31 +136,43 @@ public sealed class GeneratedDocumentationEvidenceTests
             : path.Contains("generated-docs") ? new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero)
             : new DateTimeOffset(2026, 2, 10, 9, (path.Length % 50), 0, TimeSpan.Zero));
         snapshot.GeneratedDocumentation!.ArchiveTimestampsReliable.Should().BeTrue();
-        Module(snapshot, "shop/billing").Freshness.Should().Be(GeneratedDocumentationFreshnessStatus.Stale);
-        // Billing's newer source never dates the orders documentation.
-        Module(snapshot, Root).Freshness.Should().Be(GeneratedDocumentationFreshnessStatus.Current);
+        // Newer archive (ZIP/copy) times are not scope-relevant change evidence: billing is "not enough evidence", never stale.
+        var billing = Module(snapshot, "shop/billing");
+        billing.Freshness.Should().Be(GeneratedDocumentationFreshnessStatus.NotEnoughEvidence);
+        billing.LatestSourceEvidence.Should().BeNull();
+        billing.SupportingFreshnessSignals.Should().Contain(s => s.Contains("archive modification time") && s.Contains("supporting only"));
+        // Billing's newer source never dates the orders documentation; orders' data model is dated by its own migration.
+        var orders = Module(snapshot, Root);
+        orders.Freshness.Should().NotBe(GeneratedDocumentationFreshnessStatus.Stale);
+        Doc(snapshot, $"{Root}/generated-docs/data-model.md").FreshnessStatus.Should().Be(GeneratedDocumentationFreshnessStatus.Current);
+        Doc(snapshot, $"{Root}/generated-docs/data-model.md").SourceLastModified!.Basis.Should().Contain("Migration");
     }
 
     // ── Expected outputs ──
 
     [Fact]
-    public async Task Missing_expected_document_only_where_the_module_shows_the_capability_and_extra_documents_are_not_failures()
+    public async Task Generator_capability_alone_never_makes_a_document_missing_and_extra_documents_are_not_failures()
     {
         using var db = Db();
         var files = Orders().Where(f => !f.Path.EndsWith("openapi.yaml")).ToList();
         files.Add(($"{Root}/generated-docs/review-notes.md", "# Review notes\n"));
         var snapshot = await AnalyzeAsync(db, files);
         var module = Module(snapshot, Root);
-        module.MissingExpectedDocs.Should().Contain("openapi.yaml");
-        // Declared, but the module has no messaging code: not expected.
-        module.MissingExpectedDocs.Should().NotContain("message-bus.md");
-        module.ExpectedDocuments.Single(e => e.FileName == "message-bus.md").CapabilityPresent.Should().BeFalse();
+        // The workflow lists what it CAN write; nothing declares openapi.yaml or message-bus.md required for this module.
+        module.MissingExpectedDocs.Should().BeEmpty();
+        module.ExpectedDocuments.Single(e => e.FileName == "openapi.yaml").State.Should().Be(ExpectedDocumentState.ApplicabilityNotEstablished);
+        module.ExpectedDocuments.Single(e => e.FileName == "message-bus.md").State.Should().Be(ExpectedDocumentState.ApplicabilityNotEstablished);
+        module.ExpectedDocuments.Single(e => e.FileName == "message-bus.md").StateBasis.Should().StartWith("Generator supports this document type · applicability not established");
+        module.ExpectedDocuments.Single(e => e.FileName == "README.md").State.Should().Be(ExpectedDocumentState.Optional);
         module.AdditionalDocs.Should().Contain($"{Root}/generated-docs/review-notes.md");
         Doc(snapshot, $"{Root}/generated-docs/review-notes.md").Origin.Should().Be(DocumentationOrigin.Unknown);
         var run = await Diagnostic(db).RunAsync(new GeneratedDocumentationDiagnosticRequest());
         var health = run.Modules.Single(m => m.RootPath == Root);
-        health.Status.Should().Be(GeneratedDocumentationHealthStatus.Warning);
-        run.Summary.MissingExpectedDocs.Should().Be(1);
+        health.Status.Should().NotBe(GeneratedDocumentationHealthStatus.Warning);
+        health.ApplicabilityUnresolvedDocs.Should().Contain(["openapi.yaml", "message-bus.md"]);
+        health.Review.Should().Be(GeneratedDocumentationReviewState.NoReviewSuggested);
+        run.Summary.MissingExpectedDocs.Should().Be(0);
+        run.Summary.ApplicabilityUnresolved.Should().BeGreaterThanOrEqualTo(2);
     }
 
     // ── Generated vs source ──
@@ -175,7 +187,7 @@ public sealed class GeneratedDocumentationEvidenceTests
     }
 
     [Fact]
-    public async Task A_documented_route_missing_from_source_is_a_potential_documentation_drift_requiring_review()
+    public async Task A_documented_route_missing_from_source_is_an_unresolved_source_correlation_not_drift()
     {
         using var db = Db();
         var snapshot = await AnalyzeAsync(db, Orders(documentedRoutes: ["/orders", "/invoices"], sourceRoutes: ["/orders"]));
@@ -183,13 +195,20 @@ public sealed class GeneratedDocumentationEvidenceTests
         drift.DriftType.Should().Be(CrossArtifactDriftType.DocumentationDrift);
         drift.DifferenceKind.Should().Be(DriftDifferenceKind.MissingOnRight);
         drift.StructuredKey.Should().Be("GET /invoices");
-        drift.ReviewRequired.Should().BeTrue();
-        drift.ReviewStatus.Should().Be(DriftReviewStatus.NeedsReview);
+        drift.Consistency.Should().Be(GeneratedConsistencyCategory.SourceCorrelationUnresolved);
+        drift.ReviewRequired.Should().BeFalse("an unmatched generated route is not a comparable conflict");
         drift.SourceSnapshotId.Should().Be(snapshot.Id);
         drift.LeftEvidence.Should().ContainSingle(e => e.Path == $"{Root}/generated-docs/openapi.yaml");
-        Module(snapshot, Root).Comparisons.Single(c => c.Family == "HTTP routes").State.Should().Be(GeneratedComparisonState.PotentiallyDrifted);
+        var routes = Module(snapshot, Root).Comparisons.Single(c => c.Family == "HTTP routes");
+        routes.State.Should().Be(GeneratedComparisonState.SourceCorrelationUnresolved);
+        routes.Unresolved.Should().Be(1);
         var run = await Diagnostic(db).RunAsync(new GeneratedDocumentationDiagnosticRequest());
-        run.Modules.Single(m => m.RootPath == Root).Status.Should().Be(GeneratedDocumentationHealthStatus.Warning, "semantic disagreement is never Fail");
+        var health = run.Modules.Single(m => m.RootPath == Root);
+        health.Status.Should().NotBe(GeneratedDocumentationHealthStatus.Warning, "consistency never changes health status").And.NotBe(GeneratedDocumentationHealthStatus.Fail);
+        health.SourceDiscrepancies.Should().BeEmpty();
+        health.UnresolvedCorrelations.Should().Contain(drift.Id);
+        run.Summary.SourceDocumentationDiscrepancies.Should().Be(0);
+        run.Summary.CorrelationUnresolved.Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Fact]
@@ -212,8 +231,9 @@ public sealed class GeneratedDocumentationEvidenceTests
         files.Add(($"{Root}/generated-docs/schema.graphql", "# Last updated: 2026-03-01\ntype Query { orders: [Order!]! }\ntype Order { id: ID! total: Float! }\n"));
         files.Add(($"{Root}/src/Shop.Orders.Api/Schema/schema.graphql", "type Query { orders: [Order!]! }\ntype Order { id: ID! total: Decimal! }\n"));
         var snapshot = await AnalyzeAsync(db, files);
-        Module(snapshot, Root).Comparisons.Single(c => c.Family == "GraphQL schema").State.Should().Be(GeneratedComparisonState.PotentiallyDrifted);
-        snapshot.GeneratedDocumentation!.Drift.Should().Contain(d => d.Family == "GraphQL schema" && d.DifferenceKind == DriftDifferenceKind.ValueMismatch && d.StructuredKey.Contains("Order.total"));
+        Module(snapshot, Root).Comparisons.Single(c => c.Family == "GraphQL schema").State.Should().Be(GeneratedComparisonState.PotentialInconsistency);
+        snapshot.GeneratedDocumentation!.Drift.Should().Contain(d => d.Family == "GraphQL schema" && d.DifferenceKind == DriftDifferenceKind.ValueMismatch && d.StructuredKey.Contains("Order.total")
+            && d.Consistency == GeneratedConsistencyCategory.PotentialInconsistency && d.ReviewRequired);
     }
 
     [Fact]

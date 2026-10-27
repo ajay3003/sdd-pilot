@@ -17,7 +17,8 @@ namespace BirkNext.Api.Services.SourceAnalysis.GeneratedDocumentation;
 /// </summary>
 public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store, IMemoryCache cache)
 {
-    public const int Version = 1;
+    /// <summary>2: health vs consistency semantics (stored snapshots are reinterpreted on read).</summary>
+    public const int Version = 2;
 
     public async Task<GeneratedDocumentationDiagnosticRun> RunAsync(GeneratedDocumentationDiagnosticRequest request, CancellationToken ct = default)
     {
@@ -82,6 +83,8 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
         GeneratedDocumentationSnapshotBinding? binding, GeneratedDocumentationSnapshot? generated, GeneratedDocumentationDiagnosticRequest request, bool authoredAllowed,
         IqrSourceSnapshot? source = null)
     {
+        // One interpretation for every snapshot, whatever rules it was analyzed under (inventory, provenance and identities unchanged).
+        if (generated is not null) generated = GeneratedDocumentationSemantics.Reinterpret(generated);
         var drift = new List<CrossArtifactDriftCandidate>(generated?.Drift ?? []);
         var authoredArtifacts = request.AuthoredArtifacts.Where(a => !string.IsNullOrWhiteSpace(a.Content)).ToList();
         AuthoredComparisonState authored;
@@ -91,12 +94,13 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
             authored = new(false, "Authored artifacts are compared only with the source snapshot of the same imported project (shared Project Import identity). This snapshot is not linked to the current workspace's artifacts, so no authored comparison was made.", []);
         else
         {
-            drift.AddRange(AuthoredDocumentationDrift.Compare(generated, authoredArtifacts));
+            drift.AddRange(AuthoredDocumentationDrift.Compare(generated, authoredArtifacts).Select(GeneratedDocumentationSemantics.Classified));
             authored = new(true, "Compared with the generated documentation of the same project snapshot, by module scope (artifact path) where known.",
                 authoredArtifacts.Select(a => $"{AuthoredDocumentationDrift.Role(a.Role)} · {GeneratedDocumentationDetector.Safe(a.DisplayName)}").ToList());
         }
         var modules = generated?.Modules.Select(m => Health(m, generated, drift)).ToList() ?? [];
-        var limitations = new List<string>(generated?.Limitations ?? []) { GeneratedDocumentationText.NotSynchronized };
+        var limitations = new List<string>(generated?.Limitations ?? []) { GeneratedDocumentationText.NotSynchronized, GeneratedDocumentationText.ConsistencyBoundary };
+        var reviewCandidates = drift.Where(GeneratedDocumentationSemantics.IsReviewCandidate).ToList();
         return new GeneratedDocumentationDiagnosticRun
         {
             StartedAt = started, CompletedAt = DateTimeOffset.UtcNow, DurationMilliseconds = watch.ElapsedMilliseconds, State = state, StateMessage = message,
@@ -112,8 +116,13 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
                 PotentiallyStale = modules.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale),
                 FreshnessUnknown = modules.Count(m => m.Freshness is GeneratedDocumentationFreshnessStatus.Unknown or GeneratedDocumentationFreshnessStatus.NotEnoughEvidence),
                 MissingExpectedDocs = modules.Sum(m => m.MissingExpectedDocs.Count),
-                SourceDocumentationDiscrepancies = drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift),
-                CrossArtifactDriftCandidates = drift.Count(d => d.DriftType != CrossArtifactDriftType.DocumentationDrift),
+                ApplicabilityUnresolved = modules.Sum(m => m.ApplicabilityUnresolvedDocs.Count),
+                SourceDocumentationDiscrepancies = reviewCandidates.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift),
+                AuthoredGeneratedCandidates = reviewCandidates.Count(d => GeneratedDocumentationSemantics.IsAuthoredGenerated(d.DriftType)),
+                CrossArtifactDriftCandidates = reviewCandidates.Count(d => d.DriftType != CrossArtifactDriftType.DocumentationDrift),
+                CorrelationUnresolved = drift.Count(d => GeneratedDocumentationSemantics.Classify(d) is GeneratedConsistencyCategory.SourceCorrelationUnresolved or GeneratedConsistencyCategory.UnableToCompare),
+                SourceOnlyObservations = drift.Count(d => GeneratedDocumentationSemantics.Classify(d) == GeneratedConsistencyCategory.SourceOnly),
+                UnableToCompare = modules.Sum(m => m.Comparisons.Count(c => c.State == GeneratedComparisonState.UnableToCompare)),
                 StructuralFailures = generated?.Documents.Count(d => d.StructurallyInvalid) ?? 0,
             },
         };
@@ -186,7 +195,7 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
             var (usage, reason) =
                 invalid > 0 ? (AutodocUsage.Error, $"{invalid} generated artifact(s) could not be parsed.")
                 : generators.Count == 0 ? (AutodocUsage.Partial, "Generated output present; the generator/workflow for this module could not be traced.")
-                : module.MissingExpectedDocs.Count > 0 ? (AutodocUsage.Partial, $"Generated output present; {module.MissingExpectedDocs.Count} declared output(s) absent.")
+                : module.MissingExpectedDocs.Count > 0 ? (AutodocUsage.Partial, $"Generated output present; {module.MissingExpectedDocs.Count} required output(s) absent.")
                 : (AutodocUsage.Configured, "Module-specific generated output with a traced generator.");
             return new()
             {
@@ -225,7 +234,7 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
             PotentiallyStale = outputs.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale),
             FreshnessUnknown = outputs.Count(m => m.Freshness is GeneratedDocumentationFreshnessStatus.Unknown or GeneratedDocumentationFreshnessStatus.NotEnoughEvidence),
             MissingExpectedDocs = outputs.Sum(m => m.MissingExpectedDocs.Count),
-            DiscrepancyCandidates = drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift),
+            DiscrepancyCandidates = drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift && GeneratedDocumentationSemantics.IsReviewCandidate(d)),
             ParseErrors = generated.Documents.Count(d => d.StructurallyInvalid),
             Modules = rows, RepositoryLevelDocuments = repositoryDocuments,
             Limitations =
@@ -242,37 +251,51 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
     {
         var evidence = generated.Documents.Where(d => d.ModuleId == module.ModuleId).ToList();
         var generators = module.GeneratorIds.Select(id => generated.Generators.FirstOrDefault(g => g.Id == id)).Where(g => g is not null).ToList();
-        var source = drift.Where(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift && d.ModuleId == module.ModuleId).Select(d => d.Id).ToList();
-        var cross = drift.Where(d => d.DriftType != CrossArtifactDriftType.DocumentationDrift && (d.ModuleId == module.ModuleId || d.ModuleId == "module:*")).Select(d => d.Id).ToList();
+        var mine = drift.Where(d => d.ModuleId == module.ModuleId || d.DriftType != CrossArtifactDriftType.DocumentationDrift && d.ModuleId == "module:*").ToList();
+        // Review candidates need two comparable claims that conflict; unresolved correlation and source-only items are diagnostics only.
+        var source = mine.Where(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift && GeneratedDocumentationSemantics.IsReviewCandidate(d)).Select(d => d.Id).ToList();
+        var cross = mine.Where(d => d.DriftType != CrossArtifactDriftType.DocumentationDrift && GeneratedDocumentationSemantics.IsReviewCandidate(d)).Select(d => d.Id).ToList();
+        var unresolved = mine.Where(d => !GeneratedDocumentationSemantics.IsReviewCandidate(d)).Select(d => d.Id).ToList();
         var invalid = evidence.Where(e => e.StructurallyInvalid).ToList();
         var generatorDetected = generators.Count > 0;
+        var stale = module.Freshness == GeneratedDocumentationFreshnessStatus.Stale;
+        var required = module.ExpectedDocuments.Where(e => e.State == ExpectedDocumentState.RequiredMissing).Select(e => e.FileName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // Health covers the generated documentation itself (parseability, freshness, required documents); consistency never changes it.
         var (status, reason) =
             invalid.Count > 0 ? (GeneratedDocumentationHealthStatus.Fail, $"{invalid.Count} generated contract(s) could not be parsed: {string.Join(", ", invalid.Select(i => i.SafeRelativePath))}.")
-            : module.Freshness == GeneratedDocumentationFreshnessStatus.Stale || module.MissingExpectedDocs.Count > 0 || source.Count > 0 || cross.Count > 0
+            : stale || module.MissingExpectedDocs.Count > 0
                 ? (GeneratedDocumentationHealthStatus.Warning, string.Join(" ", new[]
                 {
-                    module.Freshness == GeneratedDocumentationFreshnessStatus.Stale ? "Potentially stale." : null,
-                    module.MissingExpectedDocs.Count > 0 ? $"{module.MissingExpectedDocs.Count} expected document(s) missing." : null,
-                    source.Count > 0 ? $"{source.Count} source/documentation discrepancy candidate(s)." : null,
-                    cross.Count > 0 ? $"{cross.Count} cross-artifact drift candidate(s)." : null,
-                    "Needs review — not a failure.",
+                    stale ? "Potentially stale (trustworthy, scope-relevant source evidence is newer)." : null,
+                    module.MissingExpectedDocs.Count > 0 ? $"{module.MissingExpectedDocs.Count} required document(s) missing." : null,
+                    "Review suggested — not a failure.",
                 }.Where(s => s is not null)))
             : !generatorDetected || module.Freshness is GeneratedDocumentationFreshnessStatus.Unknown or GeneratedDocumentationFreshnessStatus.NotEnoughEvidence
-                || module.Comparisons.Any(c => c.State == GeneratedComparisonState.UnableToCompare)
-                ? (GeneratedDocumentationHealthStatus.Partial, !generatorDetected ? GeneratedDocumentationText.NoGenerator
-                    : module.Freshness is GeneratedDocumentationFreshnessStatus.Unknown or GeneratedDocumentationFreshnessStatus.NotEnoughEvidence ? "Freshness could not be established from trustworthy evidence."
-                    : "Some comparisons could not be made with the available source evidence.")
-            : (GeneratedDocumentationHealthStatus.Pass, "Generator traced, current, and no discrepancy among the structured keys compared.");
+                ? (GeneratedDocumentationHealthStatus.Partial, !generatorDetected ? GeneratedDocumentationText.NoGeneratorEstablished
+                    : "Freshness could not be established from trustworthy evidence.")
+            : (GeneratedDocumentationHealthStatus.Pass, "Generator traced, current, and no required document missing.");
+        var reasons = new List<string>();
+        if (required.Count > 0) reasons.Add($"Required document(s) missing: {string.Join(", ", required)} ({string.Join("; ", module.ExpectedDocuments.Where(e => e.State == ExpectedDocumentState.RequiredMissing).Select(e => e.StateBasis).Distinct())})");
+        var profileMissing = module.ExpectedDocuments.Where(e => e.State == ExpectedDocumentState.ExpectedByProfile && !e.Present).Select(e => e.FileName).ToList();
+        if (profileMissing.Count > 0) reasons.Add($"Expected by profile and missing: {string.Join(", ", profileMissing)}.");
+        if (stale) reasons.Add("Potentially stale: trustworthy, scope-relevant source evidence is newer than the generation date.");
+        if (invalid.Count > 0) reasons.Add($"{invalid.Count} generated contract(s) do not parse.");
+        if (source.Count > 0) reasons.Add($"{source.Count} source consistency candidate(s): comparable generated and source claims differ.");
+        if (cross.Count > 0) reasons.Add($"{cross.Count} cross-artifact consistency candidate(s): comparable authored and generated claims differ.");
+        var review = required.Count > 0 ? GeneratedDocumentationReviewState.ReviewRequired
+            : reasons.Count > 0 ? GeneratedDocumentationReviewState.ReviewSuggested : GeneratedDocumentationReviewState.NoReviewSuggested;
         return new GeneratedDocumentationHealthResult
         {
             Module = module.DisplayName, ModuleId = module.ModuleId, RootPath = module.RootPath, GeneratedDirectory = module.GeneratedDirectory,
             GeneratorDetected = generatorDetected,
             GeneratorSummary = generatorDetected ? string.Join("; ", generators.Select(g => $"{GeneratedDocumentationText.Label(g!.Type)}{(g.GeneratorName is null ? "" : $" ({g.GeneratorName})")} — {g.Path}"))
-                : evidence.FirstOrDefault()?.Provenance.Label ?? "Likely generated / Unknown provenance",
+                : GeneratedDocumentationText.NoGeneratorEstablished,
             GeneratedDocsDetected = evidence.Any(e => e.Origin == DocumentationOrigin.Generated),
             Freshness = module.Freshness, FreshnessReason = module.FreshnessReason, LatestSourceEvidence = module.LatestSourceEvidence, LatestGeneratedEvidence = module.LatestGeneratedEvidence,
             SupportingFreshnessSignals = module.SupportingFreshnessSignals, MissingExpectedDocs = module.MissingExpectedDocs, AdditionalDocs = module.AdditionalDocs,
-            SourceDiscrepancies = source, CrossArtifactDrift = cross, Comparisons = module.Comparisons, Status = status, StatusReason = reason, Evidence = evidence,
+            ApplicabilityUnresolvedDocs = [.. GeneratedDocumentationSemantics.ApplicabilityUnresolved(module)], ExpectedDocuments = module.ExpectedDocuments,
+            SourceDiscrepancies = source, CrossArtifactDrift = cross, UnresolvedCorrelations = unresolved, Comparisons = module.Comparisons, Status = status, StatusReason = reason,
+            Review = review, ReviewReasons = reasons, Evidence = evidence,
         };
     }
 }

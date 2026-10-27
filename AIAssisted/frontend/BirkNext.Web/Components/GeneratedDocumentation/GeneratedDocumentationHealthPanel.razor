@@ -5,7 +5,8 @@
 
 @* Generated Documentation Health (project analysis of the imported project). Reads generated-documentation evidence stored on ONE Source Analysis
    snapshot; authored artifacts of the current workspace are compared only with the snapshot of the same imported project. No score: counts and
-   states only. Hosted by the /generated-documentation-health page, which owns the heading and the target-project context. *@
+   states only. Health (presence, provenance, freshness, required documents, parseability) is kept visibly separate from consistency with the
+   available evidence. Hosted by the /generated-documentation-health page, which owns the heading and the target-project context. *@
 <section class="gdh" aria-labelledby="gdh-title" data-testid="gdh-panel">
     <header class="gdh-header">
         @if (Embedded)
@@ -55,12 +56,21 @@
         {
             <section aria-labelledby="gdh-summary-title" data-testid="gdh-summary">
                 <h3 id="gdh-summary-title" class="gdh-h3">Summary</h3>
-                <dl class="gdh-cards">
-                    @foreach (var (label, value, testId) in Cards(run.Summary))
+                <h4 class="gdh-h4" id="gdh-summary-health">Generated documentation health</h4>
+                <dl class="gdh-cards" aria-labelledby="gdh-summary-health" data-testid="gdh-summary-health">
+                    @foreach (var (label, value, testId) in HealthCards(run.Summary))
                     {
                         <div class="gdh-card" data-testid="gdh-card" data-metric="@testId"><dt>@label</dt><dd>@value</dd></div>
                     }
                 </dl>
+                <h4 class="gdh-h4" id="gdh-summary-consistency">Consistency with available evidence</h4>
+                <dl class="gdh-cards" aria-labelledby="gdh-summary-consistency" data-testid="gdh-summary-consistency">
+                    @foreach (var (label, value, testId) in ConsistencyCards(run.Summary))
+                    {
+                        <div class="gdh-card" data-testid="gdh-card" data-metric="@testId"><dt>@label</dt><dd>@value</dd></div>
+                    }
+                </dl>
+                <p class="gdh-note" data-testid="gdh-consistency-boundary">@GeneratedDocumentationText.ConsistencyBoundary</p>
                 <p class="gdh-note" data-testid="gdh-authored-state">
                     <strong>Authored comparison:</strong> @(run.Authored.Compared ? $"compared ({string.Join(", ", run.Authored.Artifacts)})." : "not made.") @run.Authored.Reason
                 </p>
@@ -82,7 +92,7 @@
                                         <td>@GeneratedDocumentationText.Label(g.Type)</td>
                                         <td>@g.Role</td>
                                         <td>@(g.GeneratorName ?? "Not named")</td>
-                                        <td class="gdh-wrap">@g.Basis@(g.DeclaredOutputFiles.Count > 0 ? $" · outputs: {string.Join(", ", g.DeclaredOutputFiles)}" : "")</td>
+                                        <td class="gdh-wrap">@g.Basis@(g.DeclaredOutputFiles.Count > 0 ? $" · outputs: {string.Join(", ", g.DeclaredOutputFiles)}" : "")@(g.RequiredOutputFiles.Count > 0 ? $" · declared required: {string.Join(", ", g.RequiredOutputFiles)}" : "")@(g.ConditionalOutputFiles.Count > 0 ? $" · capability rules: {string.Join(", ", g.ConditionalOutputFiles.Select(r => r.Replace("|", " when ")))}" : "")</td>
                                     </tr>
                                 }
                             </tbody>
@@ -116,14 +126,24 @@
                         var m = module;
                         var detailsId = $"gdh-module-{Slug(m.ModuleId)}";
                         var expanded = _expanded.Contains(m.ModuleId);
-                        <li class="gdh-module" data-testid="gdh-module" data-module="@m.Module" data-status="@m.Status">
+                        var sourceUnresolved = GeneratedDocumentationPresentation.UnresolvedFor(run, m, source: true);
+                        var crossUnresolved = GeneratedDocumentationPresentation.UnresolvedFor(run, m, source: false);
+                        var generatedCount = m.Evidence.Count(e => e.Origin == DocumentationOrigin.Generated);
+                        <li class="gdh-module" data-testid="gdh-module" data-module="@m.Module" data-status="@m.Status" data-review="@m.Review">
                             <div class="gdh-module-head">
                                 <h4 class="gdh-module-name"><span class="gdh-wrap">@m.Module</span></h4>
-                                <span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(m.Status)" data-testid="gdh-module-status">@GeneratedDocumentationText.Label(m.Status)</span>
-                                <span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(m.Freshness)" data-testid="gdh-module-freshness">Freshness: @GeneratedDocumentationText.Label(m.Freshness)</span>
+                                <span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(m.Review)" data-testid="gdh-module-review">@GeneratedDocumentationText.Label(m.Review)</span>
                             </div>
-                            <p class="gdh-module-reason gdh-wrap">@m.StatusReason</p>
-                            <p class="gdh-module-meta gdh-wrap">@(m.GeneratorDetected ? "Generator: " + m.GeneratorSummary : GeneratedDocumentationText.NoGenerator) · @m.Evidence.Count document(s) in <code>@m.GeneratedDirectory</code></p>
+                            <dl class="gdh-dims" data-testid="gdh-module-dimensions">
+                                <div><dt>Generated docs</dt><dd>@generatedCount available</dd></div>
+                                <div><dt>Health</dt><dd><span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(m.Status)" data-testid="gdh-module-status">@GeneratedDocumentationText.Label(m.Status)</span></dd></div>
+                                <div><dt>Freshness</dt><dd><span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(m.Freshness)" data-testid="gdh-module-freshness">@GeneratedDocumentationText.Label(m.Freshness)</span></dd></div>
+                                <div><dt>Required-doc coverage</dt><dd data-testid="gdh-module-coverage">@GeneratedDocumentationPresentation.RequiredCoverage(m)</dd></div>
+                                <div><dt>Source consistency</dt><dd data-testid="gdh-module-source-consistency">@GeneratedDocumentationPresentation.Consistency(m.SourceDiscrepancies.Count, sourceUnresolved.Count)</dd></div>
+                                <div><dt>Cross-artifact consistency</dt><dd data-testid="gdh-module-cross-consistency">@GeneratedDocumentationPresentation.Consistency(m.CrossArtifactDrift.Count, crossUnresolved.Count)</dd></div>
+                            </dl>
+                            <p class="gdh-module-reason gdh-wrap">@(m.ReviewReasons.Count > 0 ? string.Join(" ", m.ReviewReasons) : m.StatusReason)</p>
+                            <p class="gdh-module-meta gdh-wrap">@(m.GeneratorDetected ? "Generator: " + m.GeneratorSummary : GeneratedDocumentationText.NoGeneratorEstablished) · @m.Evidence.Count document(s) in <code>@m.GeneratedDirectory</code></p>
                             <button type="button" class="btn-secondary gdh-toggle" aria-expanded="@(expanded ? "true" : "false")" aria-controls="@detailsId" data-testid="gdh-module-toggle"
                                     @onclick="() => Toggle(_expanded, m.ModuleId)">
                                 @(expanded ? "Hide details" : "Show details")<span class="visually-hidden"> for @m.Module</span>
@@ -131,77 +151,151 @@
                             @if (expanded)
                             {
                                 <div id="@detailsId" class="gdh-module-details" data-testid="gdh-module-details">
-                                    <dl class="gdh-facts">
-                                        <div><dt>Generated folder</dt><dd><code class="gdh-wrap">@m.GeneratedDirectory</code></dd></div>
-                                        <div><dt>Generator / workflow</dt><dd class="gdh-wrap">@(m.GeneratorDetected ? m.GeneratorSummary : GeneratedDocumentationText.NoGenerator)</dd></div>
-                                        <div><dt>Latest relevant source evidence</dt><dd class="gdh-wrap">@GeneratedDocumentationPresentation.Date(m.LatestSourceEvidence)</dd></div>
-                                        <div><dt>Latest generated evidence</dt><dd class="gdh-wrap">@GeneratedDocumentationPresentation.Date(m.LatestGeneratedEvidence)</dd></div>
-                                        <div><dt>Freshness</dt><dd class="gdh-wrap">@GeneratedDocumentationText.Label(m.Freshness) — @m.FreshnessReason</dd></div>
-                                        @if (m.SupportingFreshnessSignals.Count > 0)
+                                    <section data-testid="gdh-health-section" aria-label="@($"Generated documentation health of {m.Module}")">
+                                        <h5 class="gdh-h5">Generated documentation health</h5>
+                                        <dl class="gdh-facts">
+                                            <div><dt>Health</dt><dd class="gdh-wrap">@GeneratedDocumentationText.Label(m.Status) — @m.StatusReason</dd></div>
+                                            <div><dt>Generated folder</dt><dd><code class="gdh-wrap">@m.GeneratedDirectory</code></dd></div>
+                                            <div><dt>Generator / workflow</dt><dd class="gdh-wrap">@(m.GeneratorDetected ? m.GeneratorSummary : GeneratedDocumentationText.NoGeneratorEstablished)</dd></div>
+                                            <div><dt>Generated documents present</dt><dd>@generatedCount generated · @(m.Evidence.Count - generatedCount) of other or unknown origin</dd></div>
+                                            <div><dt>Parseability</dt><dd>@(m.Evidence.Any(e => e.StructurallyInvalid) ? $"{m.Evidence.Count(e => e.StructurallyInvalid)} generated contract(s) do not parse" : "No structural failure")</dd></div>
+                                            <div><dt>Generation evidence</dt><dd class="gdh-wrap">@GeneratedDocumentationPresentation.Date(m.LatestGeneratedEvidence)</dd></div>
+                                        </dl>
+                                    </section>
+
+                                    <section data-testid="gdh-freshness-section" aria-label="@($"Freshness of {m.Module}")">
+                                        <h5 class="gdh-h5">Freshness</h5>
+                                        <dl class="gdh-facts">
+                                            <div><dt>Freshness</dt><dd class="gdh-wrap">@GeneratedDocumentationText.Label(m.Freshness) — @m.FreshnessReason</dd></div>
+                                            <div><dt>Latest relevant source evidence</dt><dd class="gdh-wrap">@GeneratedDocumentationPresentation.Date(m.LatestSourceEvidence)</dd></div>
+                                            <div><dt>Latest generated evidence</dt><dd class="gdh-wrap">@GeneratedDocumentationPresentation.Date(m.LatestGeneratedEvidence)</dd></div>
+                                            @if (m.SupportingFreshnessSignals.Count > 0)
+                                            {
+                                                <div><dt>Supporting signals (weaker than source)</dt><dd><ul class="gdh-plain">@foreach (var s in m.SupportingFreshnessSignals) { <li class="gdh-wrap">@s</li> }</ul></dd></div>
+                                            }
+                                        </dl>
+                                    </section>
+
+                                    <section data-testid="gdh-required-section" aria-label="@($"Required and expected documentation of {m.Module}")">
+                                        <h5 class="gdh-h5">Required / expected documentation</h5>
+                                        <p class="gdh-note" data-testid="gdh-missing">@GeneratedDocumentationPresentation.RequiredCoverage(m)@(m.MissingExpectedDocs.Count > 0 ? $": {string.Join(", ", m.MissingExpectedDocs)}" : "")</p>
+                                        @if (m.ExpectedDocuments.Count > 0)
                                         {
-                                            <div><dt>Supporting signals (weaker than source)</dt><dd><ul class="gdh-plain">@foreach (var s in m.SupportingFreshnessSignals) { <li class="gdh-wrap">@s</li> }</ul></dd></div>
+                                            <div class="gdh-scroll" tabindex="0" role="region" aria-label="@($"Declared outputs of {m.Module}")">
+                                                <table class="gdh-table" data-testid="gdh-expected">
+                                                    <thead><tr><th scope="col">Document</th><th scope="col">State</th><th scope="col">Present</th><th scope="col">Basis</th></tr></thead>
+                                                    <tbody>
+                                                        @foreach (var e in m.ExpectedDocuments)
+                                                        {
+                                                            <tr data-testid="gdh-expected-row" data-state="@e.State">
+                                                                <th scope="row"><code class="gdh-wrap">@e.FileName</code></th>
+                                                                <td><span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(e)">@(e.State is { } state ? GeneratedDocumentationText.Label(state) : "Unknown")</span></td>
+                                                                <td>@(e.Present ? "Yes" : "No")</td>
+                                                                <td class="gdh-wrap">@(e.StateBasis.Length > 0 ? e.StateBasis : e.Basis)</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         }
-                                        <div><dt>Missing expected documents</dt><dd class="gdh-wrap" data-testid="gdh-missing">@(m.MissingExpectedDocs.Count == 0 ? "None" : string.Join(", ", m.MissingExpectedDocs))</dd></div>
                                         @if (m.AdditionalDocs.Count > 0)
                                         {
-                                            <div><dt>Additional documents (not a failure)</dt><dd class="gdh-wrap">@string.Join(", ", m.AdditionalDocs)</dd></div>
+                                            <p class="gdh-note gdh-wrap"><strong>Additional documents — not a failure:</strong> @string.Join(", ", m.AdditionalDocs)</p>
                                         }
-                                    </dl>
+                                    </section>
 
-                                    @if (m.Comparisons.Count > 0)
-                                    {
-                                        <h5 class="gdh-h5">Structured comparisons</h5>
-                                        <div class="gdh-scroll" tabindex="0" role="region" aria-label="@($"Structured comparisons for {m.Module}")">
-                                            <table class="gdh-table" data-testid="gdh-comparisons">
-                                                <thead><tr><th scope="col">Family</th><th scope="col">State</th><th scope="col">Candidates</th><th scope="col">Detail</th></tr></thead>
+                                    <section data-testid="gdh-documents-section" aria-label="@($"Generated documents of {m.Module}")">
+                                        <h5 class="gdh-h5">Generated documents</h5>
+                                        @if (ExplorerVisible)
+                                        {
+                                            <p class="gdh-note"><a class="btn-link" href="@GeneratedDocumentationPresentation.ExplorerLink(m)" data-testid="gdh-open-explorer">Open in Generated Documentation Explorer</a></p>
+                                        }
+                                        <div class="gdh-scroll" tabindex="0" role="region" aria-label="@($"Generated documents of {m.Module}")">
+                                            <table class="gdh-table" data-testid="gdh-documents">
+                                                <thead><tr><th scope="col">Document</th><th scope="col">Kind</th><th scope="col">Origin</th><th scope="col">Freshness</th><th scope="col">Generated</th></tr></thead>
                                                 <tbody>
-                                                    @foreach (var c in m.Comparisons)
+                                                    @foreach (var d in m.Evidence)
                                                     {
-                                                        <tr><th scope="row">@c.Family</th><td><span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(c.State)">@GeneratedDocumentationText.Label(c.State)</span></td><td>@c.Candidates</td><td class="gdh-wrap">@c.Detail</td></tr>
+                                                        <tr data-testid="gdh-document">
+                                                            <th scope="row"><code class="gdh-wrap">@d.SafeRelativePath</code>@if (d.StructurallyInvalid) { <span class="sd-pill sd-pill-attention gdh-inline">Does not parse</span> }</th>
+                                                            <td>@GeneratedDocumentationText.Label(d.DocumentKind)</td>
+                                                            <td class="gdh-wrap">@d.Origin<span class="gdh-sub">@d.Provenance.Label</span></td>
+                                                            <td class="gdh-wrap">@GeneratedDocumentationText.Label(d.FreshnessStatus)<span class="gdh-sub">@d.FreshnessReason</span></td>
+                                                            <td class="gdh-wrap">@GeneratedDocumentationPresentation.Date(d.LastModified)</td>
+                                                        </tr>
                                                     }
                                                 </tbody>
                                             </table>
                                         </div>
-                                    }
+                                    </section>
 
-                                    <h5 class="gdh-h5">Generated documents</h5>
-                                    <div class="gdh-scroll" tabindex="0" role="region" aria-label="@($"Generated documents of {m.Module}")">
-                                        <table class="gdh-table" data-testid="gdh-documents">
-                                            <thead><tr><th scope="col">Document</th><th scope="col">Kind</th><th scope="col">Origin</th><th scope="col">Freshness</th><th scope="col">Generated</th></tr></thead>
-                                            <tbody>
-                                                @foreach (var d in m.Evidence)
-                                                {
-                                                    <tr data-testid="gdh-document">
-                                                        <th scope="row"><code class="gdh-wrap">@d.SafeRelativePath</code>@if (d.StructurallyInvalid) { <span class="sd-pill sd-pill-attention gdh-inline">Does not parse</span> }</th>
-                                                        <td>@GeneratedDocumentationText.Label(d.DocumentKind)</td>
-                                                        <td class="gdh-wrap">@d.Origin<span class="gdh-sub">@d.Provenance.Label</span></td>
-                                                        <td class="gdh-wrap">@GeneratedDocumentationText.Label(d.FreshnessStatus)<span class="gdh-sub">@d.FreshnessReason</span></td>
-                                                        <td class="gdh-wrap">@GeneratedDocumentationPresentation.Date(d.LastModified)</td>
-                                                    </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    </div>
-
-                                    @{ var drift = GeneratedDocumentationPresentation.DriftFor(run, m); }
-                                    <h5 class="gdh-h5">Potential drift (@drift.Count)</h5>
-                                    @if (drift.Count == 0)
-                                    {
-                                        <p class="gdh-note">No discrepancy among the structured keys compared. @GeneratedDocumentationText.NotSynchronized</p>
-                                    }
-                                    else
-                                    {
-                                        <ul class="gdh-drift-list" data-testid="gdh-drift-list">
-                                            @foreach (var candidate in drift.Take(_driftLimit))
-                                            {
-                                                <DriftCandidateItem Candidate="candidate" Snapshot="run.Snapshot" />
-                                            }
-                                        </ul>
-                                        @if (drift.Count > _driftLimit)
+                                    <section class="gdh-consistency" data-testid="gdh-consistency-section" aria-label="@($"Consistency with available evidence for {m.Module}")">
+                                        <h5 class="gdh-h5">Consistency with available evidence</h5>
+                                        <p class="gdh-note">Not part of the health status above. @GeneratedDocumentationText.ConsistencyBoundary</p>
+                                        @if (m.Comparisons.Count > 0)
                                         {
-                                            <p class="gdh-note">Showing the first @_driftLimit of @drift.Count candidates.</p>
+                                            <div class="gdh-scroll" tabindex="0" role="region" aria-label="@($"Structured comparisons for {m.Module}")">
+                                                <table class="gdh-table" data-testid="gdh-comparisons">
+                                                    <thead><tr><th scope="col">Family</th><th scope="col">State</th><th scope="col">Detail</th></tr></thead>
+                                                    <tbody>
+                                                        @foreach (var c in m.Comparisons)
+                                                        {
+                                                            <tr data-testid="gdh-comparison" data-state="@c.State"><th scope="row">@(c.Family == "Specification contracts" ? "Specification contracts (authored/generated consistency)" : c.Family)</th><td><span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(c.State)">@GeneratedDocumentationText.Label(c.State)</span></td><td class="gdh-wrap">@c.Detail</td></tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         }
-                                    }
+
+                                        @{ var candidates = GeneratedDocumentationPresentation.DriftFor(run, m); }
+                                        <h6 class="gdh-h6">Review candidates (@candidates.Count)</h6>
+                                        @if (candidates.Count == 0)
+                                        {
+                                            <p class="gdh-note" data-testid="gdh-no-candidates">No comparable conflicting claims among the structured keys compared. @GeneratedDocumentationText.NotSynchronized</p>
+                                        }
+                                        else
+                                        {
+                                            <ul class="gdh-drift-list" data-testid="gdh-drift-list">
+                                                @foreach (var candidate in candidates.Take(_driftLimit))
+                                                {
+                                                    <DriftCandidateItem Candidate="candidate" Snapshot="run.Snapshot" />
+                                                }
+                                            </ul>
+                                            @if (candidates.Count > _driftLimit)
+                                            {
+                                                <p class="gdh-note">Showing the first @_driftLimit of @candidates.Count candidates.</p>
+                                            }
+                                        }
+                                        @if (m.CrossArtifactDrift.Count > 0)
+                                        {
+                                            <p class="gdh-note"><a class="btn-link" href="documentation-drift" data-testid="gdh-open-drift">Compare authored and generated documentation in Documentation Drift</a></p>
+                                        }
+                                        @{ var unresolved = GeneratedDocumentationPresentation.UnresolvedFor(run, m); }
+                                        @if (unresolved.Count > 0)
+                                        {
+                                            <details class="gdh-unresolved" data-testid="gdh-unresolved">
+                                                <summary>Unresolved correlations and source-only items (@unresolved.Count) — diagnostics, not drift</summary>
+                                                <ul class="gdh-drift-list">
+                                                    @foreach (var candidate in unresolved.Take(_driftLimit))
+                                                    {
+                                                        <DriftCandidateItem Candidate="candidate" Snapshot="run.Snapshot" />
+                                                    }
+                                                </ul>
+                                            </details>
+                                        }
+                                    </section>
+
+                                    <section data-testid="gdh-provenance-section" aria-label="@($"Technical provenance of {m.Module}")">
+                                        <h5 class="gdh-h5">Technical provenance</h5>
+                                        <dl class="gdh-facts">
+                                            <div><dt>Module id</dt><dd><code class="gdh-wrap">@m.ModuleId</code></dd></div>
+                                            <div><dt>Documented scope</dt><dd><code class="gdh-wrap">@(m.RootPath.Length == 0 ? "(repository root)" : m.RootPath)</code></dd></div>
+                                            @if (run.Snapshot is { } binding)
+                                            {
+                                                <div><dt>Source snapshot</dt><dd><code class="gdh-wrap">@binding.SnapshotId</code> · analyzer v@(binding.AnalyzerVersion)</dd></div>
+                                            }
+                                        </dl>
+                                    </section>
                                 </div>
                             }
                         </li>
@@ -213,9 +307,9 @@
             @if (workspaceDrift.Count > 0)
             {
                 <section aria-labelledby="gdh-workspace-drift-title" data-testid="gdh-workspace-drift">
-                    <h3 id="gdh-workspace-drift-title" class="gdh-h3">Workspace-level drift (@workspaceDrift.Count)</h3>
+                    <h3 id="gdh-workspace-drift-title" class="gdh-h3">Workspace-level consistency (@workspaceDrift.Count(GeneratedDocumentationSemantics.IsReviewCandidate) review candidates)</h3>
                     <p class="gdh-note">Authored artifacts without a module path are compared with the generated documentation of every module.</p>
-                    <ul class="gdh-drift-list">@foreach (var candidate in workspaceDrift.Take(_driftLimit)) { <DriftCandidateItem Candidate="candidate" Snapshot="run.Snapshot" /> }</ul>
+                    <ul class="gdh-drift-list">@foreach (var candidate in workspaceDrift.OrderBy(d => GeneratedDocumentationSemantics.Classify(d)).Take(_driftLimit)) { <DriftCandidateItem Candidate="candidate" Snapshot="run.Snapshot" /> }</ul>
                 </section>
             }
 
@@ -289,15 +383,29 @@
 
     private static string Slug(string value) => System.Text.RegularExpressions.Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
 
-    private static IEnumerable<(string Label, int Value, string TestId)> Cards(GeneratedDocumentationSummary s) =>
+    /// <summary>Generated Documentation Explorer is linked only when its feature is visible (shown when no feature service is registered).</summary>
+    private bool ExplorerVisible => Services.GetService<FeatureVisibilityService>()?.GeneratedDocumentationExplorer ?? true;
+
+    private static IEnumerable<(string Label, int Value, string TestId)> HealthCards(GeneratedDocumentationSummary s) =>
     [
-        ("Modules with generated docs", s.ModulesWithGeneratedDocs, "modules"),
+        ("Generated docs", s.GeneratedDocuments, "documents"),
+        ("Generated modules", s.ModulesWithGeneratedDocs, "modules"),
         ("Generator / workflow detected", s.ModulesWithGeneratorDetected, "generator"),
         ("Fresh", s.Fresh, "fresh"),
         ("Potentially stale", s.PotentiallyStale, "stale"),
         ("Freshness unknown", s.FreshnessUnknown, "unknown"),
-        ("Missing expected docs", s.MissingExpectedDocs, "missing"),
-        ("Source / doc differences (candidates)", s.SourceDocumentationDiscrepancies, "discrepancies"),
-        ("Cross-artifact drift candidates", s.CrossArtifactDriftCandidates, "drift"),
+        ("Required docs missing", s.MissingExpectedDocs, "missing"),
+        ("Applicability unresolved", s.ApplicabilityUnresolved, "applicability"),
+    ];
+
+    /// <summary>Consistency counters are separate from health: review candidates need comparable conflicting claims; the rest are neutral diagnostics.</summary>
+    private static IEnumerable<(string Label, int Value, string TestId)> ConsistencyCards(GeneratedDocumentationSummary s) =>
+    [
+        ("Source consistency candidates", s.SourceDocumentationDiscrepancies, "discrepancies"),
+        ("Authored/generated consistency candidates", s.AuthoredGeneratedCandidates, "authored"),
+        ("Cross-artifact consistency candidates", s.CrossArtifactDriftCandidates, "drift"),
+        ("Correlation unresolved", s.CorrelationUnresolved, "unresolved"),
+        ("Source-only items", s.SourceOnlyObservations, "source-only"),
+        ("Unable to compare", s.UnableToCompare, "unable"),
     ];
 }

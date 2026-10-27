@@ -76,6 +76,8 @@ internal static class GeneratedDocumentationDetector
             var declared = new List<string>();
             var referencedDirs = new List<string>();
             var declaredFiles = new List<string>();
+            var requiredFiles = new List<string>();
+            var conditionalFiles = new List<string>();
             foreach (var (token, isLeaf) in DirectoryTokens(file.Content, docDirectories, options))
             {
                 if (DeclaresOutput(file.Content, token, role)) declared.Add(token); else referencedDirs.Add(token);
@@ -83,8 +85,16 @@ internal static class GeneratedDocumentationDetector
             foreach (var token in declared)
             {
                 var leafToken = token.TrimEnd('/');
-                foreach (Match m in Regex.Matches(file.Content, @"(?<![\w-])" + Regex.Escape(leafToken) + @"/([A-Za-z0-9][\w.-]*\.[A-Za-z0-9]{1,8})\b"))
-                    declaredFiles.Add(m.Groups[1].Value);
+                var output = new Regex(@"(?<![\w-])" + Regex.Escape(leafToken) + @"/([A-Za-z0-9][\w.-]*\.[A-Za-z0-9]{1,8})\b");
+                // Per line: a declared output is what the generator CAN produce; only the line's own wording makes it required or capability-mapped.
+                foreach (var line in file.Content.Split('\n'))
+                    foreach (Match m in output.Matches(line))
+                    {
+                        declaredFiles.Add(m.Groups[1].Value);
+                        var (required, capability) = OutputRule(line);
+                        if (capability is not null) conditionalFiles.Add($"{m.Groups[1].Value}|{capability}");
+                        else if (required) requiredFiles.Add(m.Groups[1].Value);
+                    }
             }
             var references = Regex.Matches(file.Content, @"(?<![\w-])((?:\.claude|\.cursor|\.github|scripts?|tools?)/[\w./-]+\.[A-Za-z0-9]{1,6})").Select(m => m.Groups[1].Value)
                 .Where(p => allPaths.Contains(p, StringComparer.Ordinal) && p != file.Path).Distinct(StringComparer.Ordinal).ToList();
@@ -95,6 +105,8 @@ internal static class GeneratedDocumentationDetector
                 GeneratorName = role == "Agent skill definition" || role == "Agent command definition" ? FrontMatterName.Match(file.Content.Replace("\r\n", "\n")) is { Success: true } n ? Safe(n.Groups[1].Value.Trim()) : null : null,
                 DeclaredOutputDirectories = declared.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 DeclaredOutputFiles = declaredFiles.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
+                RequiredOutputFiles = requiredFiles.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
+                ConditionalOutputFiles = conditionalFiles.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
                 References = references.Concat(referencedDirs.Select(d => d)).Distinct(StringComparer.Ordinal).Select(Safe).ToList(),
                 Basis = declared.Count > 0 ? $"Declares {string.Join(", ", declared.Distinct(StringComparer.OrdinalIgnoreCase))} as an output" : referencedDirs.Count > 0 ? $"References {string.Join(", ", referencedDirs.Distinct(StringComparer.OrdinalIgnoreCase))}" : "References other workflow files",
                 ContentFingerprint = Fingerprint(file.Content),
@@ -327,6 +339,26 @@ internal static class GeneratedDocumentationDetector
     public static string Leaf(string dir) => dir.Contains('/') ? dir[(dir.LastIndexOf('/') + 1)..] : dir;
 
     /// <summary>The scope a generated directory documents: its parent folder, skipping container folders (docs/, build/ …). "" = repository root.</summary>
+    private static readonly Regex ConditionalWording = new(@"(?i)\b(if|when|whenever|only|optional(?:ly)?|unless|where\s+(?:applicable|relevant)|for\s+modules\s+(?:that|with))\b", RegexOptions.Compiled);
+    private static readonly Regex RequiredWording = new(@"(?i)\b(required|must|always|mandatory)\b", RegexOptions.Compiled);
+    private static readonly (string Capability, Regex Words)[] CapabilityWording =
+    [
+        ("GraphQL", new(@"(?i)graph\s?ql", RegexOptions.Compiled)),
+        ("Messaging", new(@"(?i)messag|service\s?bus|event\s?hub|queue|topic|wolverine|\bconsumer|\bproducer|\bhandler", RegexOptions.Compiled)),
+        ("Data model", new(@"(?i)database|\bentit|entity\s?framework|\bef\s?core|migration|dbcontext|\btables?\b|persist", RegexOptions.Compiled)),
+        ("UI routes", new(@"(?i)\brazor|\bpages?\b|\bui\b|front-?end", RegexOptions.Compiled)),
+        ("HTTP API", new(@"(?i)\bhttp|\brest\b|endpoint|controller|\bapis?\b", RegexOptions.Compiled)),
+    ];
+
+    /// <summary>How one workflow line states an output: unconditionally required ("must/always/required" without a condition), or produced
+    /// for a capability ("if the module uses messaging … message-bus.md"). Anything else is capability of the generator only.</summary>
+    internal static (bool Required, string? Capability) OutputRule(string line)
+    {
+        if (ConditionalWording.IsMatch(line))
+            return (false, CapabilityWording.FirstOrDefault(c => c.Words.IsMatch(line)).Capability);
+        return (RequiredWording.IsMatch(line), null);
+    }
+
     public static string ModuleRoot(string dir, GeneratedDocumentationOptions options)
     {
         var parent = DirectoryOf(dir);
