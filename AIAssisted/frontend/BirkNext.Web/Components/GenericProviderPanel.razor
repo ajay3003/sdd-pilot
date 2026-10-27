@@ -1,0 +1,188 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* A connected system without a dedicated component (REST API, GraphQL, Service Bus, Event Hub, Database, File/SFTP, Generic HTTP, Other) in
+   the shared compact shell: the provider's own summary cards, required settings that are missing, in conflict or detected but not applied
+   (suggested != configured), detected values awaiting an explicit Apply, one section per setting group (only that provider's fields), a
+   runtime line and advanced details. Detect never saves; Save and Apply are explicit; a secret is added for the session only. *@
+<ProviderDetailShell @ref="_shell" Prefix="gp" Title="@View.Integration.Name" Busy="_busy" Cards="ProviderShellPresentation.Cards(View)"
+                     FixGroups="ProviderShellPresentation.ThingsToFix(View, Descriptor)" OnFix="FixAsync" Proposals="ProviderShellPresentation.Proposals(View, Descriptor)"
+                     Selected="_selected" OnToggle="Toggle" OnApply="ApplySelectedAsync" DetectionLine="@DetectionLine" Notes="View.Notes" Sections="Sections" Advanced="Advanced">
+    <HeaderActions>
+        <button type="button" class="btn btn-primary btn-sm" data-testid="ei-detect-one" disabled="@_busy" @onclick="DetectAsync">Detect settings</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-delete" disabled="@_busy" @onclick="DeleteAsync">Remove</button>
+    </HeaderActions>
+    <Banner>
+        @if (_error is { } error) { <p class="gp-banner gp-banner-error" role="alert" data-testid="gp-error">@error</p> }
+        @if (_notice is { } notice) { <p class="gp-banner" role="status" data-testid="gp-notice">@notice</p> }
+    </Banner>
+</ProviderDetailShell>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public ExternalIntegrationView View { get; set; } = new();
+    [Parameter, EditorRequired] public ExternalProviderDescriptor Descriptor { get; set; } = default!;
+    /// <summary>The integration as it is after a save, detect or secret change (the host replaces its copy).</summary>
+    [Parameter] public EventCallback<ExternalIntegrationView> OnChanged { get; set; }
+    [Parameter] public EventCallback<string> OnRemoved { get; set; }
+
+    private IExternalIntegrationsApiService? Api => Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
+    private ProviderDetailShell? _shell;
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private Dictionary<string, string>? _values;
+    private string? _forIntegration, _error, _notice, _secret;
+    private bool _busy, _secretOpen;
+
+    protected override void OnParametersSet()
+    {
+        // A new integration (or a reloaded one after a save) starts its edit buffer from the saved settings.
+        if (_forIntegration != $"{View.Integration.Id}@{View.Integration.UpdatedAt:O}") { _values = new(View.Integration.Settings, StringComparer.Ordinal); _forIntegration = $"{View.Integration.Id}@{View.Integration.UpdatedAt:O}"; }
+        _selected.IntersectWith(ProviderShellPresentation.Proposals(View, Descriptor).Select(proposal => proposal.Key));
+    }
+
+    private string? DetectionLine => View.Detected ? ExternalIntegrationPresentation.DetectionLine(View.Detection) : null;
+
+    private IReadOnlyList<string> Groups =>
+        [.. Descriptor.Fields.Select(field => field.Group).Distinct(StringComparer.Ordinal)];
+
+    private IReadOnlyList<ShellSection> Sections
+    {
+        get
+        {
+            var sections = new List<ShellSection>();
+            foreach (var group in Groups)
+            {
+                var editable = Descriptor.Fields.Where(field => field.Group == group && !field.Secret).ToList();
+                var secret = Descriptor.Fields.Any(field => field.Group == group && field.Secret);
+                var dimension = ProviderShellPresentation.Dimension(View, ProviderShellPresentation.SectionKey(group));
+                sections.Add(new ShellSection(ProviderShellPresentation.SectionKey(group), ProviderShellPresentation.SectionTitle(group), ProviderShellPresentation.GroupLine(View, group))
+                {
+                    Status = dimension is null ? null : ExternalIntegrationPresentation.Label(dimension.State),
+                    Tone = dimension is null ? "muted" : ExternalIntegrationPresentation.Tone(dimension.State),
+                    ToggleLabel = "Edit",
+                    Body = editable.Count == 0 ? null : GroupBody(group, editable),
+                    Always = secret ? SecretRow : null,
+                });
+            }
+            var runtime = ProviderShellPresentation.Dimension(View, "runtime");
+            sections.Add(new ShellSection("runtime", "Runtime", runtime?.Reason is { Length: > 0 } reason ? reason : "Not verified.")
+            {
+                Status = runtime is null ? null : ExternalIntegrationPresentation.Label(runtime.State),
+                Tone = runtime is null ? "muted" : ExternalIntegrationPresentation.Tone(runtime.State),
+            });
+            return sections;
+        }
+    }
+
+    private RenderFragment GroupBody(string group, IReadOnlyList<ProviderFieldDefinition> fields) => __builder =>
+    {
+        <ProviderFieldTable Prefix="gp" Group="@group" Fields="@(View.Fields.Where(field => field.Group == group).ToList())" />
+        <ProviderSettingsFields Descriptor="@(Descriptor with { Fields = fields })" Values="_values!" Disabled="_busy" />
+        <button type="button" class="btn btn-primary btn-sm" data-testid="ei-save" disabled="@_busy" @onclick="SaveAsync">Save</button>
+    };
+
+    private RenderFragment SecretRow => __builder =>
+    {
+        var secretField = View.Fields.FirstOrDefault(field => Descriptor.Fields.Any(item => item.Secret && item.Key == field.Key));
+        <div class="gp-secret-row" data-testid="gp-secret-row">
+            <span>@(secretField?.Label ?? "Secret"): <strong data-testid="gp-secret-state">@(secretField is null ? "Missing" : AltinnEnvironmentPresentation.StateLabel(secretField.State))</strong></span>
+            @if (!_secretOpen)
+            {
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="gp-secret-reveal" aria-expanded="false" aria-controls="gp-secret-form" @onclick="() => _secretOpen = true">Add secret for this session</button>
+            }
+        </div>
+        @if (_secretOpen)
+        {
+            <div id="gp-secret-form" class="gp-form" data-testid="ei-secret-form">
+                <label>Secret for this session <input type="password" class="form-control" data-testid="ei-secret" @bind="_secret" autocomplete="new-password" aria-describedby="gp-secret-help" /></label>
+                <span id="gp-secret-help" class="gp-muted">Held in backend memory for this session only. Never stored, logged, exported or shown.</span>
+                <div class="gp-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="ei-add-secret" disabled="@(_busy || string.IsNullOrEmpty(_secret))" @onclick="AddSecretAsync">Add session secret</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="gp-secret-cancel" @onclick="() => { _secret = null; _secretOpen = false; }">Cancel</button>
+                </div>
+            </div>
+        }
+    };
+
+    private RenderFragment Advanced => __builder =>
+    {
+        @foreach (var group in Groups)
+        {
+            var fields = View.Fields.Where(field => field.Group == group).ToList();
+            if (fields.Count == 0) continue;
+            <h5 class="gp-h5">@ProviderShellPresentation.SectionTitle(group)</h5>
+            <ProviderFieldTable Prefix="gp" Group="@group" Evidence="true" Fields="fields" />
+        }
+        <ul class="gp-list" data-testid="gp-dimension-reasons">
+            @foreach (var dimension in ProviderShellPresentation.Dimensions(View)) { <li>@dimension.Label: @ExternalIntegrationPresentation.Label(dimension.State) · @dimension.Reason</li> }
+        </ul>
+        <p class="gp-muted" data-testid="gp-internal-id">Id <code>@View.Integration.Id</code> · updated @View.Integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm") UTC</p>
+    };
+
+    private void Toggle((string Key, bool On) change) { if (change.On) _selected.Add(change.Key); else _selected.Remove(change.Key); }
+
+    private async Task Run(Func<IExternalIntegrationsApiService, Task> action)
+    {
+        if (Api is not { } api) { _error = "Connected systems are not available in this host."; return; }
+        _busy = true; _error = null;
+        try { await action(api); } finally { _busy = false; }
+    }
+
+    private async Task Changed(ActiveEventApiResult<ExternalIntegrationView> result, string notice)
+    {
+        if (result.Value is { } view) { _notice = notice; await OnChanged.InvokeAsync(view); } else _error = result.Error;
+    }
+
+    private Task DetectAsync() => Run(async api =>
+    {
+        var result = await api.DetectOneAsync(EnvironmentId, View.Integration.Id);
+        await Changed(result, result.Value is { } view ? $"Settings detected: {ExternalIntegrationPresentation.DetectionLine(view.Detection)}. Nothing was saved." : "");
+        if (result.Value is { } detected)
+            foreach (var proposal in ProviderShellPresentation.Proposals(detected, Descriptor).Where(proposal => !proposal.Conflict)) _selected.Add(proposal.Key);
+    });
+
+    private Task SaveAsync() => Save(new Dictionary<string, string>(_values!, StringComparer.Ordinal), $"{View.Integration.Name} saved.");
+
+    private Task ApplySelectedAsync() => ApplyAsync([.. _selected]);
+
+    /// <summary>Saves exactly the named proposals on top of the saved settings — never anything else, never a secret.</summary>
+    private Task ApplyAsync(IReadOnlyCollection<string> keys)
+    {
+        var proposals = View.Fields.Where(field => keys.Contains(field.Key) && field.Proposal is { Value: not null } && Descriptor.Fields.Any(item => item.Key == field.Key && !item.Secret)).ToList();
+        if (proposals.Count == 0) return Task.CompletedTask;
+        var settings = new Dictionary<string, string>(View.Integration.Settings, StringComparer.Ordinal);
+        foreach (var field in proposals) settings[field.Key] = field.Proposal!.Value!;
+        _selected.ExceptWith(proposals.Select(field => field.Key));
+        return Save(settings, $"Applied {proposals.Count} value{(proposals.Count == 1 ? "" : "s")} to {View.Integration.Name}.");
+    }
+
+    private Task Save(Dictionary<string, string> settings, string notice) => Run(async api =>
+    {
+        var integration = View.Integration;
+        await Changed(await api.SaveAsync(EnvironmentId, integration.Id, new ExternalIntegrationRequest(integration.Name, integration.ProviderType, integration.EnvironmentName, integration.Enabled, settings)), notice);
+    });
+
+    private Task AddSecretAsync() => Run(async api =>
+    {
+        var secret = _secret ?? "";
+        _secret = null; // never kept in the component after sending
+        var result = await api.AddSecretAsync(EnvironmentId, View.Integration.Id, secret);
+        if (result.Error is { } error) { _error = error; return; }
+        _secretOpen = false;
+        var list = await api.ListAsync(EnvironmentId);
+        if (list.Value?.Integrations.FirstOrDefault(item => item.Integration.Id == View.Integration.Id) is { } current) { _notice = "Secret available for this session."; await OnChanged.InvokeAsync(current); }
+        else _error = list.Error;
+    });
+
+    private Task DeleteAsync() => Run(async api =>
+    {
+        var result = await api.DeleteAsync(EnvironmentId, View.Integration.Id);
+        if (result.Error is null) await OnRemoved.InvokeAsync(View.Integration.Id); else _error = result.Error;
+    });
+
+    private async Task FixAsync(ShellFixGroup group)
+    {
+        if (group.ApplyKeys.Count > 0) await ApplyAsync(group.ApplyKeys);
+    }
+}

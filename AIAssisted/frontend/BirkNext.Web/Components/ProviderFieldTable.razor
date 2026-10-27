@@ -1,0 +1,39 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+
+@* One group of resolved provider settings as a table: readable value, state as text, source. The evidence variant adds the raw value of a
+   reference (e.g. an integration id), each field's detail and every candidate. A secret's value is never part of a field, so never shown. *@
+<table class="pft" data-testid="@($"{Prefix}-{(Evidence ? "evidence-table" : "field-table")}")" data-group="@Group">
+    <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">State</th><th scope="col">Source</th></tr></thead>
+    <tbody>
+        @foreach (var field in Fields)
+        {
+            <tr data-testid="@($"{Prefix}-{(Evidence ? "evidence-field" : "field")}")" data-key="@field.Key" data-state="@field.State">
+                <th scope="row">@field.Label @if (field.Requirement != AltinnRequirement.Optional) { <span class="pft-req">@AltinnEnvironmentPresentation.RequirementLabel(field.Requirement)</span> }</th>
+                <td class="pft-value">
+                    @AltinnEnvironmentPresentation.Display(field)
+                    @if (Evidence && field.DisplayValue is not null) { <span class="pft-req" data-testid="@($"{Prefix}-raw-reference")">ID/reference: @field.Value</span> }
+                </td>
+                <td><span class="pft-pill pft-pill-@AltinnEnvironmentPresentation.Tone(field)" data-testid="@($"{Prefix}-field-state")">@AltinnEnvironmentPresentation.StateLabel(field)</span></td>
+                <td class="pft-muted">@field.SourceLabel</td>
+            </tr>
+            @if (Evidence && (field.Detail.Length > 0 || field.Candidates.Count > 1))
+            {
+                <tr class="pft-evidence" data-testid="@($"{Prefix}-evidence")"><td colspan="4">
+                    @field.Detail
+                    @if (field.Candidates.Count > 1)
+                    {
+                        <ul>@foreach (var candidate in field.Candidates) { <li>@candidate.SourceLabel: @AltinnEnvironmentPresentation.Display(candidate)@(candidate.DisplayValue is null ? "" : $" ({candidate.Value})") (@AltinnEnvironmentPresentation.StateLabel(candidate.State))</li> }</ul>
+                    }
+                </td></tr>
+            }
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public string Prefix { get; set; } = "ps";
+    [Parameter, EditorRequired] public IReadOnlyList<AltinnSettingField> Fields { get; set; } = [];
+    [Parameter] public string Group { get; set; } = "";
+    [Parameter] public bool Evidence { get; set; }
+}

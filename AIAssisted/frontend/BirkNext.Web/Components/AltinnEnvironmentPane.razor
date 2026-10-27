@@ -2,366 +2,238 @@
 @using BirkNext.Web.Services
 @inject IServiceProvider Services
 
-@* Target Environment → Connected Systems → Altinn: the one place the Altinn environment is configured. The default view answers what is
-   ready, what is missing and what to click (summary → things to fix → detected settings → owner sections); how BirkNext knows it (every
-   field with its state, provenance and candidates, internal ids, public metadata, observations) is one click deeper in each section and in
-   Advanced details. Detect is discovery only: nothing is saved until selected values are applied. Browser login evidence is shown apart from
-   BirkNext's unattended client and never fills it. A secret is entered once (POST), held in backend memory for the session and never shown,
-   stored in the browser or returned. Test identities are managed in Test Data. *@
-<section class="ae" data-testid="ae" aria-labelledby="ae-title">
-    <header class="ae-head">
-        <h3 id="ae-title" class="ae-title" data-testid="ae-title">Altinn@(_view is null ? "" : $" · {EnvironmentLabel}")</h3>
-        <div class="ae-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-testid="ae-detect" disabled="@_busy" @onclick="DetectAsync">Detect Altinn settings</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-review-evidence" aria-expanded="@Expanded(_advanced)" aria-controls="ae-advanced-body" @onclick="() => _advanced = !_advanced">Review evidence</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-clear-session" disabled="@_busy" @onclick="ClearSessionAsync">Clear session values</button>
-        </div>
-    </header>
-
-    @if (_error is { } error) { <p class="ae-banner ae-banner-error" role="alert" data-testid="ae-error">@error</p> }
-    @if (_notice is { } notice) { <p class="ae-banner" role="status" data-testid="ae-notice">@notice</p> }
-
-    @if (_view is null)
-    {
-        <p class="ae-muted" role="status" data-testid="ae-loading">@(_error is null ? "Loading the Altinn setup…" : "The Altinn setup is not available.")</p>
-    }
-    else
-    {
-        var fix = AltinnEnvironmentPresentation.ThingsToFix(_view);
-        var proposals = AltinnEnvironmentPresentation.Proposals(_view);
-
-        @* B. Five status cards: status plus one short reason, never a table. *@
-        <dl class="ae-summary" data-testid="ae-summary">
-            @foreach (var item in _view.Summary)
-            {
-                var reason = AltinnEnvironmentPresentation.CardReason(item, _view);
-                <div data-key="@item.Key" data-testid="ae-card">
-                    <dt>@item.Label</dt>
-                    <dd>
-                        <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(item.State)">@AltinnEnvironmentPresentation.ReadinessLabel(item)</span>
-                        @if (reason.Length > 0) { <span class="ae-card-reason" data-testid="ae-card-reason">@reason</span> }
-                    </dd>
-                </div>
-            }
-        </dl>
-
-        @* C. Manual vs automated readiness, kept apart. *@
-        <div class="ae-readiness" data-testid="ae-readiness">
-            <div class="ae-readiness-card" data-testid="ae-readiness-manual">
-                <span class="ae-readiness-label">@_view.ManualReadiness.Label</span>
-                <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(_view.ManualReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(_view.ManualReadiness)</span>
-                <span class="ae-muted">@AltinnEnvironmentPresentation.ManualLine(_view)</span>
-            </div>
-            <div class="ae-readiness-card" data-testid="ae-readiness-automated">
-                <span class="ae-readiness-label">@_view.AutomatedReadiness.Label</span>
-                <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(_view.AutomatedReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(_view.AutomatedReadiness)</span>
-                <span class="ae-muted">@AltinnEnvironmentPresentation.AutomatedLine(_view)</span>
-                @if (_view.AutomatedBlockers.Count > 0)
-                {
-                    <button type="button" class="ae-link" data-testid="ae-blockers-toggle" aria-expanded="@Expanded(_blockers)" aria-controls="ae-blockers" @onclick="() => _blockers = !_blockers">@(_blockers ? "Hide blockers" : "View blockers")</button>
-                    @if (_blockers)
-                    {
-                        <ul id="ae-blockers" class="ae-list" data-testid="ae-blockers">@foreach (var blocker in _view.AutomatedBlockers) { <li>@blocker</li> }</ul>
-                    }
-                }
-            </div>
-        </div>
-
-        @* D. Things to fix: what is wrong, who owns it, what to click. *@
-        @if (fix.Count > 0)
+@* Target Environment → Connected Systems → Altinn: the one place the Altinn environment is configured, rendered in the shared compact
+   provider shell (summary → things to fix → detected settings → sections → advanced details). Altinn supplies its own cards, the manual vs
+   automated readiness, owner-grouped things to fix, and provider sections (application, browser vs unattended authentication, execution
+   safety, test identities, report contract, runtime). A suggestion (test pack default or reference) is "Not applied" until a person applies
+   it: suggested != configured. Detect is discovery only. Browser login evidence never fills BirkNext's unattended client. A secret is
+   entered once (POST), held in backend memory for the session and never shown, stored in the browser or returned. Test identities are
+   managed in Test Data. *@
+<ProviderDetailShell @ref="_shell" Prefix="ae" Title="@Title" Busy="_busy" Cards="Cards" FixGroups="FixGroups" OnFix="FixAsync"
+                     Proposals="Proposals" Selected="_selected" OnToggle="Toggle" OnApply="ApplySelectedAsync" DetectionLine="@DetectionLine"
+                     Notes="Notes" Sections="Sections" InitiallyOpen="InitiallyOpen" Placeholder="Placeholder" Advanced="Advanced">
+    <HeaderActions>
+        <button type="button" class="btn btn-primary btn-sm" data-testid="ae-detect" disabled="@_busy" @onclick="DetectAsync">Detect Altinn settings</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-review-evidence" @onclick="() => _shell?.OpenAdvanced()">Review evidence</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-clear-session" disabled="@_busy" @onclick="ClearSessionAsync">Clear session values</button>
+    </HeaderActions>
+    <Banner>
+        @if (_error is { } error) { <p class="ae-banner ae-banner-error" role="alert" data-testid="ae-error">@error</p> }
+        @if (_notice is { } notice) { <p class="ae-banner" role="status" data-testid="ae-notice">@notice</p> }
+    </Banner>
+    <Readiness>
+        @if (_view is { } view)
         {
-            <section class="ae-fix" data-testid="ae-fix" aria-labelledby="ae-fix-title">
-                <h4 id="ae-fix-title" class="ae-h4">Things to fix</h4>
-                <p class="ae-fix-count" data-testid="ae-fix-count">@AltinnEnvironmentPresentation.FixLine(fix)</p>
-                <div class="ae-fix-groups">
-                    @foreach (var group in fix)
-                    {
-                        <div class="ae-fix-group" data-testid="ae-fix-group" data-key="@group.Key">
-                            <div class="ae-fix-head"><strong>@group.Title</strong> <span class="ae-muted">Owner: @group.Owner</span></div>
-                            <ul class="ae-list">
-                                @foreach (var item in group.Items) { <li data-testid="ae-fix-item">@item.Label <span class="ae-muted">· @item.Problem</span></li> }
-                            </ul>
-                            @if (group.Kind == AltinnEnvironmentPresentation.FixAction.TestData)
-                            {
-                                <a class="btn btn-secondary btn-sm" href="@AltinnEnvironmentPresentation.TestDataHref" data-testid="ae-fix-action">@group.Action</a>
-                            }
-                            else
-                            {
-                                var kind = group.Kind;
-                                <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-fix-action" disabled="@(_busy && kind == AltinnEnvironmentPresentation.FixAction.Detect)" @onclick="() => FixAsync(kind)">@group.Action</button>
-                            }
-                        </div>
-                    }
+            <div class="ae-readiness" data-testid="ae-readiness">
+                <div class="ae-readiness-card" data-testid="ae-readiness-manual">
+                    <span class="ae-readiness-label">@view.ManualReadiness.Label</span>
+                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(view.ManualReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(view.ManualReadiness)</span>
+                    <span class="ae-muted">@AltinnEnvironmentPresentation.ManualLine(view)</span>
                 </div>
-            </section>
-        }
-
-        @* E. Pending detected values: readable, with their source; nothing is saved until applied. *@
-        @if (proposals.Count > 0 || _view.Detected)
-        {
-            <section class="ae-detected" data-testid="ae-detection" aria-labelledby="ae-detected-title">
-                <h4 id="ae-detected-title" class="ae-h4">Detected settings</h4>
-                @if (_view.Detected) { <p class="ae-muted" data-testid="ae-detection-line">@AltinnEnvironmentPresentation.DetectionLine(_view.Detection)</p> }
-                @if (proposals.Count > 0)
-                {
-                    <fieldset class="ae-proposals" data-testid="ae-proposals">
-                        <legend>Select the values to save on this Target Environment (nothing is saved until you apply)</legend>
-                        @foreach (var field in proposals)
+                <div class="ae-readiness-card" data-testid="ae-readiness-automated">
+                    <span class="ae-readiness-label">@view.AutomatedReadiness.Label</span>
+                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(view.AutomatedReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(view.AutomatedReadiness)</span>
+                    <span class="ae-muted">@AltinnEnvironmentPresentation.AutomatedLine(view)</span>
+                    @if (view.AutomatedBlockers.Count > 0)
+                    {
+                        <button type="button" class="ae-link" data-testid="ae-blockers-toggle" aria-expanded="@Expanded(_blockers)" aria-controls="ae-blockers" @onclick="() => _blockers = !_blockers">@(_blockers ? "Hide blockers" : "View blockers")</button>
+                        @if (_blockers)
                         {
-                            var key = field.Key;
-                            <label class="ae-proposal" data-key="@key">
-                                <input type="checkbox" checked="@_selected.Contains(key)" @onchange="e => Toggle(key, e.Value is true)" />
-                                <span class="ae-proposal-body">
-                                    <span class="ae-proposal-label">@field.Label</span>
-                                    <span class="ae-proposal-value" data-testid="ae-proposal-value">@AltinnEnvironmentPresentation.Display(field.Proposal!)</span>
-                                    <span class="ae-muted">@AltinnEnvironmentPresentation.StateLabel(field.Proposal!.State) · Source: @field.Proposal!.SourceLabel@(field.State == AltinnSettingState.Conflict ? $" · current: {AltinnEnvironmentPresentation.Display(field)}" : "")</span>
-                                </span>
-                            </label>
+                            <ul id="ae-blockers" class="ae-list" data-testid="ae-blockers">@foreach (var blocker in view.AutomatedBlockers) { <li>@blocker</li> }</ul>
                         }
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="ae-apply" disabled="@(_busy || _selected.Count == 0)" @onclick="ApplySelectedAsync">Apply selected</button>
-                    </fieldset>
-                }
-                else
-                {
-                    <p class="ae-muted" data-testid="ae-no-proposals">No new values to apply.</p>
-                }
-                @foreach (var note in _view.Notes) { <p class="ae-muted" data-testid="ae-note">@note</p> }
-            </section>
-        }
-
-        @* F. Owner sections: one summary line and one action each; technical detail on demand. *@
-        <div class="ae-sections">
-            <section class="ae-section" data-testid="ae-section-application" aria-labelledby="ae-app-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-app-title" class="ae-h4">Application</h4>
-                    <span class="ae-muted" data-testid="ae-section-line">@AltinnEnvironmentPresentation.ApplicationLine(_view)</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-toggle-application" aria-expanded="@Expanded(_openApplication)" aria-controls="ae-application-body" @onclick="() => _openApplication = !_openApplication">@(_openApplication ? "Hide" : "Review")</button>
-                </div>
-                @if (_openApplication)
-                {
-                    <div id="ae-application-body">@FieldTable("Application")</div>
-                }
-            </section>
-
-            <section class="ae-section" data-testid="ae-section-browser" aria-labelledby="ae-browser-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-browser-title" class="ae-h4">Browser authentication</h4>
-                    <span class="ae-muted" data-testid="ae-section-line">@AltinnEnvironmentPresentation.BrowserLine(_view) · Browser login observation: @AltinnEnvironmentPresentation.BrowserObservationLine(_view)</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-toggle-browser" aria-expanded="@Expanded(_openBrowser)" aria-controls="ae-browser-body" @onclick="() => _openBrowser = !_openBrowser">@(_openBrowser ? "Hide" : "Review evidence")</button>
-                </div>
-                <p class="ae-muted" data-testid="ae-browser-note">Browser authentication evidence never configures BirkNext unattended execution.</p>
-                @if (_openBrowser)
-                {
-                    <div id="ae-browser-body">
-                        @FieldTable("Browser authentication")
-                        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-browser-record" aria-expanded="@Expanded(_browserForm)" aria-controls="ae-browser-form" @onclick="() => _browserForm = !_browserForm">@(_browserForm ? "Hide browser login observation" : "Record browser login observation")</button>
-                        @if (_browserForm)
-                        {
-                            <div id="ae-browser-form" class="ae-form" data-testid="ae-browser-form">
-                                <span class="ae-muted">Authorization request parameters only. A code, state, nonce, request_uri or token is refused.</span>
-                                <label>Issuer <input class="form-control" @bind="_bIssuer" autocomplete="off" placeholder="https://test.idporten.no" /></label>
-                                <label>Authentication level <input class="form-control" @bind="_bAcr" autocomplete="off" placeholder="idporten-loa-substantial" /></label>
-                                <label>Observed browser client ID <input class="form-control" @bind="_bClient" autocomplete="off" /></label>
-                                <label>Observed browser redirect URI <input class="form-control" @bind="_bRedirect" data-testid="ae-browser-redirect" autocomplete="off" placeholder="https://af.tt02.altinn.no/api/cb" /></label>
-                                <label>Observed browser scopes (space separated) <input class="form-control" @bind="_bScopes" autocomplete="off" /></label>
-                                <label>PKCE method <input class="form-control" @bind="_bPkce" autocomplete="off" placeholder="S256" /></label>
-                                <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-record-browser" disabled="@_busy" @onclick="RecordBrowserAsync">Record observation</button>
-                            </div>
-                        }
-                    </div>
-                }
-            </section>
-
-            <section class="ae-section" data-testid="ae-section-automated" aria-labelledby="ae-automated-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-automated-title" class="ae-h4">Automated execution</h4>
-                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(AuthenticationState)">@AuthenticationLabel</span>
-                    <span class="ae-muted" data-testid="ae-section-line">@AltinnEnvironmentPresentation.AutomatedSettingsLine(_view)</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-toggle-automated" aria-expanded="@Expanded(_openAutomated)" aria-controls="ae-automated-body" @onclick="() => _openAutomated = !_openAutomated">@(_openAutomated ? "Hide" : "Configure")</button>
-                </div>
-                <div class="ae-secret-row" data-testid="ae-secret-row">
-                    <span>Client secret: <strong data-testid="ae-secret-state">@SecretLabel</strong></span>
-                    @if (!_secretOpen)
-                    {
-                        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-secret-reveal" aria-expanded="false" aria-controls="ae-secret-form" @onclick="() => _secretOpen = true">Add secret for this session</button>
                     }
                 </div>
-                @if (_secretOpen)
-                {
-                    <div id="ae-secret-form" class="ae-form ae-secret" data-testid="ae-secret-form">
-                        <label>Client secret for this session
-                            <input type="password" class="form-control" @bind="_secret" data-testid="ae-secret" autocomplete="new-password" aria-describedby="ae-secret-help" />
-                        </label>
-                        <span id="ae-secret-help" class="ae-muted">Held in backend memory until the backend restarts or the session expires. Never stored, logged, exported or shown.</span>
-                        <div class="ae-actions">
-                            <button type="button" class="btn btn-primary btn-sm" data-testid="ae-add-secret" disabled="@(_busy || string.IsNullOrEmpty(_secret))" @onclick="AddSecretAsync">Add session secret</button>
-                            <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-secret-cancel" @onclick="CancelSecret">Cancel</button>
-                        </div>
-                    </div>
-                }
-                @if (_openAutomated)
-                {
-                    <div id="ae-automated-body">
-                        @FieldTable("Automated execution")
-                        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-edit-client" aria-expanded="@Expanded(_clientForm)" aria-controls="ae-client-form" @onclick="() => _clientForm = !_clientForm">@(_clientForm ? "Hide unattended client" : "Edit unattended client")</button>
-                        @if (_clientForm)
-                        {
-                            <div id="ae-client-form" class="ae-form" data-testid="ae-client-form">
-                                <span class="ae-muted">BirkNext's own registered ID-porten TEST client. Never the browser login client above.</span>
-                                <label>Client ID <input class="form-control" @bind="_clientId" data-testid="ae-client-id" autocomplete="off" /></label>
-                                <label>Registered redirect URI <input class="form-control" @bind="_redirectUri" data-testid="ae-redirect" autocomplete="off" placeholder="https://…" /></label>
-                                <label>Scopes (space separated) <input class="form-control" @bind="_scopes" data-testid="ae-scopes" autocomplete="off" /></label>
-                                <label class="ae-check"><input type="checkbox" @bind="_enabled" data-testid="ae-enabled" /> Automated execution enabled for this environment</label>
-                                <button type="button" class="btn btn-primary btn-sm" data-testid="ae-save-client" disabled="@_busy" @onclick="SaveClientAsync">Save</button>
-                            </div>
-                        }
-                    </div>
-                }
-            </section>
-
-            <section class="ae-section" data-testid="ae-section-safety" aria-labelledby="ae-safety-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-safety-title" class="ae-h4">Execution safety</h4>
-                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(AltinnEnvironmentPresentation.SafetyState(_view))">@(AltinnEnvironmentPresentation.SafetyState(_view) == AltinnReadinessState.Ready ? "Ready" : "Blocked")</span>
-                    <span class="ae-muted" data-testid="ae-section-line">@AltinnEnvironmentPresentation.SafetyLine(_view)</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-toggle-safety" aria-expanded="@Expanded(_openSafety)" aria-controls="ae-safety-body" @onclick="() => _openSafety = !_openSafety">@(_openSafety ? "Hide" : "Review")</button>
-                </div>
-                @if (_openSafety)
-                {
-                    <div id="ae-safety-body">@FieldTable("Execution safety")</div>
-                }
-            </section>
-
-            <section class="ae-section" data-testid="ae-identities" aria-labelledby="ae-identities-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-identities-title" class="ae-h4">Test identities</h4>
-                    @if (_view.Summary.FirstOrDefault(item => item.Key == "identities") is { } identities)
-                    {
-                        <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(identities.State)">@AltinnEnvironmentPresentation.ReadinessLabel(identities)</span>
-                    }
-                    <span class="ae-muted" data-testid="ae-section-line">Reporter: @AltinnEnvironmentPresentation.IdentityLine(_view, "reporter") · Child: @AltinnEnvironmentPresentation.IdentityLine(_view, "child")</span>
-                    <a class="btn btn-secondary btn-sm" href="@AltinnEnvironmentPresentation.TestDataHref" data-testid="ae-manage-identities">Manage test identities</a>
-                </div>
-            </section>
-
-            @* Contract evidence (public metadata, app source, deployed-contract changes) and the interactive TestID fallback belong to the Altinn
-               system; consumers such as Skolenærvær only link here. Rendered on demand. *@
-            <section class="ae-section" data-testid="ae-contract" aria-labelledby="ae-contract-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-contract-title" class="ae-h4">Report contract</h4>
-                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(_view.Contract.State)" data-testid="ae-contract-state">@ContractLabel</span>
-                    <span class="ae-muted" data-testid="ae-section-line">Source: @_view.Contract.Reason</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-contract-toggle" aria-expanded="@Expanded(_contract)" aria-controls="ae-contract-body" @onclick="() => _contract = !_contract">@(_contract ? "Hide contract" : "Review contract")</button>
-                </div>
-                @if (_contract)
-                {
-                    <div id="ae-contract-body"><AltinnTestSetupPanel EnvironmentId="@EnvironmentId" /></div>
-                }
-            </section>
-
-            <section class="ae-section" data-testid="ae-runtime" aria-labelledby="ae-runtime-title">
-                <div class="ae-section-head">
-                    <h4 id="ae-runtime-title" class="ae-h4">Runtime</h4>
-                    @if (_view.Summary.FirstOrDefault(item => item.Key == "runtime") is { } runtime)
-                    {
-                        <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(runtime.State)">@AltinnEnvironmentPresentation.ReadinessLabel(runtime)</span>
-                    }
-                    <span class="ae-muted" data-testid="ae-section-line">Manual observations: @_view.Saved.RuntimeObservations.Count</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-observe-toggle" aria-expanded="@Expanded(_observeOpen)" aria-controls="ae-observe-form" @onclick="() => _observeOpen = !_observeOpen">@(_observeOpen ? "Cancel" : "Record observation")</button>
-                </div>
-                @if (_observeOpen)
-                {
-                    <div id="ae-observe-form" class="ae-form ae-inline" data-testid="ae-observe-form">
-                        <span class="ae-muted">Observations are evidence: they never prove BirkNext's unattended client, its secret, or MU/MM/downstream receipt.</span>
-                        <label>Observation
-                            <select class="form-select" @bind="_observationKind" data-testid="ae-observation-kind">
-                                @foreach (var kind in Enum.GetValues<AltinnRuntimeObservationKind>()) { <option value="@kind">@AltinnEnvironmentPresentation.ObservationLabel(kind)</option> }
-                            </select>
-                        </label>
-                        <label class="ae-check"><input type="checkbox" @bind="_observationSucceeded" /> Succeeded</label>
-                        <label>Note <input class="form-control" @bind="_observationNote" maxlength="500" /></label>
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="ae-record-observation" disabled="@_busy" @onclick="RecordObservationAsync">Record observation</button>
-                    </div>
-                }
-            </section>
-        </div>
-
-        @* G. Advanced details: how BirkNext knows it. *@
-        <section class="ae-section ae-advanced" data-testid="ae-advanced" aria-labelledby="ae-advanced-title">
-            <div class="ae-section-head">
-                <h4 id="ae-advanced-title" class="ae-h4">Advanced details</h4>
-                <span class="ae-muted">Every value with its state, source and candidates; internal references; public metadata; observations.</span>
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-advanced-toggle" aria-expanded="@Expanded(_advanced)" aria-controls="ae-advanced-body" @onclick="() => _advanced = !_advanced">@(_advanced ? "Hide advanced details" : "Show advanced details")</button>
             </div>
-            @if (_advanced)
-            {
-                <div id="ae-advanced-body" data-testid="ae-advanced-body">
-                    <p class="ae-muted" data-testid="ae-advanced-counts">@AltinnEnvironmentPresentation.DetectionLine(_view.Detection)</p>
-                    @foreach (var (group, label) in AltinnEnvironmentPresentation.Groups)
-                    {
-                        if (!_view.Fields.Any(field => field.Group == group)) continue;
-                        <h5 class="ae-h5">@label</h5>
-                        @FieldTable(group, evidence: true)
-                    }
-                    @if (_view.Saved.RuntimeObservations.Count > 0)
-                    {
-                        <h5 class="ae-h5">Runtime observations</h5>
-                        <ul class="ae-list" data-testid="ae-observations">
-                            @foreach (var observation in _view.Saved.RuntimeObservations)
-                            {
-                                <li>@AltinnEnvironmentPresentation.ObservationLabel(observation.Kind): @(observation.Succeeded ? "Observed successful" : "Observed failing") · @observation.EvidenceSource · @observation.ObservedAt.ToString("yyyy-MM-dd")@(string.IsNullOrEmpty(observation.Note) ? "" : $" · {observation.Note}")</li>
-                            }
-                        </ul>
-                    }
-                    @if (_view.AutomatedBlockers.Count > 0)
-                    {
-                        <h5 class="ae-h5">Automated execution blockers</h5>
-                        <ul class="ae-list">@foreach (var blocker in _view.AutomatedBlockers) { <li>@blocker</li> }</ul>
-                    }
-                </div>
-            }
-        </section>
-    }
-</section>
+        }
+    </Readiness>
+</ProviderDetailShell>
 
 @code {
-    /// <summary>One group's fields as a table. The default (section) table shows readable values; the evidence table adds the raw value of a
-    /// reference, each field's detail and every candidate.</summary>
-    private RenderFragment FieldTable(string group, bool evidence = false) => __builder =>
+    private ProviderDetailShell? _shell;
+
+    private string Title => $"Altinn{(_view is null ? "" : $" · {EnvironmentLabel}")}";
+
+    private RenderFragment? Placeholder => _view is null ? Loading : null;
+
+    private RenderFragment Loading => __builder =>
     {
-        var fields = _view!.Fields.Where(field => field.Group == group).ToList();
-        <table class="ae-table" data-testid="@(evidence ? "ae-evidence-table" : "ae-field-table")" data-group="@group">
-            <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">State</th><th scope="col">Source</th></tr></thead>
-            <tbody>
-                @foreach (var field in fields)
+        <p class="ae-muted" role="status" data-testid="ae-loading">@(_error is null ? "Loading the Altinn setup…" : "The Altinn setup is not available.")</p>
+    };
+
+    private RenderFragment BrowserNote => __builder =>
+    {
+        <p class="ae-muted ae-note-line" data-testid="ae-browser-note">Browser authentication evidence never configures BirkNext unattended execution.</p>
+    };
+
+    private RenderFragment ContractBody => __builder =>
+    {
+        <AltinnTestSetupPanel EnvironmentId="@EnvironmentId" />
+    };
+
+    private IReadOnlyList<ShellCard> Cards => _view is not { } view ? [] :
+        [.. view.Summary.Select(item => new ShellCard(item.Key, item.Label, AltinnEnvironmentPresentation.ReadinessLabel(item), AltinnEnvironmentPresentation.Tone(item.State),
+            AltinnEnvironmentPresentation.CardReason(item, view)))];
+
+    private IReadOnlyList<ShellFixGroup> FixGroups => _view is not { } view ? [] : [.. AltinnEnvironmentPresentation.ThingsToFix(view).Select(AltinnEnvironmentPresentation.ToShell)];
+
+    private IReadOnlyList<ShellProposal> Proposals => _view is not { } view ? [] :
+        [.. AltinnEnvironmentPresentation.Proposals(view).Select(field => new ShellProposal(field.Key, field.Label, AltinnEnvironmentPresentation.Display(field.Proposal!),
+            AltinnEnvironmentPresentation.StateLabel(field.Proposal!.State), field.Proposal.SourceLabel,
+            field.State == AltinnSettingState.Conflict ? AltinnEnvironmentPresentation.Display(field) : null, field.State == AltinnSettingState.Conflict))];
+
+    private string? DetectionLine => _view is { Detected: true } view ? AltinnEnvironmentPresentation.DetectionLine(view.Detection) : null;
+    private IReadOnlyList<string> Notes => _view is { Detected: true } view ? view.Notes : [];
+    private IReadOnlyList<string> InitiallyOpen => OpenContract ? ["contract"] : [];
+
+    private IReadOnlyList<ShellSection> Sections => _view is not { } view ? [] :
+    [
+        new("application", "Application", AltinnEnvironmentPresentation.ApplicationLine(view))
+        {
+            Body = Table("Application"),
+        },
+        new("browser", "Browser authentication", $"{AltinnEnvironmentPresentation.BrowserLine(view)} · Browser login observation: {AltinnEnvironmentPresentation.BrowserObservationLine(view)}")
+        {
+            ToggleLabel = "Review evidence", Body = BrowserBody,
+            Always = BrowserNote,
+        },
+        new("automated", "Automated execution", AltinnEnvironmentPresentation.AutomatedSettingsLine(view))
+        {
+            Status = AuthenticationLabel, Tone = AltinnEnvironmentPresentation.Tone(AuthenticationState), ToggleLabel = "Configure", Body = AutomatedBody, Always = SecretRow,
+        },
+        new("safety", "Execution safety", AltinnEnvironmentPresentation.SafetyLine(view))
+        {
+            Status = AltinnEnvironmentPresentation.SafetyState(view) == AltinnReadinessState.Ready ? "Ready" : "Blocked",
+            Tone = AltinnEnvironmentPresentation.Tone(AltinnEnvironmentPresentation.SafetyState(view)), Body = Table("Execution safety"),
+        },
+        new("identities", "Test identities", $"Reporter: {AltinnEnvironmentPresentation.IdentityLine(view, "reporter")} · Child: {AltinnEnvironmentPresentation.IdentityLine(view, "child")}")
+        {
+            Status = view.Summary.FirstOrDefault(item => item.Key == "identities") is { } identities ? AltinnEnvironmentPresentation.ReadinessLabel(identities) : null,
+            Tone = AltinnEnvironmentPresentation.Tone(view.Summary.FirstOrDefault(item => item.Key == "identities")?.State ?? AltinnReadinessState.NotAssessed),
+            LinkLabel = "Manage test identities", LinkHref = AltinnEnvironmentPresentation.TestDataHref, LinkTestId = "ae-manage-identities",
+        },
+        new("contract", "Report contract", $"Source: {view.Contract.Reason}")
+        {
+            Status = ContractLabel, Tone = AltinnEnvironmentPresentation.Tone(view.Contract.State), ToggleLabel = "Review contract",
+            Body = ContractBody,
+        },
+        new("runtime", "Runtime", $"Manual observations: {view.Saved.RuntimeObservations.Count}")
+        {
+            Status = view.Summary.FirstOrDefault(item => item.Key == "runtime") is { } runtime ? AltinnEnvironmentPresentation.ReadinessLabel(runtime) : null,
+            Tone = AltinnEnvironmentPresentation.Tone(view.Summary.FirstOrDefault(item => item.Key == "runtime")?.State ?? AltinnReadinessState.NotAssessed),
+            ToggleLabel = "Record observation", Body = ObservationBody,
+        },
+    ];
+
+    private RenderFragment Table(string group, bool evidence = false) => __builder =>
+    {
+        <ProviderFieldTable Prefix="ae" Group="@group" Evidence="evidence" Fields="@(_view!.Fields.Where(field => field.Group == group).ToList())" />
+    };
+
+    private RenderFragment BrowserBody => __builder =>
+    {
+        @Table("Browser authentication")
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-browser-record" aria-expanded="@Expanded(_browserForm)" aria-controls="ae-browser-form" @onclick="() => _browserForm = !_browserForm">@(_browserForm ? "Hide browser login observation" : "Record browser login observation")</button>
+        @if (_browserForm)
+        {
+            <div id="ae-browser-form" class="ae-form" data-testid="ae-browser-form">
+                <span class="ae-muted">Authorization request parameters only. A code, state, nonce, request_uri or token is refused.</span>
+                <label>Issuer <input class="form-control" @bind="_bIssuer" autocomplete="off" placeholder="https://test.idporten.no" /></label>
+                <label>Authentication level <input class="form-control" @bind="_bAcr" autocomplete="off" placeholder="idporten-loa-substantial" /></label>
+                <label>Observed browser client ID <input class="form-control" @bind="_bClient" autocomplete="off" /></label>
+                <label>Observed browser redirect URI <input class="form-control" @bind="_bRedirect" data-testid="ae-browser-redirect" autocomplete="off" placeholder="https://af.tt02.altinn.no/api/cb" /></label>
+                <label>Observed browser scopes (space separated) <input class="form-control" @bind="_bScopes" autocomplete="off" /></label>
+                <label>PKCE method <input class="form-control" @bind="_bPkce" autocomplete="off" placeholder="S256" /></label>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-record-browser" disabled="@_busy" @onclick="RecordBrowserAsync">Record observation</button>
+            </div>
+        }
+    };
+
+    private RenderFragment SecretRow => __builder =>
+    {
+        <div class="ae-secret-row" data-testid="ae-secret-row">
+            <span>Client secret: <strong data-testid="ae-secret-state">@SecretLabel</strong></span>
+            @if (!_secretOpen)
+            {
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-secret-reveal" aria-expanded="false" aria-controls="ae-secret-form" @onclick="() => _secretOpen = true">Add secret for this session</button>
+            }
+        </div>
+        @if (_secretOpen)
+        {
+            <div id="ae-secret-form" class="ae-form ae-secret" data-testid="ae-secret-form">
+                <label>Client secret for this session
+                    <input type="password" class="form-control" @bind="_secret" data-testid="ae-secret" autocomplete="new-password" aria-describedby="ae-secret-help" />
+                </label>
+                <span id="ae-secret-help" class="ae-muted">Held in backend memory until the backend restarts or the session expires. Never stored, logged, exported or shown.</span>
+                <div class="ae-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="ae-add-secret" disabled="@(_busy || string.IsNullOrEmpty(_secret))" @onclick="AddSecretAsync">Add session secret</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-secret-cancel" @onclick="CancelSecret">Cancel</button>
+                </div>
+            </div>
+        }
+    };
+
+    private RenderFragment AutomatedBody => __builder =>
+    {
+        @Table("Automated execution")
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-edit-client" aria-expanded="@Expanded(_clientForm)" aria-controls="ae-client-form" @onclick="() => _clientForm = !_clientForm">@(_clientForm ? "Hide unattended client" : "Edit unattended client")</button>
+        @if (_clientForm)
+        {
+            <div id="ae-client-form" class="ae-form" data-testid="ae-client-form">
+                <span class="ae-muted">BirkNext's own registered ID-porten TEST client. Never the browser login client above.</span>
+                <label>Client ID <input class="form-control" @bind="_clientId" data-testid="ae-client-id" autocomplete="off" /></label>
+                <label>Registered redirect URI <input class="form-control" @bind="_redirectUri" data-testid="ae-redirect" autocomplete="off" placeholder="https://…" /></label>
+                <label>Scopes (space separated) <input class="form-control" @bind="_scopes" data-testid="ae-scopes" autocomplete="off" /></label>
+                <label class="ae-check"><input type="checkbox" @bind="_enabled" data-testid="ae-enabled" /> Automated execution enabled for this environment</label>
+                <button type="button" class="btn btn-primary btn-sm" data-testid="ae-save-client" disabled="@_busy" @onclick="SaveClientAsync">Save</button>
+            </div>
+        }
+    };
+
+    private RenderFragment ObservationBody => __builder =>
+    {
+        <div id="ae-observe-form" class="ae-form ae-inline" data-testid="ae-observe-form">
+            <span class="ae-muted">Observations are evidence: they never prove BirkNext's unattended client, its secret, or MU/MM/downstream receipt.</span>
+            <label>Observation
+                <select class="form-select" @bind="_observationKind" data-testid="ae-observation-kind">
+                    @foreach (var kind in Enum.GetValues<AltinnRuntimeObservationKind>()) { <option value="@kind">@AltinnEnvironmentPresentation.ObservationLabel(kind)</option> }
+                </select>
+            </label>
+            <label class="ae-check"><input type="checkbox" @bind="_observationSucceeded" /> Succeeded</label>
+            <label>Note <input class="form-control" @bind="_observationNote" maxlength="500" /></label>
+            <button type="button" class="btn btn-primary btn-sm" data-testid="ae-record-observation" disabled="@_busy" @onclick="RecordObservationAsync">Record observation</button>
+        </div>
+    };
+
+    private RenderFragment Advanced => __builder =>
+    {
+        if (_view is not { } view) return;
+        <p class="ae-muted" data-testid="ae-advanced-counts">@AltinnEnvironmentPresentation.DetectionLine(view.Detection)</p>
+        @foreach (var (group, label) in AltinnEnvironmentPresentation.Groups)
+        {
+            if (!view.Fields.Any(field => field.Group == group)) continue;
+            <h5 class="ae-h5">@label</h5>
+            @Table(group, evidence: true)
+        }
+        @if (view.Saved.RuntimeObservations.Count > 0)
+        {
+            <h5 class="ae-h5">Runtime observations</h5>
+            <ul class="ae-list" data-testid="ae-observations">
+                @foreach (var observation in view.Saved.RuntimeObservations)
                 {
-                    <tr data-testid="@(evidence ? "ae-evidence-field" : "ae-field")" data-key="@field.Key" data-state="@field.State">
-                        <th scope="row">@field.Label @if (field.Requirement != AltinnRequirement.Optional) { <span class="ae-req">@AltinnEnvironmentPresentation.RequirementLabel(field.Requirement)</span> }</th>
-                        <td class="ae-value">
-                            @AltinnEnvironmentPresentation.Display(field)
-                            @if (evidence && field.DisplayValue is not null) { <span class="ae-req" data-testid="ae-raw-reference">ID/reference: @field.Value</span> }
-                        </td>
-                        <td><span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(field)" data-testid="ae-field-state">@AltinnEnvironmentPresentation.StateLabel(field)</span></td>
-                        <td class="ae-muted">@field.SourceLabel</td>
-                    </tr>
-                    @if (evidence && (field.Detail.Length > 0 || field.Candidates.Count > 1))
-                    {
-                        <tr class="ae-evidence" data-testid="ae-evidence"><td colspan="4">
-                            @field.Detail
-                            @if (field.Candidates.Count > 1)
-                            {
-                                <ul>@foreach (var candidate in field.Candidates) { <li>@candidate.SourceLabel: @AltinnEnvironmentPresentation.Display(candidate)@(candidate.DisplayValue is null ? "" : $" ({candidate.Value})") (@AltinnEnvironmentPresentation.StateLabel(candidate.State))</li> }</ul>
-                            }
-                        </td></tr>
-                    }
+                    <li>@AltinnEnvironmentPresentation.ObservationLabel(observation.Kind): @(observation.Succeeded ? "Observed successful" : "Observed failing") · @observation.EvidenceSource · @observation.ObservedAt.ToString("yyyy-MM-dd")@(string.IsNullOrEmpty(observation.Note) ? "" : $" · {observation.Note}")</li>
                 }
-            </tbody>
-        </table>
+            </ul>
+        }
+        @if (view.AutomatedBlockers.Count > 0)
+        {
+            <h5 class="ae-h5">Automated execution blockers</h5>
+            <ul class="ae-list">@foreach (var blocker in view.AutomatedBlockers) { <li>@blocker</li> }</ul>
+        }
     };
 
     private static string Expanded(bool open) => open ? "true" : "false";
 
-    private bool _advanced, _blockers, _openApplication, _openBrowser, _browserForm, _openAutomated, _clientForm, _secretOpen, _openSafety, _observeOpen;
+    private bool _blockers, _browserForm, _clientForm, _secretOpen;
 
     private AltinnReadinessState AuthenticationState => _view?.Summary.FirstOrDefault(item => item.Key == "authentication")?.State ?? AltinnReadinessState.NotAssessed;
     private string AuthenticationLabel => _view?.Summary.FirstOrDefault(item => item.Key == "authentication") is { } item ? AltinnEnvironmentPresentation.ReadinessLabel(item) : "Not assessed";
@@ -376,25 +248,24 @@
 
     private void CancelSecret() { _secret = null; _secretOpen = false; }
 
-    /// <summary>A "things to fix" action: run Detect, or open the one section that resolves the group.</summary>
-    private async Task FixAsync(AltinnEnvironmentPresentation.FixAction kind)
+    /// <summary>A "things to fix" action: run Detect, apply exactly the listed suggestions, or open the section that resolves the group.</summary>
+    private async Task FixAsync(ShellFixGroup group)
     {
+        if (!Enum.TryParse<AltinnEnvironmentPresentation.FixAction>(group.Action, out var kind)) return;
         switch (kind)
         {
             case AltinnEnvironmentPresentation.FixAction.Detect: await DetectAsync(); break;
-            case AltinnEnvironmentPresentation.FixAction.Application: _openApplication = true; break;
-            case AltinnEnvironmentPresentation.FixAction.Automated: _openAutomated = true; _clientForm = true; break;
-            case AltinnEnvironmentPresentation.FixAction.Safety: _openSafety = true; break;
-            case AltinnEnvironmentPresentation.FixAction.Contract: _contract = true; break;
+            case AltinnEnvironmentPresentation.FixAction.ApplySuggested: await ApplyAsync(group.ApplyKeys); break;
+            case AltinnEnvironmentPresentation.FixAction.Application: _shell?.OpenSection("application"); break;
+            case AltinnEnvironmentPresentation.FixAction.Automated: _clientForm = true; _shell?.OpenSection("automated"); break;
+            case AltinnEnvironmentPresentation.FixAction.Safety: _shell?.OpenSection("safety"); break;
+            case AltinnEnvironmentPresentation.FixAction.Contract: _shell?.OpenSection("contract"); break;
         }
     }
 
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
     /// <summary>Open the contract evidence directly (a consumer's "Review contract" link).</summary>
     [Parameter] public bool OpenContract { get; set; }
-    private bool _contract;
-
-    protected override void OnInitialized() => _contract = OpenContract;
 
     // Resolved optionally: a host without the Altinn API (e.g. a reduced test host) shows "not available" instead of failing the page.
     private IAltinnEnvironmentApiService Api => (Services.GetService(typeof(IAltinnEnvironmentApiService)) as IAltinnEnvironmentApiService)!;
@@ -437,7 +308,7 @@
         else _error = result.Error;
     }
 
-    private void Toggle(string key, bool on) { if (on) _selected.Add(key); else _selected.Remove(key); }
+    private void Toggle((string Key, bool On) change) { if (change.On) _selected.Add(change.Key); else _selected.Remove(change.Key); }
 
     private async Task Run(Func<Task> action)
     {
@@ -453,13 +324,17 @@
         if (result.Value is { } view) foreach (var field in AltinnEnvironmentPresentation.Proposals(view).Where(field => field.State != AltinnSettingState.Conflict)) _selected.Add(field.Key);
     });
 
-    private Task ApplySelectedAsync() => Run(async () =>
+    private Task ApplySelectedAsync() => ApplyAsync([.. _selected]);
+
+    /// <summary>Saves exactly the named proposals (selected ones, or the suggestions a "things to fix" group lists) — never anything else.</summary>
+    private Task ApplyAsync(IReadOnlyCollection<string> keys) => Run(async () =>
     {
         if (_view is null) return;
-        var chosen = AltinnEnvironmentPresentation.Proposals(_view).Where(field => _selected.Contains(field.Key)).Select(field => (field.Key, field.Proposal!.Value!)).ToList();
+        var chosen = AltinnEnvironmentPresentation.Proposals(_view).Where(field => keys.Contains(field.Key)).Select(field => (field.Key, field.Proposal!.Value!)).ToList();
+        if (chosen.Count == 0) return;
         var result = await Api.SaveAsync(EnvironmentId, AltinnEnvironmentPresentation.Apply(chosen));
         Show(result, result.Value is null ? null : $"Applied {chosen.Count} value{(chosen.Count == 1 ? "" : "s")} to this Target Environment.");
-        if (result.Value is not null) _selected.Clear();
+        if (result.Value is not null) _selected.ExceptWith(chosen.Select(item => item.Key));
     });
 
     private Task SaveClientAsync() => Run(async () =>
@@ -493,6 +368,6 @@
     {
         var result = await Api.RecordObservationAsync(EnvironmentId, new AltinnRuntimeObservationRequest(_observationKind, _observationSucceeded, _observationNote));
         Show(result, "Runtime observation recorded.");
-        if (result.Value is not null) { _observeOpen = false; _observationNote = null; }
+        if (result.Value is not null) { _shell?.CloseSection("runtime"); _observationNote = null; }
     });
 }

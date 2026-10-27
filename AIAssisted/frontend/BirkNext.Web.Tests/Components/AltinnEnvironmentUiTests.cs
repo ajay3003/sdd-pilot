@@ -67,13 +67,13 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Find("[data-testid=ae-title]").TextContent.Should().Be("Altinn · TT02");
         cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Ready");
         cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Blocked").And.Contain("redirect URI");
-        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("2 things need attention");
+        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("3 things need attention");
         foreach (var toggle in new[] { "ae-toggle-application", "ae-toggle-browser", "ae-toggle-automated" }) cut.Find($"[data-testid={toggle}]").Click();
         State(cut, "environment").Should().Be("Suggested", "a test-pack default is a suggestion, never 'configured'");
         State(cut, "form-data-type").Should().Be("Detected from source", "source evidence is not deployed runtime");
         State(cut, "browser-redirect").Should().Be("Observed");
         State(cut, "client-secret").Should().Be("Available for this session");
-        cut.Find("[data-testid=ae-field][data-key=client-secret] .ae-value").TextContent.Should().Be("—", "a secret value is never shown");
+        cut.Find("[data-testid=ae-field][data-key=client-secret] .pft-value").TextContent.Should().Be("—", "a secret value is never shown");
         cut.Find("[data-testid=ae-browser-note]").TextContent.Should().Contain("never configures BirkNext unattended execution");
         cut.Find("[data-testid=ae-manage-identities]").GetAttribute("href").Should().Be("/test-data");
         cut.Markup.Should().NotContain("PowerShell").And.NotContain(".ps1");
@@ -93,9 +93,9 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=ae-detection-line]").TextContent.Should().Be("1 configured · 2 detected · 1 runtime observation · 1 value missing · 0 conflicts"));
         _api.Calls.Should().Equal("get", "detect");
         _api.Saved.Should().BeEmpty("detection is not a save");
-        cut.FindAll("[data-testid=ae-proposals] .ae-proposal").Select(item => item.GetAttribute("data-key")).Should().Equal("environment", "form-data-type");
+        cut.FindAll("[data-testid=ae-proposals] [data-testid=ae-proposal]").Select(item => item.GetAttribute("data-key")).Should().Equal("environment", "form-data-type");
 
-        cut.Find("[data-testid=ae-proposals] .ae-proposal[data-key=environment] input").Change(false);
+        cut.Find("[data-testid=ae-proposals] [data-testid=ae-proposal][data-key=environment] input").Change(false);
         cut.Find("[data-testid=ae-apply]").Click();
         cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
         _api.Saved[0].FormDataType.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
@@ -258,7 +258,7 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Markup.Should().Contain("https://test.idporten.no/token");
         cut.Find("[data-testid=ae-fix-group][data-key=automated] [data-testid=ae-fix-action]").Click();
         cut.Find("[data-testid=ae-client-form]").TextContent.Should().Contain("Never the browser login client");
-        cut.Find("[data-testid=ae-observe-toggle]").Click();
+        cut.Find("[data-testid=ae-toggle-runtime]").Click();
         cut.Find("[data-testid=ae-observe-form]");
         cut.Find("[data-testid=ae-advanced-toggle]").Click();
         cut.Find("[data-testid=ae-evidence-field][data-key=integration] [data-testid=ae-raw-reference]").TextContent.Should().Contain(IntegrationRef);
@@ -292,6 +292,38 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         AltinnEnvironmentPresentation.ThingsToFix(view with { Detected = false }).First().Action.Should().Be("Detect settings");
         AltinnEnvironmentPresentation.ManualLine(view).Should().NotContain("Client").And.NotContain("secret").And.NotContain("Trusted");
         AltinnEnvironmentPresentation.CardReason(view.Summary.Single(item => item.Key == "runtime"), view).Should().BeEmpty("runtime Not verified is its own state, not a configuration gap");
+    }
+
+    [Fact]
+    public void Suggested_form_and_content_type_are_not_applied_things_to_fix_and_apply_saves_exactly_them()
+    {
+        const string Pack = "Test Pack reference · OpenAPI";
+        var suggestion = (string value) => new AltinnSettingCandidate(value, AltinnSettingState.Declared, AltinnSettingSource.TestPack, Pack);
+        var view = Skolenaervaer() with
+        {
+            Detected = false,
+            Summary = [.. Skolenaervaer().Summary.Select(item => item.Key == "app" ? item with { State = AltinnReadinessState.Partial } : item)],
+            Fields = [.. Skolenaervaer().Fields.Select(field => field.Key switch
+            {
+                "form-data-type" => field with { Value = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn", State = AltinnSettingState.Declared, SourceLabel = Pack, Proposal = suggestion("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn") },
+                "content-type" => field with { Value = "application/xml", State = AltinnSettingState.Declared, SourceLabel = Pack, Proposal = suggestion("application/xml") },
+                _ => field,
+            })],
+        };
+        _api.Next = view;
+        var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-fix]"));
+
+        cut.FindAll("[data-testid=ae-fix-group][data-key=application] [data-testid=ae-fix-item]").Select(item => item.TextContent.Trim()).Should()
+            .Equal($"Form data type · Not applied · Suggested by {Pack}", $"Content type · Not applied · Suggested by {Pack}");
+        cut.Find("[data-testid=ae-card][data-key=app] [data-testid=ae-card-reason]").TextContent.Should().Be("2 not applied");
+        _api.Saved.Should().BeEmpty("nothing is applied silently");
+
+        cut.Find("[data-testid=ae-fix-group][data-key=application] [data-testid=ae-fix-action]").Click();
+
+        cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
+        _api.Saved[0].Should().Match<AltinnEnvironmentSettingsUpdate>(update => update.FormDataType == "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn"
+            && update.ContentType == "application/xml" && update.IntegrationId == null && update.Environment == null);
     }
 
     private sealed class FakeApi : IAltinnEnvironmentApiService

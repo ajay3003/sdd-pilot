@@ -468,4 +468,61 @@ public sealed class AltinnEnvironmentTests
         contract.State.Should().NotBe(AltinnReadinessState.Blocked);
         contract.Reason.Should().NotContain("No contract evidence");
     }
+    // ── Suggested != configured (Altinn) ──
+
+    [Fact]
+    public async Task Test_pack_only_form_and_content_type_are_not_applied_and_block_until_applied()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        bed.Packs.Add(bed.SkoleNaervaerPack());
+        bed.Flows.Contract = new AltinnAppContractRecord(null, new AltinnContractSnapshot { AppId = AltinnTestKit.AppId });
+
+        var before = await bed.View();
+
+        Field(before, "form-data-type").State.Should().Be(AltinnSettingState.Declared);
+        before.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial, "a suggested form data type is not configuration");
+        before.ManualMissing.Should().Contain("Form data type (not applied)");
+        before.AutomatedBlockers.Should().Contain("Content type: not applied");
+        before.Detection.ActionableGaps.Should().Contain(gap => gap.StartsWith("Not applied: Form data type"));
+        (await bed.Db.AltinnEnvironmentSettings.CountAsync()).Should().Be(0, "viewing never applies a suggestion");
+
+        (await bed.Store.UpdateAsync(Env, new() { FormDataType = Field(before, "form-data-type").Proposal!.Value, ContentType = Field(before, "content-type").Proposal!.Value }))
+            .Problems.Should().BeEmpty();
+        var after = await bed.View();
+
+        Field(after, "form-data-type").State.Should().Be(AltinnSettingState.Configured);
+        after.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, "readiness recalculates after Apply");
+        after.AutomatedBlockers.Should().NotContain(blocker => blocker.StartsWith("Content type"));
+    }
+
+    [Fact]
+    public async Task A_suggested_app_does_not_make_the_app_ready_but_detected_iqr_values_still_do()
+    {
+        var suggested = await new Bed().View();
+        Field(suggested, "app").State.Should().Be(AltinnSettingState.Declared);
+        suggested.Summary.Single(item => item.Key == "app").State.Should().Be(AltinnReadinessState.Partial);
+        suggested.ManualMissing.Should().Contain(["Altinn environment (not applied)", "App identifier (not applied)"]);
+
+        var bed = new Bed();
+        ManualReady(bed);
+        var detected = await bed.View();
+        Field(detected, "app").State.Should().Be(AltinnSettingState.Detected, "the IQR binding is evidence BirkNext already uses");
+        detected.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready);
+    }
+
+    [Fact]
+    public async Task An_optional_suggestion_never_blocks_and_a_conflict_still_does()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        (await bed.Store.UpdateAsync(Env, new() { FormDataType = "other-model" })).Problems.Should().BeEmpty();
+
+        var view = await bed.View();
+
+        Field(view, "form-data-type").State.Should().Be(AltinnSettingState.Conflict);
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial);
+        view.ManualMissing.Should().Contain("Form data type (conflict)");
+        view.Fields.Where(field => field.Requirement == AltinnRequirement.Optional).Should().NotContain(field => view.Detection.ActionableGaps.Any(gap => gap.Contains(field.Label)));
+    }
 }

@@ -55,6 +55,9 @@ public sealed record ExternalIntegrationView
     public ExternalIntegration Integration { get; init; } = new();
     public IReadOnlyList<AltinnSettingField> Fields { get; init; } = [];
     public ExternalIntegrationSummary Summary { get; init; } = new(Empty("configuration"), Empty("dependencies"), Empty("authentication"), Empty("runtime"), Empty("execution"));
+    /// <summary>The provider's own summary cards for its detail view (e.g. REST API: Configuration, Authentication, Contract, Runtime,
+    /// Execution). Empty means the five <see cref="Summary"/> dimensions.</summary>
+    public IReadOnlyList<SetupReadinessItem> Dimensions { get; init; } = [];
     public IReadOnlyList<SetupDependencyResolution> Dependencies { get; init; } = [];
     public AltinnDetectionSummary Detection { get; init; } = new(0, 0, 0, 0, 0, []);
     public bool Detected { get; init; }

@@ -466,4 +466,52 @@ public sealed class ExternalIntegrationSetupTests
         (await bed.Store.GetAsync(Other)).AppIdentifier.Should().Be("buf/skolenaervaer");
         (await library.GetAsync(item.Id, CancellationToken.None))!.LastPreflight.Should().StartWith("Applied");
     }
+    // ── Suggested/detected != configured (generic providers) ──
+
+    [Fact]
+    public async Task A_detected_required_value_is_not_applied_until_saved_and_detection_never_saves()
+    {
+        var bed = new Bed();
+        var service = bed.Integrations();
+        (await service.SaveAsync(Env, null, new("Person API", ExternalProviderType.RestApi, "QA", true, new() { ["authScheme"] = "None" }), "Configured manually", CancellationToken.None))
+            .Problems.Should().BeEmpty();
+        bed.Catalog.Add(new IntegrationDefinition { Id = "p", EnvironmentId = Env, DisplayName = "Person", Kind = IntegrationKind.HttpApi, EndpointOrTopic = "https://person.qa.example/api" });
+        var id = (await service.ListAsync(Env, CancellationToken.None))[0].Id;
+
+        var detected = (await service.ViewOneAsync(Env, id, detect: true, CancellationToken.None))!;
+
+        detected.Fields.Single(field => field.Key == "baseUrl").State.Should().Be(AltinnSettingState.Detected);
+        detected.Summary.Configuration.State.Should().NotBe(SetupReadinessState.Ready, "a detected value satisfies nothing until it is applied");
+        detected.Summary.Configuration.Reason.Should().Contain("Not applied: Base URL");
+        detected.Detection.ActionableGaps.Should().Contain("Not applied: Base URL");
+        (await service.GetAsync(Env, id, CancellationToken.None))!.Settings.Should().NotContainKey("baseUrl", "detection never saves");
+
+        (await service.SaveAsync(Env, id, new("Person API", ExternalProviderType.RestApi, "QA", true, new() { ["authScheme"] = "None", ["baseUrl"] = "https://person.qa.example/api" }),
+            "Configured manually", CancellationToken.None)).Problems.Should().BeEmpty();
+        var applied = (await service.ViewOneAsync(Env, id, detect: false, CancellationToken.None))!;
+        applied.Fields.Single(field => field.Key == "baseUrl").State.Should().Be(AltinnSettingState.Configured);
+        applied.Summary.Configuration.State.Should().Be(SetupReadinessState.Ready, "readiness recalculates after Apply");
+    }
+
+    [Fact]
+    public async Task Providers_supply_their_own_dimensions_rest_has_a_contract_and_service_bus_does_not()
+    {
+        var bed = new Bed();
+        var service = bed.Integrations();
+        (await service.SaveAsync(Env, null, new("Person API", ExternalProviderType.RestApi, "QA", true, new() { ["baseUrl"] = "https://person.qa.example/api", ["openApiUrl"] = "https://person.qa.example/swagger.json" }),
+            "Configured manually", CancellationToken.None)).Problems.Should().BeEmpty();
+        (await service.SaveAsync(Env, null, new("Bus", ExternalProviderType.AzureServiceBus, null, true, new() { ["namespace"] = "sb-qa.servicebus.windows.net", ["entityType"] = "Topic" }),
+            "Configured manually", CancellationToken.None)).Problems.Should().BeEmpty();
+
+        var views = (await service.ViewAsync(Env, detect: false, CancellationToken.None)).Integrations;
+        var rest = views.Single(view => view.Integration.ProviderType == ExternalProviderType.RestApi);
+        var bus = views.Single(view => view.Integration.ProviderType == ExternalProviderType.AzureServiceBus);
+
+        rest.Dimensions.Select(item => item.Key).Should().Equal("configuration", "authentication", "contract", "runtime", "execution");
+        rest.Dimensions.Single(item => item.Key == "contract").State.Should().Be(SetupReadinessState.Ready);
+        rest.Fields.Single(field => field.Key == "openApiUrl").Group.Should().Be("Contract");
+        bus.Dimensions.Select(item => item.Key).Should().Equal("configuration", "authentication", "runtime", "execution");
+        bus.Fields.Should().NotContain(field => field.Key == "baseUrl" || field.Key == "openApiUrl", "provider fields stay isolated");
+        bus.Summary.Configuration.Reason.Should().Contain("Missing: Queue / topic");
+    }
 }

@@ -1,0 +1,189 @@
+@using BirkNext.Web.Services
+
+@* The compact detail view every connected system shares: Summary → Things to fix → Detected settings → provider sections → Advanced
+   details. The default view answers what is ready, what is missing, what BirkNext can fill and what to do; how BirkNext knows it sits one
+   click deeper. Providers supply the content (cards, fix groups, proposals, sections, advanced detail) and the shell owns the layout and the
+   disclosure state. Every disclosure is a real button with aria-expanded/aria-controls. Apply is always explicit: the shell only reports
+   which proposals are selected. Test ids are "{Prefix}-…" so each provider keeps stable hooks. *@
+<section class="ps" data-testid="@Prefix" aria-labelledby="@($"{Prefix}-title")">
+    <header class="ps-head">
+        <h3 id="@($"{Prefix}-title")" class="ps-title" data-testid="@($"{Prefix}-title")">@Title</h3>
+        @if (HeaderActions is not null) { <div class="ps-actions">@HeaderActions</div> }
+    </header>
+    @Banner
+
+    @if (Placeholder is not null)
+    {
+        @Placeholder
+    }
+    else
+    {
+        <dl class="ps-summary" data-testid="@($"{Prefix}-summary")">
+            @foreach (var card in Cards)
+            {
+                <div data-key="@card.Key" data-testid="@($"{Prefix}-card")">
+                    <dt>@card.Label</dt>
+                    <dd>
+                        <span class="ps-pill ps-pill-@card.Tone">@card.Status</span>
+                        @if (card.Reason.Length > 0) { <span class="ps-card-reason" data-testid="@($"{Prefix}-card-reason")">@card.Reason</span> }
+                    </dd>
+                </div>
+            }
+        </dl>
+
+        @Readiness
+
+        @if (FixGroups.Count > 0)
+        {
+            var count = FixGroups.Sum(group => group.Items.Count);
+            <section class="ps-fix" data-testid="@($"{Prefix}-fix")" aria-labelledby="@($"{Prefix}-fix-title")">
+                <h4 id="@($"{Prefix}-fix-title")" class="ps-h4">Things to fix</h4>
+                <p class="ps-fix-count" data-testid="@($"{Prefix}-fix-count")">@count thing@(count == 1 ? " needs" : "s need") attention</p>
+                <div class="ps-fix-groups">
+                    @foreach (var group in FixGroups)
+                    {
+                        <div class="ps-fix-group" data-testid="@($"{Prefix}-fix-group")" data-key="@group.Key">
+                            <div class="ps-fix-head"><strong>@group.Title</strong> <span class="ps-muted">Owner: @group.Owner</span></div>
+                            <ul class="ps-list">
+                                @foreach (var item in group.Items) { <li data-testid="@($"{Prefix}-fix-item")">@item.Label <span class="ps-muted">· @item.Problem</span></li> }
+                            </ul>
+                            @if (group.Href is { } href)
+                            {
+                                <a class="btn btn-secondary btn-sm" href="@href" data-testid="@($"{Prefix}-fix-action")">@group.ActionLabel</a>
+                            }
+                            else
+                            {
+                                var current = group;
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{Prefix}-fix-action")" disabled="@Busy" @onclick="() => FixAsync(current)">@group.ActionLabel</button>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        @if (Proposals.Count > 0 || DetectionLine is not null || Notes.Count > 0)
+        {
+            <section class="ps-detected" data-testid="@($"{Prefix}-detection")" aria-labelledby="@($"{Prefix}-detected-title")">
+                <h4 id="@($"{Prefix}-detected-title")" class="ps-h4">Detected settings</h4>
+                @if (DetectionLine is not null) { <p class="ps-muted" data-testid="@($"{Prefix}-detection-line")">@DetectionLine</p> }
+                @if (Proposals.Count > 0)
+                {
+                    <fieldset class="ps-proposals" data-testid="@($"{Prefix}-proposals")">
+                        <legend>Select the values to save (nothing is saved until you apply)</legend>
+                        @foreach (var proposal in Proposals)
+                        {
+                            var key = proposal.Key;
+                            <label class="ps-proposal" data-testid="@($"{Prefix}-proposal")" data-key="@key">
+                                <input type="checkbox" checked="@Selected.Contains(key)" @onchange="e => OnToggle.InvokeAsync((key, e.Value is true))" />
+                                <span class="ps-proposal-body">
+                                    <span class="ps-proposal-label">@proposal.Label</span>
+                                    <span class="ps-proposal-value" data-testid="@($"{Prefix}-proposal-value")">@proposal.Value</span>
+                                    <span class="ps-muted">@proposal.State · Source: @proposal.Source@(proposal.Current is { } current ? $" · current: {current}" : "")</span>
+                                </span>
+                            </label>
+                        }
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="@($"{Prefix}-apply")" disabled="@(Busy || Selected.Count == 0)" @onclick="() => OnApply.InvokeAsync()">Apply selected</button>
+                    </fieldset>
+                }
+                else
+                {
+                    <p class="ps-muted" data-testid="@($"{Prefix}-no-proposals")">No new values to apply.</p>
+                }
+                @foreach (var note in Notes) { <p class="ps-muted" data-testid="@($"{Prefix}-note")">@note</p> }
+            </section>
+        }
+
+        <div class="ps-sections">
+            @foreach (var part in Sections)
+            {
+                var key = part.Key;
+                var open = _open.Contains(key);
+                <section class="ps-section" data-testid="@($"{Prefix}-section-{key}")" aria-labelledby="@($"{Prefix}-{key}-title")">
+                    <div class="ps-section-head">
+                        <h4 id="@($"{Prefix}-{key}-title")" class="ps-h4">@part.Title</h4>
+                        @if (part.Status is { } status) { <span class="ps-pill ps-pill-@part.Tone" data-testid="@($"{Prefix}-section-status")">@status</span> }
+                        <span class="ps-muted ps-line" data-testid="@($"{Prefix}-section-line")">@part.Summary</span>
+                        @if (part.Body is not null)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{Prefix}-toggle-{key}")" aria-expanded="@Expanded(open)"
+                                    aria-controls="@($"{Prefix}-{key}-body")" @onclick="() => Toggle(key)">@(open ? "Hide" : part.ToggleLabel)</button>
+                        }
+                        else if (part.LinkHref is { } link)
+                        {
+                            <a class="btn btn-secondary btn-sm" href="@link" data-testid="@(part.LinkTestId ?? $"{Prefix}-link-{key}")">@part.LinkLabel</a>
+                        }
+                    </div>
+                    @part.Always
+                    @if (open && part.Body is not null)
+                    {
+                        <div id="@($"{Prefix}-{key}-body")" class="ps-section-body" data-testid="@($"{Prefix}-{key}-body")">@part.Body</div>
+                    }
+                </section>
+            }
+        </div>
+
+        @if (Advanced is not null)
+        {
+            <section class="ps-section ps-advanced" data-testid="@($"{Prefix}-advanced")" aria-labelledby="@($"{Prefix}-advanced-title")">
+                <div class="ps-section-head">
+                    <h4 id="@($"{Prefix}-advanced-title")" class="ps-h4">Advanced details</h4>
+                    <span class="ps-muted ps-line">Every value with its state, source and candidates; internal references and evidence.</span>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{Prefix}-advanced-toggle")" aria-expanded="@Expanded(_advanced)"
+                            aria-controls="@($"{Prefix}-advanced-body")" @onclick="() => _advanced = !_advanced">@(_advanced ? "Hide advanced details" : "Show advanced details")</button>
+                </div>
+                @if (_advanced)
+                {
+                    <div id="@($"{Prefix}-advanced-body")" data-testid="@($"{Prefix}-advanced-body")">@Advanced</div>
+                }
+            </section>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>Test-id and element-id prefix (e.g. "ae" for Altinn, "gp" for a generic provider).</summary>
+    [Parameter, EditorRequired] public string Prefix { get; set; } = "ps";
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    /// <summary>Errors and notices shown under the header.</summary>
+    [Parameter] public RenderFragment? Banner { get; set; }
+    /// <summary>Shown instead of the body while loading or unavailable.</summary>
+    [Parameter] public RenderFragment? Placeholder { get; set; }
+    [Parameter] public IReadOnlyList<ShellCard> Cards { get; set; } = [];
+    /// <summary>Optional provider readiness detail between the cards and the things to fix (e.g. Altinn manual vs automated).</summary>
+    [Parameter] public RenderFragment? Readiness { get; set; }
+    [Parameter] public IReadOnlyList<ShellFixGroup> FixGroups { get; set; } = [];
+    /// <summary>A fix action without a link: the shell opens its section (when named) and then reports the group to the provider.</summary>
+    [Parameter] public EventCallback<ShellFixGroup> OnFix { get; set; }
+    [Parameter] public IReadOnlyList<ShellProposal> Proposals { get; set; } = [];
+    [Parameter] public IReadOnlySet<string> Selected { get; set; } = new HashSet<string>();
+    [Parameter] public EventCallback<(string Key, bool On)> OnToggle { get; set; }
+    [Parameter] public EventCallback OnApply { get; set; }
+    [Parameter] public string? DetectionLine { get; set; }
+    [Parameter] public IReadOnlyList<string> Notes { get; set; } = [];
+    [Parameter] public IReadOnlyList<ShellSection> Sections { get; set; } = [];
+    [Parameter] public RenderFragment? Advanced { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    /// <summary>Sections open on first render (e.g. a deep link to the contract).</summary>
+    [Parameter] public IReadOnlyList<string> InitiallyOpen { get; set; } = [];
+
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+    private bool _advanced;
+
+    protected override void OnInitialized() => _open.UnionWith(InitiallyOpen);
+
+    private static string Expanded(bool open) => open ? "true" : "false";
+    private void Toggle(string key) { if (!_open.Remove(key)) _open.Add(key); }
+
+    public void OpenSection(string key) { _open.Add(key); StateHasChanged(); }
+    public void CloseSection(string key) { _open.Remove(key); StateHasChanged(); }
+    public void OpenAdvanced(bool open = true) { _advanced = open; StateHasChanged(); }
+    public bool IsOpen(string key) => _open.Contains(key);
+
+    private async Task FixAsync(ShellFixGroup group)
+    {
+        if (group.OpenSection is { } section) _open.Add(section);
+        await OnFix.InvokeAsync(group);
+    }
+}

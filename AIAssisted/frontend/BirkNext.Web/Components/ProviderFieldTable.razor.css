@@ -1,0 +1,13 @@
+.pft { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
+.pft th, .pft td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--clr-border, #d0d7de); vertical-align: top; overflow-wrap: anywhere; }
+.pft thead th { font-size: .75rem; color: var(--clr-text-muted, #5f6368); font-weight: 600; }
+.pft-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; }
+.pft-req { display: block; font-weight: 400; font-size: .72rem; color: var(--clr-text-muted, #5f6368); }
+.pft-muted { color: var(--clr-text-muted, #5f6368); font-size: .82rem; }
+.pft-evidence td { background: var(--clr-bg-subtle, #f6f8fa); font-size: .8rem; }
+.pft-pill { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.pft-pill-ok { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
+.pft-pill-info { background: color-mix(in sRGB, var(--clr-info, #2563eb) 10%, transparent); color: var(--clr-text, #1f2328); }
+.pft-pill-warn { background: color-mix(in sRGB, var(--clr-warning, #d97706) 14%, transparent); color: var(--clr-warning, #b45309); }
+.pft-pill-muted { background: color-mix(in sRGB, var(--clr-text-muted, #5f6368) 12%, transparent); color: var(--clr-text-muted, #5f6368); }
+@media (max-width: 640px) { .pft thead { display: none; } .pft tr { display: grid; } }

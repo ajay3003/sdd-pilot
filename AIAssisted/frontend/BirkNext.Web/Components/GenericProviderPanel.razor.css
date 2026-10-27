@@ -1,0 +1,10 @@
+/* Generic connected system content inside the shared shell. */
+.gp-banner { margin: 0; padding: .5rem .75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; font-size: .85rem; }
+.gp-banner-error { border-color: var(--clr-danger, #b42318); color: var(--clr-danger, #b42318); }
+.gp-muted { color: var(--clr-text-muted, #5f6368); font-size: .82rem; }
+.gp-h5 { margin: .6rem 0 .3rem; font-size: .82rem; font-weight: 600; }
+.gp-list { margin: .3rem 0; padding-left: 1.2rem; font-size: .85rem; overflow-wrap: anywhere; }
+.gp-secret-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .85rem; }
+.gp-form { display: grid; gap: .45rem; max-width: 36rem; }
+.gp-form label { display: grid; gap: .2rem; font-size: .82rem; }
+.gp-actions { display: flex; flex-wrap: wrap; gap: .4rem; }

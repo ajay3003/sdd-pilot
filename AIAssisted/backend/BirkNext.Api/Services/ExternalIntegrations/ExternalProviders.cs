@@ -11,7 +11,7 @@ namespace BirkNext.Api.Services.ExternalIntegrations;
 /// </summary>
 public static class ExternalProviderCatalog
 {
-    private const string App = "Application", Auth = "Authentication", Conn = "Connection", Refs = "References";
+    public const string App = "Application", Auth = "Authentication", Conn = "Connection", Refs = "References", Contract = "Contract";
     private static readonly string[] AuthSchemes = ["None", "OAuth2ClientCredentials", "ManagedIdentity", "ApiKeyHeader", "MutualTls"];
     private static readonly string[] AzureAuth = ["ManagedIdentity", "ServicePrincipal", "SharedAccessSignature"];
 
@@ -34,7 +34,7 @@ public static class ExternalProviderCatalog
         new(ExternalProviderType.RestApi, "REST API", "An HTTP API described by OpenAPI.",
         [
             new("baseUrl", "Base URL", Conn, ProviderFieldKind.Url, true, true),
-            new("openApiUrl", "OpenAPI / Swagger URL", Conn, ProviderFieldKind.Url, false, true),
+            new("openApiUrl", "OpenAPI / Swagger URL", Contract, ProviderFieldKind.Url, false, true),
             new("healthEndpoint", "Health endpoint", Conn, ProviderFieldKind.Url, false, true),
             new("contentTypes", "Content types", Conn, ProviderFieldKind.List, false, true),
             new("authScheme", "Auth scheme", Auth, ProviderFieldKind.Choice, false, true, "", AuthSchemes),
@@ -45,7 +45,7 @@ public static class ExternalProviderCatalog
         new(ExternalProviderType.GraphQl, "GraphQL", "A GraphQL endpoint.",
         [
             new("endpoint", "Endpoint", Conn, ProviderFieldKind.Url, true, true),
-            new("schemaUrl", "Schema URL", Conn, ProviderFieldKind.Url, false, true),
+            new("schemaUrl", "Schema URL", Contract, ProviderFieldKind.Url, false, true),
             new("authScheme", "Auth scheme", Auth, ProviderFieldKind.Choice, false, true, "", AuthSchemes),
             new("clientId", "Client ID / reference", Auth, ProviderFieldKind.Text, false, true),
             new("scopes", "Scopes", Auth, ProviderFieldKind.List, false, true),
@@ -235,23 +235,41 @@ public sealed class GenericProviderHandler(ExternalProviderType type, IIntegrati
             fields.Add(AltinnEnvironmentService.Resolve(field.Key, field.Group, field.Label, field.Required ? AltinnRequirement.Manual : AltinnRequirement.Optional, candidates, field.Help));
         }
 
+        // Only a saved value satisfies a requirement: a detected or suggested value is a proposal until it is applied (suggested != configured).
         var required = fields.Where(field => field.Requirement == AltinnRequirement.Manual).ToList();
-        var configuration = required.All(field => field.State == AltinnSettingState.Configured) ? new SetupReadinessItem("configuration", "Configuration", SetupReadinessState.Ready, "Required settings configured.")
+        var missing = required.Where(field => field.State is AltinnSettingState.Missing or AltinnSettingState.Unknown).Select(field => field.Label).ToList();
+        var conflicts = required.Where(field => field.State == AltinnSettingState.Conflict).Select(field => field.Label).ToList();
+        var unapplied = required.Where(field => field.State is AltinnSettingState.Detected or AltinnSettingState.Declared).Select(field => field.Label).ToList();
+        var configuration = missing.Count + conflicts.Count + unapplied.Count == 0
+            ? new SetupReadinessItem("configuration", "Configuration", SetupReadinessState.Ready, "Required settings configured.")
             : new SetupReadinessItem("configuration", "Configuration", fields.Any(field => field.State == AltinnSettingState.Configured) ? SetupReadinessState.Partial : SetupReadinessState.Blocked,
-                $"Missing: {string.Join(", ", required.Where(field => field.State != AltinnSettingState.Configured).Select(field => field.Label))}");
+                string.Join(" · ", new[] { ("Missing", missing), ("Conflict", conflicts), ("Not applied", unapplied) }.Where(part => part.Item2.Count > 0)
+                    .Select(part => $"{part.Item1}: {string.Join(", ", part.Item2)}")));
         var secret = fields.FirstOrDefault(field => field.Key.EndsWith("Secret", StringComparison.Ordinal));
-        var authentication = secret is null ? new SetupReadinessItem("authentication", "Authentication", SetupReadinessState.NotAssessed, "No secret is used by this provider.")
+        var noAuth = integration.Settings.TryGetValue("authScheme", out var scheme) && string.Equals(scheme, "None", StringComparison.OrdinalIgnoreCase);
+        var authentication = noAuth ? new SetupReadinessItem("authentication", "Authentication", SetupReadinessState.Ready, "No authentication is configured for this system.")
+            : secret is null ? new SetupReadinessItem("authentication", "Authentication", SetupReadinessState.NotAssessed, "No secret is used by this provider.")
             : new SetupReadinessItem("authentication", "Authentication", secret.State == AltinnSettingState.AvailableForSession ? SetupReadinessState.Ready : SetupReadinessState.Partial,
                 secret.State == AltinnSettingState.AvailableForSession ? "Secret available for this session." : "Secret not available — only automated execution needs it.");
+        var runtime = new SetupReadinessItem("runtime", "Runtime", SetupReadinessState.NotAssessed, "Not verified.");
+        var execution = new SetupReadinessItem("execution", "Execution", SetupReadinessState.NotAssessed, "BirkNext has no executor for this provider; it is configuration and evidence only.");
+        var dimensions = new List<SetupReadinessItem> { configuration, authentication };
+        var contractFields = fields.Where(field => field.Group == ExternalProviderCatalog.Contract).ToList();
+        if (contractFields.Count > 0)
+            dimensions.Add(contractFields.Any(field => field.State == AltinnSettingState.Configured)
+                ? new("contract", "Contract", SetupReadinessState.Ready, "Contract reference configured. Not fetched or verified by BirkNext.")
+                : contractFields.Any(field => field.State is AltinnSettingState.Detected or AltinnSettingState.Declared or AltinnSettingState.Conflict)
+                    ? new("contract", "Contract", SetupReadinessState.Partial, "A contract reference was detected but is not applied.")
+                    : new("contract", "Contract", SetupReadinessState.NotAssessed, "No contract reference configured (optional)."));
+        dimensions.Add(runtime);
+        dimensions.Add(execution);
         return new ExternalIntegrationView
         {
-            Integration = integration, Fields = fields, Detected = detect, Notes = notes,
-            Summary = new(configuration, new("dependencies", "Dependencies", SetupReadinessState.Ready, "No provider dependencies."), authentication,
-                new("runtime", "Runtime", SetupReadinessState.NotAssessed, "Not verified."),
-                new("execution", "Execution", SetupReadinessState.NotAssessed, "BirkNext has no executor for this provider; it is configuration and evidence only.")),
-            Detection = new(fields.Count(f => f.State == AltinnSettingState.Configured), fields.Count(f => f.State == AltinnSettingState.Detected), 0,
-                required.Count(f => f.State == AltinnSettingState.Missing), fields.Count(f => f.State == AltinnSettingState.Conflict),
-                [.. required.Where(f => f.State is AltinnSettingState.Missing or AltinnSettingState.Conflict).Select(f => $"{f.State}: {f.Label}")]),
+            Integration = integration, Fields = fields, Detected = detect, Notes = notes, Dimensions = dimensions,
+            Summary = new(configuration, new("dependencies", "Dependencies", SetupReadinessState.Ready, "No provider dependencies."), authentication, runtime, execution),
+            Detection = new(fields.Count(f => f.State == AltinnSettingState.Configured), fields.Count(f => f.State is AltinnSettingState.Detected or AltinnSettingState.Declared), 0,
+                missing.Count, fields.Count(f => f.State == AltinnSettingState.Conflict),
+                [.. missing.Select(label => $"Missing: {label}"), .. conflicts.Select(label => $"Conflict: {label}"), .. unapplied.Select(label => $"Not applied: {label}")]),
         };
     }
 
@@ -354,6 +372,7 @@ public sealed class AltinnProviderHandler(AltinnEnvironmentService altinn, Altin
         {
             Integration = integration with { Settings = settings, EnvironmentName = view.Fields.FirstOrDefault(field => field.Key == "environment")?.Value ?? integration.EnvironmentName },
             Fields = view.Fields, Detected = view.Detected, Notes = view.Notes, Detection = view.Detection,
+            Dimensions = [.. view.Summary.Select(item => Map(item, item.Key, item.Label))],
             Summary = new(S("app", "Configuration") ?? ExternalIntegrationView.Empty("configuration"),
                 Map(view.ManualReadiness, "dependencies", "Dependencies") with { Reason = $"Manual testing: {view.ManualReadiness.Reason}" },
                 S("authentication", "Authentication") ?? ExternalIntegrationView.Empty("authentication"),

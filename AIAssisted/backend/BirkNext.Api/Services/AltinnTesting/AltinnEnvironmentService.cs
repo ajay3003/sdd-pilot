@@ -228,14 +228,17 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var confirmedReporter = identities.Any(item => item.Role == AltinnTestDataProvider.Reporter && item.State == AltinnSettingState.Confirmed);
         var child = identities.Any(item => item.Role == AltinnTestDataProvider.Child && item.State == AltinnSettingState.Configured);
 
-        // Manual testing needs the TT02 app, a reporter, a child, the integration and the contract — never the unattended client.
+        // Manual testing needs the TT02 app, a reporter, a child, the integration and the contract — never the unattended client. A suggested
+        // value (a test pack default or reference) is not configuration: it satisfies nothing until it is applied. Detected values keep their
+        // meaning — they come from the IQR binding or the app's own contract evidence, which BirkNext already uses.
         var manualGaps = new List<string>();
         var manualMissing = new List<string>();
         foreach (var key in new[] { "environment", "app", "form-data-type", "integration" })
-            if (F(key) is { State: AltinnSettingState.Missing or AltinnSettingState.Conflict or AltinnSettingState.Unknown } || F(key).Value is null)
+            if (!Satisfied(F(key)))
             {
-                manualGaps.Add($"{F(key).Label}: {(F(key).State == AltinnSettingState.Conflict ? "conflict" : "missing")}");
-                manualMissing.Add(F(key).State == AltinnSettingState.Conflict ? $"{F(key).Label} (conflict)" : F(key).Label);
+                var problem = Problem(F(key));
+                manualGaps.Add($"{F(key).Label}: {problem}");
+                manualMissing.Add(problem == "missing" ? F(key).Label : $"{F(key).Label} ({problem})");
             }
         if (!reporter) { manualGaps.Add("Reporter: missing"); manualMissing.Add("Reporter"); }
         if (!child) { manualGaps.Add("Synthetic child: missing"); manualMissing.Add("Child"); }
@@ -248,7 +251,8 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         // Automated execution additionally needs the unattended client, the secret, trust and approval; every reason stays explicit.
         var blockers = new List<string>(manualGaps);
         if (production) blockers.Add("Production is never executable.");
-        blockers.AddRange(fields.Where(field => field.Requirement == AltinnRequirement.Automated && field.State == AltinnSettingState.Conflict).Select(field => $"{field.Label}: conflict"));
+        blockers.AddRange(fields.Where(field => field.Requirement == AltinnRequirement.Automated && field.State is AltinnSettingState.Conflict or AltinnSettingState.Declared)
+            .Select(field => $"{field.Label}: {Problem(field)}"));
         blockers.AddRange(policy.UnattendedProblems(config));
         if (targetBlock is not null) blockers.Add(targetBlock);
         if (!appApproved) blockers.Add(F("app-approval").Detail);
@@ -260,7 +264,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
                 : $"Blocked by {blockers.Count} requirement{(blockers.Count == 1 ? "" : "s")}: {blockers[0]}");
 
         var appState = production ? AltinnReadinessState.Blocked
-            : new[] { "environment", "app", "app-base-url" }.All(key => F(key).Value is not null && F(key).State != AltinnSettingState.Conflict) ? AltinnReadinessState.Ready : AltinnReadinessState.Partial;
+            : new[] { "environment", "app", "app-base-url" }.All(key => Satisfied(F(key))) ? AltinnReadinessState.Ready : AltinnReadinessState.Partial;
         var automatedFields = fields.Where(field => field.Group == AutomatedGroup).ToList();
         var authState = automatedFields.All(field => field.State is AltinnSettingState.Configured or AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend)
             ? AltinnReadinessState.Ready : automatedFields.Any(field => field.State is AltinnSettingState.Configured or AltinnSettingState.Detected or AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend)
@@ -268,7 +272,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var observations = saved.RuntimeObservations;
         var summary = new List<AltinnReadinessItem>
         {
-            new("app", "App", appState, appState == AltinnReadinessState.Ready ? $"{F("environment").Value} · {F("app").Value}" : "Environment, app or base URL is missing or in conflict."),
+            new("app", "App", appState, appState == AltinnReadinessState.Ready ? $"{F("environment").Value} · {F("app").Value}" : "Environment, app or base URL is missing, in conflict or only suggested (not applied)."),
             new("authentication", "Authentication", authState, authState == AltinnReadinessState.Ready ? "Unattended client complete." : "Unattended client incomplete — only automated execution needs it."),
             new("identities", "Test identities", reporter && child ? AltinnReadinessState.Ready : reporter || child ? AltinnReadinessState.Partial : AltinnReadinessState.Blocked,
                 $"Reporter {(reporter ? confirmedReporter ? "configured · profile confirmed" : "configured · profile not confirmed" : "missing")} · child {(child ? "configured" : "missing")}"),
@@ -278,8 +282,8 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         };
 
         var required = fields.Where(field => field.Requirement != AltinnRequirement.Optional).ToList();
-        var gaps = required.Where(field => field.State is AltinnSettingState.Missing or AltinnSettingState.Conflict)
-            .Select(field => $"{(field.State == AltinnSettingState.Conflict ? "Conflict" : "Missing")}: {field.Label}{(field.Requirement == AltinnRequirement.Automated ? " (automated execution)" : "")}").ToList();
+        var gaps = required.Where(field => field.State is AltinnSettingState.Missing or AltinnSettingState.Conflict or AltinnSettingState.Declared)
+            .Select(field => $"{field.State switch { AltinnSettingState.Conflict => "Conflict", AltinnSettingState.Declared => "Not applied", _ => "Missing" }}: {field.Label}{(field.Requirement == AltinnRequirement.Automated ? " (automated execution)" : "")}").ToList();
         if (clientProblem is not null && !gaps.Any(gap => gap.Contains("Client ID", StringComparison.Ordinal))) gaps.Add($"Conflict: Client ID (automated execution)");
         var detection = new AltinnDetectionSummary(
             fields.Count(field => field.State == AltinnSettingState.Configured), fields.Count(field => field.State is AltinnSettingState.Detected or AltinnSettingState.Declared),
@@ -293,6 +297,18 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             ManualMissing = production ? [] : manualMissing,
         };
     }
+
+    /// <summary>Whether a required value counts: configured, confirmed, verified or detected from evidence BirkNext already uses. A suggestion
+    /// (Declared) does not count until applied; missing, unknown and conflicting values never do.</summary>
+    public static bool Satisfied(AltinnSettingField field) =>
+        field.Value is not null && field.State is not (AltinnSettingState.Missing or AltinnSettingState.Unknown or AltinnSettingState.Conflict or AltinnSettingState.Declared);
+
+    private static string Problem(AltinnSettingField field) => field.State switch
+    {
+        AltinnSettingState.Conflict => "conflict",
+        AltinnSettingState.Declared => "not applied",
+        _ => "missing",
+    };
 
     /// <summary>Reporter and child availability from Test Data (aliases and states only; identifiers never leave the backend).</summary>
     private IReadOnlyList<AltinnIdentitySummary> Identities()

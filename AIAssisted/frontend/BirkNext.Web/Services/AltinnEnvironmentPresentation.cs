@@ -126,24 +126,39 @@ public static class AltinnEnvironmentPresentation
     // ── Compact tester view: what is ready, what is missing, what to click ──
 
     /// <summary>Where a "things to fix" group sends the tester. Each maps to one control on the page (or the Test Data link).</summary>
-    public enum FixAction { Detect, Application, Automated, Safety, TestData, Contract }
+    public enum FixAction { Detect, Application, Automated, Safety, TestData, Contract, ApplySuggested }
 
     public sealed record FixItem(string Label, string Problem);
 
-    /// <summary>One owner's unresolved required items with the single action that resolves them.</summary>
-    public sealed record FixGroup(string Key, string Title, string Owner, string Action, FixAction Kind, IReadOnlyList<FixItem> Items);
+    /// <summary>One owner's unresolved required items with the single action that resolves them. <see cref="ApplyKeys"/> lists the pending
+    /// suggestions an "Apply suggested settings" action applies (exactly those, nothing else).</summary>
+    public sealed record FixGroup(string Key, string Title, string Owner, string Action, FixAction Kind, IReadOnlyList<FixItem> Items)
+    {
+        public IReadOnlyList<string> ApplyKeys { get; init; } = [];
+    }
+
+    /// <summary>The shared shell's form of a fix group (the action is reported back by key).</summary>
+    public static ShellFixGroup ToShell(FixGroup group) => new(group.Key, group.Title, group.Owner, group.Action, group.Items.Select(item => new ShellFixItem(item.Label, item.Problem)).ToList())
+    {
+        Href = group.Kind == FixAction.TestData ? TestDataHref : null,
+        Action = group.Kind.ToString(),
+        ApplyKeys = group.ApplyKeys,
+    };
 
     /// <summary>The value a tester reads: a reference's display name (e.g. an integration's name) before its raw id.</summary>
     public static string Display(AltinnSettingField field) => field.DisplayValue ?? field.Value ?? "—";
     public static string Display(AltinnSettingCandidate candidate) => candidate.DisplayValue ?? candidate.Value ?? "—";
 
     private static bool Unresolved(AltinnSettingField field) => field.State is AltinnSettingState.Missing or AltinnSettingState.Conflict or AltinnSettingState.Unknown;
+    /// <summary>A required value that is only suggested (a test pack default or reference): it satisfies nothing until applied.</summary>
+    private static bool Suggested(AltinnSettingField field) => field.State == AltinnSettingState.Declared && field.Proposal is { Value: not null };
     private static bool AutomatedOpen(AltinnSettingField field) =>
         field.State is not (AltinnSettingState.Configured or AltinnSettingState.Confirmed or AltinnSettingState.Verified or AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend);
     private static string Problem(AltinnSettingField field) => field.State switch
     {
         AltinnSettingState.Conflict => "Conflict",
-        AltinnSettingState.Detected or AltinnSettingState.Declared => "Not applied",
+        AltinnSettingState.Declared => $"Not applied · Suggested by {field.Proposal?.SourceLabel ?? field.SourceLabel}",
+        AltinnSettingState.Detected => "Not applied",
         _ => "Missing",
     };
     private static string ShortLabel(AltinnSettingField field) => field.Key switch
@@ -158,13 +173,15 @@ public static class AltinnEnvironmentPresentation
     public static IReadOnlyList<FixGroup> ThingsToFix(AltinnEnvironmentView view)
     {
         var groups = new List<FixGroup>();
-        var application = view.Fields.Where(field => field.Group == "Application" && field.Requirement != AltinnRequirement.Optional && Unresolved(field))
-            .Select(field => new FixItem(field.Label, Problem(field))).ToList();
+        var applicationFields = view.Fields.Where(field => field.Group == "Application" && field.Requirement != AltinnRequirement.Optional && (Unresolved(field) || Suggested(field))).ToList();
+        var application = applicationFields.Select(field => new FixItem(field.Label, Problem(field))).ToList();
         if (application.Count > 0)
         {
+            var suggested = applicationFields.Where(Suggested).Select(field => field.Key).ToList();
             var detect = !view.Detected && application.Any(item => item.Problem == "Missing");
-            groups.Add(new("application", "Application", "Target Environment · Altinn", detect ? "Detect settings" : "Review application",
-                detect ? FixAction.Detect : FixAction.Application, application));
+            groups.Add(suggested.Count > 0
+                ? new("application", "Application", "Target Environment · Altinn", "Apply suggested settings", FixAction.ApplySuggested, application) { ApplyKeys = suggested }
+                : new("application", "Application", "Target Environment · Altinn", detect ? "Detect settings" : "Review application", detect ? FixAction.Detect : FixAction.Application, application));
         }
         var automated = view.Fields.Where(field => field.Group == "Automated execution" && AutomatedOpen(field)).Select(field => new FixItem(ShortLabel(field), Problem(field))).ToList();
         if (automated.Count > 0) groups.Add(new("automated", "Automated authentication", "Target Environment · Altinn (unattended client)", "Configure automated execution", FixAction.Automated, automated));
@@ -205,7 +222,8 @@ public static class AltinnEnvironmentPresentation
         var observations = view.Saved.RuntimeObservations.Count;
         return item.Key switch
         {
-            "app" => Count("application") > 0 ? Settings(Count("application"), "") : item.Reason,
+            "app" => ApplicationGaps(view) is var (missing, pending) && missing + pending > 0
+                ? string.Join(" · ", new[] { missing > 0 ? Settings(missing, "") : null, pending > 0 ? $"{pending} not applied" : null }.OfType<string>()) : item.Reason,
             "authentication" => Count("automated") > 0 ? Settings(Count("automated"), "automated ") : "",
             "identities" => gaps.Count == 2 && gaps.All(gap => gap.Problem == "Missing") ? "Reporter and child missing"
                 : string.Join(" · ", gaps.Select(gap => $"{gap.Role} {gap.Problem.ToLowerInvariant()}")),
@@ -228,8 +246,17 @@ public static class AltinnEnvironmentPresentation
     {
         string? V(string key) => view.Fields.FirstOrDefault(field => field.Key == key)?.Value;
         var environment = V("environment") is { } env && env.StartsWith("Test", StringComparison.Ordinal) ? "TT02" : V("environment");
-        var missing = ThingsToFix(view).FirstOrDefault(group => group.Key == "application")?.Items.Count ?? 0;
-        return string.Join(" · ", new[] { environment, V("app"), missing == 0 ? "Complete" : $"{missing} setting{(missing == 1 ? "" : "s")} missing" }.Where(part => !string.IsNullOrEmpty(part)));
+        var (missing, pending) = ApplicationGaps(view);
+        var state = missing + pending == 0 ? "Complete"
+            : string.Join(" · ", new[] { missing > 0 ? $"{missing} setting{(missing == 1 ? "" : "s")} missing" : null, pending > 0 ? $"{pending} not applied" : null }.OfType<string>());
+        return string.Join(" · ", new[] { environment, V("app"), state }.Where(part => !string.IsNullOrEmpty(part)));
+    }
+
+    /// <summary>Required application settings that are missing/in conflict, and those only suggested (not applied).</summary>
+    private static (int Missing, int Pending) ApplicationGaps(AltinnEnvironmentView view)
+    {
+        var fields = view.Fields.Where(field => field.Group == "Application" && field.Requirement != AltinnRequirement.Optional).ToList();
+        return (fields.Count(Unresolved), fields.Count(Suggested));
     }
 
     /// <summary>Browser authentication summary from public metadata (descriptive platform evidence, never client configuration).</summary>
