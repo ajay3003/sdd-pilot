@@ -297,4 +297,22 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
         var cut = RenderWith(new());
         Field(cut, "App identifier").GetAttribute("value").Should().BeNullOrEmpty("a blank IQR configuration is generic until a pilot is loaded");
     }
+
+    [Fact]
+    public void Altinn_owned_fields_are_read_only_when_the_environment_has_an_altinn_system()
+    {
+        var external = new Mock<IExternalIntegrationsApiService>();
+        external.Setup(x => x.ListAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<ExternalIntegrationsView>(new ExternalIntegrationsView("pilot",
+            [new ExternalIntegrationView { Integration = new ExternalIntegration { Id = "pilot:altinn", Name = "Altinn – Skolenærvær", ProviderType = ExternalProviderType.Altinn } }], [], []), null));
+        Services.AddSingleton(external.Object);
+        var cut = RenderWith(new() { AppIdentifier = "buf/skolenaervaer" });
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-altinn-owned]"));
+        cut.Find("[data-testid=mfr-edit-altinn]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=external&profile=pilot&focus=altinn");
+        foreach (var label in new[] { "Environment", "App identifier", "Safe base URL reference", "Client / app reference", "Configured scopes" })
+            Field(cut, label).HasAttribute("disabled").Should().BeTrue($"{label} has one owner: the Altinn system");
+        Field(cut, "Submission mode").HasAttribute("disabled").Should().BeFalse("IQR keeps its own binding fields");
+        Field(cut, "Test reporter reference").HasAttribute("disabled").Should().BeFalse();
+        cut.FindAll("[data-testid=mfr-app-suggestion]").Should().BeEmpty("no second place offers to fill an owned value");
+    }
 }

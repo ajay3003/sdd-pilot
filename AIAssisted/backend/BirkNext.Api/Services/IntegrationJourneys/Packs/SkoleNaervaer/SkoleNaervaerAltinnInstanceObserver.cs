@@ -77,12 +77,13 @@ public sealed class SkoleNaervaerAltinnInstanceObserver(IServiceScopeFactory sco
         using var scope = scopes.CreateScope();
         var package = await scope.ServiceProvider.GetRequiredService<IIntegrationMessageFlowStore>().GetAsync(context.EnvironmentId, ct);
         var policy = scope.ServiceProvider.GetRequiredService<AltinnTestingPolicy>();
-        var contract = scope.ServiceProvider.GetRequiredService<AltinnAppContractService>().Evaluate(context.EnvironmentId, package.AltinnConfiguration.AppIdentifier, package.AppContract);
+        var effectiveAltinn = policy.Effective(package.AltinnConfiguration, context.EnvironmentId);
+        var contract = scope.ServiceProvider.GetRequiredService<AltinnAppContractService>().Evaluate(context.EnvironmentId, effectiveAltinn.AppIdentifier, package.AppContract);
         string? Block()
         {
             if (AltinnTestingPolicy.TargetBlock(context.Environment, "No trusted environment.") is { } target) return target;
-            if (AltinnTestingPolicy.AltinnEnvironmentBlock(package.AltinnConfiguration) is { } environment) return environment;
-            if (policy.ApprovedApp(package.AltinnConfiguration.AppIdentifier, out var appReason) is null) return appReason;
+            if (AltinnTestingPolicy.AltinnEnvironmentBlock(effectiveAltinn) is { } environment) return environment;
+            if (policy.ApprovedApp(effectiveAltinn.AppIdentifier, out var appReason) is null) return appReason;
             if (!context.InputValues.ContainsKey(SkoleNaervaerInstanceReference.PartyKey) || !context.InputValues.ContainsKey(SkoleNaervaerInstanceReference.InstanceKey))
                 return "The run has no validated instance reference.";
             if (context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is not { Length: > 0 }) return "The run has no reporter.";
@@ -94,7 +95,7 @@ public sealed class SkoleNaervaerAltinnInstanceObserver(IServiceScopeFactory sco
         try
         {
             var auth = await authenticator.AuthenticateAsync(new AltinnAuthenticationRequest(context.EnvironmentId, context.Initiator,
-                context.InputValues[SkoleNaervaerReportInput.ReporterKey], package.AltinnConfiguration), ct);
+                context.InputValues[SkoleNaervaerReportInput.ReporterKey], effectiveAltinn), ct);
             if (!auth.Success) return new Observation(null, null, $"{AltinnAuthenticationResult.StageLabel(auth.Stage)} failed: {auth.Detail}", null, now);
             var (result, evidence) = await storage.ReadAsync(auth.Token!, party, guid, ct);
             return new Observation(result, evidence, null, contract.FormDataTypeId, now);

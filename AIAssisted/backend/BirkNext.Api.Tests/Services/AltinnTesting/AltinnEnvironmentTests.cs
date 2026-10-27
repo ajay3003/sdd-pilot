@@ -291,6 +291,24 @@ public sealed class AltinnEnvironmentTests
     }
 
     [Fact]
+    public async Task A_target_environment_only_setup_is_what_consumers_read_and_is_never_copied_into_iqr()
+    {
+        var bed = new Bed();
+        (await bed.Store.UpdateAsync(Env, new() { Environment = "TT02", AppIdentifier = AltinnTestKit.AppId, AppBaseUrl = "https://buf.apps.tt02.altinn.no/buf/skolenaervaer" })).Problems.Should().BeEmpty();
+        var iqr = bed.Flows.Configuration; // Environment Unknown, no app: nothing configured in IQR
+
+        var effective = bed.Policy.Effective(iqr, Env);
+        (effective.Environment, effective.AppIdentifier, effective.TargetEnvironmentId).Should().Be((ExternalTestEnvironment.Test, AltinnTestKit.AppId, Env));
+        AltinnTestingPolicy.AltinnEnvironmentBlock(effective).Should().BeNull("readiness, auth and the executor see the Target Environment's TT02");
+        bed.Policy.ApprovedApp(effective.AppIdentifier, out _).Should().NotBeNull();
+        iqr.AppIdentifier.Should().BeNull("the IQR record is never mutated");
+
+        var explicitIqr = iqr with { Environment = ExternalTestEnvironment.Staging, AppIdentifier = "other/app" };
+        bed.Policy.Effective(explicitIqr, Env).AppIdentifier.Should().Be(AltinnTestKit.AppId, "the saved Target Environment value takes precedence over the IQR binding");
+        bed.Policy.Effective(explicitIqr, "another-env").AppIdentifier.Should().Be("other/app", "another environment keeps its own IQR value");
+    }
+
+    [Fact]
     public async Task Production_cannot_become_executable()
     {
         var bed = new Bed();

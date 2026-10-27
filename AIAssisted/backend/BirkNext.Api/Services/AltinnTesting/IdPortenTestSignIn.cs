@@ -83,7 +83,7 @@ public sealed class IdPortenTestSignIn(
 
     public async Task<AltinnSignInStatus> StatusAsync(string initiator, string environmentId, CancellationToken ct)
     {
-        var config = (await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration with { TargetEnvironmentId = environmentId };
+        var config = policy.Effective((await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration, environmentId);
         var problems = Problems(config);
         var expires = sessions.ExpiresAt(initiator, environmentId);
         return new AltinnSignInStatus
@@ -96,7 +96,7 @@ public sealed class IdPortenTestSignIn(
 
     public async Task<AltinnSignInStart> StartAsync(string initiator, string environmentId, CancellationToken ct)
     {
-        var config = (await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration with { TargetEnvironmentId = environmentId };
+        var config = policy.Effective((await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration, environmentId);
         if (Problems(config) is { Count: > 0 } problems) throw new AltinnSignInException(string.Join(" ", problems));
         var discovery = await DiscoverAsync(ct);
         var secret = policy.Options.IdPortenTest.ClientSecret;

@@ -45,9 +45,12 @@ public sealed class AltinnAppContractService(
     private const string BpmnNs = "http://www.omg.org/spec/BPMN/20100524/MODEL";
     private const string AltinnNs = "http://altinn.no/process";
 
+    private IntegrationMessageFlowPackage Effective(IntegrationMessageFlowPackage package, string environmentId) =>
+        package with { AltinnConfiguration = policy.Effective(package.AltinnConfiguration, environmentId) };
+
     public async Task<AltinnAppContractView> ViewAsync(string environmentId, CancellationToken ct)
     {
-        var package = await messageFlows.GetAsync(environmentId, ct);
+        var package = Effective(await messageFlows.GetAsync(environmentId, ct), environmentId);
         return Evaluate(environmentId, package.AltinnConfiguration.AppIdentifier, package.AppContract) with
         {
             ConfiguredEnvironment = package.AltinnConfiguration.Environment,
@@ -64,7 +67,8 @@ public sealed class AltinnAppContractService(
     public async Task<AltinnAppContractView> DiscoverPublicWithSkoleNaervaerDefaultsAsync(string environmentId, CancellationToken ct)
     {
         var package = await messageFlows.GetAsync(environmentId, ct);
-        if (SkoleNaervaerAltinnDefaults.AnyMissing(package.AltinnConfiguration))
+        // Defaults fill only what neither the Target Environment nor IQR provides; they are saved to the raw IQR record (never a TE value).
+        if (SkoleNaervaerAltinnDefaults.AnyMissing(policy.Effective(package.AltinnConfiguration, environmentId)))
         {
             var effective = SkoleNaervaerAltinnDefaults.Apply(package.AltinnConfiguration);
             _ = policy.ApprovedApp(effective.AppIdentifier?.Trim(), out var reason) ?? throw new AltinnContractException(reason);
@@ -78,7 +82,7 @@ public sealed class AltinnAppContractService(
     /// <summary>Reads the public TT02 metadata of the configured, approved app. Read-only GETs without credentials.</summary>
     public async Task<AltinnAppContractView> DiscoverPublicAsync(string environmentId, CancellationToken ct)
     {
-        var package = await messageFlows.GetAsync(environmentId, ct);
+        var package = Effective(await messageFlows.GetAsync(environmentId, ct), environmentId);
         var appId = package.AltinnConfiguration.AppIdentifier?.Trim();
         var approved = policy.ApprovedApp(appId, out var reason) ?? throw new AltinnContractException(reason);
         if (AltinnTestingPolicy.AltinnEnvironmentBlock(package.AltinnConfiguration) is { } blocked) throw new AltinnContractException(blocked);
@@ -153,7 +157,7 @@ public sealed class AltinnAppContractService(
     /// <summary>Confirms the latest live contract after a person reviewed its changes. Refused while the contract is otherwise not usable.</summary>
     public async Task<AltinnAppContractView> AcceptChangesAsync(string environmentId, string? reviewer, CancellationToken ct)
     {
-        var package = await messageFlows.GetAsync(environmentId, ct);
+        var package = Effective(await messageFlows.GetAsync(environmentId, ct), environmentId);
         var appId = package.AltinnConfiguration.AppIdentifier?.Trim();
         var record = package.AppContract;
         if (record?.Changes is null || record.PublicMetadata is null) throw new AltinnContractException("There are no contract changes to review.");
@@ -172,7 +176,7 @@ public sealed class AltinnAppContractService(
     {
         if (string.IsNullOrWhiteSpace(json)) throw new AltinnContractException("The OpenAPI document is empty.");
         if (Encoding.UTF8.GetByteCount(json) > MaxDocumentBytes) throw new AltinnContractException($"The OpenAPI document exceeds the {MaxDocumentBytes / (1024 * 1024)} MB limit.");
-        var package = await messageFlows.GetAsync(environmentId, ct);
+        var package = Effective(await messageFlows.GetAsync(environmentId, ct), environmentId);
         var appId = package.AltinnConfiguration.AppIdentifier?.Trim();
         _ = policy.ApprovedApp(appId, out var reason) ?? throw new AltinnContractException(reason);
         AltinnDeployedProcessContract facts;
@@ -215,7 +219,7 @@ public sealed class AltinnAppContractService(
     /// </summary>
     public async Task<AltinnAppContractView> UseSourceAnalysisAsync(string environmentId, Guid? snapshotId, CancellationToken ct)
     {
-        var package = await messageFlows.GetAsync(environmentId, ct);
+        var package = Effective(await messageFlows.GetAsync(environmentId, ct), environmentId);
         var appId = package.AltinnConfiguration.AppIdentifier?.Trim();
         _ = policy.ApprovedApp(appId, out var reason) ?? throw new AltinnContractException(reason);
         if (!sources.SourceAnalysisEnabled) throw new AltinnContractException(ReviewSourceEvidenceProvider.Disabled);

@@ -137,7 +137,7 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
     public async Task<AltinnAuthenticationResult> AuthenticateAsync(AltinnAuthenticationRequest request, CancellationToken ct)
     {
         // The Target Environment's Altinn settings and session secret are resolved for the run's own environment.
-        var config = request.Configuration with { TargetEnvironmentId = request.EnvironmentId };
+        var config = policy.Effective(request.Configuration, request.EnvironmentId);
         if (AltinnTestingPolicy.AltinnEnvironmentBlock(config) is { } environment) return Fail(AltinnAuthenticationStage.Configuration, environment);
         if (policy.UnattendedProblems(config) is { Count: > 0 } problems) return Fail(AltinnAuthenticationStage.Configuration, string.Join(" ", problems));
         if (policy.Reporter(request.Reporter, out var reporterReason) is not { } reporter) return Fail(AltinnAuthenticationStage.Configuration, reporterReason);
@@ -161,7 +161,7 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
     private async Task<AltinnAuthenticationResult> AcquireAsync(AltinnAuthenticationRequest request, SyntheticReporterOptions reporter, (string, string) key, CancellationToken ct)
     {
         var client = http.CreateClient(AltinnTestingRequestGuard.ClientName);
-        var config = request.Configuration with { TargetEnvironmentId = request.EnvironmentId };
+        var config = policy.Effective(request.Configuration, request.EnvironmentId);
         var clientId = policy.ClientId(config, out _, out _)!;
         var redirect = policy.UnattendedRedirect(config)!;
         var secret = policy.UnattendedClientSecretFor(config)!;

@@ -107,7 +107,7 @@ public sealed class SkoleNaervaerReadinessPresentationTests
     [InlineData("reporter-profile", "Open Test Data", "/test-data", null)]
     [InlineData("synthetic-data", "Open Test Data", "/test-data", null)]
     [InlineData("trusted-environment", "Open Target Environment", "/admin/system-settings?section=target-environments", null)]
-    [InlineData("public-metadata", "Read public TT02 metadata", null, "contract")]
+    [InlineData("public-metadata", "Review contract", "/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn-contract", null)]
     public void EachBlocker_PointsToItsOwner_NeverToTheTargetApplicationForAuthentication(string key, string label, string? href, string? group)
     {
         var row = Rows(key).Single(item => item.Key == key);
@@ -129,6 +129,8 @@ public sealed class SkoleNaervaerReadinessPresentationTests
         var attention = SkoleNaervaerReadinessPresentation.NeedsAttention(Rows("contract-impact"));
         attention.Select(row => row.Key).Should().Equal("contract-impact");
         SkoleNaervaerReadinessPresentation.Decision(attention).Should().Be(("E", "Payload / contract blocker"));
-        SkoleNaervaerReadinessPresentation.ActionFor(attention.Single(), "dev-env").Label.Should().Be("Review contract changes");
+        // Contract changes are reviewed on the Altinn system's contract evidence (External Integrations), the one owner.
+        var action = SkoleNaervaerReadinessPresentation.ActionFor(attention.Single(), "dev-env");
+        (action.Label, action.Href).Should().Be(("Review contract", AltinnEnvironmentPresentation.ContractHref("dev-env")));
     }
 }

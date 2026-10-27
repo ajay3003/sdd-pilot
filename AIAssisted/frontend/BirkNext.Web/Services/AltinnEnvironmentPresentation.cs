@@ -12,6 +12,9 @@ public static class AltinnEnvironmentPresentation
     /// <summary>The environment's Altinn system under Target Environment → External Integrations.</summary>
     public static string AltinnHref(string environmentId) => ExternalIntegrationPresentation.ExternalHref(environmentId, "altinn");
 
+    /// <summary>The Altinn system's contract evidence (public metadata, app source, deployed-contract changes).</summary>
+    public static string ContractHref(string environmentId) => ExternalIntegrationPresentation.ExternalHref(environmentId, "altinn-contract");
+
     public const string TestDataHref = "/test-data";
 
     public static string StateLabel(AltinnSettingField field) => field.State switch

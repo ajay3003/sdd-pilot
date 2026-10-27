@@ -25,7 +25,7 @@ public sealed class AltinnConfigurationOverviewService(IIntegrationMessageFlowSt
 
     public AltinnConfigurationOverview Build(string environmentId, AltinnTestConfiguration config, AltinnAppContractView contract, AltinnAppContractRecord? record)
     {
-        config = config with { TargetEnvironmentId = environmentId };
+        config = policy.Effective(config, environmentId);
         var items = new List<AltinnConfigurationItem>();
         var approved = policy.ApprovedApp(config.AppIdentifier, out var appReason);
         items.Add(new("app", "Altinn app", contract.ConfiguredAppId, approved is null ? string.IsNullOrWhiteSpace(config.AppIdentifier) ? "Missing" : "Not approved" : "Approved",

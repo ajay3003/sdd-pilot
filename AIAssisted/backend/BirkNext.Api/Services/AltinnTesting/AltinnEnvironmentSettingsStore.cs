@@ -21,6 +21,9 @@ public sealed class AltinnEnvironmentSettingsCache
         string.IsNullOrWhiteSpace(environmentId) ? null : _byEnvironment.GetValueOrDefault(environmentId);
 
     public void Set(string environmentId, AltinnEnvironmentSettings settings) => _byEnvironment[environmentId] = settings;
+
+    /// <summary>Forgets the environment's entry (after a rolled-back apply the database, not memory, is the truth).</summary>
+    public void Remove(string environmentId) => _byEnvironment.TryRemove(environmentId, out _);
 }
 
 /// <summary>

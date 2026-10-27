@@ -291,11 +291,12 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         var services = scope.ServiceProvider;
         var package = await services.GetRequiredService<IIntegrationMessageFlowStore>().GetAsync(context.EnvironmentId, ct);
         var policy = services.GetRequiredService<AltinnTestingPolicy>();
-        var contract = services.GetRequiredService<AltinnAppContractService>().Evaluate(context.EnvironmentId, package.AltinnConfiguration.AppIdentifier, package.AppContract);
+        var effectiveAltinn = policy.Effective(package.AltinnConfiguration, context.EnvironmentId);
+        var contract = services.GetRequiredService<AltinnAppContractService>().Evaluate(context.EnvironmentId, effectiveAltinn.AppIdentifier, package.AppContract);
         // Re-checked at execution: the trusted target, the Altinn environment, the approved app and the complete contract.
         if (AltinnTestingPolicy.TargetBlock(context.Environment, "No trusted environment.") is { } target) return Blocked(context, target);
-        if (AltinnTestingPolicy.AltinnEnvironmentBlock(package.AltinnConfiguration) is { } environment) return Blocked(context, environment);
-        if (policy.ApprovedApp(package.AltinnConfiguration.AppIdentifier, out var appReason) is not { } app) return Blocked(context, appReason);
+        if (AltinnTestingPolicy.AltinnEnvironmentBlock(effectiveAltinn) is { } environment) return Blocked(context, environment);
+        if (policy.ApprovedApp(effectiveAltinn.AppIdentifier, out var appReason) is not { } app) return Blocked(context, appReason);
         if (!contract.Complete) return Blocked(context, $"The Altinn app contract is incomplete: {string.Join(" ", contract.Missing)}");
         // The process operation must be confirmed and bounded: a declared task alone never opens process/next.
         if (!contract.Process.Confirmed || contract.Process.Transitions < 1 || contract.Process.Transitions > policy.MaxProcessTransitions)
@@ -303,7 +304,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         // A state-changing submission needs the service owner's confirmation of the app's authorization policy: re-checked here, not only in readiness.
         if (context.Scenario?.StateChanging != false)
         {
-            if (policy.AppPolicy(package.AltinnConfiguration.AppIdentifier, package.AppContract?.ObservedPolicy, out var policyDetail) is not { } confirmation) return Blocked(context, policyDetail);
+            if (policy.AppPolicy(effectiveAltinn.AppIdentifier, package.AppContract?.ObservedPolicy, out var policyDetail) is not { } confirmation) return Blocked(context, policyDetail);
             var role = context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is { } selected && selected != AltinnTestingPolicy.InteractiveReporter
                 ? policy.Reporter(selected, out _)?.AltinnRole ?? "PRIV" : "PRIV";
             if (AltinnTestingPolicy.PolicyProblem(confirmation, role) is { } policyProblem) return Blocked(context, policyProblem);
@@ -316,7 +317,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         if (policy.IsReporterIdentity(reporter, context.InputValues.GetValueOrDefault(SkoleNaervaerAltinnForm.ChildIdentifier)))
             return Blocked(context, ReporterIsChild);
 
-        var auth = await authenticator.AuthenticateAsync(new AltinnAuthenticationRequest(context.EnvironmentId, context.Initiator, reporter, package.AltinnConfiguration), ct);
+        var auth = await authenticator.AuthenticateAsync(new AltinnAuthenticationRequest(context.EnvironmentId, context.Initiator, reporter, effectiveAltinn), ct);
         var mode = new JourneyEvidenceFact("Authentication", auth.Mode == "unattended" ? "Unattended ID-porten TEST (synthetic reporter)" : "Interactive ID-porten TEST (fallback)");
         if (!auth.Success)
         {

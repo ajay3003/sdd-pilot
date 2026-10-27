@@ -282,7 +282,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     /// <summary>What is stored for the requirements: the app identifier (IQR → Extensions → Altinn) and the backend's test host for that app.</summary>
     public async Task<IReadOnlyDictionary<string, string?>> ConfiguredValuesAsync(JourneyPackContext context, CancellationToken ct)
     {
-        var config = (await messageFlows.GetAsync(context.EnvironmentId, ct)).AltinnConfiguration ?? new AltinnTestConfiguration();
+        var config = altinnPolicy.Effective((await messageFlows.GetAsync(context.EnvironmentId, ct)).AltinnConfiguration ?? new AltinnTestConfiguration(), context.EnvironmentId);
         var appIdentifier = config.AppIdentifier;
         string? Stored(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
         var values = new Dictionary<string, string?>
@@ -686,7 +686,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     {
         if (journey.JourneyId != RapportmottakId || !SubmissionScenarios.Contains(scenario.ScenarioId, StringComparer.Ordinal)) return JourneyPackValidation.None;
         var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
-        var config = flow.AltinnConfiguration with { TargetEnvironmentId = context.EnvironmentId };
+        var config = altinnPolicy.Effective(flow.AltinnConfiguration, context.EnvironmentId);
         var contract = altinnContracts.Evaluate(context.EnvironmentId, config.AppIdentifier, flow.AppContract);
         var checks = new List<JourneyValidationCheck>();
         var preview = new List<JourneyEvidenceFact>();
@@ -1042,7 +1042,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             case RapportmottakId:
             {
                 var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
-                var config = flow.AltinnConfiguration with { TargetEnvironmentId = context.EnvironmentId };
+                var config = altinnPolicy.Effective(flow.AltinnConfiguration, context.EnvironmentId);
                 // The report schema's snapshot is the canonical IQR evidence binding of the report-intake integration; the Altinn configuration
                 // only names which XML Schema in it. A legacy snapshot id stored in the configuration is used only while no binding exists.
                 var reportBinding = ReportIntakeBinding(journey, context);

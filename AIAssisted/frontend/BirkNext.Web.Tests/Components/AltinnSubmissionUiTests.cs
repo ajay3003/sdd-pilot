@@ -490,9 +490,11 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
         context = new FrontendAnalysisContext { ActiveProfile = Profile };
         var with = Render<SkoleNaervaerTesting>();
-        with.WaitForAssertion(() => with.FindAll("#snt-rapport [data-testid=atp-panel]").Should().ContainSingle());
-        with.FindAll("[data-testid=ijp-panel]").Should().ContainSingle("one shared journey panel runs the submission");
-        with.Find("#snt-rapport [data-testid=snt-group-contract] [data-testid=atp-panel]").Should().NotBeNull("the Altinn setup sits in the App contract details");
+        with.WaitForAssertion(() => with.FindAll("[data-testid=ijp-panel]").Should().ContainSingle("one shared journey panel runs the submission"));
+        // The App contract is no longer a second editor here: a read-only summary links to the Altinn system's contract evidence.
+        with.FindAll("[data-testid=atp-panel]").Should().BeEmpty("contract evidence is reviewed on the Altinn system under External Integrations");
+        with.Find("#snt-rapport [data-testid=snt-group-contract] [data-testid=snt-review-contract]").GetAttribute("href")
+            .Should().Be(AltinnEnvironmentPresentation.ContractHref(Profile.Id));
     }
 
     private static void Fill(IRenderedComponent<IntegrationJourneyPanel> cut)

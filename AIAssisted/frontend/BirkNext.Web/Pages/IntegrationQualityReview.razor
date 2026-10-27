@@ -83,6 +83,30 @@
                 {
                     @SubjectCard(subject, readiness)
                 }
+                @if (readiness.Subjects.Count > 0)
+                {
+                    @* Light mode: what needs a decision first; resolved integrations collapsed. Nothing is bound or chosen automatically. *@
+                    var light = IntegrationReviewLightPresentation.Classify(readiness);
+                    <section class="iqr-card" aria-labelledby="iqr-light-heading" data-testid="iqr-light">
+                        <h3 id="iqr-light-heading" class="iqr-light-summary" data-testid="iqr-light-summary">@IntegrationReviewLightPresentation.Summary(light)</h3>
+                        @if (light.Any(item => !item.Resolved))
+                        {
+                            <ul class="iqr-reasons" data-testid="iqr-light-open">
+                                @foreach (var item in light.Where(item => !item.Resolved))
+                                {
+                                    <li data-testid="iqr-light-item" data-integration="@item.Subject.IntegrationId"><strong>@item.Subject.DisplayName</strong> — @item.Detail
+                                        <a class="iqr-link" href="@Navigation.GetUriWithQueryParameter("integration", item.Subject.IntegrationId)" data-testid="iqr-light-resolve">Resolve</a></li>
+                                }
+                            </ul>
+                        }
+                        @if (light.Any(item => item.Resolved))
+                        {
+                            <ReviewDisclosure Text="Show resolved details" CollapseText="Hide resolved details" TestId="iqr-light-resolved" Class="disclosure-inline disclosure-small">
+                                <ul class="iqr-reasons">@foreach (var item in light.Where(item => item.Resolved)) { <li data-testid="iqr-light-resolved-item">@item.Subject.DisplayName — @item.Detail</li> }</ul>
+                            </ReviewDisclosure>
+                        }
+                    </section>
+                }
                 @if (!IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness))
                 {
                     var attention = IntegrationReviewPrerunPresentation.NeedsAttention(readiness, profile.Id);

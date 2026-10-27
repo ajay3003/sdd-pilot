@@ -167,7 +167,7 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
 
         var integrationPartial = ready.Select(r => r.Key == "integration:report-intake" ? Row(r.Key, JourneyReadinessState.NotReady) : r).ToList();
         SkoleNaervaerReadinessPresentation.LightRows(integrationPartial, Env).Single(r => r.OwnerHref is not null).Should()
-            .Match<SkoleNaervaerReadinessPresentation.LightRow>(r => r.Key == "integration" && r.State == "Partial" && r.OwnerLabel == "Open IQR");
+            .Match<SkoleNaervaerReadinessPresentation.LightRow>(r => r.Key == "integration" && r.State == "Partial" && r.OwnerLabel == "Open Integrations");
 
         var altinnMissing = ready.Select(r => r.Key == "altinn-app" ? Row(r.Key, JourneyReadinessState.NotConfigured) : r).ToList();
         SkoleNaervaerReadinessPresentation.LightRows(altinnMissing, Env).Single(r => r.OwnerHref is not null).OwnerHref.Should().Be(ExternalIntegrationPresentation.ExternalHref(Env, "altinn"));

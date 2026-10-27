@@ -17,7 +17,7 @@ public sealed class AltinnTopologyProvider(IIntegrationMessageFlowStore messageF
     public async Task ContributeAsync(TopologyContext context, TopologyBuilder builder, CancellationToken ct)
     {
         var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
-        var config = flow.AltinnConfiguration;
+        var config = policy.Effective(flow.AltinnConfiguration, context.EnvironmentId);
         if (policy.ApprovedApp(config.AppIdentifier, out var reason) is not { } app)
         {
             builder.Source(new(TopologySource.ExternalApplicationMetadata, TopologySourceState.NotAvailable, reason));

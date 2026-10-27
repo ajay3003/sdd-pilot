@@ -772,7 +772,14 @@
                                 <p class="snt-muted">Resolving is not verifying: configured scopes are not a verified client registration, a configured reporter is not authenticated, and a declared child is not verified.</p>
                             </div>
                         }
-                        @if (group.Key == "contract") { <AltinnTestSetupPanel EnvironmentId="@_profile!.Id" OnOpenJourney="OpenRapportmottakAsync" /> }
+                        @if (group.Key == "contract")
+                        {
+                            @* Read-only: the contract evidence is reviewed and refreshed on the Altinn system (External Integrations), never here. *@
+                            var contractRow = SkoleNaervaerReadinessPresentation.LightRows(view.Prerequisites, _profile?.Id).First(row => row.Key == "contract");
+                            <p class="snt-contract-summary" data-testid="snt-contract-summary">Report contract: <strong>@(contractRow.State == "Ready" ? "Resolved" : contractRow.State)</strong>
+                                <span class="snt-muted">· Source: IQR / Source Analysis / public metadata</span>
+                                <a href="@AltinnEnvironmentPresentation.ContractHref(_profile!.Id)" data-testid="snt-review-contract">Review contract</a></p>
+                        }
                         @if (group.Items.Count > 0)
                         {
                             <ul class="snt-prerequisites">

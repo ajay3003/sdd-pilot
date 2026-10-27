@@ -102,7 +102,7 @@
                             @if (integration.ProviderType == ExternalProviderType.Altinn)
                             {
                                 @* The Altinn provider's own component: application, browser vs unattended auth, session secret, observations. *@
-                                <AltinnEnvironmentPane EnvironmentId="@EnvironmentId" />
+                                <AltinnEnvironmentPane EnvironmentId="@EnvironmentId" OpenContract="@(string.Equals(Focus, "altinn-contract", StringComparison.OrdinalIgnoreCase))" />
                             }
                             else
                             {
@@ -173,9 +173,10 @@
         _api = Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
         if (_api is null) { _error = "External integrations are not available in this host."; return; }
         await ReloadAsync();
-        if (string.Equals(Focus, "altinn", StringComparison.OrdinalIgnoreCase) && _view?.Integrations.FirstOrDefault(i => i.Integration.ProviderType == ExternalProviderType.Altinn) is { } altinn)
+        var altinnFocus = Focus?.StartsWith("altinn", StringComparison.OrdinalIgnoreCase) == true;
+        if (altinnFocus && _view?.Integrations.FirstOrDefault(i => i.Integration.ProviderType == ExternalProviderType.Altinn) is { } altinn)
             _open.Add(altinn.Integration.Id);
-        else if (string.Equals(Focus, "altinn", StringComparison.OrdinalIgnoreCase)) { _mode = Mode.Add; _newProvider = ExternalProviderType.Altinn; }
+        else if (altinnFocus) { _mode = Mode.Add; _newProvider = ExternalProviderType.Altinn; }
     }
 
     private async Task ReloadAsync()

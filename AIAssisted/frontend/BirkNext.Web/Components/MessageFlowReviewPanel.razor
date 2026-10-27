@@ -158,17 +158,22 @@
                         <p data-testid="mfr-unresolved">Still to configure here: @string.Join(", ", open)</p>
                     }
                 </div>
+                @if (_altinnOwned)
+                {
+                    <p class="mfr-note" data-testid="mfr-altinn-owned">Environment, app, base URL, client and scopes are owned by this environment's Altinn system and shown read-only here.
+                        <a href="@AltinnEnvironmentPresentation.AltinnHref(EnvironmentId!)" data-testid="mfr-edit-altinn">Edit in External Integrations</a></p>
+                }
                 <div class="mfr-form">
-                <SourceValueHint Resolution="@Hint("Environment")" Origin="@HintOrigin("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" />
-                <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
-                <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
-                <SourceValueHint Resolution="@Hint("App identifier")" Origin="@HintOrigin("App identifier")" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" />
+                @if (!_altinnOwned) { <SourceValueHint Resolution="@Hint("Environment")" Origin="@HintOrigin("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" /> }
+                <label>Environment<select @bind="_environment" disabled="@_altinnOwned"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
+                <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" disabled="@_altinnOwned" /></label>
+                @if (!_altinnOwned) { <SourceValueHint Resolution="@Hint("App identifier")" Origin="@HintOrigin("App identifier")" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" /> }
                 <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
-                <label>Safe base URL reference<input @bind="_baseUrl" /></label>
-                <SourceValueHint Resolution="@Hint("Safe base URL reference")" Origin="@HintOrigin("Safe base URL reference")" Current="@_baseUrl" FieldLabel="Safe base URL reference" OnUse="value => _baseUrl = value" TestId="mfr-base-url-suggestion" />
+                <label>Safe base URL reference<input @bind="_baseUrl" disabled="@_altinnOwned" /></label>
+                @if (!_altinnOwned) { <SourceValueHint Resolution="@Hint("Safe base URL reference")" Origin="@HintOrigin("Safe base URL reference")" Current="@_baseUrl" FieldLabel="Safe base URL reference" OnUse="value => _baseUrl = value" TestId="mfr-base-url-suggestion" /> }
                 <label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
                 <SourceValueHint Resolution="@Hint("Endpoint reference")" Origin="@HintOrigin("Endpoint reference")" CanUse="@(!OwnedByIntegration("Endpoint reference"))" Current="@_endpoint" FieldLabel="Endpoint reference" OnUse="value => _endpoint = value" TestId="mfr-endpoint-suggestion" />
-                @if (SafeEmptySuggestions.Count > 0)
+                @if (SafeEmptySuggestions.Count > 0 && !_altinnOwned)
                 {
                     <p class="mfr-source-fill"><button type="button" class="btn-secondary" data-testid="mfr-use-source-values" @onclick="UseSourceValues">Use @SafeEmptySuggestions.Count safe source value@(SafeEmptySuggestions.Count == 1 ? "" : "s")</button>
                         <span class="mfr-muted"> Fills only empty fields from the bound source; nothing is saved until you save.</span></p>
@@ -178,7 +183,7 @@
             <ReviewDisclosure Text="Authentication" CollapseText="Authentication" Hint="@SectionHint(_auth != "Unknown", _client, _tenant, _documentedScopes, _scopes)" TestId="mfr-section-authentication" Class="mfr-section">
             <fieldset class="mfr-group" data-testid="mfr-group-authentication"><legend class="visually-hidden">Authentication</legend><div class="mfr-form">
                 <label>Authentication type<select @bind="_auth"><option value="Unknown">Needs verification</option>@foreach (var auth in Enum.GetValues<ExternalAuthenticationType>().Where(x => x != ExternalAuthenticationType.Unknown)) { <option value="@auth">@auth</option> }</select></label>
-                <label>Client / app reference<input @bind="_client" /></label><label>Tenant reference<input @bind="_tenant" /></label><label>Documented scopes (comma-separated)<input @bind="_documentedScopes" /></label><label>Configured scopes (comma-separated)<input @bind="_scopes" /></label>
+                <label>Client / app reference<input @bind="_client" disabled="@_altinnOwned" /></label><label>Tenant reference<input @bind="_tenant" /></label><label>Documented scopes (comma-separated)<input @bind="_documentedScopes" /></label><label>Configured scopes (comma-separated)<input @bind="_scopes" disabled="@_altinnOwned" /></label>
                 @if (UsesCertificate) { <label>Certificate reference<input @bind="_certificate" /></label><label>Key reference<input @bind="_key" /></label> }
             </div>
             <p class="mfr-note" data-testid="mfr-verified-scopes">Verified scopes: @(_package.AltinnConfiguration.VerifiedScopes.Count == 0 ? "None — no token verification has occurred. Configured scopes are not verified scopes." : string.Join(", ", _package.AltinnConfiguration.VerifiedScopes))</p></fieldset>
@@ -275,6 +280,17 @@
 
 @code {
     [Parameter] public string? EnvironmentId { get; set; }
+    /// <summary>True when Target Environment → External Integrations has an Altinn system: its owned fields are read-only here (one owner).</summary>
+    private bool _altinnOwned;
+    private string? _ownershipCheckedFor;
+
+    private async Task CheckAltinnOwnershipAsync()
+    {
+        if (EnvironmentId is null || _ownershipCheckedFor == EnvironmentId) return;
+        _ownershipCheckedFor = EnvironmentId;
+        _altinnOwned = Services.GetService(typeof(IExternalIntegrationsApiService)) is IExternalIntegrationsApiService external
+            && (await external.ListAsync(EnvironmentId)).Value?.Integrations.Any(item => item.Integration.ProviderType == ExternalProviderType.Altinn) == true;
+    }
     [Inject] private IJSRuntime JS { get; set; } = default!;
     /// <summary>Certificate and key references are primary only for certificate-based authentication (Maskinporten signs with one); otherwise they
     /// sit under Advanced. Presentation only: every value is still bound and saved.</summary>
@@ -408,6 +424,7 @@
     protected override async Task OnParametersSetAsync()
     {
         if (string.IsNullOrWhiteSpace(EnvironmentId)) return;
+        await CheckAltinnOwnershipAsync();
         _busy = true;
         try
         {

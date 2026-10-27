@@ -108,6 +108,18 @@ public sealed partial class ExternalIntegrationService(AppDbContext db, IEnumera
         if (save) await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// After a rolled-back unit of work: forget tracked entities and reload the environment's Altinn settings from the database, so the
+    /// execution policy never reads a value that was never committed.
+    /// </summary>
+    public async Task ResyncAfterRollbackAsync(string environmentId, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        altinnSettings.Remove(environmentId);
+        var row = await db.AltinnEnvironmentSettings.AsNoTracking().SingleOrDefaultAsync(r => r.EnvironmentId == environmentId, ct);
+        if (row is not null && JsonSerializer.Deserialize<AltinnEnvironmentSettings>(row.DocumentJson, Json) is { } saved) altinnSettings.Set(environmentId, saved);
+    }
+
     public async Task<bool> DeleteAsync(string environmentId, string id, CancellationToken ct)
     {
         var row = await db.ExternalIntegrations.SingleOrDefaultAsync(r => r.Id == id && r.EnvironmentId == environmentId, ct);

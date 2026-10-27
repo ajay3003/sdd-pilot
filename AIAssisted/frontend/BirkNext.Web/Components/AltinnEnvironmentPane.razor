@@ -142,6 +142,19 @@
             </section>
         }
 
+        @* Contract evidence (public metadata, app source, deployed-contract changes) and the interactive TestID fallback belong to the Altinn
+           system; consumers such as Skolenærvær only link here. Rendered on demand. *@
+        <section class="ae-group" data-testid="ae-contract" aria-label="Contract evidence">
+            <h4 class="ae-h4">Contract evidence</h4>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-contract-toggle" aria-expanded="@(_contract ? "true" : "false")" @onclick="() => _contract = !_contract">
+                @(_contract ? "Hide contract evidence" : "Review contract evidence")
+            </button>
+            @if (_contract)
+            {
+                <AltinnTestSetupPanel EnvironmentId="@EnvironmentId" />
+            }
+        </section>
+
         <section class="ae-group" data-testid="ae-identities" aria-label="Test identities">
             <h4 class="ae-h4">Test identities</h4>
             @if (_view.Identities.Count == 0)
@@ -188,6 +201,11 @@
 
 @code {
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    /// <summary>Open the contract evidence directly (a consumer's "Review contract" link).</summary>
+    [Parameter] public bool OpenContract { get; set; }
+    private bool _contract;
+
+    protected override void OnInitialized() => _contract = OpenContract;
 
     // Resolved optionally: a host without the Altinn API (e.g. a reduced test host) shows "not available" instead of failing the page.
     private IAltinnEnvironmentApiService Api => (Services.GetService(typeof(IAltinnEnvironmentApiService)) as IAltinnEnvironmentApiService)!;

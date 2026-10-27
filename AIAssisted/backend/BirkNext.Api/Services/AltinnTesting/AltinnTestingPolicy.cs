@@ -133,6 +133,18 @@ public sealed class IdPortenTestOptions
 /// </summary>
 public sealed class AltinnTestingPolicy(AltinnTestingOptions options, AltinnSessionStore? session = null, AltinnEnvironmentSettingsCache? environments = null)
 {
+    /// <summary>
+    /// The configuration a consumer reads for an environment: the IQR binding overlaid with the Target Environment's saved Altinn values
+    /// (environment, app, base URL), which take precedence. Read paths only — it is never saved back, so nothing is copied into IQR.
+    /// </summary>
+    public AltinnTestConfiguration Effective(AltinnTestConfiguration config, string environmentId)
+    {
+        var effective = config with { TargetEnvironmentId = environmentId };
+        return environments?.Get(environmentId) is { } saved
+            ? effective with { Environment = saved.Environment ?? effective.Environment, AppIdentifier = saved.AppIdentifier ?? effective.AppIdentifier, BaseUrlReference = saved.AppBaseUrl ?? effective.BaseUrlReference }
+            : effective;
+    }
+
     /// <summary>The Target Environment Altinn settings saved for the configuration's environment, or null.</summary>
     public AltinnEnvironmentSettings? Saved(AltinnTestConfiguration config) => environments?.Get(config.TargetEnvironmentId);
 

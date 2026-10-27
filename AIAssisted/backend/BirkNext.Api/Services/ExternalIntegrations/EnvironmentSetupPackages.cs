@@ -237,7 +237,10 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
             dependencies.AddRange(await handler.SetupRequirementsAsync(item, portable, ct));
         }
         foreach (var pack in testPacks ?? []) dependencies.AddRange(TestPackSetupRequirements.For(pack));
-        var packageName = string.IsNullOrWhiteSpace(name) ? $"{environmentId} {(scope == SetupScope.Environment ? "environment" : provider?.ToString() ?? selected[0].Name)} setup" : name.Trim();
+        // A readable default name (never the environment's internal id): "Environment setup", "Altinn setup" or the integration's name.
+        var packageName = string.IsNullOrWhiteSpace(name)
+            ? scope switch { SetupScope.Environment => "Environment setup", SetupScope.Provider => $"{ExternalProviderCatalog.Descriptor(provider!.Value).DisplayName} setup", _ => $"{selected[0].Name} setup" }
+            : name.Trim();
         return (new SetupPackageModel
         {
             Id = new string([.. packageName.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-')]).Trim('-'), Name = packageName, Description = description?.Trim(),
@@ -436,11 +439,14 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
             if (transaction is not null) await transaction.CommitAsync(ct);
             return new(true, applied.Count == 0 ? "Nothing to change: the environment already matches the package." : $"Applied {applied.Count} value(s). {provenance}.", applied, preflight);
         }
-        catch (SetupApplyException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (transaction is not null) await transaction.RollbackAsync(ct);
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            await integrations.ResyncAfterRollbackAsync(environmentId, CancellationToken.None);
+            // A provider's own refusal is shown; any other failure is reported without its technical detail.
+            var reason = ex is SetupApplyException ? ex.Message : "The setup could not be stored.";
             // Without a relational transaction (in-memory test host) earlier systems may be written: the operation is reported Failed, never applied.
-            return new(false, $"Failed: {ex.Message} No setup was applied{(transaction is null ? " (repair: re-run Apply after fixing the problem)" : "")}.", [], preflight);
+            return new(false, $"Failed: {reason} No setup was applied{(transaction is null ? " (repair: re-run Apply after fixing the problem)" : "")}.", [], preflight);
         }
         finally { if (transaction is not null) await transaction.DisposeAsync(); }
     }

@@ -83,7 +83,7 @@ public static class SkoleNaervaerReadinessPresentation
         return
         [
             Make("environment", "Environment", "Target Environment → External Integrations", "Open External Integration", external, "altinn-environment", "altinn-app"),
-            Make("integration", "Integration", "Integration Quality Review", "Open IQR", profileId is null ? "/integration-quality-review" : IntegrationReviewPresentation.IntegrationsHref(profileId), "integration:report-intake"),
+            Make("integration", "Integration", "Target Environment → Integrations", "Open Integrations", profileId is null ? "/integration-quality-review" : IntegrationReviewPresentation.IntegrationsHref(profileId), "integration:report-intake"),
             Make("reporter", "Reporter", "Test Data", "Open Test Data", "/test-data", "synthetic-reporter", "reporter-profile"),
             Make("child", "Child", "Test Data", "Open Test Data", "/test-data", "synthetic-data"),
             Make("contract", "Contract", "IQR / Source Analysis", "Open IQR", "/integration-quality-review?view=evidence", "submission-contract", "process-contract"),
@@ -101,8 +101,9 @@ public static class SkoleNaervaerReadinessPresentation
         "test-reporter" => new("Open Test Data", "/test-data", null),
         "app-policy" => new("View details", null, "local"),
         "synthetic-reporter" or "reporter-profile" or "synthetic-data" => new("Open Test Data", "/test-data", null),
-        "public-metadata" or "submission-contract" or "process-contract" => new("Read public TT02 metadata", null, "contract"),
-        "contract-impact" => new("Review contract changes", null, "contract"),
+        // Contract evidence is refreshed and reviewed on the Altinn system (External Integrations), not on this page.
+        "public-metadata" or "submission-contract" or "process-contract" or "contract-impact"
+            => new("Review contract", profileId is null ? "/admin/system-settings?section=target-environments" : AltinnEnvironmentPresentation.ContractHref(profileId), null),
         _ => new("View details", null, "advanced"),
     };
 
