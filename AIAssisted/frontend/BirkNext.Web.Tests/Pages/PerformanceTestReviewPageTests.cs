@@ -333,7 +333,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-run-open]").Click();
         _api.Calls.Should().NotContain("start", "Run test evaluates readiness and stops at the blocker");
         cut.Find("[data-testid=pt-tab-readiness]").GetAttribute("aria-pressed").Should().Be("true");
-        cut.Find("[data-testid=pt-readiness-item][data-key=provider]").TextContent.Should().Contain("Provider unavailable").And.Contain("not installed");
+        // The single blocker's explanation is stated once, in the blocker panel; the list item names it and points there.
+        cut.Find("[data-testid=pt-readiness-item][data-key=provider]").TextContent.Should().Contain("Provider unavailable").And.Contain("See the blocker above");
+        cut.Find("[data-testid=pt-blocker-detail]").TextContent.Should().Contain("not installed");
         cut.FindAll(".sd-pill-attention").Should().BeEmpty("a missing provider is not shown with the failure tone");
     }
 
@@ -347,10 +349,12 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         });
         var cut = Page();
         Tab(cut, "readiness");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-readiness-item][data-key=environment]").TextContent.Should().Contain("Blocked — unsafe environment").And.Contain("Production environments cannot be used"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-readiness-item][data-key=environment]").TextContent.Should().Contain("Blocked — unsafe environment"));
+        cut.Find("[data-testid=pt-blocker-detail]").TextContent.Should().Contain("Production environments cannot be used");
+        cut.Find("[data-testid=pt-blocker-category]").TextContent.Should().NotBe("Local execution prerequisite", "production safety is not a local setup issue");
         Tab(cut, "run");
         cut.FindAll("[data-testid=pt-run-start]").Should().BeEmpty("a blocked run offers no Run button that cannot run");
-        cut.Find("[data-testid=pt-run-blocked]").TextContent.Should().Contain("Cannot run yet").And.Contain("Production environments cannot be used");
+        cut.Find("[data-testid=pt-run-blocked]").TextContent.Should().Contain("Run test — blocked by environment and production guard").And.Contain("Production environments cannot be used").And.NotContain("Cannot run yet");
     }
 
     [Fact]
@@ -588,7 +592,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-card-target]").ClassList.Should().Contain("ptc-accent-info");
         Status(cut, "pt-env-safety").Should().Be("Allowed");
         cut.Find("[data-testid=pt-card-environment]").TextContent.Should().Contain("Non-production");
-        cut.Find("[data-testid=pt-readiness-count]").TextContent.Should().Be("4 of 4 required checks ready for this definition");
+        cut.Find("[data-testid=pt-readiness-count]").TextContent.Should().Be("4 of 4 required readiness checks satisfied for this definition");
         cut.FindAll("[data-testid=pt-target-chips] li").Select(li => li.TextContent.Trim()).Should().Equal("✓ REST", "✓ HTTP", "✓ GraphQL queries");
         cut.FindAll("[data-testid=pt-run-reason]").Should().BeEmpty();
         cut.Find("[data-testid=pt-next-step]").GetAttribute("data-tone").Should().Be("Ready");
@@ -695,7 +699,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["x"], Items = [NetworkBlocker(), new("baseline", "Baseline", PerformanceReadinessState.Optional, "none", false) { Category = "Optional" }] });
         var cut = Page();
-        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked · container network"));
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked — container network"));
         cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().StartWith("Container reachability has not been checked.");
         var next = cut.Find("[data-testid=pt-next-action]");
         next.TextContent.Should().Be("Check container network");
@@ -720,15 +724,22 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
             Items = [CaMissing(), new("network", "Container network", PerformanceReadinessState.Optional, "TLS trust", false) { Category = "Reachability", Action = PerformanceReadinessActions.CheckNetwork, Status = "TlsTrustFailure" }],
         });
         var cut = Page();
-        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked · container TLS trust"));
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked — container TLS trust"));
+        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Contain("1 required prerequisite must be resolved").And.Contain("Local execution prerequisite")
+            .And.NotContain("certificate chain", "the full TLS explanation is stated once, in the blocker panel");
         Tab(cut, "readiness");
+        cut.Find("[data-testid=pt-blocker-category]").TextContent.Should().Be("Local execution prerequisite");
+        cut.Find("[data-testid=pt-blocker-safety]").TextContent.Should().Contain("TLS verification remains enabled and must not be bypassed");
+        cut.FindAll("[data-testid=pt-tls-policy]").Should().BeEmpty("the safety note is not repeated below the panel");
+        cut.Markup.Should().NotContainAny("--insecure", "insecureSkipTLSVerify", "Skip certificate");
         cut.Find("[data-testid=pt-blocker-headline]").TextContent.Should().Be("Container TLS trust is not configured");
         cut.Find("[data-testid=pt-blocker-owner]").TextContent.Should().Be("Owner: Local execution configuration · Configuration: PerformanceTests:Container:CaBundlePath");
         cut.Find("[data-testid=pt-blocker-action]").GetAttribute("href").Should().Be("admin/system-settings?section=performance-test-engines");
         cut.Find("[data-testid=pt-readiness-group][data-group='Execution setup']").TextContent.Should().Contain("Corporate CA trust").And.Contain("Missing");
         cut.Find("[data-testid=pt-item-technical]").TextContent.Should().Contain("code 1310");
         cut.Find("[data-testid=pt-item-action-network]").TextContent.Should().Be("Re-check container network", "after fixing the CA, readiness refreshes independently");
-        cut.Find("[data-testid=pt-tls-policy]").TextContent.Should().Contain("TLS verification is never disabled");
+        // The TLS safety rule is stated once, in the blocker panel (the general policy line is not repeated beneath it).
+        cut.Find("[data-testid=pt-blocker-safety]").TextContent.Should().Contain("TLS verification remains enabled");
         cut.Markup.Should().NotContainAny("insecure", "Insecure", "skip TLS", "Skip TLS");
     }
 
@@ -737,7 +748,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["a", "b"], Items = [CaMissing(), NetworkBlocker()] });
         var cut = Page();
-        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("2 readiness blockers"));
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked — 2 required prerequisites"));
         cut.Find("[data-testid=pt-next-action]").TextContent.Should().Be("Review blockers");
         Tab(cut, "readiness");
         cut.Find("[data-testid=pt-blocker-callout]").GetAttribute("data-count").Should().Be("2");
@@ -752,7 +763,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["x"], Items = [CaMissing()] });
         var cut = Page();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-setup-progress]").TextContent.Should().StartWith("Lookup baseline · "));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-setup-progress]").TextContent.Should().StartWith("Lookup baseline · ").And.EndWith("setup steps completed"));
+        cut.Find("[data-testid=pt-setup-meaning]").TextContent.Should().Contain("not the execution-readiness count");
         cut.Find("[data-testid=pt-setup-next]").TextContent.Should().Contain("Corporate CA trust");
         cut.Find("[data-testid=pt-setup-import]").Click();
         cut.Find("[data-testid=sp-panel]").GetAttribute("data-mode").Should().Be("Import");
@@ -785,7 +797,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
             Items = [new("provider", "Provider", PerformanceReadinessState.ProviderUnavailable, "k6 is not installed.", true)],
         });
         var cut = Page();
-        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked · provider"));
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked — provider"));
 
         cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().StartWith("A tool limitation, not a performance result");
         cut.Find("[data-testid=pt-open-engines]").GetAttribute("href").Should().Be("admin/system-settings?section=performance-test-engines");
@@ -801,7 +813,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
             Items = [new("scenario", "Scenario", PerformanceReadinessState.InvalidScenario, "Destructive methods are not allowed (DELETE).", true)],
         });
         var cut = Page();
-        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked · scenario"));
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked — scenario"));
         cut.Find("[data-testid=pt-status] .sd-pill").ClassList.Should().Contain("sd-pill-attention");
         cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Contain("Destructive methods are not allowed");
     }
@@ -1027,7 +1039,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-readiness-unsaved]");
         cut.FindAll("[data-testid=pt-precheck]").Should().NotBeEmpty();
         Tab(cut, "run");
-        cut.Find("[data-testid=pt-run-blocked]").TextContent.Should().Contain("Cannot run yet");
+        cut.Find("[data-testid=pt-run-blocked]").TextContent.Should().Contain("Run test — ").And.NotContain("Cannot run yet");
         cut.FindAll("[data-testid=pt-run-start]").Should().BeEmpty();
         cut.Find("[data-testid=pt-run-go-readiness]").Click();
         cut.Find("[data-testid=pt-tab-readiness]").GetAttribute("aria-pressed").Should().Be("true");
@@ -1044,7 +1056,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-engine-meaning]").TextContent.Should().Contain("Available does not mean this test is ready to run"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-engine-meaning]").TextContent.Should().Contain("Target execution readiness is evaluated separately"));
         cut.Find("#pt-card-ready-h").TextContent.Should().Contain("Test readiness");
         cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Test readiness status: ");
         Status(cut, "pt-status").Should().Be("Draft", "an available engine does not make an unsaved draft ready");

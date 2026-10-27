@@ -76,12 +76,33 @@ public static class PerformanceTestReviewDashboard
         if (blocking.Count == 0) return new("Not ready", "!", PtTone.Attention, readiness.Blockers.FirstOrDefault());
         var hard = blocking.Any(i => Hard.Contains(i.State));
         var first = blocking.FirstOrDefault(i => Hard.Contains(i.State)) ?? blocking[0];
-        var reason = Headline(first) is { Length: > 0 } headline ? $"{headline}. {first.Detail}" : first.Detail;
+        // Concise at the top: the full explanation is stated once, in the Readiness blocker panel.
+        var count = $"{blocking.Count} required prerequisite{(blocking.Count == 1 ? "" : "s")} must be resolved before this test can run.";
+        var scope = blocking.All(IsLocalExecutionPrerequisite) ? " Local execution prerequisite — not a performance, target or application result." : "";
+        // The blocker named briefly: a local execution prerequisite by its headline only (its full explanation lives in the blocker panel);
+        // a definition or safety blocker keeps its short reason.
+        var headline = Headline(first);
+        var named = IsLocalExecutionPrerequisite(first) && headline.Length > 0 ? $"{headline}."
+            : headline is { Length: > 0 } h ? $"{h}. {first.Detail}" : first.Detail;
+        if (Tooling.Contains(first.State)) named = "A tool limitation, not a performance result: " + named;
         if (blocking.Count == 1)
-            return new($"Blocked · {Summary(first)}", hard ? "✕" : "!", hard ? PtTone.Blocked : PtTone.Attention,
-                Tooling.Contains(first.State) ? "A tool limitation, not a performance result: " + reason : reason);
-        return new($"{blocking.Count} readiness blockers", hard ? "✕" : "!", hard ? PtTone.Blocked : PtTone.Attention, reason);
+            return new($"Blocked — {Summary(first)}", hard ? "✕" : "!", hard ? PtTone.Blocked : PtTone.Attention, $"{named} {count}{scope}");
+        return new($"Blocked — {blocking.Count} required prerequisites", hard ? "✕" : "!", hard ? PtTone.Blocked : PtTone.Attention, count + scope);
     }
+
+    /// <summary>A prerequisite of running k6 on this machine (execution setup, container network/TLS trust, engine/runtime), never a property of
+    /// the target or the application. Read from the backend's category/owner; nothing is inferred from wording.</summary>
+    public static bool IsLocalExecutionPrerequisite(PerformanceReadinessItem item) =>
+        Tooling.Contains(item.State)
+        || item.Category is PerformanceReadinessCategories.ExecutionSetup or PerformanceReadinessCategories.Reachability
+        || item.Owner == LocalExecutionOwner;
+
+    public const string LocalExecutionOwner = "Local execution configuration";
+
+    /// <summary>"Local execution prerequisite" for setup blockers; otherwise the backend category.</summary>
+    public static string BlockerCategory(PerformanceReadinessItem item) => IsLocalExecutionPrerequisite(item) ? "Local execution prerequisite" : item.Category is { Length: > 0 } c ? c : "Definition";
+
+    public const string TlsSafetyNote = "TLS verification remains enabled and must not be bypassed. Configure the trusted corporate CA bundle rather than bypassing certificate validation.";
 
     /// <summary>The blocker in a few words (backend summary; older backends: the label).</summary>
     public static string Summary(PerformanceReadinessItem item) => item.Summary.Length > 0 ? item.Summary : item.Label.ToLowerInvariant();
@@ -219,7 +240,8 @@ public static class PerformanceTestReviewDashboard
         return new List<PtCheckGroup> { new("Required", required), new("Safety", safety), new("Optional", optional) }.Where(g => g.Checks.Count > 0).ToList();
     }
 
-    /// <summary>"n of m required checks ready" over every non-optional group (Optional never counts).</summary>
+    /// <summary>"n of m required readiness checks satisfied" over every non-optional group (Optional never counts). Execution readiness — not
+    /// Guided setup progress, which counts configuration steps.</summary>
     public static (int Ready, int Total) RequiredCounts(IReadOnlyList<PtCheckGroup> groups)
     {
         // Neutral checks (optional, not assessed) are not requirements: they never count as missing.
@@ -282,11 +304,20 @@ public static class PerformanceTestReviewDashboard
         ? new("None selected", "○", PtTone.Baseline, "Promote a completed run from History to create the reference for drift comparison.")
         : new($"Baseline v{baseline.Version}", "◆", PtTone.Baseline);
 
+    public const string EngineAvailableMeaning = "The execution engine is available locally. Target execution readiness is evaluated separately.";
+
+    /// <summary>Guided setup progress, worded so it cannot be read as the execution-readiness count.</summary>
+    public static string SetupProgress(BirkNext.Integrations.JourneySetupView setup) =>
+        $"{setup.JourneyName} · {setup.RequiredReady} of {setup.RequiredSteps} setup step{(setup.RequiredSteps == 1 ? "" : "s")} completed";
+
+    public const string SetupVersusReadiness = "Guided setup tracks configuration steps. Execution readiness evaluates the actual prerequisites required to run this definition; setup progress does not directly determine it.";
+
     /// <summary>Execution engine status (k6 + runtime): a tool limitation never reads as a performance problem.</summary>
     public static PtStatus Engine(PerformanceProviderStatus? provider) => provider is null
         ? new("Unknown", "?", PtTone.Neutral)
         : provider.Availability == ProviderAvailability.Available
-            ? new("Ready", "✓", PtTone.Ready)
+            // Available, never "Ready": the engine working says nothing about whether this definition can run against the target.
+            ? new("Available", "✓", PtTone.Info, EngineAvailableMeaning)
             : new(PerformanceTestPresentation.Label(provider.Availability), "!", PtTone.Attention, "Tool limitation — see System Settings → Performance Test Engines.");
 
     /// <summary>Workload against the backend limits. "Within policy" is a preview; the backend enforces the limits.</summary>

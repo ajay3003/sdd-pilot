@@ -102,7 +102,7 @@
             <section class="ptc-card ptc-card-readiness ptc-accent-@PageState.ToneClass" aria-labelledby="pt-card-ready-h" data-testid="pt-card-readiness">
                 <h2 id="pt-card-ready-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">✓</span>Test readiness</h2>
                 <p class="ptc-value" data-testid="pt-hero-readiness">@PageState.Label</p>
-                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null || _isNew || _dirty ? "Whether this definition can run safely. Check readiness evaluates it (a new draft is saved as v1 first)." : $"{readyCount} of {requiredCount} required checks ready for this definition")</p>
+                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null || _isNew || _dirty ? "Whether this definition can run safely. Check readiness evaluates it (a new draft is saved as v1 first)." : $"{readyCount} of {requiredCount} required readiness checks satisfied for this definition")</p>
                 @if (PageState.Reason is { } why) { <p class="ptc-reason" data-testid="pt-readiness-reason">@why</p> }
                 <ul class="ptc-mini-checks">
                     @foreach (var c in groups.SelectMany(g => g.Checks.Select(c => (g.Name, c))).Where(x => x.Name != "Optional" || x.c.Key is "resources").Take(7))
@@ -123,8 +123,8 @@
                 <ul class="ptc-chips" aria-label="Supported target types" data-testid="pt-target-chips">
                     @foreach (var t in D.TargetTypes(_overview.Provider?.Capabilities)) { <li class="ptc-chip"><span aria-hidden="true">✓</span> @t</li> }
                 </ul>
-                <p class="ptc-sub" data-testid="pt-engine-meaning">The load-test tool on this machine. @(engine.Tone == PtTone.Ready ? "Available does not mean this test is ready to run — see Test readiness." : "")</p>
-                @if (engine.Tone != PtTone.Ready) { <p class="ptc-sub"><a href="admin/system-settings?section=performance-test-engines" data-testid="pt-open-engines">Open Performance Test Engines</a></p> }
+                <p class="ptc-sub" data-testid="pt-engine-meaning">The load-test tool on this machine. @(engine.Label == "Available" ? D.EngineAvailableMeaning : "")</p>
+                @if (engine.Label != "Available") { <p class="ptc-sub"><a href="admin/system-settings?section=performance-test-engines" data-testid="pt-open-engines">Open Performance Test Engines</a></p> }
             </section>
         </div>
 
@@ -175,7 +175,7 @@
         }
 
         <section class="ptc-technical-section" aria-label="Pipeline performance gates" data-testid="pt-delivery-section">
-            <ReviewDisclosure Text="Pipeline performance gates" CollapseText="Hide pipeline performance gates" Hint="Pipelines that deliver this target · configured, not executed" TestId="pt-delivery-gates" Class="ptc-technical" @bind-Expanded="_deliveryExpanded">
+            <ReviewDisclosure Text="Pipeline performance gates" CollapseText="Hide pipeline performance gates" Hint="@($"Pipelines that deliver this target · {DeliveryGateStates.ConfiguredNoExecution}")" TestId="pt-delivery-gates" Class="ptc-technical" @bind-Expanded="_deliveryExpanded">
                 @if (_deliveryExpanded)
                 {
                     <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Performance])" ScopeTargetOrigin="@_draft.TargetOrigin"
@@ -290,7 +290,7 @@
         : _isNew ? DraftValid ? "Run test saves the draft as v1, checks readiness and then asks for confirmation." : "Complete the required fields first."
         : _dirty ? "Save your changes as a new version before running."
         : _readiness is null ? "Readiness could not be evaluated."
-        : _readiness.Ready ? "" : $"Not ready: {PageState.Reason ?? "see Readiness"}";
+        : _readiness.Ready ? "" : $"{PageState.Label}. {PageState.Reason ?? "See Test readiness."}";
 
     private PtStatus? TabBadge(Tab t) => t switch
     {
@@ -754,7 +754,8 @@
         var setup = Setup;
         <article class="ptc-tile ptc-setup-card" aria-labelledby="pt-setup-h" data-testid="pt-setup-card" data-complete="@(setup.SetupComplete ? "true" : "false")">
             <h3 id="pt-setup-h" class="ptc-tile-title">Setup</h3>
-            <p class="ptc-value" data-testid="pt-setup-progress">@JourneySetupPresentation.Progress(setup)</p>
+            <p class="ptc-value" data-testid="pt-setup-progress">@D.SetupProgress(setup)</p>
+            <p class="ptc-sub" data-testid="pt-setup-meaning">Configuration steps — not the execution-readiness count.</p>
             <p class="ptc-sub" data-testid="pt-setup-next">@JourneySetupPresentation.Completion(setup)</p>
             <p class="ptc-tile-actions">
                 <button type="button" class="btn-secondary" data-testid="pt-setup-continue" @onclick="ContinueSetup">Continue setup</button>
@@ -1121,16 +1122,19 @@
         {
             var blocking = _readiness.Items.Where(i => i.Blocking).ToList();
             var actionable = D.ActionableBlockers(_readiness);
-            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : "Cannot run yet:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests. Running still asks for confirmation." : PageState.Label)</p>
+            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : $"Blocked — {blocking.Count} required prerequisite{(blocking.Count == 1 ? "" : "s")}:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests. Running still asks for confirmation." : PageState.Label)</p>
             @if (blocking.Count > 0)
             {
                 <section class="ptc-blocker-callout" aria-labelledby="pt-blocker-h" data-testid="pt-blocker-callout" data-count="@blocking.Count">
-                    <h3 id="pt-blocker-h">Cannot run yet</h3>
+                    <h3 id="pt-blocker-h">@(blocking.Count == 1 ? "Target execution blocked" : $"Target execution blocked — {blocking.Count} prerequisites")</h3>
                     @if (blocking.Count == 1)
                     {
                         var only = blocking[0];
+                        @* The one detailed explanation on the page; the top card and the list below state the blocker only briefly. *@
                         <p class="ptc-blocker-headline" data-testid="pt-blocker-headline"><strong>@(D.Headline(only) is { Length: > 0 } h ? h : only.Label)</strong></p>
+                        <p class="ptc-check-detail" data-testid="pt-blocker-status">Status: Blocked · <span data-testid="pt-blocker-category">@D.BlockerCategory(only)</span></p>
                         <p data-testid="pt-blocker-detail">@only.Detail</p>
+                        @if (only.Key == "ca-trust") { <p class="ptc-check-detail" data-testid="pt-blocker-safety">@D.TlsSafetyNote</p> }
                         @if (only.Owner is { } owner) { <p class="ptc-check-detail" data-testid="pt-blocker-owner">Owner: @owner@if (only.ConfigurationKey is { } key) {<span> · Configuration: <code>@key</code></span>}</p> }
                         @if (only.Action is { } a) { <p class="ptc-cta">@ActionControl(a, only, actionable.Count == 1, "pt-blocker-action")</p> }
                     }
@@ -1151,7 +1155,8 @@
                             {
                                 var item = _readiness.Items.FirstOrDefault(i => i.Key == c.Key);
                                 <li id="@($"pt-blocker-{c.Key}")" tabindex="-1" data-testid="@(item is null ? "pt-readiness-local" : "pt-readiness-item")" data-key="@c.Key" data-state="@(item?.State.ToString() ?? c.Status.Label)" data-status="@item?.Status" data-blocking="@(item?.Blocking == true ? "true" : "false")">
-                                    @Pill(c.Status, c.Label) <strong>@c.Label</strong>@if (c.Detail is { } detail) { <span class="ptc-check-detail">@detail</span> }
+                                    @Pill(c.Status, c.Label) <strong>@c.Label</strong>@if (c.Detail is { } detail && !(blocking.Count == 1 && blocking[0].Key == c.Key)) { <span class="ptc-check-detail">@detail</span> }
+                                    @if (blocking.Count == 1 && blocking[0].Key == c.Key) { <span class="ptc-check-detail" data-testid="pt-item-see-blocker">See the blocker above.</span> }
                                     @if (item is { Owner: { } owner } && (item.Blocking || item.Key == "ca-trust")) { <span class="ptc-check-detail" data-testid="pt-item-owner">Owner: @owner@if (item.ConfigurationKey is { } key) {<span> · Configuration: <code>@key</code></span>}</span> }
                                     @if (item is { Action: { } action } && (item.Blocking || item.Key == "network") && !(blocking.Count == 1 && blocking[0].Key == item.Key))
                                     {
@@ -1164,12 +1169,16 @@
                     </section>
                 }
             </div>
-            <p class="sd-muted" data-testid="pt-tls-policy">TLS verification is never disabled: an untrusted certificate chain is fixed by trusting the corporate CA, never by skipping verification.</p>
+            @if (!(blocking.Count == 1 && blocking[0].Key == "ca-trust"))
+            {
+                <p class="sd-muted" data-testid="pt-tls-policy">TLS verification is never disabled: an untrusted certificate chain is fixed by trusting the corporate CA, never by skipping verification.</p>
+            }
             <div class="ptc-cta" data-testid="pt-readiness-cta">
                 @if (_readiness.Ready) { <button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run" data-testid="pt-readiness-run">Run performance test</button> }
             </div>
         }
-        <ReviewDisclosure Text="Guided setup" CollapseText="Hide guided setup" Hint="@JourneySetupPresentation.Progress(Setup)" TestId="pt-guided-setup" Class="disclosure-inline" @bind-Expanded="_showSetup">
+        <ReviewDisclosure Text="Guided setup" CollapseText="Hide guided setup" Hint="@D.SetupProgress(Setup)" TestId="pt-guided-setup" Class="disclosure-inline" @bind-Expanded="_showSetup">
+            <p class="sd-muted" data-testid="pt-setup-vs-readiness">@D.SetupVersusReadiness</p>
             @if (_showSetup)
             {
                 <BirkNext.Web.Components.JourneySetupPanel SetupView="Setup" Actions="SetupAction" OnCommand="PerformAction" FocusNext="_focusSetup" />
@@ -1217,7 +1226,7 @@
             {
                 <div class="ptc-empty ptc-empty-blocked" data-testid="pt-run-blocked">
                     <span class="ptc-empty-icon" aria-hidden="true">!</span>
-                    <div><h3>Cannot run yet</h3>
+                    <div><h3 data-testid="pt-run-blocked-title">@(_readiness is { Ready: false } && PageState.Label.StartsWith("Blocked — ") ? $"Run test — blocked by {PageState.Label["Blocked — ".Length..]}" : "Run test — not available yet")</h3>
                         <p data-testid="pt-run-disabled">@RunReason</p>
                         <p>@(_isNew ? "Check readiness first — the draft is saved as v1 automatically." : _dirty ? "Save your changes as a new version first." : "Resolve the required items in Test readiness.")</p>
                         <p><button type="button" class="btn-secondary" @onclick="() => PerformAction(RunBlockedAction)" data-testid="pt-run-go-readiness">@D.ActionLabel(RunBlockedAction ?? "readiness")</button></p></div>
