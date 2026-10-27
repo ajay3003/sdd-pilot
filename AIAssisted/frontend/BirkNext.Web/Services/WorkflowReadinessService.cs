@@ -536,14 +536,17 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         var lifecycle = _session?.SddLifecycle;
         if (lifecycle?.CurrentProjectImportId is { } importId
             && lifecycle.GeneratedDocumentationSets.FirstOrDefault(s => s.ProjectImportId == importId) is { State: "Present" })
-            reviews.Add(new("generated-documentation-health", "Generated Documentation Health", NavigationCatalog.GeneratedDocumentationHealthRoute, "Source Review",
+            reviews.Add(new("generated-documentation-health", "Generated Documentation Health", NavigationCatalog.GeneratedDocumentationHealthRoute, LaneOf(NavigationCatalog.GeneratedDocumentationHealthRoute),
                 ApplicabilityStatus.Applicable, "Generated documentation detected in the current target project."));
         // Azure DevOps change provenance: optional evidence, applicable only when Azure DevOps is configured.
         if (change == ChangeProvenanceState.Configured)
-            reviews.Add(new("change-traceability", "Change Traceability", ChangeTraceabilityRoute, "Traceability",
+            reviews.Add(new("change-traceability", "Change Traceability", ChangeTraceabilityRoute, LaneOf(ChangeTraceabilityRoute),
                 ApplicabilityStatus.Applicable, "Azure DevOps is configured for this project."));
         return reviews;
     }
+
+    /// <summary>The lane of an optional review is its sidebar section (a navigation fact only, never a prerequisite).</summary>
+    private static string LaneOf(string route) => NavigationCatalog.SectionFor(route)?.Label ?? "";
 
     private static string ExplorerRoute(WorkspaceArtifactType role) => ProjectInputPresentation.ExplorerRoute(role);
 

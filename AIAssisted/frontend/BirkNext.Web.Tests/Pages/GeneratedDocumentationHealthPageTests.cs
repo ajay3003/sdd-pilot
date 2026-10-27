@@ -12,7 +12,7 @@ using static BirkNext.Web.Tests.Services.ProjectImportActivationTests;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Generated Documentation Health as project analysis: Source Review navigation (Analysis feature visibility), one canonical route, the target
+/// Generated Documentation Health as project analysis: Document Review navigation and feature visibility, one canonical route, the target
 /// project and its source snapshot shown first, a neutral fail-safe without an imported project, and the existing diagnostics reused unchanged.
 /// </summary>
 public sealed class GeneratedDocumentationHealthPageTests : BunitContext
@@ -38,14 +38,14 @@ public sealed class GeneratedDocumentationHealthPageTests : BunitContext
     }
 
     [Fact]
-    public void Navigation_places_it_with_source_analysis_as_an_analysis_feature_with_one_route()
+    public void Navigation_places_it_under_document_review_with_one_route()
     {
         var row = NavigationCatalog.Sections.SelectMany(s => s.Items.Select(i => (Section: s.Id, Item: i))).Single(x => x.Item.Label == "Generated Documentation Health");
-        row.Section.Should().Be("source-review", "it analyses the imported project's source snapshot, next to Source Analysis");
+        row.Section.Should().Be("document-review", "generated documentation is implementation-derived but still documentation");
         row.Item.Route.Should().Be("generated-documentation-health");
         row.Item.Visible(new FeatureVisibilityService()).Should().BeTrue("a configuration without the new key keeps it visible");
         NavigationCatalog.Sections.Single(s => s.Id == "admin").Items.Should().NotContain(i => i.Route.Contains("generated-docs-health"));
-        DocumentationCatalog.Features.Single(f => f.FeatureId == "generated-documentation-health").Category.Should().Be("Source Review");
+        DocumentationCatalog.Features.Single(f => f.FeatureId == "generated-documentation-health").Category.Should().Be("Document Review");
         typeof(GeneratedDocumentationHealthPage).GetCustomAttributes(typeof(Microsoft.AspNetCore.Components.RouteAttribute), false)
             .Cast<Microsoft.AspNetCore.Components.RouteAttribute>().Select(r => r.Template).Should().Equal("/generated-documentation-health");
     }
@@ -67,7 +67,8 @@ public sealed class GeneratedDocumentationHealthPageTests : BunitContext
         Import(snapshot);
         var cut = Render<GeneratedDocumentationHealthPage>();
 
-        cut.Find("h1").TextContent.Should().Be("Generated Documentation Health — M2LB");
+        cut.Find("h1").TextContent.Should().Be("Generated Documentation Health", "the feature identity is project-neutral");
+        cut.Find("[data-testid=gdh-target]").TextContent.Should().Contain("Current project").And.Contain("M2LB");
         cut.Find("[data-testid=gdh-target-project]").TextContent.Should().Be("M2LB");
         cut.Find("[data-testid=gdh-target-snapshot]").TextContent.Should().Be("shop.zip");
         cut.Find("[data-testid=gdh-target-snapshot-id]").TextContent.Should().Be(snapshot.ToString());

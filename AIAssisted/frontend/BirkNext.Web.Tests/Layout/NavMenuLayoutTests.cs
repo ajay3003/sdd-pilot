@@ -267,15 +267,17 @@ public sealed class NavMenuLayoutTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")!["nav-section-".Length..]).Should().Equal(
-            "getting-started", "project-inputs", "document-review", "traceability", "source-review", "quality-testing", "extensions", "admin");
+            "getting-started", "project-inputs", "document-review", "traceability", "source-review", "analysis", "quality-testing", "extensions", "admin");
         cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().StartWith(["Getting Started", "Project Inputs", "Document Review"]);
     }
 
     [Theory]
     [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
     [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
-    [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document" })]
-    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "technology-coverage", "generated-documentation-health", "dependency-review", "pipeline-review", "azure-environment" })]
+    [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "generated-documentation-health", "documentation-drift" })]
+    [InlineData("traceability", new[] { "artifact-traceability", "implementation-traceability" })]
+    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
+    [InlineData("analysis", new[] { "impact-analysis" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "code-risk-review", "test-data" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "admin/system-settings" })]
@@ -287,12 +289,12 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     [Fact]
-    public void TraceabilitySection_ListsRequirementsThenImplementation()
+    public void TraceabilitySection_ListsRequirementsThenChangeTraceability()
     {
         var cut = Render<NavMenu>();
 
         cut.FindAll("#nav-section-traceability a.nav-link").Select(a => a.GetAttribute("href")).Should()
-            .StartWith(["artifact-traceability", "task-alignment", "implementation-traceability"]);
+            .Equal("artifact-traceability", "implementation-traceability");
     }
 
     [Fact]
@@ -347,7 +349,8 @@ public sealed class NavMenuLayoutTests : BunitContext
         });
         var cut = Render<NavMenu>();
 
-        cut.FindAll("#nav-section-document-review a.nav-link").Select(a => a.GetAttribute("href")).Should().Equal("quality/document");
+        cut.FindAll("#nav-section-document-review a.nav-link").Select(a => a.GetAttribute("href")).Should()
+            .Equal("quality/document", "task-alignment", "generated-documentation-health", "documentation-drift");
         cut.FindAll("[data-testid=nav-section-source-review]").Should().ContainSingle("Technology Coverage is always visible");
     }
 

@@ -422,119 +422,45 @@ else if (_settings is not null)
                             </div>
                         </div>
 
-                        <!-- Feature count summary -->
-                        <div class="fv-count-summary">
-                            <div class="fv-count-chip">
-                                <span class="fv-count-group">Review</span>
-                                <span class="fv-count-on">@ReviewEnabled enabled</span>
-                                <span class="fv-count-sep">/</span>
-                                <span class="fv-count-off">@(ReviewTotal - ReviewEnabled) disabled</span>
-                            </div>
-                            <div class="fv-count-chip">
-                                <span class="fv-count-group">Library</span>
-                                <span class="fv-count-on">@LibraryEnabled enabled</span>
-                                <span class="fv-count-sep">/</span>
-                                <span class="fv-count-off">@(LibraryTotal - LibraryEnabled) disabled</span>
-                            </div>
-                            <div class="fv-count-chip">
-                                <span class="fv-count-group">Analysis</span>
-                                <span class="fv-count-on">@AnalysisEnabled enabled</span>
-                                <span class="fv-count-sep">/</span>
-                                <span class="fv-count-off">@(AnalysisTotal - AnalysisEnabled) disabled</span>
-                            </div>
-                            <div class="fv-count-chip">
-                                <span class="fv-count-group">Quality</span>
-                                <span class="fv-count-on">@QualityEnabled enabled</span>
-                                <span class="fv-count-sep">/</span>
-                                <span class="fv-count-off">@(QualityTotal - QualityEnabled) disabled</span>
-                            </div>
-                            <div class="fv-count-chip">
-                                <span class="fv-count-group">AI Review</span>
-                                <span class="fv-count-on">@AiEnabled enabled</span>
-                                <span class="fv-count-sep">/</span>
-                                <span class="fv-count-off">@(AiTotal - AiEnabled) disabled</span>
-                            </div>
+                        <!-- Feature count summary: derived from category membership (FeatureVisibilityTaxonomy), never hard-coded -->
+                        <div class="fv-count-summary" data-testid="fv-count-summary">
+                            @foreach (var category in FeatureVisibilityTaxonomy.Categories)
+                            {
+                                <div class="fv-count-chip" data-testid="fv-count-@category.Id">
+                                    <span class="fv-count-group">@category.Label</span>
+                                    <span class="fv-count-on">@EnabledCount(category) enabled</span>
+                                    <span class="fv-count-sep">/</span>
+                                    <span class="fv-count-off">@(TotalCount(category) - EnabledCount(category)) disabled</span>
+                                </div>
+                            }
                         </div>
 
-                        <!-- Grouped feature sections â€” aligned with sidebar navigation -->
+                        <!-- Grouped feature sections: the same categories as the sidebar navigation -->
                         <div class="fv-sections-grid">
 
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">Review</span>
+                            @foreach (var category in FeatureVisibilityTaxonomy.Categories)
+                            {
+                                <div class="fv-section" data-testid="fv-section-@category.Id">
+                                    <div class="fv-section-header">
+                                        <span class="fv-section-label">@category.Label</span>
+                                    </div>
+                                    @foreach (var entry in FeatureVisibilityTaxonomy.EntriesOf(category, AllEditableFeatures))
+                                    {
+                                        <FeatureRow Label="@entry.Label"
+                                                    Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
+                                                    IsLocked="false"
+                                                    IsEditMode="@_isEditMode"
+                                                    OnToggle="@(v => ToggleFeature(entry.Key, v))" />
+                                    }
                                 </div>
-                                @foreach (var entry in GetSectionEntries(ReviewSectionKeys))
-                                {
-                                    <FeatureRow Label="@entry.Label"
-                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                IsLocked="false"
-                                                IsEditMode="@_isEditMode"
-                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                }
-                            </div>
-
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">Library</span>
-                                </div>
-                                @foreach (var entry in GetSectionEntries(LibrarySectionKeys))
-                                {
-                                    <FeatureRow Label="@entry.Label"
-                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                IsLocked="false"
-                                                IsEditMode="@_isEditMode"
-                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                }
-                            </div>
-
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">Analysis</span>
-                                </div>
-                                @foreach (var entry in GetSectionEntries(AnalysisSectionKeys))
-                                {
-                                    <FeatureRow Label="@entry.Label"
-                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                IsLocked="false"
-                                                IsEditMode="@_isEditMode"
-                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                }
-                            </div>
-
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">Quality</span>
-                                </div>
-                                @foreach (var entry in GetSectionEntries(QualitySectionKeys))
-                                {
-                                    <FeatureRow Label="@entry.Label"
-                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                IsLocked="false"
-                                                IsEditMode="@_isEditMode"
-                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                }
-                            </div>
-
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">AI Review</span>
-                                </div>
-                                @foreach (var entry in GetSectionEntries(AiReviewKeys))
-                                {
-                                    <FeatureRow Label="@entry.Label"
-                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                IsLocked="false"
-                                                IsEditMode="@_isEditMode"
-                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                }
-                            </div>
+                            }
 
                             <div class="fv-section">
                                 <div class="fv-section-header">
                                     <span class="fv-section-label">Advanced Features</span>
                                     <span class="fv-section-hint">Optional</span>
                                 </div>
-                                @foreach (var entry in GetSectionEntries(AdvancedOptionalKeys))
+                                @foreach (var entry in GetSectionEntries(FeatureVisibilityTaxonomy.AdvancedKeys))
                                 {
                                     <FeatureRow Label="@entry.Label"
                                                 Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
@@ -584,7 +510,7 @@ else if (_settings is not null)
                                     <span class="fv-sync-stat-label">Hidden</span>
                                 </div>
                                 <div class="fv-sync-stat fv-sync-stat-items">
-                                    <span class="fv-sync-stat-value">@MenuItemRegistry.Length</span>
+                                    <span class="fv-sync-stat-value">@MenuItemRegistry.Count</span>
                                     <span class="fv-sync-stat-label">Menu Items</span>
                                 </div>
                             </div>
@@ -1756,104 +1682,24 @@ else if (_settings is not null)
         </button>
     };
 
-    // â”€â”€ Feature section key sets â€” aligned with sidebar navigation sections â”€â”€â”€
-
-    private static readonly HashSet<string> ReviewSectionKeys =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "SpecificationExplorer", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer"
-        };
-
-    private static readonly HashSet<string> LibrarySectionKeys =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "QaArtifactLibrary", "SampleProjects"
-        };
-
-    private static readonly HashSet<string> AnalysisSectionKeys =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "SpecDrift", "ImpactAnalysis", "ArtifactTraceability",
-            "ImplementationReview", "ImplementationTraceability", "SourceAnalysis", "AzureEnvironmentAnalysis", "GeneratedDocumentationHealth"
-        };
-
-    private static readonly HashSet<string> QualitySectionKeys =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "QualityReview", "BlazorWasmPerformanceReview"
-        };
-
-    private static readonly HashSet<string> AiReviewKeys =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "AiChangeReview"
-        };
-
-    private static readonly HashSet<string> AdvancedOptionalKeys =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "LegacyTraceabilityNavigationEnabled", "TraceabilityCoverage",
-            "TraceabilitySuggestions", "CodeTraceability",
-            "EnableArchitectureView", "EnableExtractionReview"
-        };
+    // ── Feature categories: FeatureVisibilityTaxonomy (shared with the sidebar), presentation only ─────────────────────
 
     // All known menu items with their flag keys (used for Menu Synchronization check).
-    // Platform items (locked, always-on) are included so the total count matches the sidebar.
-    private static readonly (string Label, string Key)[] MenuItemRegistry =
-    [
-        // Getting Started (Platform â€” always on)
-        ("Recommended Workflow",    "RecommendedWorkflow"),
-        ("User Guide",              "UserGuide"),
-
-        // Review
-        ("Dashboard",               "Dashboard"),
-        ("Specification Explorer",  "SpecificationExplorer"),
-        ("Constitution Explorer",   "ConstitutionExplorer"),
-        ("Data Model Explorer",     "DataModelExplorer"),
-        ("Plan Explorer",           "PlanExplorer"),
-        ("Task Explorer",           "TaskExplorer"),
-
-        // Library
-        ("Sample Projects",         "SampleProjects"),
-
-        // Traceability (legacy â€” shown only when LegacyTraceabilityNavigationEnabled)
-        ("Traceability & Coverage", "TraceabilityCoverage"),
-        ("Traceability Suggestions","TraceabilitySuggestions"),
-        ("Code Traceability",       "CodeTraceability"),
-
-        // Analysis
-        ("Documentation Drift",              "SpecDrift"),
-        ("Impact Analysis",         "ImpactAnalysis"),
-        ("Requirements Traceability",   "ArtifactTraceability"),
-        ("Task Alignment Review",   "ImplementationReview"),
-        ("Change Traceability", "ImplementationTraceability"),
-        ("Source Analysis",         "SourceAnalysis"),
-        ("Azure Environment Analysis", "AzureEnvironmentAnalysis"),
-
-        // Quality
-        ("Document Quality Review", "QualityReview"),
-        ("WASM Performance Review", "BlazorWasmPerformanceReview"),
-
-        // AI Review
-        ("AI Change Review",        "AiChangeReview"),
-
-        // Admin (Platform â€” always on)
-        ("System Settings",         "AdminSystemSettings"),
-    ];
+    private static IReadOnlyList<(string Label, string Key)> MenuItemRegistry => FeatureVisibilityTaxonomy.MenuItems;
 
     private IEnumerable<FeatureEntryDto> AllEditableFeatures =>
         _editableSettings?.FeatureVisibility.Core
             .Concat(_editableSettings.FeatureVisibility.Advanced) ?? [];
 
-    private IEnumerable<FeatureEntryDto> GetSectionEntries(HashSet<string> keys) =>
-        AllEditableFeatures.Where(e => keys.Contains(e.Key));
+    private IEnumerable<FeatureEntryDto> GetSectionEntries(IEnumerable<string> keys) =>
+        AllEditableFeatures.Where(e => keys.Contains(e.Key, StringComparer.OrdinalIgnoreCase));
 
-    private int EnabledCount(HashSet<string> keys) =>
-        GetSectionEntries(keys).Count(e =>
+    private int EnabledCount(FeatureCategory category) =>
+        FeatureVisibilityTaxonomy.EntriesOf(category, AllEditableFeatures).Count(e =>
             _isEditMode ? _editFv.GetValueOrDefault(e.Key, e.Value) : e.Value);
 
-    private int TotalCount(HashSet<string> keys) =>
-        GetSectionEntries(keys).Count();
+    private int TotalCount(FeatureCategory category) =>
+        FeatureVisibilityTaxonomy.EntriesOf(category, AllEditableFeatures).Count;
 
     private IEnumerable<(string Label, string Key)> UnflaggedMenuItems =>
         MenuItemRegistry.Where(item =>
@@ -1861,18 +1707,6 @@ else if (_settings is not null)
                 string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)) &&
             !(_editableSettings?.FeatureVisibility.Platform.Any(e =>
                 string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)) ?? false));
-
-    // Count summary properties for the template
-    private int ReviewEnabled   => EnabledCount(ReviewSectionKeys);
-    private int ReviewTotal     => TotalCount(ReviewSectionKeys);
-    private int LibraryEnabled  => EnabledCount(LibrarySectionKeys);
-    private int LibraryTotal    => TotalCount(LibrarySectionKeys);
-    private int AnalysisEnabled => EnabledCount(AnalysisSectionKeys);
-    private int AnalysisTotal   => TotalCount(AnalysisSectionKeys);
-    private int QualityEnabled  => EnabledCount(QualitySectionKeys);
-    private int QualityTotal    => TotalCount(QualitySectionKeys);
-    private int AiEnabled       => EnabledCount(AiReviewKeys);
-    private int AiTotal         => TotalCount(AiReviewKeys);
 
     // Menu synchronization summary properties
     private int AllConfiguredCount => AllEditableFeatures.Count();

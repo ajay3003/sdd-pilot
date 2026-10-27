@@ -99,18 +99,22 @@ public static class NavigationCatalog
             new("plan-explorer", "Plan Explorer", "nav-icon-plan-explorer", f => f.PlanExplorer),
             new("task-explorer", "Task Explorer", "nav-icon-task-explorer", f => f.TaskExplorer),
             new("quality/document", "Document Quality Review", "nav-icon-qa-auditor", f => f.QualityReview, ReviewId: "quality-review"),
+            // Stable route and visibility key (ImplementationReview); also reachable at /task-alignment-review.
+            new("task-alignment", "Task Alignment Review", "nav-icon-task-alignment", f => f.ImplementationReview,
+                Hint: "tasks checked against the Specification and Success Criteria; no source code is read"),
+            // Generated documentation is implementation-derived but still documentation; raw source authority stays in Source Analysis.
+            new(GeneratedDocumentationHealthRoute, "Generated Documentation Health", "nav-icon-source-analysis", f => f.GeneratedDocumentationHealth,
+                Hint: "generated documentation in the current project: availability, provenance, freshness and consistency", WrapLabel: true),
+            new("documentation-drift", "Documentation Drift", "nav-icon-spec-drift", f => f.SpecDrift,
+                Hint: "compares documents and revisions: authored ↔ authored, generated ↔ generated, authored ↔ generated"),
         ]),
-        // Documents linked to each other and to implementation evidence.
+        // How lifecycle artifacts and tracked delivery changes are linked.
         new("traceability", "Traceability",
         [
             new("artifact-traceability", "Requirements Traceability", "nav-icon-artifact-traceability", f => f.ArtifactTraceability),
-            // Stable routes and visibility keys; display names say what each page is (also reachable at /task-alignment-review, /change-traceability).
-            new("task-alignment", "Task Alignment Review", "nav-icon-task-alignment", f => f.ImplementationReview,
-                Hint: "tasks checked against the Specification and Success Criteria; no source code is read"),
+            // Stable route and visibility key (ImplementationTraceability); also reachable at /change-traceability.
             new("implementation-traceability", "Change Traceability", "nav-icon-task-alignment", f => f.ImplementationTraceability,
                 Hint: "Azure DevOps work items → pull requests → commits → changed files (optional)"),
-            new("documentation-drift", "Documentation Drift", "nav-icon-spec-drift", f => f.SpecDrift),
-            new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis),
             new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilityCoverage, OptionalByDefault: true),
             new("traceability/suggestions", "Traceability Suggestions", "nav-icon-suggestions", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilitySuggestions, OptionalByDefault: true),
             new("code-traceability", "Code Traceability", "nav-icon-code-trace", f => f.LegacyTraceabilityNavigationEnabled && f.CodeTraceability, OptionalByDefault: true),
@@ -124,14 +128,16 @@ public static class NavigationCatalog
                 Hint: "import, inspect, compare and validate generic XSD contracts"),
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always,
                 Hint: "what the source contains and what BirkNext can assess"),
-            // Project analysis of the imported project's generated documentation (autodoc …) — not a BirkNext developer diagnostic.
-            new(GeneratedDocumentationHealthRoute, "Generated Documentation Health", "nav-icon-source-analysis", f => f.GeneratedDocumentationHealth,
-                Hint: "generated documentation in the imported project: coverage, generator evidence, freshness and discrepancy candidates"),
             new("dependency-review", "Dependency Review", "nav-icon-constitution-compliance", Always, ReviewId: "dependency-review"),
             new("pipeline-review", "Pipeline Review", "nav-icon-task-alignment", Always, ReviewId: "pipeline-review"),
             // The page is the Azure provider of environment analysis; the menu stays generic and names the provider in the status.
             new("azure-environment", "Environment Analysis", "nav-icon-source-analysis", f => f.AzureEnvironmentAnalysis,
                 ReviewId: "azure-environment", Hint: "read-only cloud environment inventory (provider: Azure)", ProviderWhenApplicable: "Azure", FeatureId: "environment-analysis"),
+        ]),
+        // Cross-cutting impact of requirement and source changes (off by default).
+        new("analysis", "Analysis",
+        [
+            new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis),
         ]),
         // Runtime/deployed-system quality reviews remain target-bound.
         new("quality-testing", "Quality & Testing",

@@ -26,7 +26,7 @@
     else
     {
         <dl class="gdh-target" data-testid="gdh-target">
-            <div><dt>Target project</dt><dd data-testid="gdh-target-project">@import.ProjectName</dd></div>
+            <div><dt>Current project</dt><dd data-testid="gdh-target-project">@import.ProjectName</dd></div>
             <div><dt>Source snapshot</dt><dd data-testid="gdh-target-snapshot">@(import.SourceSnapshotId is null ? "Not available for this import" : import.ArchiveFileName)</dd></div>
             @if (import.SourceSnapshotId is { } snapshotId)
             {
@@ -56,7 +56,7 @@
 
 @code {
     public const string NoProjectMessage = "No imported project/source snapshot is currently available for Generated Documentation Health analysis.";
-    public const string IntroText = "Analyse generated project documentation in the current imported project, including generator/workflow evidence, coverage, freshness and source/document discrepancy candidates.";
+    public const string IntroText = "Review the availability, provenance, freshness and consistency of generated documentation for the current project.";
 
     private SddProjectImportRecord? Import
     {
@@ -68,7 +68,8 @@
         }
     }
 
-    private string Title => Import is { ProjectName: { Length: > 0 } name } ? $"Generated Documentation Health — {name}" : "Generated Documentation Health";
+    // Project-neutral feature identity; the current project is shown as context in the target list, never in the title.
+    private const string Title = "Generated Documentation Health";
     private static string Intro => IntroText;
 
     protected override void OnInitialized() => ArtifactContext.Changed += OnContextChanged;

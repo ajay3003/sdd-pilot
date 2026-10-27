@@ -211,6 +211,27 @@ public sealed class ProjectInputWorkflowTests
     }
 
     [Fact]
+    public async Task DocumentReviewCategory_IsNotAWorkflowPrerequisite()
+    {
+        // Moving rows into Document Review must not make them workflow reviews: the sidebar category is navigation only.
+        Documents(AllRoles);
+        DocumentStepsApproved();
+        Environment("https://m2lbdev.bufetat.no");
+        Source(detected: [Nuget, AzurePipelines]);
+
+        var r = await ReadinessAsync();
+
+        r.ApplicableReviews.Select(x => x.ReviewId).Should().NotContain(
+            ["generated-documentation-health", "documentation-drift", "change-traceability", "task-alignment"],
+            "no generated docs in the session and no Azure DevOps: these optional reviews never appear by category");
+        r.ApplicableReviews.Should().Contain(x => x.ReviewId == "quality-review" && x.Lane == "Document Review");
+        r.ApplicableReviews.Should().Contain(x => x.ReviewId == "dependency-review" && x.Lane == "Source Review", "source prerequisites unchanged");
+        NavigationCatalog.Sections.Single(s => s.Id == "document-review").Items
+            .Where(i => i.Route is "task-alignment" or "documentation-drift" or NavigationCatalog.GeneratedDocumentationHealthRoute)
+            .Should().HaveCount(3).And.OnlyContain(i => i.ReviewId == null, "no applicability-driven workflow step is derived from these rows");
+    }
+
+    [Fact]
     public async Task SourceAndTarget_SourceAndRuntimeReviews_WithoutDocuments()
     {
         Environment("https://m2lbdev.bufetat.no");

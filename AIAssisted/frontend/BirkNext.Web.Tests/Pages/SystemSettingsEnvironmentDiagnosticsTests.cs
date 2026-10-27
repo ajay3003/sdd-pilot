@@ -456,6 +456,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         public string ProjectCompatibilityJson { get; set; } = "{}";
         public string ContentIntegrityJson { get; set; } = "{}";
         public string ExplorerCoverageJson { get; set; } = "{}";
+        public string EditableJson { get; set; } = EditableSettingsJson;
         public string? LastSaveBody { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -475,7 +476,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
             var json = path switch
             {
                 "/api/admin/system-settings" => SystemSettingsJson,
-                "/api/admin/editable-settings" => EditableSettingsJson,
+                "/api/admin/editable-settings" => EditableJson,
                 "/api/frontend-quality-engines/status" => FrontendQualityStatusJson,
                 "/api/admin/environment-diagnostics" => EnvironmentDiagnosticsJson,
                 "/api/system-diagnostics/project-compatibility/run" => ProjectCompatibilityJson,

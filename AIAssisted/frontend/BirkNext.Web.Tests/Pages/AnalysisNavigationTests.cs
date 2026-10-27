@@ -100,15 +100,17 @@ public class AnalysisNavigationTests : BunitContext
         nav.IndexOf("Plan Explorer", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Task Explorer", StringComparison.Ordinal));
 
-        // Traceability: requirements first, then implementation, then the change-oriented views.
-        nav.IndexOf("Requirements Traceability", StringComparison.Ordinal)
+        // Document Review ends with the document assessments; Traceability follows with requirements, then change provenance.
+        nav.IndexOf("Task Explorer", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Task Alignment Review", StringComparison.Ordinal));
         nav.IndexOf("Task Alignment Review", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Change Traceability", StringComparison.Ordinal));
-        nav.IndexOf("Change Traceability", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Documentation Drift", StringComparison.Ordinal));
-        nav.Should().NotContain("Implementation Traceability").And.NotContain("Artifact Traceability");
         nav.IndexOf("Documentation Drift", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Requirements Traceability", StringComparison.Ordinal));
+        nav.IndexOf("Requirements Traceability", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Change Traceability", StringComparison.Ordinal));
+        nav.Should().NotContain("Implementation Traceability").And.NotContain("Artifact Traceability");
+        nav.IndexOf("Change Traceability", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Impact Analysis", StringComparison.Ordinal));
     }
 

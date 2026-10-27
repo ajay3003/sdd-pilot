@@ -71,9 +71,10 @@ Section IDs are stable, and order is deterministic:
 |---|---|
 | Getting Started (`getting-started`) | Recommended Workflow, User Guide, Dashboard (cross-cutting, so it sits here rather than under document review) |
 | Project Inputs (`project-inputs`) | Import Project (primary: one ZIP → project artifacts + source snapshot), Sample Projects (optional examples), Target Environments (runtime configuration of the deployed system, not a document input) |
-| Document Review (`document-review`) | Specification, Constitution, Data Model, Plan, Task Explorer, Document Quality Review |
-| Traceability (`traceability`) | Requirements Traceability, Implementation Review, Implementation Traceability, Documentation Drift, Impact Analysis (+ legacy rows behind the legacy flag) |
-| Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
+| Document Review (`document-review`) | Specification, Constitution, Data Model, Plan, Task Explorer, Document Quality Review, Task Alignment Review, Generated Documentation Health, Documentation Drift |
+| Traceability (`traceability`) | Requirements Traceability, Change Traceability (+ legacy rows behind the legacy flag) |
+| Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Schema Studio, Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
+| Analysis (`analysis`) | Impact Analysis (off by default) |
 | Quality & Testing (`quality-testing`) | Frontend, API, Integration Quality Review, Performance Test Review, Critical E2E Regression |
 | Extensions (`extensions`) | M01 – Gradert tilgang (Kode 6/7), formerly Security Classification (badge *Extension* when enabled, otherwise *N/A*) |
 | AI Review (`ai-review`) | AI Change Review (off by default) |
@@ -81,6 +82,10 @@ Section IDs are stable, and order is deterministic:
 
 Rules:
 
+- **Feature & Menu Visibility** (System Settings) groups the feature keys into the same categories as the sidebar
+  (`FeatureVisibilityTaxonomy`). A category is presentation only: keys (`ImplementationReview`, `ImplementationTraceability`,
+  `SpecDrift`, …) and their stored values are unchanged, counts are derived from membership, and a category is never a workflow
+  prerequisite.
 - **Source Analysis** is a source-evidence inspection page, not a primary input: it sits first under Source Review (route
   `source-analysis` unchanged). Import Project creates the snapshot; a source-only upload stays available there as an advanced path.
 - **Empty states** come from one model, `WorkspaceArtifactState` (`NoWorkspace`, `RoleUnavailable`, `RoleAmbiguous`,
