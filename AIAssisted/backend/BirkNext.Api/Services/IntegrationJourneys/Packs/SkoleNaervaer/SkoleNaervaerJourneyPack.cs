@@ -686,7 +686,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     {
         if (journey.JourneyId != RapportmottakId || !SubmissionScenarios.Contains(scenario.ScenarioId, StringComparer.Ordinal)) return JourneyPackValidation.None;
         var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
-        var config = flow.AltinnConfiguration;
+        var config = flow.AltinnConfiguration with { TargetEnvironmentId = context.EnvironmentId };
         var contract = altinnContracts.Evaluate(context.EnvironmentId, config.AppIdentifier, flow.AppContract);
         var checks = new List<JourneyValidationCheck>();
         var preview = new List<JourneyEvidenceFact>();
@@ -873,7 +873,10 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     internal const string SourceAnalysisSource = "Source Analysis";
     internal const string BirkNextSource = "BirkNext";
     internal const string TargetEnvironmentSource = "Target Environment → Integrations";
-    private static string ClientIdSource(string clientSource) => clientSource.StartsWith("Local", StringComparison.Ordinal) ? LocalSource : IqrSource;
+    /// <summary>The one place a test lead configures the Altinn environment (app, unattended client, session secret).</summary>
+    internal const string AltinnSetupSource = AltinnTestingPolicy.TargetEnvironmentAltinn;
+    private static string ClientIdSource(string clientSource) =>
+        clientSource.StartsWith("Local", StringComparison.Ordinal) ? LocalSource : clientSource.StartsWith(AltinnSetupSource, StringComparison.Ordinal) ? AltinnSetupSource : IqrSource;
 
     /// <summary>
     /// The Altinn form's contract impact as one readiness row: unchanged, or changed with the BirkNext producer's compatibility, the first
@@ -1039,7 +1042,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             case RapportmottakId:
             {
                 var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
-                var config = flow.AltinnConfiguration;
+                var config = flow.AltinnConfiguration with { TargetEnvironmentId = context.EnvironmentId };
                 // The report schema's snapshot is the canonical IQR evidence binding of the report-intake integration; the Altinn configuration
                 // only names which XML Schema in it. A legacy snapshot id stored in the configuration is used only while no binding exists.
                 var reportBinding = ReportIntakeBinding(journey, context);
@@ -1053,8 +1056,15 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var altinnEnvironment = AltinnTestingPolicy.AltinnEnvironmentBlock(config);
                 var options = altinnPolicy.Options.UnattendedIdPortenTest;
                 var clientId = altinnPolicy.ClientId(config, out var clientSource, out _);
-                var clientConfigured = config.AuthenticationType == ExternalAuthenticationType.IDPorten && clientId is not null
-                    && config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal);
+                var clientConfigured = (config.AuthenticationType == ExternalAuthenticationType.IDPorten || altinnPolicy.Saved(config)?.Unattended.ClientId is not null) && clientId is not null
+                    && altinnPolicy.Scopes(config).Contains("openid", StringComparer.Ordinal);
+                var secretState = altinnPolicy.SecretState(config);
+                var redirectConfigured = altinnPolicy.UnattendedRedirect(config) is not null;
+                // The row names where a present value actually comes from; a missing value points to where it is set (Target Environment → Altinn).
+                var saved = altinnPolicy.Saved(config);
+                var redirectSource = saved?.Unattended.RedirectUri is null && redirectConfigured ? LocalSource : AltinnSetupSource;
+                var secretSource = secretState == AltinnSettingState.AvailableToBackend ? LocalSource : AltinnSetupSource;
+                var providerSource = saved?.Unattended.Enabled is null && altinnPolicy.UnattendedEnabled(config) ? LocalSource : AltinnSetupSource;
                 // Configured ≠ confirmed: a reporter counts as configured before its Altinn profile is confirmed (shown in its own row).
                 var reporters = options.Reporters.Count(item => AltinnTestingPolicy.ReporterConfigurationProblem(item) is null);
                 var reporterProblem = options.Reporters.Select(AltinnTestingPolicy.ReporterConfigurationProblem).FirstOrDefault(item => item is not null);
@@ -1090,28 +1100,30 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                             : $"Neither unattended nor interactive ID-porten TEST authentication is configured. Unattended: {string.Join(" ", unattended)}",
                         Scenarios: AltinnCallingScenarios) { Source = LocalSource },
                     new JourneyPrerequisite("unattended-provider", "Unattended ID-porten TEST provider", JourneyPrerequisiteCategory.Authentication,
-                        options.Enabled ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        options.Enabled ? "Available: ID-porten TEST headless login for synthetic TestID users (TEST only), then the Altinn TT02 token exchange."
-                            : $"Disabled (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Enabled).", Mandatory: false) { Source = LocalSource },
+                        altinnPolicy.UnattendedEnabled(config) ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        altinnPolicy.UnattendedEnabled(config) ? "Available: ID-porten TEST headless login for synthetic TestID users (TEST only), then the Altinn TT02 token exchange."
+                            : $"Automated execution is not enabled for this environment ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Automated execution). Manual testing is not affected.", Mandatory: false) { Source = providerSource },
                     new JourneyPrerequisite("idporten-client", "ID-porten TEST client", JourneyPrerequisiteCategory.Authentication,
                         clientConfigured ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        clientConfigured ? "Configured: ID-porten authentication, client id and the openid scope (Integration Quality Review → Altinn test configuration)."
-                            : "Missing: ID-porten authentication type, client id or the openid scope (Integration Quality Review → Altinn test configuration).", Mandatory: false) { Source = clientConfigured ? ClientIdSource(clientSource) : IqrSource },
+                        clientConfigured ? $"Configured: unattended client id and the openid scope ({clientSource})."
+                            : $"Missing: the unattended client id or the openid scope ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Automated execution). Only automated execution needs it.", Mandatory: false) { Source = clientConfigured ? ClientIdSource(clientSource) : AltinnSetupSource },
                     new JourneyPrerequisite("redirect-uri", "Registered redirect URI", JourneyPrerequisiteCategory.Authentication,
-                        altinnPolicy.UnattendedRedirect() is not null ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        altinnPolicy.UnattendedRedirect() is not null
-                            ? "Configured in the backend; ID-porten's redirect must match it exactly (value not shown here)."
-                            : $"Missing: the redirect URI registered for the ID-porten TEST client (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:RedirectUri): https, or http on loopback.", Mandatory: false) { Source = LocalSource },
+                        redirectConfigured ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        redirectConfigured
+                            ? "Configured; ID-porten's redirect must match it exactly (value not shown here)."
+                            : $"Missing: the redirect URI registered for the unattended ID-porten TEST client ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Automated execution). A browser redirect URI observed for Altinn's own login is not this value.", Mandatory: false) { Source = redirectSource },
                     new JourneyPrerequisite("client-secret", "Client secret", JourneyPrerequisiteCategory.Authentication,
-                        altinnPolicy.UnattendedSecretAvailable ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        altinnPolicy.UnattendedSecretAvailable ? "Available to the backend (value never shown)." : "Missing: the ID-porten TEST client secret is not available to the backend (environment variable or secret store).", Mandatory: false) { Source = LocalSource },
+                        secretState == AltinnSettingState.Missing ? JourneyReadinessState.NotConfigured : JourneyReadinessState.Ready,
+                        secretState == AltinnSettingState.AvailableForSession ? "Available for this backend session (value never shown)."
+                            : secretState == AltinnSettingState.AvailableToBackend ? "Available to the backend (value never shown)."
+                            : $"Missing: add the ID-porten TEST client secret for this session ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Add session secret). Only automated execution needs it.", Mandatory: false) { Source = secretSource },
                     new JourneyPrerequisite("synthetic-reporter", "Synthetic reporter", JourneyPrerequisiteCategory.SyntheticData,
                         reporters > 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         reporters > 0 ? testData.DefaultReporter is { } onlyReporter
                                 ? $"Resolved: {onlyReporter} — the only usable approved synthetic TestID reporter (identifier stays in the backend). Configured is not authenticated."
                                 : $"{reporters} approved synthetic TestID reporter alias(es) configured (identifiers stay in the backend). Configured is not authenticated."
                             : reporterProblem is not null ? $"Not usable: {reporterProblem}"
-                            : $"Missing: no synthetic TestID reporter alias is configured (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Reporters).", Mandatory: false) { Source = SkoleNaervaerTestData.Source },
+                            : "Missing: no synthetic TestID reporter is available (Test Data → session test identities, or the backend's own configuration).", Mandatory: false) { Source = SkoleNaervaerTestData.Source },
                     new JourneyPrerequisite("reporter-role", "Reporter role", JourneyPrerequisiteCategory.Authorization,
                         reporters > 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         reporters > 0 ? "PRIV: the reporter submits for their own party (the only supported role; acting for an organisation is not part of this run)."

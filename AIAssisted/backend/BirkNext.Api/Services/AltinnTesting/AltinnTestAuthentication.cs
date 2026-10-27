@@ -136,7 +136,8 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
 
     public async Task<AltinnAuthenticationResult> AuthenticateAsync(AltinnAuthenticationRequest request, CancellationToken ct)
     {
-        var config = request.Configuration;
+        // The Target Environment's Altinn settings and session secret are resolved for the run's own environment.
+        var config = request.Configuration with { TargetEnvironmentId = request.EnvironmentId };
         if (AltinnTestingPolicy.AltinnEnvironmentBlock(config) is { } environment) return Fail(AltinnAuthenticationStage.Configuration, environment);
         if (policy.UnattendedProblems(config) is { Count: > 0 } problems) return Fail(AltinnAuthenticationStage.Configuration, string.Join(" ", problems));
         if (policy.Reporter(request.Reporter, out var reporterReason) is not { } reporter) return Fail(AltinnAuthenticationStage.Configuration, reporterReason);
@@ -160,10 +161,10 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
     private async Task<AltinnAuthenticationResult> AcquireAsync(AltinnAuthenticationRequest request, SyntheticReporterOptions reporter, (string, string) key, CancellationToken ct)
     {
         var client = http.CreateClient(AltinnTestingRequestGuard.ClientName);
-        var config = request.Configuration;
+        var config = request.Configuration with { TargetEnvironmentId = request.EnvironmentId };
         var clientId = policy.ClientId(config, out _, out _)!;
-        var redirect = policy.UnattendedRedirect()!;
-        var secret = policy.UnattendedClientSecret!;
+        var redirect = policy.UnattendedRedirect(config)!;
+        var secret = policy.UnattendedClientSecretFor(config)!;
 
         IdPortenTestDiscovery.Document discovery;
         try { discovery = await IdPortenTestDiscovery.ReadAsync(client, ct); }
@@ -179,7 +180,7 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
         var query = new List<KeyValuePair<string, string>>
         {
             new("response_type", "code"), new("client_id", clientId), new("redirect_uri", redirect.ToString()),
-            new("scope", string.Join(' ', config.ConfiguredScopes.Select(item => item.Trim()).Where(item => item.Length > 0).Distinct(StringComparer.Ordinal))),
+            new("scope", string.Join(' ', policy.Scopes(config))),
             new("state", state), new("nonce", nonce), new("acr_values", reporter.AcrValue),
             new("code_challenge", Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))), new("code_challenge_method", "S256"),
             new("login_hint", $"testid:{reporter.TestIdPersonIdentifier!.Trim()}_{reporter.AcrValue}"),

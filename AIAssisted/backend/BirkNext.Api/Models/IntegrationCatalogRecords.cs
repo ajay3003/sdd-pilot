@@ -141,6 +141,14 @@ public class IntegrationMessageFlowRecord
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>A Target Environment's non-secret Altinn configuration (JSON of <c>AltinnEnvironmentSettings</c>). No secret or identifier is representable.</summary>
+public class AltinnEnvironmentSettingsRecord
+{
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string DocumentJson { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 /// <summary>A stored Code Risk Review run (formerly AI-Generated Code Review), bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
 /// <summary>One Test Coverage &amp; Overlap Review run, bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
 public class TestCoverageReviewRunRecord

@@ -1469,6 +1469,12 @@
                 <IntegrationsPane Profile="profile" Focus="@(InitialTab == "integrations" ? InitialFocus : null)" />
             }
 
+            @* ── Altinn ── the canonical Altinn environment setup consumed by Skolenærvær Testing and IQR. *@
+            @if (_activeTab == "altinn")
+            {
+                <AltinnEnvironmentPane EnvironmentId="@profile.Id" />
+            }
+
         </div>
 
         @* ── Advanced / Maintenance ──
@@ -1746,7 +1752,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("General", ["general", "target", "auth"]),
         ("Discovery", ["endpoint", "browser"]),
         ("Quality settings", ["performance", "cwv", "features", "validation"]),
-        ("Integrations", ["integrations"]),
+        ("Integrations", ["integrations", "altinn"]),
     ];
 
     // ── Computed ─────────────────────────────────────────────────────────────

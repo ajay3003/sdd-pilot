@@ -70,6 +70,8 @@ public sealed class SyntheticReporterOptions
     public string AllowedEnvironment { get; set; } = "TT02";
     /// <summary>Set only after confirming the synthetic person has an Altinn TT02 profile (Altinn's token exchange requires one).</summary>
     public bool AltinnProfileConfirmed { get; set; }
+    /// <summary>Set when the reporter was entered in BirkNext for this backend session (memory only); null for backend configuration.</summary>
+    public DateTimeOffset? SessionExpiresAt { get; internal set; }
     /// <summary>The Altinn role the reporter acts in. A run's instance owner is the reporter's own current party, so only PRIV is supported.</summary>
     public string AltinnRole { get; set; } = "PRIV";
 }
@@ -83,12 +85,14 @@ public sealed class SyntheticChildOptions
     /// <summary>Stable key, e.g. "synthetic-child-1" (lowercase letters, digits and hyphens).</summary>
     public string Alias { get; set; } = "";
     public string Label { get; set; } = "";
-    /// <summary>The synthetic Test-Norge person identifier (month + 80). Configuration outside committed files only.</summary>
+    /// <summary>The synthetic Test-Norge person identifier (11 digits, valid control digits). Configuration outside committed files only.</summary>
     public string? TestPersonIdentifier { get; set; }
     /// <summary>Declared: the child is a registered synthetic test person (known child) rather than one Person does not know.</summary>
     public bool KnownToPerson { get; set; } = true;
     /// <summary>The child to use when several approved children apply. At most one may be the default; otherwise the tester chooses.</summary>
     public bool Default { get; set; }
+    /// <summary>Set when the child was entered in BirkNext for this backend session (memory only); null for backend configuration.</summary>
+    public DateTimeOffset? SessionExpiresAt { get; internal set; }
 }
 
 public sealed class AltinnAppPolicyConfirmation
@@ -123,10 +127,17 @@ public sealed class IdPortenTestOptions
 /// <summary>
 /// Every host, app and environment rule for Altinn app testing, enforced by the backend on readiness and again on every request it sends.
 /// Only Altinn TT02 and ID-porten TEST are reachable; Production hosts are refused by name even if an allowlist were ever misconfigured.
-/// Nothing here can be widened from a request.
+/// Nothing here can be widened from a request. The unattended client values resolve per environment: the Target Environment's saved Altinn
+/// settings, then a session value (the client secret), then the backend's own configuration, then the Integration Quality Review binding;
+/// two explicit values that disagree are a conflict, never a silent choice. Trust and app approval stay backend configuration only.
 /// </summary>
-public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
+public sealed class AltinnTestingPolicy(AltinnTestingOptions options, AltinnSessionStore? session = null, AltinnEnvironmentSettingsCache? environments = null)
 {
+    /// <summary>The Target Environment Altinn settings saved for the configuration's environment, or null.</summary>
+    public AltinnEnvironmentSettings? Saved(AltinnTestConfiguration config) => environments?.Get(config.TargetEnvironmentId);
+
+    public const string TargetEnvironmentAltinn = "Target Environment → Altinn";
+
     public const string IdPortenTestIssuer = "https://test.idporten.no";
     public const string IdPortenTestDiscovery = "https://test.idporten.no/.well-known/openid-configuration";
     /// <summary>ID-porten TEST's authorization and token endpoints as published by its discovery document (the runtime reads them from
@@ -225,30 +236,66 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     public static readonly string[] AcrValues = ["idporten-loa-substantial", "idporten-loa-high"];
     private static readonly Regex AliasPattern = new("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.CultureInvariant);
 
+    public static bool IsValidAlias(string? alias) => alias is not null && AliasPattern.IsMatch(alias);
+
     /// <summary>
-    /// The ID-porten TEST client id in effect: the Integration Quality Review value, else the local backend value. Null when neither is set or
-    /// when both are set and differ (then <paramref name="problem"/> says so). <paramref name="source"/> names where it came from.
+    /// The ID-porten TEST client id in effect, by precedence: Target Environment → Altinn, the backend's own configuration, the Integration
+    /// Quality Review binding. Null when none is set or when two of them are set and differ (then <paramref name="problem"/> says so).
+    /// <paramref name="source"/> names where it came from.
     /// </summary>
     public string? ClientId(AltinnTestConfiguration config, out string source, out string? problem)
     {
-        var iqr = config.ClientReference?.Trim();
-        var local = options.UnattendedIdPortenTest.ClientId?.Trim();
-        problem = null;
-        if (!string.IsNullOrEmpty(iqr) && !string.IsNullOrEmpty(local) && !string.Equals(iqr, local, StringComparison.Ordinal))
+        var candidates = new (string? Value, string Source)[]
         {
-            source = "Integration Quality Review and local backend configuration";
-            problem = $"The ID-porten TEST client id differs between Integration Quality Review and the backend ({AltinnTestingOptions.Section}:UnattendedIdPortenTest:ClientId); set one of them.";
+            (Saved(config)?.Unattended.ClientId?.Trim(), TargetEnvironmentAltinn),
+            (options.UnattendedIdPortenTest.ClientId?.Trim(), "Local backend configuration"),
+            (config.ClientReference?.Trim(), "Integration Quality Review → Altinn test configuration"),
+        }.Where(item => !string.IsNullOrEmpty(item.Value)).ToList();
+        problem = null;
+        if (candidates.Select(item => item.Value).Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            source = string.Join(" and ", candidates.Select(item => item.Source));
+            problem = $"The ID-porten TEST client id differs between {source}; keep one value ({TargetEnvironmentAltinn}).";
             return null;
         }
-        if (!string.IsNullOrEmpty(iqr)) { source = "Integration Quality Review → Altinn test configuration"; return iqr; }
-        if (!string.IsNullOrEmpty(local)) { source = "Local backend configuration"; return local; }
+        if (candidates.Count > 0) { source = candidates[0].Source; return candidates[0].Value; }
         source = "Not configured";
         return null;
     }
 
+    /// <summary>The unattended client's scopes: the Target Environment's saved scopes, else the Integration Quality Review scopes.</summary>
+    public IReadOnlyList<string> Scopes(AltinnTestConfiguration config) =>
+        (Saved(config)?.Unattended.Scopes is { Count: > 0 } saved ? saved : config.ConfiguredScopes)
+            .Select(scope => scope.Trim()).Where(scope => scope.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>Automated execution enabled: the Target Environment's explicit choice, else the backend configuration.</summary>
+    public bool UnattendedEnabled(AltinnTestConfiguration? config = null) => (config is null ? null : Saved(config)?.Unattended.Enabled) ?? options.UnattendedIdPortenTest.Enabled;
+
     public string? UnattendedRedirectUri => string.IsNullOrWhiteSpace(options.UnattendedIdPortenTest.RedirectUri) ? options.IdPortenTest.RedirectUri : options.UnattendedIdPortenTest.RedirectUri;
+
+    /// <summary>
+    /// The registered redirect URI: the Target Environment's saved value, else the backend's explicit unattended value, else the interactive
+    /// sign-in callback (a fallback default). The saved and the explicit backend value set and different is a conflict.
+    /// </summary>
+    public string? UnattendedRedirectUriFor(AltinnTestConfiguration? config, out string? problem)
+    {
+        var saved = config is null ? null : Saved(config)?.Unattended.RedirectUri?.Trim();
+        var local = options.UnattendedIdPortenTest.RedirectUri?.Trim();
+        problem = !string.IsNullOrEmpty(saved) && !string.IsNullOrEmpty(local) && !string.Equals(saved, local, StringComparison.Ordinal)
+            ? $"The registered redirect URI differs between {TargetEnvironmentAltinn} and the backend configuration; keep one value." : null;
+        return problem is not null ? null : !string.IsNullOrEmpty(saved) ? saved : UnattendedRedirectUri?.Trim();
+    }
+
     public bool UnattendedSecretAvailable => !string.IsNullOrEmpty(UnattendedClientSecret);
     internal string? UnattendedClientSecret => string.IsNullOrEmpty(options.UnattendedIdPortenTest.ClientSecret) ? options.IdPortenTest.ClientSecret : options.UnattendedIdPortenTest.ClientSecret;
+
+    /// <summary>The client secret in effect for the environment: a session value entered in BirkNext, else the backend's own configuration.</summary>
+    internal string? UnattendedClientSecretFor(AltinnTestConfiguration? config) => session?.Secret(config?.TargetEnvironmentId) ?? UnattendedClientSecret;
+
+    /// <summary>Where the environment's secret comes from (never the value).</summary>
+    public AltinnSettingState SecretState(AltinnTestConfiguration? config) =>
+        session?.Secret(config?.TargetEnvironmentId) is not null ? AltinnSettingState.AvailableForSession
+        : UnattendedSecretAvailable ? AltinnSettingState.AvailableToBackend : AltinnSettingState.Missing;
 
     /// <summary>The approved reporter with this alias, or null with the reason. Its identifier never appears in the reason.</summary>
     public SyntheticReporterOptions? Reporter(string? alias, out string reason)
@@ -308,20 +355,20 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     public IReadOnlyList<string> UnattendedProblems(AltinnTestConfiguration config)
     {
         var problems = new List<string>();
-        if (!options.UnattendedIdPortenTest.Enabled)
-            problems.Add($"Unattended ID-porten TEST authentication is not enabled (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Enabled).");
-        if (config.AuthenticationType != ExternalAuthenticationType.IDPorten)
+        if (!UnattendedEnabled(config))
+            problems.Add($"Automated execution is not enabled for this environment ({TargetEnvironmentAltinn} → Automated execution).");
+        if (config.AuthenticationType != ExternalAuthenticationType.IDPorten && Saved(config)?.Unattended.ClientId is null)
             problems.Add("Authentication type is not ID-porten (Integration Quality Review → Altinn test configuration → Authentication).");
         if (ClientId(config, out _, out var clientProblem) is null)
-            problems.Add(clientProblem ?? $"No ID-porten TEST client id is configured (Altinn test configuration → Client reference, or backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:ClientId).");
-        if (!config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal))
-            problems.Add("The configured scopes do not include openid (Altinn test configuration → Configured scopes).");
-        if (UnattendedRedirect() is null)
-            problems.Add($"No registered redirect URI is configured for the ID-porten TEST client (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:RedirectUri): https, or http on loopback.");
-        if (string.IsNullOrEmpty(UnattendedClientSecret))
-            problems.Add("The ID-porten TEST client secret is not available to the backend (environment variable or secret store).");
+            problems.Add(clientProblem ?? $"No unattended ID-porten TEST client id is configured ({TargetEnvironmentAltinn} → Automated execution).");
+        if (!Scopes(config).Contains("openid", StringComparer.Ordinal))
+            problems.Add($"The unattended client's scopes do not include openid ({TargetEnvironmentAltinn} → Automated execution).");
+        if (UnattendedRedirect(config) is null)
+            problems.Add(UnattendedRedirectProblem(config) ?? $"No registered redirect URI is configured for the unattended ID-porten TEST client ({TargetEnvironmentAltinn} → Automated execution): https, or http on loopback.");
+        if (string.IsNullOrEmpty(UnattendedClientSecretFor(config)))
+            problems.Add($"The ID-porten TEST client secret is not available ({TargetEnvironmentAltinn} → Add session secret).");
         if (!options.UnattendedIdPortenTest.Reporters.Any(item => ReporterProblem(item) is null))
-            problems.Add("No approved synthetic TEST reporter is configured (backend reporter alias with a synthetic TestID identifier).");
+            problems.Add("No approved synthetic TEST reporter is configured (Test Data → session test identities: a reporter with a synthetic TestID identifier and a confirmed TT02 profile).");
         problems.AddRange(options.UnattendedIdPortenTest.Reporters.Select(ReporterProblem).OfType<string>());
         if (options.UnattendedIdPortenTest.Reporters.GroupBy(item => item.Alias, StringComparer.Ordinal).Any(group => group.Count() > 1))
             problems.Add("A reporter alias is configured more than once.");
@@ -329,9 +376,11 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     }
 
     /// <summary>The registered redirect URI when it is usable: absolute, https or loopback http, no credentials or fragment.</summary>
-    public Uri? UnattendedRedirect() =>
-        Uri.TryCreate(UnattendedRedirectUri, UriKind.Absolute, out var redirect) && string.IsNullOrEmpty(redirect.UserInfo) && redirect.Fragment.Length == 0
+    public Uri? UnattendedRedirect(AltinnTestConfiguration? config = null) =>
+        Uri.TryCreate(UnattendedRedirectUriFor(config, out _), UriKind.Absolute, out var redirect) && string.IsNullOrEmpty(redirect.UserInfo) && redirect.Fragment.Length == 0
             && (redirect.Scheme == Uri.UriSchemeHttps || (redirect.Scheme == Uri.UriSchemeHttp && redirect.IsLoopback)) ? redirect : null;
+
+    private string? UnattendedRedirectProblem(AltinnTestConfiguration? config) { UnattendedRedirectUriFor(config, out var problem); return problem; }
 
     /// <summary>The execution bound on process/next calls per run (see <see cref="AltinnTestingOptions.MaxProcessTransitions"/>).</summary>
     public int MaxProcessTransitions => options.MaxProcessTransitions is >= 1 and <= 10 ? options.MaxProcessTransitions : 1;
@@ -431,7 +480,7 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
             problems.Add("Authentication type is not ID-porten (Integration Quality Review → Altinn test configuration → Authentication).");
         if (ClientId(config, out _, out var clientProblem) is null)
             problems.Add(clientProblem ?? "No ID-porten TEST client id is configured (Altinn test configuration → Client reference).");
-        if (!config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal))
+        if (!Scopes(config).Contains("openid", StringComparer.Ordinal))
             problems.Add("The configured scopes do not include openid (Altinn test configuration → Configured scopes).");
         if (!Uri.TryCreate(options.IdPortenTest.RedirectUri, UriKind.Absolute, out var redirect))
             problems.Add($"No redirect URI is configured for the ID-porten TEST client (backend {AltinnTestingOptions.Section}:IdPortenTest:RedirectUri).");

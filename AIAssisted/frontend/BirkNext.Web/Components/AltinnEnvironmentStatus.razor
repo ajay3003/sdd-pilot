@@ -1,0 +1,42 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* A consumer's view of Target Environment → Altinn (e.g. Skolenærvær Rapportmottak): the shared Altinn environment state, manual test
+   readiness and automated BirkNext execution readiness, each with its reason, and one link to the setup. It stores and edits nothing —
+   the consumer never asks for app, client, redirect URI, scopes, secret or reporter again. *@
+<section class="aes" data-testid="aes" aria-label="Altinn environment">
+    @if (_view is null)
+    {
+        <p class="aes-muted" data-testid="aes-unavailable">Altinn environment: @(_error ?? "loading…") <a href="@AltinnEnvironmentPresentation.AltinnHref(EnvironmentId)">View Altinn setup</a></p>
+    }
+    else
+    {
+        var app = _view.Summary.FirstOrDefault(item => item.Key == "app");
+        <dl class="aes-grid">
+            @if (app is not null)
+            {
+                <div data-testid="aes-environment"><dt>Altinn environment</dt><dd><span class="aes-pill aes-pill-@AltinnEnvironmentPresentation.Tone(app.State)">@AltinnEnvironmentPresentation.ReadinessLabel(app)</span> <span class="aes-muted">@app.Reason · Source: Target Environment → Altinn</span></dd></div>
+            }
+            <div data-testid="aes-manual"><dt>Manual test readiness</dt><dd><span class="aes-pill aes-pill-@AltinnEnvironmentPresentation.Tone(_view.ManualReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(_view.ManualReadiness)</span> <span class="aes-muted">@_view.ManualReadiness.Reason</span></dd></div>
+            <div data-testid="aes-automated"><dt>Automated BirkNext execution</dt><dd><span class="aes-pill aes-pill-@AltinnEnvironmentPresentation.Tone(_view.AutomatedReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(_view.AutomatedReadiness)</span> <span class="aes-muted">@_view.AutomatedReadiness.Reason</span></dd></div>
+        </dl>
+        <p class="aes-muted">Incomplete automated execution never blocks manual testing. <a href="@AltinnEnvironmentPresentation.AltinnHref(EnvironmentId)" data-testid="aes-open">View Altinn setup</a></p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    private AltinnEnvironmentView? _view;
+    private string? _error;
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        if (Services.GetService(typeof(IAltinnEnvironmentApiService)) is not IAltinnEnvironmentApiService api) { _error = "not available in this host."; return; }
+        var result = await api.GetAsync(EnvironmentId);
+        (_view, _error) = (result.Value, result.Error);
+    }
+}

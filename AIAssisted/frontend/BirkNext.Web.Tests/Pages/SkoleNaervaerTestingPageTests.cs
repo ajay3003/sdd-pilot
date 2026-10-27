@@ -495,13 +495,13 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
             .Select(id => page.Markup.IndexOf($"data-testid=\"{id}\"", StringComparison.Ordinal)).ToList();
         order.Should().OnlyContain(position => position >= 0).And.BeInAscendingOrder("status and actions first, then blockers, then the run, then technical details");
         page.FindAll("[data-testid=snt-rapport-actions] button, [data-testid=snt-rapport-actions] a").Select(e => e.TextContent)
-            .Should().Equal("Prepare Rapportmottak run", "Open Altinn run configuration");
+            .Should().Equal("Prepare Rapportmottak run", "View Altinn setup");
         page.Find("[data-testid=snt-open-run]").ClassList.Should().Contain("btn-secondary", "no strong run action while clearly blocked");
-        page.Find("[data-testid=snt-configure-altinn]").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
+        page.Find("[data-testid=snt-configure-altinn]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=altinn&profile=dev");
 
         // Tester actions grouped, each with an owner and one action; the raw checks stay behind a disclosure.
         page.FindAll("[data-testid=snt-blocker-group]").Select(group => group.GetAttribute("data-group")).Should().Equal("source", "authentication");
-        page.FindAll("[data-testid=snt-blocker-owner]").Select(o => o.TextContent).Should().Equal("Owner: Import Project", "Owner: Local execution config");
+        page.FindAll("[data-testid=snt-blocker-owner]").Select(o => o.TextContent).Should().Equal("Owner: Import Project", "Owner: Target Environment");
         page.Find("[data-testid=snt-blocker-details-body]").HasAttribute("hidden").Should().BeTrue("the prerequisite checks are collapsed");
         page.FindAll("[data-testid=snt-attention-item]").Select(li => li.GetAttribute("data-key")).Should().Equal("altinn-auth", "source:MM");
         page.FindAll("[data-testid=snt-attention-item] [data-testid=snt-source-badge]").Should().OnlyContain(badge => badge.TextContent == "Source: BirkNext");
@@ -575,12 +575,13 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("authentication");
         page.Find("[data-testid=snt-blocker-group]").TextContent.Should().Contain("ID-porten test setup").And.Contain("1 check incomplete");
 
-        page.Find("[data-testid=snt-attention-item] button").TextContent.Should().Be("Configure local execution");
-        page.Find("[data-testid=snt-group-local-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        page.Find("[data-testid=snt-attention-item] button").Click();
-        page.Find("[data-testid=snt-group-local-toggle]").GetAttribute("aria-expanded").Should().Be("true");
-        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("configure-skolenaervaer-tt02-local.ps1").And.Contain("The run page stores nothing");
-        JSInterop.VerifyInvoke("birknextFocusElement").Arguments.Should().Equal("snt-group-local");
+        // The missing secret points to its owner, Target Environment → Altinn — never a terminal or PowerShell helper.
+        var action = page.Find("[data-testid=snt-attention-item] a");
+        action.TextContent.Should().Be("View Altinn setup");
+        action.GetAttribute("href").Should().Contain("section=target-environments").And.Contain("tab=altinn");
+        page.Find("[data-testid=snt-group-local-toggle]").Click();
+        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("Target Environment → Altinn").And.Contain("The run page stores nothing")
+            .And.NotContain(".ps1").And.NotContain("PowerShell").And.NotContain("restart the backend from");
     }
 
     [Fact]
@@ -634,7 +635,8 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open("rapportmottak");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-attention-item]").Should().ContainSingle());
-        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
+        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=altinn&profile=dev",
+            "the Altinn environment is configured once in Target Environment → Altinn, never again on the run page");
         var outsideRun = page.FindAll("#snt-rapport input, #snt-rapport select, #snt-rapport textarea").Where(field => field.Closest("[data-testid=ijp-panel]") is null && field.Closest("[data-testid=atp-panel]") is null);
         outsideRun.Should().BeEmpty("client id, scopes, redirect, secret, reporter and child are resolved from their owners, never re-entered here");
     }

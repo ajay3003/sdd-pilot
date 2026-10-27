@@ -46,6 +46,21 @@ public static class SyntheticPersonIdentifier
     private static readonly int[] K1 = [3, 7, 6, 1, 8, 9, 4, 5, 2];
     private static readonly int[] K2 = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
 
+    /// <summary>
+    /// A person identifier usable for a test child: 11 digits with valid control digits and a plausible date part — an ordinary birth date,
+    /// a D-number (day + 40) or a Test-Norge synthetic offset (month + 40 or month + 80). Test-Norge persons known to Person can carry
+    /// ordinary-looking identifiers, so the reporter's TestID rule (month + 80) is deliberately not applied to the child. Whether the person
+    /// exists in Test-Norge is an approval decision, never inferred here.
+    /// </summary>
+    public static bool IsTestPerson(string? value)
+    {
+        if (value is not { Length: 11 } || !value.All(char.IsAsciiDigit)) return false;
+        var day = int.Parse(value[..2], CultureInfo.InvariantCulture);
+        var month = int.Parse(value[2..4], CultureInfo.InvariantCulture);
+        return day is (>= 1 and <= 31) or (>= 41 and <= 71) && month is (>= 1 and <= 12) or (>= 41 and <= 52) or (>= 81 and <= 92)
+            && Control(value, K1, 9) == value[9] - '0' && Control(value, K2, 10) == value[10] - '0';
+    }
+
     public static bool IsSynthetic(string? value)
     {
         if (value is not { Length: 11 } || !value.All(char.IsAsciiDigit)) return false;

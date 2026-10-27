@@ -67,8 +67,10 @@ public static class SkoleNaervaerReadinessPresentation
     {
         "trusted-environment" => new("Open Target Environment", "/admin/system-settings?section=target-environments", null),
         _ when row.Key.StartsWith("integration:", StringComparison.Ordinal) => new("Open Target Environment → Integrations", IntegrationReviewPresentation.IntegrationsHref(profileId), null),
-        "idporten-client" or "altinn-app" or "altinn-environment" or "test-reporter" => new("Open Altinn run configuration", "/integration-quality-review?view=test-verify", null),
-        "redirect-uri" or "client-secret" or "unattended-provider" or "reporter-auth" or "app-policy" => new("Configure local execution", null, "local"),
+        "idporten-client" or "altinn-app" or "altinn-environment" or "redirect-uri" or "client-secret" or "unattended-provider" or "reporter-auth"
+            => new("View Altinn setup", profileId is null ? "/admin/system-settings?section=target-environments" : AltinnEnvironmentPresentation.AltinnHref(profileId), null),
+        "test-reporter" => new("Open Test Data", "/test-data", null),
+        "app-policy" => new("View details", null, "local"),
         "synthetic-reporter" or "reporter-profile" or "synthetic-data" => new("Open Test Data", "/test-data", null),
         "public-metadata" or "submission-contract" or "process-contract" => new("Read public TT02 metadata", null, "contract"),
         "contract-impact" => new("Review contract changes", null, "contract"),

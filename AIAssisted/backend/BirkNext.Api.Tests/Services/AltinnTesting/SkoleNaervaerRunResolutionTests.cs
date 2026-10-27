@@ -179,8 +179,9 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { ClientReference = null });
         var view = await RapportmottakAsync(bed);
         Unresolved(view).Should().Equal("idporten-client");
-        Row(view, "idporten-client").Source.Should().Be("Integration Quality Review");
-        Row(view, "idporten-client").Detail.Should().Contain("Integration Quality Review → Altinn test configuration");
+        // A missing unattended client points to where a test lead sets it: Target Environment → Altinn (no longer IQR or a terminal).
+        Row(view, "idporten-client").Source.Should().Be("Target Environment → Altinn");
+        Row(view, "idporten-client").Detail.Should().Contain("Target Environment → Altinn → Automated execution").And.Contain("Only automated execution needs it");
         Row(view, "reporter-auth").State.Should().NotBe(JourneyReadinessState.Ready, "unattended authentication genuinely depends on the client id");
     }
 
@@ -202,7 +203,7 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await ReadyAsync((kit, _) => { kit.Options.UnattendedIdPortenTest.RedirectUri = null; kit.Options.IdPortenTest.RedirectUri = null; });
         var view = await RapportmottakAsync(bed);
         Unresolved(view).Should().Equal("redirect-uri");
-        Row(view, "redirect-uri").Source.Should().Be("Local execution config");
+        Row(view, "redirect-uri").Source.Should().Be("Target Environment → Altinn");
         bed.Kit.Policy.UnattendedRedirect().Should().BeNull("nothing guesses a redirect URI");
     }
 

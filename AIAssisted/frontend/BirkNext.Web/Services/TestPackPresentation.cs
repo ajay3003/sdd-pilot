@@ -123,10 +123,11 @@ public static class TestPackPresentation
     /// <summary>
     /// Unresolved prerequisites as tester-facing action groups (at most ten kinds, typically fewer): a check whose value is already known
     /// from guidance but not saved for the active run is "Run configuration" (saved only by an explicit apply); every other check groups by its
-    /// category metadata. Generic: <paramref name="titles"/> lets a pack name a group in its own terms (e.g. its sign-in setup).
+    /// category metadata. Generic: <paramref name="titles"/> lets a pack name a group in its own terms (e.g. its sign-in setup), and
+    /// <paramref name="authenticationSetupHref"/> names where the pack's environment authentication setup lives (its Target Environment section).
     /// </summary>
     public static IReadOnlyList<BlockerGroup> BlockerGroups(IEnumerable<JourneyPrerequisite> blockers, TestPackSourceGuidance? guidance, string? profileId,
-        IReadOnlyDictionary<string, string>? titles = null, IReadOnlyList<TestPackSourceStatus>? journeySources = null)
+        IReadOnlyDictionary<string, string>? titles = null, IReadOnlyList<TestPackSourceStatus>? journeySources = null, string? authenticationSetupHref = null)
     {
         var list = blockers.DistinctBy(item => item.Key).ToList();
         // Known but not saved: resolved from the canonical source, a Test Pack reference or a default. A value an integration owns (its
@@ -190,10 +191,11 @@ public static class TestPackPresentation
                 {
                     KnownValues = [.. items.SelectMany(Known).Select(s => $"{s.Requirement.Label}: {s.ResolvedValue} ({SourceGuidancePresentation.Origin(s)})").Distinct()],
                 },
-                "authentication" => new BlockerGroup(g.Key, Title(g.Key, "Authentication setup"), Checks(items.Count), "The test sign-in setup is incomplete.",
-                    "Local execution config", "Configure local execution", null, "local", items),
+                // The unattended client and its session secret are configured once on the Target Environment (never a terminal).
+                "authentication" => new BlockerGroup(g.Key, Title(g.Key, "Authentication setup"), Checks(items.Count), "The unattended test sign-in setup is incomplete. Only automated execution needs it.",
+                    "Target Environment", "View environment setup", authenticationSetupHref ?? "/admin/system-settings?section=target-environments", null, items),
                 "authorization" => new BlockerGroup(g.Key, Title(g.Key, "Authorization policy"), "Not confirmed", "The test application's authorization policy is not confirmed.",
-                    "Local execution config", "Configure authorization", null, "local", items),
+                    "Backend configuration (administrator)", "View details", null, "local", items),
                 "test-data" => new BlockerGroup(g.Key, Title(g.Key, "Test data"), "Incomplete", "Approved synthetic test data is incomplete.", "Test Data", "Open Test Data", "/test-data", null, items),
                 "contract" => new BlockerGroup(g.Key, Title(g.Key, "Contract & runtime evidence"), "Not verified",
                     "Reference metadata and source evidence are separate from runtime verification, which is not done yet.", "Test pack / Source Analysis", "View details", null, "contract", items),

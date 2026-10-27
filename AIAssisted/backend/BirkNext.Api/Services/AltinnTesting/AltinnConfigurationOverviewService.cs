@@ -25,6 +25,7 @@ public sealed class AltinnConfigurationOverviewService(IIntegrationMessageFlowSt
 
     public AltinnConfigurationOverview Build(string environmentId, AltinnTestConfiguration config, AltinnAppContractView contract, AltinnAppContractRecord? record)
     {
+        config = config with { TargetEnvironmentId = environmentId };
         var items = new List<AltinnConfigurationItem>();
         var approved = policy.ApprovedApp(config.AppIdentifier, out var appReason);
         items.Add(new("app", "Altinn app", contract.ConfiguredAppId, approved is null ? string.IsNullOrWhiteSpace(config.AppIdentifier) ? "Missing" : "Not approved" : "Approved",
@@ -77,12 +78,14 @@ public sealed class AltinnConfigurationOverviewService(IIntegrationMessageFlowSt
 
         var clientId = policy.ClientId(config, out var clientSource, out var clientProblem);
         items.Add(new("client", "ID-porten TEST client", null, clientProblem is not null ? "Conflict" : clientId is null ? "Missing" : "Configured", clientSource,
-            clientProblem ?? (clientId is null ? "No client id (Integration Quality Review → Altinn test configuration, or backend AltinnTesting:UnattendedIdPortenTest:ClientId)." : "Configured; replaceable without a code change.")));
-        items.Add(new("redirect", "Redirect URI", null, policy.UnattendedRedirect() is null ? "Missing" : "Configured", LocalConfiguration,
-            policy.UnattendedRedirect() is null ? "AltinnTesting:UnattendedIdPortenTest:RedirectUri: https, or http on loopback." : "Must equal the URI registered for the client (value not shown)."));
-        items.Add(new("secret", "Client secret", null, policy.UnattendedSecretAvailable ? "Available" : "Missing", SecretSource,
-            policy.UnattendedSecretAvailable ? "Available to the backend (value never shown)." : "Not available to the backend (environment variable)."));
-        var scopes = config.ConfiguredScopes.Where(scope => !string.IsNullOrWhiteSpace(scope)).Select(scope => scope.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+            clientProblem ?? (clientId is null ? $"No unattended client id ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Automated execution)." : "Configured; replaceable without a code change.")));
+        items.Add(new("redirect", "Redirect URI", null, policy.UnattendedRedirect(config) is null ? "Missing" : "Configured", policy.Saved(config)?.Unattended.RedirectUri is null ? LocalConfiguration : AltinnTestingPolicy.TargetEnvironmentAltinn,
+            policy.UnattendedRedirect(config) is null ? $"The registered redirect URI of the unattended client ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Automated execution): https, or http on loopback." : "Must equal the URI registered for the client (value not shown)."));
+        var secret = policy.SecretState(config);
+        items.Add(new("secret", "Client secret", null, secret == AltinnSettingState.Missing ? "Missing" : "Available", secret == AltinnSettingState.AvailableForSession ? "Secret · this backend session" : SecretSource,
+            secret == AltinnSettingState.AvailableForSession ? "Available for this backend session (value never shown)." : secret == AltinnSettingState.AvailableToBackend ? "Available to the backend (value never shown)."
+                : $"Not available ({AltinnTestingPolicy.TargetEnvironmentAltinn} → Add session secret)."));
+        var scopes = policy.Scopes(config).ToArray();
         var openid = scopes.Contains("openid", StringComparer.Ordinal);
         items.Add(new("scopes", "Scopes", scopes.Length == 0 ? null : string.Join(", ", scopes), scopes.Length == 0 ? "Missing" : openid ? $"{scopes.Length} configured" : "Missing openid",
             "Integration Quality Review → Altinn test configuration",

@@ -330,6 +330,12 @@
             </ReviewDisclosure>
         </section>
 
+        @* Session test identities: the approved synthetic reporter and child for Altinn runs, entered here instead of a terminal. *@
+        <section class="td-card" aria-labelledby="td-session-heading" data-testid="td-session-identities">
+            <h2 id="td-session-heading">Session test identities</h2>
+            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" />
+        </section>
+
         @* Sources & configuration: where assets come from. Useful plumbing, not the primary goal of the page. *@
         <section class="td-card" aria-labelledby="td-sources-heading" data-testid="td-sources">
             <h2 id="td-sources-heading">Sources & configuration</h2>

@@ -179,6 +179,27 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("ai_code_review_runs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.AltinnEnvironmentSettingsRecord", b =>
+                {
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("environment_id");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("document_json");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("EnvironmentId");
+
+                    b.ToTable("altinn_environment_settings", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ApplicationMessagingEvidenceRecord", b =>
                 {
                     b.Property<string>("EnvironmentId")

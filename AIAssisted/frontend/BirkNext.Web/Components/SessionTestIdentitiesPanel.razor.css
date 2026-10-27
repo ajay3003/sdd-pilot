@@ -1,0 +1,7 @@
+.sti { display: grid; gap: .5rem; min-width: 0; }
+.sti-muted { color: var(--clr-text-muted, #5f6368); font-size: .82rem; margin: 0; }
+.sti-form { display: grid; gap: .45rem; max-width: 36rem; }
+.sti-form label { display: grid; gap: .2rem; font-size: .85rem; }
+.sti-form .sti-check { display: flex; gap: .4rem; align-items: center; }
+.sti-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.sti-message { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }

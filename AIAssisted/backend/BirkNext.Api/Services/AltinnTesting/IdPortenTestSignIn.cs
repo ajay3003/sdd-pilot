@@ -83,7 +83,7 @@ public sealed class IdPortenTestSignIn(
 
     public async Task<AltinnSignInStatus> StatusAsync(string initiator, string environmentId, CancellationToken ct)
     {
-        var config = (await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration;
+        var config = (await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration with { TargetEnvironmentId = environmentId };
         var problems = Problems(config);
         var expires = sessions.ExpiresAt(initiator, environmentId);
         return new AltinnSignInStatus
@@ -96,7 +96,7 @@ public sealed class IdPortenTestSignIn(
 
     public async Task<AltinnSignInStart> StartAsync(string initiator, string environmentId, CancellationToken ct)
     {
-        var config = (await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration;
+        var config = (await messageFlows.GetAsync(environmentId, ct)).AltinnConfiguration with { TargetEnvironmentId = environmentId };
         if (Problems(config) is { Count: > 0 } problems) throw new AltinnSignInException(string.Join(" ", problems));
         var discovery = await DiscoverAsync(ct);
         var secret = policy.Options.IdPortenTest.ClientSecret;
@@ -115,7 +115,7 @@ public sealed class IdPortenTestSignIn(
         var query = new List<KeyValuePair<string, string>>
         {
             new("response_type", "code"), new("client_id", policy.ClientId(config, out _, out _)!), new("redirect_uri", policy.Options.IdPortenTest.RedirectUri!),
-            new("scope", string.Join(' ', config.ConfiguredScopes.Select(item => item.Trim()).Where(item => item.Length > 0).Distinct(StringComparer.Ordinal))),
+            new("scope", string.Join(' ', policy.Scopes(config))),
             new("state", state), new("nonce", nonce), new("code_challenge", challenge), new("code_challenge_method", "S256"),
         };
         // form_post keeps the authorization code out of URLs (and so out of browser history, proxies and request logs) when ID-porten offers it.

@@ -1,0 +1,11 @@
+.aes { margin: .5rem 0; min-width: 0; }
+.aes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .5rem; margin: 0; }
+.aes-grid div { padding: .5rem .65rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; overflow-wrap: anywhere; }
+.aes-grid dt { font-size: .75rem; color: var(--clr-text-muted, #5f6368); }
+.aes-grid dd { margin: .2rem 0 0; font-size: .85rem; }
+.aes-muted { color: var(--clr-text-muted, #5f6368); font-size: .82rem; }
+.aes-pill { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+.aes-pill-ok { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
+.aes-pill-warn { background: color-mix(in sRGB, var(--clr-warning, #d97706) 14%, transparent); color: var(--clr-warning, #b45309); }
+.aes-pill-bad { background: color-mix(in sRGB, var(--clr-danger, #dc2626) 12%, transparent); color: var(--clr-danger, #b42318); }
+.aes-pill-muted { background: color-mix(in sRGB, var(--clr-text-muted, #5f6368) 12%, transparent); color: var(--clr-text-muted, #5f6368); }

@@ -100,10 +100,10 @@ public sealed class SkoleNaervaerReadinessPresentationTests
     }
 
     [Theory]
-    [InlineData("idporten-client", "Open Altinn run configuration", "/integration-quality-review?view=test-verify", null)]
-    [InlineData("redirect-uri", "Configure local execution", null, "local")]
-    [InlineData("client-secret", "Configure local execution", null, "local")]
-    [InlineData("unattended-provider", "Configure local execution", null, "local")]
+    [InlineData("idporten-client", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
+    [InlineData("redirect-uri", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
+    [InlineData("client-secret", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
+    [InlineData("unattended-provider", "View Altinn setup", "/admin/system-settings?section=target-environments&tab=altinn&profile=dev", null)]
     [InlineData("reporter-profile", "Open Test Data", "/test-data", null)]
     [InlineData("synthetic-data", "Open Test Data", "/test-data", null)]
     [InlineData("trusted-environment", "Open Target Environment", "/admin/system-settings?section=target-environments", null)]

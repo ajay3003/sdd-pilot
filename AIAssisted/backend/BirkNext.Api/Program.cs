@@ -599,6 +599,11 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCandidateServi
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions.Section)
     .Get<BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions>() ?? new BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions());
+// Target Environment → Altinn: saved non-secret settings (database + in-memory cache for the policy) and session-only values (memory).
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsCache>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnSessionStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestingPolicy>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestSessionCache>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnTestTokens>(sp => sp.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnTestSessionCache>());
@@ -739,6 +744,8 @@ try
     // One process migrates at a time (parallel test hosts and multiple instances share the database).
     if (db.Database.IsRelational())
         await DatabaseMigrationLock.MigrateAsync(db);
+    // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
+    await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();
 }
 catch (PostgresException ex) when (ex.SqlState == "28P01")
 {

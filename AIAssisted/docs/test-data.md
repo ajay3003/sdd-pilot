@@ -78,7 +78,7 @@ Invalid. A scenario that needs schema-valid data must ask for it explicitly.
 - **Configured catalog** (`TestData` section): typed scalars, inline values, fixture files, expected results and data sets.
   - Files are read only from inside the test-data folder (`TestData:Root`, default `TestData` under the backend content root). An absolute path or `..` is refused, and files are limited to 1 MB.
   - A sensitive value belongs in local configuration (an environment variable), never a committed file.
-- **Local approved configuration**: the existing `AltinnTesting:UnattendedIdPortenTest:Reporters` and `AltinnTesting:SyntheticChildren` (set by `scripts/configure-skolenaervaer-tt02-local.ps1`). They become sensitive entity references. No migration or re-entry is needed.
+- **Local approved configuration**: approved synthetic reporters and children entered in **Test Data → Session test identities** (backend memory for the session only), or supplied by the backend's own `AltinnTesting:UnattendedIdPortenTest:Reporters` / `AltinnTesting:SyntheticChildren` configuration. They become sensitive entity references; identifiers are never shown.
 
 Credentials are not test data. The ID-porten client id, scopes, redirect URI, client secret and Enabled keep their owners (IQR and local
 execution configuration).

@@ -1,0 +1,88 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Test Data → session test identities: the approved synthetic reporter and child an Altinn run uses, entered here (not in a terminal) and held
+   in backend memory for this session only. The identifier field is a password input; it is sent once in a POST body, cleared from the form,
+   never stored in the browser and never shown again — the catalog lists the alias only. Reporter and child must be different persons. The
+   TT02 profile confirmation is a deliberate act (type the alias), never inferred from the identifier. *@
+<div class="sti" data-testid="sti">
+    <p class="sti-muted">Approved synthetic identities for Altinn runs (e.g. Skolenærvær). Held in backend memory until the backend restarts or the session expires; never stored, logged or exported.</p>
+    @if (_api is null)
+    {
+        <p class="sti-muted" data-testid="sti-unavailable">Session test identities are not available in this host.</p>
+    }
+    else
+    {
+        <div class="sti-form" data-testid="sti-form">
+            <label>Role
+                <select class="form-select" @bind="_role" data-testid="sti-role">
+                    <option value="reporter">Reporter (TestID user)</option>
+                    <option value="child">Child (form data)</option>
+                </select>
+            </label>
+            <label>Alias <input class="form-control" @bind="_alias" data-testid="sti-alias" autocomplete="off" placeholder="@(_role == "reporter" ? "reporter-a" : "child-a")" /></label>
+            <label>Label <input class="form-control" @bind="_label" data-testid="sti-label" autocomplete="off" placeholder="@(_role == "reporter" ? "Skolenærvær reporter A" : "Skolenærvær test child A")" /></label>
+            <label>Synthetic identifier
+                <input type="password" class="form-control" @bind="_identifier" data-testid="sti-identifier" autocomplete="off" aria-describedby="sti-identifier-help" />
+            </label>
+            <span id="sti-identifier-help" class="sti-muted">@(_role == "reporter" ? "A synthetic Test-Norge TestID person (11 digits, month + 80)." : "A Test-Norge person known to Person (11 digits with valid control digits). Must not be the reporter.")</span>
+            @if (_role == "reporter")
+            {
+                <label>Confirm TT02 profile (type the alias again, only after checking the person's Altinn TT02 profile)
+                    <input class="form-control" @bind="_confirm" data-testid="sti-confirm" autocomplete="off" />
+                </label>
+            }
+            else
+            {
+                <label class="sti-check"><input type="checkbox" @bind="_knownToPerson" data-testid="sti-known" /> Known to Person (declared, not verified by BirkNext)</label>
+            }
+            <div class="sti-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-testid="sti-add" disabled="@(_busy || string.IsNullOrWhiteSpace(_alias) || string.IsNullOrEmpty(_identifier))" @onclick="AddAsync">Add for this session</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="sti-clear" disabled="@_busy" @onclick="ClearAsync">Clear session identities</button>
+            </div>
+        </div>
+        @if (_message is { } message) { <p class="sti-message" role="status" data-testid="sti-message">@message</p> }
+    }
+</div>
+
+@code {
+    /// <summary>Called after a change so the page reloads the catalog (aliases only).</summary>
+    [Parameter] public EventCallback<string?> OnChanged { get; set; }
+
+    private IAltinnEnvironmentApiService? _api;
+    private string _role = "reporter";
+    private string? _alias, _label, _identifier, _confirm, _message;
+    private bool _knownToPerson = true, _busy;
+
+    protected override void OnInitialized() => _api = Services.GetService(typeof(IAltinnEnvironmentApiService)) as IAltinnEnvironmentApiService;
+
+    private async Task AddAsync()
+    {
+        if (_api is null) return;
+        _busy = true;
+        var identifier = _identifier ?? "";
+        _identifier = null; // never kept in the component after sending
+        try
+        {
+            var result = await _api.AddSessionIdentityAsync(new AltinnSessionIdentityRequest(_role, (_alias ?? "").Trim(), (_label ?? "").Trim(), identifier,
+                _role == "reporter" ? _confirm : null, _knownToPerson));
+            _message = result.Error ?? $"{(_role == "reporter" ? "Reporter" : "Child")} {(_alias ?? "").Trim()} is available for this session (identifier not shown).";
+            if (result.Error is null) { _confirm = null; await OnChanged.InvokeAsync(null); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ClearAsync()
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var result = await _api.ClearSessionIdentitiesAsync();
+            _message = result.Error ?? "Session identities cleared. Identities from the backend's own configuration are unchanged.";
+            if (result.Error is null) await OnChanged.InvokeAsync(null);
+        }
+        finally { _busy = false; }
+    }
+}

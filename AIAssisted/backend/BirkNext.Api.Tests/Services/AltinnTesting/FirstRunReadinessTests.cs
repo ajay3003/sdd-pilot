@@ -78,7 +78,7 @@ public sealed class FirstRunReadinessTests
         Row(view, "reporter-profile").Detail.Should().Contain("Not applicable", "a profile is only confirmable for a usable reporter");
 
         kit.Options.UnattendedIdPortenTest.Reporters.Clear();
-        Row(await Rapportmottak(harness, kit), "synthetic-reporter").Detail.Should().Contain("AltinnTesting:UnattendedIdPortenTest:Reporters");
+        Row(await Rapportmottak(harness, kit), "synthetic-reporter").Detail.Should().Contain("Test Data → session test identities").And.NotContain("PowerShell");
     }
 
     [Fact]

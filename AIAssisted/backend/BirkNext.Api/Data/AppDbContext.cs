@@ -34,6 +34,7 @@ public class AppDbContext : DbContext
     public DbSet<GraphQlSchemaArtifactRecord> GraphQlSchemaArtifacts => Set<GraphQlSchemaArtifactRecord>();
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
     public DbSet<IntegrationMessageFlowRecord> IntegrationMessageFlows => Set<IntegrationMessageFlowRecord>();
+    public DbSet<AltinnEnvironmentSettingsRecord> AltinnEnvironmentSettings => Set<AltinnEnvironmentSettingsRecord>();
     public DbSet<IntegrationEvidenceBindingRecord> IntegrationEvidenceBindings => Set<IntegrationEvidenceBindingRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
@@ -686,6 +687,15 @@ public class AppDbContext : DbContext
             entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
             entity.Property(r => r.IntegrationId).HasColumnName("integration_id").HasMaxLength(200).IsRequired();
             entity.Property(r => r.SnapshotId).HasColumnName("snapshot_id");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<AltinnEnvironmentSettingsRecord>(entity =>
+        {
+            entity.ToTable("altinn_environment_settings");
+            entity.HasKey(r => r.EnvironmentId);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
             entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
         });

@@ -1,0 +1,40 @@
+/* Target Environment → Altinn. Compact summary first, details progressively; every state is text plus tone, never colour alone. */
+.ae { display: grid; gap: 1rem; min-width: 0; }
+.ae-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.ae-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.ae-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.ae-h4 { margin: 0 0 .4rem; font-size: .9rem; font-weight: 600; }
+.ae-muted { color: var(--clr-text-muted, #5f6368); font-size: .82rem; }
+.ae-banner { margin: 0; padding: .5rem .75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; font-size: .85rem; }
+.ae-banner-error { border-color: var(--clr-danger, #b42318); color: var(--clr-danger, #b42318); }
+.ae-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr)); gap: .5rem; margin: 0; }
+.ae-summary div { padding: .5rem .65rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; }
+.ae-summary dt { font-size: .75rem; color: var(--clr-text-muted, #5f6368); text-transform: uppercase; letter-spacing: .03em; }
+.ae-summary dd { margin: .2rem 0 0; }
+.ae-missing { margin: 0; font-weight: 600; font-size: .85rem; }
+.ae-readiness { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .5rem; }
+.ae-readiness-card { display: grid; gap: .25rem; padding: .6rem .75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; overflow-wrap: anywhere; }
+.ae-readiness-label { font-weight: 600; font-size: .85rem; }
+.ae-pill { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.ae-pill-ok { background: color-mix(in sRGB, var(--clr-success, #16a34a) 12%, transparent); color: var(--clr-success, #16a34a); }
+.ae-pill-info { background: color-mix(in sRGB, var(--clr-info, #2563eb) 10%, transparent); color: var(--clr-text, #1f2328); border-color: color-mix(in sRGB, var(--clr-info, #2563eb) 25%, transparent); }
+.ae-pill-warn { background: color-mix(in sRGB, var(--clr-warning, #d97706) 14%, transparent); color: var(--clr-warning, #b45309); }
+.ae-pill-bad { background: color-mix(in sRGB, var(--clr-danger, #dc2626) 12%, transparent); color: var(--clr-danger, #b42318); }
+.ae-pill-muted { background: color-mix(in sRGB, var(--clr-text-muted, #5f6368) 12%, transparent); color: var(--clr-text-muted, #5f6368); }
+.ae-detected, .ae-group { padding-top: .75rem; border-top: 1px solid var(--clr-border, #d0d7de); min-width: 0; }
+.ae-detected p { margin: .2rem 0; }
+.ae-gaps { margin: .3rem 0; padding-left: 1.2rem; }
+.ae-proposals { display: grid; gap: .35rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: .5rem .75rem; min-inline-size: 0; }
+.ae-proposal { display: flex; gap: .5rem; align-items: flex-start; overflow-wrap: anywhere; }
+.ae-table { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
+.ae-table th, .ae-table td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--clr-border, #d0d7de); vertical-align: top; overflow-wrap: anywhere; }
+.ae-table thead th { font-size: .75rem; color: var(--clr-text-muted, #5f6368); font-weight: 600; }
+.ae-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; }
+.ae-req { display: block; font-weight: 400; font-size: .72rem; color: var(--clr-text-muted, #5f6368); }
+.ae-evidence td { background: var(--clr-bg-subtle, #f6f8fa); font-size: .8rem; }
+.ae-form { display: grid; gap: .45rem; max-width: 36rem; margin-top: .5rem; }
+.ae-form label { display: grid; gap: .2rem; font-size: .82rem; }
+.ae-form .ae-check { display: flex; gap: .4rem; align-items: center; }
+.ae-inline { grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); align-items: end; max-width: none; }
+.ae-list { margin: .3rem 0; padding-left: 1.2rem; font-size: .85rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .ae-table thead { display: none; } .ae-table tr { display: grid; } }

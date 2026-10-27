@@ -26,7 +26,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
     public string? StatusLabel(TestDataSourceStatus status) => status == TestDataSourceStatus.Available ? "Approved local references" : "No approved assets";
     public string Label => SourceLabel;
     public string Description => "Approved local test references supplied by environment or test configuration. Identifiers are never shown.";
-    public string? Detail => "Currently includes approved synthetic TestID reporters (AltinnTesting:UnattendedIdPortenTest:Reporters) and synthetic persons (AltinnTesting:SyntheticChildren) from the local Altinn testing configuration, set as process-scope environment variables.";
+    public string? Detail => "Approved synthetic TestID reporters and synthetic children: entered in Test Data for this backend session (memory only), or supplied by the backend's own configuration.";
     public bool Configured => options.UnattendedIdPortenTest.Reporters.Count > 0 || options.SyntheticChildren.Count > 0;
 
     public IReadOnlyList<TestDataAsset> Assets()
@@ -44,7 +44,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 ValidationDetail = reporter.AltinnProfileConfirmed ? "Altinn TT02 profile confirmed (configured confirmation; not an authentication)." : "Altinn TT02 profile not confirmed.",
                 Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel,
                 Value = string.IsNullOrWhiteSpace(reporter.TestIdPersonIdentifier) ? null : new TestDataValue(reporter.TestIdPersonIdentifier.Trim()),
-                Provenance = [new("Configuration", "AltinnTesting:UnattendedIdPortenTest:Reporters")],
+                Provenance = [reporter.SessionExpiresAt is null ? new("Configuration", "Backend configuration") : new("Session", "Entered in Test Data for this backend session")],
             });
         }
         foreach (var child in options.SyntheticChildren.Where(item => !string.IsNullOrWhiteSpace(item.Alias)))
@@ -59,7 +59,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 ValidationDetail = child.KnownToPerson ? "Declared known to Person; not verified by BirkNext." : "Declared unknown to Person; not verified by BirkNext.",
                 Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel, IsDefault = child.Default,
                 Value = string.IsNullOrWhiteSpace(child.TestPersonIdentifier) ? null : new TestDataValue(child.TestPersonIdentifier.Trim()),
-                Provenance = [new("Configuration", "AltinnTesting:SyntheticChildren")],
+                Provenance = [child.SessionExpiresAt is null ? new("Configuration", "Backend configuration") : new("Session", "Entered in Test Data for this backend session")],
             });
         }
         return assets;
@@ -71,8 +71,9 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
         if (!AliasPattern().IsMatch(child.Alias)) return "The synthetic child alias must be lowercase letters, digits and hyphens.";
         if (options.SyntheticChildren.Count(item => string.Equals(item.Alias, child.Alias, StringComparison.Ordinal)) > 1) return $"Synthetic child {child.Alias}: the alias is configured more than once.";
         var identifier = child.TestPersonIdentifier?.Trim();
-        if (!SyntheticPersonIdentifier.IsSynthetic(identifier))
-            return $"Synthetic child {child.Alias}: the identifier is missing or not a synthetic Test-Norge identifier (month + 80).";
+        // Domain-correct child rule (date part and control digits); the reporter's TestID rule (month + 80) does not apply to a child.
+        if (!SyntheticPersonIdentifier.IsTestPerson(identifier))
+            return $"Synthetic child {child.Alias}: the identifier is missing or not a valid 11-digit person identifier (date part and control digits).";
         if (options.UnattendedIdPortenTest.Reporters.FirstOrDefault(reporter => string.Equals(reporter.TestIdPersonIdentifier?.Trim(), identifier, StringComparison.Ordinal)) is { } same)
             return $"Synthetic child {child.Alias} is the same person as reporter {same.Alias}; the reporter and the child must be different persons.";
         return null;

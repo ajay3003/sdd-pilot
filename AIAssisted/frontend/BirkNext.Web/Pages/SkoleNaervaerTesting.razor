@@ -563,7 +563,8 @@
 
     /// <summary>What a journey needs from the tester, as owner-aware action groups (never a wall of raw checks).</summary>
     private IReadOnlyList<TestPackPresentation.BlockerGroup> AttentionGroups(string journeyId) =>
-        TestPackPresentation.BlockerGroups(Blockers(journeyId), _guidance, _profile?.Id, GroupTitles, SourceGuidancePresentation.ForJourney(_guidance, journeyId));
+        TestPackPresentation.BlockerGroups(Blockers(journeyId), _guidance, _profile?.Id, GroupTitles, SourceGuidancePresentation.ForJourney(_guidance, journeyId),
+            _profile is null ? null : AltinnEnvironmentPresentation.AltinnHref(_profile.Id));
 
     /// <summary>"N things need attention": one card per group with its state, owner and one action; the first is the primary next action
     /// (Rapportmottak's safe configuration, when offered, is its primary action instead).</summary>
@@ -696,6 +697,8 @@
         @* The decision's internal code (A–F, a root-cause order) is not a formal classification, so only its label is shown. *@
         <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code"><span class="snt-dimension-label">TT02 submission readiness</span> <strong>@decision.Label</strong>
             @if (executable) { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
+        @* The Altinn environment is configured once in Target Environment → Altinn and consumed here (manual vs automated readiness apart). *@
+        <AltinnEnvironmentStatus EnvironmentId="@_profile!.Id" />
         @ReadinessDimensions(view.Journey.JourneyId)
         @if (ApplicableSourceValues.Count > 0 && _applyResult is null)
         {
@@ -729,7 +732,7 @@
         @if (_applyError is not null) { <p role="alert" data-testid="snt-apply-error">@_applyError</p> }
         <div class="snt-actions" data-testid="snt-rapport-actions">
             <button type="button" class="@(executable ? "btn-primary" : "btn-secondary")" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">@(executable ? "Start Rapportmottak run" : "Prepare Rapportmottak run")</button>
-            <a class="snt-inline-link" href="/integration-quality-review?view=test-verify" data-testid="snt-configure-altinn">Open Altinn run configuration</a>
+            <a class="snt-inline-link" href="@AltinnEnvironmentPresentation.AltinnHref(_profile!.Id)" data-testid="snt-configure-altinn">View Altinn setup</a>
         </div>
         <p class="snt-muted">Opening the run sends nothing. A real TT02 submission starts only after you confirm it there, and the backend re-checks every gate.</p>
     };
@@ -749,10 +752,10 @@
                             <div class="snt-local-setup" data-testid="snt-local-setup">
                                 <p>The run page stores nothing: it reads each value from its owner when the readiness is loaded.</p>
                                 <ul>
-                                    <li><strong>Integration Quality Review → Test &amp; Verify → Altinn provider:</strong> app, environment, ID-porten client id and scopes, approved test reporter reference and synthetic identity set. <a href="/integration-quality-review?view=test-verify">Open Altinn run configuration</a></li>
-                                    <li><strong>Local execution config</strong> (this backend's process only, never a committed file): Enabled, the registered redirect URI, the client secret, the approved synthetic TestID reporters and their Altinn profile confirmation, approved synthetic children and the app-policy confirmation. Set them with <code>AIAssisted/scripts/configure-skolenaervaer-tt02-local.ps1</code> and restart the backend from that window.</li>
-                                    <li><strong>Target Environment:</strong> the trusted target and its enrolled integrations. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
-                                    <li><strong>Test Data:</strong> approved synthetic reporters and identities. <a href="/test-data">Open Test Data</a></li>
+                                    <li><strong>Target Environment → Altinn:</strong> Altinn environment, app, base URL, form contract, the unattended ID-porten TEST client (client id, registered redirect URI, scopes, enabled) and the client secret for this session. <a href="@AltinnEnvironmentPresentation.AltinnHref(_profile!.Id)" data-testid="snt-local-altinn">View Altinn setup</a></li>
+                                    <li><strong>Test Data → Session test identities:</strong> the approved synthetic reporter (with its TT02 profile confirmation) and the synthetic child. <a href="/test-data">Open Test Data</a></li>
+                                    <li><strong>Target Environment → Integrations:</strong> the report-intake integration and its Integration Quality Review binding. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
+                                    <li><strong>Backend configuration (administrator):</strong> the trusted execution environment and the app-policy confirmation. They are never set from the UI or by setup.</li>
                                     <li><strong>Live Altinn metadata:</strong> task, data type and process contract, read anonymously with "Read public TT02 metadata" under App contract.</li>
                                 </ul>
                                 <p class="snt-muted">Resolving is not verifying: configured scopes are not a verified client registration, a configured reporter is not authenticated, and a declared child is not verified.</p>
