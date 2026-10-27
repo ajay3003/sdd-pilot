@@ -229,7 +229,7 @@ public sealed class DataModelModelViewTests : BunitContext
         var cut = Panel("# Notes\n\nSome prose about the project.\n\n```\nnot a model\n```\n");
         cut.Find("[data-testid=dme-model-empty]").TextContent.Should().Contain("No normalized data model could be derived from the selected evidence.");
         cut.Find("[data-testid=dme-model-partial]").TextContent.Should().Contain("Some document content is not represented in the structured view.")
-            .And.Contain("BirkNext does not infer missing model facts from unmapped content");
+            .And.Contain("preserved outside the structured view").And.Contain("BirkNext does not infer missing model facts");
         cut.Find("[data-testid=markdown-source-notes-toggle]").Click();
         cut.FindAll("article[data-source-block-id]").Should().NotBeEmpty();
     }

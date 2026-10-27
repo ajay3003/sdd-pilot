@@ -521,7 +521,7 @@
     }
 </div>
 
-<MarkdownSourceNotesPanel Blocks="@(_tree?.UnmappedSourceBlocks)" />
+<MarkdownSourceNotesPanel Blocks="@(_tree?.UnmappedSourceBlocks)" Context="@UnmappedSourceContext.For(_tree)" />
 
 @code {
     [Parameter] public IReadOnlyList<ExtractionCandidate>? Candidates { get; set; }

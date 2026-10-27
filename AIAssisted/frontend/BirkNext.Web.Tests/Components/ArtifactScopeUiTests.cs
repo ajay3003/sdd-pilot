@@ -139,7 +139,7 @@ public sealed class ArtifactScopeUiTests : BunitContext
     {
         var cut = Render<MarkdownSourceNotesPanel>(p => p.Add(x => x.Blocks, [new MarkdownSourceNote("b1", 3, 3, "Paragraph", "f", "Loose paragraph")]));
 
-        cut.Find("[data-testid=markdown-source-notes-summary]").TextContent.Should().Contain("Structured extraction diagnostics").And.Contain("kept as raw source notes");
+        cut.Find("[data-testid=markdown-source-notes-summary]").TextContent.Should().Contain("Source content not structured · 1 block").And.NotContain("raw source notes");
         cut.Find("[data-testid=markdown-source-notes-scope]").TextContent.Should().Contain("Document Quality Review reads the full text");
         cut.FindAll("[data-testid=markdown-source-notes-detail]").Should().BeEmpty("collapsed by default");
         cut.Find("[data-testid=markdown-source-notes-toggle]").Click();

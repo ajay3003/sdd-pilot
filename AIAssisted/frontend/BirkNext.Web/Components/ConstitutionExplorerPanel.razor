@@ -774,7 +774,7 @@
 
 </div>
 
-<MarkdownSourceNotesPanel Blocks="@(_document?.UnmappedSourceBlocks)" />
+<MarkdownSourceNotesPanel Blocks="@(_document?.UnmappedSourceBlocks)" Context="@UnmappedSourceContext.For(_document)" />
 
 @code {
     [Parameter] public string ConstitutionText { get; set; } = string.Empty;

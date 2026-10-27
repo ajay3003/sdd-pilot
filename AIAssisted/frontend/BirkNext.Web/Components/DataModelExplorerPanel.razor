@@ -623,7 +623,7 @@ else
     </div>
 }
 
-<MarkdownSourceNotesPanel Blocks="@(_document?.UnmappedSourceBlocks)" Lazy="true" Summary="Parsed document structure — technical details" />
+<MarkdownSourceNotesPanel Blocks="@(_document?.UnmappedSourceBlocks)" Context="@UnmappedSourceContext.For(_document)" SourceName="@ArtifactPath" />
 
 @code {
     [Parameter] public string              DataModelText { get; set; } = string.Empty;
@@ -1012,7 +1012,7 @@ else
             @if (partial)
             {
                 <p class="dme-model-partial" role="status" data-testid="dme-model-partial">Some document content is not represented in the structured view.
-                    <span class="dme-muted">@(document.UnmappedSourceBlocks.Count > 0 ? $"{document.UnmappedSourceBlocks.Count} source sections are available under technical details. " : "")BirkNext does not infer missing model facts from unmapped content — nothing is guessed from them.</span></p>
+                    <span class="dme-muted">@(document.UnmappedSourceBlocks.Count > 0 ? $"{document.UnmappedSourceBlocks.Count} source blocks were preserved outside the structured view (see “Source content not structured” below). " : "")BirkNext does not infer missing model facts from them — nothing is guessed.</span></p>
             }
         </section>
         if (document.EntityCount == 0 && document.Enums.Count == 0)
@@ -1024,7 +1024,7 @@ else
                     <li>Document parsed: Yes — @document.UnmappedSourceBlocks.Count block(s) were not recognised as data structures.</li>
                     <li>Recognised notations: entity/table headings with field tables, field lists, C# class/record/enum declarations and SQL CREATE TABLE in code blocks.</li>
                 </ul>
-                <p class="dme-muted">Open “Parsed document structure — technical details” below to see the unmapped blocks.</p>
+                <p class="dme-muted">See “Source content not structured” below for the preserved blocks and their exact source lines.</p>
             </div>
             return;
         }

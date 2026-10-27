@@ -134,14 +134,17 @@ public static class MarkdownTokenizer
         var documentFingerprint = DocumentFingerprint(markdown);
         var sourceRanges = GetProjectionSources(parsedProjection);
         var notes = new List<MarkdownSourceNote>();
+        string? section = null;
         foreach (var token in Tokenize(markdown).Where(t => t.Kind is not (MarkdownTokenKind.Blank or MarkdownTokenKind.HorizontalRule or MarkdownTokenKind.TableSeparator)))
         {
+            // The authored heading a block sits under: presentation context for grouping, mapped or not.
+            if (token.Kind == MarkdownTokenKind.Heading && !string.IsNullOrWhiteSpace(token.Content)) section = token.Content.Trim();
             // Direct source notes are the full-text destination for any token that is not linked to an explicit projection.
             // This keeps repeated strings distinct by source line and avoids using JSON/display text as coverage evidence.
             if (sourceRanges.Any(source => token.LineIndex + 1 >= source.StartLine && token.LineIndex + 1 <= source.EndLine)) continue;
             var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token.RawLine.Trim())));
             notes.Add(new MarkdownSourceNote(CreateSourceBlockId(documentFingerprint, token.LineIndex, token.RawLine), token.LineIndex + 1, token.LineIndex + 1,
-                token.Kind.ToString(), fingerprint, token.RawLine));
+                token.Kind.ToString(), fingerprint, token.RawLine, section));
         }
         return notes;
     }

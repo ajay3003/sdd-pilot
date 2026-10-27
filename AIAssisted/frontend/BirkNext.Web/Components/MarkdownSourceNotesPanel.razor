@@ -1,39 +1,169 @@
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 
-@* Authored text an explorer did not map to a structured field. The verbatim blocks are kept, but they are technical detail: the normal view says
-   only how many there are, and line ranges and parser block types render on request ("Review source notes"). Shared by every explorer. *@
-@if (Blocks is { Count: > 0 })
+@* Source content not structured: the authored blocks an Explorer did not map to a structured field. Shared by every Explorer.
+   The normal view is a compact summary; potential mapping gaps (Explorer-aware, never already-structured facts) are listed first;
+   informational, change/history and reference content is grouped and collapsed; structural scaffolding appears only in the
+   technical raw source, which is last and collapsed. Presentation only: nothing here is promoted into the structured model. *@
+@if (Blocks is { Count: > 0 } && _content is { } content)
 {
-    <section class="markdown-source-notes" aria-label="Unmapped source content" data-testid="markdown-source-notes">
-        <p class="markdown-source-notes-summary" data-testid="markdown-source-notes-summary">
-            <span class="markdown-source-notes-label">Structured extraction diagnostics · technical details</span>
-            @Blocks.Count source block@(Blocks.Count == 1 ? " was" : "s were") not mapped to structured fields and @(Blocks.Count == 1 ? "is" : "are") kept as raw source notes.
-            <span class="markdown-source-notes-scope" data-testid="markdown-source-notes-scope">Unmapped is not ignored: Document Quality Review reads the full text of the document.</span>
-            <button type="button" class="btn-secondary btn-small" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_id"
-                    data-testid="markdown-source-notes-toggle" @onclick="() => _open = !_open">@(_open ? "Hide raw source notes" : "View raw source notes")</button>
-        </p>
-        @if (_open)
-        {
-            <div id="@_id" data-testid="markdown-source-notes-detail">
-                <p>@(Summary ?? "Technical details · unmapped source content"): these authored blocks are kept verbatim because they were not mapped to a structured field.</p>
-                @foreach (var block in Blocks)
+    var gaps = content.Gaps;
+    <section class="markdown-source-notes" aria-label="Source content not structured" data-testid="markdown-source-notes">
+        <div class="msn-summary" data-testid="markdown-source-notes-summary">
+            <h3 class="msn-title">Source content not structured · @content.Total block@(content.Total == 1 ? "" : "s")</h3>
+            <p class="msn-lead">These blocks were preserved from the source document but were not deterministically mapped to structured Explorer fields.</p>
+            <p class="msn-verdict" role="status" data-testid="markdown-source-notes-verdict">
+                @if (gaps.Count > 0)
                 {
-                    <article class="markdown-source-note" data-source-block-id="@block.BlockId" data-source-start-line="@block.StartLine" data-source-end-line="@block.EndLine">
-                        <h4>Lines @block.StartLine–@block.EndLine · @block.BlockType</h4>
-                        <pre>@block.Text</pre>
+                    <span>Most source content was preserved for context and auditability. Only potential mapping gaps require review: <strong>@gaps.Count potential mapping gap@(gaps.Count == 1 ? "" : "s")</strong> may contain structured information not represented above.</span>
+                }
+                else
+                {
+                    <span>No likely mapping gaps detected in the preserved source content. Preserved source content is not automatically a parsing problem.</span>
+                }
+            </p>
+            <ul class="msn-counts" aria-label="Source content by category" data-testid="markdown-source-notes-counts">
+                @foreach (var (category, count) in content.Counts)
+                {
+                    <li class="msn-count msn-count-@Css(category)" data-category="@category">@UnmappedSourceContent.PluralLabel(category, count) <strong>@count</strong></li>
+                }
+            </ul>
+            <p class="markdown-source-notes-scope" data-testid="markdown-source-notes-scope">Not structured is not ignored: Document Quality Review reads the full text of the document.</p>
+        </div>
+
+        @if (gaps.Count > 0)
+        {
+            <section class="msn-gaps" aria-label="Potential mapping gaps" data-testid="markdown-source-notes-gaps">
+                <h4 class="msn-h4">Potential mapping gaps</h4>
+                <p class="msn-muted">Review observations: the source appears relevant to this Explorer but was not mapped. Nothing is added to the structured view.</p>
+                @foreach (var gap in gaps)
+                {
+                    <article class="msn-gap" data-testid="markdown-source-gap" data-source-block-id="@gap.Block.BlockId" data-potential-kind="@gap.PotentialKind">
+                        <p class="msn-gap-kind"><span class="msn-tag">Potential mapping gap</span> · @gap.PotentialKind</p>
+                        <p class="msn-gap-text">@UnmappedSourceContent.Readable(gap.Block.Text)</p>
+                        <p class="msn-muted">Reason: @gap.Reason</p>
+                        <p class="msn-muted">Source: @Lines(gap.Block.StartLine, gap.Block.EndLine)@(gap.Section is { } s ? $" · under “{s}”" : "")</p>
+                        @SourceToggle(gap.Block.BlockId, [gap], "Show source for this potential mapping gap")
                     </article>
                 }
-            </div>
+            </section>
         }
+
+        @foreach (var category in GroupedCategories)
+        {
+            var groups = content.GroupsOf(category);
+            if (groups.Count == 0) continue;
+            var open = _openCategories.Contains(category);
+            var id = $"{_id}-{Css(category)}";
+            <section class="msn-category" data-testid="markdown-source-category-@Css(category)">
+                <button type="button" class="btn-secondary btn-small msn-category-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@id"
+                        data-testid="markdown-source-category-toggle-@Css(category)" @onclick="() => Toggle(_openCategories, category)">
+                    @(open ? "Hide" : "Show") @CategoryHeading(category) (@content.Count(category))
+                </button>
+                @if (open)
+                {
+                    <div id="@id">
+                        @foreach (var group in groups)
+                        {
+                            <article class="msn-group" data-testid="markdown-source-group" data-source-block-ids="@string.Join(' ', group.Blocks.Select(b => b.Block.BlockId))">
+                                <p class="msn-group-title">@group.Title</p>
+                                <p class="msn-group-preview">@group.Preview</p>
+                                <p class="msn-muted">@group.Blocks.Count source block@(group.Blocks.Count == 1 ? "" : "s") · @Lines(group.StartLine, group.EndLine)</p>
+                                @SourceToggle(group.Id, group.Blocks, $"Show source for {group.Title}")
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="msn-raw" data-testid="markdown-source-notes-raw">
+            <button type="button" class="btn-secondary btn-small" aria-expanded="@(_rawOpen ? "true" : "false")" aria-controls="@_id"
+                    data-testid="markdown-source-notes-toggle" @onclick="() => _rawOpen = !_rawOpen">@(_rawOpen ? "Hide" : "Show") technical raw source (@content.Total block@(content.Total == 1 ? "" : "s"))</button>
+            @if (_rawOpen)
+            {
+                <div id="@_id" data-testid="markdown-source-notes-detail">
+                    <p class="msn-muted">Raw source: every preserved block verbatim, with its line range, parser block type and presentation category.</p>
+                    @foreach (var block in content.Blocks)
+                    {
+                        <article class="markdown-source-note" data-source-block-id="@block.Block.BlockId" data-source-start-line="@block.Block.StartLine" data-source-end-line="@block.Block.EndLine">
+                            <h4>Lines @block.Block.StartLine–@block.Block.EndLine · @block.Block.BlockType · @UnmappedSourceContent.Label(block.Category)</h4>
+                            <pre>@block.Block.Text</pre>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
     </section>
 }
 
 @code {
     [Parameter] public IReadOnlyList<MarkdownSourceNote>? Blocks { get; set; }
-    /// <summary>Kept for callers that already pass it: technical content always renders on request now.</summary>
+    /// <summary>The Explorer and its structured model; without it only the generic (non-gap) categories apply.</summary>
+    [Parameter] public UnmappedSourceContext? Context { get; set; }
+    /// <summary>The source document (path or name) shown with "Show source", when the Explorer knows it.</summary>
+    [Parameter] public string? SourceName { get; set; }
+    /// <summary>Kept for callers that already pass it: everything technical renders on request.</summary>
     [Parameter] public bool Lazy { get; set; }
-    /// <summary>Heading of the technical detail when opened.</summary>
+    /// <summary>Kept for callers that already pass it (former technical heading).</summary>
     [Parameter] public string? Summary { get; set; }
-    private bool _open;
+
+    private static readonly SourceContentCategory[] GroupedCategories =
+        [SourceContentCategory.Informational, SourceContentCategory.ChangeHistory, SourceContentCategory.Reference];
+
+    private UnmappedSourceContent? _content;
+    private IReadOnlyList<MarkdownSourceNote>? _classifiedBlocks;
+    private object? _classifiedModel;
+    private bool _rawOpen;
+    private readonly HashSet<SourceContentCategory> _openCategories = [];
+    private readonly HashSet<string> _openSources = new(StringComparer.Ordinal);
     private readonly string _id = "msn-" + Guid.NewGuid().ToString("N")[..8];
+
+    protected override void OnParametersSet()
+    {
+        // Classify once per document/model: the classification is deterministic and the inputs are immutable parse results.
+        if (ReferenceEquals(Blocks, _classifiedBlocks) && ReferenceEquals(Context?.Model, _classifiedModel) && _content is not null) return;
+        _classifiedBlocks = Blocks;
+        _classifiedModel = Context?.Model;
+        _content = UnmappedSourceContent.Classify(Blocks, Context ?? new UnmappedSourceContext(SourceContentExplorer.None, null));
+    }
+
+    private RenderFragment SourceToggle(string key, IReadOnlyList<ClassifiedSourceBlock> blocks, string accessibleLabel) => __builder =>
+    {
+        var open = _openSources.Contains(key);
+        var id = $"{_id}-src-{key.GetHashCode():x}";
+        <button type="button" class="btn-link msn-source-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@id" aria-label="@accessibleLabel"
+                data-testid="markdown-source-show" @onclick="() => Toggle(_openSources, key)">@(open ? "Hide source" : "Show source")</button>
+        if (open)
+        {
+            <div id="@id" class="msn-source" data-testid="markdown-source-exact">
+                @if (SourceName is { Length: > 0 } source) { <p class="msn-muted">Document: <span class="msn-wrap">@source</span></p> }
+                @foreach (var block in blocks)
+                {
+                    <p class="msn-muted">@Lines(block.Block.StartLine, block.Block.EndLine) · @block.Block.BlockType@(block.Section is { } s ? $" · under “{s}”" : "")</p>
+                    <pre>@block.Block.Text</pre>
+                }
+            </div>
+        }
+    };
+
+    private static void Toggle<T>(HashSet<T> set, T key) { if (!set.Remove(key)) set.Add(key); }
+
+    private static string Lines(int start, int end) => start == end ? $"line {start}" : $"lines {start}–{end}";
+
+    private static string CategoryHeading(SourceContentCategory category) => category switch
+    {
+        SourceContentCategory.Informational => "informational content",
+        SourceContentCategory.ChangeHistory => "change / history",
+        _ => "references",
+    };
+
+    private static string Css(SourceContentCategory category) => category switch
+    {
+        SourceContentCategory.PotentialMappingGap => "gap",
+        SourceContentCategory.Informational => "informational",
+        SourceContentCategory.ChangeHistory => "history",
+        SourceContentCategory.Reference => "reference",
+        _ => "structural",
+    };
 }

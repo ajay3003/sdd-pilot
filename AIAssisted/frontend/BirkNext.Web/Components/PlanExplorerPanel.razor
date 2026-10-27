@@ -1133,7 +1133,7 @@
 
 </div>
 
-<MarkdownSourceNotesPanel Blocks="@(_plan?.UnmappedSourceBlocks)" />
+<MarkdownSourceNotesPanel Blocks="@(_plan?.UnmappedSourceBlocks)" Context="@UnmappedSourceContext.For(_plan)" />
 
 @code {
     [Parameter] public string PlanText { get; set; } = string.Empty;
