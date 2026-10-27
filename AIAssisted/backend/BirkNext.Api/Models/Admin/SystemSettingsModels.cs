@@ -132,7 +132,7 @@ public class FeatureVisibilityInfo
     public bool ImpactAnalysis { get; set; } = true;
     public bool SpecDrift { get; set; } = true;
     public bool ImplementationReview { get; set; } = true;
-    public bool ImplementationTraceability { get; set; } = true;
+    public bool ImplementationTraceability { get; set; } = false;
     public bool SourceAnalysis { get; set; } = true;
     public bool AzureEnvironmentAnalysis { get; set; } = true;
     public bool GeneratedDocumentationHealth { get; set; } = true;

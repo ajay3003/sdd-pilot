@@ -50,10 +50,10 @@ public sealed class ProjectInputWorkflowTests
     private readonly Mock<IFrontendAnalysisSettingsService> _settings = new();
     private readonly Mock<ICurrentWorkspaceProjection> _projection = new();
 
-    private Task<WorkflowReadiness> ReadinessAsync() => Create().Service.GetReadinessAsync();
+    private Task<WorkflowReadiness> ReadinessAsync(FeatureVisibilityService? features = null) => Create(features).Service.GetReadinessAsync();
 
     /// <summary>The production chain: workspace projection + applicability (Target Environments, source coverage) + readiness.</summary>
-    private (WorkflowReadinessService Service, ProjectApplicabilityState Applicability) Create()
+    private (WorkflowReadinessService Service, ProjectApplicabilityState Applicability) Create(FeatureVisibilityService? features = null)
     {
         _projection.Setup(p => p.GetAsync()).ReturnsAsync(() => _workspace);
         var projection = _projection;
@@ -66,7 +66,7 @@ public sealed class ProjectInputWorkflowTests
         var applicability = new ProjectApplicabilityState(api.Object, contexts.Object, projection.Object, _settings.Object);
         _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
             .ReturnsAsync(() => _steps);
-        return (new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance), applicability);
+        return (new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance, features: features), applicability);
     }
 
     /// <summary>A Target Environment saved, created, switched or reset: the settings service announces it.</summary>
@@ -208,6 +208,26 @@ public sealed class ProjectInputWorkflowTests
         r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Document Review", "Quality & Testing"]);
         r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain(["quality-review", "api-quality-review"]);
         r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review", "Document Review appears before runtime reviews in the sidebar");
+    }
+
+    [Fact]
+    public async Task ChangeTraceability_DisabledByDefault_IsNeitherOfferedNorQueriedNorAGap()
+    {
+        Documents(AllRoles);
+        DocumentStepsApproved();
+        Source(detected: [Nuget]);
+
+        var disabled = await ReadinessAsync(new FeatureVisibilityService());
+        disabled.ChangeProvenance.Should().Be(ChangeProvenanceState.Disabled);
+        disabled.EvidenceBranches.Select(b => b.Key).Should().NotContain("change", "a disabled optional feature is not shown, not a warning and not a gap");
+        disabled.ApplicableReviews.Should().NotContain(r => r.ReviewId == "change-traceability");
+        disabled.RequiredReviewCount.Should().Be((await ReadinessAsync()).RequiredReviewCount, "Change Traceability never changes workflow completion");
+
+        var enabled = new FeatureVisibilityService();
+        enabled.ApplyLocalFlags(new FeatureVisibilityDto { ImplementationTraceability = true });
+        var shown = await ReadinessAsync(enabled);
+        shown.EvidenceBranches.Should().Contain(b => b.Key == "change" && !b.Ready, "enabled without Azure DevOps it is optional, never a blocker");
+        shown.NextRecommendedAction?.Route.Should().NotBe(WorkflowReadinessService.ChangeTraceabilityRoute);
     }
 
     [Fact]

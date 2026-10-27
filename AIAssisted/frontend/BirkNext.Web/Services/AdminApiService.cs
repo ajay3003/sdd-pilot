@@ -413,7 +413,8 @@ public class FeatureVisibilityDto
     [JsonPropertyName("impactAnalysis")]       public bool ImpactAnalysis       { get; set; } = true;
     [JsonPropertyName("specDrift")]            public bool SpecDrift            { get; set; } = true;
     [JsonPropertyName("implementationReview")]       public bool ImplementationReview       { get; set; } = true;
-    [JsonPropertyName("implementationTraceability")] public bool ImplementationTraceability { get; set; } = true;
+    // Optional Azure DevOps provenance: off unless explicitly enabled.
+    [JsonPropertyName("implementationTraceability")] public bool ImplementationTraceability { get; set; } = false;
     [JsonPropertyName("sourceAnalysis")] public bool SourceAnalysis { get; set; } = true;
     [JsonPropertyName("azureEnvironmentAnalysis")] public bool AzureEnvironmentAnalysis { get; set; } = true;
     [JsonPropertyName("generatedDocumentationHealth")] public bool GeneratedDocumentationHealth { get; set; } = true;

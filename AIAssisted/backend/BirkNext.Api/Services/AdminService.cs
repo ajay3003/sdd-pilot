@@ -56,6 +56,16 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("GeneratedDocumentationHealth", "Generated Documentation Health")
     ];
 
+    /// <summary>
+    /// Core features that are off unless a configuration explicitly enables them. Change Traceability depends on the optional Azure
+    /// DevOps integration and never counts toward workflow, coverage or readiness, so it is not shown by default.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> CoreFeaturesDisabledByDefault =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ImplementationTraceability" };
+
+    /// <summary>The value a feature key takes when the configuration does not set it.</summary>
+    internal static bool CoreDefault(string key) => !CoreFeaturesDisabledByDefault.Contains(key);
+
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
     [
         ("EnableExtractionReview", "Extraction Review"),
@@ -260,7 +270,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             ImpactAnalysis       = s.GetValue("ImpactAnalysis",       true),
             SpecDrift            = s.GetValue("SpecDrift",            true),
             ImplementationReview        = s.GetValue("ImplementationReview",        true),
-            ImplementationTraceability  = s.GetValue("ImplementationTraceability",  true),
+            // Optional Azure DevOps provenance: off unless explicitly enabled (an explicit true or false always wins).
+            ImplementationTraceability  = s.GetValue("ImplementationTraceability",  CoreDefault("ImplementationTraceability")),
             // Missing key (older configuration) resolves to enabled, like every Core feature.
             SourceAnalysis              = s.GetValue("SourceAnalysis",              true),
             AzureEnvironmentAnalysis    = s.GetValue("AzureEnvironmentAnalysis",    true),
@@ -299,7 +310,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         var core = CoreFeatures.Select(f => new FeatureVisibilityEntry
         {
             Key = f.Key, Label = f.Label,
-            Value = fv.GetValue(f.Key, true), Locked = false
+            Value = fv.GetValue(f.Key, CoreDefault(f.Key)), Locked = false
         }).ToList();
 
         var advanced = AdvancedFeatures.Select(f => new FeatureVisibilityEntry

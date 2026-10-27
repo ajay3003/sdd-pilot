@@ -22,7 +22,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         ("ApiQualityReview", "API Quality Review", true), ("IntegrationQualityReview", "Integration Quality Review", true),
         ("CriticalE2ERegression", "Critical E2E Regression", true), ("BlazorWasmSecurityReview", "WASM Security Review", true),
         ("BlazorWasmPerformanceReview", "WASM Performance Review", true), ("ImplementationReview", "Task Alignment Review", true),
-        ("ImplementationTraceability", "Change Traceability", true), ("SourceAnalysis", "Source Analysis", true),
+        ("ImplementationTraceability", "Change Traceability", false), ("SourceAnalysis", "Source Analysis", true),
         ("AzureEnvironmentAnalysis", "Azure Environment Analysis", true), ("GeneratedDocumentationHealth", "Generated Documentation Health", true),
     ];
 
@@ -67,6 +67,9 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
             "Specification Explorer", "Constitution Explorer", "Data Model Explorer", "Plan Explorer", "Task Explorer",
             "Document Quality Review", "Task Alignment Review", "Generated Documentation Health", "Documentation Drift");
         SectionLabels(cut, "traceability").Should().Equal("Requirements Traceability", "Change Traceability");
+        cut.FindAll("[data-testid=fv-section-traceability] .fv-row").Single(r => r.TextContent.Contains("Change Traceability"))
+            .QuerySelector(".fv-badge-disabled")!.TextContent.Should().Be("Disabled", "optional Azure DevOps provenance is off by default");
+        cut.Find("[data-testid=fv-count-traceability] .fv-count-off").TextContent.Should().Be("1 disabled");
         SectionLabels(cut, "source-review").Should().Equal("Source Analysis", "Azure Environment Analysis");
         SectionLabels(cut, "analysis").Should().Equal("Impact Analysis");
         SectionLabels(cut, "quality-testing").Should().NotContain("Document Quality Review");
@@ -93,6 +96,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         }
         // Spot-check the fixture: moved Documentation Drift stays enabled; Impact Analysis stays disabled.
         cut.Find("[data-testid=fv-count-document-review] .fv-count-on").TextContent.Should().Be("9 enabled");
+        cut.Find("[data-testid=fv-count-traceability] .fv-count-on").TextContent.Should().Be("1 enabled");
         cut.Find("[data-testid=fv-count-analysis] .fv-count-off").TextContent.Should().Be("1 disabled");
         cut.FindAll("[data-testid=fv-section-analysis] .fv-badge-disabled").Should().ContainSingle();
     }

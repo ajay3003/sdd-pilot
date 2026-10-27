@@ -28,10 +28,17 @@ public sealed class FeatureVisibilityTaxonomyTests
     [Fact]
     public void Sidebar_traceability_is_requirements_and_change_traceability_only()
     {
-        // Legacy rows stay behind the (off by default) legacy flag; the current rows are exactly the two traceability features.
-        var visible = new FeatureVisibilityService();
-        NavigationCatalog.Sections.Single(s => s.Id == "traceability").Items.Where(i => i.Visible(visible)).Select(i => i.Label)
-            .Should().Equal("Requirements Traceability", "Change Traceability");
+        // Legacy rows stay behind the (off by default) legacy flag. Change Traceability is off by default; explicit values always win.
+        IEnumerable<string> Visible(FeatureVisibilityDto? flags)
+        {
+            var visibility = new FeatureVisibilityService();
+            if (flags is not null) visibility.ApplyLocalFlags(flags);
+            return NavigationCatalog.Sections.Single(s => s.Id == "traceability").Items.Where(i => i.Visible(visibility)).Select(i => i.Label);
+        }
+        Visible(null).Should().Equal("Requirements Traceability");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = true }).Should().Equal("Requirements Traceability", "Change Traceability");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = false }).Should().Equal("Requirements Traceability");
+        new FeatureVisibilityDto().ImplementationTraceability.Should().BeFalse("no explicit value means disabled");
         SidebarLabels("traceability").Should().NotContain(["Task Alignment Review", "Documentation Drift", "Impact Analysis"]);
     }
 

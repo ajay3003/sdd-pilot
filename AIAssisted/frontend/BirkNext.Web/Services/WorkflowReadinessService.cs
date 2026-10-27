@@ -24,7 +24,7 @@ public sealed record WorkflowReviewOption(string ReviewId, string Label, string 
 public enum SourceBindingState { NoSource, NotEstablished, Established }
 
 /// <summary>Azure DevOps change provenance: optional, independent of Source Analysis.</summary>
-public enum ChangeProvenanceState { Unknown, NotConfigured, Configured, DemoEvidence }
+public enum ChangeProvenanceState { Unknown, NotConfigured, Configured, DemoEvidence, Disabled }
 
 /// <summary>
 /// One evidence branch after the document and alignment reviews (source-backed implementation evidence, Azure DevOps change provenance,
@@ -160,6 +160,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private readonly ILogger<WorkflowReadinessService> _logger;
     private readonly IWorkspaceSessionService? _session;
     private readonly ImplementationTraceabilityApiService? _changeTraceability;
+    private readonly FeatureVisibilityService? _features;
 
     public event Action? ReadinessChanged;
 
@@ -169,8 +170,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         IRecommendedWorkflowApiService workflowApi,
         ILogger<WorkflowReadinessService> logger,
         IWorkspaceSessionService? session = null,
-        ImplementationTraceabilityApiService? changeTraceability = null)
+        ImplementationTraceabilityApiService? changeTraceability = null,
+        FeatureVisibilityService? features = null)
     {
+        _features = features;
         _workspace = workspace;
         _applicability = applicability;
         _workflowApi = workflowApi;
@@ -456,6 +459,8 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     /// <summary>Azure DevOps change provenance from the backend status. Unknown when it cannot be read — never a blocker either way.</summary>
     private async Task<ChangeProvenanceState> ChangeProvenanceAsync()
     {
+        // Hidden by Feature & Menu Visibility (the default): not offered, not queried, never a gap or a penalty.
+        if (_features is { ImplementationTraceability: false }) return ChangeProvenanceState.Disabled;
         if (_changeTraceability is null) return ChangeProvenanceState.Unknown;
         try
         {
@@ -473,6 +478,9 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
     /// <summary>The three evidence branches after the core review path. Independent of each other; each names its own prerequisite.</summary>
     private static IReadOnlyList<WorkflowEvidenceBranch> EvidenceBranches(ProjectInputs inputs, SourceBindingState binding, ChangeProvenanceState change) =>
+        [.. AllEvidenceBranches(inputs, binding, change).Where(b => b.Key != "change" || change != ChangeProvenanceState.Disabled)];
+
+    private static IReadOnlyList<WorkflowEvidenceBranch> AllEvidenceBranches(ProjectInputs inputs, SourceBindingState binding, ChangeProvenanceState change) =>
     [
         new("source", "Implementation Evidence Review",
             "Assess documented requirements against explicit source-backed implementation and test evidence.",

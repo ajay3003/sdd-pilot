@@ -71,7 +71,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         link.QuerySelector(".nav-label")!.TextContent.Should().Be("Integration Quality Review");
         link.GetAttribute("title").Should().Be("Integration Quality Review");
         cut.Find("a[href='task-alignment']").GetAttribute("title").Should().Be("Task Alignment Review: tasks checked against the Specification and Success Criteria; no source code is read");
-        cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
+        cut.FindAll("a[href='implementation-traceability']").Should().BeEmpty("Change Traceability is off unless explicitly enabled");
     }
 
     [Fact]
@@ -275,7 +275,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
     [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "generated-documentation-health", "documentation-drift" })]
-    [InlineData("traceability", new[] { "artifact-traceability", "implementation-traceability" })]
+    [InlineData("traceability", new[] { "artifact-traceability" })]
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("analysis", new[] { "impact-analysis" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "code-risk-review", "test-data" })]
@@ -289,9 +289,11 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     [Fact]
-    public void TraceabilitySection_ListsRequirementsThenChangeTraceability()
+    public void TraceabilitySection_ListsRequirementsThenChangeTraceability_WhenChangeTraceabilityIsEnabled()
     {
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto { ImplementationTraceability = true });
         var cut = Render<NavMenu>();
+        cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
 
         cut.FindAll("#nav-section-traceability a.nav-link").Select(a => a.GetAttribute("href")).Should()
             .Equal("artifact-traceability", "implementation-traceability");

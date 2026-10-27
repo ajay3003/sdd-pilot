@@ -108,10 +108,9 @@ public class AnalysisNavigationTests : BunitContext
         nav.IndexOf("Documentation Drift", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Requirements Traceability", StringComparison.Ordinal));
         nav.IndexOf("Requirements Traceability", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Change Traceability", StringComparison.Ordinal));
-        nav.Should().NotContain("Implementation Traceability").And.NotContain("Artifact Traceability");
-        nav.IndexOf("Change Traceability", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Impact Analysis", StringComparison.Ordinal));
+        nav.Should().NotContain("Implementation Traceability").And.NotContain("Artifact Traceability");
+        nav.Should().NotContain("Change Traceability", "off unless explicitly enabled");
     }
 
     [Fact]

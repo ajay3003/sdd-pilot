@@ -26,7 +26,8 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         cut.FindAll("a").Count(a => a.TextContent.Trim() == "Source Analysis").Should().Be(1);
         entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
         entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Demo Projects", "Target Environments");
-        entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "Change Traceability", "§Source Review");
+        entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "§Source Review");
+        entries.Should().NotContain("Change Traceability", "optional Azure DevOps provenance is off by default");
         entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
