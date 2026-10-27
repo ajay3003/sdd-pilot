@@ -4,7 +4,7 @@
 
 @* Integration Quality Review's read-only view of its integrations in the canonical Integration Topology: each configured integration's
    connection, interfaces, status and every source that states it. Interfaces are not edited here; integrations are configured where they
-   always were (Target Environment → Integrations). *@
+   always were (Target Environment → Integration Catalog). *@
 <section class="ti" aria-labelledby="@($"{_id}-heading")" data-testid="ti-panel">
     <h3 id="@($"{_id}-heading")">Integrations in the topology</h3>
     @if (string.IsNullOrWhiteSpace(EnvironmentId)) { <p role="status">Select a Target Environment.</p> }

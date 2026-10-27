@@ -6,7 +6,7 @@ using FluentAssertions;
 namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
-/// Target Environment → Integrations, candidate review and project-specific setup as rules: review-state labels keep the backend semantics,
+/// Target Environment → Integration Catalog, candidate review and project-specific setup as rules: review-state labels keep the backend semantics,
 /// the default view is ready-to-review first, relationships read in words, several relationships of one producer group, Terraform never
 /// reads "0 of 0", setup items are grouped by evidence type and assumptions/historical evidence never read as confirmed or current.
 /// </summary>

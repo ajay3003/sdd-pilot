@@ -32,5 +32,29 @@ public sealed class IntegrationQualityReviewIntegrationsDeepLinkTests : BunitCon
         cut.Markup.Should().Contain("QA target");
         settings.Settings.ActiveProfileId.Should().Be("dev", "navigation selects the environment for viewing; it does not activate it");
         JSInterop.Invocations.Where(i => i.Identifier.Contains("setItem", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty();
+        cut.Find("#target-tab-integrations").TextContent.Trim().Should().Be("Integration Catalog");
+        cut.Find("[data-testid=ip-intro]").TextContent.Should().StartWith("Review how systems are connected, mapped and evidenced.");
+    }
+
+    [Theory]
+    [InlineData("integrations", "integrations")]
+    [InlineData("integration-catalog", "integrations")]
+    [InlineData("external", "external")]
+    [InlineData("connected-systems", "external")]
+    [InlineData("altinn", "external")]
+    [InlineData("setup-library", "library")]
+    public void Old_and_new_tab_names_route_to_the_same_tab(string requested, string key)
+    {
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(new FrontendAnalysisSettingsService());
+        Services.AddSingleton(Mock.Of<ITargetEnvironmentDetectionApiService>());
+        Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
+        Services.AddSingleton<IIntegrationCatalogApiService>(new FakeIntegrationCatalogApi());
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult("""{"activeProfileId":"qa","profiles":[{"id":"qa","name":"QA target","environmentType":"QA"}]}""");
+
+        var cut = Render<BirkNext.Web.Components.FrontendAnalysisSettings>(p => p.Add(c => c.InitialTab, requested).Add(c => c.InitialProfileId, "qa"));
+
+        cut.Find($"#target-tab-{key}").GetAttribute("aria-selected").Should().Be("true");
     }
 }

@@ -8,7 +8,7 @@ using static BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceF
 namespace BirkNext.Api.Tests.Services.Integrations;
 
 /// <summary>
-/// Target Environment → Integrations compares environment-specific configured values (seeded or typed) with Terraform in Source Analysis:
+/// Target Environment → Integration Catalog compares environment-specific configured values (seeded or typed) with Terraform in Source Analysis:
 /// agreement is supporting evidence, disagreement needs review, absence leaves seeded values as assumptions. Read-only — nothing is written.
 /// Generic "Acme" Terraform; no project-specific names.
 /// </summary>

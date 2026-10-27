@@ -61,7 +61,7 @@ public static class JourneySetupModel
 {
     public static readonly IReadOnlyList<(JourneySetupStepKind Kind, string Title, string Owner)> StepOrder =
     [
-        (JourneySetupStepKind.Integration, "Integration", "Target Environment → Integrations"),
+        (JourneySetupStepKind.Integration, "Integration", "Target Environment → Integration Catalog"),
         (JourneySetupStepKind.SourceEvidence, "Source evidence", "Integration Quality Review → Setup & Evidence"),
         (JourneySetupStepKind.Contract, "Contract", "Contract & Schema Evidence"),
         (JourneySetupStepKind.Environment, "Environment", "Test pack run configuration"),

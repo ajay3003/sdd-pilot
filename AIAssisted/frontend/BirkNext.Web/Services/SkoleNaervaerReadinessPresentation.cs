@@ -68,7 +68,7 @@ public static class SkoleNaervaerReadinessPresentation
     /// <summary>
     /// Rapportmottak light mode: Environment, Integration, Reporter, Child and Contract from the canonical owners' readiness rows, and the MU
     /// receipt as downstream verification (never inferred from a submission). Each unresolved dimension names exactly one owner; the page edits
-    /// nothing. Manual vs automated readiness come from Target Environment → External Integrations (shown beside these rows).
+    /// nothing. Manual vs automated readiness come from Target Environment → Connected Systems (shown beside these rows).
     /// </summary>
     public static IReadOnlyList<LightRow> LightRows(IReadOnlyList<JourneyPrerequisite> rows, string? profileId)
     {
@@ -82,8 +82,8 @@ public static class SkoleNaervaerReadinessPresentation
             : new(key, label, keys.Select(Row).Any(row => row is { State: JourneyReadinessState.NotConfigured }) ? "Missing" : "Partial", "warn", source, owner, href, First(keys));
         return
         [
-            Make("environment", "Environment", "Target Environment → External Integrations", "Open External Integration", external, "altinn-environment", "altinn-app"),
-            Make("integration", "Integration", "Target Environment → Integrations", "Open Integrations", profileId is null ? "/integration-quality-review" : IntegrationReviewPresentation.IntegrationsHref(profileId), "integration:report-intake"),
+            Make("environment", "Environment", "Target Environment → Connected Systems", "Open Connected Systems", external, "altinn-environment", "altinn-app"),
+            Make("integration", "Integration", "Target Environment → Integration Catalog", "Open Integration Catalog", profileId is null ? "/integration-quality-review" : IntegrationReviewPresentation.IntegrationsHref(profileId), "integration:report-intake"),
             Make("reporter", "Reporter", "Test Data", "Open Test Data", "/test-data", "synthetic-reporter", "reporter-profile"),
             Make("child", "Child", "Test Data", "Open Test Data", "/test-data", "synthetic-data"),
             Make("contract", "Contract", "IQR / Source Analysis", "Open IQR", "/integration-quality-review?view=evidence", "submission-contract", "process-contract"),
@@ -95,7 +95,7 @@ public static class SkoleNaervaerReadinessPresentation
     public static Action ActionFor(JourneyPrerequisite row, string? profileId) => row.Key switch
     {
         "trusted-environment" => new("Open Target Environment", "/admin/system-settings?section=target-environments", null),
-        _ when row.Key.StartsWith("integration:", StringComparison.Ordinal) => new("Open Target Environment → Integrations", IntegrationReviewPresentation.IntegrationsHref(profileId), null),
+        _ when row.Key.StartsWith("integration:", StringComparison.Ordinal) => new("Open Target Environment → Integration Catalog", IntegrationReviewPresentation.IntegrationsHref(profileId), null),
         "idporten-client" or "altinn-app" or "altinn-environment" or "redirect-uri" or "client-secret" or "unattended-provider" or "reporter-auth"
             => new("View Altinn setup", profileId is null ? "/admin/system-settings?section=target-environments" : AltinnEnvironmentPresentation.AltinnHref(profileId), null),
         "test-reporter" => new("Open Test Data", "/test-data", null),

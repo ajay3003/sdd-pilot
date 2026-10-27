@@ -177,7 +177,7 @@ public static class TestPackSources
                         ? $"{role.Label} source is available ({string.Join(", ", available)}) but not bound where it is needed."
                         : $"{role.Label} source is available ({string.Join(", ", available)}), but no configured integration uses it yet.",
                 NextAction = noTarget ? "Select a target environment"
-                    : names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "Bind it in IQR Evidence" : "Configure the integration in Target Environment → Integrations, then bind it in IQR Evidence",
+                    : names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "Bind it in IQR Evidence" : "Configure the integration in Target Environment → Integration Catalog, then bind it in IQR Evidence",
                 NextActionTarget = noTarget ? "target-environment"
                     : names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "iqr-evidence" : "target-environment-integrations",
             };

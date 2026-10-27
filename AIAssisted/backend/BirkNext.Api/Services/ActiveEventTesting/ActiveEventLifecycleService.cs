@@ -72,7 +72,7 @@ public sealed class ActiveEventLifecycleService(
                 ResourceStatuses = resources,
                 Coverage = found == 0 ? ActiveEventProviderCoverage.None : found == resources.Length ? ActiveEventProviderCoverage.Complete : ActiveEventProviderCoverage.Partial,
                 NotApplicableReason = applicable.Length > 0 ? ""
-                    : $"No configured Event Hub integration was found for this CDC source ({string.Join(" / ", provider.Resources)}). Configure it in Target Environment → Integrations with its database.schema.table source resource.",
+                    : $"No configured Event Hub integration was found for this CDC source ({string.Join(" / ", provider.Resources)}). Configure it in Target Environment → Integration Catalog with its database.schema.table source resource.",
             };
         }).ToArray();
     }

@@ -17,7 +17,7 @@ public sealed class SetupProfileService(IIntegrationJourneyPackRegistry packs, I
     Integrations.SourceEvidence.IIntegrationEvidenceBindingStore bindings, SourceAnalysis.IReviewSourceEvidenceProvider sources,
     ITrustedExecutionEnvironmentRegistry environments, ILogger<SetupProfileService> logger, IActiveEventLifecycleService? activeEvents = null)
 {
-    private const string CatalogOwner = "Target Environment → Integrations";
+    private const string CatalogOwner = "Target Environment → Integration Catalog";
     private const string BindingOwner = "Integration Quality Review → evidence binding";
     private const string RunOwner = "Test pack run configuration";
     public static readonly IReadOnlyList<string> AlwaysManual = ["trustedExecution", "authenticationSecrets", "approvedTestIdentity", "authorizationAttestation"];

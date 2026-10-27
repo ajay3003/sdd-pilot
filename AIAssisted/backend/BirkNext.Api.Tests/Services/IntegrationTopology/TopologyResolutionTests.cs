@@ -490,7 +490,7 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
         var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
         var mm = Rel(coverage, "mm-skoletjenesten");
         mm.State.Should().NotBe(TopologyRelationshipState.Resolved);
-        (mm.Action, mm.Owner).Should().Be((TopologyGapAction.ConfigureIntegration, "Target Environment → Integrations"));
+        (mm.Action, mm.Owner).Should().Be((TopologyGapAction.ConfigureIntegration, "Target Environment → Integration Catalog"));
     }
 
     [Fact]

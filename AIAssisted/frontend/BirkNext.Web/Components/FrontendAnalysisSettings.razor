@@ -1460,7 +1460,7 @@
                 }
             }
 
-            @* ── Integrations ──
+            @* ── Integration Catalog ──
                The configured integrations are persisted by the backend catalog (not in this browser profile), so the pane
                reads and saves them itself, identically in view and edit mode. Integrations that older versions stored in
                the profile are imported once. *@
@@ -1469,7 +1469,7 @@
                 <IntegrationsPane Profile="profile" Focus="@(InitialTab == "integrations" ? InitialFocus : null)" />
             }
 
-            @* ── External Integrations ── environment-specific external systems; Altinn is one provider (its own setup component). *@
+            @* ── Connected Systems ── environment-specific systems (provider instances); Altinn is one provider (its own setup component). *@
             @if (_activeTab == "external")
             {
                 <ExternalIntegrationsPane EnvironmentId="@profile.Id" Focus="@ExternalFocus" />
@@ -1758,7 +1758,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("General", ["general", "target", "auth"]),
         ("Discovery", ["endpoint", "browser"]),
         ("Quality settings", ["performance", "cwv", "features", "validation"]),
-        ("Integrations", ["integrations", "external", "library"]),
+        ("Systems & integrations", ["external", "library", "integrations"]),
     ];
 
     // ── Computed ─────────────────────────────────────────────────────────────
@@ -2104,7 +2104,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         }
     }
 
-    /// <summary>The External Integrations focus from a deep link (an old Altinn-tab link focuses the Altinn system).</summary>
+    /// <summary>The Connected Systems focus from a deep link (an old Altinn-tab link focuses the Altinn system).</summary>
     private string? ExternalFocus => string.Equals(InitialTab, "altinn", StringComparison.OrdinalIgnoreCase) ? "altinn"
         : string.Equals(InitialTab, "external", StringComparison.OrdinalIgnoreCase) ? InitialFocus : null;
 
@@ -2112,8 +2112,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         string.Equals(tab, "security", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(tab, "security-expectations", StringComparison.OrdinalIgnoreCase)
             ? "endpoint"
-        // Earlier links opened a separate Altinn tab; Altinn is now a provider under External Integrations.
-        : string.Equals(tab, "altinn", StringComparison.OrdinalIgnoreCase) ? "external" : tab;
+        // Earlier links opened a separate Altinn tab; Altinn is now a provider under Connected Systems. The tab keys stay "external" and
+        // "integrations" so every existing link keeps working; the new names are accepted as aliases.
+        : string.Equals(tab, "altinn", StringComparison.OrdinalIgnoreCase) || string.Equals(tab, "connected-systems", StringComparison.OrdinalIgnoreCase) ? "external"
+        : string.Equals(tab, "integration-catalog", StringComparison.OrdinalIgnoreCase) ? "integrations"
+        : string.Equals(tab, "setup-library", StringComparison.OrdinalIgnoreCase) ? "library" : tab;
 
     // ── Profile selection ────────────────────────────────────────────────────
 

@@ -161,7 +161,7 @@
                 @if (_altinnOwned)
                 {
                     <p class="mfr-note" data-testid="mfr-altinn-owned">Environment, app, base URL, client and scopes are owned by this environment's Altinn system and shown read-only here.
-                        <a href="@AltinnEnvironmentPresentation.AltinnHref(EnvironmentId!)" data-testid="mfr-edit-altinn">Edit in External Integrations</a></p>
+                        <a href="@AltinnEnvironmentPresentation.AltinnHref(EnvironmentId!)" data-testid="mfr-edit-altinn">Edit in Connected Systems</a></p>
                 }
                 <div class="mfr-form">
                 @if (!_altinnOwned) { <SourceValueHint Resolution="@Hint("Environment")" Origin="@HintOrigin("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" /> }
@@ -280,7 +280,7 @@
 
 @code {
     [Parameter] public string? EnvironmentId { get; set; }
-    /// <summary>True when Target Environment → External Integrations has an Altinn system: its owned fields are read-only here (one owner).</summary>
+    /// <summary>True when Target Environment → Connected Systems has an Altinn system: its owned fields are read-only here (one owner).</summary>
     private bool _altinnOwned;
     private string? _ownershipCheckedFor;
 

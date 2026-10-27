@@ -156,14 +156,14 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         var original = System.Text.Json.JsonSerializer.Serialize(Persisted());
         cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        foreach (var tab in new[] { "Target Application", "Authentication", "Endpoint Discovery", "Frontend Review Engines", "Core Web Vitals", "Performance Thresholds", "Integrations" })
+        foreach (var tab in new[] { "Target Application", "Authentication", "Endpoint Discovery", "Frontend Review Engines", "Core Web Vitals", "Performance Thresholds", "Integration Catalog" })
         {
             OpenTab(cut, tab);
             // Settings form stays read-only; the managed Edge runtime panel has no editable control either (no runtime trust opt-in).
             // Integrations are a backend catalog saved per record, outside the profile draft: its search/filter controls are not
             // profile fields, and nothing there is written unless the user saves an integration.
             // Authentication differences carry review decisions (radio buttons), which are not profile fields and write nothing.
-            if (tab != "Integrations") cut.FindAll("input:not([data-testid^=auth-decision-]), select, textarea").Should().BeEmpty(tab);
+            if (tab != "Integration Catalog") cut.FindAll("input:not([data-testid^=auth-decision-]), select, textarea").Should().BeEmpty(tab);
             cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel", tab);
         }
         _integrations.Saved.Should().BeEmpty("detecting settings never writes an integration");

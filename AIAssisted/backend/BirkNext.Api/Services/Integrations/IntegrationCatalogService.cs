@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Services.Integrations;
 
 /// <summary>
-/// Target Environment → Integrations persistence: the configured, expected integrations Integration Quality Review runs
+/// Target Environment → Integration Catalog persistence: the configured, expected integrations Integration Quality Review runs
 /// from. Owns configuration only — observed traffic stays with Endpoint Discovery, browser evidence with Browser Discovery.
 /// </summary>
 public interface IIntegrationCatalogService

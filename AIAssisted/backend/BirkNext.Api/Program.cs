@@ -446,7 +446,7 @@ builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
 
 builder.Services.AddScoped<IContractComparer, ContractComparer>();
 
-// Integration catalog (Target Environment → Integrations) and Integration Quality Review over it. Read-only evidence ports:
+// Integration catalog (Target Environment → Integration Catalog) and Integration Quality Review over it. Read-only evidence ports:
 // a DNS/TCP/TLS namespace probe; no runtime or contract adapter exists in this build, so those domains report Not assessed.
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationCatalogService, BirkNext.Api.Services.Integrations.IntegrationCatalogService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationMessageFlowStore, BirkNext.Api.Services.Integrations.IntegrationMessageFlowStore>();
@@ -599,12 +599,12 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCandidateServi
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions.Section)
     .Get<BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions>() ?? new BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions());
-// Target Environment → External Integrations → Altinn: saved non-secret settings (database + in-memory cache for the policy) and session-only values (memory).
+// Target Environment → Connected Systems → Altinn: saved non-secret settings (database + in-memory cache for the policy) and session-only values (memory).
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsCache>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnSessionStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentService>();
-// Target Environment → External Integrations: provider handlers (Altinn dedicated, every other provider generic), the generic setup package
+// Target Environment → Connected Systems: provider handlers (Altinn dedicated, every other provider generic), the generic setup package
 // pipeline (export → preflight → apply) and the Setup Library.
 builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.IExternalProviderHandler, BirkNext.Api.Services.ExternalIntegrations.AltinnProviderHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.ExternalIntegrationService>();

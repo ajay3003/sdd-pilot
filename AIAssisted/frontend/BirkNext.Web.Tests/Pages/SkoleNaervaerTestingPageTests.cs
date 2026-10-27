@@ -204,7 +204,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
                 Assessment = JourneyAssessmentState.ExecutedNotVerified,
                 Dimensions =
                 [
-                    Dim(JourneyDimension.Integration, "Integration", JourneyDimensionState.Partial, "Target Environment → Integrations", "integrations"),
+                    Dim(JourneyDimension.Integration, "Integration", JourneyDimensionState.Partial, "Target Environment → Integration Catalog", "integrations"),
                     Dim(JourneyDimension.Contracts, "Contracts", JourneyDimensionState.ReviewRequired, "Integration Quality Review / Contract & Schema Evidence", "source-contracts"),
                     Dim(JourneyDimension.TestData, "Test Data", JourneyDimensionState.Missing, "Test Data", "test-data"),
                     Dim(JourneyDimension.Execution, "Execution", JourneyDimensionState.Blocked, "Target Environment / execution safety", "execution-settings"),
@@ -416,7 +416,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
                 TestPackSourceState.Bound) { BoundArchives = ["Tiltak 2 - Sikkert digitalt økosystem (1).zip"], NextAction = "Open IQR Evidence", NextActionTarget = "iqr-evidence" },
             new(new TestPackSourceRole("m2lb", "M2LB", "downstream") { Capabilities = ["MM", "Skoletjenesten"], Journeys = ["utdanningsdata", "rapportmottak", "periodeavslutning"],
                 ComponentTokens = ["Skoletjenesten", "MM"] }, TestPackSourceState.AvailableNotBound)
-                { AvailableArchives = ["M2LB (2).zip"], NextAction = "Configure the integration in Target Environment → Integrations, then bind it in IQR Evidence", NextActionTarget = "target-environment-integrations" },
+                { AvailableArchives = ["M2LB (2).zip"], NextAction = "Configure the integration in Target Environment → Integration Catalog, then bind it in IQR Evidence", NextActionTarget = "target-environment-integrations" },
             new(new TestPackSourceRole("altinn-app", "Altinn Skolenærvær application", "app") { RequiresApiDocument = true, ExpectedArtifact = "OpenAPI / Swagger document", Journeys = ["rapportmottak"] },
                 TestPackSourceState.Missing) { NextAction = "Import it in Source Analysis", NextActionTarget = "source-analysis" },
         ],
@@ -575,12 +575,12 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("authentication");
         page.Find("[data-testid=snt-blocker-group]").TextContent.Should().Contain("ID-porten test setup").And.Contain("1 check incomplete");
 
-        // The missing secret points to its owner, Target Environment → External Integrations → Altinn — never a terminal or PowerShell helper.
+        // The missing secret points to its owner, Target Environment → Connected Systems → Altinn — never a terminal or PowerShell helper.
         var action = page.Find("[data-testid=snt-attention-item] a");
         action.TextContent.Should().Be("View Altinn setup");
         action.GetAttribute("href").Should().Contain("section=target-environments").And.Contain("tab=external").And.Contain("focus=altinn");
         page.Find("[data-testid=snt-group-local-toggle]").Click();
-        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("Target Environment → External Integrations → Altinn").And.Contain("The run page stores nothing")
+        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("Target Environment → Connected Systems → Altinn").And.Contain("The run page stores nothing")
             .And.NotContain(".ps1").And.NotContain("PowerShell").And.NotContain("restart the backend from");
     }
 
@@ -636,7 +636,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-attention-item]").Should().ContainSingle());
         page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=external&profile=dev&focus=altinn",
-            "the Altinn environment is configured once in Target Environment → External Integrations → Altinn, never again on the run page");
+            "the Altinn environment is configured once in Target Environment → Connected Systems → Altinn, never again on the run page");
         var outsideRun = page.FindAll("#snt-rapport input, #snt-rapport select, #snt-rapport textarea").Where(field => field.Closest("[data-testid=ijp-panel]") is null && field.Closest("[data-testid=atp-panel]") is null);
         outsideRun.Should().BeEmpty("client id, scopes, redirect, secret, reporter and child are resolved from their owners, never re-entered here");
     }

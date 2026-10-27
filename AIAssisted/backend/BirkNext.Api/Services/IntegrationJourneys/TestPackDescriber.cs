@@ -20,7 +20,7 @@ public static class TestPackDescriber
         var integrations = pack.Journeys.SelectMany(journey => journey.Integrations)
             .GroupBy(requirement => requirement.Key, StringComparer.Ordinal)
             .Select(group => group.First())
-            .Select(requirement => new TestPackCapabilityRequirement(requirement.Key, requirement.Label, "Target Environment → Integrations",
+            .Select(requirement => new TestPackCapabilityRequirement(requirement.Key, requirement.Label, "Target Environment → Integration Catalog",
                 $"{requirement.Producer} → {requirement.Consumer} ({requirement.Kind}): {requirement.Purpose}"))
             .ToList();
         var verification = pack.VerificationViews.ToList();

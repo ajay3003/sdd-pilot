@@ -13,7 +13,7 @@ namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
 /// Application messaging (Wolverine). Source Analysis owns the evidence (Source Analysis → Application messaging: compact text badges,
-/// configuration never shown as runtime); Target Environment → Integrations owns the evidence scope and the explicit IQR binding (Advanced).
+/// configuration never shown as runtime); Target Environment → Integration Catalog owns the evidence scope and the explicit IQR binding (Advanced).
 /// </summary>
 public sealed class ApplicationMessagingUiTests : BunitContext
 {
@@ -64,7 +64,7 @@ public sealed class ApplicationMessagingUiTests : BunitContext
         return cut;
     }
 
-    /// <summary>The environment's evidence scope and IQR links, where Target Environment → Integrations configures them (Advanced).</summary>
+    /// <summary>The environment's evidence scope and IQR links, where Target Environment → Integration Catalog configures them (Advanced).</summary>
     private IRenderedComponent<IntegrationsPane> Config() =>
         Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development })).WithAdvancedOpen();
 

@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Services.ExternalIntegrations;
 
 /// <summary>
-/// Target Environment → External Integrations: the environment-specific external systems (provider instances). The Integration Catalog keeps
+/// Target Environment → Connected Systems: the environment-specific external systems (provider instances). The Integration Catalog keeps
 /// the logical integrations (producer → consumer) reviewed in IQR; an external integration is the system configuration they run against and is
 /// referenced, never copied. Viewing and detecting never write; create/update/delete are explicit. Altinn is surfaced from its typed Target
 /// Environment settings even before an integration record exists (one Altinn system per environment).
@@ -37,7 +37,7 @@ public sealed partial class ExternalIntegrationService(AppDbContext db, IEnumera
             list.Add(new ExternalIntegration
             {
                 Id = environmentId + AltinnSuffix, TargetEnvironmentId = environmentId, Name = $"Altinn – {saved.AppIdentifier ?? "app"}", ProviderType = ExternalProviderType.Altinn,
-                EnvironmentName = saved.Environment?.ToString(), Provenance = new() { ["*"] = "Configured in Target Environment → External Integrations → Altinn" },
+                EnvironmentName = saved.Environment?.ToString(), Provenance = new() { ["*"] = "Configured in Target Environment → Connected Systems → Altinn" },
                 CreatedAt = saved.UpdatedAt ?? clock.GetUtcNow(), UpdatedAt = saved.UpdatedAt ?? clock.GetUtcNow(),
             });
         return [.. list.OrderBy(item => item.ProviderType).ThenBy(item => item.Name, StringComparer.Ordinal)];

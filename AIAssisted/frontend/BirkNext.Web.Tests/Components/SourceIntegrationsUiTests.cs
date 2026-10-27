@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Target Environment → Integrations with Source Analysis as the owner of source evidence: generic section titles, model-derived disjoint
+/// Target Environment → Integration Catalog with Source Analysis as the owner of source evidence: generic section titles, model-derived disjoint
 /// counts, compact filters, source/channel/capture/mapping columns, a link to Source Analysis instead of repeated source evidence, explicit
 /// confirmation of source suggestions, secondary suggestions that are added — never confirmed — on request, and the same UI for Debezium CDC,
 /// a custom CDC publisher, HTTP and GraphQL — no source system or technology is special-cased.

@@ -241,7 +241,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 PrerequisiteKey = "integration:report-intake", ConsumerField = "Endpoint reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true,
                 // The report-intake integration record owns the webhook: IQR and this pack read it there instead of keeping a second copy.
                 IntegrationRequirementKey = ReportIntake, IntegrationField = nameof(IntegrationDefinition.EndpointOrTopic),
-                OwnerAction = "Target Environment → Integrations → Skolenærvær – Altinn report intake",
+                OwnerAction = "Target Environment → Integration Catalog → Skolenærvær – Altinn report intake",
             },
         new("altinn-test-server", "Altinn test server", BirkNext.SourceDomains.SourceConfigurationKeys.Server(BirkNext.SourceDomains.SourceEnvironmentRole.Test), AltinnAppSource, AppReference,
             "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole] },
@@ -257,22 +257,22 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         // Messaging values the Skolenærvær integrations own (Utdanningsdata's CDC stream, Periodeavslutning's event). Their records are the owner;
         // canonical M2LB evidence is compared, never substituted, and nothing is guessed for an environment that has no record.
         new("cdc-event-hub", "Education CDC Event Hub", BirkNext.SourceDomains.SourceConfigurationKeys.MessagingEventHubName, "M2LB (SkoleAdapter)", MessagingEvidence,
-            "The Event Hub the BiRK education changes are published on.", "Target Environment → Integrations")
+            "The Event Hub the BiRK education changes are published on.", "Target Environment → Integration Catalog")
         {
             PrerequisiteKey = "integration:education-cdc", SourceRoles = [M2lbSource], IntegrationRequirementKey = EducationCdc, IntegrationField = nameof(IntegrationDefinition.EndpointOrTopic),
-            OwnerAction = "Target Environment → Integrations → Skolenærvær – BiRK CDC → SkoleAdapter",
+            OwnerAction = "Target Environment → Integration Catalog → Skolenærvær – BiRK CDC → SkoleAdapter",
         },
         new("cdc-consumer-group", "Education CDC consumer group", BirkNext.SourceDomains.SourceConfigurationKeys.MessagingEventHubConsumerGroup, "M2LB (SkoleAdapter)", MessagingEvidence,
-            "The consumer group SkoleAdapter reads with (never assumed to be $Default).", "Target Environment → Integrations")
+            "The consumer group SkoleAdapter reads with (never assumed to be $Default).", "Target Environment → Integration Catalog")
         {
             PrerequisiteKey = "integration:education-cdc", SourceRoles = [M2lbSource], IntegrationRequirementKey = EducationCdc, IntegrationField = nameof(IntegrationDefinition.ConsumerGroup),
-            OwnerAction = "Target Environment → Integrations → Skolenærvær – BiRK CDC → SkoleAdapter",
+            OwnerAction = "Target Environment → Integration Catalog → Skolenærvær – BiRK CDC → SkoleAdapter",
         },
         new("period-closed-topic", "Period-closed Service Bus topic", BirkNext.SourceDomains.SourceConfigurationKeys.MessagingServiceBusTopic, "M2LB (Skolenærværsrapport)", MessagingEvidence,
-            "Where Skolenærværsrapport publishes the closed period for Bufdata.", "Target Environment → Integrations")
+            "Where Skolenærværsrapport publishes the closed period for Bufdata.", "Target Environment → Integration Catalog")
         {
             PrerequisiteKey = "integration:period-closed", SourceRoles = [M2lbSource], IntegrationRequirementKey = PeriodClosed, IntegrationField = nameof(IntegrationDefinition.EndpointOrTopic),
-            OwnerAction = "Target Environment → Integrations → Skolenærvær – Period closed → Bufdata",
+            OwnerAction = "Target Environment → Integration Catalog → Skolenærvær – Period closed → Bufdata",
         },
     ];
 
@@ -872,7 +872,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     internal const string MetadataSource = "Live Altinn metadata";
     internal const string SourceAnalysisSource = "Source Analysis";
     internal const string BirkNextSource = "BirkNext";
-    internal const string TargetEnvironmentSource = "Target Environment → Integrations";
+    internal const string TargetEnvironmentSource = "Target Environment → Integration Catalog";
     /// <summary>The one place a test lead configures the Altinn environment (app, unattended client, session secret).</summary>
     internal const string AltinnSetupSource = AltinnTestingPolicy.TargetEnvironmentAltinn;
     private static string ClientIdSource(string clientSource) =>
@@ -1060,7 +1060,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     && altinnPolicy.Scopes(config).Contains("openid", StringComparer.Ordinal);
                 var secretState = altinnPolicy.SecretState(config);
                 var redirectConfigured = altinnPolicy.UnattendedRedirect(config) is not null;
-                // The row names where a present value actually comes from; a missing value points to where it is set (Target Environment → External Integrations → Altinn).
+                // The row names where a present value actually comes from; a missing value points to where it is set (Target Environment → Connected Systems → Altinn).
                 var saved = altinnPolicy.Saved(config);
                 var redirectSource = saved?.Unattended.RedirectUri is null && redirectConfigured ? LocalSource : AltinnSetupSource;
                 var secretSource = secretState == AltinnSettingState.AvailableToBackend ? LocalSource : AltinnSetupSource;

@@ -50,8 +50,8 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
         SourceGuidancePresentation.Configured(Suggested("https://other.invalid")).Should().Be("https://other.invalid (differs from source)");
         SourceGuidancePresentation.Configured(Suggested() with { Requirement = Requirement(null) }).Should().Be("No stored field — known from: Canonical source evidence",
             "a known value is never shown as missing or as a generic 'no field'");
-        SourceGuidancePresentation.Configured(new(Requirement(null) with { OwnerAction = "Target Environment → Integrations" }, SourceSuggestionState.SourceMissing))
-            .Should().Be("Unresolved — Target Environment → Integrations", "an unresolved value names where it is configured");
+        SourceGuidancePresentation.Configured(new(Requirement(null) with { OwnerAction = "Target Environment → Integration Catalog" }, SourceSuggestionState.SourceMissing))
+            .Should().Be("Unresolved — Target Environment → Integration Catalog", "an unresolved value names where it is configured");
         SourceGuidancePresentation.Provenance(Suggested()).Should().Equal("OpenAPI · api/parcels.json → servers[0]");
     }
 

@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// Target Environment → Integrations: the configured, expected integrations of one environment. Configuration only — no
+/// Target Environment → Integration Catalog: the configured, expected integrations of one environment. Configuration only — no
 /// secret is accepted or returned (authentication is a mechanism name). <c>environmentType</c> and
 /// <c>targetUrl</c> only decide whether the M2LB DEV template is SUGGESTED; it is applied solely through
 /// <c>POST templates/{templateId}/apply</c> (an explicit action), so a generic project never receives M2LB records.

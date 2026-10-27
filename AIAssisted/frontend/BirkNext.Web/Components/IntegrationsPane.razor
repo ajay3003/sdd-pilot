@@ -8,7 +8,7 @@
 @inject IServiceProvider ServiceProvider
 @implements IDisposable
 
-@* Target Environment → Integrations owns environment-specific integration configuration: what is configured here, which Source Analysis
+@* Target Environment → Integration Catalog owns environment-specific integration configuration: what is configured here, which Source Analysis
    suggestions to add, whether runtime evidence is set up, and the way into Integration Quality Review. Source Analysis owns detected source
    evidence (Wolverine usage, handlers, routes, retry, outbox, telemetry) — it is linked, never re-rendered here. Changes are saved
    immediately; the surrounding Target Environment Edit/Save/Cancel does not stage or roll them back. Configuration status is completeness
@@ -30,7 +30,7 @@
         @foreach (var notice in _notices) { <p class="ip-notice" role="status" data-testid="ip-notice">@notice</p> }
 
         <section class="ip-overview" aria-label="Integrations overview" data-testid="ip-overview">
-            <p class="ip-muted" data-testid="ip-intro">Integrations configured for this environment are reviewed in Integration Quality Review. Candidates discovered from Source Analysis are reviewed here before they are added.</p>
+            <p class="ip-muted" data-testid="ip-intro">Review how systems are connected, mapped and evidenced. The systems themselves are configured in Connected Systems. Integrations configured for this environment are reviewed in Integration Quality Review. Candidates discovered from Source Analysis are reviewed here before they are added.</p>
             <dl class="ip-summary" data-testid="ip-summary">
                 <div><dt>Environment</dt><dd data-testid="ip-summary-env">@IntegrationsOverviewPresentation.Environment(Profile)</dd></div>
                 <div><dt>Configured integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
@@ -855,7 +855,7 @@
                 Consumer = definition.Consumer with
                 {
                     DisplayName = pending.Consumer, MappingState = ConsumerMappingState.Confirmed, MappingConfirmedAt = DateTimeOffset.UtcNow,
-                    MappingSource = "Confirmed in Target Environment → Integrations (suggested by source discovery)",
+                    MappingSource = "Confirmed in Target Environment → Integration Catalog (suggested by source discovery)",
                     MappingEvidence = $"Confirmed by a person from source discovery evidence ({(candidate is null ? "source snapshot" : SourceIntegrationsPresentation.Evidence(candidate.ConsumerEvidence))})",
                     MappingSourceSnapshotId = snapshot,
                 },
@@ -866,7 +866,7 @@
                 {
                     MappingState = ConsumerMappingState.Confirmed,
                     MappingEvidence = $"Confirmed by a person in BirkNext Integrations (suggested by: {definition.Consumer.MappingSource ?? "unknown source"})",
-                    MappingSource = "Confirmed in Target Environment → Integrations",
+                    MappingSource = "Confirmed in Target Environment → Integration Catalog",
                     MappingConfirmedAt = DateTimeOffset.UtcNow,
                     MappingSourceSnapshotId = supported ? snapshot : definition.Consumer.MappingSourceSnapshotId,
                 },
@@ -1333,7 +1333,7 @@
             {
                 MappingState = ConsumerMappingState.Confirmed,
                 MappingEvidence = $"Confirmed by a person in BirkNext Integrations (suggested by: {definition.Consumer.MappingSource ?? "unknown source"})",
-                MappingSource = "Confirmed in Target Environment → Integrations",
+                MappingSource = "Confirmed in Target Environment → Integration Catalog",
                 MappingConfirmedAt = DateTimeOffset.UtcNow,
             },
         }));

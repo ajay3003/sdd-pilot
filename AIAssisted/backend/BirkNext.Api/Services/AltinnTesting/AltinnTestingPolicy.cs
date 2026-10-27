@@ -148,7 +148,7 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options, AltinnSess
     /// <summary>The Target Environment Altinn settings saved for the configuration's environment, or null.</summary>
     public AltinnEnvironmentSettings? Saved(AltinnTestConfiguration config) => environments?.Get(config.TargetEnvironmentId);
 
-    public const string TargetEnvironmentAltinn = "Target Environment → External Integrations → Altinn";
+    public const string TargetEnvironmentAltinn = "Target Environment → Connected Systems → Altinn";
 
     public const string IdPortenTestIssuer = "https://test.idporten.no";
     public const string IdPortenTestDiscovery = "https://test.idporten.no/.well-known/openid-configuration";
@@ -251,7 +251,7 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options, AltinnSess
     public static bool IsValidAlias(string? alias) => alias is not null && AliasPattern.IsMatch(alias);
 
     /// <summary>
-    /// The ID-porten TEST client id in effect, by precedence: Target Environment → External Integrations → Altinn, the backend's own configuration, the Integration
+    /// The ID-porten TEST client id in effect, by precedence: Target Environment → Connected Systems → Altinn, the backend's own configuration, the Integration
     /// Quality Review binding. Null when none is set or when two of them are set and differ (then <paramref name="problem"/> says so).
     /// <paramref name="source"/> names where it came from.
     /// </summary>

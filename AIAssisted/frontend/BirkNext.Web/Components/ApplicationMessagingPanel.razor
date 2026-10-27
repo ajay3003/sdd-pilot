@@ -4,7 +4,7 @@
 @inject IIntegrationCatalogApiService Api
 @inject IServiceProvider Services
 
-@* Two owners, one component. Configuration (Target Environment → Integrations): which source scope this environment's messaging evidence is
+@* Two owners, one component. Configuration (Target Environment → Integration Catalog): which source scope this environment's messaging evidence is
    built from, and which analyzed application is linked to which IQR consumer. Evidence (Source Analysis): what the source declares — Wolverine
    usage, handlers, routes, retry, outbox, telemetry. Full shows both (component tests). *@
 <section class="am" aria-labelledby="am-heading" data-testid="am" data-view="@View">
@@ -155,7 +155,7 @@
     [Parameter, EditorRequired] public IntegrationCatalog Catalog { get; set; } = new();
     [Parameter] public ApplicationMessagingEvidenceSet? Evidence { get; set; }
     [Parameter] public EventCallback<ApplicationMessagingEvidenceSet?> EvidenceChanged { get; set; }
-    /// <summary>Configuration for Target Environment → Integrations, Evidence for Source Analysis, Full for both.</summary>
+    /// <summary>Configuration for Target Environment → Integration Catalog, Evidence for Source Analysis, Full for both.</summary>
     [Parameter] public ApplicationMessagingView View { get; set; } = ApplicationMessagingView.Full;
 
     private bool _busy;

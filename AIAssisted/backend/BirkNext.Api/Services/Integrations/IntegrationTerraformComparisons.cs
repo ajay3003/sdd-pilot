@@ -4,7 +4,7 @@ using BirkNext.Integrations;
 namespace BirkNext.Api.Services.Integrations;
 
 /// <summary>
-/// Target Environment → Integrations' view of Terraform: the environment's CONFIGURED values (seeded or typed) compared with what the latest
+/// Target Environment → Integration Catalog' view of Terraform: the environment's CONFIGURED values (seeded or typed) compared with what the latest
 /// Source Analysis snapshot with infrastructure evidence DECLARES, through the same comparison Integration Quality Review uses. Read-only —
 /// nothing is written and neither side wins: a difference is "needs review", never an automatic overwrite. Declared ≠ deployed.
 /// </summary>

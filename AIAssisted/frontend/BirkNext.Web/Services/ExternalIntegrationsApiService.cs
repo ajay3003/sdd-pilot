@@ -6,7 +6,7 @@ using BirkNext.Integrations;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Target Environment → External Integrations, the scope-aware setup import/export pipeline and the Setup Library. Reads, Detect, export and
+/// Target Environment → Connected Systems, the scope-aware setup import/export pipeline and the Setup Library. Reads, Detect, export and
 /// preflight never write; create/update/delete, Apply and library saves are explicit. A secret is POSTed once and never returned or stored.
 /// </summary>
 public interface IExternalIntegrationsApiService

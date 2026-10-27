@@ -982,7 +982,7 @@
                 DisplayName = Clean(ConsumerName), LogicalName = Clean(ConsumerLogicalName), ContainerApp = Clean(ConsumerContainerApp), ManagedIdentity = Clean(ConsumerManagedIdentity),
                 MappingState = Clean(ConsumerName) is null ? ConsumerMappingState.NeedsConfirmation : MappingState,
                 MappingSource = original?.Consumer.MappingState == MappingState && original.Consumer.DisplayName == Clean(ConsumerName) ? original.Consumer.MappingSource
-                    : MappingState == ConsumerMappingState.Confirmed ? "Confirmed in Target Environment → Integrations" : original?.Consumer.MappingSource,
+                    : MappingState == ConsumerMappingState.Confirmed ? "Confirmed in Target Environment → Integration Catalog" : original?.Consumer.MappingSource,
                 MappingEvidence = original?.Consumer.MappingState == MappingState && original.Consumer.DisplayName == Clean(ConsumerName) ? original.Consumer.MappingEvidence
                     : MappingState == ConsumerMappingState.Confirmed ? "Confirmed by a person in BirkNext Integrations" : null,
                 MappingConfirmedAt = original?.Consumer.MappingState == MappingState && original.Consumer.DisplayName == Clean(ConsumerName) ? original.Consumer.MappingConfirmedAt

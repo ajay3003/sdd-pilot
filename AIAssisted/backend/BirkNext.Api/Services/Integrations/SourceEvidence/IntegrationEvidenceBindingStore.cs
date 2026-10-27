@@ -37,7 +37,7 @@ public sealed class IntegrationEvidenceBindingStore(AppDbContext db, IqrSourceSt
         if (string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(request.IntegrationId)) return (null, "Environment and integration are required.");
         var configured = await catalog.GetAsync(environmentId, null, null, ct);
         if (configured.Integrations.All(item => item.Id != request.IntegrationId))
-            return (null, "The integration is not configured for this Target Environment; configure it under Target Environment → Integrations first.");
+            return (null, "The integration is not configured for this Target Environment; configure it under Target Environment → Integration Catalog first.");
         var row = await db.IntegrationEvidenceBindings.FirstOrDefaultAsync(r => r.EnvironmentId == environmentId && r.IntegrationId == request.IntegrationId, ct);
         if (request.SnapshotId is not { } snapshotId)
         {

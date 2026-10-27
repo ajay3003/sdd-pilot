@@ -385,17 +385,17 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
             }
             case SetupDependencyKind.ExternalIntegration:
                 return existing.Any(item => string.Equals(item.Name, d.Reference, StringComparison.OrdinalIgnoreCase)) || model.Systems.Any(s => string.Equals(s.Name, d.Reference, StringComparison.OrdinalIgnoreCase))
-                    ? new(d, SetupDependencyState.Resolved, "Configured in this environment or provided by this package.", "External Integrations", externalHref)
-                    : new(d, missing, $"External integration {d.Reference} is not configured.", "External Integrations", externalHref);
+                    ? new(d, SetupDependencyState.Resolved, "Configured in this environment or provided by this package.", "Connected Systems", externalHref)
+                    : new(d, missing, $"Connected system {d.Reference} is not configured.", "Connected Systems", externalHref);
             case SetupDependencyKind.ProviderCapability:
             {
                 var offering = merged.Where(entry => ExternalProviderCatalog.Descriptor(entry.Provider).Capabilities.Contains(d.Reference, StringComparer.Ordinal)).ToList();
                 var current = existing.Where(item => ExternalProviderCatalog.Descriptor(item.ProviderType).Capabilities.Contains(d.Reference, StringComparer.Ordinal)).ToList();
                 foreach (var item in current) offering.Add((item.ProviderType, await integrations.Handler(item.ProviderType).CurrentSettingsAsync(item, ct)));
-                if (offering.Count == 0) return new(d, missing, $"No external integration provides {d.Reference}.", "External Integrations", externalHref);
+                if (offering.Count == 0) return new(d, missing, $"No connected system provides {d.Reference}.", "Connected Systems", externalHref);
                 return offering.Any(entry => integrations.Handler(entry.Provider).Satisfies(d.Reference, entry.Settings))
-                    ? new(d, SetupDependencyState.Resolved, $"{d.Reference} is provided by a configured system.", "External Integrations", externalHref)
-                    : new(d, SetupDependencyState.Incompatible, $"A {offering[0].Provider} system exists but does not satisfy {d.Reference} (required settings missing).", "External Integrations", externalHref);
+                    ? new(d, SetupDependencyState.Resolved, $"{d.Reference} is provided by a configured system.", "Connected Systems", externalHref)
+                    : new(d, SetupDependencyState.Incompatible, $"A {offering[0].Provider} system exists but does not satisfy {d.Reference} (required settings missing).", "Connected Systems", externalHref);
             }
             case SetupDependencyKind.TestPack:
                 return packs.Any(pack => string.Equals(pack.PackId, d.Reference, StringComparison.OrdinalIgnoreCase))

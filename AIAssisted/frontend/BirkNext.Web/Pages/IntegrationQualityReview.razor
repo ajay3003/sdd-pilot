@@ -15,7 +15,7 @@
 
 <PageTitle>Integration Quality Review</PageTitle>
 
-@* Integration Quality Review runs from the ENABLED integrations configured in Target Environment → Integrations (persisted by
+@* Integration Quality Review runs from the ENABLED integrations configured in Target Environment → Integration Catalog (persisted by
    the backend). Endpoint Discovery keeps observed REST/GraphQL traffic; Browser Discovery keeps browser evidence. The review is
    read-only: no event is published or consumed, no checkpoint moved, no consumer group created. Configured expectation,
    runtime evidence, contract evidence and the review result are shown as four different things. *@
@@ -75,8 +75,8 @@
                 @if (IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness))
                 {
                     <div class="iqr-card iqr-empty-state" data-testid="iqr-zero-integrations">
-                        <p><strong>No configured integrations.</strong> Integration Quality Review assesses the integrations configured and enabled under Target Environment → Integrations.</p>
-                        <a class="btn-primary" href="@IntegrationsHref(profile)" data-testid="iqr-zero-integrations-action">Open Target Environment → Integrations</a>
+                        <p><strong>No configured integrations.</strong> Integration Quality Review assesses the integrations configured and enabled under Target Environment → Integration Catalog.</p>
+                        <a class="btn-primary" href="@IntegrationsHref(profile)" data-testid="iqr-zero-integrations-action">Open Target Environment → Integration Catalog</a>
                     </div>
                 }
                 else if (subject is not null)
@@ -170,7 +170,7 @@
         @* ── Setup & Evidence ── *@
         <section class="iqr-group" aria-labelledby="iqr-group-evidence-heading" data-testid="iqr-group-evidence" hidden="@(CurrentView != IntegrationReviewPrerunPresentation.SetupView)">
             <h2 class="iqr-group-heading" id="iqr-group-evidence-heading">Setup &amp; Evidence</h2>
-            <p class="iqr-muted">Values known from their owners are shown with where they come from and are never re-entered here. Edit the integration in Target Environment → Integrations.</p>
+            <p class="iqr-muted">Values known from their owners are shown with where they come from and are never re-entered here. Edit the integration in Target Environment → Integration Catalog.</p>
             @{ var snapshots = _readiness?.AvailableSourceSnapshots ?? []; var enabled = (_catalog?.Integrations ?? []).Where(i => i.Enabled).ToList(); var bound = _bindings.Where(b => enabled.Any(i => i.Id == b.IntegrationId)).ToList(); }
             <div class="iqr-stages" role="list" aria-label="Setup and evidence" data-testid="iqr-evidence-stages">
                 <div role="listitem" class="iqr-stage" data-testid="iqr-stage" data-stage="integration">
@@ -178,8 +178,8 @@
                         <span class="iqr-pill iqr-pill-@(enabled.Count > 0 ? "ready" : "muted")" data-testid="iqr-stage-status">@(enabled.Count > 0 ? "Configured" : "Not configured")</span></h3>
                     @if (enabled.Count == 0)
                     {
-                        <p class="iqr-muted">No integration is enabled. Integrations are configured in Target Environment → Integrations.</p>
-                        <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-stage-integrations-action">Open Target Environment → Integrations</a>
+                        <p class="iqr-muted">No integration is enabled. Integrations are configured in Target Environment → Integration Catalog.</p>
+                        <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-stage-integrations-action">Open Target Environment → Integration Catalog</a>
                     }
                     else if (subject is not null && _catalog?.Integrations.FirstOrDefault(i => i.Id == subject.IntegrationId) is { } definition)
                     {
@@ -191,7 +191,7 @@
                             <div data-testid="iqr-known" data-field="Consumer mapping"><dt>Consumer mapping</dt><dd>@IntegrationConfigurationRules.MappingLabel(definition.Consumer.MappingState)
                                 @if (definition.Consumer.MappingState != ConsumerMappingState.Confirmed) { <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusMappings)" data-testid="iqr-setup-confirm-mapping">Confirm consumer mapping</a> }</dd></div>
                         </dl>
-                        <p class="iqr-muted"><a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-setup-edit-integration">Edit in Target Environment → Integrations</a> · @enabled.Count enabled integration@(enabled.Count == 1 ? "" : "s")</p>
+                        <p class="iqr-muted"><a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-setup-edit-integration">Edit in Target Environment → Integration Catalog</a> · @enabled.Count enabled integration@(enabled.Count == 1 ? "" : "s")</p>
                     }
                 </div>
                 <div role="listitem" class="iqr-stage" data-testid="iqr-stage" data-stage="binding">
@@ -290,7 +290,7 @@
                                 <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-contract-missing">@foreach (var item in b.NotVerified) { <li>@item</li> }</ul></div>
                         </div>
                     }
-                    else { <p class="iqr-muted">Integration contracts (XSD, JSON Schema, OpenAPI, AsyncAPI, WSDL, Protobuf, GraphQL schema) are discovered per side from each integration's bound snapshot in Target Environment → Integrations; uploading is the fallback. Configured is not observed.</p> }
+                    else { <p class="iqr-muted">Integration contracts (XSD, JSON Schema, OpenAPI, AsyncAPI, WSDL, Protobuf, GraphQL schema) are discovered per side from each integration's bound snapshot in Target Environment → Integration Catalog; uploading is the fallback. Configured is not observed.</p> }
                     @if (subject is not null && _pair is { } pair && pair.IntegrationId == subject.IntegrationId)
                     {
                         @* The producer ↔ consumer pair, each side an exact artifact (snapshot + path) or explicitly unresolved; never confirmed by a name. *@
@@ -386,7 +386,7 @@
                             {
                                 <div class="iqr-empty-state" data-testid="iqr-no-systems">
                                     <p><strong>No integrations are enabled for this Target Environment.</strong></p>
-                                    <a class="btn-primary" href="@IntegrationsHref(profile)" data-testid="iqr-no-systems-action">Open Target Environment → Integrations</a>
+                                    <a class="btn-primary" href="@IntegrationsHref(profile)" data-testid="iqr-no-systems-action">Open Target Environment → Integration Catalog</a>
                                 </div>
                             }
                             @foreach (var system in areas.Systems)
@@ -1004,7 +1004,7 @@
                             <div><dt>Runtime evidence</dt><dd data-testid="iqr-messaging-summary-runtime">@apps.Count(a => a.RuntimeState == IntegrationEvidenceState.Available) of @apps.Count available</dd></div>
                         </dl>
                         <div class="iqr-system-actions">
-                            <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-messaging-manage">Manage in Target Environment → Integrations</a>
+                            <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-messaging-manage">Manage in Target Environment → Integration Catalog</a>
                             <ReviewDisclosure Text="@($"View {apps.Count} application{(apps.Count == 1 ? "" : "s")}")" CollapseText="Hide applications" TestId="iqr-messaging-details" Class="disclosure-inline">
                                 <ul class="iqr-sources iqr-messaging-list">
                                     @foreach (var app in apps)
@@ -1082,7 +1082,7 @@
                 </button>
                 <span class="iqr-muted" id="@($"{testId}-note")">Read-only review. No messages are published, consumed or changed.</span>
             }
-            @if (!IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness)) { <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="@($"{testId}-integrations")">Open Target Environment → Integrations</a> }
+            @if (!IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness)) { <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="@($"{testId}-integrations")">Open Target Environment → Integration Catalog</a> }
         </div>
     };
 

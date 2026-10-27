@@ -11,7 +11,7 @@ namespace BirkNext.Web.Services;
 /// <list type="bullet">
 /// <item><b>Observed</b> — seen in runtime traffic.</item>
 /// <item><b>Correlated</b> — evidence associated across network, page and service data. Association, not ownership.</item>
-/// <item><b>Configured</b> — saved under Target Environment → Integrations. Never evidence of anything running.</item>
+/// <item><b>Configured</b> — saved under Target Environment → Integration Catalog. Never evidence of anything running.</item>
 /// <item><b>Detected</b> — belongs to the target-detection workflow, and does not appear here at all.</item>
 /// </list>
 ///

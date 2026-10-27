@@ -119,7 +119,7 @@ public sealed class SkoleNaervaerReadinessPresentationTests
     public void IntegrationEnrolment_OpensTargetEnvironmentIntegrations_ForThisProfile()
     {
         var action = SkoleNaervaerReadinessPresentation.ActionFor(Rows("integration:report-intake").Single(item => item.Key == "integration:report-intake"), "dev");
-        action.Label.Should().Be("Open Target Environment → Integrations");
+        action.Label.Should().Be("Open Target Environment → Integration Catalog");
         action.Href.Should().Contain("tab=integrations").And.Contain("profile=dev");
     }
 

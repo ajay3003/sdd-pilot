@@ -148,7 +148,7 @@ public sealed record AltinnIdentitySummary(string Role, string Alias, string Lab
 
 public sealed record AltinnDetectionSummary(int Configured, int Detected, int Observed, int Missing, int Conflicts, IReadOnlyList<string> ActionableGaps);
 
-/// <summary>The Target Environment → External Integrations → Altinn view. Never contains a secret, a token or a raw synthetic identifier.</summary>
+/// <summary>The Target Environment → Connected Systems → Altinn view. Never contains a secret, a token or a raw synthetic identifier.</summary>
 public sealed record AltinnEnvironmentView
 {
     public string EnvironmentId { get; init; } = "";

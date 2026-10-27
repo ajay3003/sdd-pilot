@@ -3,13 +3,13 @@ using BirkNext.Integrations;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Labels and tones for Target Environment → External Integrations → Altinn. Every state is shown as text (never colour alone) and states are never collapsed into a
+/// Labels and tones for Target Environment → Connected Systems → Altinn. Every state is shown as text (never colour alone) and states are never collapsed into a
 /// generic "available": configured, detected (from source or metadata), suggested (a test-pack default), observed (runtime evidence) and
 /// verified stay distinct.
 /// </summary>
 public static class AltinnEnvironmentPresentation
 {
-    /// <summary>The environment's Altinn system under Target Environment → External Integrations.</summary>
+    /// <summary>The environment's Altinn system under Target Environment → Connected Systems.</summary>
     public static string AltinnHref(string environmentId) => ExternalIntegrationPresentation.ExternalHref(environmentId, "altinn");
 
     /// <summary>The Altinn system's contract evidence (public metadata, app source, deployed-contract changes).</summary>

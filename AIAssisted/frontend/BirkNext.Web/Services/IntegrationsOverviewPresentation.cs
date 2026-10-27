@@ -28,7 +28,7 @@ public enum SetupGroup { Platforms, HistoricalRuntimeEvidence, Assumptions, Conf
 public enum RuntimeEvidenceStatus { NotConfigured, Partial, Configured, Unavailable }
 
 /// <summary>
-/// Target Environment → Integrations overview: configured integrations, suggestions from Source Analysis and runtime-evidence setup. It reads
+/// Target Environment → Integration Catalog overview: configured integrations, suggestions from Source Analysis and runtime-evidence setup. It reads
 /// the catalog and the source report; it never re-derives source evidence (Source Analysis owns that) and never confirms a mapping.
 /// </summary>
 public static class IntegrationsOverviewPresentation

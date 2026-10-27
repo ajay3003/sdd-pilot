@@ -16,7 +16,7 @@ namespace BirkNext.Api.Services.Integrations;
 /// cannot prove; and the SCIM platform (container app, identity, gateway route) — ingress and identity are deployment facts.</item>
 /// </list>
 /// Everything Source Analysis discovers — the other CDC hubs and their consumers, Service Bus entities, publishers and listeners, SCIM
-/// routes in code, Wolverine mappings — is no longer seeded: it is offered as a source suggestion in Target Environment → Integrations.
+/// routes in code, Wolverine mappings — is no longer seeded: it is offered as a source suggestion in Target Environment → Integration Catalog.
 /// Consumer group stays unknown; <c>$Default</c> is a labelled CONFIGURED ASSUMPTION that never confirms a mapping or yields a Pass.
 /// </summary>
 public static partial class M2lbDevIntegrationSeed

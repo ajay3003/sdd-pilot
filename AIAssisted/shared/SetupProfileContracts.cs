@@ -28,7 +28,7 @@ public sealed record SetupChange
 {
     public string Id { get; init; } = "";
     public string Journey { get; init; } = "";
-    /// <summary>The owner that keeps the value ("Target Environment → Integrations", "Integration Quality Review → evidence binding", "Test pack run configuration").</summary>
+    /// <summary>The owner that keeps the value ("Target Environment → Integration Catalog", "Integration Quality Review → evidence binding", "Test pack run configuration").</summary>
     public string Owner { get; init; } = "";
     public string Setting { get; init; } = "";
     public string? Current { get; init; }

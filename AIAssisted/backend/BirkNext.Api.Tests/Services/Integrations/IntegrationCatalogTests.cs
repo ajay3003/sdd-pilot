@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace BirkNext.Api.Tests.Services.Integrations;
 
 /// <summary>
-/// Target Environment → Integrations: the M2LB DEV helper v5 (three platforms and ONE integration — the confirmed Person mapping; every
+/// Target Environment → Integration Catalog: the M2LB DEV helper v5 (three platforms and ONE integration — the confirmed Person mapping; every
 /// discoverable hub is a source suggestion instead), no $Default on any integration (only a labelled platform assumption), no secrets, no
 /// internal source host, idempotent add-missing seeding that never overwrites a user edit or resurrects a deleted platform, a server-side
 /// guard that refuses QA, Production and other hosts, logical-identity duplicate prevention, and the one-time browser-profile import.

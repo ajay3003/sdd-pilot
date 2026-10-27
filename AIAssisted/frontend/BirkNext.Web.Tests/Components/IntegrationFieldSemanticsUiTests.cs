@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Target Environment → Integrations detail: grouped fields with exact states (Not applicable / Not assessed / Needs confirmation are never
+/// Target Environment → Integration Catalog detail: grouped fields with exact states (Not applicable / Not assessed / Needs confirmation are never
 /// "Not configured"), source evidence separate from source configuration, causal readiness, and evidence-first integration contracts with
 /// upload as the fallback. A generic HTTP/API webhook beside the M2LB Event Hub fixture; no product is special-cased.
 /// </summary>

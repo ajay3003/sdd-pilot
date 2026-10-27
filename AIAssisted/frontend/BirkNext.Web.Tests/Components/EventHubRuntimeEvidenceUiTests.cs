@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Event Hub runtime evidence in Target Environment → Integrations: four groups that are never mixed — runtime execution (can this instance
+/// Event Hub runtime evidence in Target Environment → Integration Catalog: four groups that are never mixed — runtime execution (can this instance
 /// call Azure), the four counted evidence sources, supporting settings (expected consumer group, Log Analytics workspace) and the
 /// evaluation policy. The verified M2LB DEV defaults, <c>$Default</c> as an assumption, checkpoint endpoint + container, Application
 /// Insights without a Log Analytics workspace.

@@ -43,7 +43,7 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
 }
 
 /// <summary>
-/// Client for the backend integration catalog (Target Environment → Integrations) and Integration Quality Review over it.
+/// Client for the backend integration catalog (Target Environment → Integration Catalog) and Integration Quality Review over it.
 /// The catalog is persisted by the backend; this client never holds a secret — authentication is a mechanism name.
 /// </summary>
 public interface IIntegrationCatalogApiService

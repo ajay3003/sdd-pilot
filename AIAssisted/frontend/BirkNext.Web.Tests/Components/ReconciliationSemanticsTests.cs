@@ -115,7 +115,9 @@ public sealed class ReconciliationSemanticsTests : BunitContext
     [Fact]
     public void Target_environment_tabs_are_grouped_once_each_in_tab_order()
     {
-        BirkNext.Web.Components.FrontendAnalysisSettings.TabGroups.Select(group => group.Group).Should().Equal("General", "Discovery", "Quality settings", "Integrations");
+        BirkNext.Web.Components.FrontendAnalysisSettings.TabGroups.Select(group => group.Group).Should().Equal("General", "Discovery", "Quality settings", "Systems & integrations");
+        BirkNext.Web.Components.FrontendAnalysisSettings.TabGroups.Last().Keys.Should().Equal("external", "library", "integrations");
+        BirkNext.Web.Services.DocumentationCatalog.TargetEnvironmentTabs.TakeLast(3).Should().Equal("Connected Systems", "Setup Library", "Integration Catalog");
         BirkNext.Web.Components.FrontendAnalysisSettings.TabGroups.SelectMany(group => group.Keys).Should().Equal(DocumentationCatalog.TargetEnvironmentTabDefinitions.Select(tab => tab.Key),
             "every tab is in exactly one group, and the visual order is the keyboard order");
     }

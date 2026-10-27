@@ -4,7 +4,7 @@ using BirkNext.Standards;
 namespace BirkNext.Integrations;
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Integration catalog: the CONFIGURED, expected integrations of one Target Environment (Target Environment → Integrations).
+// Integration catalog: the CONFIGURED, expected integrations of one Target Environment (Target Environment → Integration Catalog).
 // It is the source of truth Integration Quality Review runs from. Configured is never observed: nothing here is runtime
 // evidence, and nothing here carries a secret (no SAS key, connection string, token, client secret or password — only the
 // NAME of an authentication mechanism). Terraform is not read, imported or referenced by BirkNext.

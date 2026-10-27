@@ -9,7 +9,7 @@
 <section class="slp" data-testid="slp" aria-labelledby="slp-title">
     <header class="ei-head">
         <h3 id="slp-title" class="ei-title">Setup Library</h3>
-        <a class="btn btn-secondary btn-sm" href="@ExternalIntegrationPresentation.ExternalHref(EnvironmentId)" data-testid="slp-external">External Integrations</a>
+        <a class="btn btn-secondary btn-sm" href="@ExternalIntegrationPresentation.ExternalHref(EnvironmentId)" data-testid="slp-external">Connected Systems</a>
     </header>
     <div class="slp-filters" role="group" aria-label="Filter the Setup Library">
         <label>Provider
@@ -36,7 +36,7 @@
     @if (_notice is { } notice) { <p class="ei-banner" role="status" data-testid="slp-notice">@notice</p> }
 
     @if (_items is null) { <p class="ei-muted" role="status">Loading the Setup Library…</p> }
-    else if (_items.Count == 0) { <p class="ei-muted" data-testid="slp-empty">No packages. Save one from External Integrations → Export setup, or import a file there.</p> }
+    else if (_items.Count == 0) { <p class="ei-muted" data-testid="slp-empty">No packages. Save one from Connected Systems → Export setup, or import a file there.</p> }
     else
     {
         <table class="ei-table" data-testid="slp-table">

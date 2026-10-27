@@ -2,34 +2,35 @@
 @using BirkNext.Web.Services
 @inject IServiceProvider Services
 
-@* Target Environment → External Integrations: the canonical environment-specific setup of external systems (provider instances). Light by
+@* Target Environment → Connected Systems: the canonical environment-specific setup of external systems (provider instances). Light by
    default — one card per system with the same five dimensions — and Advanced details on request. The Integration Catalog (Target Environment
    → Integrations) keeps logical producer→consumer integrations; IQR reviews their evidence; this page owns the systems they run against.
    Detect proposes systems from deterministic evidence and never saves; Add / Accept / Apply are explicit. *@
 <section class="ei" data-testid="ei" aria-labelledby="ei-title">
     <header class="ei-head">
-        <h3 id="ei-title" class="ei-title">External Integrations</h3>
+        <h3 id="ei-title" class="ei-title">Connected Systems</h3>
         <div class="ei-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)">Add integration</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync">Detect integrations</button>
+            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)">Add system</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync">Detect systems</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-import" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Import)">Import setup</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-export" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Export)">Export setup</button>
             <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)">Setup Library</a>
         </div>
     </header>
+    <p class="ei-muted ei-intro" data-testid="ei-intro">Configure the systems available in this environment.</p>
     @if (_error is { } error) { <p class="ei-banner ei-banner-error" role="alert" data-testid="ei-error">@error</p> }
     @if (_notice is { } notice) { <p class="ei-banner" role="status" data-testid="ei-notice">@notice</p> }
 
     @if (_view is null)
     {
-        <p class="ei-muted" role="status" data-testid="ei-loading">@(_error is null ? "Loading external integrations…" : "External integrations are not available.")</p>
+        <p class="ei-muted" role="status" data-testid="ei-loading">@(_error is null ? "Loading connected systems…" : "Connected systems are not available.")</p>
     }
     else
     {
         @if (_mode == Mode.Add)
         {
             var descriptor = _view.Providers.First(p => p.Type == _newProvider);
-            <section class="ei-add" data-testid="ei-add-form" aria-label="Add integration">
+            <section class="ei-add" data-testid="ei-add-form" aria-label="Add system">
                 <div class="ei-form-row">
                     <label>Name <input class="form-control" data-testid="ei-name" @bind="_newName" placeholder="e.g. Altinn – Skolenærvær" /></label>
                     <label>External integration type
@@ -53,8 +54,8 @@
 
         @if (_view.Proposals.Count > 0)
         {
-            <section class="ei-proposals" data-testid="ei-proposals" aria-label="Detected integrations">
-                <h4 class="ei-h4">Detected integrations</h4>
+            <section class="ei-proposals" data-testid="ei-proposals" aria-label="Detected systems">
+                <h4 class="ei-h4">Detected systems</h4>
                 @foreach (var proposal in _view.Proposals)
                 {
                     <div class="ei-proposal" data-testid="ei-proposal" data-provider="@proposal.ProviderType">
@@ -62,7 +63,7 @@
                         <span class="ei-muted">Detected from: @proposal.DetectedFrom · @proposal.Reason</span>
                         @if (!proposal.Ambiguous)
                         {
-                            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-accept" disabled="@_busy" @onclick="() => AcceptAsync(proposal)">Accept detected integration</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-accept" disabled="@_busy" @onclick="() => AcceptAsync(proposal)">Accept detected system</button>
                         }
                     </div>
                 }
@@ -71,7 +72,7 @@
 
         @if (_view.Integrations.Count == 0)
         {
-            <p class="ei-muted" data-testid="ei-empty">No external integrations in this environment yet. Detect integrations, import a setup, or add one.</p>
+            <p class="ei-muted" data-testid="ei-empty">No connected systems in this environment yet. Detect systems, import a setup, or add one.</p>
         }
         <div class="ei-cards">
             @foreach (var item in _view.Integrations)
@@ -171,7 +172,7 @@
         if (_loadedFor == EnvironmentId) return;
         _loadedFor = EnvironmentId;
         _api = Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
-        if (_api is null) { _error = "External integrations are not available in this host."; return; }
+        if (_api is null) { _error = "Connected systems are not available in this host."; return; }
         await ReloadAsync();
         var altinnFocus = Focus?.StartsWith("altinn", StringComparison.OrdinalIgnoreCase) == true;
         if (altinnFocus && _view?.Integrations.FirstOrDefault(i => i.Integration.ProviderType == ExternalProviderType.Altinn) is { } altinn)

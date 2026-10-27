@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// SCIM identity provisioning evidence (Target Environment → Integrations → Identity provisioning). Source archives are analyzed in memory;
+/// SCIM identity provisioning evidence (Target Environment → Integration Catalog → Identity provisioning). Source archives are analyzed in memory;
 /// the safe checks send GET requests only (health, authentication challenge on a random id, metadata) and never create, change, delete or
 /// list a user or publish a message. Production and unknown environment types are refused. No token or user payload is stored or returned.
 /// </summary>

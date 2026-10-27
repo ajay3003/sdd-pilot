@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// §92 immediate-save semantics of Target Environment → Integrations, consumer-mapping confirmation, contract artifacts and the
+/// §92 immediate-save semantics of Target Environment → Integration Catalog, consumer-mapping confirmation, contract artifacts and the
 /// per-platform runtime evidence sources.
 /// </summary>
 public sealed class IntegrationsPaneSaveUxTests : BunitContext

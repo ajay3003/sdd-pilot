@@ -255,7 +255,7 @@ builder.Services.AddTransient<SecurityExecutionBearerHandler>();
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
     client.BaseAddress = backendBase).AddHttpMessageHandler<SecurityExecutionBearerHandler>();
 
-// Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it. Reads are
+// Integration catalog (Target Environment → Integration Catalog, persisted by the backend) and Integration Quality Review over it. Reads are
 // open; writes need IntegrationConfiguration.Write, so a token is attached when one can be obtained silently (never a forced sign-in).
 var catalogClient = builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = backendBase);
@@ -303,11 +303,11 @@ if (entra.Configured)
 var altinnTestingClient = builder.Services.AddHttpClient<IAltinnTestingApiService, AltinnTestingApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     altinnTestingClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
-// Target Environment → External Integrations → Altinn: canonical Altinn environment setup (saved non-secret values, detection, session-only secret and identities).
+// Target Environment → Connected Systems → Altinn: canonical Altinn environment setup (saved non-secret values, detection, session-only secret and identities).
 var altinnEnvironmentClient = builder.Services.AddHttpClient<IAltinnEnvironmentApiService, AltinnEnvironmentApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     altinnEnvironmentClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
-// Target Environment → External Integrations (provider instances), scope-aware setup import/export and the Setup Library.
+// Target Environment → Connected Systems (provider instances), scope-aware setup import/export and the Setup Library.
 var externalIntegrationsClient = builder.Services.AddHttpClient<IExternalIntegrationsApiService, ExternalIntegrationsApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     externalIntegrationsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));

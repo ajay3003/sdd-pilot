@@ -71,7 +71,7 @@ public static class JourneyReadinessComposer
             JourneyDimensionState.NotAssessed => "The journey declares no integration.",
             _ => "Configured — not enabled for active runs in this environment (configured ≠ runtime verified).",
         };
-        return new(JourneyDimension.Integration, "Integration", state, text, "Target Environment → Integrations", "integrations") { Items = Lines(items), Provenance = "Integration catalog + Target Environment" };
+        return new(JourneyDimension.Integration, "Integration", state, text, "Target Environment → Integration Catalog", "integrations") { Items = Lines(items), Provenance = "Integration catalog + Target Environment" };
     }
 
     private static JourneyReadinessDimension SourceBindings(JourneyReadinessInputs input)

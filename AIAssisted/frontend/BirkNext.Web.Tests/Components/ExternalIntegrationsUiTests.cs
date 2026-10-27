@@ -10,7 +10,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Target Environment → External Integrations: the provider combobox renders only the selected provider's fields, every system shows the same
+/// Target Environment → Connected Systems: the provider combobox renders only the selected provider's fields, every system shows the same
 /// five dimensions, Altinn uses its own provider component, Detect never saves, import shows the fail-closed preflight with owner links and
 /// explicit conflict decisions, export is scope- and provider-aware, and the Setup Library filters by provider. Skolenærvær light rows name one
 /// owner per unresolved dimension.
@@ -167,7 +167,7 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
 
         var integrationPartial = ready.Select(r => r.Key == "integration:report-intake" ? Row(r.Key, JourneyReadinessState.NotReady) : r).ToList();
         SkoleNaervaerReadinessPresentation.LightRows(integrationPartial, Env).Single(r => r.OwnerHref is not null).Should()
-            .Match<SkoleNaervaerReadinessPresentation.LightRow>(r => r.Key == "integration" && r.State == "Partial" && r.OwnerLabel == "Open Integrations");
+            .Match<SkoleNaervaerReadinessPresentation.LightRow>(r => r.Key == "integration" && r.State == "Partial" && r.OwnerLabel == "Open Integration Catalog");
 
         var altinnMissing = ready.Select(r => r.Key == "altinn-app" ? Row(r.Key, JourneyReadinessState.NotConfigured) : r).ToList();
         SkoleNaervaerReadinessPresentation.LightRows(altinnMissing, Env).Single(r => r.OwnerHref is not null).OwnerHref.Should().Be(ExternalIntegrationPresentation.ExternalHref(Env, "altinn"));

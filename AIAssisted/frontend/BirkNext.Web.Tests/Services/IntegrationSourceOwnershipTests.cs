@@ -8,7 +8,7 @@ namespace BirkNext.Web.Tests.Services;
 /// <summary>
 /// Pins the integration provenance model as it actually behaves.
 ///
-/// Target Environment → Integrations is a configuration surface. Manual entry and the audited M2LB catalogue write
+/// Target Environment → Integration Catalog is a configuration surface. Manual entry and the audited M2LB catalogue write
 /// provenance into a saved profile; <see cref="IntegrationConfigurationSource.EndpointDiscovery"/> has no frontend
 /// producer, which is why the Detected partition was removed rather than left as an unreachable view. Observed
 /// REST/GraphQL traffic belongs to Endpoint Discovery, and Integration Quality Review receives it separately as

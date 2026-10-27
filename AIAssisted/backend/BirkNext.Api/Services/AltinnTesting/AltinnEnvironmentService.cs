@@ -7,7 +7,7 @@ using BirkNext.Integrations;
 namespace BirkNext.Api.Services.AltinnTesting;
 
 /// <summary>
-/// Target Environment → External Integrations → Altinn: resolves every Altinn value of one environment with its state and provenance, and assesses manual testing and
+/// Target Environment → Connected Systems → Altinn: resolves every Altinn value of one environment with its state and provenance, and assesses manual testing and
 /// automated BirkNext execution separately. Precedence for non-secret values: the Target Environment's saved settings, the backend's own
 /// configuration, the Integration Quality Review binding, Source Analysis, stored public metadata, the test pack's declared default. Explicit
 /// sources that disagree are a Conflict; a declared default never conflicts with or overrides an explicit value. Reading and detecting never
@@ -93,9 +93,9 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var integration = Resolve("integration", ApplicationGroup, "Integration", AltinnRequirement.Manual,
             [Candidate(saved.IntegrationId, AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment),
              Candidate(bound?.Id, AltinnSettingState.Detected, AltinnSettingSource.IntegrationBinding)],
-            $"{IntegrationName}: Altinn → Meldingsutveksleren (MU). Referenced from Target Environment → Integrations, never copied.");
+            $"{IntegrationName}: Altinn → Meldingsutveksleren (MU). Referenced from Target Environment → Integration Catalog, never copied.");
         if (integration.Value is { } integrationId && integrations.Count > 0 && integrations.All(item => item.Id != integrationId))
-            integration = integration with { State = AltinnSettingState.Missing, Detail = $"The integration {integrationId} is not configured in this environment (Target Environment → Integrations)." };
+            integration = integration with { State = AltinnSettingState.Missing, Detail = $"The integration {integrationId} is not configured in this environment (Target Environment → Integration Catalog)." };
         fields.Add(IntegrationReferenceNames.Apply(integration, integrations));
 
         // ── Browser authentication: evidence of Altinn's own login client (observed), plus ID-porten public metadata on Detect ──

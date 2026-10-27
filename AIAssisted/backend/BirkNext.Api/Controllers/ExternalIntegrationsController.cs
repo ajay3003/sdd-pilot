@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// Target Environment → External Integrations and its scope-aware setup import/export. Reading, detecting, exporting and preflight never
+/// Target Environment → Connected Systems and its scope-aware setup import/export. Reading, detecting, exporting and preflight never
 /// write; create/update/delete and Apply are explicit. A secret is accepted by POST only, held for the session and never returned.
 /// </summary>
 [ApiController]

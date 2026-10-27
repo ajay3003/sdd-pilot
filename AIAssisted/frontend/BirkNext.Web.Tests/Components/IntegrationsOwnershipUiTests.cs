@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Ownership of Target Environment → Integrations: environment-specific configuration first; Source Analysis evidence linked, never
+/// Ownership of Target Environment → Integration Catalog: environment-specific configuration first; Source Analysis evidence linked, never
 /// re-rendered (no Wolverine package, registration, retry, outbox, telemetry, handler or route lists here); suggestions secondary; runtime
 /// evidence contextual; record origin visible; Advanced collapsed.
 /// </summary>

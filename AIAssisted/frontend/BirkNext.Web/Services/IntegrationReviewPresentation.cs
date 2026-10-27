@@ -142,12 +142,12 @@ public static class IntegrationReviewPresentation
     public const string ConfigureDetailsAction = "Open Integrations configuration";
 
     /// <summary>
-    /// Target Environment → Integrations for one environment. Target Environment owns integration configuration; the review
+    /// Target Environment → Integration Catalog for one environment. Target Environment owns integration configuration; the review
     /// only links there. Opening it selects the environment for viewing — it does not activate it or save anything.
     /// </summary>
     public const string IntegrationFocusPrefix = "integration:";
 
-    /// <summary>Target Environment → Integrations with one existing integration open for review (journey/IQR deep link).</summary>
+    /// <summary>Target Environment → Integration Catalog with one existing integration open for review (journey/IQR deep link).</summary>
     public static string IntegrationHref(string? profileId, string integrationId) =>
         IntegrationsHref(profileId) + "&focus=" + Uri.EscapeDataString(IntegrationFocusPrefix + integrationId);
 

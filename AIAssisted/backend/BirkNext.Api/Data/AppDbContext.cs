@@ -619,7 +619,7 @@ public class AppDbContext : DbContext
                 .HasDatabaseName("ix_workspace_review_progress_workspace_approval");
         });
 
-        // ── Integration catalog (Target Environment → Integrations) and Integration Quality Review runs ──
+        // ── Integration catalog (Target Environment → Integration Catalog) and Integration Quality Review runs ──
         modelBuilder.Entity<IntegrationPlatformRecord>(entity =>
         {
             entity.ToTable("integration_platforms");

@@ -174,8 +174,8 @@ public sealed class GuidedSetupAndSecurityContextTests : BunitContext
             Valid = true, Version = 1, ProfileName = "Dev",
             Changes =
             [
-                new() { Id = "a", Setting = "Endpoint", Classification = SetupChangeClassification.New, SafeToApply = true, Preselected = true, Owner = "Target Environment → Integrations" },
-                new() { Id = "b", Setting = "Producer", Current = "explicit", Proposed = "other", Classification = SetupChangeClassification.Conflict, Owner = "Target Environment → Integrations" },
+                new() { Id = "a", Setting = "Endpoint", Classification = SetupChangeClassification.New, SafeToApply = true, Preselected = true, Owner = "Target Environment → Integration Catalog" },
+                new() { Id = "b", Setting = "Producer", Current = "explicit", Proposed = "other", Classification = SetupChangeClassification.Conflict, Owner = "Target Environment → Integration Catalog" },
                 new() { Id = "c", Setting = "Create integration", Classification = SetupChangeClassification.RequiresConfirmation, SafeToApply = true, RequiresConfirmation = true },
             ],
             Issues = [new("journeys.x.clientSecret", SetupIssueSeverity.Rejected, "Field \"clientSecret\" cannot be imported because secrets are not allowed in setup profiles.")],

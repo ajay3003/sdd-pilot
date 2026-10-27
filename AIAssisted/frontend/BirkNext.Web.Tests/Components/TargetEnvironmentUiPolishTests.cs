@@ -135,7 +135,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
     private IRenderedComponent<Component> OpenIntegrations()
     {
         var cut = Open();
-        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Integrations").Click();
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Integration Catalog").Click();
         return cut;
     }
 

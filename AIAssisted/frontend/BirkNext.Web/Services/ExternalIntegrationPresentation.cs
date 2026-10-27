@@ -52,7 +52,7 @@ public static class ExternalIntegrationPresentation
     };
 
     public static string DependencyLabel(SetupDependency dependency) =>
-        $"{dependency.Kind switch { SetupDependencyKind.TestData => "Test Data", SetupDependencyKind.ProviderCapability => "Capability", SetupDependencyKind.SourceSnapshot => "Source", SetupDependencyKind.ExternalIntegration => "External integration", _ => dependency.Kind.ToString() }}: "
+        $"{dependency.Kind switch { SetupDependencyKind.TestData => "Test Data", SetupDependencyKind.ProviderCapability => "Capability", SetupDependencyKind.SourceSnapshot => "Source", SetupDependencyKind.ExternalIntegration => "Connected system", _ => dependency.Kind.ToString() }}: "
         + (dependency.Role is { } role && role != dependency.Reference ? $"{role} ({dependency.Reference})" : dependency.Reference);
 
     /// <summary>"IMPORT READY" / "IMPORT BLOCKED" / "PACKAGE INVALID" with the reason line.</summary>

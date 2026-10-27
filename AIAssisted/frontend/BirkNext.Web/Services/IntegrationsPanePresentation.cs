@@ -2,7 +2,7 @@ using BirkNext.Integrations;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>Summary strip of Target Environment → Integrations. Technical platform topics are never counted as business integrations.</summary>
+/// <summary>Summary strip of Target Environment → Integration Catalog. Technical platform topics are never counted as business integrations.</summary>
 public sealed record IntegrationsSummary(int Configured, int Enabled, int Ready, int NeedsConfirmation, int NeedsConfiguration, int Disabled, IReadOnlyList<string> Platforms);
 
 /// <summary>One row of the grouped integrations table.</summary>

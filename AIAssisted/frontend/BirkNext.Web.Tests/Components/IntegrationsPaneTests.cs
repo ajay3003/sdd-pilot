@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Components;
 
-/// <summary>Target Environment → Integrations over the backend catalog, with the M2LB DEV seed shape.</summary>
+/// <summary>Target Environment → Integration Catalog over the backend catalog, with the M2LB DEV seed shape.</summary>
 public sealed class IntegrationsPaneTests : BunitContext
 {
     private readonly FakeIntegrationCatalogApi _api = new() { Catalog = M2lbFixture.Catalog() };

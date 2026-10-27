@@ -20,7 +20,7 @@ public static class TestPackPresentation
 
     // ── Status dimensions of a journey (generic: they read only the backend's journey view) ─────────────────────────────
 
-    /// <summary>Configuration: whether the journey's required integrations are configured (Target Environment → Integrations).</summary>
+    /// <summary>Configuration: whether the journey's required integrations are configured (Target Environment → Integration Catalog).</summary>
     public static string Configuration(IntegrationJourneyView view) => view.Journey.Integrations.Count == 0 ? "Not applicable" : view.Maturity.Configured ? "Configured" : "Not configured";
 
     /// <summary>Source evidence: from the journey's own source-evidence prerequisites — Verified (all bound and found), "Available · needs
@@ -168,9 +168,9 @@ public static class TestPackPresentation
                 "integration" => new BlockerGroup(g.Key, Title(g.Key, "Integration"),
                     items.Any(i => i.State == JourneyReadinessState.NotConfigured) ? "Missing integration" : "Not enabled for active runs",
                     items.Any(i => i.State == JourneyReadinessState.NotConfigured) ? "The journey's integration is not configured yet." : "The integration is configured but not enabled for active runs in this environment.",
-                    "Target Environment → Integrations", "Configure integration", IntegrationReviewPresentation.IntegrationsHref(profileId), null, items),
+                    "Target Environment → Integration Catalog", "Configure integration", IntegrationReviewPresentation.IntegrationsHref(profileId), null, items),
                 "integration-mapping" => new BlockerGroup(g.Key, Title(g.Key, "Integration mapping"), "Integration found · mapping incomplete",
-                    items[0].Detail, "Target Environment → Integrations", "Review integration mapping",
+                    items[0].Detail, "Target Environment → Integration Catalog", "Review integration mapping",
                     MappingIntegrationId(items[0]) is { } mappedId ? IntegrationReviewPresentation.IntegrationHref(profileId, mappedId) : IntegrationReviewPresentation.IntegrationsHref(profileId), null, items),
                 "source" => ambiguous is not null
                     ? new BlockerGroup(g.Key, Title(g.Key, $"{ambiguous.Role.Label} source evidence"), "Review required",

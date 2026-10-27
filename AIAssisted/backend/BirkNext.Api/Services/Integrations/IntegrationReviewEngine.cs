@@ -16,7 +16,7 @@ public sealed record IntegrationContractSet(IReadOnlyList<(IntegrationContractAr
 }
 
 /// <summary>
-/// Integration Quality Review over the configured catalog (Target Environment → Integrations) and read-only evidence: the namespace probe,
+/// Integration Quality Review over the configured catalog (Target Environment → Integration Catalog) and read-only evidence: the namespace probe,
 /// Event Hub metadata, the consumer-group list, the checkpoint store, consumer telemetry and trusted contract artifacts. Configured
 /// expectation, runtime evidence, contract evidence and the review conclusion stay four different things: configuration alone never
 /// produces a runtime Pass, a missing source is "Not assessed" with its exact reason, and absent evidence is never a zero.
@@ -255,7 +255,7 @@ public sealed class IntegrationReviewEngine(
             Domains = domains, CanRun = canRun, EvidenceAdapters = adapters, Subjects = subjects,
             AzureRuntimeEnabled = azureOn, AzureRuntimeReason = azureOn ? null : AzureDisabledReason, RuntimeSourcesConfigured = sourcesConfigured, RuntimeSourcesTotal = sourcesTotal,
             Headline = !canRun ? "Cannot run" : limited ? "Can run with limitations" : "Ready",
-            Reasons = canRun ? reasons : ["Enable at least one configured integration in Target Environment → Integrations."],
+            Reasons = canRun ? reasons : ["Enable at least one configured integration in Target Environment → Integration Catalog."],
         };
     }
 

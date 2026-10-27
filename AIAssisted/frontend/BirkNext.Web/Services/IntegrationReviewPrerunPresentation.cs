@@ -5,7 +5,7 @@ namespace BirkNext.Web.Services;
 /// <summary>
 /// Pure projection of the backend's <see cref="IntegrationReviewReadiness"/> for the Integration Quality Review pre-run: what limits the
 /// review, where to fix it, and what can be reviewed. Presentation only — domain readiness, headline and Run gate stay the backend's.
-/// Corrective actions deep-link to Target Environment → Integrations; the pre-run never hosts configuration of its own.
+/// Corrective actions deep-link to Target Environment → Integration Catalog; the pre-run never hosts configuration of its own.
 /// </summary>
 public static class IntegrationReviewPrerunPresentation
 {
@@ -57,7 +57,7 @@ public static class IntegrationReviewPrerunPresentation
     /// <summary>The Run button text, only offered when the review can run: always "Run review" — a read-only review, never active execution.</summary>
     public static string RunLabel(IntegrationReviewReadiness readiness) => "Run review";
 
-    /// <summary>No enabled integration: the review has nothing to assess until Target Environment → Integrations has one.</summary>
+    /// <summary>No enabled integration: the review has nothing to assess until Target Environment → Integration Catalog has one.</summary>
     public static bool NoEnabledIntegrations(IntegrationReviewReadiness readiness) => readiness.EnabledIntegrations == 0;
 
     public static string ReadinessTone(IntegrationReviewReadiness readiness) =>
@@ -294,7 +294,7 @@ public static class IntegrationReviewPrerunPresentation
         return row.Domain switch
         {
             IntegrationReviewDomain.Contract or IntegrationReviewDomain.DataQuality => ("Manage contracts", Href(profileId, FocusContracts)),
-            IntegrationReviewDomain.Configuration => ("Open Integrations", IntegrationReviewPresentation.IntegrationsHref(profileId)),
+            IntegrationReviewDomain.Configuration => ("Open Integration Catalog", IntegrationReviewPresentation.IntegrationsHref(profileId)),
             IntegrationReviewDomain.Connectivity or IntegrationReviewDomain.MessageFlow or IntegrationReviewDomain.Reliability or IntegrationReviewDomain.ErrorHandling
                 or IntegrationReviewDomain.Security or IntegrationReviewDomain.Observability or IntegrationReviewDomain.Performance when runtimeMissing
                 => (AzureRuntimeOff(readiness) ? "View runtime evidence" : "Configure runtime evidence", Href(profileId, FocusRuntime)),

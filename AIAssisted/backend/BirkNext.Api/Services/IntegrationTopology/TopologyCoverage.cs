@@ -262,7 +262,7 @@ public static class TopologyCoverage
         TopologyGapAction.ImportSource => "Project Import",
         TopologyGapAction.BindSource or TopologyGapAction.ReviewCandidates => "Integration Quality Review → Setup & Evidence (canonical source binding)",
         TopologyGapAction.ReanalyzeSource or TopologyGapAction.ViewMissingEvidence or TopologyGapAction.ViewEvidence => "Source Analysis",
-        TopologyGapAction.ConfigureIntegration => "Target Environment → Integrations",
+        TopologyGapAction.ConfigureIntegration => "Target Environment → Integration Catalog",
         _ => null,
     };
 
