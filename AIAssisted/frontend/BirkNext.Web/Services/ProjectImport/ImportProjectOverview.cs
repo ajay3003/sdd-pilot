@@ -4,8 +4,27 @@ using BirkNext.Web.Services.Explorers;
 
 namespace BirkNext.Web.Services.ProjectImport;
 
+/// <summary>Who resolves an attention item: the project's documents, a testing setup, the source analysis or the test environment.</summary>
+public enum ImportAttentionGroup { Documents, TestingSetup, SourceAnalysis, Environment }
+
 /// <summary>One thing on Import Project that a tester should resolve (or know), with the action that resolves it.</summary>
-public sealed record ImportAttentionItem(string Key, string Text, string? Detail, string ActionLabel, string Href, bool Informational = false);
+public sealed record ImportAttentionItem(string Key, string Text, string? Detail, string ActionLabel, string Href, bool Informational = false,
+    ImportAttentionGroup Group = ImportAttentionGroup.Documents);
+
+/// <summary>Source Analysis of one import, separate from the import itself (an import succeeds even when no source analysis exists).</summary>
+public enum ImportAnalysisState { NoSource, NotCreated, Available, Ready, Partial, NoApplicationCode, Failed }
+
+/// <summary>
+/// Source Analysis as Import Project shows it: a short status, why, and which areas hold evidence. <see cref="HasDetails"/> marks a state whose
+/// details live in Source Analysis (Partial / no application code / Failed).
+/// </summary>
+public sealed record ImportSourceAnalysis(ImportAnalysisState State, string Status, ProjectImportTone Tone, string? Explanation, string? Areas)
+{
+    public bool HasDetails => State is ImportAnalysisState.Partial or ImportAnalysisState.NoApplicationCode or ImportAnalysisState.Failed;
+}
+
+/// <summary>The source role a testing setup recognized in a snapshot ("MU (Meldingsutveksleren)"), or why none was.</summary>
+public sealed record ImportSourceRole(string Status, string? Detail, bool Identified);
 
 /// <summary>One document type of the current project as Import Project summarizes it: what was found, what needs a choice, where to review it.</summary>
 public sealed record ImportRoleSummary(WorkspaceArtifactType Role, string Title, string Found, string? Note, int RequiresClarification, string ActionLabel, string? Href);
@@ -47,21 +66,82 @@ public static class ImportProjectOverview
             _ => "Nothing supported was found in this archive",
         };
 
+    /// <summary>The current project's Source Analysis (see <see cref="SourceAnalysis(bool, Guid?, SourceSetupSnapshot?, string?, bool)"/>).</summary>
+    public static ImportSourceAnalysis SourceAnalysis(ProjectImportCurrentSource source, SourceSetupSnapshot? snapshot) =>
+        SourceAnalysis(source.SourceDetected, source.SnapshotId, snapshot, source.Detail, source.CanRetry);
+
     /// <summary>
-    /// Source Analysis in plain words, with what "partial" means. The snapshot id and exact status stay in Technical details.
+    /// Source Analysis in plain words, never the import's outcome. The snapshot's own Failed means only that the application-code analyzer found no
+    /// production project: architecture and the evidence domains are analyzed independently, so a Failed snapshot that still holds infrastructure,
+    /// configuration, CI/CD or contract evidence is shown as partial evidence with no application code — and Failed only when no area holds any.
     /// </summary>
-    public static (string Status, string? Explanation) SourceAnalysis(ProjectImportCurrentSource source, string? snapshotStatus)
+    public static ImportSourceAnalysis SourceAnalysis(bool sourceDetected, Guid? snapshotId, SourceSetupSnapshot? snapshot, string? notCreatedDetail = null, bool canRetry = false)
     {
-        if (source.SnapshotId is null)
-            return source.SourceDetected
-                ? ("Source code found · analysis not available", source.CanRetry ? "The source analysis could not be created. You can retry without uploading again." : source.Detail)
-                : ("No source code in this project", null);
-        return snapshotStatus switch
+        if (snapshotId is null)
+            return sourceDetected
+                ? new(ImportAnalysisState.NotCreated, "Not created", ProjectImportTone.Partial,
+                    canRetry ? "The import succeeded, but no source analysis was created. You can retry without uploading again." : notCreatedDetail, null)
+                : new(ImportAnalysisState.NoSource, "No source code", ProjectImportTone.Neutral, null, null);
+        var areas = snapshot?.Areas ?? [];
+        var summary = AreaSummary(areas);
+        return snapshot?.Status switch
         {
-            "Partial" => ("Source analysis available with limitations", "Some source-analysis categories could not be assessed (for example a technology BirkNext does not analyze)."),
-            "Failed" => ("Source analysis available with limitations", "Source Analysis found no production project it supports, so most categories could not be assessed."),
-            _ => ("Source analysis available", null),
+            null => new(ImportAnalysisState.Available, "Available", ProjectImportTone.Available, null, null),
+            "Ready" => new(ImportAnalysisState.Ready, "Ready", ProjectImportTone.Available, null, summary),
+            "Partial" => new(ImportAnalysisState.Partial, "Partial", ProjectImportTone.Partial, "Some areas could not be fully analyzed.", summary),
+            _ when areas.Count == 0 => new(ImportAnalysisState.NoApplicationCode, "No production project found", ProjectImportTone.Partial,
+                "Code analysis found no supported production project. Source Analysis shows which other areas hold evidence.", null),
+            _ when areas.Any(Usable) => new(ImportAnalysisState.NoApplicationCode, "Partial · no application code", ProjectImportTone.Partial,
+                "No supported production project was found, so code-level analysis did not run. The other source evidence is available.", summary),
+            _ => new(ImportAnalysisState.Failed, "Failed", ProjectImportTone.Rejected,
+                "Nothing in this source could be analyzed: no supported production project and no architecture, infrastructure, configuration, CI/CD or contract evidence.", summary),
         };
+    }
+
+    private static bool Usable(SourceSetupArea area) => area.Status is "Complete" or "Partial";
+
+    /// <summary>"Infrastructure as Code, Configuration complete · CI/CD partial · Architecture not supported · no supported application code".
+    /// Areas not detected in the source are omitted (absence says nothing about the project).</summary>
+    public static string? AreaSummary(IReadOnlyList<SourceSetupArea> areas)
+    {
+        if (areas.Count == 0) return null;
+        string Names(string status) => string.Join(", ", areas.Where(a => a.Status == status && a.Area != "Application code").Select(a => a.Area));
+        var parts = new List<string>();
+        if (Names("Complete") is { Length: > 0 } complete) parts.Add($"{complete} complete");
+        if (Names("Partial") is { Length: > 0 } partial) parts.Add($"{partial} partial");
+        if (Names("Failed") is { Length: > 0 } failed) parts.Add($"{failed} failed");
+        if (Names("Unsupported") is { Length: > 0 } unsupported) parts.Add($"{unsupported} not supported");
+        switch (areas.FirstOrDefault(a => a.Area == "Application code")?.Status)
+        {
+            case "Complete": parts.Insert(0, "Application code complete"); break;
+            case "Partial": parts.Insert(0, "Application code partial"); break;
+            case "Failed": parts.Add("application code could not be read"); break;
+            case "NotDetected": parts.Add("no supported application code"); break;
+        }
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// The source role(s) the testing setups recognized in a snapshot — from its contents (components, projects, API documents, declared
+    /// infrastructure), never its archive name — or "Not identified" with the recognizer's own reason. Null when no testing setup declares source
+    /// roles (then a role means nothing).
+    /// </summary>
+    public static ImportSourceRole? SourceRole(SourceSetupView? setup, Guid? snapshotId, bool sourceDetected)
+    {
+        if (setup is not { Packs.Count: > 0 }) return null;
+        if (!sourceDetected && snapshotId is null) return new("No source", "A document-only import never satisfies a source requirement.", false);
+        if (snapshotId is not { } id) return new("Not determined", "The source role is recognized from the source analysis, which does not exist yet.", false);
+        var matches = setup.Packs.SelectMany(p => p.Sources).Where(s => s.Candidates.Any(c => c.SnapshotId == id)).ToList();
+        if (matches.Count > 0)
+        {
+            var matchedOn = matches.SelectMany(s => s.Candidates.Where(c => c.SnapshotId == id).SelectMany(c => c.MatchedOn)).Distinct().Take(2).ToList();
+            return new(string.Join(" · ", matches.Select(s => s.Role.Label).Distinct()),
+                matchedOn.Count > 0 ? $"Recognized from the source contents: {string.Join(", ", matchedOn)}." : "Recognized from the source contents.", true);
+        }
+        var nearMiss = setup.Packs.SelectMany(p => p.Sources).SelectMany(s => s.NearMisses.Where(n => n.SnapshotId == id).Select(n => (s.Role.Label, n.Reason))).FirstOrDefault();
+        return new("Not identified", nearMiss.Reason is { } reason
+            ? $"Checked as {nearMiss.Label}: {reason}"
+            : $"It matches no source requirement of {string.Join(", ", setup.Packs.Select(p => p.DisplayName))}. Shared libraries and unrelated repositories stay unidentified.", false);
     }
 
     /// <summary>"Test environment: Development" or "Not selected" — the environment runtime and integration reviews use. Configured is not tested.</summary>
@@ -184,19 +264,51 @@ public static class ImportProjectOverview
             {
                 var line = Line(status);
                 if (!line.NeedsAttention || line.Optional) continue;
-                items.Add(new($"setup-{pack.PackId}-{status.Role.Key}",
-                    SourceSetupPresentation.IsAmbiguous(status) ? $"{status.Role.Label} source requires clarification" : $"{status.Role.Label}: {line.State}",
-                    $"{pack.DisplayName} · {line.State}.", line.ActionLabel ?? "Review setup", line.Href ?? "#pi-setup-heading"));
+                // The exact role that is missing ("M2LB application source missing"), and what was checked — never "M2LB: Not found".
+                var text = status.State switch
+                {
+                    _ when SourceSetupPresentation.IsAmbiguous(status) => $"{status.Role.Label} source requires clarification",
+                    TestPackSourceState.Missing => $"{status.Role.Label} source missing",
+                    TestPackSourceState.ReviewRequired => $"{status.Role.Label} source binding needs review",
+                    _ => $"{status.Role.Label}: {line.State}",
+                };
+                var expected = status.State == TestPackSourceState.Missing && status.Role.ExpectedArtifact is { Length: > 0 } artifact ? $" Expected: {artifact}." : "";
+                items.Add(new($"setup-{pack.PackId}-{status.Role.Key}", text, $"{pack.DisplayName}: {SourceSetupPresentation.Sentence(status)}{expected}",
+                    line.ActionLabel ?? "Review setup", line.Href ?? "#pi-setup-heading", Group: ImportAttentionGroup.TestingSetup));
             }
         if (source is { SnapshotId: null, SourceDetected: true })
-            items.Add(new("source-analysis", "Source analysis is not available for this project", source.Detail, source.CanRetry ? "Retry" : "View details", "#pi-current-heading"));
+            items.Add(new("source-analysis", "Source analysis was not created for this project", source.Detail, source.CanRetry ? "Retry" : "View details", "#pi-current-heading",
+                Group: ImportAttentionGroup.SourceAnalysis));
         if (!environmentSelected)
-            items.Add(new("test-environment", "Test environment not selected", "Integration and runtime reviews need one. Document review does not.",
-                "Select test environment", NavigationCatalog.TargetEnvironmentsRoute, Informational: true));
+            items.Add(new("test-environment", "No test environment selected", "Integration and runtime reviews need one. Document review does not.",
+                "Select test environment", NavigationCatalog.TargetEnvironmentsRoute, Informational: true, Group: ImportAttentionGroup.Environment));
         return items;
     }
 
+    /// <summary>Attention items grouped by who resolves them, in a fixed order (documents, testing setup, source analysis, environment).</summary>
+    public static IReadOnlyList<(ImportAttentionGroup Group, string Title, IReadOnlyList<ImportAttentionItem> Items)> Grouped(IReadOnlyList<ImportAttentionItem> items) =>
+        [.. items.GroupBy(i => i.Group).OrderBy(g => g.Key).Select(g => (g.Key, GroupTitle(g.Key), (IReadOnlyList<ImportAttentionItem>)g.ToList()))];
+
+    public static string GroupTitle(ImportAttentionGroup group) => group switch
+    {
+        ImportAttentionGroup.Documents => "Project documents",
+        ImportAttentionGroup.TestingSetup => "Testing setup",
+        ImportAttentionGroup.SourceAnalysis => "Source analysis",
+        _ => "Environment",
+    };
+
     // ── Previously imported projects ─────────────────────────────────────────────────
+
+    /// <summary>"24 Oct 2026".</summary>
+    public static string Date(DateTimeOffset at) => at.ToLocalTime().ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>An area status in words: "Not detected", "Not analyzed" (the snapshot predates the area).</summary>
+    public static string AreaStatus(string status) => status switch
+    {
+        "NotDetected" => "Not detected",
+        "NotAnalyzed" => "Not analyzed",
+        _ => status,
+    };
 
     /// <summary>"Imported 24 Oct 2026".</summary>
     public static string Imported(DateTimeOffset at) => "Imported " + at.ToLocalTime().ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);

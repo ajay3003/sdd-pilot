@@ -89,13 +89,18 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             "How BirkNext writes the form data when it submits automatically. A manual browser submission does not need it."));
 
         var integrations = await IntegrationsAsync(environmentId, ct);
-        var bound = integrations.FirstOrDefault(item => item.DisplayName == IntegrationName || item.Id.Contains("report-intake", StringComparison.Ordinal));
+        // Deterministic: the catalog integrations that fulfil the pack's Altinn submission requirement (the requirement of the template that reads
+        // the Altinn Test Pack reference), plus the established name. Exactly one is proposed; several are never chosen between.
+        var matching = ReportIntakeMatches(integrations);
+        var bound = matching.Count == 1 ? matching[0] : null;
         var integration = Resolve("integration", ApplicationGroup, "Integration", AltinnRequirement.Manual,
             [Candidate(saved.IntegrationId, AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment),
              Candidate(bound?.Id, AltinnSettingState.Detected, AltinnSettingSource.IntegrationBinding)],
             $"{IntegrationName}: Altinn → Meldingsutveksleren (MU). Referenced from Target Environment → Integration Catalog, never copied.");
         if (integration.Value is { } integrationId && integrations.Count > 0 && integrations.All(item => item.Id != integrationId))
             integration = integration with { State = AltinnSettingState.Missing, Detail = $"The integration {integrationId} is not configured in this environment (Target Environment → Integration Catalog)." };
+        else if (integration.Value is null && matching.Count > 1)
+            integration = integration with { Detail = $"{matching.Count} integrations in the Integration Catalog match the report intake requirement ({string.Join(", ", matching.Select(item => item.DisplayName))}). Nothing is chosen automatically: choose one here or review them in Target Environment → Integration Catalog." };
         fields.Add(IntegrationReferenceNames.Apply(integration, integrations));
 
         // ── Browser authentication: evidence of Altinn's own login client (observed), plus ID-porten public metadata on Detect ──
@@ -332,6 +337,22 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         }
         return list;
     }
+
+    /// <summary>Catalog integrations that fulfil a pack's Altinn submission requirement (<see cref="IIntegrationJourneyPack.Matches"/> on the requirement
+    /// of every template that reads a Test Pack reference) or carry the established name. Distinct; never ordered into a choice.</summary>
+    internal IReadOnlyList<IntegrationDefinition> ReportIntakeMatches(IReadOnlyList<IntegrationDefinition> integrations)
+    {
+        var requirements = (packs ?? []).SelectMany(pack => (pack.IntegrationTemplates ?? []).Where(template => template.Reference is not null && template.RequirementKey is not null)
+                .Select(template => (Pack: pack, Requirement: (pack.Journeys ?? []).SelectMany(journey => journey.Integrations).FirstOrDefault(item => item.Key == template.RequirementKey))))
+            .Where(item => item.Requirement is not null).ToList();
+        return [.. integrations.Where(item => item.Enabled && (requirements.Any(r => r.Pack.Matches(r.Requirement!, item))
+                || item.DisplayName == IntegrationName || item.Id.Contains("report-intake", StringComparison.Ordinal)))
+            .DistinctBy(item => item.Id)];
+    }
+
+    /// <summary>The configured integrations that fulfil the Altinn report intake requirement in an environment (zero, one or several).</summary>
+    public async Task<IReadOnlyList<IntegrationDefinition>> ReportIntakeIntegrationsAsync(string environmentId, CancellationToken ct) =>
+        ReportIntakeMatches(await IntegrationsAsync(environmentId, ct));
 
     private async Task<IReadOnlyList<IntegrationDefinition>> IntegrationsAsync(string environmentId, CancellationToken ct)
     {

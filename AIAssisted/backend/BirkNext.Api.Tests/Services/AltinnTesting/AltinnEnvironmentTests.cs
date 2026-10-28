@@ -525,4 +525,37 @@ public sealed class AltinnEnvironmentTests
         view.ManualMissing.Should().Contain("Form data type (conflict)");
         view.Fields.Where(field => field.Requirement == AltinnRequirement.Optional).Should().NotContain(field => view.Detection.ActionableGaps.Any(gap => gap.Contains(field.Label)));
     }
+
+    // ── Integration: one deterministic Integration Catalog match is proposed; several are never chosen between ──────────
+
+    [Fact]
+    public async Task One_matching_catalog_integration_is_proposed_two_stay_unresolved_and_none_is_missing()
+    {
+        var one = new Bed();
+        one.Integrations.Add(new IntegrationDefinition { Id = "dev:http:skolenaervaer-report-intake", EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });
+        Field(await one.View(detect: true), "integration").Should().Match<AltinnSettingField>(f =>
+            f.State == AltinnSettingState.Detected && f.Proposal != null && f.Proposal.Value == "dev:http:skolenaervaer-report-intake");
+
+        var two = new Bed();
+        two.Integrations.Add(new IntegrationDefinition { Id = "dev:http:skolenaervaer-report-intake", EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });
+        two.Integrations.Add(new IntegrationDefinition { Id = "dev:http:report-intake-copy", EnvironmentId = Env, DisplayName = "Report intake (copy)" });
+        var ambiguous = Field(await two.View(detect: true), "integration");
+        ambiguous.Value.Should().BeNull("two matches are never chosen between");
+        ambiguous.Proposal.Should().BeNull();
+        ambiguous.State.Should().Be(AltinnSettingState.Missing);
+        ambiguous.Detail.Should().Contain("2 integrations in the Integration Catalog match").And.Contain("Nothing is chosen automatically");
+
+        var none = new Bed();
+        none.Integrations.Add(new IntegrationDefinition { Id = "dev:http:person", EnvironmentId = Env, DisplayName = "Person API" });
+        Field(await none.View(detect: true), "integration").Should().Match<AltinnSettingField>(f => f.State == AltinnSettingState.Missing && f.Proposal == null);
+    }
+
+    [Fact]
+    public async Task A_saved_integration_wins_and_detection_saves_nothing()
+    {
+        var bed = new Bed();
+        bed.Integrations.Add(new IntegrationDefinition { Id = "dev:http:skolenaervaer-report-intake", EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });
+        await bed.View(detect: true);
+        bed.Db.AltinnEnvironmentSettings.Count().Should().Be(0, "Detect calculates candidates only");
+    }
 }

@@ -333,7 +333,14 @@
         @* Session test identities: the approved synthetic reporter and child for Altinn runs, entered here instead of a terminal. *@
         <section class="td-card" aria-labelledby="td-session-heading" data-testid="td-session-identities">
             <h2 id="td-session-heading">Session test identities</h2>
-            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" />
+            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" Assets="@(_catalog?.Assets ?? [])" />
+        </section>
+
+        @* XML fixtures: reusable message payloads for a test pack's contract, created here from the identities above (generation and validation
+           reuse Schema Studio; values come from Test Data). *@
+        <section class="td-card" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
+            <h2 id="td-xml-heading">XML fixtures</h2>
+            <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" />
         </section>
 
         @* Sources & configuration: where assets come from. Useful plumbing, not the primary goal of the page. *@

@@ -10,8 +10,9 @@
     <header class="ei-head">
         <h3 id="ei-title" class="ei-title">Connected Systems</h3>
         <div class="ei-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)">Add system</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync">Detect systems</button>
+            @* Discover first, add manually second: Detect stays the primary action even when systems exist (new evidence can reveal more). *@
+            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync">Detect systems</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)">Add system</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-import" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Import)">Import setup</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-export" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Export)">Export setup</button>
             <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)">Setup Library</a>
@@ -72,7 +73,7 @@
 
         @if (_view.Integrations.Count == 0)
         {
-            <p class="ei-muted" data-testid="ei-empty">No connected systems in this environment yet. Detect systems, import a setup, or add one.</p>
+            <p class="ei-muted" data-testid="ei-empty">No connected systems yet. Start with Detect systems. Add a system manually only if it cannot be discovered from project evidence.</p>
         }
         <div class="ei-cards">
             @foreach (var item in _view.Integrations)
@@ -80,9 +81,16 @@
                 var integration = item.Integration;
                 var open = _open.Contains(integration.Id);
                 <article class="ei-card" data-testid="ei-card" data-provider="@integration.ProviderType" aria-label="@integration.Name">
-                    <header class="ei-card-head">
-                        <h4 class="ei-card-title">@integration.Name</h4>
-                        <span class="ei-muted">@ExternalIntegrationPresentation.ProviderLabel(integration.ProviderType, _view.Providers)@(integration.EnvironmentName is { } env ? $" · {env}" : "")@(integration.Enabled ? "" : " · disabled")</span>
+                    @* System identity first; while open, Close sits at the far right of this header — never in the provider's action row. *@
+                    <header class="ei-card-head" data-testid="ei-card-head">
+                        <div class="ei-card-identity">
+                            <h4 class="ei-card-title">@integration.Name</h4>
+                            <span class="ei-muted">@ExternalIntegrationPresentation.ProviderLabel(integration.ProviderType, _view.Providers)@(integration.EnvironmentName is { } env ? $" · {env}" : "")@(integration.Enabled ? "" : " · disabled")</span>
+                        </div>
+                        @if (open)
+                        {
+                            <button type="button" id="@($"ei-toggle-{integration.Id}")" class="btn btn-link btn-sm ei-close" data-testid="ei-review" aria-expanded="true" aria-label="@($"Close {integration.Name}")" @onclick="() => ToggleOpen(integration.Id)">Close</button>
+                        }
                     </header>
                     @if (!open)
                     {
@@ -93,9 +101,12 @@
                             }
                         </dl>
                     }
-                    <div class="ei-card-actions">
-                        <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-review" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleOpen(integration.Id)">@(open ? "Close" : "Review")</button>
-                    </div>
+                    @if (!open)
+                    {
+                        <div class="ei-card-actions">
+                            <button type="button" id="@($"ei-toggle-{integration.Id}")" class="btn btn-secondary btn-sm" data-testid="ei-review" aria-expanded="false" @onclick="() => ToggleOpen(integration.Id)">Review</button>
+                        </div>
+                    }
                     @if (open)
                     {
                         @* Every provider renders in the shared compact shell: Altinn through its own component, every other provider through the
@@ -156,7 +167,17 @@
     }
 
     private void Toggle(Mode mode) => _mode = _mode == mode ? Mode.None : mode;
-    private void ToggleOpen(string id) { if (!_open.Remove(id)) _open.Add(id); }
+    /// <summary>Opens or closes a system. Close and Review are different buttons, so focus moves to the one that replaces the clicked one.</summary>
+    private void ToggleOpen(string id) { if (!_open.Remove(id)) _open.Add(id); _focusToggle = $"ei-toggle-{id}"; }
+
+    private string? _focusToggle;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusToggle is not { } target || Services.GetService<IJSRuntime>() is not { } js) return;
+        _focusToggle = null;
+        try { await js.InvokeVoidAsync("birknextFocusElement", target); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
 
     private async Task Run(Func<Task> action) { _busy = true; _error = null; try { await action(); } finally { _busy = false; } }
 

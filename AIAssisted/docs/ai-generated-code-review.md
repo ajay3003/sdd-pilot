@@ -1,11 +1,12 @@
-# AI-Generated Code Review
+# Code Risk Review
 
-**Quality & Testing → AI-Generated Code Review** (`/ai-generated-code-review`) reviews ordinary software that was generated or heavily
-modified with coding assistants (Copilot, Claude Code, ChatGPT, Cursor, …) for risk patterns that are common after such changes.
+**Quality & Testing → Code Risk Review** (`/code-risk-review`; formerly “AI-Generated Code Review”, whose address `/ai-generated-code-review`
+still works) reviews source code and changes for deterministic implementation risks, evidence gaps and drift — including risk patterns that are
+common after code was generated or heavily modified with coding assistants (Copilot, Claude Code, ChatGPT, Cursor, …).
 
 ## What it is not
 
-- **Not an AI detector.** It never determines or claims that code was written by AI. The profile is used because the user chooses it.
+- **Not an AI detector.** It never determines or claims that code was written by AI.
 - **Not an LLM review.** The MVP is deterministic: no model is called, no API key or prompt is configured, and there is no score
   (no "AI quality %", no confidence number).
 - **Not a correctness proof.** "No indicators observed by the checks executed" never means the code is correct.
@@ -20,7 +21,7 @@ Source Analysis snapshot (current, optional baseline of the same repository)
   + generated-documentation evidence
   + the workspace's requirement graph (summarized in the browser from the existing SDD graph)
         ↓
-AI-Generated Code Review profile → deterministic rules (AIC-*) → findings with provenance
+Code Risk Review → deterministic rules (AIC-*) → findings with provenance
 ```
 
 - Source comes only from Source Analysis (Import Project or a source upload there). This page never uploads or re-reads source.

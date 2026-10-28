@@ -317,6 +317,21 @@ public sealed class SchemaStudioService
         }
     }
 
+    /// <summary>
+    /// Generated XML with the elements at <paramref name="paths"/> ("Klient.Identifikator.Fodselsnummer", local names under the root) present:
+    /// an optional element on the path is built and inserted in its sequence position, exactly as for a generated test case. Used to make
+    /// room for Test Data values a minimum instance omits; a path the schema does not declare is left out (validation then reports it).
+    /// </summary>
+    public static string WithElements(SchemaPackage package, string xml, IEnumerable<string> paths)
+    {
+        var document = XDocument.Parse(xml);
+        if (document.Root is not { } root || package.EffectiveSchema.FirstOrDefault(r => r.Name == root.Name.LocalName) is not { } schemaRoot) return xml;
+        var budget = new XmlGenerationBudget();
+        foreach (var path in paths)
+            Materialize(root, schemaRoot, [schemaRoot.Name, .. path.Split('.', StringSplitOptions.RemoveEmptyEntries)], "", package, null, budget);
+        return SerializeGeneratedXml(root);
+    }
+
     private static string SafeDiagnostic(string value) => value.Length > 300 ? value[..300] : value;
 
     private static string SerializeGeneratedXml(XElement root)

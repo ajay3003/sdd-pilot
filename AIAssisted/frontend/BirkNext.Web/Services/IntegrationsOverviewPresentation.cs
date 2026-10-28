@@ -35,6 +35,8 @@ public static class IntegrationsOverviewPresentation
 {
     public static SuggestionStrength Strength(SourceIntegrationCandidate candidate) => candidate switch
     {
+        // Contributing sources disagree (multi-source discovery): a decision, never resolved by picking one.
+        { SourceDisagreements.Count: > 0 } => SuggestionStrength.Conflict,
         { ConsumerEvidence: ArchitectureEvidenceState.Conflict } => SuggestionStrength.Conflict,
         { ConsumerCandidate: null } or { ConsumerEvidence: ArchitectureEvidenceState.Unresolved } => SuggestionStrength.Unassigned,
         { ConsumerEvidence: ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported } => SuggestionStrength.StronglySupported,
@@ -179,6 +181,22 @@ public static class IntegrationsOverviewPresentation
 
     /// <summary>Candidates from the latest source discovery that no configured integration covers (business channels only).</summary>
     public static IReadOnlyList<SourceIntegrationCandidate> Suggestions(SourceIntegrationsReport? report) => SourceIntegrationsPresentation.Unconfigured(report);
+
+    /// <summary>Source candidates plus Test Pack proposals backed by recognized source evidence: ready ones are ready to review, the rest need a
+    /// decision (counted as needing confirmation). Available when either exists.</summary>
+    public static SuggestionSummary Summary(SourceIntegrationsReport? report, IReadOnlyList<IntegrationPackProposal> packs)
+    {
+        var source = Summary(report);
+        if (packs.Count == 0) return source;
+        var ready = packs.Count(p => p.Ready);
+        return source with { Available = true, Total = source.Total + packs.Count, StronglySupported = source.StronglySupported + ready, Suggested = source.Suggested + packs.Count - ready };
+    }
+
+    /// <summary>"M2LB.Common.zip — Current project source; Tiltak 2.zip — MU source (Skolenærvær Testing)": why BirkNext discovered the candidate.</summary>
+    public static IReadOnlyList<string> Provenance(SourceIntegrationCandidate candidate, string? fallbackArchive) =>
+        candidate.Sources.Count > 0
+            ? [.. candidate.Sources.Select(s => $"{s.ArchiveName} — {s.Reason}{(s.CorroboratingOnly ? " (corroborates)" : "")}")]
+            : fallbackArchive is { Length: > 0 } archive ? [archive] : [];
 
     public static SuggestionSummary Summary(SourceIntegrationsReport? report)
     {

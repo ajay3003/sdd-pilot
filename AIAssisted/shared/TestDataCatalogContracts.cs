@@ -226,3 +226,12 @@ public static class TestDataCatalogRules
 
     public static readonly System.Text.RegularExpressions.Regex AliasPattern = new("^[a-z0-9][a-z0-9-]{0,63}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 }
+
+/// <summary>One Test Data value to place in a generated XML fixture: the asset alias and the element path under the root (local names, dots).</summary>
+public sealed record TestDataXmlBinding(string Alias, string ElementPath);
+
+/// <summary>Fill generated XML with Test Data values (Test Data → Create XML fixture). The backend resolves each alias; values are never sent by the
+/// browser and never logged.</summary>
+public sealed record TestDataXmlBindRequest(string Xml, IReadOnlyList<TestDataXmlBinding> Bindings);
+
+public sealed record TestDataXmlBindResult(string? Xml, IReadOnlyList<string> Problems);

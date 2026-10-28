@@ -36,6 +36,14 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
         return asset is not null ? Ok(new { assetId = asset.Id }) : existing is not null ? Conflict(new { message = error, existingAssetId = existing }) : BadRequest(new { message = error });
     }
 
+    /// <summary>Test Data → Create XML fixture: fills generated XML with Test Data values by alias (resolved here, never sent by the browser).</summary>
+    [HttpPost("xml-fixtures/bind")]
+    public ActionResult<TestDataXmlBindResult> BindXmlFixture([FromServices] TestDataCatalog testData, [FromBody] TestDataXmlBindRequest request)
+    {
+        var result = TestDataXmlBinder.Bind(request, testData.Assets());
+        return result.Xml is not null ? Ok(result) : BadRequest(result);
+    }
+
     [HttpPost("assets/{id}/approve")]
     public IActionResult Approve(string id) => service.Approve(id) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id });
 

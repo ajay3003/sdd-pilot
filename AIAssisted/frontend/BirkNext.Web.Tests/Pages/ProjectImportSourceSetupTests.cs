@@ -147,9 +147,20 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         hub.QuerySelector("[data-testid=pi-previous-documents]")!.TextContent.Should().Be("No project documents", "a source-only import is history too");
         hub.QuerySelector("[data-testid=pi-previous-bindings]")!.TextContent.Should().Be("Used by 1 IQR integration: Demo – report intake");
         hub.QuerySelector("[data-testid=pi-previous-open-source]")!.GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}");
-        hub.QuerySelector("[data-testid=pi-previous-open-source]")!.TextContent.Should().Be("Open Tiltak 2 - hub (1) in Source Analysis");
-        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Open this project");
-        hub.QuerySelector("[data-testid=pi-previous-use]")!.GetAttribute("aria-label").Should().Be("Open Tiltak 2 - hub (1)");
+        hub.QuerySelector("[data-testid=pi-previous-open-source]")!.TextContent.Should().Be("Open Source Analysis");
+        hub.QuerySelector("[data-testid=pi-previous-open-source]")!.GetAttribute("aria-label").Should().Be("Open Tiltak 2 - hub (1) in Source Analysis");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Set as current project");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.GetAttribute("aria-label").Should().Be("Set Tiltak 2 - hub (1) as current project");
+        // Compact by default: role, analysis, binding count and date; provenance (archive, fingerprint, snapshot, origin) only behind Details.
+        hub.QuerySelector("[data-testid=pi-previous-role]")!.TextContent.Should().Be("Message hub");
+        hub.QuerySelector("[data-testid=pi-previous-analysis]").Should().NotBeNull();
+        hub.QuerySelector("[data-testid=pi-previous-binding-count]")!.TextContent.Should().Be("1", "a target is selected and the source is bound");
+        var details = hub.QuerySelector("[data-testid=pi-previous-details]")!;
+        details.HasAttribute("open").Should().BeFalse();
+        details.QuerySelector("[data-testid=pi-previous-archive]").Should().NotBeNull("the archive name is provenance");
+        details.QuerySelector("code").Should().NotBeNull("the fingerprint is behind Details");
+        details.QuerySelector("[data-testid=pi-previous-source]")!.TextContent.Should().StartWith("Snapshot ");
+        cut.Find("#pi-previous-heading").TextContent.Should().Be("Previously imported projects and sources");
 
         var docs = rows.Single(r => r.TextContent.Contains("docs-only.zip"));
         docs.QuerySelector("[data-testid=pi-previous-logical]")!.TextContent.Should().Be("None", "a document-only import never satisfies a source requirement");
@@ -199,10 +210,12 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         ImportHistory();
         _preview = ProjectImportActivationTests.Preview(MuSha, source: true) with { Archive = new ProjectImportArchive("hub-renamed.zip", MuSha, 4096, 12) };
         var cut = RenderPage();
+        cut.Find("[data-testid=pi-current-import-another]").Click();
         cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "hub-renamed.zip"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate]"));
 
         cut.Find("[data-testid=pi-duplicate]").TextContent.Should().Contain("Matching imported source already exists").And.Contain("Tiltak 2 - hub (1).zip");
+        cut.Find("[data-testid=pi-duplicate-again-help]").TextContent.Should().Contain("no second history entry").And.Contain("Nothing is deleted");
         cut.Find("[data-testid=pi-import]").HasAttribute("disabled").Should().BeTrue("a duplicate is never imported or reused silently");
         cut.Find("[data-testid=pi-duplicate-import-again]").Click();
         cut.FindAll("[data-testid=pi-duplicate]").Should().BeEmpty();
@@ -215,6 +228,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         ImportHistory();
         _preview = ProjectImportActivationTests.Preview(MuSha, source: true);
         var cut = RenderPage();
+        cut.Find("[data-testid=pi-current-import-another]").Click();
         cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "again.zip"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate-use]"));
         cut.Find("[data-testid=pi-duplicate-use]").Click();
@@ -299,14 +313,17 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
     }
 
     [Fact]
-    public void WithoutATargetEnvironment_BindingsAreExplained_NotShownAsUnbound()
+    public void WithoutATargetEnvironment_BindingsAreNotRepeatedOnEveryCard_NorShownAsUnbound()
     {
         _profile = null;
         ImportHistory();
         _setup = _setup! with { BindingsRead = false, EnvironmentId = "" };
         var cut = RenderPage();
         _journeys.Verify(j => j.SourceSetupAsync(null, It.IsAny<CancellationToken>()), Times.AtLeastOnce());
-        cut.Find("[data-testid=pi-current-bindings]").TextContent.Should().Be("Select a target environment to see IQR bindings");
+        cut.FindAll("[data-testid=pi-current-bindings], [data-testid=pi-previous-bindings], [data-testid=pi-previous-binding-count]")
+            .Should().BeEmpty("bindings belong to a target environment; without one they are neither unbound nor repeated per source");
+        cut.Markup.Should().NotContain("Select a target environment to see IQR bindings");
+        cut.FindAll("[data-testid=pi-attention-item][data-key=test-environment]").Should().ContainSingle("the environment is said once, under Needs attention");
     }
 
     [Fact]
@@ -443,6 +460,69 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         _journeys.Verify(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2), "source setup refreshes when the current project changes");
     }
 
+    /// <summary>The real Terraform-iac-meldingsutveksler shape: imported, code analysis "Failed" (no projects), infrastructure evidence analyzed.</summary>
+    [Fact]
+    public void CurrentProjectCard_KeepsImportAnalysisRoleAndEnvironmentSeparate_ForAFailedCodeAnalysisWithInfrastructureEvidence()
+    {
+        _profile = null;
+        var infra = Import("Terraform-iac-meldingsutveksler.zip", MuSha, MuSnapshot, documents: false, DateTimeOffset.UtcNow);
+        _setup = Setup(false,
+        [
+            new(Role("app", "Demo application"), TestPackSourceState.Missing) { NearMisses = [new(MuSnapshot, "Terraform-iac-meldingsutveksler.zip", "It contains none of the expected components or projects: Demo.")] },
+            new(Role("infra", "Infrastructure as Code", TestPackSourceRequirement.Optional) with { RequiresInfrastructureAsCode = true }, TestPackSourceState.Available)
+                { Candidates = [Candidate(MuSnapshot, "Terraform-iac-meldingsutveksler.zip", MuSha) with { MatchedOn = ["Infrastructure as Code: Terraform"] }] },
+        ],
+        new SourceSetupSnapshot(MuSnapshot, "Terraform-iac-meldingsutveksler.zip", MuSha, DateTimeOffset.UtcNow, "Failed")
+        {
+            ImportId = infra.ImportId, InfrastructureFormats = ["Terraform"], ConfigurationEnvironments = ["QA", "Production"],
+            Areas = [new("Application code", "NotDetected"), new("Architecture", "Unsupported"), new("Infrastructure as Code", "Complete"),
+                new("Configuration", "Complete"), new("CI/CD", "Partial"), new("Contracts", "Partial")],
+        });
+
+        var cut = RenderPage();
+        var card = cut.Find("[data-testid=pi-current-card]");
+
+        card.QuerySelector("[data-testid=pi-current-success]")!.TextContent.Should().Contain("Project imported successfully", "a failed code analysis is never a failed import");
+        card.QuerySelector("[data-testid=pi-current-source-status]")!.TextContent.Should().Be("Partial · no application code");
+        card.QuerySelector("[data-testid=pi-current-source-areas]")!.TextContent.Should().Contain("Infrastructure as Code, Configuration complete").And.Contain("no supported application code");
+        card.QuerySelector("[data-testid=pi-current-analysis-details]")!.GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}", "details reuse Source Analysis");
+        card.QuerySelector("[data-testid=pi-current-role]")!.GetAttribute("data-identified").Should().Be("true");
+        card.QuerySelector("[data-testid=pi-current-role-status]")!.TextContent.Should().Be("Infrastructure as Code");
+        card.QuerySelector("[data-testid=pi-current-environment]")!.TextContent.Should().Contain("Not selected");
+        card.TextContent.Should().NotContain(MuSnapshot.ToString()[..8], "no snapshot id or fingerprint in the summary").And.NotContain(MuSha[..12]);
+        cut.Find("[data-testid=pi-contents-infrastructure]").TextContent.Should().Be("Terraform detected");
+        cut.Find("[data-testid=pi-contents-contracts]").TextContent.Should().Be("Detected · partially analyzed");
+
+        var groups = cut.FindAll("[data-testid=pi-attention-group]");
+        groups.Select(g => g.GetAttribute("data-group")).Should().Equal("TestingSetup", "Environment");
+        groups[0].TextContent.Should().Contain("Demo application source missing").And.Contain("Terraform-iac-meldingsutveksler.zip was checked but does not match");
+        cut.Find("[data-testid=pi-attention-count]").TextContent.Should().Be("· 1 thing needs attention", "the environment is a note, not a problem");
+        cut.FindAll("[data-testid=pi-current-open-integrations]").Should().ContainSingle("a testing setup exists");
+    }
+
+    [Fact]
+    public void ASharedLibrary_IsNotIdentified_WithTheRecognizersReason_AndWithoutATestingSetupNoRoleIsShown()
+    {
+        var common = Import("M2LB.Common.zip", M2lbSha, M2lbSnapshot, documents: true, DateTimeOffset.UtcNow);
+        _setup = Setup(true,
+        [
+            new(Role("platform", "Platform application"), TestPackSourceState.Missing)
+                { NearMisses = [new(M2lbSnapshot, "M2LB.Common.zip", "It contains none of the expected components or projects: Platform.Api.")] },
+        ], new SourceSetupSnapshot(M2lbSnapshot, "M2LB.Common.zip", M2lbSha, DateTimeOffset.UtcNow, "Partial") { ImportId = common.ImportId });
+
+        var cut = RenderPage();
+
+        cut.Find("[data-testid=pi-current-role]").GetAttribute("data-identified").Should().Be("false");
+        cut.Find("[data-testid=pi-current-role-status]").TextContent.Should().Be("Not identified");
+        cut.Find("[data-testid=pi-current-role-detail]").TextContent.Should().Contain("Checked as Platform application: It contains none of the expected components");
+        cut.Find("[data-testid=pi-attention-item][data-key='setup-demo.pack-platform']").TextContent.Should().Contain("Platform application source missing");
+
+        _setup = new SourceSetupView { Snapshots = _setup.Snapshots };
+        var plain = RenderPage();
+        plain.FindAll("[data-testid=pi-current-role]").Should().BeEmpty("a source role is only meaningful against a testing setup");
+        plain.FindAll("[data-testid=pi-current-open-integrations], [data-testid=pi-current-open-setup]").Should().BeEmpty("no testing setup: no setup or integration action");
+    }
+
     [Fact]
     public void CurrentProjectCard_ShowsPrimaryFacts_AndKeepsTechnicalDetailsCollapsed()
     {
@@ -455,7 +535,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         cut.Find("[data-testid=pi-current-technical] [data-testid=pi-current-logical]").TextContent.Should().Be("Platform");
         current.QuerySelector("[data-testid=pi-current-fingerprint]").Should().BeNull("the summary never leads with a fingerprint");
         current.QuerySelector("[data-testid=pi-current-summary]")!.TextContent.Should().NotContainAny("Snapshot", "snapshot", "fingerprint", ".zip");
-        cut.FindAll("[data-testid=pi-previous-match]").Select(b => b.TextContent).Should().Contain("Matches Message hub source requirement");
+        cut.FindAll("[data-testid=pi-previous-match]").Select(b => b.TextContent).Should().Contain("Matches the Message hub source requirement");
     }
 
     // ── Test Pack references: provided by the pack, never an imported source ────────────────────────────────────────────────────────

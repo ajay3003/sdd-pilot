@@ -353,7 +353,7 @@ public sealed class ProjectInputWorkflowTests
             "no generated docs in the session and no Azure DevOps: these optional reviews never appear by category");
         r.ApplicableReviews.Should().Contain(x => x.ReviewId == "quality-review" && x.Lane == "Document Review");
         r.ApplicableReviews.Should().Contain(x => x.ReviewId == "dependency-review" && x.Lane == "Source Review", "source prerequisites unchanged");
-        NavigationCatalog.Sections.Single(s => s.Id == "document-review").Items
+        NavigationCatalog.Sections.SelectMany(s => s.Items)
             .Where(i => i.Route is "task-alignment" or "documentation-drift" or NavigationCatalog.GeneratedDocumentationHealthRoute)
             .Should().HaveCount(3).And.OnlyContain(i => i.ReviewId == null, "no applicability-driven workflow step is derived from these rows");
     }

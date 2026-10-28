@@ -104,9 +104,7 @@ public static class NavigationCatalog
             // Stable route and visibility key (ImplementationReview); also reachable at /task-alignment-review.
             new("task-alignment", "Task Alignment Review", "nav-icon-task-alignment", f => f.ImplementationReview,
                 Hint: "tasks checked against the Specification and Success Criteria; no source code is read"),
-            // Generated documentation is implementation-derived but still documentation; raw source authority stays in Source Analysis.
-            new(GeneratedDocumentationHealthRoute, "Generated Documentation Health", "nav-icon-source-analysis", f => f.GeneratedDocumentationHealth,
-                Hint: "generated documentation in the current project: availability, provenance, freshness and consistency", WrapLabel: true),
+            // Document ↔ document only (authored and generated revisions); it never reads source, so it stays with the documents.
             new("documentation-drift", "Documentation Drift", "nav-icon-spec-drift", f => f.SpecDrift,
                 Hint: "compares documents and revisions: authored ↔ authored, generated ↔ generated, authored ↔ generated"),
         ]),
@@ -127,9 +125,13 @@ public static class NavigationCatalog
             new("source-analysis", "Source Analysis", "nav-icon-source-analysis", f => f.SourceAnalysis,
                 Hint: "inspect the current source snapshot (from Import Project or a source-only upload)"),
             new("schema-studio", "Schema Studio", "nav-icon-source-analysis", Always,
-                Hint: "import, inspect, compare and validate generic XSD contracts"),
+                Hint: "inspect, compare and validate XSD schemas from uploaded files or the project source snapshot"),
             new(GeneratedDocumentationExplorerRoute, "Generated Documentation Explorer", "nav-icon-source-analysis", f => f.GeneratedDocumentationExplorer,
                 Hint: "browse generated (implementation-derived) documentation by module, structured by document type", WrapLabel: true),
+            // Runs over the import's Source Analysis snapshot (generated-doc evidence detected there) and checks it against source and
+            // authored intent: discovery (Explorer) first, then its health.
+            new(GeneratedDocumentationHealthRoute, "Generated Documentation Health", "nav-icon-source-analysis", f => f.GeneratedDocumentationHealth,
+                Hint: "generated documentation in the current project: availability, provenance, freshness and consistency", WrapLabel: true),
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always,
                 Hint: "what the source contains and what BirkNext can assess"),
             new("dependency-review", "Dependency Review", "nav-icon-constitution-compliance", Always, ReviewId: "dependency-review"),
@@ -143,18 +145,20 @@ public static class NavigationCatalog
         [
             new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis),
         ]),
-        // Runtime/deployed-system quality reviews remain target-bound.
+        // Planning → preparation → target-bound runs. Source-only assessments (test inventory, code risk) say where to focus; Test Data
+        // is the prerequisite of the runs that need test identities/assets (Performance, Critical E2E; readiness shown in API/Integration);
+        // Topology precedes the IQR it reads bindings from; Critical E2E is the end-to-end release check.
         new("quality-testing", "Quality & Testing",
         [
             new("test-coverage-review", "Test Coverage & Overlap Review", "nav-icon-task-alignment", Always),
+            new("code-risk-review", "Code Risk Review", "nav-icon-constitution-compliance", Always, ReviewId: "code-risk-review"),
+            new("test-data", "Test Data", "nav-icon-task-alignment", Always, Hint: "approved typed test data: values, payloads, files, entity references, data sets, expected results"),
             new("frontend-quality-review", "Frontend Quality Review", "nav-icon-constitution-compliance", f => f.FrontendQualityReview, ReviewId: "frontend-quality-review"),
             new("api-quality-review", "API Quality Review", "nav-icon-constitution-compliance", f => f.ApiQualityReview, ReviewId: "api-quality-review"),
             new("integration-topology", "Integration Topology", "nav-icon-source-analysis", Always, Hint: "components, interfaces (REST, GraphQL, messaging, file/storage) and connections with their sources"),
             new("integration-quality-review", "Integration Quality Review", "nav-icon-constitution-compliance", f => f.IntegrationQualityReview, ReviewId: "integration-quality-review"),
             new("performance-test-review", "Performance Test Review", "nav-icon-constitution-compliance", Always, ReviewId: "performance-test-review"),
             new("critical-e2e-regression", "Critical E2E Regression", "nav-icon-constitution-compliance", f => f.CriticalE2ERegression, ReviewId: "critical-e2e-regression"),
-            new("code-risk-review", "Code Risk Review", "nav-icon-constitution-compliance", Always, ReviewId: "code-risk-review"),
-            new("test-data", "Test Data", "nav-icon-task-alignment", Always, Hint: "approved typed test data: values, payloads, files, entity references, data sets, expected results"),
         ]),
         // Project-specific domain extensions: shown with their applicability (N/A unless the extension is enabled).
         new("extensions", "Extensions",

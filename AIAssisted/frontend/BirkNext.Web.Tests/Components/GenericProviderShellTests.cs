@@ -157,7 +157,9 @@ public sealed class GenericProviderShellTests : BunitContext
         cut.FindAll("[data-testid=gp-card]").Select(card => card.GetAttribute("data-key")).Should().Equal("configuration", "authentication", "runtime", "execution");
         cut.FindAll("[data-testid=gp-fix-item]").Select(item => item.TextContent.Trim()).Should().Equal("Namespace · Missing", "Queue / topic · Conflict");
         cut.Find("[data-testid=gp-fix-action]").TextContent.Should().Be("Edit configuration");
-        cut.Find("[data-testid=gp-proposal][data-key=entity]").TextContent.Should().Contain("current: topic-a");
+        // A conflicting detected value is shown (configured vs detected) but never selectable: Apply selected can never overwrite it.
+        cut.FindAll("[data-testid=gp-proposal][data-key=entity]").Should().BeEmpty();
+        cut.Find("[data-testid=gp-conflict][data-key=entity] [data-testid=gp-conflict-configured]").TextContent.Should().Be("topic-a");
         cut.FindAll("[data-testid=gp-section-contract]").Should().BeEmpty("Service Bus has no contract section");
 
         cut.Find("[data-testid=gp-fix-action]").Click();

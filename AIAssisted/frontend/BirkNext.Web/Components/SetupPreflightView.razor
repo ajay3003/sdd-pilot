@@ -13,14 +13,26 @@
         <div><dt>Detected provider</dt><dd data-testid="spv-provider">@(Result.DetectedProviders.Count == 0 ? "—" : string.Join(", ", Result.DetectedProviders))</dd></div>
         <div><dt>Configuration changes</dt><dd>@Result.Changes.Count(c => c.Classification != "Same")</dd></div>
         <div><dt>Already configured</dt><dd>@Result.Changes.Count(c => c.Classification == "Same")</dd></div>
-        <div><dt>Required dependencies</dt><dd data-testid="spv-required">@ExternalIntegrationPresentation.RequiredLine(Result)</dd></div>
+        <div><dt>Blocking dependencies</dt><dd data-testid="spv-required">@ExternalIntegrationPresentation.RequiredLine(Result)</dd></div>
+        <div><dt>Test readiness</dt><dd data-testid="spv-test-required">@ExternalIntegrationPresentation.TestLine(Result)</dd></div>
         <div><dt>Optional missing</dt><dd>@Result.OptionalMissing</dd></div>
         <div><dt>Conflicts</dt><dd data-testid="spv-conflicts">@Result.Conflicts</dd></div>
         <div><dt>Imported secrets · raw identities · runtime evidence</dt><dd data-testid="spv-never">@Result.SecretsImported · @Result.IdentitiesImported · @Result.RuntimeEvidenceImported</dd></div>
     </dl>
-    <p class="spv-status spv-@tone" role="status" data-testid="spv-status">@status</p>
-    @foreach (var reason in Result.BlockReasons) { <p class="spv-block" data-testid="spv-block">@reason</p> }
+    <h5 class="spv-h5" id="spv-apply-heading">Setup apply readiness</h5>
+    @* The status says Ready/Blocked in words (never colour alone); focus lands here after a rerun that left something unresolved. *@
+    <p class="spv-status spv-@tone" role="status" aria-live="polite" tabindex="-1" id="spv-status" data-testid="spv-status">@status</p>
+    @foreach (var reason in Result.BlockReasons.Where(r => !r.Contains("blocking dependenc", StringComparison.Ordinal))) { <p class="spv-block" data-testid="spv-block">@reason</p> }
+    @if (ExternalIntegrationPresentation.AlreadyMatches(Result) is { } matches) { <p class="spv-muted" data-testid="spv-matches">@matches</p> }
     @if (ExternalIntegrationPresentation.OptionalLine(Result) is { } optional) { <p class="spv-muted" data-testid="spv-optional">@optional</p> }
+    @Dependencies(Result.Dependencies.Where(d => d.Phase == SetupDependencyPhase.Apply), "apply")
+
+    @if (ExternalIntegrationPresentation.TestStatus(Result) is { } test)
+    {
+        <h5 class="spv-h5" id="spv-test-heading">Test readiness</h5>
+        <p class="spv-test spv-@test.Tone" role="status" data-testid="spv-test-status">@test.Status</p>
+        @Dependencies(Result.Dependencies.Where(d => d.Phase == SetupDependencyPhase.Test), "test")
+    }
 
     @if (Result.Issues.Count > 0)
     {
@@ -29,20 +41,6 @@
         </ul>
     }
 
-    @if (Result.Dependencies.Count > 0)
-    {
-        <h5 class="spv-h5">Dependencies</h5>
-        <ul class="spv-list" data-testid="spv-dependencies">
-            @foreach (var d in Result.Dependencies.OrderBy(d => d.State == SetupDependencyState.Resolved).ThenBy(d => !d.Dependency.Required))
-            {
-                <li data-testid="spv-dependency" data-state="@d.State" data-kind="@d.Dependency.Kind">
-                    <span class="spv-pill spv-@ExternalIntegrationPresentation.Tone(d.State)">@ExternalIntegrationPresentation.Label(d.State)</span>
-                    <strong>@ExternalIntegrationPresentation.DependencyLabel(d.Dependency)</strong>@(d.Dependency.Required ? "" : " (optional)") — @d.Detail
-                    @if (d.State != SetupDependencyState.Resolved) { <a href="@d.OwnerHref" data-testid="spv-owner">Open @d.Owner</a> }
-                </li>
-            }
-        </ul>
-    }
 
     @if (Result.Changes.Count > 0)
     {
@@ -78,6 +76,32 @@
     /// <summary>Conflict decisions (change id → apply package value); every conflict needs one before Apply.</summary>
     [Parameter] public Dictionary<string, bool> Decisions { get; set; } = [];
     [Parameter] public EventCallback DecisionsChanged { get; set; }
+
+    /// <summary>Dependencies of one phase grouped by the owner that resolves them, with one action per unresolved group (never an editor here).</summary>
+    private RenderFragment Dependencies(IEnumerable<SetupDependencyResolution> items, string phase) => __builder =>
+    {
+        var groups = ExternalIntegrationPresentation.Groups(items);
+        if (groups.Count == 0) return;
+        <div class="spv-groups" data-testid="@($"spv-{phase}-dependencies")">
+            @foreach (var group in groups)
+            {
+                <div class="spv-group" data-testid="spv-group" data-owner="@group.Owner" data-resolved="@(group.Resolved ? "true" : "false")">
+                    <h6 class="spv-group-title">@(group.Resolved ? $"{group.Owner} · resolved" : group.Owner)</h6>
+                    <ul class="spv-list">
+                        @foreach (var d in group.Items)
+                        {
+                            <li data-testid="spv-dependency" data-state="@d.State" data-kind="@d.Dependency.Kind" data-role="@d.Dependency.Role" data-phase="@d.Phase" data-cause="@d.Cause">
+                                <span class="spv-pill spv-@ExternalIntegrationPresentation.Tone(d.State)">@ExternalIntegrationPresentation.Label(d.State)</span>
+                                <strong>@ExternalIntegrationPresentation.DependencyLabel(d.Dependency)</strong>@(d.Dependency.Required ? "" : " (optional)") — @d.Detail
+                                @if (d.Hint is { } hint && d.State != SetupDependencyState.Resolved) { <span class="spv-muted" data-testid="spv-hint"> @hint</span> }
+                            </li>
+                        }
+                    </ul>
+                    @if (!group.Resolved) { <a href="@group.Href" class="spv-owner" data-testid="spv-owner">@group.Action</a> }
+                </div>
+            }
+        </div>
+    };
 
     public static bool AllDecided(SetupPreflightResult result, IReadOnlyDictionary<string, bool> decisions) =>
         result.Changes.Where(change => change.Classification == "Conflict").All(change => decisions.ContainsKey(change.Id));

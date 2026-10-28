@@ -181,6 +181,9 @@ public interface IExternalProviderHandler
     Task<IReadOnlyList<SetupDependency>> SetupRequirementsAsync(ExternalIntegration integration, IReadOnlyDictionary<string, string> settings, CancellationToken ct);
     /// <summary>Resolves a provider-specific dependency (e.g. an Altinn form contract), or null when the generic resolver owns the kind.</summary>
     Task<SetupDependencyResolution?> ResolveAsync(string environmentId, SetupDependency dependency, CancellationToken ct) => Task.FromResult<SetupDependencyResolution?>(null);
+    /// <summary>The phase of one of this provider's dependency kinds when it differs from the declared one (e.g. an older package's manifest),
+    /// or null to keep it.</summary>
+    SetupDependencyPhase? PhaseOf(SetupDependency dependency) => null;
     /// <summary>Whether merged settings satisfy a capability this provider offers.</summary>
     bool Satisfies(string capability, IReadOnlyDictionary<string, string> settings) =>
         Descriptor.Capabilities.Contains(capability, StringComparer.Ordinal) && Descriptor.Fields.Where(field => field.Required && !field.Secret).All(field => settings.ContainsKey(field.Key));
@@ -386,20 +389,42 @@ public sealed class AltinnProviderHandler(AltinnEnvironmentService altinn, Altin
     public Task<IReadOnlyList<SetupDependency>> SetupRequirementsAsync(ExternalIntegration integration, IReadOnlyDictionary<string, string> settings, CancellationToken ct)
     {
         var list = new List<SetupDependency>();
+        // Apply: the integration reference must point to a configured catalog integration. Test: contract evidence, an XML fixture for the
+        // contract and the reporter/child only matter to validate and run the journey — applying stores the values either way.
         if (settings.TryGetValue("integrationId", out var integrationId)) list.Add(new(SetupDependencyKind.Integration, integrationId, true, Provider: "Altinn"));
-        if (settings.TryGetValue("formDataType", out var form)) list.Add(new(SetupDependencyKind.Contract, form, true, Provider: "Altinn"));
+        if (settings.TryGetValue("formDataType", out var form))
+        {
+            list.Add(new(SetupDependencyKind.Contract, form, true, Provider: "Altinn") { Phase = SetupDependencyPhase.Test });
+            list.Add(new(SetupDependencyKind.TestData, form, true, XmlFixtureRole, "Altinn") { Phase = SetupDependencyPhase.Test });
+        }
         // Reporter and child are roles resolved against Test Data at the destination; the alias travels when one is known, never the identifier.
-        var reporter = policy.Options.UnattendedIdPortenTest.Reporters.FirstOrDefault(item => AltinnTestingPolicy.ReporterConfigurationProblem(item) is null)?.Alias;
-        var child = policy.Options.SyntheticChildren.FirstOrDefault()?.Alias;
-        list.Add(new(SetupDependencyKind.TestData, reporter ?? "Reporter", true, "Reporter"));
-        list.Add(new(SetupDependencyKind.TestData, child ?? "Child", true, "Child"));
+        // Only a determined alias travels (the single default, or the only candidate); otherwise the role alone, so the destination resolves it or
+        // reports the ambiguity — never the first row.
+        static string? Determined<T>(IReadOnlyList<T> items, Func<T, bool> isDefault, Func<T, string> alias) =>
+            items.Where(isDefault).ToList() is { Count: 1 } defaults ? alias(defaults[0]) : items.Count == 1 ? alias(items[0]) : null;
+        var reporter = Determined(policy.Options.UnattendedIdPortenTest.Reporters.Where(item => AltinnTestingPolicy.ReporterConfigurationProblem(item) is null).ToList(), r => r.Default, r => r.Alias);
+        var child = Determined(policy.Options.SyntheticChildren, c => c.Default, c => c.Alias);
+        list.Add(new(SetupDependencyKind.TestData, reporter ?? "Reporter", true, "Reporter") { Phase = SetupDependencyPhase.Test });
+        list.Add(new(SetupDependencyKind.TestData, child ?? "Child", true, "Child") { Phase = SetupDependencyPhase.Test });
         return Task.FromResult<IReadOnlyList<SetupDependency>>(list);
     }
+
+    /// <summary>Test Data role of the XML fixture a contract needs (its reference is the contract's form data type).</summary>
+    public const string XmlFixtureRole = "XmlFixture";
+
+    /// <summary>An Altinn form contract is evidence for validating and running the journey, never needed to store the configuration.</summary>
+    public SetupDependencyPhase? PhaseOf(SetupDependency dependency) =>
+        dependency.Kind == SetupDependencyKind.Contract && dependency.Provider == "Altinn" ? SetupDependencyPhase.Test : null;
 
     public bool Satisfies(string capability, IReadOnlyDictionary<string, string> settings) =>
         capability is "AltinnAppSubmission" or "AltinnReportSubmission" && settings.ContainsKey("appId") && (capability == "AltinnAppSubmission" || settings.ContainsKey("formDataType"));
 
-    /// <summary>An Altinn form contract resolves against the stored contract evidence (Source Analysis / public metadata); never the newest guess.</summary>
+    /// <summary>
+    /// An Altinn form contract resolves against the stored contract evidence (Source Analysis / public metadata); never the newest guess. When it is
+    /// unresolved, the earliest failed prerequisite decides the owner and the one next step: (1) a configured integration for the report intake
+    /// (Integration Catalog), (2) contract source evidence for it — the bound app source or the public metadata (Integration Quality Review),
+    /// (3) the contract itself, (4) a matching contract.
+    /// </summary>
     public async Task<SetupDependencyResolution?> ResolveAsync(string environmentId, SetupDependency dependency, CancellationToken ct)
     {
         if (dependency.Kind != SetupDependencyKind.Contract || dependency.Provider != "Altinn") return null;
@@ -407,14 +432,34 @@ public sealed class AltinnProviderHandler(AltinnEnvironmentService altinn, Altin
         var known = new[] { record?.SourceAnalysis, record?.PublicMetadata, record?.Confirmed?.Snapshot }.OfType<AltinnContractSnapshot>().ToList();
         var ids = known.Select(snapshot => snapshot.FormDataTypeId).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
         var candidates = known.SelectMany(snapshot => snapshot.FormDataTypeCandidates).Distinct(StringComparer.Ordinal).ToList();
-        const string owner = "Integration Quality Review (Altinn contract)", href = "/integration-quality-review?view=evidence";
+        var integrations = await altinn.ReportIntakeIntegrationsAsync(environmentId, ct);
+        var iqr = $"/integration-quality-review?view=evidence{(integrations.Count == 1 ? $"&integration={Uri.EscapeDataString(integrations[0].Id)}" : "")}";
+        const string iqrOwner = "Integration Quality Review (Altinn contract)";
         if (ids.Contains(dependency.Reference, StringComparer.Ordinal))
-            return new(dependency, SetupDependencyState.Resolved, "Resolved from stored contract evidence (Source Analysis / public metadata). Not runtime verified.", owner, href);
-        if (candidates.Count(item => item == dependency.Reference) > 0 && ids.Count == 0)
-            return new(dependency, SetupDependencyState.Ambiguous, "The app declares several form data types; none is selected automatically.", owner, href);
-        return ids.Count > 0
-            ? new(dependency, SetupDependencyState.Incompatible, $"The stored contract declares {string.Join(", ", ids)}, not {dependency.Reference}.", owner, href)
-            : new(dependency, dependency.Required ? SetupDependencyState.Missing : SetupDependencyState.OptionalMissing, "No Altinn contract evidence in this environment (read public metadata or bind the app source).", owner, href);
+            return new(dependency, SetupDependencyState.Resolved, "Resolved from stored contract evidence (Source Analysis / public metadata). Not runtime verified.", iqrOwner, iqr);
+        var unresolved = dependency.Required ? SetupDependencyState.Missing : SetupDependencyState.OptionalMissing;
+        // (1) No integration: the contract cannot be reviewed yet — the integration is the first actionable prerequisite.
+        if (integrations.Count == 0)
+            return new(dependency, unresolved,
+                "Contract unresolved because no Altinn integration is configured. First resolve the integration in Integration Catalog; contract review becomes available after the integration is configured.",
+                "Integration Catalog", $"/admin/system-settings?section=target-environments&tab=integrations&profile={Uri.EscapeDataString(environmentId)}")
+            { Cause = SetupDependencyCause.IntegrationNotConfigured, ActionLabel = "Open Integration Catalog" };
+        // (2) Integration exists, but there is no contract source to assess (no bound app source, no public metadata read).
+        if (known.Count == 0)
+            return new(dependency, unresolved,
+                "Contract cannot be assessed because source evidence is not bound: bind the app source or read the public metadata for the integration in Integration Quality Review.",
+                "Integration Quality Review (source evidence)", iqr)
+            { Cause = SetupDependencyCause.SourceEvidenceMissing, ActionLabel = "Review source evidence in Integration Quality Review" };
+        if (candidates.Contains(dependency.Reference, StringComparer.Ordinal) && ids.Count == 0)
+            return new(dependency, SetupDependencyState.Ambiguous, "The app declares several form data types; none is selected automatically.", iqrOwner, iqr)
+            { Cause = SetupDependencyCause.ContractConflict, ActionLabel = "Review contract evidence in Integration Quality Review" };
+        if (ids.Count > 0)
+            return new(dependency, SetupDependencyState.Incompatible,
+                $"Contract conflict. Package: {dependency.Reference}. Evidence: {string.Join(", ", ids)}.", iqrOwner, iqr)
+            { Cause = SetupDependencyCause.ContractIncompatible, ActionLabel = "Review contract evidence in Integration Quality Review" };
+        // (3) Source evidence exists, but it does not name the contract.
+        return new(dependency, unresolved, "Contract evidence missing: the available contract evidence does not name this form data type.", iqrOwner, iqr)
+        { Cause = SetupDependencyCause.ContractEvidenceMissing, ActionLabel = "Review contract evidence in Integration Quality Review" };
     }
 
     public async Task<IReadOnlyList<ExternalIntegrationProposal>> ProposeAsync(string environmentId, IReadOnlyList<ExternalIntegration> existing, CancellationToken ct)
@@ -444,11 +489,12 @@ public static class TestPackSetupRequirements
     {
         "skolenaervaer" =>
         [
-            new(SetupDependencyKind.ProviderCapability, "AltinnReportSubmission", true, Provider: "Altinn"),
-            new(SetupDependencyKind.TestData, "Reporter", true, "Reporter"),
-            new(SetupDependencyKind.TestData, "Child", true, "Child"),
-            new(SetupDependencyKind.TestData, "duplicate-report-payload", false, "DuplicatePayload"),
-            new(SetupDependencyKind.TestData, "invalid-report-payload", false, "InvalidPayload"),
+            // A test pack's requirements describe test readiness: they never block applying a configuration.
+            new(SetupDependencyKind.ProviderCapability, "AltinnReportSubmission", true, Provider: "Altinn") { Phase = SetupDependencyPhase.Test },
+            new(SetupDependencyKind.TestData, "Reporter", true, "Reporter") { Phase = SetupDependencyPhase.Test },
+            new(SetupDependencyKind.TestData, "Child", true, "Child") { Phase = SetupDependencyPhase.Test },
+            new(SetupDependencyKind.TestData, "duplicate-report-payload", false, "DuplicatePayload") { Phase = SetupDependencyPhase.Test },
+            new(SetupDependencyKind.TestData, "invalid-report-payload", false, "InvalidPayload") { Phase = SetupDependencyPhase.Test },
         ],
         _ => [],
     };

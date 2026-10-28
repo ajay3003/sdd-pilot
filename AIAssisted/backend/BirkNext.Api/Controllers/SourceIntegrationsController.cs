@@ -13,11 +13,11 @@ namespace BirkNext.Api.Controllers;
 public sealed class SourceIntegrationsController(SourceIntegrationService service) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<SourceIntegrationsReport>> Get([FromQuery] string environmentId, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await service.ReportAsync(environmentId, ct));
+    public async Task<ActionResult<SourceIntegrationsReport>> Get([FromQuery] string environmentId, [FromQuery] Guid? primarySnapshotId, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await service.ReportAsync(environmentId, primarySnapshotId, ct));
 
     /// <summary>"Discover from source": re-runs discovery on the stored source snapshot (no archive re-processing, no runtime call).</summary>
     [HttpPost("discover")]
-    public async Task<ActionResult<SourceIntegrationsReport>> Discover([FromQuery] string environmentId, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await service.ReportAsync(environmentId, ct));
+    public async Task<ActionResult<SourceIntegrationsReport>> Discover([FromQuery] string environmentId, [FromQuery] Guid? primarySnapshotId, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await service.ReportAsync(environmentId, primarySnapshotId, ct));
 }

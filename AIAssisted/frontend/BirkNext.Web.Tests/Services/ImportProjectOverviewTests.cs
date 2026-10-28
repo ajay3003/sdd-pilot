@@ -51,14 +51,112 @@ public class ImportProjectOverviewTests
         summary.Should().NotContainAny("Snapshot", "fingerprint", ".zip");
     }
 
+    // ── Source Analysis status (separate from the import) ─────────────────────
+
+    private static SourceSetupSnapshot Snap(string status, params (string Area, string Status)[] areas) =>
+        new(Guid.NewGuid(), "x.zip", "f", DateTimeOffset.UtcNow, status) { Areas = [.. areas.Select(a => new SourceSetupArea(a.Area, a.Status))] };
+
+    /// <summary>The real Terraform-iac-meldingsutveksler shape: code analysis Failed (no projects), the evidence domains analyzed.</summary>
+    private static SourceSetupSnapshot TerraformOnly() => Snap("Failed", ("Application code", "NotDetected"), ("Architecture", "Unsupported"),
+        ("Infrastructure as Code", "Complete"), ("Configuration", "Complete"), ("CI/CD", "Partial"), ("Contracts", "Partial"));
+
     [Fact]
-    public void SourceAnalysisPartial_IsExplainedInPlainLanguage()
+    public void ImportSucceeds_EvenWithoutASourceAnalysis_AndTheTwoStatusesStaySeparate()
     {
-        var (status, explanation) = ImportProjectOverview.SourceAnalysis(Source(true, Guid.NewGuid()), "Partial");
-        status.Should().Be("Source analysis available with limitations");
-        explanation.Should().Contain("could not be assessed");
-        ImportProjectOverview.SourceAnalysis(Source(true, Guid.NewGuid()), "Ready").Should().Be(("Source analysis available", (string?)null));
-        ImportProjectOverview.SourceAnalysis(Source(false), null).Status.Should().Be("No source code in this project");
+        var notCreated = ImportProjectOverview.SourceAnalysis(sourceDetected: true, snapshotId: null, snapshot: null, "The source snapshot could not be saved.", canRetry: true);
+        notCreated.Should().Match<ImportSourceAnalysis>(a => a.State == ImportAnalysisState.NotCreated && a.Status == "Not created" && a.Tone == ProjectImportTone.Partial);
+        notCreated.Explanation.Should().Contain("The import succeeded");
+        ImportProjectOverview.SourceAnalysis(false, null, null).Should().Match<ImportSourceAnalysis>(a => a.State == ImportAnalysisState.NoSource && a.Status == "No source code");
+    }
+
+    [Fact]
+    public void FailedCodeAnalysis_WithSurvivingInfrastructureEvidence_IsPartialWithNoApplicationCode_NotFailed()
+    {
+        var analysis = ImportProjectOverview.SourceAnalysis(true, Guid.NewGuid(), TerraformOnly());
+
+        analysis.State.Should().Be(ImportAnalysisState.NoApplicationCode);
+        analysis.Status.Should().Be("Partial · no application code", "the backend Failed is the code analyzer's outcome only");
+        analysis.Tone.Should().Be(ProjectImportTone.Partial);
+        analysis.Explanation.Should().Contain("No supported production project");
+        analysis.Areas.Should().Be("Infrastructure as Code, Configuration complete · CI/CD, Contracts partial · Architecture not supported · no supported application code");
+        analysis.HasDetails.Should().BeTrue();
+    }
+
+    [Fact]
+    public void FailedAnalysis_WithNoUsableArea_StaysFailed()
+    {
+        var analysis = ImportProjectOverview.SourceAnalysis(true, Guid.NewGuid(), Snap("Failed", ("Application code", "NotDetected"), ("Architecture", "Unsupported"),
+            ("Infrastructure as Code", "NotDetected"), ("Configuration", "NotDetected"), ("CI/CD", "Failed"), ("Contracts", "NotDetected")));
+
+        analysis.Should().Match<ImportSourceAnalysis>(a => a.State == ImportAnalysisState.Failed && a.Status == "Failed" && a.Tone == ProjectImportTone.Rejected,
+            "Partial is never used to hide a source nothing could be read from");
+        analysis.Areas.Should().Contain("CI/CD failed");
+    }
+
+    [Fact]
+    public void ReadyAndPartial_KeepTheSnapshotsOwnStatus_WithAreaOutcomes()
+    {
+        ImportProjectOverview.SourceAnalysis(true, Guid.NewGuid(), Snap("Ready", ("Application code", "Complete"), ("Architecture", "Complete")))
+            .Should().Match<ImportSourceAnalysis>(a => a.State == ImportAnalysisState.Ready && a.Status == "Ready" && !a.HasDetails && a.Areas == "Application code complete · Architecture complete");
+        var partial = ImportProjectOverview.SourceAnalysis(true, Guid.NewGuid(), Snap("Partial", ("Application code", "Partial"), ("Architecture", "Complete"), ("Contracts", "NotDetected")));
+        partial.Should().Match<ImportSourceAnalysis>(a => a.State == ImportAnalysisState.Partial && a.Status == "Partial" && a.HasDetails);
+        partial.Areas.Should().Be("Application code partial · Architecture complete", "an area not detected in the source says nothing and is omitted");
+        // An older backend sends no areas: the snapshot's own wording, never a guess.
+        ImportProjectOverview.SourceAnalysis(true, Guid.NewGuid(), Snap("Failed")).Status.Should().Be("No production project found");
+    }
+
+    // ── Source role ───────────────────────────────────────────────────────────
+
+    private static TestPackSourceRole Role(string key, string label) => new(key, label, "") { ExpectedArtifact = $"{label} repository source archive" };
+
+    [Fact]
+    public void SourceRole_IsRecognizedFromContents_OrExplainedWithTheRecognizersOwnReason()
+    {
+        var mu = Guid.NewGuid(); var common = Guid.NewGuid(); var terraform = Guid.NewGuid();
+        var setup = new SourceSetupView
+        {
+            Packs = [new TestPackSourceSetup("skolenaervaer", "Skolenærvær",
+            [
+                new(Role("mu", "MU (Meldingsutveksleren)"), TestPackSourceState.AvailableNotBound)
+                    { Candidates = [new(mu, "Tiltak 2.zip", "a", DateTimeOffset.UtcNow) { MatchedOn = ["Project: Buf.Meldingsutveksler.Common"] }] },
+                new(Role("m2lb", "M2LB application"), TestPackSourceState.Missing)
+                {
+                    NearMisses = [new(common, "M2LB.Common.zip", "It contains none of the expected components or projects: Meldingsutvekslermottak, Skole."),
+                        new(terraform, "Terraform-iac-m2lb.zip", "It contains none of the expected components or projects: Meldingsutvekslermottak, Skole.")],
+                },
+                new(Role("infrastructure", "Infrastructure as Code") with { RequiresInfrastructureAsCode = true, Requirement = TestPackSourceRequirement.Optional }, TestPackSourceState.Available)
+                    { Candidates = [new(terraform, "Terraform-iac-m2lb.zip", "t", DateTimeOffset.UtcNow) { MatchedOn = ["Infrastructure as Code: Terraform"] }] },
+            ])],
+        };
+
+        ImportProjectOverview.SourceRole(setup, mu, true).Should().Match<ImportSourceRole>(r => r.Identified && r.Status == "MU (Meldingsutveksleren)"
+            && r.Detail!.Contains("Buf.Meldingsutveksler.Common"));
+        // The M2LB-named IaC repository is Infrastructure as Code only: its name never makes it the M2LB application source.
+        ImportProjectOverview.SourceRole(setup, terraform, true)!.Status.Should().Be("Infrastructure as Code");
+        // A shared library is genuinely not the application source: Not identified, with what was checked.
+        ImportProjectOverview.SourceRole(setup, common, true).Should().Match<ImportSourceRole>(r => !r.Identified && r.Status == "Not identified"
+            && r.Detail!.StartsWith("Checked as M2LB application: It contains none of the expected components"));
+        ImportProjectOverview.SourceRole(setup, Guid.NewGuid(), true)!.Detail.Should().Contain("matches no source requirement of Skolenærvær");
+        ImportProjectOverview.SourceRole(setup, null, false)!.Status.Should().Be("No source");
+        ImportProjectOverview.SourceRole(new SourceSetupView(), mu, true).Should().BeNull("without a testing setup a source role means nothing");
+    }
+
+    [Fact]
+    public void Attention_IsGroupedByOwner_AndNamesTheExactMissingRole()
+    {
+        var missing = new TestPackSourceStatus(Role("m2lb", "M2LB application"), TestPackSourceState.Missing)
+            { NearMisses = [new(Guid.NewGuid(), "M2LB.Common.zip", "It contains none of the expected components or projects.")] };
+        var setup = new SourceSetupView { Packs = [new TestPackSourceSetup("skolenaervaer", "Skolenærvær", [missing])] };
+
+        var items = ImportProjectOverview.Attention(null, setup, Source(true), environmentSelected: false);
+
+        var source = items.Single(i => i.Key == "setup-skolenaervaer-m2lb");
+        source.Text.Should().Be("M2LB application source missing", "never the bare \"M2LB: Not found\"");
+        source.Detail.Should().Contain("M2LB.Common.zip was checked but does not match").And.Contain("Expected: M2LB application repository source archive");
+        source.Group.Should().Be(ImportAttentionGroup.TestingSetup);
+        items.Single(i => i.Key == "source-analysis").Group.Should().Be(ImportAttentionGroup.SourceAnalysis);
+        items.Single(i => i.Key == "test-environment").Should().Match<ImportAttentionItem>(i => i.Group == ImportAttentionGroup.Environment && i.Informational);
+        ImportProjectOverview.Grouped(items).Select(g => g.Title).Should().Equal("Testing setup", "Source analysis", "Environment");
     }
 
     // ── Project contents ──────────────────────────────────────────────────────

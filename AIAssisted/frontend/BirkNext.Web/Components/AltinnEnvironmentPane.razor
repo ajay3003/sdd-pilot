@@ -330,10 +330,12 @@
     private Task ApplyAsync(IReadOnlyCollection<string> keys) => Run(async () =>
     {
         if (_view is null) return;
-        var chosen = AltinnEnvironmentPresentation.Proposals(_view).Where(field => keys.Contains(field.Key)).Select(field => (field.Key, field.Proposal!.Value!)).ToList();
+        // A conflicting detected value never overwrites the configured one through Apply.
+        var chosen = AltinnEnvironmentPresentation.Proposals(_view).Where(field => keys.Contains(field.Key) && field.State != AltinnSettingState.Conflict)
+            .Select(field => (field.Key, field.Proposal!.Value!)).ToList();
         if (chosen.Count == 0) return;
         var result = await Api.SaveAsync(EnvironmentId, AltinnEnvironmentPresentation.Apply(chosen));
-        Show(result, result.Value is null ? null : $"Applied {chosen.Count} value{(chosen.Count == 1 ? "" : "s")} to this Target Environment.");
+        Show(result, result.Value is null ? null : $"Applied {chosen.Count} setting{(chosen.Count == 1 ? "" : "s")} to this Target Environment.");
         if (result.Value is not null) _selected.ExceptWith(chosen.Select(item => item.Key));
     });
 

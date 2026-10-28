@@ -328,6 +328,69 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
             && update.ContentType == "application/xml" && update.IntegrationId == null && update.Environment == null);
     }
 
+    // ── Detected settings: preselected ≠ applied, Apply selected (N), conflicts never overwritten ──────────────────────
+
+    private static string ApplyText(IRenderedComponent<AltinnEnvironmentPane> cut) => cut.Find("[data-testid=ae-apply]").TextContent.Trim();
+    private static bool ApplyDisabled(IRenderedComponent<AltinnEnvironmentPane> cut) => cut.Find("[data-testid=ae-apply]").HasAttribute("disabled");
+    private static AngleSharp.Dom.IElement Box(IRenderedComponent<AltinnEnvironmentPane> cut, string key) => cut.Find($"[data-testid=ae-proposal][data-key={key}] input");
+
+    [Fact]
+    public void Detect_preselects_safe_values_and_Apply_selected_counts_them_while_saving_nothing()
+    {
+        var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-detect]"));
+        cut.Find("[data-testid=ae-detect]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-apply]"));
+
+        _api.Saved.Should().BeEmpty("Detect calculates candidates and saves nothing");
+        Box(cut, "environment").HasAttribute("checked").Should().BeTrue();
+        Box(cut, "form-data-type").HasAttribute("checked").Should().BeTrue();
+        ApplyText(cut).Should().Be("Apply selected (2)");
+        cut.Find("[data-testid=ae-proposal][data-key=environment]").TextContent.Should().Contain("Not applied", "preselected is not applied");
+
+        Box(cut, "environment").Change(false);
+        ApplyText(cut).Should().Be("Apply selected (1)");
+        Box(cut, "form-data-type").Change(false);
+        ApplyText(cut).Should().Be("Apply selected (0)");
+        ApplyDisabled(cut).Should().BeTrue("nothing selected, nothing to apply");
+        Box(cut, "form-data-type").Change(true);
+        ApplyText(cut).Should().Be("Apply selected (1)");
+        ApplyDisabled(cut).Should().BeFalse();
+        _api.Saved.Should().BeEmpty("selecting is session state only");
+
+        cut.Find("[data-testid=ae-apply]").Click();
+        cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
+        _api.Saved[0].FormDataType.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
+        _api.Saved[0].Environment.Should().BeNull("only the selected value is persisted");
+        cut.Find("[data-testid=ae-notice]").TextContent.Should().Be("Applied 1 setting to this Target Environment.");
+    }
+
+    [Fact]
+    public void A_detected_value_that_differs_from_the_configured_one_is_a_conflict_never_preselected_or_applied()
+    {
+        var view = View(detected: true);
+        _api.DetectResult = view with
+        {
+            Fields = [.. view.Fields.Select(field => field.Key == "app"
+                ? field with { State = AltinnSettingState.Conflict, Proposal = new("buf/other-app", AltinnSettingState.Detected, AltinnSettingSource.SourceAnalysis, "Source Analysis") }
+                : field)],
+        };
+        var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-detect]"));
+        cut.Find("[data-testid=ae-detect]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-conflict][data-key=app]"));
+
+        cut.FindAll("[data-testid=ae-proposal][data-key=app]").Should().BeEmpty("a conflict has no checkbox");
+        cut.Find("[data-testid=ae-conflict][data-key=app] [data-testid=ae-conflict-configured]").TextContent.Should().Be("buf/skolenaervaer");
+        cut.Find("[data-testid=ae-conflict][data-key=app] [data-testid=ae-conflict-detected]").TextContent.Should().Be("buf/other-app");
+        cut.Find("[data-testid=ae-conflict][data-key=app]").TextContent.Should().Contain("Source: Source Analysis");
+        ApplyText(cut).Should().Be("Apply selected (2)", "the conflict is not counted");
+
+        cut.Find("[data-testid=ae-apply]").Click();
+        cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
+        _api.Saved[0].AppIdentifier.Should().BeNull("Apply selected never overwrites a configured value");
+    }
+
     private sealed class FakeApi : IAltinnEnvironmentApiService
     {
         public AltinnEnvironmentView? Next { get; set; }
@@ -338,7 +401,8 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
 
         private static ActiveEventApiResult<AltinnEnvironmentView> Ok(AltinnEnvironmentView view) => new(view, null, HttpStatusCode.OK);
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> GetAsync(string environmentId, CancellationToken ct = default) { Calls.Add("get"); return Task.FromResult(Ok(Next ?? View())); }
-        public Task<ActiveEventApiResult<AltinnEnvironmentView>> DetectAsync(string environmentId, CancellationToken ct = default) { Calls.Add("detect"); return Task.FromResult(Ok(View(detected: true))); }
+        public AltinnEnvironmentView? DetectResult { get; set; }
+        public Task<ActiveEventApiResult<AltinnEnvironmentView>> DetectAsync(string environmentId, CancellationToken ct = default) { Calls.Add("detect"); return Task.FromResult(Ok(DetectResult ?? View(detected: true))); }
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> SaveAsync(string environmentId, AltinnEnvironmentSettingsUpdate update, CancellationToken ct = default) { Saved.Add(update); return Task.FromResult(Ok(View())); }
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> RecordObservationAsync(string environmentId, AltinnRuntimeObservationRequest request, CancellationToken ct = default) => Task.FromResult(Ok(View()));
         public Task<ActiveEventApiResult<AltinnEnvironmentView>> RecordBrowserObservationAsync(string environmentId, AltinnBrowserObservationRequest request, CancellationToken ct = default) => Task.FromResult(Ok(View()));

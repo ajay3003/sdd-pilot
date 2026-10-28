@@ -194,7 +194,8 @@ public sealed class ProjectImportLifecycleTests : BunitContext
 
         var cut = Render<ProjectImportPage>();
 
-        cut.Find("[data-testid=pi-current-source]").TextContent.Should().Contain("Source code found · analysis not available", "the tester view says it plainly");
+        cut.Find("[data-testid=pi-current-source-status]").TextContent.Should().Be("Not created", "the tester view says it plainly");
+        cut.Find("[data-testid=pi-current-success]").TextContent.Should().Contain("Project imported successfully", "the import succeeded; only its source analysis is missing");
         cut.Find("[data-testid=pi-current-snapshot]").TextContent.Should().Contain(status, "the exact state stays in Technical details");
         cut.Find("[data-testid=pi-current-source-detail]").TextContent.Should().Contain(detail);
         cut.FindAll("[data-testid=pi-current-open-source]").Should().BeEmpty("there is no snapshot to open");
@@ -208,7 +209,7 @@ public sealed class ProjectImportLifecycleTests : BunitContext
 
         var cut = Render<ProjectImportPage>();
 
-        cut.Find("[data-testid=pi-current-source]").TextContent.Should().Contain("No source code in this project");
+        cut.Find("[data-testid=pi-current-source-status]").TextContent.Should().Be("No source code");
         cut.Find("[data-testid=pi-current-snapshot]").TextContent.Should().Contain("No source in this archive");
         cut.FindAll("[data-testid=pi-current-open-source], [data-testid=pi-current-retry-source]").Should().BeEmpty();
     }

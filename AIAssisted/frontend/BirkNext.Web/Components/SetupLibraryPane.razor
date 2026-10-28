@@ -11,6 +11,7 @@
         <h3 id="slp-title" class="ei-title">Setup Library</h3>
         <a class="btn btn-secondary btn-sm" href="@ExternalIntegrationPresentation.ExternalHref(EnvironmentId)" data-testid="slp-external">Connected Systems</a>
     </header>
+    <p class="ei-muted" data-testid="slp-storage-note">@ExternalIntegrationPresentation.StorageNote</p>
     <div class="slp-filters" role="group" aria-label="Filter the Setup Library">
         <label>Provider
             <select class="form-select" data-testid="slp-filter-provider" @onchange="e => FilterAsync(provider: e.Value?.ToString())">
@@ -40,16 +41,22 @@
     else
     {
         <table class="ei-table" data-testid="slp-table">
-            <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Providers</th><th scope="col">Latest</th><th scope="col">Required</th><th scope="col">Last preflight</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="spv-sr">Actions</span></th></tr></thead>
+            <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Providers</th><th scope="col">Latest</th><th scope="col" title="Dependencies and references the package declares; each is resolved during preflight">Dependencies</th><th scope="col">Last preflight</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="spv-sr">Actions</span></th></tr></thead>
             <tbody>
                 @foreach (var item in _items)
                 {
                     var latest = item.Versions.FirstOrDefault();
+                    var (statusLabel, statusHelp) = ExternalIntegrationPresentation.LibraryStatus(item.Status);
+                    var expanded = _selected?.Id == item.Id;
                     <tr data-testid="slp-item" data-status="@item.Status">
                         <td>@item.Name</td><td>@ExternalIntegrationPresentation.ScopeLabel(item.SetupType)</td><td>@string.Join(", ", item.Providers)</td>
-                        <td>v@(latest?.VersionNumber)</td><td>@(latest?.Dependencies.Count(d => d.Required) ?? 0)</td><td>@(item.LastPreflight ?? "Not run")</td><td>@item.Status</td>
+                        <td>v@(latest?.VersionNumber)</td><td data-testid="slp-dependencies">@(latest?.Dependencies.Count(d => d.Required) ?? 0) required</td><td>@(item.LastPreflight ?? "Not run")</td>
+                        <td><span data-testid="slp-status" title="@statusHelp">@statusLabel</span>@if (statusHelp is not null) { <span class="spv-sr"> (@statusHelp)</span> }</td>
                         <td>@item.UpdatedAt.ToString("yyyy-MM-dd")</td>
-                        <td><button type="button" class="btn btn-secondary btn-sm" data-testid="slp-open" @onclick="() => Open(item)">Open</button></td>
+                        @* Open is the row's primary action: it expands the details (aria-expanded/aria-controls) and focus moves into them; Open again
+                           collapses and keeps focus here. *@
+                        <td><button type="button" id="@($"slp-open-{item.Id:N}")" class="btn btn-primary btn-sm" data-testid="slp-open" aria-expanded="@(expanded ? "true" : "false")"
+                                    aria-controls="slp-detail" aria-label="@($"Open {item.Name}")" @onclick="() => Toggle(item)">Open</button></td>
                     </tr>
                 }
             </tbody>
@@ -58,8 +65,8 @@
 
     @if (_selected is { } selected)
     {
-        <section class="slp-detail" data-testid="slp-detail" aria-label="@selected.Name">
-            <h4 class="ei-h4">@selected.Name</h4>
+        <section class="slp-detail" id="slp-detail" data-testid="slp-detail" aria-labelledby="slp-detail-heading">
+            <h4 class="ei-h4" id="slp-detail-heading" tabindex="-1">@selected.Name</h4>
             <p class="ei-muted">@(selected.Description ?? "")@(selected.TestPacks.Count > 0 ? $" · Test packs: {string.Join(", ", selected.TestPacks)}" : "")</p>
             <div class="ei-card-actions">
                 <button type="button" class="btn btn-primary btn-sm" data-testid="slp-preflight" disabled="@_busy" @onclick="PreflightAsync">@(_preflight is null ? "Preview & preflight for this environment" : "Rerun preflight")</button>
@@ -94,7 +101,7 @@
                 <SetupPreflightView Result="preflight" Decisions="_decisions" DecisionsChanged="StateHasChanged" />
                 <button type="button" class="btn btn-primary btn-sm" data-testid="slp-apply" disabled="@(_busy || !preflight.CanApply || !SetupPreflightView.AllDecided(preflight, _decisions))" @onclick="ApplyAsync">Apply to this environment</button>
             }
-            @if (_applied is { } applied) { <p role="status" data-testid="slp-apply-result" data-applied="@(applied.Applied ? "true" : "false")">@applied.Outcome</p> }
+            @if (_applied is { } applied) { <p role="status" data-testid="slp-apply-result" data-applied="@(applied.Applied ? "true" : "false")">@ExternalIntegrationPresentation.AppliedOutcome(applied, _lastPreflight)</p> }
         </section>
     }
 </section>
@@ -111,12 +118,26 @@
     private Dictionary<string, bool> _decisions = [];
     private string? _error, _notice, _provider, _status, _testPack, _setupType;
     private bool _busy;
+    private string? _focusId;
+    private SetupPreflightResult? _lastPreflight;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is not { } id || Services.GetService(typeof(IJSRuntime)) is not IJSRuntime js) return;
+        _focusId = null;
+        try { await js.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         _api = Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
         if (_api is null) { _error = "The Setup Library is not available in this host."; _items = []; return; }
         await LoadAsync();
+        // Open in Setup Library (after Save) deep-links one item: it opens expanded, focus on its heading.
+        if (Services.GetService(typeof(NavigationManager)) is NavigationManager navigation
+            && Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(navigation.Uri).Query).TryGetValue("item", out var item)
+            && Guid.TryParse(item.ToString(), out var id) && _items?.FirstOrDefault(i => i.Id == id) is { } linked)
+            Toggle(linked);
     }
 
     private async Task LoadAsync()
@@ -138,6 +159,14 @@
 
     private void Open(SetupLibraryItemView item) { _selected = item; _preflight = null; _applied = null; _differences = null; _decisions = []; }
 
+    /// <summary>Open expands the item and moves focus to its heading; Open on the expanded item collapses it and focus stays on that Open.</summary>
+    private void Toggle(SetupLibraryItemView item)
+    {
+        if (_selected?.Id == item.Id) { _selected = null; _focusId = $"slp-open-{item.Id:N}"; return; }
+        Open(item);
+        _focusId = "slp-detail-heading";
+    }
+
     private async Task Run(Func<Task> action) { _busy = true; _error = null; try { await action(); } finally { _busy = false; } }
 
     private Task PreflightAsync() => Run(async () =>
@@ -145,6 +174,8 @@
         var result = await _api!.PreflightLibraryVersionAsync(_selected!.Id, null, EnvironmentId);
         (_preflight, _error) = (result.Value, result.Error);
         _applied = null;
+        // The user just asked for (re)run: when something is still unresolved, focus the status so it is announced.
+        if (_preflight is { } done && (!done.CanApply || done.TestResolved < done.TestTotal)) _focusId = "spv-status";
         await LoadAsync();
     });
 
@@ -152,7 +183,7 @@
     {
         var result = await _api!.ApplyLibraryVersionAsync(_selected!.Id, null, EnvironmentId, _decisions);
         (_applied, _error) = (result.Value, result.Error);
-        if (_applied is { Applied: false } blocked) _preflight = blocked.Preflight; else _preflight = null;
+        if (_applied is { Applied: false } blocked) _preflight = blocked.Preflight; else { _lastPreflight = _preflight; _preflight = null; }
         await LoadAsync();
     });
 
@@ -160,7 +191,8 @@
     {
         var result = await _api!.ExportLibraryVersionAsync(_selected!.Id, null, format);
         if (result.Value is { } export)
-            try { await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, format == SetupPackageFormat.Json ? "application/json" : "application/yaml"); _notice = $"Exported {export.FileName}."; }
+            try { await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, format == SetupPackageFormat.Json ? "application/json" : "application/yaml");
+                  _notice = $"{ExternalIntegrationPresentation.Downloaded(format, export.FileName)}. A separate portable file; this Setup Library item is unchanged."; }
             catch (JSException) { _error = "The file could not be downloaded."; }
         else _error = result.Error;
     });
@@ -170,7 +202,7 @@
         var item = _selected!;
         var result = await _api!.NewLibraryVersionAsync(item.Id, new SetupLibrarySaveRequest(item.Name, item.Description, EnvironmentId, item.SetupType,
             item.SetupType == SetupScope.Environment ? null : item.Providers.FirstOrDefault(), TestPacks: item.TestPacks, ChangeSummary: $"From environment {EnvironmentId}"));
-        if (result.Value is { } updated) { _selected = updated; _notice = $"Saved v{updated.Versions[0].VersionNumber}; earlier versions are unchanged."; await LoadAsync(); } else _error = result.Error;
+        if (result.Value is { } updated) { _selected = updated; _notice = $"{ExternalIntegrationPresentation.SavedToLibrary(updated)}. Earlier versions are unchanged."; await LoadAsync(); } else _error = result.Error;
     });
 
     private Task DuplicateAsync() => Run(async () =>

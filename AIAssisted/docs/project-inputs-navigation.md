@@ -70,13 +70,13 @@ Section IDs are stable, and order is deterministic:
 | Section (id) | Rows |
 |---|---|
 | Getting Started (`getting-started`) | Recommended Workflow, User Guide, Dashboard (cross-cutting, so it sits here rather than under document review) |
-| Project Inputs (`project-inputs`) | Import Project (primary: one ZIP → project artifacts + source snapshot), Sample Projects (optional examples), Target Environments (runtime configuration of the deployed system, not a document input) |
-| Document Review (`document-review`) | Specification, Constitution, Data Model, Plan, Task Explorer, Document Quality Review, Task Alignment Review, Generated Documentation Health, Documentation Drift |
+| Project Inputs (`project-inputs`) | Import Project (primary: one ZIP → project artifacts + source snapshot), Demo Projects (optional examples), Target Environments (runtime configuration of the deployed system, not a document input) |
+| Document Review (`document-review`) | Specification, Constitution, Data Model, Plan, Task Explorer, Document Quality Review, Task Alignment Review, Documentation Drift (document ↔ document only) |
 | Traceability (`traceability`) | Requirements Traceability, Change Traceability (+ legacy rows behind the legacy flag) |
-| Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Schema Studio, Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
+| Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Schema Studio, Generated Documentation Explorer, Generated Documentation Health (runs over the import's source snapshot), Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
 | Analysis (`analysis`) | Impact Analysis (off by default) |
-| Quality & Testing (`quality-testing`) | Frontend, API, Integration Quality Review, Performance Test Review, Critical E2E Regression |
-| Extensions (`extensions`) | M01 – Gradert tilgang (Kode 6/7), formerly Security Classification (badge *Extension* when enabled, otherwise *N/A*) |
+| Quality & Testing (`quality-testing`) | Test Coverage & Overlap Review, Code Risk Review (source-only planning/triage), Test Data (prerequisite of runs that need test identities/assets), Frontend Quality Review, API Quality Review, Integration Topology, Integration Quality Review, Performance Test Review, Critical E2E Regression |
+| Extensions (`extensions`) | M01 – Gradert tilgang (Kode 6/7), formerly Security Classification (badge *Extension* when enabled, otherwise *N/A*), Skolenærvær Testing |
 | AI Review (`ai-review`) | AI Change Review (off by default) |
 | Admin (`admin`) | System Settings |
 

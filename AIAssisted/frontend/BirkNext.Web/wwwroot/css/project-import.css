@@ -154,7 +154,6 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-current-heading strong { font-size: 1.25rem; overflow-wrap: anywhere; }
 .pi-current-success { padding: .45rem .65rem; border-radius: var(--radius-sm, 4px); background: #f0fdf4; border: 1px solid #86efac; color: #14532d; font-size: .88rem; }
 .pi-current-summary { font-size: .95rem; font-weight: 600; color: #0f172a; }
-.pi-current-facts { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .88rem; }
 .pi-attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
 .pi-attention-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .5rem; align-items: start; padding: .45rem .6rem; border: 1px solid var(--clr-border); border-radius: var(--radius-sm, 4px); }
 .pi-attention-item.is-attention { border-left: 4px solid #b45309; background: #fffbeb; }
@@ -177,3 +176,19 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-technical-heading { font-size: .95rem !important; }
 .pi-details > summary { cursor: pointer; color: var(--clr-link, #1d4ed8); min-height: 24px; }
 .pi-details > summary:focus-visible { outline: 2px solid var(--clr-link, #1d4ed8); outline-offset: 2px; }
+/* Current project statuses: one row per concept (documents, source analysis, source role, test environment), never one overall status. */
+.pi-current-status { margin: 0; display: grid; gap: .35rem; font-size: .88rem; }
+.pi-current-status > div { display: grid; grid-template-columns: minmax(7.5rem, 10rem) minmax(0, 1fr); gap: .5rem; align-items: baseline; min-width: 0; }
+.pi-current-status dt { font-size: .78rem; font-weight: 600; color: #475569; }
+.pi-current-status dd { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .45rem; min-width: 0; overflow-wrap: anywhere; }
+.pi-areas { flex-basis: 100%; font-size: .82rem; color: #334155; }
+@media (max-width: 520px) { .pi-current-status > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; } }
+.pi-attention-group { display: grid; gap: .35rem; min-width: 0; }
+.pi-attention-group + .pi-attention-group { margin-top: .6rem; }
+.pi-attention-group-title { margin: 0; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+.pi-contents-status { margin-bottom: .6rem; }
+/* Compact history cards: what a test lead scans; provenance stays behind Details. */
+.pi-previous-facts { margin: 0; display: flex; flex-wrap: wrap; gap: .25rem 1.1rem; font-size: .84rem; }
+.pi-previous-facts > div { display: flex; gap: .3rem; align-items: baseline; min-width: 0; }
+.pi-previous-facts dt { font-size: .74rem; color: var(--clr-text-muted); }
+.pi-previous-facts dd { margin: 0; overflow-wrap: anywhere; }

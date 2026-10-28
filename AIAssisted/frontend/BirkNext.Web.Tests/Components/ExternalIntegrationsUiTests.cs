@@ -108,9 +108,11 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         cut.Find("[data-testid=spp-library]").Change(_api.Library[0].Id.ToString());
         cut.Find("[data-testid=spp-preflight]").Click();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=spv-status]").TextContent.Should().Be("IMPORT BLOCKED"));
-        cut.Find("[data-testid=spv-required]").TextContent.Should().Be("1 / 3 resolved");
-        cut.FindAll("[data-testid=spv-owner]").Select(a => a.GetAttribute("href")).Should().Contain(["/test-data", "/integration-quality-review"]);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=spv-status]").TextContent.Should().Be("Import blocked · 1 blocking dependency unresolved"));
+        cut.Find("[data-testid=spv-required]").TextContent.Should().Be("0 / 1 resolved", "only the integration is needed to apply");
+        cut.Find("[data-testid=spv-test-required]").TextContent.Should().Be("1 / 2 resolved");
+        cut.Find("[data-testid=spv-test-status]").TextContent.Should().Be("Test readiness warning · 1 item unresolved — these do not block Apply");
+        cut.FindAll("[data-testid=spv-owner]").Select(a => a.TextContent).Should().Equal(["Open Integration Catalog", "Open Test Data"], "one action per owner group");
         cut.Find("[data-testid=spv-optional]").TextContent.Should().Be("Import can proceed with 1 optional capability unavailable.");
         cut.Find("[data-testid=spv-never]").TextContent.Should().Be("0 · 0 · 0");
         cut.Find("[data-testid=spp-apply]").HasAttribute("disabled").Should().BeTrue("required dependencies are unresolved");
@@ -118,7 +120,7 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         _api.Preflight = Preflight(blocked: false);
         cut.Find("[data-testid=spp-preflight]").TextContent.Should().Be("Rerun preflight");
         cut.Find("[data-testid=spp-preflight]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=spv-status]").TextContent.Should().Be("IMPORT READY"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=spv-status]").TextContent.Should().Be("Setup ready to apply"));
         cut.Find("[data-testid=spp-apply]").HasAttribute("disabled").Should().BeTrue("the conflict has no decision yet");
         cut.FindAll("[data-testid=spv-decision] input")[0].Change(true); // Keep current
         cut.Find("[data-testid=spp-apply]").HasAttribute("disabled").Should().BeFalse();
@@ -185,13 +187,165 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         Changes = [new("0:baseUrl", "Altinn – Skolenærvær", ExternalProviderType.Altinn, "App base URL", "https://other.example", "https://buf.apps.tt02.altinn.no/buf/skolenaervaer", "Conflict", "")],
         Dependencies =
         [
-            new(new(SetupDependencyKind.TestData, "reporter-a", true, "Reporter"), blocked ? SetupDependencyState.Missing : SetupDependencyState.Resolved, "", "Test Data", "/test-data"),
-            new(new(SetupDependencyKind.Integration, "skolenaervaer-report-intake", true), blocked ? SetupDependencyState.Missing : SetupDependencyState.Resolved, "", "Integration Quality Review", "/integration-quality-review"),
-            new(new(SetupDependencyKind.Contract, "form", true), SetupDependencyState.Resolved, "", "Integration Quality Review", "/integration-quality-review"),
-            new(new(SetupDependencyKind.TestData, "duplicate-report-payload", false, "DuplicatePayload"), SetupDependencyState.OptionalMissing, "", "Test Data", "/test-data"),
+            new(new(SetupDependencyKind.TestData, "reporter-a", true, "Reporter") { Phase = SetupDependencyPhase.Test }, blocked ? SetupDependencyState.Missing : SetupDependencyState.Resolved, "", "Test Data", "/test-data")
+                { ActionLabel = "Open Test Data" },
+            new(new(SetupDependencyKind.Integration, "skolenaervaer-report-intake", true), blocked ? SetupDependencyState.Missing : SetupDependencyState.Resolved, "", "Integration Catalog", "/integrations")
+                { ActionLabel = "Open Integration Catalog", Cause = SetupDependencyCause.IntegrationNotConfigured },
+            new(new(SetupDependencyKind.Contract, "form", true) { Phase = SetupDependencyPhase.Test }, SetupDependencyState.Resolved, "", "Integration Quality Review", "/integration-quality-review"),
+            new(new(SetupDependencyKind.TestData, "duplicate-report-payload", false, "DuplicatePayload") { Phase = SetupDependencyPhase.Test }, SetupDependencyState.OptionalMissing, "", "Test Data", "/test-data"),
         ],
-        BlockReasons = blocked ? ["2 required dependencies unresolved"] : [],
+        BlockReasons = blocked ? ["1 blocking dependency unresolved"] : [],
     };
+
+    // ── Setup Library: internal copy vs downloaded file, keyboard save, Open focus, preflight phases ──────────────────────
+
+    private IRenderedComponent<SetupPackagePanel> Export() =>
+        Render<SetupPackagePanel>(p => p.Add(c => c.EnvironmentId, Env).Add(c => c.Providers, Providers()));
+
+    [Fact]
+    public void Save_to_setup_library_is_a_keyboard_form_with_a_persistent_confirmation_of_the_returned_name_and_version()
+    {
+        var cut = Export();
+        cut.Find("[data-testid=spp-storage-note]").TextContent.Should().Contain("internal reusable copy").And.Contain("separate portable YAML/JSON file");
+        cut.Find("[data-testid=spp-save-library]").HasAttribute("disabled").Should().BeTrue("an empty name cannot be saved");
+        // Name then Save are adjacent in the tab order: nothing focusable sits between them.
+        var form = cut.Find("[data-testid=spp-save-form]");
+        form.QuerySelectorAll("input, button, select, a, textarea").Select(e => e.GetAttribute("data-testid")).Should().Equal("spp-library-name", "spp-save-library");
+        cut.Find("[data-testid=spp-library-name]").Input("Altinn TT02 – Skolenærvær");
+        cut.Find("[data-testid=spp-save-library]").HasAttribute("disabled").Should().BeFalse();
+        _api.SavedLibrary.Should().BeEmpty("nothing is persisted before an explicit save");
+
+        form.Submit(); // Enter in the name field submits the form
+        cut.WaitForAssertion(() => cut.Find("[data-testid=spp-library-saved-text]").TextContent.Should().Be("Saved internally to Setup Library as “Skolenærvær TT02” · v2"));
+        _api.SavedLibrary.Should().ContainSingle(r => r.Name == "Altinn TT02 – Skolenærvær");
+        cut.Find("[data-testid=spp-save-library]").TextContent.Should().Be("Saved");
+        cut.Find("[data-testid=spp-library-saved]").GetAttribute("role").Should().Be("status");
+        cut.Find("[data-testid=spp-open-library]").GetAttribute("href").Should().EndWith($"&item={_api.Library[0].Id:D}");
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments.Single()).Should().Contain("spp-library-saved");
+
+        cut.Find("[data-testid=spp-library-name]").Input("Another name");
+        cut.FindAll("[data-testid=spp-library-saved]").Should().BeEmpty("a changed name is a new save");
+        cut.Find("[data-testid=spp-save-library]").TextContent.Should().Be("Save to Setup Library");
+    }
+
+    [Fact]
+    public void A_failed_save_keeps_the_name_and_says_why_and_a_download_is_never_called_a_library_save()
+    {
+        _api.SaveLibraryError = "A name (at most 200 characters) is required.";
+        var cut = Export();
+        cut.Find("[data-testid=spp-library-name]").Input("Altinn TT02 – Skolenærvær");
+        cut.Find("[data-testid=spp-save-form]").Submit();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=spp-library-error]").TextContent.Should().Be("Could not save to Setup Library. A name (at most 200 characters) is required."));
+        cut.Find("[data-testid=spp-library-error]").GetAttribute("role").Should().Be("alert");
+        cut.Find("[data-testid=spp-library-name]").GetAttribute("value").Should().Be("Altinn TT02 – Skolenærvær");
+
+        cut.Find("[data-testid=spp-export-json]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=spp-downloaded]").TextContent.Should().StartWith("Downloaded JSON package: x.setup.yaml").And.Contain("Not saved to Setup Library"));
+        _api.SavedLibrary.Should().ContainSingle("the export created no library item");
+    }
+
+    [Fact]
+    public void Library_rows_say_what_ready_and_dependencies_mean_and_open_moves_focus_into_the_details_and_back()
+    {
+        var cut = Render<SetupLibraryPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=slp-item]"));
+        cut.Find("[data-testid=slp-table] thead").TextContent.Should().Contain("Dependencies").And.NotContain("Required");
+        cut.Find("[data-testid=slp-dependencies]").TextContent.Should().EndWith("required");
+        cut.Find("[data-testid=slp-status]").TextContent.Should().Be("Package ready");
+        cut.Find("[data-testid=slp-status]").GetAttribute("title").Should().Be("Package is valid. Destination readiness is checked during preflight.");
+        var open = cut.Find("[data-testid=slp-open]");
+        open.ClassList.Should().Contain("btn-primary");
+        open.GetAttribute("aria-expanded").Should().Be("false");
+        open.GetAttribute("aria-controls").Should().Be("slp-detail");
+
+        open.Click();
+        cut.Find("[data-testid=slp-open]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("#slp-detail #slp-detail-heading").GetAttribute("tabindex").Should().Be("-1");
+        cut.Find("[data-testid=slp-detail] .ei-card-actions button").GetAttribute("data-testid").Should().Be("slp-preflight", "Preview & preflight is the first, primary action");
+        JSInterop.Invocations.Last(i => i.Identifier == "birknextFocusElement").Arguments.Single().Should().Be("slp-detail-heading");
+
+        cut.Find("[data-testid=slp-open]").Click();
+        cut.FindAll("[data-testid=slp-detail]").Should().BeEmpty();
+        JSInterop.Invocations.Last(i => i.Identifier == "birknextFocusElement").Arguments.Single().Should().Be($"slp-open-{_api.Library[0].Id:N}", "focus returns to the originating Open");
+    }
+
+    [Fact]
+    public void A_preflight_with_only_test_gaps_is_ready_to_apply_and_says_when_configuration_already_matches()
+    {
+        _api.Preflight = Preflight(blocked: false) with
+        {
+            Changes = [new("0:appId", "Altinn – Skolenærvær", ExternalProviderType.Altinn, "App identifier", "buf/skolenaervaer", "buf/skolenaervaer", "Same", "")],
+            Dependencies = [.. Preflight(blocked: false).Dependencies,
+                new(new(SetupDependencyKind.TestData, "form", true, "XmlFixture") { Phase = SetupDependencyPhase.Test }, SetupDependencyState.Missing, "No XML fixture for form in Test Data.", "Test Data", "/test-data")
+                    { ActionLabel = "Open Test Data", Hint = "Generate and validate a fixture in Schema Studio, then register and approve it in Test Data." }],
+        };
+        var cut = Render<SetupLibraryPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=slp-open]"));
+        cut.Find("[data-testid=slp-open]").Click();
+        cut.Find("[data-testid=slp-preflight]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=spv-status]").TextContent.Should().Be("Setup ready to apply"));
+        cut.Find("[data-testid=spv-matches]").TextContent.Should().Be("Configuration already matches this package. Only unresolved dependencies remain.");
+        cut.Find("[data-testid=spv-test-status]").TextContent.Should().StartWith("Test readiness warning · 1 item unresolved");
+        cut.Find("[data-testid=spv-test-dependencies] [data-testid=spv-hint]").TextContent.Should().Contain("Schema Studio");
+        cut.Find("[data-testid=slp-apply]").HasAttribute("disabled").Should().BeFalse("test readiness never blocks Apply");
+        JSInterop.Invocations.Last(i => i.Identifier == "birknextFocusElement").Arguments.Single().Should().Be("spv-status", "a rerun that leaves something unresolved is announced");
+    }
+
+    // ── Detect first; Close belongs to the system header ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Detect_systems_is_the_primary_action_and_Add_system_is_secondary_with_or_without_systems(bool empty)
+    {
+        _api.NoSystems = empty;
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+
+        cut.Find("[data-testid=ei-detect]").ClassList.Should().Contain("btn-primary", "discover first");
+        cut.Find("[data-testid=ei-add]").ClassList.Should().Contain("btn-secondary").And.NotContain("btn-primary", "manual creation is the fallback");
+        cut.FindAll(".ei-actions .btn-primary").Should().ContainSingle();
+        cut.FindAll(".ei-actions > *").Select(e => e.GetAttribute("data-testid")).Should().Equal("ei-detect", "ei-add", "ei-import", "ei-export", "ei-library");
+        if (empty)
+            cut.Find("[data-testid=ei-empty]").TextContent.Should().Be("No connected systems yet. Start with Detect systems. Add a system manually only if it cannot be discovered from project evidence.");
+        else
+            cut.FindAll("[data-testid=ei-empty]").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Altinn", "ae")]
+    [InlineData("RestApi", "gp")]
+    public void Expanded_system_shows_its_name_once_with_Close_in_the_header_never_among_provider_actions(string provider, string prefix)
+    {
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-card]").Count.Should().Be(2));
+        var card = cut.Find($"[data-testid=ei-card][data-provider={provider}]");
+        var name = card.QuerySelector(".ei-card-title")!.TextContent;
+        card.QuerySelector("[data-testid=ei-review]")!.TextContent.Should().Be("Review");
+
+        card.QuerySelector("[data-testid=ei-review]")!.Click();
+        cut.WaitForAssertion(() => cut.Find($"[data-testid={prefix}-actions]"));
+        card = cut.Find($"[data-testid=ei-card][data-provider={provider}]");
+
+        var close = card.QuerySelector("[data-testid=ei-card-head] [data-testid=ei-review]")!;
+        close.TextContent.Should().Be("Close");
+        close.GetAttribute("aria-label").Should().Be($"Close {name}");
+        close.GetAttribute("aria-expanded").Should().Be("true");
+        card.QuerySelectorAll("[data-testid=ei-review]").Should().ContainSingle("Close is the only toggle while the system is open");
+        card.QuerySelectorAll(".ei-card-actions").Should().BeEmpty("the old action row above the provider actions is gone while open");
+        card.QuerySelector($"[data-testid={prefix}-actions]")!.TextContent.Should().NotContain("Close", "provider actions configure; Close only collapses");
+        card.QuerySelectorAll(".ei-card-title").Should().ContainSingle().Which.TextContent.Should().Be(name, "the system name is shown once");
+        // The header comes first: Close, then the provider's own actions (logical keyboard order).
+        var html = card.InnerHtml;
+        html.IndexOf("ei-card-head", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf($"{prefix}-actions", StringComparison.Ordinal));
+
+        close.Click();
+        cut.WaitForAssertion(() => cut.FindAll($"[data-testid={prefix}-actions]").Should().BeEmpty());
+        cut.Find($"[data-testid=ei-card][data-provider={provider}] [data-testid=ei-review]").TextContent.Should().Be("Review");
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments.Single()!.ToString()).Should().Contain(id => id!.StartsWith("ei-toggle-"),
+            "focus moves to the button that replaces the clicked one");
+    }
 
     private sealed class FakeApi : IExternalIntegrationsApiService
     {
@@ -217,7 +371,10 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
                 new("authentication", "Authentication", SetupReadinessState.Partial, ""), new("runtime", "Runtime", runtime, ""), new("execution", "Execution", execution, "")),
         };
 
+        public bool NoSystems { get; set; }
+
         private ExternalIntegrationsView View(bool detect) => new(Env,
+            NoSystems ? [] :
             [Card("dev:altinn", "Altinn – Skolenærvær", ExternalProviderType.Altinn, SetupReadinessState.Observed, SetupReadinessState.Blocked),
              Card("dev:restapi:person", "Person API", ExternalProviderType.RestApi, SetupReadinessState.NotAssessed, SetupReadinessState.NotAssessed)],
             detect ? [new("Payments API", ExternalProviderType.RestApi, "QA", "Integration Quality Review", "Ready to configure.", new() { ["baseUrl"] = "https://pay.example" }, false)] : [],
@@ -237,7 +394,13 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         public Task<ActiveEventApiResult<SetupApplyPackageResult>> ApplyAsync(string environmentId, SetupApplyPackageRequest request, CancellationToken ct = default) => Ok(new SetupApplyPackageResult(true, "Applied", [], Preflight));
         public Task<ActiveEventApiResult<IReadOnlyList<SetupLibraryItemView>>> LibraryAsync(ExternalProviderType? provider = null, SetupLibraryStatus? status = null, string? testPack = null, SetupScope? setupType = null, CancellationToken ct = default)
         { LibraryQueries.Add(provider?.ToString()); return Ok<IReadOnlyList<SetupLibraryItemView>>(Library); }
-        public Task<ActiveEventApiResult<SetupLibraryItemView>> SaveToLibraryAsync(SetupLibrarySaveRequest request, CancellationToken ct = default) => Ok(Library[0]);
+        public List<SetupLibrarySaveRequest> SavedLibrary { get; } = [];
+        public string? SaveLibraryError { get; set; }
+        public Task<ActiveEventApiResult<SetupLibraryItemView>> SaveToLibraryAsync(SetupLibrarySaveRequest request, CancellationToken ct = default)
+        {
+            SavedLibrary.Add(request);
+            return SaveLibraryError is { } error ? Task.FromResult(new ActiveEventApiResult<SetupLibraryItemView>(null, error, HttpStatusCode.BadRequest)) : Ok(Library[0]);
+        }
         public Task<ActiveEventApiResult<SetupLibraryItemView>> NewLibraryVersionAsync(Guid id, SetupLibrarySaveRequest request, CancellationToken ct = default) => Ok(Library[0]);
         public Task<ActiveEventApiResult<SetupLibraryItemView>> DuplicateLibraryItemAsync(Guid id, CancellationToken ct = default) => Ok(Library[0]);
         public Task<ActiveEventApiResult<bool>> ArchiveLibraryItemAsync(Guid id, CancellationToken ct = default) => Ok(true);

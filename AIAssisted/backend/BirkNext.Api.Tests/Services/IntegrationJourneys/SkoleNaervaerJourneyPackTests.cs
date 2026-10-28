@@ -92,7 +92,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         pack.Journeys.Single(view => view.Journey.JourneyId == "rapportmottak").Prerequisites.Single(item => item.Key == "integration:report-intake")
             .Detail.Should().Contain("No configured HttpApi integration was found for Skolenærvær – Altinn report intake");
         pack.Journeys.Single(view => view.Journey.JourneyId == "utdanningsdata").Prerequisites.Single(item => item.Key == "source:SkoleAdapter")
-            .Detail.Should().StartWith("Needs M2LB source evidence");
+            .Detail.Should().StartWith("Needs M2LB application source evidence");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         report.Prerequisites.Single(item => item.Key == "reporter-auth").State.Should().Be(JourneyReadinessState.NotConfigured);
         report.Prerequisites.Single(item => item.Key == "submission-contract").State.Should().Be(JourneyReadinessState.NotReady);
         report.Prerequisites.Single(item => item.Key == "executor").State.Should().Be(JourneyReadinessState.NotAvailable, "no Altinn executor is registered in this harness");
-        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Needs M2LB source evidence", "MM belongs to M2LB, not to any other source");
+        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Needs M2LB application source evidence", "MM belongs to M2LB, not to any other source");
         report.Readiness.Should().Be(JourneyReadinessState.Partial);
         report.CanRun.Should().BeFalse();
         report.Maturity.Configured.Should().BeTrue();

@@ -169,9 +169,10 @@ public static class ReviewNavigator
                 item.Route, missing, a?.Reason ?? ""));
         }
 
-        // Optional documentation capabilities: applicable from their own evidence, never part of the core path.
+        // Optional documentation capabilities: applicable from their own evidence, never part of the core path. Generated Documentation
+        // Health runs over the source snapshot, so it sits with the source reviews (as in the sidebar).
         if (Visible(NavigationCatalog.GeneratedDocumentationHealthRoute))
-            capabilities.Add(new("generated-documentation-health", "Generated Documentation Health", ReviewSection.Documentation,
+            capabilities.Add(new("generated-documentation-health", "Generated Documentation Health", ReviewSection.Source,
                 generatedDocumentationPresent ? ReviewApplicabilityState.Applicable : ReviewApplicabilityState.NotApplicable,
                 generatedDocumentationPresent ? ReviewReadiness.Ready : ReviewReadiness.NotApplicable, ReviewRequiredness.Optional,
                 ReviewDecisionState.NoDecisionTracked, NavigationCatalog.GeneratedDocumentationHealthRoute, [],

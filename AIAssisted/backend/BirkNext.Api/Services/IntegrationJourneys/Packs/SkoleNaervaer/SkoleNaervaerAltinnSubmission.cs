@@ -142,7 +142,9 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
             if (identifier.Length > 0) errors.Add("Leave the child identifier empty when an approved synthetic child is used.");
             if (!offered) errors.Add("Choose one of the approved synthetic children for this scenario.");
             identifier = offered ? approvedChild?.Invoke(childAlias) ?? "" : "";
-            if (offered && !SyntheticPersonIdentifier.IsSynthetic(identifier)) errors.Add("The approved synthetic child is not available in the approved test data.");
+            // The approved child passed Test Data's child check (IsTestPerson: valid date and control digits) — the same rule readiness and the
+            // session store use. A typed identifier (below) keeps the stricter synthetic rule.
+            if (offered && !SyntheticPersonIdentifier.IsTestPerson(identifier)) errors.Add("The approved synthetic child is not available in the approved test data.");
         }
         else if (source == Generated)
         {

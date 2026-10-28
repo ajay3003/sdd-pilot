@@ -367,6 +367,27 @@ public sealed class SourceIntegrationDiscoveryTests
         db.IqrSourceSnapshots.Count().Should().Be(1, "reading the report never writes");
     }
 
+    [Fact]
+    public async Task TheCurrentProjectIsThePrimaryContext_AndUnrelatedNewerHistoryIsNeverRead()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var store = new IqrSourceStore(db);
+        var (project, _) = await store.AnalyzeAsync("env", "source", "shop.zip", Zip(DebeziumConsumer()));
+        var (unrelated, _) = await store.AnalyzeAsync("env", "source", "other.zip", Zip(("Other/Other.Api/Other.Api.csproj", "<Project Sdk=\"Microsoft.NET.Sdk.Web\"></Project>"),
+            ("Other/Other.Api/Program.cs", "public static class Program { public static void Main() { } }")));
+        var service = new SourceIntegrationService(store, new Catalog_(Catalog()));
+
+        var primary = await service.ReportAsync("env", project!.Id);
+        primary.ContributingSources.Select(s => s.ArchiveName).Should().Equal(["shop.zip"], "the unrelated, newer archive is not in scope");
+        primary.ContributingSources[0].Reason.Should().Be(SourceIntegrationScope.PrimaryReason);
+        primary.UnconfiguredCandidateIds.Should().NotBeEmpty();
+        primary.Discovery!.Candidates.Should().OnlyContain(c => c.Sources.Count == 1 && c.Sources[0].SnapshotId == project.Id, "every candidate names its source");
+
+        // Without a current project, binding or recognized source the newest analyzed snapshot is read, as before.
+        (await service.ReportAsync("env")).ContributingSources.Single().SnapshotId.Should().Be(unrelated!.Id);
+        db.IqrSourceSnapshots.Count().Should().Be(2, "discovery never writes");
+    }
+
     private sealed class Catalog_(IntegrationCatalog catalog) : IIntegrationCatalogService
     {
         public Task<IntegrationCatalog> GetAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default) => Task.FromResult(catalog);

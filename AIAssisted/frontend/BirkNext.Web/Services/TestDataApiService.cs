@@ -24,6 +24,10 @@ public interface ITestDataApiService
     Task<(List<TestDataMatch>? Matches, string? Error)> MatchesAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) => Task.FromResult<(List<TestDataMatch>?, string?)>((null, Unavailable));
     Task<(TestDataUsageReference? Usage, string? Error)> BindAsync(TestDataUsageReference usage, CancellationToken ct = default) => Task.FromResult<(TestDataUsageReference?, string?)>((null, Unavailable));
 
+    /// <summary>Fills generated XML with Test Data values by alias (POST api/test-data/xml-fixtures/bind); the values are resolved by the backend.</summary>
+    Task<(string? Xml, IReadOnlyList<string> Problems)> BindXmlFixtureAsync(TestDataXmlBindRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(string?, IReadOnlyList<string>)>((null, [Unavailable]));
+
     const string Unavailable = "This Test Data action is not available in this host.";
 }
 
@@ -73,6 +77,18 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
     {
         var (body, error) = await PostAsync("api/test-data/registrations", request, ct);
         return error is not null ? (null, error) : (body is { } b && b.TryGetProperty("assetId", out var id) ? id.GetString() : null, null);
+    }
+
+    public async Task<(string? Xml, IReadOnlyList<string> Problems)> BindXmlFixtureAsync(TestDataXmlBindRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync("api/test-data/xml-fixtures/bind", request, Json, ct);
+            var result = await response.Content.ReadFromJsonAsync<TestDataXmlBindResult>(Json, ct);
+            return result is null ? (null, [$"The request failed ({(int)response.StatusCode})."]) : (result.Xml, result.Problems);
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
+        { return (null, [BackendRequestClassifier.FromException(Title, e, "POST api/test-data/xml-fixtures/bind", ct).UserMessage]); }
     }
 
     public async Task<string?> ApproveAsync(string assetId, CancellationToken ct = default) =>

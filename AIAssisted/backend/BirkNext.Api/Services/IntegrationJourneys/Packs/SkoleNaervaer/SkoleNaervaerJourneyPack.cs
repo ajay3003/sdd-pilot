@@ -150,6 +150,12 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             EndpointOrTopic = "https://buf-meldings-utveksler.azurewebsites.net/api/altinn/webhook", EvidenceSourceRoleKey = MuSource,
             // MU's source implements the receiving side of the webhook; the Altinn app reference describes what the sender submits.
             EvidenceSourceSide = BirkNext.Integrations.IntegrationSourceSide.Consumer,
+            // A report fixture: the child is form data (the form binding's own element path); the reporter is the Altinn actor, never in the XML.
+            FixtureBindings =
+            [
+                new("Child", "child", new SkoleNaervaerAltinnForm().Fields.Single(field => field.Key == SkoleNaervaerAltinnForm.ChildIdentifier).Path, "The child the report is about."),
+                new("Reporter", "reporter", null, "Submits the report as the Altinn actor; not part of the XML."),
+            ],
             // The Altinn app reference describes how the report is submitted to the app (scheme, token providers, data type, task); the schema
             // named by the form data type is looked up in MU's own source, which is evidence of what MU holds — not proof of what MM validates.
             Reference = new(AltinnAppSourceRole)
@@ -181,7 +187,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             ExcludedComponentTokens = ["Meldingsutvekslermottak"],
             Capabilities = ["Meldingsutveksleren", "Altinn webhook", "Altinn source filter", "Report-intake configuration"], Journeys = [RapportmottakId],
         },
-        new(M2lbSource, "M2LB", "The downstream Skolenærvær implementation (MM, Skoletjenesten, SkoleAdapter, Utdanning, Skolenærværsrapport).")
+        // "M2LB application": the application source of these components. M2LB infrastructure (IaC) or a shared library (M2LB.Common) is not it.
+        new(M2lbSource, "M2LB application", "The downstream Skolenærvær implementation (MM, Skoletjenesten, SkoleAdapter, Utdanning, Skolenærværsrapport).")
         {
             IntegrationRequirementKeys = [EducationCdc, PeriodClosed],
             ComponentTokens = ["Meldingsutvekslermottak", "Skoletjenesten", "Skole", "SkoleAdapter", "Utdanning", "Skolenaervaersrapport", "Skolenærværsrapport"],

@@ -66,22 +66,44 @@
                 @if (DetectionLine is not null) { <p class="ps-muted" data-testid="@($"{Prefix}-detection-line")">@DetectionLine</p> }
                 @if (Proposals.Count > 0)
                 {
-                    <fieldset class="ps-proposals" data-testid="@($"{Prefix}-proposals")">
-                        <legend>Select the values to save (nothing is saved until you apply)</legend>
-                        @foreach (var proposal in Proposals)
-                        {
-                            var key = proposal.Key;
-                            <label class="ps-proposal" data-testid="@($"{Prefix}-proposal")" data-key="@key">
-                                <input type="checkbox" checked="@Selected.Contains(key)" @onchange="e => OnToggle.InvokeAsync((key, e.Value is true))" />
-                                <span class="ps-proposal-body">
-                                    <span class="ps-proposal-label">@proposal.Label</span>
-                                    <span class="ps-proposal-value" data-testid="@($"{Prefix}-proposal-value")">@proposal.Value</span>
-                                    <span class="ps-muted">@proposal.State · Source: @proposal.Source@(proposal.Current is { } current ? $" · current: {current}" : "")</span>
-                                </span>
-                            </label>
-                        }
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="@($"{Prefix}-apply")" disabled="@(Busy || Selected.Count == 0)" @onclick="() => OnApply.InvokeAsync()">Apply selected</button>
-                    </fieldset>
+                    var applicable = Proposals.Where(p => !p.Conflict).ToList();
+                    var conflicts = Proposals.Where(p => p.Conflict).ToList();
+                    var count = applicable.Count(p => Selected.Contains(p.Key));
+                    @if (applicable.Count > 0)
+                    {
+                        <fieldset class="ps-proposals" data-testid="@($"{Prefix}-proposals")">
+                            <legend>Select the values to save (nothing is saved until you apply)</legend>
+                            @foreach (var proposal in applicable)
+                            {
+                                var key = proposal.Key;
+                                <label class="ps-proposal" data-testid="@($"{Prefix}-proposal")" data-key="@key">
+                                    <input type="checkbox" checked="@Selected.Contains(key)" @onchange="e => OnToggle.InvokeAsync((key, e.Value is true))" />
+                                    <span class="ps-proposal-body">
+                                        <span class="ps-proposal-label">@proposal.Label</span>
+                                        <span class="ps-proposal-value" data-testid="@($"{Prefix}-proposal-value")">@proposal.Value</span>
+                                        <span class="ps-muted">@proposal.State · Source: @proposal.Source · Not applied</span>
+                                    </span>
+                                </label>
+                            }
+                            @* The count is the selected applicable values: preselected is not applied, and a conflict is never part of Apply. *@
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="@($"{Prefix}-apply")" data-count="@count" disabled="@(Busy || count == 0)" @onclick="() => OnApply.InvokeAsync()">Apply selected (@count)</button>
+                        </fieldset>
+                    }
+                    @if (conflicts.Count > 0)
+                    {
+                        @* A detected value that differs from the configured one: shown, never selectable — Apply never overwrites a configured value. *@
+                        <ul class="ps-conflicts" data-testid="@($"{Prefix}-conflicts")" aria-label="Detected values that conflict with configured values">
+                            @foreach (var conflict in conflicts)
+                            {
+                                <li class="ps-conflict" data-testid="@($"{Prefix}-conflict")" data-key="@conflict.Key">
+                                    <strong>@conflict.Label · Conflict</strong>
+                                    <span>Configured: <span data-testid="@($"{Prefix}-conflict-configured")">@(conflict.Current ?? "—")</span></span>
+                                    <span>Detected: <span data-testid="@($"{Prefix}-conflict-detected")">@conflict.Value</span></span>
+                                    <span class="ps-muted">Source: @conflict.Source · The configured value is kept; change it yourself if the detected value is right.</span>
+                                </li>
+                            }
+                        </ul>
+                    }
                 }
                 else
                 {

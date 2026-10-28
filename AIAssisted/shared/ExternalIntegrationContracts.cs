@@ -90,10 +90,33 @@ public enum SetupDependencyKind { ExternalIntegration, ProviderCapability, Integ
 public enum SetupDependencyState { Resolved, Missing, Ambiguous, Incompatible, NotApproved, OptionalMissing }
 
 /// <summary>A dependency a package needs at its destination. References and roles only — never a value, secret or identifier.</summary>
-public sealed record SetupDependency(SetupDependencyKind Kind, string Reference, bool Required, string? Role = null, string? Provider = null);
+public sealed record SetupDependency(SetupDependencyKind Kind, string Reference, bool Required, string? Role = null, string? Provider = null)
+{
+    /// <summary>When the dependency matters: to apply the configuration safely (blocks Apply) or only to test after applying (a test-readiness
+    /// warning). Never part of a package file: preflight classifies every dependency, so existing package versions keep their meaning.</summary>
+    public SetupDependencyPhase Phase { get; init; } = SetupDependencyPhase.Apply;
+}
 
-/// <summary>How a dependency resolved at the destination, with its canonical owner to fix it there.</summary>
-public sealed record SetupDependencyResolution(SetupDependency Dependency, SetupDependencyState State, string Detail, string Owner, string OwnerHref);
+/// <summary>Apply: needed to apply the configuration safely. Test: needed only to run the intended tests afterwards (Test Data, fixtures,
+/// contract evidence for validation).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SetupDependencyPhase { Apply, Test }
+
+/// <summary>Why an unresolved dependency is unresolved: the earliest failed prerequisite, so the action goes to its owner (a contract cannot be
+/// assessed before the integration it belongs to exists, nor before source evidence for it is available).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SetupDependencyCause { None, IntegrationNotConfigured, SourceEvidenceMissing, ContractEvidenceMissing, ContractConflict, ContractIncompatible }
+
+/// <summary>How a dependency resolved at the destination, with its canonical owner to fix it there. <see cref="Owner"/>/<see cref="OwnerHref"/> are
+/// the owner of the earliest actionable prerequisite (<see cref="Cause"/>); <see cref="ActionLabel"/> names the one next step.</summary>
+public sealed record SetupDependencyResolution(SetupDependency Dependency, SetupDependencyState State, string Detail, string Owner, string OwnerHref)
+{
+    public SetupDependencyCause Cause { get; init; } = SetupDependencyCause.None;
+    public string? ActionLabel { get; init; }
+    /// <summary>Secondary guidance (e.g. "Generate and validate a fixture in Schema Studio, then register it in Test Data").</summary>
+    public string? Hint { get; init; }
+    public SetupDependencyPhase Phase => Dependency.Phase;
+}
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SetupScope { Integration, Provider, Environment }
@@ -124,8 +147,12 @@ public sealed record SetupPreflightResult
     public IReadOnlyList<SetupDependencyResolution> Dependencies { get; init; } = [];
     public IReadOnlyList<string> BlockReasons { get; init; } = [];
     public bool CanApply => Valid && BlockReasons.Count == 0;
-    public int RequiredResolved => Dependencies.Count(d => d.Dependency.Required && d.State == SetupDependencyState.Resolved);
-    public int RequiredTotal => Dependencies.Count(d => d.Dependency.Required);
+    /// <summary>Setup apply readiness: required dependencies needed to apply safely (they block Apply when unresolved).</summary>
+    public int RequiredResolved => Dependencies.Count(d => d.Phase == SetupDependencyPhase.Apply && d.Dependency.Required && d.State == SetupDependencyState.Resolved);
+    public int RequiredTotal => Dependencies.Count(d => d.Phase == SetupDependencyPhase.Apply && d.Dependency.Required);
+    /// <summary>Test readiness: what the destination needs to run the intended tests after applying. Warnings, never Apply blockers.</summary>
+    public int TestResolved => Dependencies.Count(d => d.Phase == SetupDependencyPhase.Test && d.Dependency.Required && d.State == SetupDependencyState.Resolved);
+    public int TestTotal => Dependencies.Count(d => d.Phase == SetupDependencyPhase.Test && d.Dependency.Required);
     public int OptionalMissing => Dependencies.Count(d => d.State == SetupDependencyState.OptionalMissing);
     public int Conflicts => Changes.Count(c => c.Classification == "Conflict");
     public int SecretsImported => 0;

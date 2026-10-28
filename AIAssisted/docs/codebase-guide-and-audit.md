@@ -12,7 +12,7 @@ Coverage limit: this is a codebase-level architecture and risk audit, not a line
 
 BirkNext is a .NET 8 application for reviewing software project evidence. It combines a Blazor WebAssembly user interface, an ASP.NET Core API, shared request/response contracts, and PostgreSQL persistence through EF Core. Its product spans document-based software delivery lifecycle (SDD) analysis, source analysis, quality and security reviews, integration configuration and testing, and environment diagnostics.
 
-The system is strongest as an evidence collection and review workbench. It intentionally distinguishes declared source configuration from runtime observation, design-level test links from executed test results, and message acceptance from downstream verification. Many analyses are deterministic and bounded; the labels “AI-Generated Code Review” and “AI Change Review” should not be read as evidence that every review calls a model.
+The system is strongest as an evidence collection and review workbench. It intentionally distinguishes declared source configuration from runtime observation, design-level test links from executed test results, and message acceptance from downstream verification. Many analyses are deterministic and bounded; the label “AI Change Review” (and Code Risk Review’s former name, “AI-Generated Code Review”) should not be read as evidence that every review calls a model.
 
 The principal deployment concern is that authentication is configured, but it is not the default for the API. Explicit authorization protects Active Event execution and most integration-configuration writes. The saved-workspace API still uses a shared `default-user` identity and is unauthenticated. This is a significant tenant-isolation concern if the application is exposed to multiple users or beyond a trusted local machine. Local launch settings bind to loopback, which reduces the default local-development exposure but does not establish production safety.
 
@@ -64,7 +64,7 @@ This inventory follows the navigation catalog and the associated application mod
 | Document Review | Specification, Constitution, Data Model, Plan, and Task Explorers; Document Quality Review | Parse and inspect structured SDD artifacts and report document-level issues. |
 | Traceability | Requirements Traceability, Implementation Review, Implementation Traceability, Documentation Drift, Impact Analysis, optional Traceability & Coverage, Traceability Suggestions, Code Traceability | Relate requirements and delivery artifacts to work items, source references, test design, execution evidence, and change impact. |
 | Source Review | Source Analysis, Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis (Azure provider) | Inventory source technologies, contracts, dependencies, configuration, pipelines, infrastructure, and selected cloud environment evidence. |
-| Quality & Testing | Test Coverage & Overlap Review, Frontend Quality Review, API Quality Review, Integration Quality Review, Performance Test Review, Critical E2E Regression, AI-Generated Code Review | Inspect test inventory/overlap, run configured quality checks, analyze runtime and source signals, and retain review results where supported. |
+| Quality & Testing | Test Coverage & Overlap Review, Frontend Quality Review, API Quality Review, Integration Quality Review, Performance Test Review, Critical E2E Regression, Code Risk Review | Inspect test inventory/overlap, run configured quality checks, analyze runtime and source signals, and retain review results where supported. |
 | Extensions | M01 – Gradert tilgang (Kode 6/7) | M01 review of graded access and Kode 6/Kode 7 classification in M2LB (formerly named Security Classification; route `/security-classification-review`). Its classification evidence is a shared capability also consumed by Skolenærvær Testing. It is not a generic security classifier. |
 | AI Review | AI Change Review | Change-oriented review feature; its exact evidence and model use depend on its configured provider and implementation. |
 | Admin | System Settings | Configure visibility and local runtime settings; expose environment diagnostics and data-reset controls when enabled. |
@@ -83,7 +83,7 @@ This is not a universal artifact-management system. The artifact slots and parse
 
 Source Analysis accepts bounded project archives, rejects unsafe archive paths and sizes, analyzes in memory, redacts sensitive configuration values, and persists a snapshot of typed domains. Domains cover architecture, database, observability, infrastructure, configuration, CI/CD, contracts, tests, security expectations, messaging, and cross-domain links. Domain results carry status, provenance, diagnostics, and limitations. A declared cloud resource, pipeline step, or messaging channel is not presented as proof that it exists or is operating at runtime.
 
-Consumers include Technology Coverage, Dependency Review, Pipeline Review, Integration Quality Review, source security configuration/Classification, AI-Generated Code Review, Test Coverage & Overlap Review, and Impact Analysis. Support varies by format and analyzer; `Partial`, `Unsupported`, `NotDetected`, and `NotAssessed` must not be collapsed into “passed.” See [Source Evidence Domains](source-evidence-domains.md), [Source Analysis Archives](source-analysis-archives.md), and [Generated Documentation Evidence](generated-documentation-evidence.md).
+Consumers include Technology Coverage, Dependency Review, Pipeline Review, Integration Quality Review, source security configuration/Classification, Code Risk Review, Test Coverage & Overlap Review, and Impact Analysis. Support varies by format and analyzer; `Partial`, `Unsupported`, `NotDetected`, and `NotAssessed` must not be collapsed into “passed.” See [Source Evidence Domains](source-evidence-domains.md), [Source Analysis Archives](source-analysis-archives.md), and [Generated Documentation Evidence](generated-documentation-evidence.md).
 
 ### Runtime and integration review
 
@@ -144,7 +144,7 @@ Confirmed sensitive examples include the workspace persistence API and `api/admi
 - `birknext-sdd-audit.md` is a chronological audit with follow-up sections. Its early baseline text says Implementation Review was a placeholder, while later follow-ups describe its replacement and subsequent evidence integration. Read the later dated follow-ups as the current state and treat early claims as historical.
 - The project has useful module documentation, but no single authoritative feature-to-route-to-API-to-storage index existed at this audit target. This guide is intended to provide that entry point; it links to deeper module docs rather than duplicating every rule.
 - Navigation feature visibility is configuration, not access control. It must not be used as a substitute for API authorization.
-- “AI-Generated Code Review” is a deterministic source-evidence profile; its name does not mean it detects AI authorship or calls a language model. The feature's own documentation states that limitation.
+- Code Risk Review (formerly “AI-Generated Code Review”; the old route still works) is a deterministic source-evidence review; neither name means it detects AI authorship or calls a language model. The feature's own documentation states that limitation.
 
 ## Module documentation index
 
@@ -153,7 +153,7 @@ Confirmed sensitive examples include the workspace persistence API and `api/admi
 - [Source Analysis archive handling](source-analysis-archives.md)
 - [Source evidence domains](source-evidence-domains.md)
 - [Generated documentation evidence](generated-documentation-evidence.md)
-- [AI-Generated Code Review](ai-generated-code-review.md)
+- [Code Risk Review](ai-generated-code-review.md)
 - [Test Coverage & Overlap Review](test-coverage-overlap-review.md)
 - [Active Event Testing](active-event-testing.md)
 - [Integration Journeys](integration-journeys.md)

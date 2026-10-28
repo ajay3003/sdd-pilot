@@ -311,10 +311,17 @@ public sealed class ProjectImportPageTests : BunitContext
 
         cut.Find("[data-testid=pi-current-name]").TextContent.Should().Be("shop");
         cut.Find("[data-testid=pi-current-fingerprint]").TextContent.Should().Be(new string('9', 12));
-        cut.Find("[data-testid=pi-current-source]").TextContent.Trim().Should().StartWith("Source analysis available", "the snapshot id is technical detail");
+        cut.Find("[data-testid=pi-current-source-status]").TextContent.Should().Be("Available", "the snapshot id is technical detail");
+        cut.Find("[data-testid=pi-current-source]").TextContent.Should().NotContain("Snapshot ");
         cut.Find("[data-testid=pi-current-snapshot]").TextContent.Should().StartWith("Snapshot ");
+        cut.Find("[data-testid=pi-close]").TextContent.Should().Be("Clear current project");
+        cut.Find("[data-testid=pi-close-help]").TextContent.Should().Contain("Imported data remains available in history").And.Contain("nothing is deleted");
+        var importId = _repository.SddLifecycle.CurrentProjectImportId;
         cut.Find("[data-testid=pi-close]").Click();
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull();
+        _repository.SddLifecycle.ProjectImports.Should().ContainSingle(i => i.ImportId == importId, "clearing deletes nothing: the import stays in history");
+        _repository.SddLifecycle.Revisions.Should().Contain(r => r.ProjectImportId == importId);
         cut.FindAll("[data-testid=pi-current]").Should().BeEmpty();
+        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Choose a project archive", "without a current project the upload block is open");
     }
 }

@@ -22,7 +22,7 @@ public sealed class FeatureVisibilityTaxonomyTests
     {
         SidebarLabels("document-review").Should().Equal(
             "Specification Explorer", "Constitution Explorer", "Data Model Explorer", "Plan Explorer", "Task Explorer",
-            "Document Quality Review", "Task Alignment Review", "Generated Documentation Health", "Documentation Drift");
+            "Document Quality Review", "Task Alignment Review", "Documentation Drift");
     }
 
     [Fact]
@@ -43,10 +43,10 @@ public sealed class FeatureVisibilityTaxonomyTests
     }
 
     [Fact]
-    public void Sidebar_source_review_keeps_source_features_without_generated_documentation_health()
+    public void Sidebar_source_review_holds_the_source_snapshot_features_including_generated_documentation_health()
     {
         SidebarLabels("source-review").Should().Equal(
-            "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+            "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
     }
 
     [Theory]
@@ -82,7 +82,7 @@ public sealed class FeatureVisibilityTaxonomyTests
     [Theory]
     [InlineData("QualityReview", "document-review")]          // Document Quality Review
     [InlineData("ImplementationReview", "document-review")]   // Task Alignment Review
-    [InlineData("GeneratedDocumentationHealth", "document-review")]
+    [InlineData("GeneratedDocumentationHealth", "source-review")]
     [InlineData("SpecDrift", "document-review")]              // Documentation Drift
     [InlineData("ArtifactTraceability", "traceability")]      // Requirements Traceability
     [InlineData("ImplementationTraceability", "traceability")] // Change Traceability

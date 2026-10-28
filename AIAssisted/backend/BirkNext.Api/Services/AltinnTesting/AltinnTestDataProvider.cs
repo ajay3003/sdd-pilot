@@ -29,6 +29,10 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
     public string? Detail => "Approved synthetic TestID reporters and synthetic children: entered in Test Data for this backend session (memory only), or supplied by the backend's own configuration.";
     public bool Configured => options.UnattendedIdPortenTest.Reporters.Count > 0 || options.SyntheticChildren.Count > 0;
 
+    private static TestDataFact Origin(bool builtIn, DateTimeOffset? sessionExpiresAt) =>
+        builtIn ? new("Built-in", "Skolenærvær default test identity (Test Data built-in)")
+        : sessionExpiresAt is null ? new("Configuration", "Backend configuration") : new("Session", "Entered in Test Data for this backend session");
+
     public IReadOnlyList<TestDataAsset> Assets()
     {
         var assets = new List<TestDataAsset>();
@@ -42,9 +46,9 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 Approval = problem is null ? TestDataApproval.Approved : TestDataApproval.Unapproved, ApprovalDetail = problem,
                 Validation = reporter.AltinnProfileConfirmed ? TestDataValidation.Validated : TestDataValidation.NeedsValidation,
                 ValidationDetail = reporter.AltinnProfileConfirmed ? "Altinn TT02 profile confirmed (configured confirmation; not an authentication)." : "Altinn TT02 profile not confirmed.",
-                Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel,
+                Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel, IsDefault = reporter.Default,
                 Value = string.IsNullOrWhiteSpace(reporter.TestIdPersonIdentifier) ? null : new TestDataValue(reporter.TestIdPersonIdentifier.Trim()),
-                Provenance = [reporter.SessionExpiresAt is null ? new("Configuration", "Backend configuration") : new("Session", "Entered in Test Data for this backend session")],
+                Provenance = [Origin(reporter.BuiltIn, reporter.SessionExpiresAt)],
             });
         }
         foreach (var child in options.SyntheticChildren.Where(item => !string.IsNullOrWhiteSpace(item.Alias)))
@@ -59,7 +63,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 ValidationDetail = child.KnownToPerson ? "Declared known to Person; not verified by BirkNext." : "Declared unknown to Person; not verified by BirkNext.",
                 Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel, IsDefault = child.Default,
                 Value = string.IsNullOrWhiteSpace(child.TestPersonIdentifier) ? null : new TestDataValue(child.TestPersonIdentifier.Trim()),
-                Provenance = [child.SessionExpiresAt is null ? new("Configuration", "Backend configuration") : new("Session", "Entered in Test Data for this backend session")],
+                Provenance = [Origin(child.BuiltIn, child.SessionExpiresAt)],
             });
         }
         return assets;

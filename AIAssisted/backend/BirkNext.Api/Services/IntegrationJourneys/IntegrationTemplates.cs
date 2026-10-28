@@ -55,6 +55,7 @@ public static class IntegrationTemplates
             Values = values, NeedsConfiguration = needs, Journeys = journeys, AlreadyConfigured = configured, EvidenceSource = evidence,
             ReferenceSource = reference, AuthenticationReference = Pick(template.Reference?.AuthenticationFacts), ContractReference = Pick(template.Reference?.ContractFacts),
             SchemaName = schemaName, SchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName),
+            FixtureBindings = template.FixtureBindings,
         };
     }
 

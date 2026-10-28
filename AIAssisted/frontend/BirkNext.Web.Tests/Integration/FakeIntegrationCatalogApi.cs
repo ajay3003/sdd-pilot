@@ -44,6 +44,13 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         Calls.Add("discover-source-integrations");
         return Task.FromResult(SourceReport?.Invoke(Catalog));
     }
+    /// <summary>The primary (current project) snapshot the pane last asked discovery for.</summary>
+    public Guid? LastPrimarySnapshot { get; private set; }
+    public Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default)
+    {
+        LastPrimarySnapshot = primarySnapshotId;
+        return SourceIntegrationsAsync(environmentId, ct);
+    }
     // Source Analysis infrastructure suggestions per kind (read-only). Null = no suggestion (the hint renders nothing).
     public Func<BirkNext.SourceDomains.InfrastructureResourceKind, BirkNext.SourceDomains.SourceInfrastructureSuggestion?>? Suggestions { get; set; }
     public Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) =>

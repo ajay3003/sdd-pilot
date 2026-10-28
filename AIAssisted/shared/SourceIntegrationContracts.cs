@@ -74,7 +74,17 @@ public sealed record SourceIntegrationCandidate
     public string? TechnicalPurpose { get; init; }
     public List<SourceFieldEvidence> Evidence { get; init; } = [];
     public List<string> Diagnostics { get; init; } = [];
+    /// <summary>Every source snapshot that contributed this candidate and why it was in scope (multi-source discovery). Empty for a single-snapshot
+    /// discovery, where <see cref="SourceSnapshotId"/> is the only source.</summary>
+    public List<SourceIntegrationProvenance> Sources { get; init; } = [];
+    /// <summary>Fields on which contributing sources disagree ("Capture technology: Debezium (a.zip) ≠ Custom publisher (b.zip)"). Never resolved
+    /// automatically: a candidate with disagreements needs a decision.</summary>
+    public List<string> SourceDisagreements { get; init; } = [];
 }
+
+/// <summary>One source snapshot behind a candidate: the archive, why it was in discovery scope (current project source, bound in IQR, recognized as a
+/// Test Pack source role) and whether it only corroborates (Infrastructure as Code never originates a candidate on its own).</summary>
+public sealed record SourceIntegrationProvenance(Guid SnapshotId, string ArchiveName, string Reason, bool CorroboratingOnly = false);
 
 /// <summary>A platform/support channel that is excluded from business integration counts, with why.</summary>
 public sealed record TechnicalIntegrationChannel(string Name, IntegrationTransport Transport, string Purpose, string Source, string ExclusionReason);
@@ -134,6 +144,9 @@ public sealed record SourceIntegrationsReport
     public List<SourceIntegrationMatch> Matches { get; init; } = [];
     /// <summary>Business candidates in source that no configured integration covers (never added automatically).</summary>
     public List<string> UnconfiguredCandidateIds { get; init; } = [];
+    /// <summary>The source snapshots discovery read, primary (current project) first, each with why it was in scope. Unrelated stored snapshots are
+    /// never read.</summary>
+    public List<SourceIntegrationProvenance> ContributingSources { get; init; } = [];
     public DateTimeOffset GeneratedAt { get; init; }
     public string Boundary { get; init; } = SourceIntegrationDiscoveryResult.Boundary;
 }

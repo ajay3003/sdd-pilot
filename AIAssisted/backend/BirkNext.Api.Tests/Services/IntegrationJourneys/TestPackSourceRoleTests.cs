@@ -1,3 +1,4 @@
+using BirkNext.Api.Services.Integrations.SourceDiscovery;
 using BirkNext.Api.Services.IntegrationJourneys;
 using BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 using BirkNext.Api.Tests.Services.ActiveEventTesting;
@@ -80,14 +81,14 @@ public sealed class TestPackSourceRoleTests
 
         // Architecture rules need M2LB: not assessed, never "component not found in the MU source".
         rules.Findings.Should().HaveCount(4).And.OnlyContain(finding => finding.Outcome == ArchitectureRuleOutcome.NotAssessed);
-        rules.Findings.Should().OnlyContain(finding => finding.Detail.StartsWith("Not assessed — this rule requires M2LB source evidence. The currently bound source is MU (Meldingsutveksleren).", StringComparison.Ordinal)
+        rules.Findings.Should().OnlyContain(finding => finding.Detail.StartsWith("Not assessed — this rule requires M2LB application source evidence. The currently bound source is MU (Meldingsutveksleren).", StringComparison.Ordinal)
             && finding.Detail.Contains("M2LB (2).zip is available but not bound", StringComparison.Ordinal));
         rules.Findings.Should().NotContain(finding => finding.Detail.Contains("not found", StringComparison.OrdinalIgnoreCase) || finding.Detail.Contains("not present", StringComparison.OrdinalIgnoreCase));
         rules.RuleSources.Should().OnlyContain(item => item.SourceRole == "m2lb" && item.BoundArchive == null && item.AvailableArchive == "M2LB (2).zip" && item.State == TestPackSourceState.AvailableNotBound);
 
         // Source prerequisites: MM needs M2LB (available, not bound) — not "not present".
         var rapport = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak");
-        rapport.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Needs M2LB source evidence: component M2LB.Meldingsutvekslermottak.Host is in M2LB (2).zip");
+        rapport.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Needs M2LB application source evidence: component M2LB.Meldingsutvekslermottak.Host is in M2LB (2).zip");
         rapport.Prerequisites.Single(item => item.Key == "source:MU").State.Should().Be(JourneyReadinessState.Ready);
     }
 
@@ -120,8 +121,8 @@ public sealed class TestPackSourceRoleTests
         harness.Bindings.Bind(PeriodClosed.Id, mu);
         var (guidance, rules) = await ReadAsync(harness);
         Source(guidance, "m2lb").State.Should().Be(TestPackSourceState.ReviewRequired);
-        Source(guidance, "m2lb").Detail.Should().Contain("is not recognized as the M2LB source");
-        rules.Findings.Should().OnlyContain(finding => finding.Outcome == ArchitectureRuleOutcome.NotAssessed && finding.Detail.StartsWith("Not assessed — this rule requires M2LB source evidence.", StringComparison.Ordinal));
+        Source(guidance, "m2lb").Detail.Should().Contain("is not recognized as the M2LB application source");
+        rules.Findings.Should().OnlyContain(finding => finding.Outcome == ArchitectureRuleOutcome.NotAssessed && finding.Detail.StartsWith("Not assessed — this rule requires M2LB application source evidence.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -150,7 +151,7 @@ public sealed class TestPackSourceRoleTests
             .Should().OnlyContain(item => item.State == TestPackSourceState.Missing);
         Source(guidance, "altinn-app").State.Should().Be(TestPackSourceState.ReferenceAvailable);
         Source(guidance, "infrastructure").State.Should().Be(TestPackSourceState.NotProvided, "Infrastructure as Code is optional for Skolenærvær, never a missing requirement");
-        rules.Findings.Should().OnlyContain(finding => finding.Detail.Contains("No M2LB source is imported", StringComparison.Ordinal));
+        rules.Findings.Should().OnlyContain(finding => finding.Detail.Contains("No M2LB application source is imported", StringComparison.Ordinal));
         var text = System.Text.Json.JsonSerializer.Serialize(new { guidance, rules, roles = Pack(harness).SourceRoles });
         text.Should().NotContain("skolenaervaer.json", "the BirkNext OpenAPI fixture is automated test evidence, never a package a tester imports");
         text.Should().NotContain("testdata");
@@ -253,7 +254,7 @@ public sealed class TestPackSourceRoleTests
         var (guidance, _) = await ReadAsync(harness);
         var m2lb = Source(guidance, "m2lb");
         m2lb.State.Should().Be(TestPackSourceState.ReviewRequired);
-        m2lb.Detail.Should().Contain("Several stored snapshots match the M2LB source").And.Contain("not chosen automatically");
+        m2lb.Detail.Should().Contain("Several stored snapshots match the M2LB application source").And.Contain("not chosen automatically");
         m2lb.Candidates.Select(item => item.ArchiveFileName).Should().Equal("M2LB.zip", "M2LB (2).zip");
         m2lb.Candidates.Should().OnlyContain(item => !item.Bound);
         m2lb.NextActionTarget.Should().Be("iqr-evidence");
@@ -455,6 +456,96 @@ public sealed class TestPackSourceRoleTests
         setup.Packs.Single().Sources.Single(item => item.Role.Key == "infrastructure").NearMisses.Should().BeEmpty();
     }
 
+    // ── Import Project: source status and source role semantics ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>An infrastructure-only repository: no application project, so the code analyzer's status is Failed; the evidence domains are analyzed.</summary>
+    private static IqrSourceSnapshot InfrastructureOnly(string archive) => Terraform(archive) with
+    {
+        Status = SourceAnalysisStatus.Failed,
+        Architecture = new ArchitectureSnapshot { Status = ArchitectureStatus.Unsupported },
+        EvidenceDomains = Terraform(archive).EvidenceDomains! with
+        {
+            Infrastructure = Terraform(archive).EvidenceDomains!.Infrastructure with { Status = BirkNext.SourceDomains.SourceDomainStatus.Complete },
+            Configuration = new BirkNext.SourceDomains.ConfigurationEvidence
+            {
+                Domain = BirkNext.SourceDomains.SourceEvidenceDomain.Configuration, Status = BirkNext.SourceDomains.SourceDomainStatus.Complete,
+                Files = [new() { Path = "env/qa.tfvars", Format = "hcl", Technology = "Terraform variables", Environment = new(BirkNext.SourceDomains.SourceEnvironmentKind.QA, "qa") },
+                    new() { Path = "env/prod.tfvars", Format = "hcl", Technology = "Terraform variables", Environment = new(BirkNext.SourceDomains.SourceEnvironmentKind.Production, "prod") }],
+            },
+            CiCd = new BirkNext.SourceDomains.PipelineEvidence { Domain = BirkNext.SourceDomains.SourceEvidenceDomain.CiCd, Status = BirkNext.SourceDomains.SourceDomainStatus.Partial },
+        },
+    };
+
+    [Fact]
+    public void AreaOutcomes_ShowThatAFailedCodeAnalysisIsOneAreaOnly_AndTheOtherAreasKeepTheirEvidence()
+    {
+        var areas = SourceSetupAreas.Of(InfrastructureOnly("Terraform-iac-meldingsutveksler.zip")).ToDictionary(a => a.Area, a => a.Status);
+
+        areas.Should().Equal(new Dictionary<string, string>
+        {
+            ["Application code"] = "NotDetected", ["Architecture"] = "Unsupported", ["Infrastructure as Code"] = "Complete",
+            ["Configuration"] = "Complete", ["CI/CD"] = "Partial", ["Contracts"] = "NotDetected",
+        });
+        // Production projects that exist but could not be read are a failed code analysis, not "no application code".
+        SourceSetupAreas.Of(new IqrSourceSnapshot { Status = SourceAnalysisStatus.Failed, Projects = [new SourceProject("Orders.Api", "src/Orders.Api/Orders.Api.csproj", false, "Application", SourceConfidence.Confirmed)] })
+            .Single(a => a.Area == "Application code").Status.Should().Be("Failed");
+        SourceSetupAreas.Of(new IqrSourceSnapshot { Status = SourceAnalysisStatus.Ready }).Should().Contain(new SourceSetupArea("Architecture", "NotAnalyzed"),
+            "a snapshot from before an area existed says so, never Failed");
+    }
+
+    [Fact]
+    public async Task SourceSetup_ForAFailedCodeAnalysis_KeepsAreasEnvironmentLabelsAndTheInfrastructureRole()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var infra = Imported(InfrastructureOnly("Terraform-iac-meldingsutveksler.zip"), "import-iac");
+        harness.Sources.Snapshots.Add(infra);
+
+        var setup = await harness.Service(Pack(harness)).SourceSetupAsync("", default);
+
+        var snapshot = setup.Snapshots.Single();
+        snapshot.Status.Should().Be("Failed", "the stored status is the code analyzer's own and is not rewritten");
+        snapshot.Areas.Should().Contain(new SourceSetupArea("Infrastructure as Code", "Complete"));
+        snapshot.ConfigurationEnvironments.Should().Equal("QA", "Production");
+        snapshot.InfrastructureFormats.Should().Equal("Terraform");
+        var sources = setup.Packs.Single().Sources;
+        sources.Single(s => s.Role.Key == "infrastructure").Candidates.Should().ContainSingle(c => c.SnapshotId == infra.Id);
+        sources.Single(s => s.Role.Key == "mu").Candidates.Should().BeEmpty("a name containing \"meldingsutveksler\" never makes infrastructure the MU application");
+    }
+
+    [Fact]
+    public async Task EachRealSourceShape_IsClassifiedByContent_AndTheM2lbRequirementNeedsTheApplicationSource()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var mu = WithFingerprint(Mu("Tiltak 2 - Sikkert digitalt økosystem.zip"), 'm');
+        var common = WithFingerprint(Repo("M2LB.Common.zip", ("M2LB.Common", null), ("M2LB.Common.Messaging", null)), 'c');
+        var m2lbIac = Terraform("Terraform-iac-m2lb.zip");
+        var m01Iac = Terraform("Terraform-iac-m2lbm01.zip");
+        var genericIac = Terraform("platform-infra.zip");
+        var unknown = WithFingerprint(Repo("orders.zip", ("Orders.Api", null)), 'o');
+        harness.Sources.Snapshots.AddRange([mu, common, m2lbIac, m01Iac, genericIac, unknown]);
+
+        var sources = (await harness.Service(Pack(harness)).SourceSetupAsync("", default)).Packs.Single().Sources.ToDictionary(s => s.Role.Key);
+        IEnumerable<string> RolesOf(IqrSourceSnapshot snapshot) => sources.Values.Where(s => s.Candidates.Any(c => c.SnapshotId == snapshot.Id)).Select(s => s.Role.Key);
+
+        RolesOf(mu).Should().Equal("mu");
+        RolesOf(m2lbIac).Should().Equal(["infrastructure"], "M2LB infrastructure is related evidence, not the M2LB application source");
+        RolesOf(m01Iac).Should().Equal("infrastructure");
+        RolesOf(genericIac).Should().Equal("infrastructure");
+        RolesOf(common).Should().BeEmpty("a shared library has none of the application's components");
+        RolesOf(unknown).Should().BeEmpty();
+
+        var m2lb = sources["m2lb"];
+        m2lb.Role.Label.Should().Be("M2LB application", "the requirement names the exact role it needs");
+        m2lb.State.Should().Be(TestPackSourceState.Missing);
+        m2lb.Detail.Should().StartWith("M2LB application source is missing");
+        m2lb.NearMisses.Select(n => n.ArchiveFileName).Should().Contain(["M2LB.Common.zip", "Terraform-iac-m2lb.zip"], "M2LB-named archives are checked and explained, never accepted by name");
+        m2lb.NearMisses.Should().OnlyContain(n => n.Reason.Contains("none of the expected components"));
+
+        harness.Sources.Snapshots.Add(M2lb());
+        var withApplication = (await harness.Service(Pack(harness)).SourceSetupAsync("", default)).Packs.Single().Sources.Single(s => s.Role.Key == "m2lb");
+        withApplication.State.Should().Be(TestPackSourceState.AvailableNotBound, "only the application source (MM, SkoleAdapter, Utdanning …) satisfies it");
+    }
+
     [Fact]
     public async Task MatchedOnNamesTheEvidence_ForComponentsAndInfrastructure()
     {
@@ -464,5 +555,65 @@ public sealed class TestPackSourceRoleTests
 
         Source(guidance, "m2lb").Candidates.Single().MatchedOn.Should().HaveCountLessThanOrEqualTo(8).And.Contain("Component: M2LB.Utdanning.Api").And.NotContain(item => item.Contains("Person"));
         Source(guidance, "infrastructure").Candidates.Single().MatchedOn.Should().Equal("Infrastructure as Code: Terraform");
+    }
+
+    // ── Integration Catalog discovery scope (multi-source) ──────────────────────────────────────────────────────────────
+
+    private static IqrSourceSnapshot WithArchitecture(IqrSourceSnapshot snapshot) => snapshot with { Architecture = snapshot.Architecture ?? new ArchitectureSnapshot { Status = ArchitectureStatus.Unsupported } };
+
+    [Fact]
+    public async Task Discovery_scope_is_the_current_project_plus_recognized_sources_never_unrelated_history_or_a_name_match()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var now = DateTimeOffset.UtcNow;
+        var common = WithFingerprint(Repo("M2LB.Common.zip", ("M2LB.Common", null)), 'c') with { AnalyzedAt = now.AddHours(-1) };
+        var mu = WithFingerprint(Mu("Tiltak 2 - Sikkert digitalt økosystem.zip"), 'm') with { AnalyzedAt = now.AddHours(-2) };
+        var olderMu = WithFingerprint(Mu("Tiltak 2 - Sikkert digitalt økosystem.zip"), 'n') with { AnalyzedAt = now.AddHours(-9) };
+        var infra = WithArchitecture(Terraform("Terraform-iac-m2lb.zip")) with { AnalyzedAt = now.AddHours(-3) };
+        var unrelated = WithFingerprint(Repo("orders.zip", ("Orders.Api", null)), 'o') with { AnalyzedAt = now };
+        var namedOnly = WithFingerprint(Repo("Meldingsutveksler-notes.zip", ("Notes.Api", null)), 'q') with { AnalyzedAt = now.AddMinutes(-5) };
+        var scope = SourceIntegrationScope.Select([common, mu, olderMu, infra, unrelated, namedOnly], common.Id, [], [Pack(harness)]);
+
+        scope.Select(s => s.Snapshot.Archive.FileName).Should().Equal(["M2LB.Common.zip", "Tiltak 2 - Sikkert digitalt økosystem.zip", "Terraform-iac-m2lb.zip"],
+            "the current project first; the newest analysis of each recognized source; unrelated and name-only archives never");
+        scope[0].Reasons.Should().Equal(SourceIntegrationScope.PrimaryReason);
+        scope[1].Reasons.Single().Should().StartWith("MU (Meldingsutveksleren) source");
+        scope[1].Originates.Should().BeTrue();
+        scope[2].Originates.Should().BeFalse("Infrastructure as Code only corroborates");
+        scope.Should().NotContain(s => s.Snapshot.Id == olderMu.Id, "an earlier analysis of the same archive is replaced, not doubled");
+
+        // An IQR-bound snapshot is in scope even when it is an older analysis; without any context the newest stays the fallback.
+        SourceIntegrationScope.Select([mu, olderMu], null, [olderMu.Id], []).Select(s => s.Snapshot.Id).Should().Equal(olderMu.Id);
+        SourceIntegrationScope.Select([common, unrelated], null, [], []).Single().Reasons.Should().Equal(SourceIntegrationScope.FallbackReason);
+    }
+
+    private static SourceIntegrationCandidate Found(string id, Guid snapshot, string? consumer = null, string? capture = null) =>
+        new() { Id = id, SourceSnapshotId = snapshot, Transport = IntegrationTransport.ServiceBusQueue, Pattern = IntegrationPattern.Messaging, ChannelName = id, ConsumerCandidate = consumer, CaptureTechnology = capture };
+
+    private static ScopedSourceSnapshot Scoped(string archive, bool originates) =>
+        new(new IqrSourceSnapshot { Id = Guid.NewGuid(), Archive = new(archive, new string('x', 64), 1) }, [originates ? "Current project source" : "Infrastructure as Code source"], originates);
+
+    [Fact]
+    public void Merging_deduplicates_by_identity_keeps_every_source_fills_complementary_fields_and_never_picks_between_disagreeing_ones()
+    {
+        var app = Scoped("app.zip", true);
+        var other = Scoped("other.zip", true);
+        var infra = Scoped("infra.zip", false);
+        var merged = SourceIntegrationScope.Merge(
+        [
+            (app, new SourceIntegrationDiscoveryResult { SourceSnapshotId = app.Snapshot.Id, Candidates = [Found("q1", app.Snapshot.Id, capture: "Custom"), Found("q2", app.Snapshot.Id)] }),
+            (other, new SourceIntegrationDiscoveryResult { SourceSnapshotId = other.Snapshot.Id, Candidates = [Found("q1", other.Snapshot.Id, consumer: "Hub.Consumer", capture: "Debezium")] }),
+            (infra, new SourceIntegrationDiscoveryResult { SourceSnapshotId = infra.Snapshot.Id, Candidates = [Found("q2", infra.Snapshot.Id), Found("infra-only", infra.Snapshot.Id)] }),
+        ])!;
+
+        merged.Candidates.Select(c => c.Id).Should().Equal(["q1", "q2"], "one candidate per identity; infrastructure never originates one");
+        var q1 = merged.Candidates[0];
+        q1.Sources.Select(s => s.ArchiveName).Should().Equal("app.zip", "other.zip");
+        q1.ConsumerCandidate.Should().Be("Hub.Consumer", "a consumer one repository names fills the gap of another");
+        q1.CaptureTechnology.Should().Be("Custom", "the first source's value is kept…");
+        q1.SourceDisagreements.Should().ContainSingle().Which.Should().Be("Capture technology: Custom (app.zip) ≠ Debezium (other.zip)", "…and the disagreement is surfaced");
+        merged.Candidates[1].Sources.Should().Equal(app.Provenance, infra.Provenance);
+        merged.Candidates[1].Sources[1].CorroboratingOnly.Should().BeTrue();
+        merged.SourceSnapshotId.Should().Be(app.Snapshot.Id, "the primary context stays first");
     }
 }

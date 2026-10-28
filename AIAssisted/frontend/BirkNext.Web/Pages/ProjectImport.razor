@@ -34,54 +34,76 @@
         {
             var currentSource = ProjectImportPresentation.CurrentSource(current, DateTimeOffset.UtcNow);
             var currentSnapshot = CurrentSnapshot(current);
-            var (analysisStatus, analysisExplanation) = ImportProjectOverview.SourceAnalysis(currentSource, currentSnapshot?.Status);
+            var analysis = ImportProjectOverview.SourceAnalysis(currentSource, currentSnapshot);
+            var sourceRole = ImportProjectOverview.SourceRole(_setup, currentSource.SnapshotId, currentSource.SourceDetected);
             <div class="pi-current-group" data-testid="pi-current">
-            @* ── A · Current project summary ── *@
+            @* ── A · Current project summary: import, documents, source analysis, source role and test environment are separate statuses ── *@
             <section class="pi-card pi-current" aria-labelledby="pi-current-heading" data-testid="pi-current-card">
                 <h2 id="pi-current-heading" tabindex="-1" class="pi-current-heading"><span class="pi-current-eyebrow">Current project</span> <strong data-testid="pi-current-name">@current.ProjectName</strong></h2>
                 <p class="pi-current-success" data-testid="pi-current-success"><span aria-hidden="true">✓ </span><strong>Project imported successfully.</strong> @ImportProjectOverview.ImportedKind(current, currentSource). Import means BirkNext found and recorded the contents — nothing has been reviewed or tested yet.</p>
                 <p class="pi-current-summary" data-testid="pi-current-summary">@ImportProjectOverview.Summary(current, _workspace, currentSource)</p>
-                <ul class="pi-current-facts">
-                    <li data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")">
-                        <span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(currentSource.Tone)">@analysisStatus</span>
-                        @if (analysisExplanation is { } explanation) { <span class="pi-muted" data-testid="pi-current-source-explanation"> @explanation</span> }
-                    </li>
-                    <li data-testid="pi-current-documents">Project documents: @(current.ArtifactDocumentCount > 0 && _workspace?.Overview is { } docOverview ? ImportProjectOverview.DocumentTypes(docOverview) : DocumentsFact(current))</li>
-                    <li data-testid="pi-current-environment"><span class="pi-badge pi-badge-@(_hasTarget ? "available" : "partial")">@ImportProjectOverview.TestEnvironment(_environmentName)</span></li>
-                </ul>
+                <dl class="pi-current-status">
+                    <div data-testid="pi-current-documents"><dt>Documents</dt><dd>@(current.ArtifactDocumentCount > 0 && _workspace?.Overview is { } docOverview ? ImportProjectOverview.DocumentTypes(docOverview) : DocumentsFact(current))</dd></div>
+                    <div data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")" data-state="@analysis.State">
+                        <dt>Source Analysis</dt>
+                        <dd>
+                            <span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(analysis.Tone)" data-testid="pi-current-source-status">@analysis.Status</span>
+                            @if (analysis.Explanation is { } explanation) { <span class="pi-muted" data-testid="pi-current-source-explanation"> @explanation</span> }
+                            @if (analysis.Areas is { } areas) { <span class="pi-areas" data-testid="pi-current-source-areas">@areas</span> }
+                            @if (analysis.HasDetails && currentSource.SnapshotId is { } detailSnapshot) { <a href="@ProjectImportPresentation.SourceAnalysisHref(detailSnapshot)" data-testid="pi-current-analysis-details">View analysis details</a> }
+                        </dd>
+                    </div>
+                    @if (sourceRole is { } role)
+                    {
+                        <div data-testid="pi-current-role" data-identified="@(role.Identified ? "true" : "false")">
+                            <dt>Source role</dt>
+                            <dd><span class="pi-badge pi-badge-@(role.Identified ? "available" : "neutral")" data-testid="pi-current-role-status">@role.Status</span>@if (role.Detail is { } roleDetail) { <span class="pi-muted" data-testid="pi-current-role-detail"> @roleDetail</span> }</dd>
+                        </div>
+                    }
+                    <div data-testid="pi-current-environment"><dt>Test environment</dt><dd><span class="pi-badge pi-badge-@(_hasTarget ? "available" : "partial")">@(_environmentName ?? "Not selected")</span></dd></div>
+                </dl>
                 @if (_currentRetryMessage is { } retryMessage) { <p class="pi-warning" role="status" data-testid="pi-current-retry-message">@retryMessage</p> }
             </section>
 
-            @* ── B · Needs attention ── *@
-            @{ var attention = ImportProjectOverview.Attention(_workspace, _setup, currentSource, _hasTarget); }
+            @* ── B · Needs attention, grouped by who resolves it (documents ≠ testing setup ≠ source analysis ≠ environment) ── *@
+            @{ var attention = ImportProjectOverview.Attention(_workspace, _setup, currentSource, _hasTarget); var open = attention.Count(a => !a.Informational); }
             <section class="pi-card pi-attention" aria-labelledby="pi-attention-heading" data-testid="pi-attention">
-                <h2 id="pi-attention-heading">Needs attention <span class="pi-muted" data-testid="pi-attention-count">@(attention.Count(a => !a.Informational) is var n && n > 0 ? $"· {n} item{(n == 1 ? "" : "s")}" : "· nothing to resolve")</span></h2>
+                <h2 id="pi-attention-heading">Needs attention <span class="pi-muted" data-testid="pi-attention-count">@(open > 0 ? $"· {open} thing{(open == 1 ? "" : "s")} need{(open == 1 ? "s" : "")} attention" : "· nothing to resolve")</span></h2>
                 @if (attention.Count == 0)
                 {
                     <p class="pi-muted">Nothing needs attention. You can start reviewing.</p>
                 }
                 else
                 {
-                    <ul class="pi-attention-list">
-                        @foreach (var item in attention)
-                        {
-                            <li class="pi-attention-item @(item.Informational ? "is-info" : "is-attention")" data-testid="pi-attention-item" data-key="@item.Key">
-                                <span class="pi-attention-kind">@(item.Informational ? "Note" : "Attention")</span>
-                                <span class="pi-attention-body"><span class="pi-attention-text">@item.Text</span>@if (item.Detail is { Length: > 0 } detail) { <span class="pi-muted">@detail</span> }</span>
-                                <a href="@item.Href" class="pi-attention-action" data-testid="pi-attention-action">@item.ActionLabel</a>
-                            </li>
-                        }
-                    </ul>
+                    @foreach (var (group, title, items) in ImportProjectOverview.Grouped(attention))
+                    {
+                        <div class="pi-attention-group" data-testid="pi-attention-group" data-group="@group">
+                            <h3 class="pi-attention-group-title">@title</h3>
+                            <ul class="pi-attention-list">
+                                @foreach (var item in items)
+                                {
+                                    <li class="pi-attention-item @(item.Informational ? "is-info" : "is-attention")" data-testid="pi-attention-item" data-key="@item.Key">
+                                        <span class="pi-attention-kind">@(item.Informational ? "Note" : "Attention")</span>
+                                        <span class="pi-attention-body"><span class="pi-attention-text">@item.Text</span>@if (item.Detail is { Length: > 0 } detail) { <span class="pi-muted">@detail</span> }</span>
+                                        <a href="@item.Href" class="pi-attention-action" data-testid="pi-attention-action">@item.ActionLabel</a>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
                 }
             </section>
 
-            @* ── C · What can I do now? (ordered by tester value; Source Analysis is technical evidence, so secondary) ── *@
+            @* ── C · What can I do now? Only actions useful in the current state; Source Analysis is technical evidence, so secondary ── *@
             <section class="pi-card" aria-labelledby="pi-next-now-heading" data-testid="pi-now">
                 <h2 id="pi-next-now-heading">What can I do now?</h2>
                 <div class="pi-actions">
                     @if (FirstExplorer(current) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-current-open-documents">Review project documents</a> }
-                    @if (_setup is { Packs.Count: > 0 }) { <a class="btn-secondary" href="#pi-setup-heading" data-testid="pi-current-open-setup">Review testing setup</a> }
-                    <a class="btn-secondary" href="integration-quality-review" data-testid="pi-current-open-integrations">Review integrations</a>
+                    @if (_setup is { Packs.Count: > 0 })
+                    {
+                        <a class="btn-secondary" href="#pi-setup-heading" data-testid="pi-current-open-setup">Review testing setup</a>
+                        <a class="btn-secondary" href="integration-quality-review" data-testid="pi-current-open-integrations">Review integrations</a>
+                    }
                     @if (currentSource.SnapshotId is { } openSnapshot)
                     {
                         <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(openSnapshot)" data-testid="pi-current-open-source">View Source Analysis</a>
@@ -90,15 +112,21 @@
                     {
                         <button type="button" class="btn-secondary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">@(_retrying ? "Retrying…" : "Retry creating source analysis")</button>
                     }
-                    @ImportAnotherButton("pi-current-import-another", "pi-current-import-another-file")
-                    <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close current project view</button>
+                    <button type="button" class="btn-secondary" data-testid="pi-current-import-another" aria-expanded="@(_showUpload ? "true" : "false")" aria-controls="pi-choose" @onclick="ShowUpload">Import another project</button>
+                    <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Clear current project</button>
                 </div>
-                <p class="pi-muted" data-testid="pi-close-help">Closing only stops showing this project. Its import, documents and source analysis stay in history, and nothing changes which source Integration Quality Review uses.</p>
+                <p class="pi-muted" data-testid="pi-close-help">Clearing only stops showing this as the current project. Imported data remains available in history: nothing is deleted, and Integration Quality Review bindings do not change.</p>
             </section>
 
             @* ── D · Project contents ── *@
             <section class="pi-card pi-project-artifacts" aria-labelledby="pi-artifacts-heading" data-testid="pi-current-candidates" data-import="@current.ImportId">
                 <h2 id="pi-artifacts-heading">Project contents</h2>
+                @* Status per kind of content, from what the import and its stored snapshot already hold (nothing is analyzed for this). *@
+                <dl class="pi-facts pi-contents-status" data-testid="pi-contents-status">
+                    <div><dt>Source code</dt><dd data-testid="pi-contents-source">@(currentSource.SourceDetected ? "Available" : "Not in this archive")</dd></div>
+                    @if (currentSnapshot is { InfrastructureFormats.Count: > 0 } iacSnapshot) { <div><dt>Infrastructure</dt><dd data-testid="pi-contents-infrastructure">@string.Join(", ", iacSnapshot.InfrastructureFormats) detected</dd></div> }
+                    @if (currentSnapshot?.Areas.FirstOrDefault(a => a.Area == "Contracts") is { Status: "Complete" or "Partial" } contracts) { <div><dt>Contracts/schemas</dt><dd data-testid="pi-contents-contracts">Detected@(contracts.Status == "Partial" ? " · partially analyzed" : "")</dd></div> }
+                </dl>
                 @if (current.ArtifactDocumentCount > 0) { <ProjectArtifactCandidateReview @key="current.ImportId" LabelledBy="pi-artifacts-heading" /> }
                 else { <p class="pi-muted" data-testid="pi-current-no-artifacts">No supported project documents were found. @(currentSource.SourceDetected ? "The source code can still be reviewed." : "")</p> }
             </section>
@@ -140,39 +168,52 @@
         @if (ProjectImportHistory.Previous(Activation.Imports, Activation.Current?.ImportId, _setup) is { Count: > 0 } previous)
         {
             <section class="pi-card pi-previous" aria-labelledby="pi-previous-heading" data-testid="pi-previous">
-                <h2 id="pi-previous-heading">Previously imported projects</h2>
-                <p class="pi-muted">Already imported here, so there is no need to upload them again. <strong>Open this project</strong> changes the project shown in BirkNext. It does not re-import, create a source analysis, or change saved review evidence or integration bindings.</p>
+                <h2 id="pi-previous-heading">Previously imported projects and sources</h2>
+                <p class="pi-muted" data-testid="pi-previous-help">Each keeps its own source analysis, which testing setups and Integration Quality Review use directly — whichever project is current. <strong>Set as current project</strong> only changes which project's documents BirkNext shows: it does not re-import, analyze, or change saved review evidence or integration bindings.</p>
                 @if (_useMessage is { } useMessage) { <p class="pi-warning" role="status" data-testid="pi-use-message">@useMessage</p> }
-                <ul class="pi-previous-list" aria-label="Previously imported projects">
+                <ul class="pi-previous-list" aria-label="Previously imported projects and sources">
                     @foreach (var row in previous)
                     {
+                        var rowAnalysis = ImportProjectOverview.SourceAnalysis(row.HasSource, row.SnapshotId, row.Snapshot);
+                        var rowRole = ImportProjectOverview.SourceRole(_setup, row.SnapshotId, row.HasSource);
                         <li class="pi-previous-row" data-testid="pi-previous-row" data-origin="@row.Origin" data-import="@row.ImportId" data-snapshot="@row.SnapshotId">
                             <div class="pi-setup-head">
                                 <strong class="pi-previous-name" data-testid="pi-previous-name">@row.DisplayName</strong>
-                                <span class="pi-muted" data-testid="pi-previous-when">@ImportProjectOverview.Imported(row.ImportedAt)</span>
-                                <span class="pi-muted" data-testid="pi-previous-contents">· @ImportProjectOverview.Contents(row)</span>
+                                <span class="pi-muted" data-testid="pi-previous-contents">@ImportProjectOverview.Contents(row)</span>
                             </div>
+                            <dl class="pi-previous-facts">
+                                @if (rowRole is { } previousRole) { <div><dt>Source role</dt><dd data-testid="pi-previous-role">@previousRole.Status</dd></div> }
+                                @if (row.HasSource) { <div><dt>Source Analysis</dt><dd><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(rowAnalysis.Tone)" data-testid="pi-previous-analysis">@rowAnalysis.Status</span></dd></div> }
+                                @if (row.ConfigurationEnvironments.Count > 0)
+                                {
+                                    <div><dt>Environment labels</dt><dd data-testid="pi-previous-environment-labels" title="Labels found in source, not proof of deployment.">@string.Join(" · ", row.ConfigurationEnvironments)<span class="visually-hidden"> (labels found in source, not proof of deployment)</span></dd></div>
+                                }
+                                @* IQR bindings belong to a target environment: shown only when one is selected and the source is actually bound. *@
+                                @if (_setup is { BindingsRead: true } && row.BoundIntegrations.Count > 0) { <div><dt>IQR bindings</dt><dd data-testid="pi-previous-binding-count">@row.BoundIntegrations.Count</dd></div> }
+                                <div><dt>Imported</dt><dd data-testid="pi-previous-when">@ImportProjectOverview.Date(row.ImportedAt)</dd></div>
+                            </dl>
                             <div class="pi-actions">
-                                @if (row.CanUseAsCurrent) { <button type="button" class="btn-secondary" data-testid="pi-previous-use" aria-label="@($"Open {row.DisplayName}")" @onclick="() => UseAsCurrent(row.ImportId!)">Open this project</button> }
+                                @if (row.CanUseAsCurrent) { <button type="button" class="btn-secondary" data-testid="pi-previous-use" aria-label="@($"Set {row.DisplayName} as current project")" @onclick="() => UseAsCurrent(row.ImportId!)">Set as current project</button> }
+                                @if (row.SnapshotId is { } openRowSnapshot) { <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(openRowSnapshot)" data-testid="pi-previous-open-source" aria-label="@($"Open {row.DisplayName} in Source Analysis")">Open Source Analysis</a> }
                             </div>
-                            <details class="pi-details">
-                                <summary>View technical source details<span class="visually-hidden"> of @row.DisplayName</span></summary>
+                            <details class="pi-details" data-testid="pi-previous-details">
+                                <summary>Details<span class="visually-hidden"> of @row.DisplayName</span></summary>
                                 <dl class="pi-facts">
-                                    <div><dt>Origin</dt><dd>@(row.Origin == PreviousImportOrigin.ProjectImport ? "Project Import" : "Source Analysis upload")</dd></div>
+                                    <div><dt>Origin</dt><dd>@(row.Origin == PreviousImportOrigin.ProjectImport ? "Project Import" : "Source Analysis upload (not a project: no documents)")</dd></div>
                                     <div><dt>Archive</dt><dd><span data-testid="pi-previous-archive">@row.ArchiveFileName</span> · imported @row.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
                                     <div><dt>Source Analysis</dt><dd data-testid="pi-previous-source">@(row.SnapshotId is { } rowSnapshot ? $"Snapshot {ProjectImportHistory.ShortId(rowSnapshot)} · {row.SourceStatus}" : row.SourceStatus)</dd></div>
+                                    @if (rowAnalysis.Explanation is { } rowExplanation) { <div><dt>Analysis</dt><dd>@rowExplanation</dd></div> }
+                                    @if (rowAnalysis.Areas is { } rowAreas) { <div><dt>Analysis areas</dt><dd data-testid="pi-previous-areas">@rowAreas</dd></div> }
                                     <div><dt>Documents</dt><dd data-testid="pi-previous-documents">@row.Documents</dd></div>
-                                    @if (row.HasSource && _setup is { } rowSetup) { <div><dt>IQR bindings</dt><dd data-testid="pi-previous-bindings">@ProjectImportHistory.BindingsText(row.BoundIntegrations, rowSetup.BindingsRead)</dd></div> }
-                                    <div><dt>Logical source</dt><dd data-testid="pi-previous-logical">@(row.LogicalSources.Count > 0 ? string.Join(", ", row.LogicalSources) : row.HasSource ? "Not identified" : "None")</dd></div>
-                                    @foreach (var match in row.LogicalSources) { <div><dt>Testing setup</dt><dd data-testid="pi-previous-match">Matches @match source requirement</dd></div> }
+                                    <div><dt>Source role</dt><dd data-testid="pi-previous-logical">@(row.LogicalSources.Count > 0 ? string.Join(", ", row.LogicalSources) : row.HasSource ? "Not identified" : "None")</dd></div>
+                                    @if (rowRole is { Detail: { } roleWhy }) { <div><dt>Why</dt><dd data-testid="pi-previous-role-detail">@roleWhy</dd></div> }
+                                    @foreach (var match in row.LogicalSources) { <div><dt>Testing setup</dt><dd data-testid="pi-previous-match">Matches the @match source requirement</dd></div> }
+                                    @if (row.HasSource && _setup is { BindingsRead: true }) { <div><dt>IQR bindings</dt><dd data-testid="pi-previous-bindings">@ProjectImportHistory.BindingsText(row.BoundIntegrations, true)</dd></div> }
                                     <div><dt>Fingerprint</dt><dd><code title="@row.Fingerprint">@ProjectImportPresentation.ShortFingerprint(row.Fingerprint)</code></dd></div>
                                     @if (row.InfrastructureFormats.Count > 0) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", row.InfrastructureFormats)</dd></div> }
                                     @if (row.ConfigurationEnvironments.Count > 0) { <div><dt>Environment labels in source</dt><dd data-testid="pi-previous-environments">@string.Join(", ", row.ConfigurationEnvironments) <span class="pi-muted">(source labels, not deployed environments)</span></dd></div> }
                                 </dl>
-                                <div class="pi-actions">
-                                    @if (row.SnapshotId is { } openRowSnapshot) { <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(openRowSnapshot)" data-testid="pi-previous-open-source">Open @row.DisplayName in Source Analysis</a> }
-                                    @if (row.BoundIntegrations.Count > 0) { <a href="integration-quality-review?view=evidence" data-testid="pi-previous-bindings-link">View @row.DisplayName bindings in IQR</a> }
-                                </div>
+                                @if (row.BoundIntegrations.Count > 0 && _setup is { BindingsRead: true }) { <div class="pi-actions"><a href="integration-quality-review?view=evidence" data-testid="pi-previous-bindings-link">View @row.DisplayName bindings in IQR</a></div> }
                             </details>
                         </li>
                     }
@@ -194,12 +235,14 @@
                         <div><dt>Imported</dt><dd>@technical.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
                         <div><dt>Import</dt><dd><code>@technical.ImportId</code></dd></div>
                         <div><dt>Fingerprint</dt><dd><code title="@technical.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(technical.ArchiveSha256)</code></dd></div>
-                        <div><dt>Logical source</dt><dd data-testid="pi-current-logical">@(ProjectImportHistory.LogicalSources(_setup, techSnapshot?.SnapshotId ?? technical.SourceSnapshotId) is { Count: > 0 } logical ? string.Join(", ", logical) : techSource.SnapshotId is null ? "None" : "Not identified")</dd></div>
-                        <div><dt>Source Analysis</dt><dd data-testid="pi-current-snapshot">@techSource.Status@(techSnapshot is null ? "" : $" · {techSnapshot.Status}")@(techSnapshot?.Status == "Partial" ? " (partial: some source-analysis categories could not be assessed)" : "")</dd></div>
+                        <div><dt>Source role</dt><dd data-testid="pi-current-logical">@(ProjectImportHistory.LogicalSources(_setup, techSnapshot?.SnapshotId ?? technical.SourceSnapshotId) is { Count: > 0 } logical ? string.Join(", ", logical) : techSource.SnapshotId is null ? "None" : "Not identified")</dd></div>
+                        @* The snapshot's own status: Failed there is the application-code analyzer's outcome only (no production project). *@
+                        <div><dt>Source Analysis</dt><dd data-testid="pi-current-snapshot">@techSource.Status@(techSnapshot is null ? "" : $" · {techSnapshot.Status}")@(techSnapshot?.Status switch { "Partial" => " (some areas could not be fully analyzed)", "Failed" => " (code analysis found no supported production project; other areas are analyzed separately)", _ => "" })</dd></div>
+                        @if (techSnapshot is { Areas.Count: > 0 } withAreas) { <div><dt>Analysis areas</dt><dd data-testid="pi-current-areas">@string.Join(" · ", withAreas.Areas.Select(a => $"{a.Area}: {ImportProjectOverview.AreaStatus(a.Status)}"))</dd></div> }
                         <div><dt>Source detail</dt><dd data-testid="pi-current-source-detail">@techSource.Detail</dd></div>
-                        @if (techSource.SnapshotId is not null && _setup is { } currentSetup)
+                        @if (techSource.SnapshotId is not null && _setup is { BindingsRead: true })
                         {
-                            <div><dt>IQR bindings</dt><dd data-testid="pi-current-bindings">@ProjectImportHistory.BindingsText(techSnapshot?.BoundIntegrations ?? [], currentSetup.BindingsRead)</dd></div>
+                            <div><dt>IQR bindings</dt><dd data-testid="pi-current-bindings">@ProjectImportHistory.BindingsText(techSnapshot?.BoundIntegrations ?? [], true)</dd></div>
                         }
                         @if (techSnapshot is { ConfigurationEnvironments.Count: > 0 } withEnvironments)
                         {
@@ -213,8 +256,10 @@
             </section>
         }
 
-        @* ── H · Import another project ── *@
-        <section class="pi-card pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
+        @* ── H · Import another project: the full upload block only without a current project, or after "Import another project" ── *@
+        @if (Activation.Current is null || _showUpload)
+        {
+        <section class="pi-card pi-choose" id="pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
             <h2 id="pi-choose-heading">@(Activation.Current is null ? "Choose a project archive" : "Import another project")</h2>
             <p>Upload one ZIP containing project source, project documents, or both. BirkNext shows what it found before anything is imported.</p>
             <ul class="pi-outcomes" data-testid="pi-outcomes">
@@ -231,8 +276,9 @@
                 </label>
                 <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
             </div>
-            <p class="pi-muted"><a href="demo-projects">Demo Projects</a> remain available as optional examples. Source-only archives can still be added directly in <a href="source-analysis">Source Analysis</a>.</p>
+            <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
         </section>
+        }
         @if (_failure is { } failure) { <ProjectImportFailure Failure="failure" /> }
     }
     else if (_phase is Phase.Validating or Phase.Classifying or Phase.Importing)
@@ -294,7 +340,8 @@
                     <div><dt>Fingerprint</dt><dd><code title="@duplicate.Fingerprint">@ProjectImportPresentation.ShortFingerprint(duplicate.Fingerprint)</code></dd></div>
                     <div><dt>Imported</dt><dd>@duplicate.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
                 </dl>
-                <p class="pi-muted">This exact archive (same content) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
+                <p class="pi-muted">This exact archive (same content, whatever its file name) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
+                <p class="pi-muted" data-testid="pi-duplicate-again-help">Import again updates that same import (no second history entry) and reuses its source analysis unless Source Analysis has changed since. Nothing is deleted.</p>
                 <div class="pi-actions">
                     @if (duplicate.ImportId is { } existingImport && !duplicate.IsCurrent && Activation.Imports.Any(i => i.ImportId == existingImport))
                     {
@@ -447,6 +494,8 @@
     private ProjectImportDuplicate? _duplicate;
     private bool _importAgain;
     private string? _useMessage;
+    /// <summary>The upload block is shown while a project is current only after "Import another project" (or when a choice failed).</summary>
+    private bool _showUpload;
 
     protected override async Task OnInitializedAsync()
     {
@@ -497,6 +546,13 @@
         await LoadSetupAsync();
     }
 
+    /// <summary>"Import another project": reveals the upload block and moves focus to its file chooser. Nothing changes until a file is chosen.</summary>
+    private void ShowUpload()
+    {
+        _showUpload = true;
+        _focusId = "pi-choose-file";
+    }
+
     private void UseExisting(string importId)
     {
         var staging = _preview?.StagingId;
@@ -536,7 +592,7 @@
         {
             await using var stream = args.File.OpenReadStream(50 * 1024 * 1024);
             var (preview, error) = await Api.PreviewAsync(args.File.Name, stream);
-            if (preview is null) { _failure = error; _inputGeneration++; _phase = Phase.Choose; StopElapsedTimer(); _focusId = "pi-choose-file"; return; }
+            if (preview is null) { _failure = error; _inputGeneration++; _phase = Phase.Choose; _showUpload = true; StopElapsedTimer(); _focusId = "pi-choose-file"; return; }
             _preview = preview;
             _phase = Phase.Classifying;
             _classified = 0;
@@ -590,7 +646,7 @@
             StopElapsedTimer();
             _failure = error;
             _phase = error?.Code == "IMPORT_STAGING_EXPIRED" ? Phase.Choose : Phase.Preview;
-            if (_phase == Phase.Choose) { _preview = null; _discovery = null; _inputGeneration++; }
+            if (_phase == Phase.Choose) { _preview = null; _discovery = null; _inputGeneration++; _showUpload = true; }
             return;
         }
         _commit = commit;
@@ -650,6 +706,7 @@
     private void BackToImportProject()
     {
         Reset();
+        _showUpload = false;
         // Focus the top of the upload view (the just-imported current project), not the chooser at the end of the page.
         _focusId = Activation.Current is null ? "pi-choose-file" : "pi-current-heading";
     }
@@ -659,6 +716,7 @@
         // The preview is replaced at once; releasing the staged archive must never block or undo the reset (it also expires on its own).
         var staging = _preview?.StagingId;
         Reset();
+        _showUpload = true;
         if (staging is { } stagingId) _ = DiscardQuietlyAsync(stagingId);
     }
 
@@ -713,7 +771,7 @@
         _ = AutoSave.SaveNowAsync();
     }
 
-    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _inputGeneration++; _phase = Phase.Choose; _focusId = "pi-choose-file"; }
+    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _inputGeneration++; _phase = Phase.Choose; _showUpload = true; _focusId = "pi-choose-file"; }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

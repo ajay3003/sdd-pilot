@@ -274,11 +274,11 @@ public sealed class NavMenuLayoutTests : BunitContext
     [Theory]
     [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
     [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
-    [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "generated-documentation-health", "documentation-drift" })]
+    [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
     [InlineData("traceability", new[] { "artifact-traceability" })]
-    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
+    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("analysis", new[] { "impact-analysis" })]
-    [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "code-risk-review", "test-data" })]
+    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "admin/system-settings" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)
@@ -352,7 +352,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("#nav-section-document-review a.nav-link").Select(a => a.GetAttribute("href")).Should()
-            .Equal("quality/document", "task-alignment", "generated-documentation-health", "documentation-drift");
+            .Equal("quality/document", "task-alignment", "documentation-drift");
         cut.FindAll("[data-testid=nav-section-source-review]").Should().ContainSingle("Technology Coverage is always visible");
     }
 
@@ -383,11 +383,73 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("admin/system-settings?section=target-environments&tab=auth", NavigationCatalog.TargetEnvironmentsRoute)]
     [InlineData("dashboard/details", "dashboard")]
     [InlineData("plan-explorer", "plan-explorer")]
+    [InlineData("generated-documentation-health", "generated-documentation-health")]
+    [InlineData("test-data", "test-data")]
+    [InlineData("code-risk-review", "code-risk-review")]
+    [InlineData("integration-quality-review", "integration-quality-review")]
+    [InlineData("extensions/skolenaervaer", "extensions/skolenaervaer")]
+    [InlineData("admin/system-settings?section=target-environments&tab=integrations", NavigationCatalog.TargetEnvironmentsRoute)]
+    [InlineData("admin/system-settings?section=target-environments&tab=external", NavigationCatalog.TargetEnvironmentsRoute)]
     public void ExactlyOneRowIsCurrent_ForEachLocation(string location, string expected)
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo(location);
         var cut = Render<NavMenu>();
 
         CurrentRows(cut).Should().Equal(expected);
+    }
+
+    // ── Audited ownership and sequence (prerequisites before consumers; relative facts, not pixel positions) ─────────────────
+
+    private static List<string> RoutesOf(string sectionId) => NavigationCatalog.Sections.Single(s => s.Id == sectionId).Items.Select(i => i.Route).ToList();
+
+    [Fact]
+    public void QualityTesting_PlansAndPreparesBeforeTargetBoundRuns_AndEndsWithCriticalE2E()
+    {
+        var routes = RoutesOf("quality-testing");
+        bool TargetBound(string route) => NavigationCatalog.Sections.SelectMany(s => s.Items).Single(i => i.Route == route).ReviewId is { } id
+            && ReviewCatalog.Find(id)?.Requires.Any(c => c is Capability.BrowserTarget or Capability.ApiTarget) == true;
+        var firstTargetBound = routes.FindIndex(TargetBound);
+
+        firstTargetBound.Should().BeGreaterThan(0);
+        routes.IndexOf("test-coverage-review").Should().BeLessThan(firstTargetBound, "test inventory and gaps are source-only planning");
+        routes.IndexOf("code-risk-review").Should().BeLessThan(firstTargetBound, "code risk triage reads only the source snapshot");
+        routes.IndexOf("test-data").Should().BeLessThan(firstTargetBound, "Test Data is a prerequisite of the runs that need test identities/assets")
+            .And.BeLessThan(routes.IndexOf("performance-test-review")).And.BeLessThan(routes.IndexOf("critical-e2e-regression"));
+        routes.IndexOf("integration-quality-review").Should().Be(routes.IndexOf("integration-topology") + 1, "Topology (what connects) directly precedes IQR");
+        routes.Last().Should().Be("critical-e2e-regression");
+    }
+
+    [Fact]
+    public void SourceSnapshotConsumers_AreUnderSourceReview_AndDocumentOnlyComparisonsStayInDocumentReview()
+    {
+        NavigationCatalog.SectionFor(NavigationCatalog.GeneratedDocumentationHealthRoute)!.Id.Should().Be("source-review");
+        NavigationCatalog.SectionFor(NavigationCatalog.GeneratedDocumentationExplorerRoute)!.Id.Should().Be("source-review");
+        NavigationCatalog.SectionFor("documentation-drift")!.Id.Should().Be("document-review", "it compares documents only and never reads source");
+        NavigationCatalog.SectionFor("artifact-traceability")!.Id.Should().Be("traceability");
+        NavigationCatalog.SectionFor("code-risk-review")!.Id.Should().Be("quality-testing");
+        NavigationCatalog.SectionFor("test-data")!.Id.Should().Be("quality-testing");
+        RoutesOf("source-review").First().Should().Be("source-analysis", "the snapshot owner precedes its consumers");
+    }
+
+    [Fact]
+    public void TargetEnvironmentTabs_StayNested_AndExtensionsComeAfterGenericCapabilities()
+    {
+        var all = NavigationCatalog.Sections.SelectMany(s => s.Items).Select(i => i.Route).ToList();
+        all.Where(r => r.Contains("tab=", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty("Connected Systems, Setup Library and Integration Catalog are tabs of Target Environments");
+        RoutesOf("project-inputs").Should().Contain(NavigationCatalog.TargetEnvironmentsRoute);
+        RoutesOf("extensions").Should().Equal("security-classification-review", "extensions/skolenaervaer");
+        var ids = NavigationCatalog.Sections.Select(s => s.Id).ToList();
+        ids.IndexOf("extensions").Should().BeGreaterThan(ids.IndexOf("quality-testing")).And.BeLessThan(ids.IndexOf("admin"));
+    }
+
+    [Fact]
+    public void EveryPageRow_RoutesToARoutablePage()
+    {
+        var templates = typeof(NavMenu).Assembly.GetTypes()
+            .SelectMany(t => t.GetCustomAttributes(typeof(RouteAttribute), false).Cast<RouteAttribute>())
+            .Select(r => r.Template.Trim('/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in NavigationCatalog.Sections.SelectMany(s => s.Items))
+            templates.Should().Contain(NavigationCatalog.Split(item.Route).Path, $"{item.Label} must open a page");
     }
 }

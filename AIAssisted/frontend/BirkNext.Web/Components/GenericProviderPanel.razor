@@ -149,7 +149,10 @@
     /// <summary>Saves exactly the named proposals on top of the saved settings — never anything else, never a secret.</summary>
     private Task ApplyAsync(IReadOnlyCollection<string> keys)
     {
-        var proposals = View.Fields.Where(field => keys.Contains(field.Key) && field.Proposal is { Value: not null } && Descriptor.Fields.Any(item => item.Key == field.Key && !item.Secret)).ToList();
+        // A conflicting detected value never overwrites the configured one through Apply.
+        var conflicts = ProviderShellPresentation.Proposals(View, Descriptor).Where(proposal => proposal.Conflict).Select(proposal => proposal.Key).ToHashSet(StringComparer.Ordinal);
+        var proposals = View.Fields.Where(field => keys.Contains(field.Key) && !conflicts.Contains(field.Key) && field.Proposal is { Value: not null }
+            && Descriptor.Fields.Any(item => item.Key == field.Key && !item.Secret)).ToList();
         if (proposals.Count == 0) return Task.CompletedTask;
         var settings = new Dictionary<string, string>(View.Integration.Settings, StringComparer.Ordinal);
         foreach (var field in proposals) settings[field.Key] = field.Proposal!.Value!;

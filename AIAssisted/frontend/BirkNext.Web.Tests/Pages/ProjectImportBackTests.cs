@@ -80,6 +80,14 @@ public sealed class ProjectImportBackTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview], [data-testid=pi-failure]").Should().NotBeEmpty());
     }
 
+    /// <summary>"Import another project" on the current project: reveals the upload block with its file chooser.</summary>
+    private static void RevealUpload(IRenderedComponent<ProjectImportPage> cut)
+    {
+        cut.Find("[data-testid=pi-current-import-another]").Click();
+        cut.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.FindAll("[data-testid=pi-choose-file]").Should().ContainSingle();
+    }
+
     private IRenderedComponent<ProjectImportPage> ImportFirst(ProjectImportSourceState state = ProjectImportSourceState.Created, Guid? snapshot = null, bool canRetry = false)
     {
         Queue("orders-a.zip", ShaA, state == ProjectImportSourceState.Created ? snapshot ?? SnapshotA : snapshot, state, canRetry);
@@ -93,10 +101,19 @@ public sealed class ProjectImportBackTests : BunitContext
     /// <summary>Everything the workspace persists about imports, documents and selections, as one comparable value.</summary>
     private string Persisted() => JsonSerializer.Serialize(_repository.SddLifecycle);
 
+    /// <summary>The upload view: with a current project the upload block stays collapsed behind "Import another project"; without one it is open.</summary>
     private static void AssertPreImportView(IRenderedComponent<ProjectImportPage> cut)
     {
-        cut.Find("[data-testid=pi-choose]");
-        cut.FindAll("[data-testid=pi-choose-file]").Should().ContainSingle();
+        if (cut.FindAll("[data-testid=pi-current]").Count > 0)
+        {
+            cut.FindAll("[data-testid=pi-choose]").Should().BeEmpty("the full upload block is shown only after Import another project");
+            cut.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("false");
+        }
+        else
+        {
+            cut.Find("[data-testid=pi-choose]");
+            cut.FindAll("[data-testid=pi-choose-file]").Should().ContainSingle();
+        }
         cut.FindAll("[data-testid=pi-result], [data-testid=pi-preview], [data-testid=pi-progress], [data-testid=pi-failure], [data-testid=pi-commit-failure]")
             .Should().BeEmpty("no completed result, preview, progress or error of the finished import session remains");
         cut.FindAll("[data-testid=pi-import-id], [data-testid=pi-fingerprint], [data-testid=pi-notes], [data-testid=pi-candidate-review], [data-testid=pi-save-warning]")
@@ -137,6 +154,7 @@ public sealed class ProjectImportBackTests : BunitContext
 
         AssertPreImportView(cut);
         cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("orders-a.zip", "the imported project stays the current project");
+        RevealUpload(cut);
         cut.Find("#pi-choose-heading").TextContent.Should().Be("Import another project");
         _activation.Current!.ImportId.Should().Be(record.ImportId, "Back is navigation, not a rollback to the previous project");
         _activation.Current!.SourceSnapshotId.Should().Be(SnapshotA, "the Source Analysis snapshot stays linked");
@@ -163,6 +181,7 @@ public sealed class ProjectImportBackTests : BunitContext
         var cut = ImportFirst();
         var generation = cut.Find("[data-testid=pi-import-another-file]").GetAttribute("data-generation");
         cut.Find("[data-testid=pi-back]").Click();
+        RevealUpload(cut);
         cut.Find("[data-testid=pi-choose-file]").GetAttribute("data-generation").Should().NotBe(generation, "no stale file selection survives");
     }
 
@@ -186,6 +205,7 @@ public sealed class ProjectImportBackTests : BunitContext
         cut.Find("[data-testid=pi-back]").Click();
 
         Queue("billing-b.zip", ShaB, SnapshotB);
+        RevealUpload(cut);
         Choose(cut, "pi-choose-file", "billing-b.zip");
         var preview = cut.Find("[data-testid=pi-preview]").TextContent;
         preview.Should().Contain("billing-b.zip").And.NotContain("orders-a.zip").And.NotContain(ShaA[..12]);
@@ -275,7 +295,7 @@ public sealed class ProjectImportBackTests : BunitContext
         cut.Find("[data-testid=pi-back]").Click();
         cut.InvokeAsync(() => pending.SetException(new HttpRequestException("connection refused")));
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-choose]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-current]"));
         AssertPreImportView(cut);
         _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip");
     }

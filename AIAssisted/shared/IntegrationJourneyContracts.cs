@@ -514,7 +514,15 @@ public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName
     public string? InfrastructureAutomation { get; init; }
     /// <summary>The configuration environments the snapshot declares (Development, QA, Local …). A source label, never a deployed environment.</summary>
     public IReadOnlyList<string> ConfigurationEnvironments { get; init; } = [];
+    /// <summary>The snapshot's own per-area analysis outcomes (application code, architecture, evidence domains), copied from the stored models —
+    /// so a snapshot whose code analysis found no production project still shows the infrastructure, configuration or contract evidence it holds.
+    /// Empty from older backends.</summary>
+    public IReadOnlyList<SourceSetupArea> Areas { get; init; } = [];
 }
+
+/// <summary>One Source Analysis area of a stored snapshot and its own outcome: Complete, Partial, NotDetected, Unsupported, Failed or NotAnalyzed
+/// (the snapshot predates the area). Not a review result.</summary>
+public sealed record SourceSetupArea(string Area, string Status);
 
 /// <summary>Source setup across every registered pack that declares logical sources, plus the stored snapshots they were matched against.
 /// Bindings are per target environment: without one, nothing reads as bound.</summary>
@@ -634,8 +642,17 @@ public sealed record TestPackAuthorizationExpectation(string ApiSelector, string
 /// come from <see cref="EndpointByEnvironment"/> (an unknown environment stays empty — never guessed) and a template value is never offered
 /// for a production environment.
 /// </summary>
+/// <summary>
+/// Where a Test Data role goes in the message the template's contract describes: an element path under the root ("Klient.Identifikator.Fodselsnummer",
+/// local names) or none when the role is not part of the message (e.g. the Altinn actor). Declared by the test pack; values are resolved from Test
+/// Data by alias at fixture creation, never stored here.
+/// </summary>
+public sealed record TestDataFixtureBinding(string Role, string Capability, string? ElementPath, string Note);
+
 public sealed record IntegrationTemplateDefinition(string Key, string DisplayName, string Description, BirkNext.Integrations.IntegrationKind Kind)
 {
+    /// <summary>Test Data roles of a message fixture for this template's contract (Test Data → Create XML fixture).</summary>
+    public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
     /// <summary>The pack integration requirement the template fulfils (also how an existing record is recognized as already configured).</summary>
     public string? RequirementKey { get; init; }
     public string? SystemName { get; init; }
@@ -704,4 +721,6 @@ public sealed record IntegrationTemplateView(string Key, string DisplayName, str
     public string? SchemaName { get; init; }
     /// <summary>Schemas named exactly <see cref="SchemaName"/> in the snapshots recognized as the evidence source (never chosen automatically).</summary>
     public IReadOnlyList<IntegrationTemplateSchemaCandidate> SchemaCandidates { get; init; } = [];
+    /// <summary>Test Data roles of a message fixture for <see cref="SchemaName"/> (see <see cref="TestDataFixtureBinding"/>).</summary>
+    public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
 }

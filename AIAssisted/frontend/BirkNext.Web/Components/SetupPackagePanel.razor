@@ -36,18 +36,29 @@
 
     @if (!Import)
     {
+        <p class="spp-muted" data-testid="spp-storage-note">@ExternalIntegrationPresentation.StorageNote</p>
         <div class="spp-actions">
             <button type="button" class="btn btn-primary btn-sm" data-testid="spp-export-yaml" disabled="@(_busy || !Selectable)" @onclick="() => ExportAsync(SetupPackageFormat.Yaml)">Export YAML</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="spp-export-json" disabled="@(_busy || !Selectable)" @onclick="() => ExportAsync(SetupPackageFormat.Json)">Export JSON</button>
         </div>
-        <div class="spp-save">
-            <label>Save to Setup Library as <input class="form-control" data-testid="spp-library-name" @bind="_libraryName" placeholder="e.g. Skolenærvær TT02" /></label>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="spp-save-library" disabled="@(_busy || !Selectable || string.IsNullOrWhiteSpace(_libraryName))" @onclick="SaveToLibraryAsync">Save to Setup Library</button>
-        </div>
+        @* A form so Enter in the name saves (when Save is available); the name is followed directly by Save in the tab order. *@
+        <form class="spp-save" data-testid="spp-save-form" @onsubmit="SaveToLibraryAsync" @onsubmit:preventDefault="true">
+            <label for="spp-library-name">Save to Setup Library as</label>
+            <input id="spp-library-name" class="form-control" data-testid="spp-library-name" @bind="_libraryName" @bind:event="oninput" @bind:after="NameChanged" placeholder="e.g. Skolenærvær TT02" />
+            <button type="submit" id="spp-save-library" class="btn btn-secondary btn-sm" data-testid="spp-save-library" disabled="@(!CanSave)">@(_saving ? "Saving…" : _saved is not null ? "Saved" : "Save to Setup Library")</button>
+        </form>
+        @if (_saved is { } saved)
+        {
+            <div class="spp-saved" id="spp-library-saved" tabindex="-1" role="status" aria-live="polite" data-testid="spp-library-saved">
+                <span data-testid="spp-library-saved-text">@ExternalIntegrationPresentation.SavedToLibrary(saved)</span>
+                <a href="@ExternalIntegrationPresentation.LibraryItemHref(EnvironmentId, saved.Id)" data-testid="spp-open-library">Open in Setup Library</a>
+            </div>
+        }
+        @if (_saveError is { } saveError) { <p class="spp-error" role="alert" data-testid="spp-library-error">Could not save to Setup Library. @saveError</p> }
         @if (_export is { } export)
         {
-            <div class="spp-export" data-testid="spp-export-result">
-                <p>Exported <code>@export.FileName</code> with @export.Dependencies.Count(d => d.Required) required and @export.Dependencies.Count(d => !d.Required) optional references.</p>
+            <div class="spp-export" data-testid="spp-export-result" role="status">
+                <p data-testid="spp-downloaded">@ExternalIntegrationPresentation.Downloaded(_exportFormat, export.FileName) <span class="spp-muted">— with @export.Dependencies.Count(d => d.Required) required and @export.Dependencies.Count(d => !d.Required) optional references. Not saved to Setup Library.</span></p>
                 <p class="spp-muted">Excluded:</p>
                 <ul class="spp-list" data-testid="spp-excluded">@foreach (var item in export.Excluded) { <li>@item</li> }</ul>
             </div>
@@ -86,7 +97,7 @@
         }
         @if (_applied is { } applied)
         {
-            <p class="spp-result" role="status" data-testid="spp-apply-result" data-applied="@(applied.Applied ? "true" : "false")">@applied.Outcome</p>
+            <p class="spp-result" role="status" data-testid="spp-apply-result" data-applied="@(applied.Applied ? "true" : "false")">@ExternalIntegrationPresentation.AppliedOutcome(applied, _lastPreflight)</p>
         }
     }
     @if (_error is { } error) { <p class="spp-error" role="alert" data-testid="spp-error">@error</p> }
@@ -113,13 +124,30 @@
     private IReadOnlyList<SetupLibraryItemView> _library = [];
 
     private bool Selectable => _scope != SetupScope.Integration || _integrationId is not null;
+    private bool CanSave => !_busy && Selectable && !string.IsNullOrWhiteSpace(_libraryName);
+    private SetupLibraryItemView? _saved;
+    private string? _saveError;
+    private bool _saving;
+    private SetupPackageFormat _exportFormat;
+    private SetupPreflightResult? _lastPreflight;
+    private string? _focusId;
+
+    /// <summary>A changed name is a new save: the previous confirmation no longer describes it.</summary>
+    private void NameChanged() { _saved = null; _saveError = null; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is not { } id) return;
+        _focusId = null;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         if (Import && (await Api.LibraryAsync()).Value is { } items) _library = items;
     }
 
-    private void Reset() { _preflight = null; _applied = null; _export = null; _decisions = []; _error = null; }
+    private void Reset() { _preflight = null; _applied = null; _export = null; _decisions = []; _error = null; _saved = null; _saveError = null; }
 
     private void ChooseLibrary(string? id)
     {
@@ -159,7 +187,7 @@
             var result = _libraryId is { } id ? await Api.ApplyLibraryVersionAsync(id, null, EnvironmentId, _decisions)
                 : await Api.ApplyAsync(EnvironmentId, new SetupApplyPackageRequest(_content!, _fileName, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId, _decisions));
             (_applied, _error) = (result.Value, result.Error);
-            if (_applied is { Applied: true }) { _preflight = null; await OnApplied.InvokeAsync(); }
+            if (_applied is { Applied: true }) { _lastPreflight = _preflight; _preflight = null; await OnApplied.InvokeAsync(); }
             else if (_applied is { } blocked) _preflight = blocked.Preflight;
         }
         finally { _busy = false; }
@@ -167,7 +195,7 @@
 
     private async Task ExportAsync(SetupPackageFormat format)
     {
-        _busy = true;
+        _busy = true; _saved = null; _saveError = null; _exportFormat = format;
         try
         {
             var result = await Api.ExportAsync(EnvironmentId, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId, format, TestPacks);
@@ -179,16 +207,22 @@
         finally { _busy = false; }
     }
 
+    /// <summary>
+    /// Saves an internal, sanitized Setup Library item (version 1; the same name again is a separate item — versions come from "New version").
+    /// The confirmation names what the backend returned and stays until the name or package changes; on failure the name and selections stay.
+    /// </summary>
     private async Task SaveToLibraryAsync()
     {
-        _busy = true;
+        if (!CanSave) return;
+        _busy = true; _saving = true; _saved = null; _saveError = null;
         try
         {
             var result = await Api.SaveToLibraryAsync(new SetupLibrarySaveRequest(_libraryName!.Trim(), null, EnvironmentId, _scope, _scope == SetupScope.Environment ? null : _provider, _integrationId, TestPacks: TestPacks));
-            _error = result.Error;
-            _notice = result.Value is { } item ? $"Saved to the Setup Library as {item.Name} v1 (sanitized)." : null;
+            if (result.Value is { } item) { _saved = item; _focusId = "spp-library-saved"; }
+            else { _saveError = result.Error ?? "The backend did not accept the package."; _focusId = "spp-save-library"; }
         }
-        finally { _busy = false; }
+        catch (HttpRequestException) { _saveError = "The backend could not be reached."; _focusId = "spp-save-library"; }
+        finally { _busy = false; _saving = false; }
     }
 
     private async Task SaveImportedAsync()
@@ -199,7 +233,7 @@
             var name = _preflight?.PackageName ?? _fileName ?? "Imported setup";
             var result = await Api.SaveToLibraryAsync(new SetupLibrarySaveRequest(name, null, Content: _content));
             _error = result.Error;
-            _notice = result.Value is { } item ? $"Saved to the Setup Library as {item.Name} v1. Nothing was applied." : null;
+            _notice = result.Value is { } item ? $"{ExternalIntegrationPresentation.SavedToLibrary(item)}. Nothing was applied." : null;
         }
         finally { _busy = false; }
     }

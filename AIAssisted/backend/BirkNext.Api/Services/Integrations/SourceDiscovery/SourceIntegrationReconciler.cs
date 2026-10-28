@@ -36,7 +36,8 @@ public static class SourceIntegrationReconciler
             var configured = integration.Consumer;
             var withConsumer = candidates.Where(c => c.ConsumerCandidate is not null).ToList();
             var agreeing = withConsumer.FirstOrDefault(c => SameConsumer(configured, c));
-            var stale = configured.MappingSourceSnapshotId is { } basis && basis != latest.SourceSnapshotId;
+            // Stale: the mapping was confirmed against a snapshot that no longer contributes this candidate.
+            var stale = configured.MappingSourceSnapshotId is { } basis && basis != latest.SourceSnapshotId && candidates.All(c => c.Sources.All(s => s.SnapshotId != basis));
             var chosen = agreeing ?? withConsumer.FirstOrDefault() ?? candidates[0];
             var changes = previous is null ? [] : Changes(previous.Candidates.FirstOrDefault(p => p.Id == chosen.Id) ?? previous.Candidates.FirstOrDefault(p => SameChannel(p, integration.EndpointOrTopic)), chosen);
             if (string.IsNullOrWhiteSpace(configured.DisplayName))
@@ -102,16 +103,30 @@ public static class SourceIntegrationReconciler
     }
 }
 
-/// <summary>Builds the Source integrations report of an environment from its stored source snapshots and the configured catalog. Read-only.</summary>
-public sealed class SourceIntegrationService(IqrSourceStore sources, IIntegrationCatalogService catalog)
+/// <summary>
+/// Builds the Source integrations report of an environment from the stored snapshots in discovery scope (<see cref="SourceIntegrationScope"/>:
+/// the current project's snapshot first, IQR-bound snapshots, Test Pack-recognized sources) and the configured catalog. Read-only: nothing is
+/// created, bound or confirmed.
+/// </summary>
+public sealed class SourceIntegrationService(IqrSourceStore sources, IIntegrationCatalogService catalog,
+    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null,
+    IEnumerable<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPack>? packs = null)
 {
-    public async Task<SourceIntegrationsReport> ReportAsync(string environmentId, CancellationToken ct = default)
+    public async Task<SourceIntegrationsReport> ReportAsync(string environmentId, CancellationToken ct = default) => await ReportAsync(environmentId, null, ct);
+
+    public async Task<SourceIntegrationsReport> ReportAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default)
     {
         // No environment type/URL: a read must never attach seed records.
         var configured = await catalog.GetAsync(environmentId, null, null, ct);
-        var snapshots = (await sources.ListAsync(environmentId, ct)).Where(s => s.Architecture is not null).OrderByDescending(s => s.AnalyzedAt).Take(2).ToList();
-        var latest = snapshots.Count > 0 ? SourceIntegrationDiscoveryEngine.Discover(snapshots[0]) : null;
-        var previous = snapshots.Count > 1 ? SourceIntegrationDiscoveryEngine.Discover(snapshots[1]) : null;
-        return SourceIntegrationReconciler.Reconcile(configured, latest, previous, DateTimeOffset.UtcNow);
+        var stored = await sources.ListAsync(environmentId, ct);
+        var bound = bindings is null ? [] : (await bindings.ListAsync(environmentId, ct)).Select(b => b.SnapshotId).ToHashSet();
+        var scope = SourceIntegrationScope.Select(stored, primarySnapshotId, bound, packs ?? []);
+        var latest = SourceIntegrationScope.Merge([.. scope.Select(s => (s, SourceIntegrationDiscoveryEngine.Discover(s.Snapshot)))]);
+        // "Changes since previous": the earlier analysis of the primary source's own archive, never another repository.
+        var previousSnapshot = scope.Count == 0 ? null : stored.Where(s => s.Architecture is not null && s.Id != scope[0].Snapshot.Id && s.AnalyzedAt <= scope[0].Snapshot.AnalyzedAt
+                && string.Equals(s.Archive.FileName, scope[0].Snapshot.Archive.FileName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(s => s.AnalyzedAt).FirstOrDefault();
+        var previous = previousSnapshot is null ? null : SourceIntegrationDiscoveryEngine.Discover(previousSnapshot);
+        return SourceIntegrationReconciler.Reconcile(configured, latest, previous, DateTimeOffset.UtcNow) with { ContributingSources = [.. scope.Select(s => s.Provenance)] };
     }
 }

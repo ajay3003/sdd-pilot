@@ -133,6 +133,10 @@ public interface IIntegrationCatalogApiService
     Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
     /// <summary>"Discover from source": re-runs discovery on the stored source snapshot (no runtime call, no archive re-processing).</summary>
     Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
+    /// <summary>Source integrations with the current project's snapshot as the primary context; the backend adds IQR-bound and Test Pack-recognized
+    /// sources. Fakes without it fall back to the environment-only read.</summary>
+    Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) => SourceIntegrationsAsync(environmentId, ct);
+    Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) => DiscoverSourceIntegrationsAsync(environmentId, ct);
     /// <summary>Configured environment values compared with Terraform in Source Analysis (read-only; nothing is written).</summary>
     Task<IntegrationTerraformComparison?> TerraformComparisonAsync(FrontendAnalysisProfile profile, CancellationToken ct = default) => Task.FromResult<IntegrationTerraformComparison?>(null);
     /// <summary>Uploads repository archives for read-only SCIM source analysis.</summary>
@@ -397,12 +401,18 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     public async Task<IntegrationTerraformComparison?> TerraformComparisonAsync(FrontendAnalysisProfile profile, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<IntegrationTerraformComparison>($"api/integrations/terraform-comparison?{Env(profile.Id)}&environmentName={Uri.EscapeDataString(profile.Name ?? "")}", Json, ct);
 
-    public async Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<SourceIntegrationsReport>($"api/integrations/source-integrations?{Env(environmentId)}", Json, ct);
+    public Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => SourceIntegrationsAsync(environmentId, null, ct);
 
-    public async Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default)
+    public async Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<SourceIntegrationsReport>($"api/integrations/source-integrations?{Env(environmentId)}{Primary(primarySnapshotId)}", Json, ct);
+
+    public Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => DiscoverSourceIntegrationsAsync(environmentId, null, ct);
+
+    private static string Primary(Guid? snapshotId) => snapshotId is { } id ? $"&primarySnapshotId={id:D}" : "";
+
+    public async Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default)
     {
-        using var response = await http.PostAsync($"api/integrations/source-integrations/discover?{Env(environmentId)}", null, ct);
+        using var response = await http.PostAsync($"api/integrations/source-integrations/discover?{Env(environmentId)}{Primary(primarySnapshotId)}", null, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<SourceIntegrationsReport>(Json, ct);
     }

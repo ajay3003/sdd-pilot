@@ -277,6 +277,7 @@ public sealed class IntegrationJourneyService(
             InfrastructureFormats = TestPackSources.InfrastructureFormats(snapshot),
             InfrastructureAutomation = TestPackSources.InfrastructureAutomation(snapshot),
             ConfigurationEnvironments = BirkNext.SourceDomains.SourceEnvironmentValueExtractor.Environments(snapshot),
+            Areas = SourceSetupAreas.Of(snapshot),
         }).ToArray();
         return new SourceSetupView
         {

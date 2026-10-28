@@ -12,7 +12,10 @@
 .ei-banner-error, .spp-error { color: var(--clr-danger, #b42318); }
 .ei-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: .75rem; }
 .ei-card, .ei-add, .ei-proposals, .slp-detail, .spp, .spv { border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; padding: .75rem; min-width: 0; overflow-wrap: anywhere; }
-.ei-card-head { display: grid; gap: .15rem; }
+.ei-card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .25rem .75rem; }
+.ei-card-identity { display: grid; gap: .15rem; min-width: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
+/* Close only collapses the system: quiet, far right, never in the provider's configuration actions. */
+.ei-close { margin-left: auto; flex: 0 0 auto; padding: .15rem .4rem; }
 .ei-card-title { margin: 0; font-size: .95rem; font-weight: 600; }
 .ei-dims, .spv-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr)); gap: .4rem; margin: 0; }
 .ei-dims dt, .spv-summary dt { font-size: .72rem; color: var(--clr-text-muted, #5f6368); }

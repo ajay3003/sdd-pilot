@@ -131,8 +131,18 @@ public sealed class ProjectImportAnotherTests : BunitContext
         cut.Find("[data-testid=pi-result]");
         cut.Dispose();
         var page = Render<ProjectImportPage>();
-        page.Find("[data-testid=pi-current] [data-testid=pi-current-import-another]").TextContent.Trim().Should().Be("Import another project");
-        Choose(page, "pi-current-import-another-file", "billing-b.zip");
+        // With a current project the upload block is collapsed; Import another project reveals it and moves focus to its file chooser.
+        page.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
+        var another = page.Find("[data-testid=pi-current] [data-testid=pi-current-import-another]");
+        another.TextContent.Trim().Should().Be("Import another project");
+        another.GetAttribute("aria-expanded").Should().Be("false");
+        another.Click();
+        page.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=pi-choose]").TextContent.Should().Contain("ZIP · maximum 50 MB · documents up to 1 MB each")
+            .And.Contain("Project documents").And.Contain("Source code").And.Contain("Contracts and schemas").And.Contain("Infrastructure configuration");
+        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file"));
+        _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip", "revealing the upload changes nothing");
+        Choose(page, "pi-choose-file", "billing-b.zip");
         page.Find("[data-testid=pi-preview]").TextContent.Should().Contain("billing-b.zip");
     }
 

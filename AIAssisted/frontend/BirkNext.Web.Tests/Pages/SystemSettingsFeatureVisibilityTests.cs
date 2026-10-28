@@ -66,12 +66,12 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
             ["Document Review", "Library", "Traceability", "Source Review", "Analysis", "Quality & Testing", "AI Review", "Advanced Features", "Admin"]);
         SectionLabels(cut, "document-review").Should().Equal(
             "Specification Explorer", "Constitution Explorer", "Data Model Explorer", "Plan Explorer", "Task Explorer",
-            "Document Quality Review", "Task Alignment Review", "Generated Documentation Health", "Documentation Drift");
+            "Document Quality Review", "Task Alignment Review", "Documentation Drift");
         SectionLabels(cut, "traceability").Should().Equal("Requirements Traceability", "Change Traceability");
         cut.FindAll("[data-testid=fv-section-traceability] .fv-row").Single(r => r.TextContent.Contains("Change Traceability"))
             .QuerySelector(".fv-badge-disabled")!.TextContent.Should().Be("Disabled", "optional Azure DevOps provenance is off by default");
         cut.Find("[data-testid=fv-count-traceability] .fv-count-off").TextContent.Should().Be("1 disabled");
-        SectionLabels(cut, "source-review").Should().Equal("Source Analysis", "Generated Documentation Explorer", "Azure Environment Analysis");
+        SectionLabels(cut, "source-review").Should().Equal("Source Analysis", "Generated Documentation Explorer", "Generated Documentation Health", "Azure Environment Analysis");
         SectionLabels(cut, "analysis").Should().Equal("Impact Analysis");
         SectionLabels(cut, "quality-testing").Should().NotContain("Document Quality Review");
 
@@ -96,7 +96,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
             chip.QuerySelector(".fv-count-off")!.TextContent.Should().Be($"{members.Count(k => !values[k])} disabled");
         }
         // Spot-check the fixture: moved Documentation Drift stays enabled; Impact Analysis stays disabled.
-        cut.Find("[data-testid=fv-count-document-review] .fv-count-on").TextContent.Should().Be("9 enabled");
+        cut.Find("[data-testid=fv-count-document-review] .fv-count-on").TextContent.Should().Be("8 enabled");
         cut.Find("[data-testid=fv-count-traceability] .fv-count-on").TextContent.Should().Be("1 enabled");
         cut.Find("[data-testid=fv-count-analysis] .fv-count-off").TextContent.Should().Be("1 disabled");
         cut.FindAll("[data-testid=fv-section-analysis] .fv-badge-disabled").Should().ContainSingle();

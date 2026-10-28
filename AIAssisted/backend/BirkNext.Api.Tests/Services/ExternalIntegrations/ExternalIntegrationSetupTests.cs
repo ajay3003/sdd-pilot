@@ -93,8 +93,13 @@ public sealed class ExternalIntegrationSetupTests
             sources.Setup(s => s.ListAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => Snapshots);
             var pack = new Mock<IIntegrationJourneyPack>();
             pack.SetupGet(p => p.PackId).Returns("skolenaervaer");
-            return new EnvironmentSetupService(Db, Integrations(), CatalogMock().Object, new TestDataCatalog([new AltinnTestDataProvider(Kit.Options)]), sources.Object, [pack.Object], Time);
+            return new EnvironmentSetupService(Db, Integrations(), CatalogMock().Object,
+                new TestDataCatalog([new AltinnTestDataProvider(Kit.Options), new SchemaStudioTestDataProvider(() => SavedXml)]), sources.Object, [pack.Object], Time, Schemas);
         }
+
+        /// <summary>Saved XML fixtures (Schema Studio's saved-XML documents, as Test Data's fixture flow writes them) and the schemas they validate against.</summary>
+        public List<string> SavedXml { get; } = [];
+        public ITestDataSchemaSource? Schemas { get; set; }
 
         public SetupLibraryService Library() => new(Db, Setup(), Time);
 
@@ -303,15 +308,17 @@ public sealed class ExternalIntegrationSetupTests
     }
 
     [Fact] // B, C
-    public async Task Missing_reporter_or_child_blocks_and_points_to_test_data()
+    public async Task Missing_reporter_or_child_is_a_test_readiness_warning_that_points_to_test_data_and_never_blocks_apply()
     {
         var bed = new Bed();
         bed.ContractEvidence(); bed.ReportIntake();
         var result = await PreflightAsync(bed);
-        result.CanApply.Should().BeFalse();
-        Dep(result, SetupDependencyKind.TestData, "Reporter").Should().Match<SetupDependencyResolution>(d => d.State == SetupDependencyState.Missing && d.OwnerHref == "/test-data");
-        Dep(result, SetupDependencyKind.TestData, "Child").State.Should().Be(SetupDependencyState.Missing);
-        result.BlockReasons.Should().Contain(reason => reason.Contains("required dependencies unresolved"));
+        Dep(result, SetupDependencyKind.TestData, "Reporter").Should().Match<SetupDependencyResolution>(d =>
+            d.State == SetupDependencyState.Missing && d.OwnerHref == "/test-data" && d.Phase == SetupDependencyPhase.Test);
+        Dep(result, SetupDependencyKind.TestData, "Child").State.Should().Be(SetupDependencyState.Missing, "Test Data is still checked during preflight");
+        result.CanApply.Should().BeTrue("the configuration can be applied safely; only testing is not ready");
+        result.BlockReasons.Should().BeEmpty();
+        result.TestResolved.Should().BeLessThan(result.TestTotal);
     }
 
     [Fact] // D, E
@@ -320,9 +327,14 @@ public sealed class ExternalIntegrationSetupTests
         var bed = new Bed();
         bed.Identities();
         var result = await PreflightAsync(bed);
-        Dep(result, SetupDependencyKind.Integration).Should().Match<SetupDependencyResolution>(d => d.State == SetupDependencyState.Missing && d.Owner == "Integration Quality Review");
-        Dep(result, SetupDependencyKind.Contract).State.Should().Be(SetupDependencyState.Missing);
-        result.CanApply.Should().BeFalse();
+        Dep(result, SetupDependencyKind.Integration).Should().Match<SetupDependencyResolution>(d => d.State == SetupDependencyState.Missing && d.Owner == "Integration Catalog"
+            && d.Cause == SetupDependencyCause.IntegrationNotConfigured && d.ActionLabel == "Open Integration Catalog" && d.Phase == SetupDependencyPhase.Apply);
+        // The contract cannot be assessed before the integration exists: its first actionable prerequisite is the Integration Catalog, not IQR.
+        Dep(result, SetupDependencyKind.Contract).Should().Match<SetupDependencyResolution>(d => d.State == SetupDependencyState.Missing
+            && d.Cause == SetupDependencyCause.IntegrationNotConfigured && d.Owner == "Integration Catalog" && d.ActionLabel == "Open Integration Catalog"
+            && d.OwnerHref.Contains("tab=integrations") && d.Phase == SetupDependencyPhase.Test);
+        result.CanApply.Should().BeFalse("a dangling integration reference is unsafe to apply");
+        result.BlockReasons.Should().ContainSingle().Which.Should().Be("1 blocking dependency unresolved");
         var applied = await bed.Setup().ApplyAsync(Env, new(Content(bed), "pkg.yaml"), "x", CancellationToken.None);
         applied.Applied.Should().BeFalse();
         (await bed.Writes()).Should().Be(0, "a blocked import applies nothing and creates no placeholder");
@@ -350,8 +362,9 @@ public sealed class ExternalIntegrationSetupTests
         bed.Identities(); bed.ContractEvidence("another_form_type"); bed.ReportIntake();
         var result = await PreflightAsync(bed, extra: "dependencies:\n  required:\n    - kind: TestData\n      reference: child-a\n      role: Reporter\n");
         result.Dependencies.Should().Contain(d => d.Dependency.Reference == "child-a" && d.State == SetupDependencyState.Incompatible);
-        Dep(result, SetupDependencyKind.Contract).State.Should().Be(SetupDependencyState.Incompatible);
-        result.CanApply.Should().BeFalse();
+        Dep(result, SetupDependencyKind.Contract).Should().Match<SetupDependencyResolution>(d => d.State == SetupDependencyState.Incompatible
+            && d.Cause == SetupDependencyCause.ContractIncompatible && d.Detail.Contains($"Package: {AltinnTestKit.RealFormDataType}") && d.Detail.Contains("Evidence: another_form_type"));
+        result.CanApply.Should().BeTrue("a wrong Test Data type and a contract mismatch are test readiness, shown but never applied over");
     }
 
     [Fact]
@@ -533,5 +546,121 @@ public sealed class ExternalIntegrationSetupTests
         rest.Values.Should().NotContain(SetupReadinessState.NotVerified);
         altinn["runtime"].Should().Be(SetupReadinessState.NotVerified, "Altinn has runtime verification, still outstanding");
         altinn["automated"].Should().NotBe(SetupReadinessState.NoExecutor, "Altinn has automated execution");
+    }
+
+    // ── Built-in Skolenærvær test identities, Apply vs Test readiness, XML fixture ──────────────────────────────────────
+
+    private const string DefaultReporterId = "05859497324", DefaultChildId = "04061076692";
+
+    [Fact]
+    public void Built_in_identities_are_seeded_once_with_stable_aliases_roles_and_defaults_and_configuration_wins()
+    {
+        var options = new AltinnTestingOptions();
+        SkoleNaervaerTestIdentityDefaults.Apply(options);
+        SkoleNaervaerTestIdentityDefaults.Apply(options);
+
+        var reporter = options.UnattendedIdPortenTest.Reporters.Should().ContainSingle("re-initialization creates no duplicate").Subject;
+        reporter.Should().Match<SyntheticReporterOptions>(r => r.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias && r.Label == "Skolenærvær default reporter"
+            && r.TestIdPersonIdentifier == DefaultReporterId && r.Default && r.AltinnProfileConfirmed && r.BuiltIn);
+        AltinnTestingPolicy.ReporterConfigurationProblem(reporter).Should().BeNull();
+        var child = options.SyntheticChildren.Should().ContainSingle().Subject;
+        child.Should().Match<SyntheticChildOptions>(c => c.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias && c.Label == "Skolenærvær default child"
+            && c.TestPersonIdentifier == DefaultChildId && c.Default && c.KnownToPerson && c.BuiltIn);
+
+        var assets = new AltinnTestDataProvider(options).Assets();
+        assets.Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias).Should().Match<BirkNext.Api.Services.TestData.TestDataAsset>(a =>
+            a.IsDefault && a.Approval == BirkNext.TestData.TestDataApproval.Approved && a.Capabilities.Contains("reporter") && a.Provenance[0].Label == "Built-in");
+        assets.Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias).Should().Match<BirkNext.Api.Services.TestData.TestDataAsset>(a =>
+            a.IsDefault && a.Approval == BirkNext.TestData.TestDataApproval.Approved && a.Capabilities.Contains("child"));
+
+        // A configured default keeps precedence; the same person configured under another alias is never added twice; the flag turns it off.
+        var configured = new AltinnTestingOptions { SyntheticChildren = [new() { Alias = "child-a", TestPersonIdentifier = DefaultChildId, Default = true }] };
+        SkoleNaervaerTestIdentityDefaults.Apply(configured).SyntheticChildren.Should().ContainSingle(c => c.Alias == "child-a");
+        configured.UnattendedIdPortenTest.Reporters.Single().Default.Should().BeTrue("no configured reporter is a default");
+        SkoleNaervaerTestIdentityDefaults.Apply(new AltinnTestingOptions { BuiltInSkolenaervaerIdentities = false }).SyntheticChildren.Should().BeEmpty();
+        // The child is a test person (date + control digits): the rule readiness, the session store and run preparation share.
+        BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SyntheticPersonIdentifier.IsTestPerson(DefaultChildId).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task With_the_built_in_identities_reporter_and_child_resolve_from_the_test_data_defaults_and_only_the_integration_blocks_apply()
+    {
+        var bed = new Bed();
+        SkoleNaervaerTestIdentityDefaults.Apply(bed.Kit.Options);
+        var result = await PreflightAsync(bed);
+
+        Dep(result, SetupDependencyKind.TestData, "Reporter").Should().Match<SetupDependencyResolution>(d => d.State == SetupDependencyState.Resolved
+            && d.Detail.Contains("Test Data default") && d.Detail.Contains(SkoleNaervaerTestIdentityDefaults.ReporterAlias) && !d.Detail.Contains(DefaultReporterId));
+        Dep(result, SetupDependencyKind.TestData, "Child").State.Should().Be(SetupDependencyState.Resolved);
+        Dep(result, SetupDependencyKind.Contract).Cause.Should().Be(SetupDependencyCause.IntegrationNotConfigured);
+        Dep(result, SetupDependencyKind.TestData, AltinnProviderHandler.XmlFixtureRole).Should().Match<SetupDependencyResolution>(d =>
+            d.State == SetupDependencyState.Missing && d.Phase == SetupDependencyPhase.Test && d.ActionLabel == "Open Test Data" && d.Hint!.Contains("Schema Studio"));
+        result.RequiredResolved.Should().Be(0); result.RequiredTotal.Should().Be(1, "only the integration reference is needed to apply safely");
+        result.CanApply.Should().BeFalse();
+
+        // A second reporter without a default flag: the built-in default still resolves it (no arbitrary choice when no default exists).
+        bed.Session.AddIdentity(new("reporter", "reporter-b", "Reporter B", AltinnTestKit.ReporterIdentifier, "reporter-b")).Should().BeNull();
+        Dep(await PreflightAsync(bed), SetupDependencyKind.TestData, "Reporter").State.Should().Be(SetupDependencyState.Resolved);
+        bed.Kit.Options.UnattendedIdPortenTest.Reporters.Single(r => r.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias).Default = false;
+        Dep(await PreflightAsync(bed), SetupDependencyKind.TestData, "Reporter").State.Should().Be(SetupDependencyState.Ambiguous);
+    }
+
+    [Fact]
+    public async Task Ready_to_apply_but_not_ready_to_test_enables_apply_and_keeps_every_test_gap_visible()
+    {
+        var bed = new Bed();
+        bed.ReportIntake();
+        var result = await PreflightAsync(bed);
+
+        result.CanApply.Should().BeTrue("Reporter, Child, contract evidence and the XML fixture are test readiness only");
+        result.BlockReasons.Should().BeEmpty();
+        result.Dependencies.Where(d => d.Phase == SetupDependencyPhase.Test && d.State != SetupDependencyState.Resolved).Select(d => d.Dependency.Role ?? d.Dependency.Kind.ToString())
+            .Should().Contain(["Reporter", "Child", AltinnProviderHandler.XmlFixtureRole, "Contract"]);
+        Dep(result, SetupDependencyKind.Contract).Should().Match<SetupDependencyResolution>(d => d.Cause == SetupDependencyCause.SourceEvidenceMissing
+            && d.ActionLabel == "Review source evidence in Integration Quality Review" && d.OwnerHref.Contains("integration="));
+        bed.ContractEvidence();
+        Dep(await PreflightAsync(bed), SetupDependencyKind.Contract).State.Should().Be(SetupDependencyState.Resolved, "rerun re-evaluates the chain");
+    }
+
+    [Fact]
+    public async Task Exports_and_library_versions_never_carry_the_built_in_identifiers()
+    {
+        var bed = await ConfiguredAsync();
+        SkoleNaervaerTestIdentityDefaults.Apply(bed.Kit.Options);
+        foreach (var format in new[] { SetupPackageFormat.Yaml, SetupPackageFormat.Json })
+        {
+            var (export, _) = await bed.Setup().ExportAsync(Env, SetupScope.Environment, null, null, format, ["skolenaervaer"], CancellationToken.None);
+            export!.Content.Should().NotContain(DefaultReporterId).And.NotContain(DefaultChildId);
+            System.Text.Json.JsonSerializer.Serialize(export.Dependencies).Should().NotContain(DefaultReporterId).And.NotContain(DefaultChildId);
+        }
+    }
+
+    private sealed class RealSchema : ITestDataSchemaSource
+    {
+        public Task<TestDataSchemaPackage?> FindAsync(BirkNext.TestData.TestDataSchemaReference reference, CancellationToken ct) => Task.FromResult<TestDataSchemaPackage?>(
+            new(reference.SourceSnapshotId ?? Guid.Empty, new Dictionary<string, string> { [TestData.TestDataXmlFixtureTests.SchemaPath] = Schemas.RealSchemaFixtures.Read(Schemas.RealSchemaFixtures.Skolenaervaer200) }, true));
+    }
+
+    [Fact]
+    public async Task A_saved_approved_valid_xml_fixture_resolves_test_readiness_an_invalid_one_warns_and_neither_blocks_apply()
+    {
+        var bed = new Bed();
+        bed.ReportIntake(); bed.ContractEvidence(); bed.Identities();
+        bed.Schemas = new RealSchema();
+        const string form = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn";
+
+        var missing = await PreflightAsync(bed, form: form);
+        Dep(missing, SetupDependencyKind.TestData, AltinnProviderHandler.XmlFixtureRole).State.Should().Be(SetupDependencyState.Missing);
+
+        bed.SavedXml.Add(TestData.TestDataXmlFixtureTests.SavedXmlDocument(approved: true, xml: TestData.TestDataXmlFixtureTests.Skeleton("04061076692")));
+        var ready = await PreflightAsync(bed, form: form);
+        Dep(ready, SetupDependencyKind.TestData, AltinnProviderHandler.XmlFixtureRole).Should().Match<SetupDependencyResolution>(d =>
+            d.State == SetupDependencyState.Resolved && d.Detail.Contains("skolenaervaer-valid-report") && !d.Detail.Contains("04061076692"));
+
+        bed.SavedXml.Clear();
+        bed.SavedXml.Add(TestData.TestDataXmlFixtureTests.SavedXmlDocument(approved: true, xml: TestData.TestDataXmlFixtureTests.Skeleton("04061076692").Replace("<Klient>", "<Ukjent/><Klient>")));
+        var invalid = await PreflightAsync(bed, form: form);
+        Dep(invalid, SetupDependencyKind.TestData, AltinnProviderHandler.XmlFixtureRole).State.Should().Be(SetupDependencyState.Incompatible);
+        invalid.CanApply.Should().Be(ready.CanApply, "XML fixture readiness never changes Apply");
     }
 }

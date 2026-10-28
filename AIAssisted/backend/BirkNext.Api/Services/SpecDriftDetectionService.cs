@@ -5,6 +5,11 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Services;
 
 /// <summary>
+/// Requirement-to-test coverage check ("spec drift" in the QA library sense): which library requirements have no, or only one,
+/// linked test, which tests link to no requirement, and overall coverage. It is unrelated to the Documentation Drift capability
+/// (frontend DocumentationDrift, document ↔ document comparison) and reads no documents. The name is kept because it backs the
+/// GraphQL <c>specDriftReport</c> query and its <see cref="SpecDriftReport"/> type; consumed by <see cref="AIQaAuditorService"/>.
+///
 /// Detects spec drift using deterministic rules applied to live traceability data.
 /// Orchestrates ImpactAnalysisService (requirement risk) and direct DB queries
 /// (orphan test detection). No AI call — pure data analysis.

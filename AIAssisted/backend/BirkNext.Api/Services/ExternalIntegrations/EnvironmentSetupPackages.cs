@@ -207,7 +207,7 @@ public static class SetupPackageSchema
 /// that is Missing, Ambiguous, Incompatible or Not approved blocks Apply; nothing is created as a placeholder and nothing is chosen for you.
 /// </summary>
 public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegrationService integrations, IIntegrationCatalogService catalog, TestDataCatalog testData,
-    IReviewSourceEvidenceProvider sources, IEnumerable<IIntegrationJourneyPack> packs, TimeProvider clock)
+    IReviewSourceEvidenceProvider sources, IEnumerable<IIntegrationJourneyPack> packs, TimeProvider clock, ITestDataSchemaSource? schemas = null)
 {
     public async Task<(SetupPackageModel? Model, string? Problem)> BuildAsync(string environmentId, SetupScope scope, ExternalProviderType? provider, string? integrationId,
         string? name, string? description, IReadOnlyList<string>? testPacks, CancellationToken ct)
@@ -303,9 +303,11 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
         foreach (var system in model.Systems)
             dependencies.AddRange(await integrations.Handler(system.Provider).SetupRequirementsAsync(Destination(system, existing, request) ?? new ExternalIntegration { TargetEnvironmentId = environmentId, ProviderType = system.Provider }, system.Settings, ct));
         foreach (var pack in model.TestPacks) dependencies.AddRange(TestPackSetupRequirements.For(pack));
-        // One requirement per (kind, reference); required wins over optional.
-        dependencies = [.. dependencies.GroupBy(d => (d.Kind, Reference: d.Role is not null && d.Kind == SetupDependencyKind.TestData ? d.Role : d.Reference))
-            .Select(group => group.OrderByDescending(d => d.Required).ThenByDescending(d => d.Reference != d.Role).First())];
+        // Phase: Test Data is destination-local test readiness and never needed to apply a configuration (also for older manifests that
+        // declared it required); a provider may classify its own kinds. One requirement per (kind, reference): required, then Apply, wins.
+        dependencies = [.. dependencies.Select(d => d with { Phase = PhaseOf(d, model) })
+            .GroupBy(d => (d.Kind, Reference: d.Role is not null && d.Kind == SetupDependencyKind.TestData ? d.Role : d.Reference))
+            .Select(group => group.OrderByDescending(d => d.Required).ThenBy(d => d.Phase).ThenByDescending(d => d.Reference != d.Role).First())];
 
         var resolutions = new List<SetupDependencyResolution>();
         foreach (var dependency in dependencies) resolutions.Add(await ResolveAsync(environmentId, dependency, model, existing, merged, ct));
@@ -313,14 +315,55 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
         var block = new List<string>();
         if (issues.Any(issue => issue.Severity == SetupIssueSeverity.Error))
             block.Add($"{issues.Count(issue => issue.Severity == SetupIssueSeverity.Error)} package error(s): {issues.First(issue => issue.Severity == SetupIssueSeverity.Error).Message}");
-        var unresolved = resolutions.Where(r => r.Dependency.Required && r.State is not SetupDependencyState.Resolved).ToList();
-        if (unresolved.Count > 0) block.Add($"{unresolved.Count} required dependenc{(unresolved.Count == 1 ? "y" : "ies")} unresolved");
+        // Only what is needed to apply safely blocks Apply; unresolved test readiness stays a warning in its own section.
+        var unresolved = resolutions.Where(r => r.Phase == SetupDependencyPhase.Apply && r.Dependency.Required && r.State is not SetupDependencyState.Resolved).ToList();
+        if (unresolved.Count > 0) block.Add($"{unresolved.Count} blocking dependenc{(unresolved.Count == 1 ? "y" : "ies")} unresolved");
         return new SetupPreflightResult
         {
             Valid = issues.All(issue => issue.Severity != SetupIssueSeverity.Error), PackageName = model.Name, PackageVersion = model.Version, SchemaVersion = SetupPackageSchema.SupportedVersion,
             DetectedScope = model.Scope, DetectedProviders = [.. model.Systems.Select(system => system.Provider).Distinct()], Issues = issues, Changes = changes,
             Dependencies = resolutions, BlockReasons = block,
         };
+    }
+
+    private SetupDependencyPhase PhaseOf(SetupDependency d, SetupPackageModel model)
+    {
+        if (d.Kind == SetupDependencyKind.TestData) return SetupDependencyPhase.Test;
+        foreach (var provider in model.Systems.Select(s => s.Provider).Distinct())
+            if (integrations.Handler(provider).PhaseOf(d) is { } phase) return phase;
+        return d.Phase;
+    }
+
+    /// <summary>
+    /// Test readiness of a contract's XML fixture: an approved, positive XML asset in Test Data whose schema is the contract, validated with the
+    /// shared XSD validator (Schema Studio generates and saves fixtures; Test Data owns them once registered). At least one valid fixture is ready.
+    /// </summary>
+    private async Task<SetupDependencyResolution> XmlFixtureAsync(SetupDependency d, CancellationToken ct)
+    {
+        const string owner = "Test Data", href = "/test-data", hint = "Generate and validate a fixture in Schema Studio, then register and approve it in Test Data.";
+        var missing = d.Required ? SetupDependencyState.Missing : SetupDependencyState.OptionalMissing;
+        bool ForContract(TestDataAsset asset) => asset.Schema is { } schema
+            && (string.Equals(System.IO.Path.GetFileNameWithoutExtension(schema.SchemaPath.Replace('\\', '/').Split('/').Last()), d.Reference, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(System.IO.Path.GetFileNameWithoutExtension(schema.Label ?? ""), d.Reference, StringComparison.OrdinalIgnoreCase));
+        var fixtures = testData.Assets().Where(asset => string.Equals(asset.MediaType, "application/xml", StringComparison.OrdinalIgnoreCase) && ForContract(asset)
+            && !asset.Capabilities.Contains("negative-test", StringComparer.OrdinalIgnoreCase)).ToList();
+        if (fixtures.Count == 0)
+            return new(d, missing, $"No XML fixture for {d.Reference} in Test Data.", owner, href) { ActionLabel = "Open Test Data", Hint = hint };
+        var approved = fixtures.Where(asset => asset.Approval == TestDataApproval.Approved).ToList();
+        if (approved.Count == 0)
+            return new(d, SetupDependencyState.NotApproved, $"{fixtures.Count} XML fixture{(fixtures.Count == 1 ? "" : "s")} for {d.Reference}, none approved.", owner, href) { ActionLabel = "Open Test Data" };
+        var checks = new List<(TestDataAsset Asset, TestDataSchemaCheck? Check)>();
+        foreach (var asset in approved)
+            checks.Add((asset, schemas is null ? null : TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct))));
+        if (checks.FirstOrDefault(c => c.Check?.Status == TestDataSchemaStatus.Validated) is { Asset: { } valid })
+            return new(d, SetupDependencyState.Resolved, $"XML fixture {valid.Alias} is valid against the {d.Reference} schema (schema-valid is not business-valid).", owner, href);
+        if (checks.Any(c => c.Check?.Status == TestDataSchemaStatus.Invalid))
+            return new(d, SetupDependencyState.Incompatible, $"The XML fixture for {d.Reference} is invalid against its XSD.", owner, href) { ActionLabel = "Open Test Data", Hint = hint };
+        var status = checks.Select(c => c.Check?.Status).FirstOrDefault();
+        return new(d, missing, status is TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved
+                ? $"The XML fixture for {d.Reference} cannot be validated: the contract schema is unavailable."
+                : $"The XML fixture for {d.Reference} is not validated against the contract.", owner, href)
+            { ActionLabel = "Open Test Data", Hint = hint };
     }
 
     private static ExternalIntegration? Destination(SetupPackageSystem system, IReadOnlyList<ExternalIntegration> existing, SetupPreflightRequest request) =>
@@ -338,6 +381,8 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
 
         switch (d.Kind)
         {
+            case SetupDependencyKind.TestData when d.Role == AltinnProviderHandler.XmlFixtureRole:
+                return await XmlFixtureAsync(d, ct);
             case SetupDependencyKind.TestData:
             {
                 var assets = testData.Assets();
@@ -347,27 +392,33 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
                     : capability is null ? [] : [.. assets.Where(asset => asset.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase))];
                 const string owner = "Test Data", href = "/test-data";
                 var label = d.Role is null ? d.Reference : $"{d.Role} ({d.Reference})";
-                if (candidates.Count == 0) return new(d, missing, $"No Test Data asset for {label}. Nothing is generated.", owner, href);
-                if (candidates.Count > 1) return new(d, SetupDependencyState.Ambiguous, $"{candidates.Count} Test Data assets match {label}; choose or mark one default.", owner, href);
-                var asset = candidates[0];
+                if (candidates.Count == 0) return new(d, missing, $"No Test Data asset for {label}. Nothing is generated.", owner, href) { ActionLabel = "Open Test Data" };
+                // Several candidates: the one Test Data default resolves it (as Test Data's own resolver does); otherwise nothing is guessed.
+                var defaults = candidates.Where(asset => asset.IsDefault).ToList();
+                if (candidates.Count > 1 && defaults.Count != 1)
+                    return new(d, SetupDependencyState.Ambiguous, $"{candidates.Count} Test Data assets match {label}; choose or mark one default.", owner, href) { ActionLabel = "Open Test Data" };
+                var asset = candidates.Count == 1 ? candidates[0] : defaults[0];
                 if (byAlias.Count > 0 && capability is not null && !asset.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase))
                     return new(d, SetupDependencyState.Incompatible, $"{asset.Alias} is not a {d.Role} asset.", owner, href);
-                if (asset.Approval != TestDataApproval.Approved) return new(d, SetupDependencyState.NotApproved, $"{asset.Alias} is not approved.", owner, href);
-                return new(d, SetupDependencyState.Resolved, $"Resolved from Test Data: {asset.Alias} (identifier not shown).", owner, href);
+                if (asset.Approval != TestDataApproval.Approved) return new(d, SetupDependencyState.NotApproved, $"{asset.Alias} is not approved.", owner, href) { ActionLabel = "Open Test Data" };
+                return new(d, SetupDependencyState.Resolved, $"Resolved from Test Data{(asset.IsDefault ? " default" : "")}: {asset.Alias} (identifier not shown).", owner, href);
             }
             case SetupDependencyKind.Integration:
             {
                 IReadOnlyList<IntegrationDefinition> list;
                 try { list = (await catalog.GetAsync(environmentId, null, null, ct)).Integrations; }
                 catch (Exception ex) when (ex is not OperationCanceledException) { list = []; }
-                const string owner = "Integration Quality Review", href = "/integration-quality-review";
-                if (list.Any(item => item.Id == d.Reference)) return new(d, SetupDependencyState.Resolved, $"Resolved from IQR: {d.Reference}.", owner, href);
+                // Configured integrations are owned by the Integration Catalog (IQR reviews their evidence).
+                const string owner = "Integration Catalog";
+                var href = $"/admin/system-settings?section=target-environments&tab=integrations&profile={Uri.EscapeDataString(environmentId)}";
+                if (list.Any(item => item.Id == d.Reference)) return new(d, SetupDependencyState.Resolved, $"Resolved from the Integration Catalog: {d.Reference}.", owner, href);
                 var named = list.Where(item => string.Equals(item.DisplayName, d.Reference, StringComparison.OrdinalIgnoreCase)).ToList();
                 return named.Count switch
                 {
-                    1 => new(d, SetupDependencyState.Resolved, $"Resolved from IQR by name: {named[0].Id}.", owner, href),
-                    > 1 => new(d, SetupDependencyState.Ambiguous, $"{named.Count} integrations are named {d.Reference}; resolve in IQR.", owner, href),
-                    _ => new(d, missing, $"Integration {d.Reference} is not configured in this environment. It is never created by import.", owner, href),
+                    1 => new(d, SetupDependencyState.Resolved, $"Resolved from the Integration Catalog by name: {named[0].Id}.", owner, href),
+                    > 1 => new(d, SetupDependencyState.Ambiguous, $"{named.Count} integrations are named {d.Reference}; resolve in the Integration Catalog.", owner, href) { ActionLabel = "Open Integration Catalog" },
+                    _ => new(d, missing, $"Integration {d.Reference} is not configured in this environment. It is never created by import.", owner, href)
+                        { Cause = SetupDependencyCause.IntegrationNotConfigured, ActionLabel = "Open Integration Catalog" },
                 };
             }
             case SetupDependencyKind.SourceSnapshot:

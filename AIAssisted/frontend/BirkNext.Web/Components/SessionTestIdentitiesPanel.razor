@@ -1,5 +1,6 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
+@using BirkNext.TestData
 @inject IServiceProvider Services
 
 @* Test Data → session test identities: the approved synthetic reporter and child an Altinn run uses, entered here (not in a terminal) and held
@@ -14,6 +15,33 @@
     }
     else
     {
+        @* What runs use now: per role the single default (or the only identity); several without a default need a choice in the run. *@
+        <dl class="sti-current" data-testid="sti-current">
+            @foreach (var (role, label) in new[] { ("reporter", "Reporter"), ("child", "Child") })
+            {
+                var candidates = Assets.Where(a => a.SourceId == "altinn-local" && a.Capabilities.Contains(role, StringComparer.OrdinalIgnoreCase)).ToList();
+                var chosen = candidates.Where(a => a.IsDefault).ToList() is { Count: 1 } defaults ? defaults[0] : candidates.Count == 1 ? candidates[0] : null;
+                <div data-testid="sti-role-row" data-role="@role">
+                    <dt>@label</dt>
+                    <dd>
+                        @if (chosen is not null)
+                        {
+                            <span data-testid="sti-chosen">@(chosen.Label ?? chosen.Alias)</span> <code class="sti-alias">@chosen.Alias</code>
+                            @if (chosen.IsDefault) { <span class="sti-badge" data-testid="sti-default">Default</span> }
+                            <span class="sti-badge" data-testid="sti-state">@(chosen.Approval == TestDataApproval.Approved ? "Ready" : "Not approved")</span>
+                            @if (candidates.Count > 1) { <span class="sti-muted"> · @(candidates.Count - 1) other identit@(candidates.Count == 2 ? "y" : "ies") available; a run can select another.</span> }
+                        }
+                        else
+                        {
+                            <span data-testid="sti-chosen">@(candidates.Count == 0 ? "Missing" : "Choose…")</span>
+                            <span class="sti-muted"> @(candidates.Count == 0 ? "Add one below." : $"{candidates.Count} identities and no default: a run chooses one.")</span>
+                        }
+                    </dd>
+                </div>
+            }
+        </dl>
+        <details class="sti-add" data-testid="sti-add-disclosure">
+        <summary>Add another session identity</summary>
         <div class="sti-form" data-testid="sti-form">
             <label>Role
                 <select class="form-select" @bind="_role" data-testid="sti-role">
@@ -42,6 +70,7 @@
                 <button type="button" class="btn btn-secondary btn-sm" data-testid="sti-clear" disabled="@_busy" @onclick="ClearAsync">Clear session identities</button>
             </div>
         </div>
+        </details>
         @if (_message is { } message) { <p class="sti-message" role="status" data-testid="sti-message">@message</p> }
     }
 </div>
@@ -49,6 +78,8 @@
 @code {
     /// <summary>Called after a change so the page reloads the catalog (aliases only).</summary>
     [Parameter] public EventCallback<string?> OnChanged { get; set; }
+    /// <summary>The catalog's assets (aliases and metadata only), to show which reporter and child Test Data holds — the built-in defaults included.</summary>
+    [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
 
     private IAltinnEnvironmentApiService? _api;
     private string _role = "reporter";

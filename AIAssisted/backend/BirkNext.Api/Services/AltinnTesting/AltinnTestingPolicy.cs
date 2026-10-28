@@ -16,6 +16,9 @@ public sealed class AltinnTestingOptions
     /// <summary>Approved synthetic children for report scenarios, chosen by alias. Local execution configuration only (environment variables,
     /// never a committed file): the identifier stays in the backend. BirkNext never adds to this list or invents a child.</summary>
     public List<SyntheticChildOptions> SyntheticChildren { get; set; } = [];
+    /// <summary>Adds the built-in Skolenærvær default reporter and child to the Test Data identities at startup (fill-if-absent by alias;
+    /// <see cref="SkoleNaervaerTestIdentityDefaults"/>). On by default; false keeps only configured and session identities.</summary>
+    public bool BuiltInSkolenaervaerIdentities { get; set; } = true;
     /// <summary>
     /// Service-owner confirmations that an app's authorization policy (XACML: who may instantiate, write and complete, roles, authentication
     /// level, party representation) accepts the configured synthetic TEST reporter. Without a confirmation for the app, submission scenarios
@@ -74,6 +77,10 @@ public sealed class SyntheticReporterOptions
     public DateTimeOffset? SessionExpiresAt { get; internal set; }
     /// <summary>The Altinn role the reporter acts in. A run's instance owner is the reporter's own current party, so only PRIV is supported.</summary>
     public string AltinnRole { get; set; } = "PRIV";
+    /// <summary>The reporter to use when several approved reporters apply (an explicit selection always wins). At most one may be the default.</summary>
+    public bool Default { get; set; }
+    /// <summary>A built-in default identity (not backend configuration and not a session entry).</summary>
+    public bool BuiltIn { get; internal set; }
 }
 
 /// <summary>
@@ -93,6 +100,8 @@ public sealed class SyntheticChildOptions
     public bool Default { get; set; }
     /// <summary>Set when the child was entered in BirkNext for this backend session (memory only); null for backend configuration.</summary>
     public DateTimeOffset? SessionExpiresAt { get; internal set; }
+    /// <summary>A built-in default identity (not backend configuration and not a session entry).</summary>
+    public bool BuiltIn { get; internal set; }
 }
 
 public sealed class AltinnAppPolicyConfirmation

@@ -25,7 +25,11 @@
     else
     {
         var summary = IntegrationsPanePresentation.Summary(_catalog);
-        var suggestions = IntegrationsOverviewPresentation.Summary(_sources);
+        // Candidates = source-discovered (current project + IQR-bound + Test Pack-recognized sources) plus Test Pack proposals backed by
+        // recognized source evidence. The list filters below are about source candidates only.
+        var packProposals = IntegrationPackProposals.For(_templates);
+        var sourceSummary = IntegrationsOverviewPresentation.Summary(_sources);
+        var suggestions = IntegrationsOverviewPresentation.Summary(_sources, packProposals);
         var runtime = IntegrationsOverviewPresentation.Runtime(_catalog);
         @foreach (var notice in _notices) { <p class="ip-notice" role="status" data-testid="ip-notice">@notice</p> }
 
@@ -65,7 +69,7 @@
 
         @if (_editing is { } editing)
         {
-            <IntegrationDefinitionEditor Original="editing.Original" Platforms="_catalog.Platforms" Templates="_templates" OnSave="SaveAsync" OnCancel="CancelEdit" EnvironmentId="@Profile.Id"
+            <IntegrationDefinitionEditor Original="editing.Original" Platforms="_catalog.Platforms" Templates="_templates" InitialTemplateKey="@editing.TemplateKey" OnSave="SaveAsync" OnCancel="CancelEdit" EnvironmentId="@Profile.Id"
                                          Binding="@(editing.Original is { } edited ? _bindings.FirstOrDefault(b => b.IntegrationId == edited.Id) : null)" />
             @if (_saveError is { } saveError) { <p class="ip-banner ip-banner-error" role="alert" data-testid="ip-save-error">@saveError</p> }
         }
@@ -386,9 +390,35 @@
                     @if (suggestions.Conflicts > 0) { <div><dt>Conflicting evidence</dt><dd data-testid="ip-suggestions-conflicts">@suggestions.Conflicts</dd></div> }
                 </dl>
                 <p class="ip-muted ip-small" data-testid="ip-suggestions-legend">Ready to review: explicit source wiring or several independent indicators. Needs confirmation: naming or convention only. Needs mapping: no consumer identified in source.</p>
-                @if (suggestions.Total > 0)
+                @if (_sources?.ContributingSources is { Count: > 0 } contributing)
                 {
-                    <button type="button" class="ip-disclosure" data-testid="ip-suggestions-toggle" aria-expanded="@(_suggestionsOpen ? "true" : "false")" aria-controls="ip-suggestion-list" @onclick="() => _suggestionsOpen = !_suggestionsOpen">@(_suggestionsOpen ? "Hide candidates" : $"Show candidates ({suggestions.Total})")</button>
+                    <p class="ip-muted ip-small" data-testid="ip-contributing-sources">Sources read: @string.Join(" · ", contributing.Select(s => $"{s.ArchiveName} ({s.Reason})"))</p>
+                }
+                @if (packProposals.Count > 0)
+                {
+                    <h4 class="ip-h4" data-testid="ip-pack-proposals-heading">Proposed by test packs</h4>
+                    <ul class="ip-suggestion-items" data-testid="ip-pack-proposals">
+                        @foreach (var proposal in packProposals)
+                        {
+                            var current = proposal;
+                            <li class="ip-suggestion" data-testid="ip-pack-proposal" data-template="@proposal.Template.Key" data-ready="@(proposal.Ready ? "true" : "false")">
+                                <div class="ip-suggestion-main">
+                                    <strong>@proposal.Template.DisplayName</strong>
+                                    <span class="ip-cell-sub">@proposal.Template.Description</span>
+                                    <dl class="ip-suggestion-facts">
+                                        <div><dt>Evidence</dt><dd data-testid="ip-pack-proposal-evidence">@string.Join(" · ", proposal.Evidence)</dd></div>
+                                        @if (proposal.Decision is { } decision) { <div><dt>Needs decision</dt><dd data-testid="ip-pack-proposal-decision">@decision</dd></div> }
+                                    </dl>
+                                </div>
+                                <span class="ip-pill ip-pill-@(proposal.Ready ? "info" : "attention")" data-testid="ip-pack-proposal-state">@(proposal.Ready ? "Ready to review" : "Needs decision")</span>
+                                <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-pack-proposal-review" aria-label="@($"Review and add {proposal.Template.DisplayName}")" @onclick="() => BeginAddFromTemplate(current.Template.Key)">Review &amp; add</button>
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (sourceSummary.Total > 0)
+                {
+                    <button type="button" class="ip-disclosure" data-testid="ip-suggestions-toggle" aria-expanded="@(_suggestionsOpen ? "true" : "false")" aria-controls="ip-suggestion-list" @onclick="() => _suggestionsOpen = !_suggestionsOpen">@(_suggestionsOpen ? "Hide candidates" : $"Show source candidates ({sourceSummary.Total})")</button>
                 }
                 @if (_suggestionsOpen)
                 {
@@ -398,17 +428,17 @@
                         <div class="ip-filters" role="group" aria-label="Filter integration candidates">
                             <label class="ip-field-inline">Review state
                                 <select class="form-control" data-testid="ip-candidate-filter" @bind="_candidateFilter">
-                                    <option value="@CandidateFilter.Ready">Ready to review (@suggestions.StronglySupported)</option>
-                                    <option value="@CandidateFilter.NeedsConfirmation">Needs confirmation (@suggestions.Suggested)</option>
-                                    <option value="@CandidateFilter.NeedsMapping">Needs mapping (@suggestions.Unassigned)</option>
-                                    @if (suggestions.Conflicts > 0) { <option value="@CandidateFilter.Conflicts">Conflicting evidence (@suggestions.Conflicts)</option> }
-                                    <option value="@CandidateFilter.All">All (@suggestions.Total)</option>
+                                    <option value="@CandidateFilter.Ready">Ready to review (@sourceSummary.StronglySupported)</option>
+                                    <option value="@CandidateFilter.NeedsConfirmation">Needs confirmation (@sourceSummary.Suggested)</option>
+                                    <option value="@CandidateFilter.NeedsMapping">Needs mapping (@sourceSummary.Unassigned)</option>
+                                    @if (sourceSummary.Conflicts > 0) { <option value="@CandidateFilter.Conflicts">Conflicting evidence (@sourceSummary.Conflicts)</option> }
+                                    <option value="@CandidateFilter.All">All (@sourceSummary.Total)</option>
                                 </select>
                             </label>
                             <label class="ip-field-inline">Search <input type="search" class="form-control" data-testid="ip-candidate-search" @bind="_candidateSearch" @bind:event="oninput" placeholder="Producer, consumer or channel" /></label>
                         </div>
-                        <p class="ip-muted" role="status" data-testid="ip-suggestion-filter">Showing @shown.Count of @suggestions.Total candidates@(mixed ? "" : $" · {IntegrationsOverviewPresentation.Label(IntegrationsOverviewPresentation.Strength(_candidateFilter)!.Value)}").
-                            @if (!mixed) { <button type="button" class="ip-link" data-testid="ip-suggestions-all" @onclick="() => _candidateFilter = CandidateFilter.All">Show all @suggestions.Total candidates</button> }</p>
+                        <p class="ip-muted" role="status" data-testid="ip-suggestion-filter">Showing @shown.Count of @sourceSummary.Total candidates@(mixed ? "" : $" · {IntegrationsOverviewPresentation.Label(IntegrationsOverviewPresentation.Strength(_candidateFilter)!.Value)}").
+                            @if (!mixed) { <button type="button" class="ip-link" data-testid="ip-suggestions-all" @onclick="() => _candidateFilter = CandidateFilter.All">Show all @sourceSummary.Total candidates</button> }</p>
                         @if (shown.Count == 0) { <p class="ip-muted" data-testid="ip-suggestions-none">No candidate matches this view. Choose another review state or show all candidates.</p> }
                         <ul class="ip-suggestion-items">
                             @foreach (var group in IntegrationsOverviewPresentation.GroupByProducer(shown))
@@ -762,6 +792,15 @@
                     <div><dt>Consumer</dt><dd>@(c.ConsumerCandidate ?? "Not identified in source")</dd></div>
                     <div><dt>Channel</dt><dd class="ip-mono ip-wrap" title="@c.ChannelName">@SourceIntegrationsPresentation.ChannelShort(c.ChannelName)</dd></div>
                     <div><dt>Evidence</dt><dd data-testid="ip-suggestion-evidence">@SourceIntegrationsPresentation.Evidence(c.ConsumerEvidence)</dd></div>
+                    @* Why BirkNext discovered it: every contributing source with the reason it was read — never one opaque "Source Analysis". *@
+                    @if (IntegrationsOverviewPresentation.Provenance(c, _sources?.Discovery?.ArchiveName) is { Count: > 0 } provenance)
+                    {
+                        <div><dt>Discovered from</dt><dd class="ip-wrap" data-testid="ip-suggestion-provenance">@string.Join(" · ", provenance)</dd></div>
+                    }
+                    @if (c.SourceDisagreements.Count > 0)
+                    {
+                        <div><dt>Needs decision</dt><dd class="ip-wrap" data-testid="ip-suggestion-disagreements">Sources disagree: @string.Join("; ", c.SourceDisagreements)</dd></div>
+                    }
                 </dl>
                 <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="@($"ip-suggestion-details-{slug}")" Class="disclosure-inline disclosure-small">
                     <dl class="ip-dl ip-dl-technical">
@@ -797,7 +836,8 @@
     /// <summary>Adds a source suggestion as a configured integration. Origin = source suggestion; the mapping stays a suggestion until confirmed.</summary>
     private Task AddSuggestionAsync(SourceIntegrationCandidate candidate)
     {
-        var definition = IntegrationsOverviewPresentation.FromCandidate(_catalog!, candidate, _sources?.Discovery?.SourceSnapshotId);
+        // The mapping basis is the snapshot this candidate was discovered in (multi-source discovery reads several).
+        var definition = IntegrationsOverviewPresentation.FromCandidate(_catalog!, candidate, candidate.SourceSnapshotId != Guid.Empty ? candidate.SourceSnapshotId : _sources?.Discovery?.SourceSnapshotId);
         return TrackAsync($"{definition.DisplayName} added from a source suggestion; its consumer mapping is not confirmed.", () => Api.CreateAsync(Profile.Id, definition));
     }
 
@@ -825,7 +865,7 @@
         _sourcesError = null;
         try
         {
-            _sources = await Api.DiscoverSourceIntegrationsAsync(Profile.Id);
+            _sources = await Api.DiscoverSourceIntegrationsAsync(Profile.Id, PrimarySnapshotId());
             _discoveryReport = _sources is null ? ["Source integration discovery is not available."] : SourceIntegrationsPresentation.DiscoveryReport(_catalog!, _sources);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
@@ -1163,7 +1203,10 @@
 
     public void Dispose() { _mappingCancellation.Cancel(); _mappingCancellation.Dispose(); }
 
-    private sealed record EditState(IntegrationDefinition? Original);
+    private sealed record EditState(IntegrationDefinition? Original, string? TemplateKey = null);
+
+    /// <summary>The current project's source snapshot: the primary context of discovery (other relevant imported sources are added by the backend).</summary>
+    private Guid? PrimarySnapshotId() => ServiceProvider.GetService<BirkNext.Web.Services.ProjectImport.ProjectImportActivation>()?.Current?.SourceSnapshotId;
 
     /// <summary>Service Bus runtime settings in edit (the Event Hub form owns its own model).</summary>
     private sealed class RuntimeModel
@@ -1225,7 +1268,7 @@
             _messaging = await Api.ApplicationMessagingAsync(Profile.Id);
             try { _bindings = await Api.ListEvidenceBindingsAsync(Profile.Id) ?? []; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _bindings = []; }
-            try { _sources = await Api.SourceIntegrationsAsync(Profile.Id); _sourcesError = null; }
+            try { _sources = await Api.SourceIntegrationsAsync(Profile.Id, PrimarySnapshotId()); _sourcesError = null; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or NotSupportedException)
             { _sources = null; _sourcesError = "Source integrations could not be loaded; the configured integrations are shown without source evidence."; }
             await LoadTerraformAsync();
@@ -1279,6 +1322,8 @@
     // The form re-reads the templates when it opens: their evidence state is what the source store holds now. A snapshot imported after
     // this page loaded (another tab, Import Project in between) must never show as "Missing" from a list read earlier.
     private async Task BeginAdd() { _saveError = null; _bindingOutcome = null; await LoadTemplatesAsync(); _editing = new EditState(null); }
+    /// <summary>"Review &amp; add" on a Test Pack proposal: the normal Add integration form with that template preselected. Nothing is saved until Save.</summary>
+    private async Task BeginAddFromTemplate(string templateKey) { _saveError = null; _bindingOutcome = null; await LoadTemplatesAsync(); _editing = new EditState(null, templateKey); }
     private async Task BeginEdit(IntegrationDefinition definition) { _saveError = null; _bindingOutcome = null; await LoadTemplatesAsync(); _editing = new EditState(definition); }
     private void CancelEdit() { _focusAddTrigger = _editing?.Original is null; _editing = null; _saveError = null; }
 

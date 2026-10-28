@@ -280,4 +280,17 @@ public sealed class IntegrationTemplateTests
         public Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<JourneyPrerequisite>>([]);
     }
+
+    [Fact]
+    public async Task The_report_intake_template_declares_its_fixture_roles_child_in_the_form_and_reporter_as_the_altinn_actor()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var kit = new BirkNext.Api.Tests.Services.AltinnTesting.AltinnTestKit();
+        var pack = new BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack(harness.MessageFlows, kit.Policy, kit.Contracts(harness.MessageFlows, harness.Sources));
+        var template = pack.IntegrationTemplates.Single(t => t.Key == "skolenaervaer-report-intake");
+
+        template.FixtureBindings.Select(b => (b.Role, b.Capability, b.ElementPath)).Should().Equal(("Child", "child", "Klient.Identifikator.Fodselsnummer"), ("Reporter", "reporter", (string?)null));
+        (await harness.Service(pack).IntegrationTemplatesAsync(BirkNext.Api.Tests.Services.ActiveEventTesting.ActiveEventTestHarness.Env, "Development", default))
+            .Single(t => t.Key == template.Key).FixtureBindings.Should().BeEquivalentTo(template.FixtureBindings, "the view carries the pack's declaration unchanged");
+    }
 }

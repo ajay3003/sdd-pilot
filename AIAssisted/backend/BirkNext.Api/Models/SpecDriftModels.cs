@@ -27,6 +27,7 @@ public sealed class DriftFinding
 
 /// <summary>
 /// Full spec drift report for a project. Computed on demand — not persisted.
+/// Requirement-to-test coverage (see SpecDriftDetectionService); unrelated to the Documentation Drift capability.
 /// Reuses data from ImpactAnalysisService; adds orphan test detection and
 /// drift-specific findings + recommendations.
 /// </summary>

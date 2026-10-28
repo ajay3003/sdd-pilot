@@ -459,4 +459,89 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         cut.Find("[data-testid=ip-edit-cancel]").Click();
         GenericTriggers(cut).Should().ContainSingle();
     }
+
+    // ── Integration Catalog: Test Pack proposals and multi-source provenance ───────────────────────────────────────────
+
+    private static TestPackSourceStatus Available(params (Guid Id, string Archive, char Fill)[] candidates) =>
+        new(Mu, candidates.Length > 1 ? TestPackSourceState.ReviewRequired : TestPackSourceState.AvailableNotBound)
+            { Candidates = [.. candidates.Select(c => Candidate(c.Id, c.Archive, c.Fill))] };
+
+    [Fact]
+    public void A_template_whose_evidence_source_is_imported_is_proposed_and_Review_and_add_opens_the_form_with_it_preselected_saving_nothing()
+    {
+        _templates = [Intake(Available((SnapshotA, "Tiltak 2.zip", 'a'))), Intake(Missing()) with { Key = "other", DisplayName = "Pack – no evidence" }];
+        var cut = Open();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-pack-proposal]"));
+
+        var proposal = cut.Find("[data-testid=ip-pack-proposal]");
+        cut.FindAll("[data-testid=ip-pack-proposal]").Should().ContainSingle("a template without imported evidence is not proposed (the testing setup names the missing source)");
+        proposal.GetAttribute("data-ready").Should().Be("true");
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-state]")!.TextContent.Should().Be("Ready to review");
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-evidence]")!.TextContent.Should().Contain("Demo pack Test Pack").And.Contain("MU (Meldingsutveksleren) source: Tiltak 2.zip");
+        cut.Find("[data-testid=ip-summary-suggestions]").TextContent.Should().Be("1", "an evidence-backed proposal is a candidate");
+        cut.Find("[data-testid=ip-summary-ready]").TextContent.Should().Be("1");
+
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-review]")!.Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-edit-template-select]").GetAttribute("value").Should().Be("pack-report-intake"));
+        Value(cut, "ip-edit-name").Should().Be("Pack – report intake");
+        _api.Calls.Should().NotContain("create", "a proposal is never configured until the person saves");
+    }
+
+    [Fact]
+    public void Several_matching_evidence_sources_need_a_decision_and_a_configured_requirement_is_not_proposed_again()
+    {
+        _templates = [Intake(Available((SnapshotA, "hub-a.zip", 'a'), (SnapshotB, "hub-b.zip", 'b'))), Stream() with { EvidenceSource = Available((SnapshotA, "ledger.zip", 'c')), AlreadyConfigured = ["Ledger – CDC stream"] }];
+        var cut = Open();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-pack-proposal]"));
+
+        var proposal = cut.Find("[data-testid=ip-pack-proposal]");
+        cut.FindAll("[data-testid=ip-pack-proposal]").Should().ContainSingle("an already configured requirement is not proposed again");
+        proposal.GetAttribute("data-ready").Should().Be("false");
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-decision]")!.TextContent.Should().Be("Choose which MU (Meldingsutveksleren) source is the evidence (hub-a.zip, hub-b.zip).");
+        cut.Find("[data-testid=ip-summary-ready]").TextContent.Should().Be("0");
+    }
+
+    [Fact]
+    public void A_source_candidate_shows_every_contributing_source_and_disagreeing_sources_need_a_decision()
+    {
+        var candidate = new SourceIntegrationCandidate
+        {
+            Id = "servicebusqueue|incoming|consumer", SourceSnapshotId = SnapshotA, Transport = IntegrationTransport.ServiceBusQueue, Pattern = IntegrationPattern.Messaging,
+            ChannelName = "incoming", ConsumerCandidate = "Hub.Consumer", ConsumerEvidence = BirkNext.SourceArchitecture.ArchitectureEvidenceState.Confirmed, ProducerComponent = "Hub.Api",
+            Sources = [new(SnapshotA, "app.zip", "Current project source"), new(SnapshotB, "infra.zip", "Infrastructure as Code source (Demo pack)", CorroboratingOnly: true)],
+            SourceDisagreements = ["Capture technology: Custom (app.zip) ≠ Debezium (other.zip)"],
+        };
+        _api.SourceReport = catalog => new SourceIntegrationsReport
+        {
+            EnvironmentId = "dev", SourceAnalysis = SourceDiscoveryStatus.Complete,
+            Discovery = new SourceIntegrationDiscoveryResult { SourceSnapshotId = SnapshotA, ArchiveName = "app.zip", Status = SourceDiscoveryStatus.Complete, Candidates = [candidate] },
+            UnconfiguredCandidateIds = [candidate.Id],
+            ContributingSources = [.. candidate.Sources],
+        };
+        var cut = Open();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-suggestions-toggle]"));
+        cut.Find("[data-testid=ip-contributing-sources]").TextContent.Should().Contain("app.zip (Current project source)").And.Contain("infra.zip");
+        cut.Find("[data-testid=ip-suggestions-toggle]").Click();
+        cut.Find("[data-testid=ip-candidate-filter]").Change(CandidateFilter.Conflicts.ToString());
+
+        var row = cut.Find("[data-testid=ip-suggestion]");
+        row.QuerySelector("[data-testid=ip-suggestion-provenance]")!.TextContent.Should().Be("app.zip — Current project source · infra.zip — Infrastructure as Code source (Demo pack) (corroborates)");
+        row.QuerySelector("[data-testid=ip-suggestion-disagreements]")!.TextContent.Should().Contain("Sources disagree: Capture technology");
+        row.GetAttribute("data-strength").Should().Be("Conflict", "sources that disagree are never resolved by picking one");
+        _api.Calls.Should().NotContain("create");
+    }
+
+    [Fact]
+    public void Discovery_receives_the_current_projects_snapshot_as_its_primary_context()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        var activation = new BirkNext.Web.Services.ProjectImport.ProjectImportActivation(repository);
+        var preview = BirkNext.Web.Tests.Services.ProjectImportActivationTests.Preview(new string('e', 64), source: true);
+        activation.Activate(preview, BirkNext.Web.Services.ProjectImport.ProjectImportArtifactDiscovery.From(preview),
+            BirkNext.Web.Tests.Services.ProjectImportActivationTests.Commit(preview, BirkNext.ProjectImport.ProjectImportSourceState.Created, SnapshotA));
+        Services.AddSingleton(activation);
+
+        var cut = Open();
+        cut.WaitForAssertion(() => _api.LastPrimarySnapshot.Should().Be(SnapshotA));
+    }
 }

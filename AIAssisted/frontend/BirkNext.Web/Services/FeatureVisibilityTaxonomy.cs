@@ -24,13 +24,13 @@ public static class FeatureVisibilityTaxonomy
         new("document-review", "Document Review", "document-review",
         [
             "SpecificationExplorer", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer",
-            "QualityReview", "ImplementationReview", "GeneratedDocumentationHealth", "SpecDrift",
+            "QualityReview", "ImplementationReview", "SpecDrift",
         ]),
         new("library", "Library", null, ["QaArtifactLibrary", "SampleProjects"]),
         // How are lifecycle artifacts and tracked delivery changes linked?
         new("traceability", "Traceability", "traceability", ["ArtifactTraceability", "ImplementationTraceability"]),
         // What does the source/implementation-oriented evidence say?
-        new("source-review", "Source Review", "source-review", ["SourceAnalysis", "GeneratedDocumentationExplorer", "AzureEnvironmentAnalysis"]),
+        new("source-review", "Source Review", "source-review", ["SourceAnalysis", "GeneratedDocumentationExplorer", "GeneratedDocumentationHealth", "AzureEnvironmentAnalysis"]),
         new("analysis", "Analysis", "analysis", ["ImpactAnalysis"]),
         // How do we assess or test the solution?
         new("quality-testing", "Quality & Testing", "quality-testing",
@@ -76,7 +76,6 @@ public static class FeatureVisibilityTaxonomy
         ("Task Explorer",                  "TaskExplorer"),
         ("Document Quality Review",        "QualityReview"),
         ("Task Alignment Review",          "ImplementationReview"),
-        ("Generated Documentation Health", "GeneratedDocumentationHealth"),
         ("Documentation Drift",            "SpecDrift"),
 
         // Library
@@ -93,6 +92,7 @@ public static class FeatureVisibilityTaxonomy
         // Source Review
         ("Source Analysis",                "SourceAnalysis"),
         ("Generated Documentation Explorer", "GeneratedDocumentationExplorer"),
+        ("Generated Documentation Health", "GeneratedDocumentationHealth"),
         ("Azure Environment Analysis",     "AzureEnvironmentAnalysis"),
 
         // Analysis

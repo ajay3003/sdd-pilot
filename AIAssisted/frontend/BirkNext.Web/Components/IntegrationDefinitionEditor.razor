@@ -557,6 +557,8 @@
     [Parameter] public EventCallback OnCancel { get; set; }
     /// <summary>The environment's resolved integration templates (empty: the manual form only).</summary>
     [Parameter] public IReadOnlyList<IntegrationTemplateView> Templates { get; set; } = [];
+    /// <summary>A template to preselect when the form opens for a new integration (a Test Pack proposal); it fills empty fields only.</summary>
+    [Parameter] public string? InitialTemplateKey { get; set; }
     /// <summary>The edited integration's canonical evidence binding, if any (shown; never replaced here).</summary>
     [Parameter] public IntegrationEvidenceBinding? Binding { get; set; }
 
@@ -624,6 +626,7 @@
         _prefilled.Clear();
         _provenance.Clear();
         if (IsNew && _model.Producer is { Length: > 0 } platformProducer) _prefilled["Producer"] = platformProducer;
+        if (IsNew && InitialTemplateKey is { } key && Templates.FirstOrDefault(t => t.Key == key) is { } template) { _selectedKey = key; Apply(template, TemplateApplyMode.WhereEmpty); }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
