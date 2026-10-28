@@ -52,7 +52,7 @@ public sealed class TestPackBlockerGroupTests
         var available = TestPackPresentation.BlockerGroups([P("source:hub", JourneyPrerequisiteCategory.SourceEvidence, JourneyReadinessState.Partial)], null, "dev").Single();
         (available.State, available.ActionLabel).Should().Be(("Available · needs binding", "Bind source evidence"));
         var missing = TestPackPresentation.BlockerGroups([P("source:hub", JourneyPrerequisiteCategory.SourceEvidence)], null, "dev").Single();
-        (missing.State, missing.ActionLabel, missing.ActionHref).Should().Be(("Missing", "Import source", "/project-import"));
+        (missing.State, missing.ActionLabel, missing.ActionHref).Should().Be(("Missing", "Import source", "project-import?import=source"));
     }
 
     [Fact]

@@ -3,8 +3,19 @@ using BirkNext.TestData;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>How ready a contract's XML fixture is in Test Data. Outdated: validated against another snapshot of the schema than the current one.</summary>
-public enum XmlFixtureReadiness { Missing, Ready, Outdated, Invalid, NotApproved, NotValidated }
+/// <summary>One Test Data role (Reporter, Child) for the tester view: the identity Test Data resolves for it and whether it is usable.</summary>
+public sealed record TestDataRoleStatus(string Role, string? Label, bool Ready, string Status, string? Note);
+
+/// <summary>
+/// Test Data readiness for one test context, as testers read it: Reporter, Child, XML fixture, contract validation and an overall state with
+/// one reason. Test Data readiness only — never runtime or delivery readiness. Built on <see cref="TestDataXmlReadiness"/>, the rule Setup
+/// Library preflight also uses.
+/// </summary>
+public sealed record TestDataTesterStatus(IReadOnlyList<TestDataRoleStatus> Roles, TestDataXmlReadinessState Xml, string XmlText, TestDataAssetSummary? Fixture,
+    string ContractValidation, string Overall, string? Reason)
+{
+    public bool Ready => Overall == "Ready";
+}
 
 /// <summary>
 /// Test Data → XML fixtures: which test context, identities and XSD a fixture is created from, and how ready the saved fixtures are. Pure over
@@ -34,22 +45,70 @@ public static class XmlFixturePresentation
         : candidates.Where(c => c.IsDefault).ToList() is { Count: 1 } defaults ? defaults[0]
         : candidates.Count == 1 ? candidates[0] : null;
 
-    /// <summary>Saved XML fixtures for the contract: XML assets whose schema file is the contract (positive fixtures only).</summary>
+    /// <summary>Saved XML fixtures for the contract (positive fixtures only) — the shared rule's own selection.</summary>
     public static IReadOnlyList<TestDataAssetSummary> Fixtures(IEnumerable<TestDataAssetSummary> assets, string contract) =>
-        [.. assets.Where(a => string.Equals(a.MediaType, "application/xml", StringComparison.OrdinalIgnoreCase) && a.Schema is { } schema
-            && string.Equals(Path.GetFileNameWithoutExtension(schema.SchemaPath.Replace('\\', '/').Split('/').Last()), contract, StringComparison.OrdinalIgnoreCase)
-            && !a.Capabilities.Contains("negative-test", StringComparer.OrdinalIgnoreCase))];
+        [.. assets.Where(a => TestDataXmlReadiness.IsFixtureFor(a.MediaType, a.Schema, a.Capabilities, contract))];
 
-    /// <summary>Ready only for an approved fixture that validates against the current schema snapshot; anything else names what is missing.</summary>
-    public static (XmlFixtureReadiness State, string Text) Readiness(IReadOnlyList<TestDataAssetSummary> fixtures, Guid? currentSnapshot)
+    /// <summary>The shared readiness rule over these fixtures, with tester wording and the fixture it is about.</summary>
+    public static (TestDataXmlReadinessState State, string Text, TestDataAssetSummary? Fixture) Readiness(IReadOnlyList<TestDataAssetSummary> fixtures, Guid? currentSnapshot)
     {
-        if (fixtures.Count == 0) return (XmlFixtureReadiness.Missing, "Missing");
-        var validated = fixtures.Where(f => f.Approval == TestDataApproval.Approved && f.SchemaCheck?.Status == TestDataSchemaStatus.Validated).ToList();
-        if (validated.Any(f => currentSnapshot is null || f.Schema?.SourceSnapshotId == currentSnapshot)) return (XmlFixtureReadiness.Ready, "Ready");
-        if (validated.Count > 0) return (XmlFixtureReadiness.Outdated, "Validated against another schema snapshot — create it again from the current XSD");
-        if (fixtures.Any(f => f.SchemaCheck?.Status == TestDataSchemaStatus.Invalid)) return (XmlFixtureReadiness.Invalid, "Invalid against its XSD");
-        if (fixtures.Any(f => f.Approval != TestDataApproval.Approved && f.SchemaCheck?.Status == TestDataSchemaStatus.Validated)) return (XmlFixtureReadiness.NotApproved, "Saved, not approved");
-        return (XmlFixtureReadiness.NotValidated, "Not validated against the contract");
+        var (state, facts) = TestDataXmlReadiness.Evaluate(
+            [.. fixtures.Select(f => new TestDataXmlFixtureFacts(f.Alias, f.Approval == TestDataApproval.Approved, f.SchemaCheck?.Status, f.SchemaCheck?.SourceSnapshotId ?? f.Schema?.SourceSnapshotId))],
+            currentSnapshot);
+        return (state, ReadinessText(state), facts is null ? null : fixtures.First(f => f.Alias == facts.Alias));
+    }
+
+    public static string ReadinessText(TestDataXmlReadinessState state) => state switch
+    {
+        TestDataXmlReadinessState.Missing => "Missing",
+        TestDataXmlReadinessState.NotApproved => "Saved, not approved",
+        TestDataXmlReadinessState.Ready => "Ready for test use",
+        TestDataXmlReadinessState.Outdated => "Validation outdated",
+        TestDataXmlReadinessState.Invalid => "Invalid",
+        TestDataXmlReadinessState.SchemaUnavailable => "Schema unavailable",
+        _ => "Needs validation",
+    };
+
+    /// <summary>Schema validation of one fixture, apart from its approval ("Approved" and "Valid" are different facts).</summary>
+    public static string SchemaValidation(TestDataAssetSummary fixture) => fixture.SchemaCheck?.Status switch
+    {
+        TestDataSchemaStatus.Validated => "Valid",
+        TestDataSchemaStatus.Invalid => "Invalid",
+        TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved => "Schema unavailable",
+        _ => "Needs validation",
+    };
+
+    /// <summary>
+    /// Test Data readiness for the context: each role's chosen identity (explicit choice, else the single default, else the only one), the XML
+    /// fixture by the shared rule, and the fixture's schema validation. Overall Ready only when everything is; Needs attention for a missing
+    /// identity or an invalid fixture; Partial otherwise — always with one reason.
+    /// </summary>
+    public static TestDataTesterStatus Tester(IReadOnlyList<TestDataAssetSummary> assets, IntegrationTemplateView context, IReadOnlyDictionary<string, string?>? explicitAliases = null)
+    {
+        var roles = context.FixtureBindings.Select(b =>
+        {
+            var chosen = Chosen(Candidates(assets, b.Capability), explicitAliases?.GetValueOrDefault(b.Role));
+            var ready = chosen is { Approval: TestDataApproval.Approved };
+            return new TestDataRoleStatus(b.Role, chosen?.Label ?? chosen?.Alias, ready, chosen is null ? "Missing" : ready ? "Ready" : "Not approved",
+                b.ElementPath is null ? "Used to submit the report; not part of the XML payload." : null);
+        }).ToList();
+        var (xml, xmlText, fixture) = Readiness(Fixtures(assets, context.SchemaName ?? ""), Preselected(context)?.SnapshotId);
+        var contract = fixture is null ? "Missing" : xml == TestDataXmlReadinessState.Outdated ? "Needs validation" : SchemaValidation(fixture);
+        var missingRole = roles.FirstOrDefault(r => !r.Ready);
+        var (overall, reason) =
+            missingRole is null && xml == TestDataXmlReadinessState.Ready ? ("Ready", (string?)null)
+            : missingRole is { Status: "Missing" } ? ("Needs attention", $"{missingRole.Role} missing")
+            : xml == TestDataXmlReadinessState.Invalid ? ("Needs attention", "XML fixture invalid")
+            : missingRole is not null ? ("Partial", $"{missingRole.Role} not approved")
+            : ("Partial", xml switch
+            {
+                TestDataXmlReadinessState.Missing => "XML fixture missing",
+                TestDataXmlReadinessState.NotApproved => "XML fixture not approved",
+                TestDataXmlReadinessState.Outdated => "XML fixture validation outdated",
+                TestDataXmlReadinessState.SchemaUnavailable => "Contract schema unavailable",
+                _ => "XML fixture needs validation",
+            });
+        return new(roles, xml, xmlText, fixture, contract, overall, reason);
     }
 
     /// <summary>"Child: skolenaervaer-child-default; Reporter (Altinn actor): skolenaervaer-reporter-default" — fixture metadata, aliases only.</summary>

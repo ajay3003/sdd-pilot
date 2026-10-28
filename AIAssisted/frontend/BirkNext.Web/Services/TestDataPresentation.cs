@@ -105,10 +105,22 @@ public static class TestDataPresentation
     /// <summary>The one real action a source has, by provider id. Sources without a page to go to have none (no dead buttons).</summary>
     public static (string Label, string Href)? SourceAction(TestDataSourceSummary source) => source.Id switch
     {
-        "configured" => ("How to configure", UserGuideHref),
+        "configured" => ("Configure catalog", UserGuideHref),
         "schema-studio" => ("Open Schema Studio", SchemaStudioHref),
         _ => null,
     };
+
+    /// <summary>One line per source for the collapsed Sources summary: what it holds, or that it is not configured / unavailable.</summary>
+    public static IReadOnlyList<(string Name, string Value)> SourceSummary(TestDataCatalogView catalog) =>
+    [
+        .. catalog.Sources.Select(source => (source.Id switch { "schema-studio" => "Schema Studio fixtures", "registered" => "Registered source assets", _ => source.Label },
+            source.Status == TestDataSourceStatus.Unavailable ? "Unavailable"
+            : source.AssetCount == 0 && source.Id == "configured" ? "Not configured (optional)"
+            : source.AssetCount.ToString(System.Globalization.CultureInfo.InvariantCulture))),
+    ];
+
+    /// <summary>Required test requirements in plain words instead of "0 of 0 resolved".</summary>
+    public static string Requirements(int resolved, int total) => total == 0 ? "None registered" : total == resolved ? "All resolved" : $"{total - resolved} unresolved";
 
     public enum EmptyKind { NoSources, ConfiguredButEmpty, SourcesUnavailable }
 
@@ -148,7 +160,8 @@ public static class TestDataPresentation
     public static string Consumer(TestDataConsumer consumer) =>
         string.IsNullOrWhiteSpace(consumer.Parent) ? consumer.DisplayName : $"{consumer.Parent} › {consumer.DisplayName}";
 
-    public static string UsedBy(int consumers) => consumers switch { 0 => "Not used", 1 => "Used by 1 consumer", _ => $"Used by {consumers} consumers" };
+    /// <summary>No reference is not "unusable": a ready asset may simply not be referenced by a consumer yet.</summary>
+    public static string UsedBy(int consumers) => consumers switch { 0 => "No consumer references yet", 1 => "Used by 1 consumer", _ => $"Used by {consumers} consumers" };
 
     /// <summary>A proposed alias from a candidate label ("CreatePersonRequest request body" → "createpersonrequest-request-body"); the person edits it.</summary>
     public static string SuggestAlias(string label)

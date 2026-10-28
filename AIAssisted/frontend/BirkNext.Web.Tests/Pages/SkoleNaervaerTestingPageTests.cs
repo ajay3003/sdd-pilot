@@ -96,7 +96,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         var verify = Open("message-verification");
         verify.FindAll("[data-testid=snt-subnav-section]").Select(s => s.GetAttribute("aria-label")).Should().Equal("Runtime verification", "Source-based checks");
-        verify.FindAll("[data-testid=snt-subtab]").Select(a => a.TextContent).Should().Equal("Message Verification", "Architecture Rules");
+        verify.FindAll("[data-testid=snt-subtab]").Select(a => a.TextContent).Should().Equal("Runtime Message Verification", "Source / Architecture Checks");
     }
 
     [Fact]
@@ -145,9 +145,13 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     {
         var page = Open();
 
-        page.Markup.Should().Contain("Not selected · execution not ready");
-        page.Find("[data-testid=snt-journeys-not-ready]").TextContent.Should().Contain("Nothing has been run or assessed");
-        page.FindAll("[data-testid=snt-journey-status]").Select(State).Should().OnlyContain(s => s == "Not ready");
+        page.Find("[data-testid=snt-target]").TextContent.Should().Be("Not selected");
+        page.Find("[data-testid=snt-env-context]").TextContent.Should().Contain("Target environment not selected.").And.Contain("Readiness and verification cannot be assessed.");
+        page.Find("[data-testid=snt-select-environment]").TextContent.Should().Be("Select target environment");
+        page.Find("[data-testid=snt-journeys-not-ready]").TextContent.Should().Contain("Not assessed").And.Contain("Nothing has failed");
+        page.FindAll("[data-testid=snt-journey-status]").Select(State).Should().OnlyContain(s => s == "Not assessed", "absent context is not a failure");
+        page.FindAll("[data-testid=snt-attention-select-environment]").Should().HaveCount(3);
+        page.FindAll("a[href='/admin/system-settings?section=target-environments']").Select(a => a.GetAttribute("data-testid")).Should().NotContain((string?)null, "no anonymous repeated environment buttons");
         page.FindAll("[data-testid=snt-journey-status]").Should().OnlyContain(cell => cell.TextContent.StartsWith("Execution readiness:"), "a status always names its dimension");
         _integrations.Invocations.Should().BeEmpty();
         _journeys.Calls.Should().Equal("test-packs");
@@ -166,7 +170,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.FindAll("[data-testid=snt-journeys-not-ready]").Should().BeEmpty("it is not yet known that no Target Environment is selected");
 
         pending.SetResult(new FrontendAnalysisContext());
-        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-journey-status]").Select(State).Should().OnlyContain(s => s == "Not ready"));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-journey-status]").Select(State).Should().OnlyContain(s => s == "Not assessed"));
         page.FindAll("[data-testid=snt-journeys-not-ready]").Should().ContainSingle();
     }
 
@@ -183,7 +187,8 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         Cell("utdanningsdata", "Integration").Should().Be("Not applicable", "the sample journey declares no integration requirement");
         Cell("utdanningsdata", "Execution").Should().Be("Blocked");
         Cell("utdanningsdata", "Test Data").Should().Be("Not assessed", "no readiness dimension was reported — never guessed");
-        page.Find("[data-journey=rapportmottak] [data-testid=snt-journey-blockers]").TextContent.Should().Be("2 actions", "grouped tester actions, not raw checks");
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-attention-count]").TextContent.Should().Be("2 issues", "grouped tester actions, not raw checks");
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-attention-action]").GetAttribute("aria-label").Should().Contain("owner:", "one primary owner action per journey");
         page.Find("[data-journey=utdanningsdata] th").TextContent.Should().Contain("BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning");
         page.FindAll("[data-testid=ijp-panel], [data-testid=atp-panel], [data-testid=mvp], [data-testid=act-panel]").Should().BeEmpty("no feature is rendered inline on the overview");
         page.FindAll("[data-testid=snt-journey-open]").Select(a => a.GetAttribute("href")).Should().Equal("extensions/skolenaervaer?tab=utdanningsdata",
@@ -217,7 +222,9 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-journey]").Should().HaveCount(3));
         string Cell(string label) => State(page.Find($"[data-journey=rapportmottak] td[data-label='{label}']"));
-        (Cell("Integration"), Cell("Contract"), Cell("Test Data"), Cell("Verification")).Should().Be(("Partial", "Review required", "Missing", "Partial"));
+        (Cell("Integration"), Cell("Contract"), Cell("Test Data"), Cell("Verification")).Should().Be(("Partial", "Review required", "Missing", "Not verified"),
+            "verification is an outcome; observability is its reason");
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-observability]").TextContent.Should().Be("Some steps observable");
         page.Find("[data-journey=rapportmottak] [data-testid=snt-matrix-assessment]").TextContent.Should().Be("Last run: Executed · not verified", "executed is not verified");
         page.Find("[data-testid=snt-attention-summary]").TextContent.Should().Be("5 things need attention: 1 integration not enabled for active runs, 1 contracts, 1 test data, 1 execution, 1 verification",
             "an optional dimension (delivery) never needs attention");
@@ -696,9 +703,10 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     public void MessageVerification_HasItsOwnView_WithAProperEmptyStateWithoutATarget()
     {
         var without = Open("message-verification");
-        without.Find("#snt-verification-heading").TextContent.Should().Be("Message Verification");
+        without.Find("#snt-verification-heading").TextContent.Should().Be("Runtime Message Verification");
         without.Find("[data-testid=snt-verification-not-ready]").TextContent.Should().Contain("Nothing has been read");
-        without.Find("[data-testid=snt-verification-not-ready] a").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments");
+        without.FindAll("[data-testid=snt-verification-not-ready] a").Should().BeEmpty("the one environment action is in the shared page context");
+        without.Find("[data-testid=snt-select-environment]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments");
         without.FindAll("[data-testid=mvp]").Should().BeEmpty("nothing is loaded without a Target Environment");
     }
 
@@ -808,7 +816,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
                 new("rapportmottak", "Rapportmottak", "Altinn → MU → MM → Skolenærværsrapport", JourneyExecutionMode.JourneyRunner, null),
                 new("periodeavslutning", "Periodeavslutning", "Skolenærværsrapport → Service Bus → Bufdata", JourneyExecutionMode.JourneyRunner, null),
             ],
-            VerificationViews = [new("message-verification", "Message Verification", TestPackViewKind.Verification, "rapportmottak", "message-verification", "Read-only verification of what happened to one message.")],
+            VerificationViews = [new("message-verification", "Runtime Message Verification", TestPackViewKind.Verification, "rapportmottak", "message-verification", "Read-only verification of what happened to one message.")],
             RuleIds = ["mm-no-person", "rapport-person"], SupportsHistory = true,
             Navigation =
             [
@@ -816,7 +824,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
                 new("Journeys", [new("utdanningsdata", "Utdanningsdata", TestPackViewKind.Journey, "utdanningsdata"), new("rapportmottak", "Rapportmottak", TestPackViewKind.Journey, "rapportmottak"),
                     new("periodeavslutning", "Periodeavslutning", TestPackViewKind.Journey, "periodeavslutning")]),
                 new("Security", [new("security", "Security / Gradert tilgang", TestPackViewKind.Security, Description: "From the shared Security Classification evidence.")]),
-                new("Verify", [new("message-verification", "Message Verification", TestPackViewKind.Verification, "rapportmottak", "message-verification"), new("architecture-rules", "Architecture Rules", TestPackViewKind.Rules)]),
+                new("Verify", [new("message-verification", "Runtime Message Verification", TestPackViewKind.Verification, "rapportmottak", "message-verification"), new("architecture-rules", "Source / Architecture Checks", TestPackViewKind.Rules)]),
                 new("History", [new("history", "History", TestPackViewKind.History)]),
             ],
         };
@@ -860,5 +868,29 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
             Calls.Add("history");
             return Task.FromResult(new ActiveEventApiResult<IReadOnlyList<IntegrationJourneyRunSummary>>([], null, HttpStatusCode.OK));
         }
+    }
+
+    [Fact]
+    public void Rapportmottak_execution_splits_manual_and_automated_from_connected_systems_and_verification_stays_not_verified()
+    {
+        WithTarget();
+        var altinn = new Mock<IAltinnEnvironmentApiService>();
+        altinn.Setup(a => a.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<AltinnEnvironmentView>(new AltinnEnvironmentView
+        {
+            ManualReadiness = new("manual", "Manual test readiness", AltinnReadinessState.Ready, ""),
+            AutomatedReadiness = new("automated", "Automated BirkNext execution", AltinnReadinessState.Blocked, "Unattended client incomplete"),
+        }, null));
+        Services.AddSingleton(altinn.Object);
+        _journeys.Pack = IntegrationJourneyPanelTests.SamplePack();
+        var page = Open();
+
+        page.WaitForAssertion(() => page.FindAll("[data-journey=rapportmottak] [data-testid=snt-exec-manual]").Should().ContainSingle());
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-exec-manual] .snt-pill").TextContent.Should().Be("Manual: Ready");
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-exec-automated] .snt-pill").TextContent.Should().Be("Automated: Blocked", "never one generic Not ready");
+        State(page.Find("[data-journey=rapportmottak] td[data-label='Verification']")).Should().Be("Not verified", "no runtime evidence is not a failure and never Ready");
+        page.FindAll("[data-journey=utdanningsdata] [data-testid=snt-exec-manual]").Should().BeEmpty("only a journey with an Altinn system has that split");
+        altinn.Verify(a => a.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        altinn.VerifyNoOtherCalls();
+        _integrations.Invocations.Select(i => i.Method.Name).Should().OnlyContain(name => name.StartsWith("List") || name.StartsWith("Get"), "the page reads; it never writes configuration");
     }
 }

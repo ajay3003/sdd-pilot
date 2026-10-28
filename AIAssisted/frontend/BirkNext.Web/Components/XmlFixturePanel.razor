@@ -21,21 +21,43 @@
         var context = _context!;
         var xsds = XmlFixturePresentation.Xsds(context);
         var fixtures = XmlFixturePresentation.Fixtures(Assets, context.SchemaName!);
-        var (readiness, readinessText) = XmlFixturePresentation.Readiness(fixtures, _xsd?.SnapshotId ?? XmlFixturePresentation.Preselected(context)?.SnapshotId);
+        var (readiness, readinessText, current) = XmlFixturePresentation.Readiness(fixtures, _xsd?.SnapshotId ?? XmlFixturePresentation.Preselected(context)?.SnapshotId);
         <dl class="xf-summary" data-testid="xf-summary">
             <div><dt>Test context</dt><dd data-testid="xf-context">@context.PackName · @context.DisplayName</dd></div>
             @foreach (var binding in context.FixtureBindings)
             {
                 var chosen = Chosen(binding);
-                <div data-testid="xf-role" data-role="@binding.Role"><dt>@binding.Role</dt><dd>@(chosen is null ? "Missing — choose in Session test identities" : chosen.Label ?? chosen.Alias)@(binding.ElementPath is null ? $" · {binding.Note}" : "")</dd></div>
+                <div data-testid="xf-role" data-role="@binding.Role"><dt>@binding.Role</dt><dd>@(chosen is null ? "Missing — choose in Session test identities" : chosen.Label ?? chosen.Alias)@if (binding.ElementPath is null) { <span class="xf-muted"> · Used to submit the report; not part of the XML payload.</span> }</dd></div>
             }
             <div><dt>Contract / XSD</dt><dd data-testid="xf-contract">@context.SchemaName</dd></div>
-            <div><dt>XML fixture</dt><dd><span class="xf-badge" data-testid="xf-readiness" data-state="@readiness">@readinessText</span></dd></div>
+            <div><dt>XML fixture</dt><dd><span class="xf-badge xf-badge-@(readiness == TestDataXmlReadinessState.Ready ? "ready" : "attention")" data-testid="xf-readiness" data-state="@readiness">@readinessText</span></dd></div>
         </dl>
 
         @if (!_open)
         {
-            <button type="button" class="btn btn-primary btn-sm" data-testid="xf-create" @onclick="Open">Create XML fixture</button>
+            @* The primary action follows the state: a ready fixture is opened, not created again; anything else is created (or revalidated). *@
+            <div class="xf-actions" data-testid="xf-primary-actions">
+                @if (readiness == TestDataXmlReadinessState.Ready && current is not null)
+                {
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-open-ready" aria-controls="@DetailId(current)" aria-expanded="@(_detailFor == current.Id ? "true" : "false")" @onclick="() => ToggleDetail(current)">@(_detailFor == current.Id ? "Hide fixture" : "Open fixture")</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">Create another</button>
+                }
+                else if (readiness == TestDataXmlReadinessState.NotApproved && current is not null)
+                {
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-approve" disabled="@_busy" @onclick="() => ApproveAsync(current.Id)">Approve @current.Alias</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">Create another</button>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-create" @onclick="Open">@(readiness switch
+                    {
+                        TestDataXmlReadinessState.Outdated => "Revalidate against current XSD",
+                        TestDataXmlReadinessState.Invalid => "Create a valid XML fixture",
+                        _ => "Create XML fixture",
+                    })</button>
+                }
+            </div>
+            @if (readiness == TestDataXmlReadinessState.Outdated) { <p class="xf-muted" data-testid="xf-outdated-help">The fixture was validated against another snapshot of the XSD. Revalidate creates it again from the current XSD; nothing ready is assumed.</p> }
         }
         else
         {
@@ -112,21 +134,55 @@
         }
         @if (_error is { } error) { <p class="xf-error" role="alert" data-testid="xf-error">@error</p> }
         @if (_message is { } message) { <p role="status" data-testid="xf-message">@message</p> }
-        @if (_savedAlias is { } savedAlias && fixtures.FirstOrDefault(f => f.Alias == savedAlias) is { Approval: not TestDataApproval.Approved } unapproved)
+        @if (_savedAlias is { } savedAlias && fixtures.FirstOrDefault(f => f.Alias == savedAlias) is { Approval: not TestDataApproval.Approved } unapproved
+             && !(readiness == TestDataXmlReadinessState.NotApproved && current?.Id == unapproved.Id))
         {
             <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-approve" disabled="@_busy" @onclick="() => ApproveAsync(unapproved.Id)">Approve @savedAlias</button>
         }
 
         @if (fixtures.Count > 0)
         {
+            @* Compact rows: what a tester needs (approval and schema validation are separate facts); schema path, snapshot, fingerprint and
+               provenance stay one click away in Details. *@
             <ul class="xf-list" data-testid="xf-fixtures" aria-label="Saved XML fixtures for @context.SchemaName">
                 @foreach (var fixture in fixtures)
                 {
-                    <li data-testid="xf-fixture" data-alias="@fixture.Alias">
-                        <strong>@(fixture.Label ?? fixture.Alias)</strong> <code>@fixture.Alias</code>
-                        · XML · @(fixture.SchemaCheck?.Status switch { TestDataSchemaStatus.Validated => "Valid", TestDataSchemaStatus.Invalid => "Invalid", null => "Not validated", var s => s.ToString() })
-                        · @(fixture.Approval == TestDataApproval.Approved ? "Approved" : "Not approved")
-                        @if (fixture.Provenance.FirstOrDefault(p => p.Label == "Test Data roles") is { } roles) { <span class="xf-muted"> · @roles.Value</span> }
+                    var isReady = readiness == TestDataXmlReadinessState.Ready && current?.Id == fixture.Id;
+                    var detailId = DetailId(fixture);
+                    <li class="xf-fixture" data-testid="xf-fixture" data-alias="@fixture.Alias" data-ready="@(isReady ? "true" : "false")">
+                        <div class="xf-fixture-head">
+                            <strong>@(fixture.Label ?? fixture.Alias)</strong>
+                            <span class="xf-muted">XML payload</span>
+                            @if (isReady) { <span class="xf-badge xf-badge-ready" data-testid="xf-fixture-ready">Ready for test use</span> }
+                        </div>
+                        <dl class="xf-fixture-facts">
+                            <div><dt>Approval</dt><dd data-testid="xf-fixture-approval">@(fixture.Approval == TestDataApproval.Approved ? "Approved" : "Not approved")</dd></div>
+                            <div><dt>Schema validation</dt><dd data-testid="xf-fixture-validation">@XmlFixturePresentation.SchemaValidation(fixture)</dd></div>
+                            <div><dt>Contract</dt><dd>@context.SchemaName</dd></div>
+                            @if (fixture.Provenance.FirstOrDefault(p => p.Label == "Test Data roles") is { } roles) { <div><dt>Roles</dt><dd data-testid="xf-fixture-roles">@roles.Value</dd></div> }
+                        </dl>
+                        <div class="xf-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" id="@($"{detailId}-toggle")" data-testid="xf-fixture-toggle" aria-expanded="@(_detailFor == fixture.Id ? "true" : "false")" aria-controls="@detailId" @onclick="() => ToggleDetail(fixture)">@(_detailFor == fixture.Id ? "Hide details" : "Details")</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-revalidate" disabled="@_busy" @onclick="() => RevalidateAsync(fixture)">Validate again</button>
+                        </div>
+                        <div class="xf-fixture-detail" id="@detailId" hidden="@(_detailFor != fixture.Id)" data-testid="xf-fixture-detail">
+                            <h4 id="@($"{detailId}-heading")" tabindex="-1" class="xf-detail-heading">Technical details · @fixture.Alias</h4>
+                            <dl class="xf-fixture-facts">
+                                <div><dt>Alias</dt><dd><code>@fixture.Alias</code></dd></div>
+                                @if (fixture.Schema is { } schema)
+                                {
+                                    <div><dt>XSD path</dt><dd class="xf-mono" data-testid="xf-detail-schema">@schema.SchemaPath</dd></div>
+                                    @if (schema.RootElement is { } root) { <div><dt>Root element</dt><dd data-testid="xf-detail-root">@root</dd></div> }
+                                }
+                                @if ((fixture.SchemaCheck?.SourceSnapshotId ?? fixture.Schema?.SourceSnapshotId) is { } snapshot) { <div><dt>Source snapshot</dt><dd class="xf-mono" data-testid="xf-detail-snapshot">@snapshot</dd></div> }
+                                @if (fixture.SchemaCheck?.SchemaFingerprint is { } fingerprint) { <div><dt>Schema fingerprint</dt><dd class="xf-mono">@fingerprint[..Math.Min(16, fingerprint.Length)]…</dd></div> }
+                                @if (fixture.SchemaCheck is { } check) { <div><dt>Local validation</dt><dd data-testid="xf-detail-check">@check.Detail</dd></div> }
+                                @if (fixture.Fingerprint is { } hash) { <div><dt>Fixture hash</dt><dd class="xf-mono">@hash[..Math.Min(16, hash.Length)]…</dd></div> }
+                                @if (fixture.ApprovedAt is { } approvedAt) { <div><dt>Approved</dt><dd>@approvedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
+                                <div><dt>Source</dt><dd>@fixture.Source</dd></div>
+                                @foreach (var fact in fixture.Provenance) { <div><dt>@fact.Label</dt><dd class="xf-mono" data-testid="xf-detail-provenance">@fact.Value</dd></div> }
+                            </dl>
+                        </div>
                     </li>
                 }
             </ul>
@@ -251,7 +307,7 @@
             var scope = repository is WorkspaceArtifactRepository concrete ? concrete.SessionScope : null;
             var root = XDocument.Parse(_xml).Root?.Name.LocalName;
             var facts = new SchemaXmlRegistrationFacts("Valid", "Valid", GeneratorVersion: "Test Data XML fixture v1", RootElement: root, EnvironmentId: _environmentId,
-                Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)));
+                Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)), Capabilities: context.FixtureCapabilities);
             var saved = store.Save(_package, xsd.File, "Test Data XML fixture", null, _xml, scope, null, facts);
             store.Register(saved.Id, scope, _alias!.Trim(), "positive", _name?.Trim(), facts);
             repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(scope), "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
@@ -264,6 +320,39 @@
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or System.Xml.XmlException) { _error = $"The fixture could not be saved: {ex.Message}"; }
         finally { _busy = false; }
+    }
+
+    private string? _detailFor, _focusId;
+
+    private static string DetailId(TestDataAssetSummary fixture) =>
+        "xf-detail-" + new string([.. fixture.Alias.Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-')]);
+
+    /// <summary>Opens one fixture's technical details (focus to its heading) or closes them (focus back to the fixture's Details button).</summary>
+    private void ToggleDetail(TestDataAssetSummary fixture)
+    {
+        var opening = _detailFor != fixture.Id;
+        _detailFor = opening ? fixture.Id : null;
+        _focusId = opening ? $"{DetailId(fixture)}-heading" : $"{DetailId(fixture)}-toggle";
+    }
+
+    /// <summary>"Validate again": Test Data re-checks every XML asset against its XSD when the catalog is read, so reloading it re-runs the check.</summary>
+    private async Task RevalidateAsync(TestDataAssetSummary fixture)
+    {
+        _busy = true; _error = null;
+        try
+        {
+            await OnSaved.InvokeAsync(null);
+            var now = XmlFixturePresentation.Fixtures(Assets, _context?.SchemaName ?? "").FirstOrDefault(f => f.Id == fixture.Id) ?? fixture;
+            _message = $"Validated {fixture.Alias} again against its XSD: {XmlFixturePresentation.SchemaValidation(now)}.";
+        }
+        finally { _busy = false; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is not { } id || Services.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is not Microsoft.JSInterop.IJSRuntime js) return;
+        _focusId = null;
+        try { await js.InvokeVoidAsync("birknextFocusElement", id); } catch (Microsoft.JSInterop.JSException) { }
     }
 
     private async Task ApproveAsync(string assetId)

@@ -82,12 +82,12 @@ public sealed class XmlFixturePanelTests : BunitContext
     [Fact]
     public void Readiness_is_ready_only_for_an_approved_fixture_validated_against_the_current_snapshot()
     {
-        XmlFixturePresentation.Readiness([], Snapshot).State.Should().Be(XmlFixtureReadiness.Missing);
-        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Validated)], Snapshot).State.Should().Be(XmlFixtureReadiness.Ready);
-        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Validated, Guid.NewGuid())], Snapshot).State.Should().Be(XmlFixtureReadiness.Outdated);
-        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Invalid)], Snapshot).State.Should().Be(XmlFixtureReadiness.Invalid);
-        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Unapproved, TestDataSchemaStatus.Validated)], Snapshot).State.Should().Be(XmlFixtureReadiness.NotApproved);
-        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, null)], Snapshot).State.Should().Be(XmlFixtureReadiness.NotValidated);
+        XmlFixturePresentation.Readiness([], Snapshot).State.Should().Be(TestDataXmlReadinessState.Missing);
+        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Validated)], Snapshot).State.Should().Be(TestDataXmlReadinessState.Ready);
+        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Validated, Guid.NewGuid())], Snapshot).State.Should().Be(TestDataXmlReadinessState.Outdated);
+        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Invalid)], Snapshot).State.Should().Be(TestDataXmlReadinessState.Invalid);
+        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Unapproved, TestDataSchemaStatus.Validated)], Snapshot).State.Should().Be(TestDataXmlReadinessState.NotApproved);
+        XmlFixturePresentation.Readiness([Fixture(TestDataApproval.Approved, null)], Snapshot).State.Should().Be(TestDataXmlReadinessState.NotValidated);
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class XmlFixturePanelTests : BunitContext
         panel.WaitForAssertion(() => panel.Find("[data-testid=xf-contract]").TextContent.Should().Be(Contract));
         panel.Find("[data-testid=xf-role][data-role=Child]").TextContent.Should().Contain("skolenaervaer-child-default");
         panel.Find("[data-testid=xf-role][data-role=Reporter]").TextContent.Should().Contain("skolenaervaer-reporter-default").And.Contain("not part of the XML");
-        panel.Find("[data-testid=xf-readiness]").GetAttribute("data-state").Should().Be(nameof(XmlFixtureReadiness.Missing));
+        panel.Find("[data-testid=xf-readiness]").GetAttribute("data-state").Should().Be(nameof(TestDataXmlReadinessState.Missing));
         panel.Markup.Should().NotContain("04061076692").And.NotContain("05859497324");
     }
 

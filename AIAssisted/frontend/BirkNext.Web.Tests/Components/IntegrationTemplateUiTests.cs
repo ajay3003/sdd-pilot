@@ -157,7 +157,7 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Missing");
         cut.Find("[data-testid=ip-edit-evidence-role]").TextContent.Should().Be("MU (Meldingsutveksleren)");
         cut.Find("[data-testid=ip-edit-evidence-meaning]").TextContent.Should().Be("No matching imported source found.");
-        cut.Find("[data-testid=ip-edit-evidence-import]").GetAttribute("href").Should().Be("project-import");
+        cut.Find("[data-testid=ip-edit-evidence-import]").GetAttribute("href").Should().Be("project-import?import=source", "it opens the upload form even while another project is current");
         cut.Markup.Should().NotContain("skolenaervaer.json");
     }
 
@@ -478,8 +478,13 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         proposal.GetAttribute("data-ready").Should().Be("true");
         proposal.QuerySelector("[data-testid=ip-pack-proposal-state]")!.TextContent.Should().Be("Ready to review");
         proposal.QuerySelector("[data-testid=ip-pack-proposal-evidence]")!.TextContent.Should().Contain("Demo pack Test Pack").And.Contain("MU (Meldingsutveksleren) source: Tiltak 2.zip");
-        cut.Find("[data-testid=ip-summary-suggestions]").TextContent.Should().Be("1", "an evidence-backed proposal is a candidate");
+        proposal.QuerySelectorAll("[data-testid=ip-pack-proposal-evidence-items] li").Select(li => li.TextContent).Should().Contain(i => i.Contains("MU (Meldingsutveksleren) source: Tiltak 2.zip"));
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-why]")!.TextContent.Should().Contain("Required by the Demo pack Test Pack");
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-ready-note]")!.TextContent.Should().Contain("No unresolved discovery decision").And.Contain("is not configured");
+        proposal.QuerySelector("[data-testid=ip-pack-proposal-review]")!.ClassList.Should().Contain("btn-primary", "Review & add is the next action; the badge only states the state");
+        cut.Find("[data-testid=ip-summary-proposals]").TextContent.Should().Be("1", "an evidence-backed Test Pack proposal is a relevant proposal");
         cut.Find("[data-testid=ip-summary-ready]").TextContent.Should().Be("1");
+        cut.Find("[data-testid=ip-summary-decisions]").TextContent.Should().Be("0");
 
         proposal.QuerySelector("[data-testid=ip-pack-proposal-review]")!.Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ip-edit-template-select]").GetAttribute("value").Should().Be("pack-report-intake"));
@@ -497,8 +502,12 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         var proposal = cut.Find("[data-testid=ip-pack-proposal]");
         cut.FindAll("[data-testid=ip-pack-proposal]").Should().ContainSingle("an already configured requirement is not proposed again");
         proposal.GetAttribute("data-ready").Should().Be("false");
-        proposal.QuerySelector("[data-testid=ip-pack-proposal-decision]")!.TextContent.Should().Be("Choose which MU (Meldingsutveksleren) source is the evidence (hub-a.zip, hub-b.zip).");
+        var decision = proposal.QuerySelector("[data-testid=ip-pack-proposal-decision]")!;
+        decision.GetAttribute("data-kind").Should().Be("ambiguous");
+        decision.TextContent.Should().Contain("MU (Meldingsutveksleren) evidence source is ambiguous").And.Contain("none is selected for you");
+        decision.QuerySelectorAll("li").Select(li => li.TextContent).Should().Equal("hub-a.zip", "hub-b.zip");
         cut.Find("[data-testid=ip-summary-ready]").TextContent.Should().Be("0");
+        cut.Find("[data-testid=ip-summary-decisions]").TextContent.Should().Be("1");
     }
 
     [Fact]

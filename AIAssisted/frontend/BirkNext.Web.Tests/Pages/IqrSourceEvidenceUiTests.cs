@@ -24,7 +24,9 @@ public sealed class IqrSourceEvidenceUiTests : BunitContext
         var cut = Render<IqrSourceDetails>(p => p.Add(c => c.Snapshot, Snapshot()));
         cut.Markup.Should().Contain("Developer unit test exists").And.Contain("no same-layer duplicate").And.Contain("Cross-layer gap").And.Contain("RuntimeGap").And.Contain("E2EGap");
         cut.Markup.Should().Contain("execution results are unavailable").And.NotContain("tests passed");
-        cut.FindAll("details > summary").Should().HaveCount(5);
+        cut.FindAll(".disclosure-toggle").Should().HaveCount(5, "projects, rules, dataflow, developer tests and limitations — each collapsed technical evidence");
+        cut.FindAll(".disclosure-toggle").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false");
+        cut.Find("[data-testid=iqr-src-tests-toggle]").TextContent.Should().Contain("1 discovered · not executed", "discovered is never executed");
         cut.Find("[role=region]").GetAttribute("tabindex").Should().Be("0");
     }
     [Fact] public void SetupBindsAnExactSourceAnalysisSnapshotPerIntegrationWithoutAnyUpload()

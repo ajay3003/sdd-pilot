@@ -51,10 +51,96 @@ public sealed class AltinnEnvironmentTests
             var trusted = new Mock<ITrustedExecutionEnvironmentRegistry>();
             string reason = "This environment is not a trusted execution environment in backend configuration (TargetEnvironments:Trusted).";
             trusted.Setup(t => t.Resolve(It.IsAny<string>(), out reason)).Returns(() => Trusted);
-            return new AltinnEnvironmentService(Store, Flows, Policy, Kit.Contracts(Flows), catalog.Object, trusted.Object, Kit.Factory, Packs);
+            return new AltinnEnvironmentService(Store, Flows, Policy, Kit.Contracts(Flows), catalog.Object, trusted.Object, Kit.Factory, Packs,
+                WithTestData ? new BirkNext.Api.Services.TestData.TestDataCatalog([new AltinnTestDataProvider(Kit.Options), new BirkNext.Api.Services.TestData.SchemaStudioTestDataProvider(() => SavedXml)]) : null,
+                WithTestData ? new RealXsd() : null);
         }
 
         public Task<AltinnEnvironmentView> View(bool detect = false) => Service().ViewAsync(Env, detect, CancellationToken.None);
+
+        /// <summary>Canonical Test Data for the payload (off by default so older tests keep assessing without a catalog).</summary>
+        public bool WithTestData { get; set; }
+        public List<string> SavedXml { get; } = [];
+    }
+
+    private sealed class RealXsd : BirkNext.Api.Services.TestData.ITestDataSchemaSource
+    {
+        public Task<BirkNext.Api.Services.TestData.TestDataSchemaPackage?> FindAsync(BirkNext.TestData.TestDataSchemaReference reference, CancellationToken ct) =>
+            Task.FromResult<BirkNext.Api.Services.TestData.TestDataSchemaPackage?>(new(reference.SourceSnapshotId ?? Guid.Empty,
+                new Dictionary<string, string> { [TestData.TestDataXmlFixtureTests.SchemaPath] = Schemas.RealSchemaFixtures.Read(Schemas.RealSchemaFixtures.Skolenaervaer200) }, true));
+    }
+
+    private static string Fixture(bool valid = true) => TestData.TestDataXmlFixtureTests.SavedXmlDocument(approved: true,
+        xml: valid ? TestData.TestDataXmlFixtureTests.Skeleton("04061076692") : TestData.TestDataXmlFixtureTests.Skeleton("04061076692").Replace("<Klient>", "<Ukjent/><Klient>"));
+
+    [Fact]
+    public async Task Identities_ready_with_the_xml_fixture_missing_is_not_manual_ready_and_says_so()
+    {
+        var bed = new Bed { WithTestData = true };
+        ManualReady(bed);
+        var view = await bed.View();
+
+        view.Summary.Single(i => i.Key == "identities").State.Should().Be(AltinnReadinessState.Ready, "who is involved is ready");
+        view.Summary.Single(i => i.Key == "testdata").Should().Match<AltinnReadinessItem>(i => i.State == AltinnReadinessState.Blocked && i.Reason.Contains("XML fixture missing"));
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial);
+        view.ManualReadiness.Reason.Should().Contain("XML fixture: missing");
+        view.ManualMissing.Should().Contain("XML fixture");
+        view.AutomatedBlockers.Should().Contain(b => b.Contains("XML fixture"), "automated submission needs the payload too");
+        view.Summary.Select(i => i.Key).Should().StartWith(["app", "identities", "testdata", "authentication"]);
+    }
+
+    [Fact]
+    public async Task A_valid_xml_fixture_makes_manual_ready_without_claiming_contract_evidence_or_runtime()
+    {
+        var bed = new Bed { WithTestData = true };
+        ManualReady(bed);
+        bed.SavedXml.Add(Fixture());
+        var view = await bed.View();
+
+        view.Summary.Single(i => i.Key == "testdata").State.Should().Be(AltinnReadinessState.Ready);
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, view.ManualReadiness.Reason);
+        view.ManualReadiness.Reason.Should().Contain("contract identifier is known").And.NotContain("contract are known");
+        view.ManualReadiness.Reason.Should().ContainAny("Contract evidence is still incomplete", "Contract evidence is complete");
+        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked, "unattended authentication is still missing");
+        view.Summary.Single(i => i.Key == "runtime").State.Should().Be(AltinnReadinessState.NotAssessed, "no runtime evidence");
+    }
+
+    [Fact]
+    public async Task An_invalid_xml_fixture_is_named_and_never_reads_ready()
+    {
+        var bed = new Bed { WithTestData = true };
+        ManualReady(bed);
+        bed.SavedXml.Add(Fixture(valid: false));
+        var view = await bed.View();
+
+        view.Summary.Single(i => i.Key == "testdata").Should().Match<AltinnReadinessItem>(i => i.State == AltinnReadinessState.Partial && i.Reason.Contains("invalid against its XSD"));
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial);
+    }
+
+    [Fact]
+    public async Task A_known_contract_identifier_without_contract_evidence_is_partial_not_missing()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        bed.Flows.Contract = null;
+        var view = await bed.View();
+        if (view.Fields.Single(f => f.Key == "form-data-type") is { State: not (AltinnSettingState.Missing or AltinnSettingState.Declared) })
+            view.Contract.Should().Match<AltinnReadinessItem>(c => c.State == AltinnReadinessState.Partial && c.Reason.StartsWith("Contract identifier known"));
+    }
+
+    [Fact]
+    public void The_configuration_overview_resolves_the_child_from_test_data_and_an_explicit_run_input_wins()
+    {
+        var kit = new AltinnTestKit();
+        var options = SkoleNaervaerTestIdentityDefaults.Apply(kit.Options); // as at startup: the built-in default identities
+        var policy = new AltinnTestingPolicy(options, new AltinnSessionStore(options, TimeProvider.System), new AltinnEnvironmentSettingsCache());
+        var service = new AltinnConfigurationOverviewService(new IntegrationJourneyHarness.FakeMessageFlows(), policy, kit.Contracts(new IntegrationJourneyHarness.FakeMessageFlows()));
+        var contract = new AltinnAppContractView();
+        var fromTestData = service.Build(Env, new AltinnTestConfiguration { TargetEnvironmentId = Env }, contract, null).Items.Single(i => i.Key == "child");
+        (fromTestData.State, fromTestData.Source).Should().Be(("Configured", "Test Data"), "the canonical approved child, not a legacy run-input-only model");
+        fromTestData.Detail.Should().NotContain("04061076692");
+        var explicitRun = service.Build(Env, new AltinnTestConfiguration { TargetEnvironmentId = Env, ApprovedSyntheticData = true, SyntheticIdentitySetReference = "set-1" }, contract, null).Items.Single(i => i.Key == "child");
+        explicitRun.State.Should().Be("Declared", "an explicit run input wins");
     }
 
     private sealed class FakeClock : TimeProvider

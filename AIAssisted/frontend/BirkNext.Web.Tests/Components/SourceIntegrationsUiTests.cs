@@ -74,7 +74,7 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     public void TheSectionsAreGeneric_NoSourceSystemOrTechnologyInTheirTitles()
     {
         var cut = Open();
-        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().StartWith(["Configured integrations", "Integration candidates from Source Analysis", "Source evidence"]);
+        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().StartWith(["Configured integrations", "Relevant integration proposals", "Technical relationships from Source Analysis", "Source evidence"]);
         cut.FindAll("h3").Select(h => h.TextContent).Should().NotContain(h => h.Contains("Debezium") || h.Contains("BIRK CDC"));
         cut.FindAll("[data-testid=ip-group]").Should().BeEmpty("the configured group name is no longer a section title");
         cut.FindAll("[data-testid=ip-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Integration", "Type", "Producer / source", "Consumer / destination", "Configuration", "Source evidence", "Runtime evidence", "Actions");
@@ -350,7 +350,9 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         Int(cut, "ip-summary-suggestions").Should().Be(4);
         (Int(cut, "ip-suggestions-total"), Int(cut, "ip-suggestions-strong"), Int(cut, "ip-suggestions-suggested"), Int(cut, "ip-suggestions-unassigned"), Int(cut, "ip-suggestions-conflicts"))
             .Should().Be((4, 1, 1, 1, 1));
-        cut.Find("[data-testid=ip-review-suggestions]").TextContent.Should().Be("Review integration candidates");
+        cut.Find("[data-testid=ip-review-suggestions]").TextContent.Should().Be("Show technical relationships", "no Test Pack proposal: the source rows are technical evidence");
+        cut.Find("[data-testid=ip-summary-proposals]").TextContent.Should().Be("0", "technical relationships never inflate the proposal count");
+        cut.FindAll("[data-testid=ip-summary-ready]").Should().BeEmpty();
         cut.Find("[data-testid=ip-review-suggestions]").Click();
         cut.FindAll("[data-testid=ip-suggestion]").Select(r => r.GetAttribute("data-strength")).Should().Equal("StronglySupported");
         cut.FindAll("[data-testid=ip-suggestion-strength]").Should().BeEmpty("a single-state view does not repeat the same badge on every row");

@@ -527,8 +527,7 @@
     }
     else if (_result is { } result)
     {
-        @foreach (var snapshot in result.SourceSnapshots) { <IqrSourceDetails Snapshot="snapshot" /> }
-        @* ── Post-run ── *@
+        @* ── Post-run: summary → domain status → main gaps → findings → technical evidence (collapsed, at the end) ── *@
         var headline = IntegrationReviewResultPresentation.Headline(result);
         <section class="iqr-card iqr-result" aria-labelledby="iqr-result-heading" data-testid="iqr-result">
             <h2 id="iqr-result-heading">Review result <span class="iqr-pill iqr-pill-@(result.Outcome == IntegrationReviewOutcome.Completed ? "ready" : "attention")" data-testid="iqr-outcome">@headline.Outcome</span></h2>
@@ -541,7 +540,17 @@
                 <div><dt>Evidence freshness</dt><dd data-testid="iqr-result-freshness">@headline.Freshness</dd></div>
                 <div><dt>Review window</dt><dd data-testid="iqr-result-window">@headline.Window</dd></div>
             </dl>
-            <p class="iqr-muted" data-testid="iqr-result-sources">Evidence sources: @headline.Sources. Configuration snapshot from @result.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC — later edits in Integrations do not change this result.</p>
+            @{ var runtimeObserved = result.EvidenceAdapters.Any(a => a.State == IntegrationEvidenceState.Available); var testsDiscovered = result.SourceSnapshots.Sum(s => s.Tests.Count); }
+            <dl class="iqr-summary iqr-summary-evidence" data-testid="iqr-result-evidence">
+                <div><dt>Evidence</dt><dd data-testid="iqr-result-evidence-kind">@(result.SourceSnapshots.Count > 0 ? "Source + configuration" : "Configuration")@(runtimeObserved ? " + runtime" : "")</dd></div>
+                <div><dt>Runtime evidence</dt><dd><span class="iqr-pill iqr-pill-@(runtimeObserved ? "ready" : "muted")" data-testid="iqr-result-runtime">@(runtimeObserved ? "Observed" : "Not verified")</span></dd></div>
+                @if (testsDiscovered > 0) { <div><dt>Developer tests</dt><dd data-testid="iqr-result-dev-tests">@testsDiscovered discovered · not executed</dd></div> }
+            </dl>
+            @if (result.Outcome != IntegrationReviewOutcome.Completed)
+            {
+                <p class="iqr-limitation-reason" data-testid="iqr-result-limitation-reason">Review completed using @(result.SourceSnapshots.Count > 0 ? "source/configuration" : "configuration") evidence.@(runtimeObserved ? "" : " Runtime behavior was not verified.")@(testsDiscovered > 0 ? " Developer tests were found in source but not executed." : "")</p>
+            }
+            <p class="iqr-muted" data-testid="iqr-result-sources">Evidence sources: @headline.Sources. Evidence snapshot @result.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC — later edits in Integrations do not change this result; run the review again to refresh it.</p>
         </section>
 
         <div class="iqr-tabs" role="tablist" aria-label="Integration review result">
@@ -554,6 +563,8 @@
         <div id="iqr-tabpanel" role="tabpanel" aria-labelledby="iqr-tab-btn-@Slug(_tab)" class="iqr-tabpanel" data-testid="iqr-tabpanel" data-tab="@_tab">
             @if (_tab == "Overview")
             {
+                @if (result.Findings.Count == 0) { <p class="iqr-findings-line" data-testid="iqr-overview-findings">No review findings were produced. Gaps and limitations below are not findings.</p> }
+                else { <p class="iqr-findings-line" data-testid="iqr-overview-findings"><strong>@result.Findings.Count finding@(result.Findings.Count == 1 ? "" : "s")</strong> · <button type="button" class="iqr-link-button" @onclick='() => _tab = "Findings"'>View findings</button></p> }
                 <ul class="iqr-domain-grid" data-testid="iqr-overview-domains">
                     @foreach (var domain in result.Domains)
                     {
@@ -564,17 +575,33 @@
                             @if (domain.Observed.Count > 0)
                             {
                                 <p class="iqr-domain-list-label">Observed</p>
-                                <ul class="iqr-domain-list" data-testid="iqr-domain-observed">@foreach (var item in domain.Observed.Take(4)) { <li>@item</li> }</ul>
+                                <ul class="iqr-domain-list" data-testid="iqr-domain-observed">@foreach (var item in domain.Observed.Take(2)) { <li>@item</li> }</ul>
                             }
                             @if (domain.Missing.Count > 0)
                             {
                                 <p class="iqr-domain-list-label">Missing</p>
-                                <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-domain-missing">@foreach (var item in domain.Missing.Take(4)) { <li>@item</li> }</ul>
+                                <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-domain-missing">@foreach (var item in domain.Missing.Take(2)) { <li>@item</li> }</ul>
                             }
-                            @if (domain.Observed.Count > 4 || domain.Missing.Count > 4) { <p class="iqr-muted">More in the @IntegrationReviewLabels.Domain(domain.Domain) tab.</p> }
+                            @if (DomainTab(domain.Domain) is { } domainTab)
+                            {
+                                <button type="button" class="iqr-link-button" data-testid="iqr-domain-details" aria-label="@($"View {IntegrationReviewLabels.Domain(domain.Domain)} details")" @onclick="() => _tab = domainTab">View details@(domain.Observed.Count + domain.Missing.Count > 4 ? $" ({domain.Observed.Count + domain.Missing.Count - Math.Min(2, domain.Observed.Count) - Math.Min(2, domain.Missing.Count)} more)" : "")</button>
+                            }
                         </li>
                     }
                 </ul>
+                @* Main gaps: derived from this result only (runtime, developer tests, domains not assessed, recorded not-assessed scope). Not findings. *@
+                @if (MainGaps(result) is { Count: > 0 } gaps)
+                {
+                    <section class="iqr-card" aria-labelledby="iqr-gaps-heading" data-testid="iqr-main-gaps">
+                        <h3 id="iqr-gaps-heading">Main gaps</h3>
+                        <ul class="iqr-gaps">
+                            @foreach (var (gap, href, action) in gaps)
+                            {
+                                <li data-testid="iqr-gap">@gap@if (href is not null) { <text> · </text><a class="iqr-link" href="@href" data-testid="iqr-gap-action">@action</a> }</li>
+                            }
+                        </ul>
+                    </section>
+                }
                 <section class="iqr-card" aria-labelledby="iqr-adapters-heading" data-testid="iqr-result-adapters">
                     <h3 id="iqr-adapters-heading">Runtime evidence sources <span class="iqr-muted">· @IntegrationReviewResultPresentation.AdapterSummary(result.EvidenceAdapters)</span></h3>
                     @if (result.EvidenceAdapters.Count == 0)
@@ -791,7 +818,9 @@
                 </section>
                 <section class="iqr-card" aria-labelledby="iqr-limitations-heading" data-testid="iqr-limitations">
                     <h3 id="iqr-limitations-heading">Review limitations</h3>
-                    <ul>@foreach (var limitation in result.Limitations) { <li data-testid="iqr-limitation">@limitation</li> }</ul>
+                    <ReviewDisclosure Text="@($"Show all limitations ({result.Limitations.Count})")" CollapseText="Hide limitations" TestId="iqr-limitations-list" Class="disclosure-inline">
+                        <ul>@foreach (var limitation in result.Limitations) { <li data-testid="iqr-limitation">@limitation</li> }</ul>
+                    </ReviewDisclosure>
                 </section>
             }
             else if (_tab == "Findings")
@@ -851,6 +880,16 @@
             }
         </div>
     }
+    @if (_result is { SourceSnapshots.Count: > 0 } evidenceResult)
+    {
+        <section class="iqr-card iqr-technical" aria-labelledby="iqr-technical-heading" data-testid="iqr-technical-evidence">
+            <h2 id="iqr-technical-heading">Technical evidence</h2>
+            <p class="iqr-muted">Projects, configuration keys, contract rules, developer tests, analyzer limitations and provenance from the source snapshot@(evidenceResult.SourceSnapshots.Count == 1 ? "" : "s") of this run — evidence, not findings.</p>
+            <ReviewDisclosure Text="Show technical evidence" CollapseText="Hide technical evidence" TestId="iqr-technical" Class="disclosure-inline">
+                @foreach (var snapshot in evidenceResult.SourceSnapshots) { <IqrSourceDetails Snapshot="snapshot" /> }
+            </ReviewDisclosure>
+        </section>
+    }
     @if (_result is not null && _profile is { } messageFlowProfile)
     {
         <MessageFlowReviewPanel EnvironmentId="@messageFlowProfile.Id" />
@@ -859,6 +898,21 @@
 
 @code {
     private bool _deliveryExpanded, _testDataExpanded;
+
+    private static string? DomainTab(IntegrationReviewDomain domain) => IntegrationReviewResultPresentation.Tabs.FirstOrDefault(t => IntegrationReviewResultPresentation.DomainOf(t) == domain);
+
+    /// <summary>The run's main gaps, derived from its own result (never stored separately), each with a safe owner action where one exists.</summary>
+    private static IReadOnlyList<(string Gap, string? Href, string? Action)> MainGaps(IntegrationReviewResult result)
+    {
+        var gaps = new List<(string, string?, string?)>();
+        if (!result.EvidenceAdapters.Any(a => a.State == IntegrationEvidenceState.Available)) gaps.Add(("No runtime evidence — runtime behavior not verified", null, null));
+        if (result.SourceSnapshots.Sum(s => s.Tests.Count) is > 0 and var tests) gaps.Add(($"{tests} developer tests discovered — not executed", null, null));
+        foreach (var domain in result.Domains.Where(d => d.ChecksAssessed == 0)) gaps.Add(($"{IntegrationReviewLabels.Domain(domain.Domain)} not assessed{(domain.KeyLimitation is { } why ? $" — {why}" : "")}", null, null));
+        foreach (var item in result.WhatWasNotAssessed.Take(4)) gaps.Add((item, null, null));
+        if (result.SourceSnapshots.FirstOrDefault(s => s.Limitations.Count > 0) is { } limited)
+            gaps.Add(($"Source analysis has {limited.Limitations.Count} limitation(s)", $"/source-analysis?snapshot={limited.Id:D}", "Open Source Analysis"));
+        return [.. gaps.DistinctBy(g => g.Item1).Take(8)];
+    }
     private static string ObservedLabel(BirkNext.AzureEnvironment.ObservedLookupState state) => state switch
     {
         BirkNext.AzureEnvironment.ObservedLookupState.Observed => "Observed",

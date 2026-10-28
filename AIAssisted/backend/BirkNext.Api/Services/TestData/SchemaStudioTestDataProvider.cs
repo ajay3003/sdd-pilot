@@ -74,7 +74,7 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
             Approval = problem is null && registration.Approved ? TestDataApproval.Approved : TestDataApproval.Unapproved,
             ApprovalDetail = problem ?? (registration.Approved ? null : "Registered from Schema Studio; review and approve it in Test Data before it is used."),
             ReviewRequested = !registration.Approved, Environment = registration.Facts?.EnvironmentId,
-            Capabilities = negative ? ["schema-derived", NegativeTest] : ["schema-derived"],
+            Capabilities = negative ? ["schema-derived", NegativeTest] : ["schema-derived", .. DeclaredCapabilities(registration.Facts?.Capabilities)],
             Sensitivity = TestDataSensitivity.Sensitive, Source = Label, Value = new TestDataValue(xml.Xml),
             Schema = new TestDataSchemaReference(xml.Provenance?.SelectedContractPath ?? xml.FileName, xml.Provenance?.SourceSnapshotId,
                 xml.Provenance?.ContractFingerprint, registration.Facts?.RootElement, xml.FileName),
@@ -82,10 +82,16 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
         };
     }
 
+    /// <summary>Capabilities a test pack declared for the fixture (positive fixtures only): lower-case tokens, at most eight, never "negative-test".</summary>
+    private static IEnumerable<string> DeclaredCapabilities(IReadOnlyList<string>? declared) =>
+        (declared ?? []).Where(c => c is { Length: > 0 and <= 64 } && c.All(ch => char.IsAsciiLetterLower(ch) || char.IsAsciiDigit(ch) || ch == '-') && c != NegativeTest)
+            .Distinct(StringComparer.Ordinal).Take(8);
+
     private sealed record Document(int Version, List<SavedXml>? Items);
     private sealed record SavedXml(Guid Id, string FileName, string ProfileName, string Xml, string? ProjectScope, Provenance? Provenance, Registration? TestData);
     private sealed record Provenance(Guid? SourceSnapshotId, string? SelectedContractPath, string? ContractFingerprint);
     private sealed record Registration(string Alias, string? Label, string Intent, bool Approved, DateTimeOffset RegisteredAt, Facts? Facts);
     private sealed record Facts(string ExpectedResult, string ValidationStatus, string? Mutation, string? TargetRule, string? Path, string? ProfileId,
-        string? ProfileVersion, string? GeneratorVersion, string? RootElement, string? EnvironmentId, string? Contract = null, string? TestDataBindings = null);
+        string? ProfileVersion, string? GeneratorVersion, string? RootElement, string? EnvironmentId, string? Contract = null, string? TestDataBindings = null,
+        IReadOnlyList<string>? Capabilities = null);
 }

@@ -113,6 +113,24 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
     }
 
     [Fact]
+    public void The_result_leads_with_a_summary_runtime_status_gaps_and_findings_and_keeps_technical_evidence_collapsed_at_the_end()
+    {
+        var cut = Run();
+        var markup = cut.Markup;
+        markup.IndexOf("data-testid=\"iqr-result-summary\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"iqr-overview-domains\"", StringComparison.Ordinal), "summary first");
+        cut.Find("[data-testid=iqr-result-runtime]").TextContent.Should().Be("Not verified", "configuration/source evidence is never runtime verification");
+        cut.Find("[data-testid=iqr-overview-findings]").TextContent.Should().Contain("1 finding");
+        cut.FindAll("[data-testid=iqr-gap]").Select(g => g.TextContent).Should().Contain(g => g.StartsWith("No runtime evidence"));
+        cut.FindAll("[data-testid=iqr-domain-card] [data-testid=iqr-domain-observed] li, [data-testid=iqr-domain-card] [data-testid=iqr-domain-missing] li")
+            .GroupBy(li => li.Closest("[data-testid=iqr-domain-card]")).Should().OnlyContain(g => g.Count() <= 4, "cards show at most two observations and two gaps");
+        var details = cut.FindAll("[data-testid=iqr-domain-details]");
+        details.Should().NotBeEmpty();
+        details[0].Click();
+        cut.Find("[data-testid=iqr-checks-table]");
+        cut.FindAll("[data-testid=iqr-source-details]").Should().BeEmpty("this run has no source snapshot, so there is no technical appendix above or below");
+    }
+
+    [Fact]
     public void TabsAreAnAccessibleTablistWithArrowKeys()
     {
         var cut = Run();

@@ -1,0 +1,87 @@
+@using BirkNext.Integrations
+@using BirkNext.TestData
+@using BirkNext.Web.Services
+@using BirkNext.Web.Models
+@inject IServiceProvider Services
+
+@* Test Data readiness for testers — Reporter, Child, XML fixture, contract validation, overall — from the one shared rule
+   (XmlFixturePresentation.Tester over TestDataXmlReadiness, which Setup Library preflight also uses). Test Data readiness only, never runtime
+   readiness. The same component is shown on Test Data and by consumers such as Skolenærvær Testing (with an owner link), so no consumer has a
+   second definition. Read-only: nothing here changes Test Data. *@
+<section class="tdr" aria-labelledby="@($"{TestId}-heading")" data-testid="@TestId" data-overall="@_status?.Overall">
+    <h3 class="tdr-heading" id="@($"{TestId}-heading")">@Heading</h3>
+    @if (_loading)
+    {
+        <p class="tdr-muted" role="status">Loading Test Data readiness…</p>
+    }
+    else if (_context is null || _status is null)
+    {
+        <p class="tdr-muted" data-testid="@($"{TestId}-none")">No test pack declares Test Data roles for this environment.</p>
+    }
+    else
+    {
+        var status = _status;
+        <dl class="tdr-list">
+            @foreach (var role in status.Roles)
+            {
+                <div data-testid="tdr-role" data-role="@role.Role" data-ready="@(role.Ready ? "true" : "false")">
+                    <dt>@role.Role</dt>
+                    <dd><span class="tdr-pill tdr-@(role.Ready ? "ready" : "attention")">@role.Status</span>@if (role.Label is { } label) { <span class="tdr-label"> @label</span> }@if (role.Note is { } note) { <span class="tdr-muted tdr-note"> @note</span> }</dd>
+                </div>
+            }
+            <div data-testid="tdr-xml" data-state="@status.Xml">
+                <dt>XML fixture</dt>
+                <dd><span class="tdr-pill tdr-@(status.Xml == TestDataXmlReadinessState.Ready ? "ready" : "attention")">@status.XmlText</span>@if (status.Fixture is { } fixture) { <span class="tdr-label"> @(fixture.Label ?? fixture.Alias)</span> }</dd>
+            </div>
+            <div data-testid="tdr-contract" data-state="@status.ContractValidation">
+                <dt>Contract validation</dt>
+                <dd><span class="tdr-pill tdr-@(status.ContractValidation == "Valid" ? "ready" : "attention")">@status.ContractValidation</span> <span class="tdr-muted">@_context.SchemaName</span></dd>
+            </div>
+            <div data-testid="tdr-overall" data-state="@status.Overall">
+                <dt>Test Data readiness</dt>
+                <dd><span class="tdr-pill tdr-@(status.Ready ? "ready" : "attention")">@status.Overall</span>@if (status.Reason is { } reason) { <span class="tdr-muted"> — @reason</span> }</dd>
+            </div>
+        </dl>
+        <p class="tdr-muted tdr-scope">Test Data readiness only — covers this test context's roles and XML fixture; a journey may require more Test Data. Runtime and delivery are verified separately.</p>
+        @if (ShowOwnerLink) { <p class="tdr-owner">Owner: Test Data · <a href="test-data#td-session-heading" data-testid="tdr-open-test-data">Open Test Data</a></p> }
+    }
+</section>
+
+@code {
+    /// <summary>The catalog's assets when the host already has them (Test Data); null loads the catalog here (consumers).</summary>
+    [Parameter] public IReadOnlyList<TestDataAssetSummary>? Assets { get; set; }
+    [Parameter] public string Heading { get; set; } = "Test Data readiness";
+    [Parameter] public bool ShowOwnerLink { get; set; }
+    [Parameter] public string TestId { get; set; } = "tdr";
+    /// <summary>The test context (template key) to show; null = the first context that declares Test Data roles.</summary>
+    [Parameter] public string? ContextKey { get; set; }
+
+    private IntegrationTemplateView? _context;
+    private IReadOnlyList<TestDataAssetSummary> _loaded = [];
+    private TestDataTesterStatus? _status;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        string? environmentId = null;
+        if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
+            try { environmentId = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+        if (Services.GetService(typeof(IIntegrationJourneysApiService)) is IIntegrationJourneysApiService journeys)
+            try
+            {
+                var all = XmlFixturePresentation.Contexts((await journeys.IntegrationTemplatesAsync(environmentId, null)).Value ?? []);
+                _context = all.FirstOrDefault(c => ContextKey is null || c.Key == ContextKey);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _context = null; }
+        // Consumers load the catalog themselves; a host without an API client (no registered service, no HTTP setup) shows no readiness.
+        if (Assets is null && (Services.GetService(typeof(ITestDataApiService)) is not null || Services.GetService(typeof(IHttpClientFactory)) is not null))
+            try { _loaded = (await TestDataApiService.Resolve(Services).CatalogAsync()).Catalog?.Assets ?? []; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or ArgumentException) { _loaded = []; }
+        _loading = false;
+        Compute();
+    }
+
+    protected override void OnParametersSet() { if (!_loading) Compute(); }
+
+    private void Compute() => _status = _context is null ? null : XmlFixturePresentation.Tester(Assets ?? _loaded, _context);
+}

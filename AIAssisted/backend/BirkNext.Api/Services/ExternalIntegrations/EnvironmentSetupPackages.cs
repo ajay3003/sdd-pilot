@@ -340,30 +340,27 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
     /// </summary>
     private async Task<SetupDependencyResolution> XmlFixtureAsync(SetupDependency d, CancellationToken ct)
     {
-        const string owner = "Test Data", href = "/test-data", hint = "Generate and validate a fixture in Schema Studio, then register and approve it in Test Data.";
+        const string owner = "Test Data", href = "/test-data", hint = "Create XML fixture in Test Data (generated and validated against the contract XSD), then approve it.";
         var missing = d.Required ? SetupDependencyState.Missing : SetupDependencyState.OptionalMissing;
-        bool ForContract(TestDataAsset asset) => asset.Schema is { } schema
-            && (string.Equals(System.IO.Path.GetFileNameWithoutExtension(schema.SchemaPath.Replace('\\', '/').Split('/').Last()), d.Reference, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(System.IO.Path.GetFileNameWithoutExtension(schema.Label ?? ""), d.Reference, StringComparison.OrdinalIgnoreCase));
-        var fixtures = testData.Assets().Where(asset => string.Equals(asset.MediaType, "application/xml", StringComparison.OrdinalIgnoreCase) && ForContract(asset)
-            && !asset.Capabilities.Contains("negative-test", StringComparer.OrdinalIgnoreCase)).ToList();
-        if (fixtures.Count == 0)
-            return new(d, missing, $"No XML fixture for {d.Reference} in Test Data.", owner, href) { ActionLabel = "Open Test Data", Hint = hint };
-        var approved = fixtures.Where(asset => asset.Approval == TestDataApproval.Approved).ToList();
-        if (approved.Count == 0)
-            return new(d, SetupDependencyState.NotApproved, $"{fixtures.Count} XML fixture{(fixtures.Count == 1 ? "" : "s")} for {d.Reference}, none approved.", owner, href) { ActionLabel = "Open Test Data" };
-        var checks = new List<(TestDataAsset Asset, TestDataSchemaCheck? Check)>();
-        foreach (var asset in approved)
-            checks.Add((asset, schemas is null ? null : TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct))));
-        if (checks.FirstOrDefault(c => c.Check?.Status == TestDataSchemaStatus.Validated) is { Asset: { } valid })
-            return new(d, SetupDependencyState.Resolved, $"XML fixture {valid.Alias} is valid against the {d.Reference} schema (schema-valid is not business-valid).", owner, href);
-        if (checks.Any(c => c.Check?.Status == TestDataSchemaStatus.Invalid))
-            return new(d, SetupDependencyState.Incompatible, $"The XML fixture for {d.Reference} is invalid against its XSD.", owner, href) { ActionLabel = "Open Test Data", Hint = hint };
-        var status = checks.Select(c => c.Check?.Status).FirstOrDefault();
-        return new(d, missing, status is TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved
-                ? $"The XML fixture for {d.Reference} cannot be validated: the contract schema is unavailable."
-                : $"The XML fixture for {d.Reference} is not validated against the contract.", owner, href)
-            { ActionLabel = "Open Test Data", Hint = hint };
+        // The shared rule (TestDataXmlReadiness) decides, exactly as Test Data and Skolenærvær Testing show it; schema checks run for approved fixtures.
+        var fixtures = testData.Assets().Where(asset => TestDataXmlReadiness.IsFixtureFor(asset.MediaType, asset.Schema, asset.Capabilities, d.Reference)).ToList();
+        var facts = new List<TestDataXmlFixtureFacts>();
+        foreach (var asset in fixtures)
+        {
+            var check = asset.Approval == TestDataApproval.Approved && schemas is not null ? TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct)) : null;
+            facts.Add(new(asset.Alias, asset.Approval == TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId));
+        }
+        var (state, fixture) = TestDataXmlReadiness.Evaluate(facts);
+        return state switch
+        {
+            TestDataXmlReadinessState.Missing => new(d, missing, $"No XML fixture for {d.Reference} in Test Data.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
+            TestDataXmlReadinessState.NotApproved => new(d, SetupDependencyState.NotApproved, $"{fixtures.Count} XML fixture{(fixtures.Count == 1 ? "" : "s")} for {d.Reference}, none approved.", owner, href) { ActionLabel = "Open Test Data" },
+            TestDataXmlReadinessState.Ready or TestDataXmlReadinessState.Outdated =>
+                new(d, SetupDependencyState.Resolved, $"XML fixture {fixture!.Alias} is valid against the {d.Reference} schema (schema-valid is not business-valid).", owner, href),
+            TestDataXmlReadinessState.Invalid => new(d, SetupDependencyState.Incompatible, $"The XML fixture for {d.Reference} is invalid against its XSD.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
+            TestDataXmlReadinessState.SchemaUnavailable => new(d, missing, $"The XML fixture for {d.Reference} cannot be validated: the contract schema is unavailable.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
+            _ => new(d, missing, $"The XML fixture for {d.Reference} is not validated against the contract.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
+        };
     }
 
     private static ExternalIntegration? Destination(SetupPackageSystem system, IReadOnlyList<ExternalIntegration> existing, SetupPreflightRequest request) =>

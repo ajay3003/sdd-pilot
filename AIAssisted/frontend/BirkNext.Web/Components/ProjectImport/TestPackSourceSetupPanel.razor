@@ -125,7 +125,7 @@
 @code {
     [Parameter, EditorRequired] public SourceSetupView Setup { get; set; } = new();
     /// <summary>Where a missing source is imported on the hosting page.</summary>
-    [Parameter] public string ImportAnchor { get; set; } = "#pi-choose-heading";
+    [Parameter] public string ImportAnchor { get; set; } = ProjectImportPresentation.ImportSourceHref;
 
     /// <summary>The IQR integrations whose canonical binding is this source's bound snapshot (role integrations only).</summary>
     private IReadOnlyList<string> BoundTo(TestPackSourceStatus source) =>

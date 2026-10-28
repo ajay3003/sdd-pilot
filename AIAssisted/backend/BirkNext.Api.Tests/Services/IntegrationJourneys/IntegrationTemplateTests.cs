@@ -290,6 +290,9 @@ public sealed class IntegrationTemplateTests
         var template = pack.IntegrationTemplates.Single(t => t.Key == "skolenaervaer-report-intake");
 
         template.FixtureBindings.Select(b => (b.Role, b.Capability, b.ElementPath)).Should().Equal(("Child", "child", "Klient.Identifikator.Fodselsnummer"), ("Reporter", "reporter", (string?)null));
+        template.FixtureCapabilities.Should().Equal("skolenaervaer-report");
+        (await harness.Service(pack).IntegrationTemplatesAsync(BirkNext.Api.Tests.Services.ActiveEventTesting.ActiveEventTestHarness.Env, "Development", default))
+            .Single(t => t.Key == template.Key).Flow.Should().Be("External reporting party (Altinn) → MU", "the requirement's own producer → consumer, never hardcoded in the catalog");
         (await harness.Service(pack).IntegrationTemplatesAsync(BirkNext.Api.Tests.Services.ActiveEventTesting.ActiveEventTestHarness.Env, "Development", default))
             .Single(t => t.Key == template.Key).FixtureBindings.Should().BeEquivalentTo(template.FixtureBindings, "the view carries the pack's declaration unchanged");
     }

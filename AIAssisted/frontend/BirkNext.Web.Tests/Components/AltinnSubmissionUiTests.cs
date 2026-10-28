@@ -485,7 +485,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
         Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("extensions/skolenaervaer?tab=rapportmottak");
         var without = Render<SkoleNaervaerTesting>();
-        without.Find("#snt-rapport [data-testid=snt-not-ready]").TextContent.Should().StartWith("Not ready");
+        without.Find("#snt-rapport [data-testid=snt-not-ready]").TextContent.Should().StartWith("Not assessed", "absent context is not a failure");
         without.FindAll("[data-testid=atp-panel]").Should().BeEmpty();
 
         context = new FrontendAnalysisContext { ActiveProfile = Profile };

@@ -8,7 +8,10 @@
    never stored in the browser and never shown again — the catalog lists the alias only. Reporter and child must be different persons. The
    TT02 profile confirmation is a deliberate act (type the alias), never inferred from the identifier. *@
 <div class="sti" data-testid="sti">
-    <p class="sti-muted">Approved synthetic identities for Altinn runs (e.g. Skolenærvær). Held in backend memory until the backend restarts or the session expires; never stored, logged or exported.</p>
+    <p class="sti-muted" data-testid="sti-help">Approved Test Data identities used by applicable test journeys. Explicit session selections override defaults.</p>
+    <ReviewDisclosure Text="Details" CollapseText="Hide details" TestId="sti-lifecycle" Class="disclosure-inline disclosure-small">
+        <p class="sti-muted">Identities added here are held in backend memory until the backend restarts or the session expires; never stored, logged or exported. Identifiers are never shown.</p>
+    </ReviewDisclosure>
     @if (_api is null)
     {
         <p class="sti-muted" data-testid="sti-unavailable">Session test identities are not available in this host.</p>

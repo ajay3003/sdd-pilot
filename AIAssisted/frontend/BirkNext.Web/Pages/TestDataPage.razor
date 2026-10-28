@@ -82,23 +82,93 @@
     {
         @if (_actionStatus is { } actionStatus) { <p role="status" class="td-note" data-testid="td-action-status">@actionStatus</p> }
 
-        @* Test-lead overview: counts, from the enriched catalog and the registered consumer requirements. *@
-        @if (_consumers?.Overview is { } o)
-        {
-            <section class="td-card td-overview" aria-label="Test Data overview" data-testid="td-overview">
-                <dl class="td-overview-list">
+        @* 1 · Test Data readiness: Reporter, Child, XML fixture and contract validation by the shared rule (also used by Setup Library preflight
+           and Skolenærvær Testing), then compact catalog counts. Test Data readiness only. *@
+        <section class="td-card td-overview" aria-labelledby="td-readiness-heading" data-testid="td-overview">
+            <h2 id="td-readiness-heading">Test Data readiness</h2>
+            <TestDataTesterReadiness Assets="catalog.Assets" Heading="Ready for testing?" TestId="td-tester-readiness" />
+            @if (_consumers?.Overview is { } o)
+            {
+                <dl class="td-overview-list" aria-label="Test Data counts">
                     <div><dt>Approved</dt><dd data-testid="td-overview-approved">@o.Approved</dd></div>
                     <div><dt>Needs review</dt><dd data-testid="td-overview-review">@o.NeedsReview</dd></div>
                     <div><dt>Draft</dt><dd>@o.Draft</dd></div>
                     <div><dt>Deprecated</dt><dd>@o.Deprecated</dd></div>
-                    <div><dt>Open consumer requirements</dt><dd data-testid="td-overview-open">@o.OpenRequirements</dd></div>
-                    <div><dt>Required needs resolved</dt><dd data-testid="td-overview-coverage">@o.RequiredResolved of @o.RequiredTotal</dd></div>
-                    <div><dt>Environment mismatches</dt><dd>@o.EnvironmentMismatches</dd></div>
-                    <div><dt>Contract mismatches</dt><dd>@o.ContractMismatches</dd></div>
+                    <div><dt>Open requirements</dt><dd data-testid="td-overview-open">@o.OpenRequirements</dd></div>
+                    <div><dt>Test requirements</dt><dd data-testid="td-overview-coverage">@P.Requirements(o.RequiredResolved, o.RequiredTotal)</dd></div>
+                    @if (o.EnvironmentMismatches > 0) { <div><dt>Environment mismatches</dt><dd>@o.EnvironmentMismatches</dd></div> }
+                    @if (o.ContractMismatches > 0) { <div><dt>Contract mismatches</dt><dd>@o.ContractMismatches</dd></div> }
                 </dl>
-                <p class="td-note">Requirement resolved is Test Data readiness only — each consumer decides whether it is ready to run.</p>
-            </section>
-        }
+            }
+        </section>
+
+        @* Session test identities: the approved synthetic reporter and child for Altinn runs, entered here instead of a terminal. *@
+        <section class="td-card" aria-labelledby="td-session-heading" data-testid="td-session-identities">
+            <h2 id="td-session-heading">Session test identities</h2>
+            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" Assets="@(_catalog?.Assets ?? [])" />
+        </section>
+
+        @* XML fixtures: reusable message payloads for a test pack's contract, created here from the identities above (generation and validation
+           reuse Schema Studio; values come from Test Data). *@
+        <section class="td-card" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
+            <h2 id="td-xml-heading">XML fixtures</h2>
+            <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" />
+        </section>
+
+        @* Inbound needs registered by consumers. Test Data shows whether each is resolved; it never decides whether the consumer can run. *@
+        <section class="td-card" aria-labelledby="td-requested-heading" data-testid="td-requested">
+            <h2 id="td-requested-heading">Requested Test Data</h2>
+            @if (_consumers is not { Requirements.Count: > 0 } consumerView)
+            {
+                <p class="td-note" data-testid="td-requested-none">No open Test Data requirements.</p>
+                <ReviewDisclosure Text="Details" CollapseText="Hide details" TestId="td-requested-details" Class="disclosure-inline disclosure-small">
+                    <p class="td-note">Consumers (reviews, test packs, journeys, flows, extensions) register what they need here, or open Test Data with their requirement. Test Data shows whether each is resolved; each consumer decides whether it can run.</p>
+                </ReviewDisclosure>
+            }
+            else
+            {
+                var requirements = consumerView.Requirements.Where(r => _reqStatus.Length == 0 || r.Status.ToString() == _reqStatus)
+                    .Where(r => _reqConsumer.Length == 0 || P.Consumer(r.Consumer) == _reqConsumer).ToList();
+                <div class="td-filters" role="group" aria-label="Filter requested Test Data">
+                    @Filter("Status", "td-req-filter-status", _reqStatus, v => _reqStatus = v, consumerView.Requirements.Select(r => r.Status).Distinct().Order().Select(s => (s.ToString(), s == TestDataRequirementStatus.NeedsReview ? "Needs review" : s.ToString())))
+                    @Filter("Consumer", "td-req-filter-consumer", _reqConsumer, v => _reqConsumer = v, consumerView.Requirements.Select(r => P.Consumer(r.Consumer)).Distinct().Order().Select(c => (c, c)))
+                </div>
+                <ul class="td-requirements">
+                    @foreach (var r in requirements)
+                    {
+                        var requirement = r;
+                        <li class="td-requirement" data-testid="td-requirement" data-status="@r.Status" data-consumer="@r.Consumer.Key">
+                            <div class="td-requirement-head">
+                                <strong>@P.Consumer(r.Consumer)</strong> <span class="td-note">· @r.Consumer.ConsumerType</span>
+                                <span class="td-pill td-pill-@(r.Status == TestDataRequirementStatus.Resolved ? "ready" : "attention")" data-testid="td-requirement-status">@(r.Status == TestDataRequirementStatus.NeedsReview ? "Needs review" : r.Status.ToString())</span>
+                            </div>
+                            <p class="td-note">Needs @TestDataDataTypes.Label(r.RequestedDataType) for @r.Usage@(r.RequestedFields.Count > 0 ? $" ({string.Join(", ", r.RequestedFields)})" : "") · @(r.Required ? "required" : "optional") · @TestDataCatalogRules.ScopeLabel(r.EnvironmentId)@(r.BoundAssetId is { } bound ? $" · bound to {bound}" : "")</p>
+                            <button type="button" class="btn-secondary btn-small" data-testid="td-requirement-find" aria-expanded="@(_matchesFor == r.Id ? "true" : "false")" @onclick="() => FindMatchesAsync(requirement)">@(_matchesFor == r.Id ? "Hide matches" : "Find matching Test Data")</button>
+                            @if (_matchesFor == r.Id && _matches is { } found)
+                            {
+                                @if (found.Count == 0) { <p class="td-note" data-testid="td-requirement-no-match">No match. Register and approve an asset of this type.</p> }
+                                <ul class="td-matches">
+                                    @foreach (var m in found)
+                                    {
+                                        var match = m;
+                                        <li data-testid="td-match" data-state="@m.State"><span class="td-mono">@m.Alias</span> · <strong>@TestDataCatalogRules.Label(m.State)</strong> <span class="td-note">— @m.Reason</span>
+                                            @if (m.State is TestDataMatchState.Exact or TestDataMatchState.Compatible || m.State == TestDataMatchState.Possible && _confirmed == m.AssetId)
+                                            {
+                                                <button type="button" class="btn-secondary btn-small" data-testid="td-bind" disabled="@_busy" @onclick="() => BindAsync(requirement, match)">Bind to this requirement</button>
+                                            }
+                                            else if (m.State == TestDataMatchState.Possible)
+                                            {
+                                                <button type="button" class="btn-link" data-testid="td-confirm" @onclick="() => _confirmed = match.AssetId">Confirm it fits</button>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
 
         @if (catalog.Assets.Count == 0)
         {
@@ -124,7 +194,7 @@
             var usages = _consumers?.Usages ?? [];
             var shown = Filtered(catalog, usages);
             <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
-                <h2 id="td-assets-heading">Reusable Test Data <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
+                <h2 id="td-assets-heading">Test Data assets <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
                 <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
                     <label>Search <input type="search" class="form-control" data-testid="td-search" placeholder="Name, type, contract, consumer, field" @bind="_query" @bind:event="oninput" /></label>
                     @Filter("Data type", "td-filter-type", _type, v => _type = v, catalog.Assets.Select(P.DataType).Distinct().Order().Select(t => (t.ToString(), TestDataDataTypes.Label(t))))
@@ -144,7 +214,7 @@
                 {
                     <table class="td-table" data-testid="td-asset-table">
                         <caption class="visually-hidden">Reusable Test Data assets with type, status, scope, source, contract status and consumers</caption>
-                        <thead><tr><th scope="col">Name</th><th scope="col">Data type</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Source</th><th scope="col">Contract</th><th scope="col">Consumers</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Contract</th><th scope="col">Consumers</th><th scope="col">Action</th></tr></thead>
                         <tbody>
                             @foreach (var asset in shown)
                             {
@@ -154,10 +224,9 @@
                                 var assetUsages = usages.Where(u => u.AssetId == asset.Id).ToList();
                                 <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind" data-status="@status">
                                     <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }</th>
-                                    <td data-label="Data type" data-testid="td-data-type">@TestDataDataTypes.Label(P.DataType(asset))</td>
+                                    <td data-label="Type" data-testid="td-data-type">@TestDataDataTypes.Label(P.DataType(asset))</td>
                                     <td data-label="Status"><span class="td-pill td-pill-@P.StatusTone(status)" data-testid="td-status">@TestDataCatalogRules.Label(status)</span></td>
                                     <td data-label="Scope" data-testid="td-scope">@P.Scope(asset)</td>
-                                    <td data-label="Source" data-testid="td-asset-source">@asset.Source</td>
                                     <td data-label="Contract"><span class="td-pill td-pill-@P.ContractTone(asset)" data-testid="td-contract">@P.ContractLabel(asset)</span></td>
                                     <td data-label="Consumers" data-testid="td-consumers">@P.UsedBy(asset.Consumers)</td>
                                     <td class="td-row-action"><button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId"
@@ -270,83 +339,23 @@
             </section>
         }
 
-        @* Inbound needs registered by consumers. Test Data shows whether each is resolved; it never decides whether the consumer can run. *@
-        <section class="td-card" aria-labelledby="td-requested-heading" data-testid="td-requested">
-            <h2 id="td-requested-heading">Requested Test Data</h2>
-            @if (_consumers is not { Requirements.Count: > 0 } consumerView)
-            {
-                <p class="td-note" data-testid="td-requested-none">No consumer has registered a Test Data requirement yet. Consumers (reviews, test packs, journeys, flows, extensions) register needs here or open Test Data with their requirement.</p>
-            }
-            else
-            {
-                var requirements = consumerView.Requirements.Where(r => _reqStatus.Length == 0 || r.Status.ToString() == _reqStatus)
-                    .Where(r => _reqConsumer.Length == 0 || P.Consumer(r.Consumer) == _reqConsumer).ToList();
-                <div class="td-filters" role="group" aria-label="Filter requested Test Data">
-                    @Filter("Status", "td-req-filter-status", _reqStatus, v => _reqStatus = v, consumerView.Requirements.Select(r => r.Status).Distinct().Order().Select(s => (s.ToString(), s == TestDataRequirementStatus.NeedsReview ? "Needs review" : s.ToString())))
-                    @Filter("Consumer", "td-req-filter-consumer", _reqConsumer, v => _reqConsumer = v, consumerView.Requirements.Select(r => P.Consumer(r.Consumer)).Distinct().Order().Select(c => (c, c)))
-                </div>
-                <ul class="td-requirements">
-                    @foreach (var r in requirements)
-                    {
-                        var requirement = r;
-                        <li class="td-requirement" data-testid="td-requirement" data-status="@r.Status" data-consumer="@r.Consumer.Key">
-                            <div class="td-requirement-head">
-                                <strong>@P.Consumer(r.Consumer)</strong> <span class="td-note">· @r.Consumer.ConsumerType</span>
-                                <span class="td-pill td-pill-@(r.Status == TestDataRequirementStatus.Resolved ? "ready" : "attention")" data-testid="td-requirement-status">@(r.Status == TestDataRequirementStatus.NeedsReview ? "Needs review" : r.Status.ToString())</span>
-                            </div>
-                            <p class="td-note">Needs @TestDataDataTypes.Label(r.RequestedDataType) for @r.Usage@(r.RequestedFields.Count > 0 ? $" ({string.Join(", ", r.RequestedFields)})" : "") · @(r.Required ? "required" : "optional") · @TestDataCatalogRules.ScopeLabel(r.EnvironmentId)@(r.BoundAssetId is { } bound ? $" · bound to {bound}" : "")</p>
-                            <button type="button" class="btn-secondary btn-small" data-testid="td-requirement-find" aria-expanded="@(_matchesFor == r.Id ? "true" : "false")" @onclick="() => FindMatchesAsync(requirement)">@(_matchesFor == r.Id ? "Hide matches" : "Find matching Test Data")</button>
-                            @if (_matchesFor == r.Id && _matches is { } found)
-                            {
-                                @if (found.Count == 0) { <p class="td-note" data-testid="td-requirement-no-match">No match. Register and approve an asset of this type.</p> }
-                                <ul class="td-matches">
-                                    @foreach (var m in found)
-                                    {
-                                        var match = m;
-                                        <li data-testid="td-match" data-state="@m.State"><span class="td-mono">@m.Alias</span> · <strong>@TestDataCatalogRules.Label(m.State)</strong> <span class="td-note">— @m.Reason</span>
-                                            @if (m.State is TestDataMatchState.Exact or TestDataMatchState.Compatible || m.State == TestDataMatchState.Possible && _confirmed == m.AssetId)
-                                            {
-                                                <button type="button" class="btn-secondary btn-small" data-testid="td-bind" disabled="@_busy" @onclick="() => BindAsync(requirement, match)">Bind to this requirement</button>
-                                            }
-                                            else if (m.State == TestDataMatchState.Possible)
-                                            {
-                                                <button type="button" class="btn-link" data-testid="td-confirm" @onclick="() => _confirmed = match.AssetId">Confirm it fits</button>
-                                            }
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </li>
-                    }
-                </ul>
-            }
-        </section>
-
         <section class="td-card" aria-labelledby="td-candidates-heading" data-testid="td-candidates-section">
             <h2 id="td-candidates-heading">Candidates from source evidence</h2>
-            <p class="td-note">Proposed from a Source Analysis snapshot's contracts (OpenAPI, GraphQL, XSD, JSON Schema), enum reference data and data model — each with the reason it was proposed. Review → register as reusable Test Data → approve; nothing is approved automatically.</p>
+            <p class="td-note">Proposals from Source Analysis; approval stays explicit.</p>
             <ReviewDisclosure Text="Review candidates" CollapseText="Hide candidates" TestId="td-candidates" Class="disclosure-inline">
+                <p class="td-note" data-testid="td-candidates-help">Proposed from a Source Analysis snapshot's contracts (OpenAPI, GraphQL, XSD, JSON Schema), enum reference data and data model — each with the reason it was proposed. Review → register as reusable Test Data → approve; a proposal never becomes approved automatically.</p>
                 <TestDataCandidatesPanel Scopes="_scopes" OnRegistered="ReloadAsync" />
             </ReviewDisclosure>
-        </section>
-
-        @* Session test identities: the approved synthetic reporter and child for Altinn runs, entered here instead of a terminal. *@
-        <section class="td-card" aria-labelledby="td-session-heading" data-testid="td-session-identities">
-            <h2 id="td-session-heading">Session test identities</h2>
-            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" Assets="@(_catalog?.Assets ?? [])" />
-        </section>
-
-        @* XML fixtures: reusable message payloads for a test pack's contract, created here from the identities above (generation and validation
-           reuse Schema Studio; values come from Test Data). *@
-        <section class="td-card" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
-            <h2 id="td-xml-heading">XML fixtures</h2>
-            <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" />
         </section>
 
         @* Sources & configuration: where assets come from. Useful plumbing, not the primary goal of the page. *@
         <section class="td-card" aria-labelledby="td-sources-heading" data-testid="td-sources">
             <h2 id="td-sources-heading">Sources & configuration</h2>
-            <ReviewDisclosure Text="Show asset sources" CollapseText="Hide asset sources" TestId="td-sources-disclosure" Class="disclosure-inline">
+            <p class="td-note">Shows where Test Data assets come from and how reusable assets are registered.</p>
+            <dl class="td-source-summary" data-testid="td-source-summary">
+                @foreach (var (name, value) in P.SourceSummary(catalog)) { <div data-testid="td-source-summary-item"><dt>@name</dt><dd>@value</dd></div> }
+            </dl>
+            <ReviewDisclosure Text="View source details" CollapseText="Hide source details" TestId="td-sources-disclosure" Class="disclosure-inline">
                 <ul class="td-source-grid">
                     @foreach (var source in catalog.Sources)
                     {
@@ -357,16 +366,14 @@
                                 <span class="td-pill td-pill-@P.SourceTone(source)" data-testid="td-source-status"><span class="visually-hidden">Status: </span>@P.SourceStatusLabel(source)</span>
                             </div>
                             <p class="td-source-count" data-testid="td-source-count">@source.AssetCount @(source.AssetCount == 1 ? "asset" : "assets")@(source.SetCount > 0 ? $" · {source.SetCount} data {(source.SetCount == 1 ? "set" : "sets")}" : "")</p>
-                            <p class="td-note">@source.Description</p>
+                            @if (source.Id == "configured") { <p class="td-note">Optional configured asset source.</p> }
                             @if (source.Problem is { } problem) { <p class="td-source-problem" role="alert" data-testid="td-source-problem">Source unavailable: @problem</p> }
                             <div class="td-source-actions">
-                                @if (source.Detail is { } detail)
-                                {
-                                    <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="@($"td-source-details-{source.Id}")" Class="disclosure-inline disclosure-small">
-                                        <p class="td-note" data-testid="td-source-detail">@detail</p>
-                                    </ReviewDisclosure>
-                                }
-                                @if (action is { } a) { <a class="td-source-action" href="@a.Href" data-testid="td-source-action" aria-describedby="@($"td-source-{source.Id}")">@a.Label</a> }
+                                @if (action is { } a) { <a class="td-source-action btn-secondary btn-small" href="@a.Href" data-testid="td-source-action" aria-describedby="@($"td-source-{source.Id}")">@a.Label</a> }
+                                <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="@($"td-source-details-{source.Id}")" Class="disclosure-inline disclosure-small">
+                                    <p class="td-note">@source.Description</p>
+                                    @if (source.Detail is { } detail) { <p class="td-note" data-testid="td-source-detail">@detail</p> }
+                                </ReviewDisclosure>
                             </div>
                         </li>
                     }
@@ -385,14 +392,20 @@
                         }
                     </ul>
                 }
-                @if (catalog.Assets.Count > 0)
-                {
-                    <ReviewDisclosure Text="Documentation (metadata only)" CollapseText="Hide documentation" TestId="td-documentation" Class="disclosure-inline">
-                        <pre class="td-preview" tabindex="0" aria-label="Test data documentation" data-testid="td-documentation-text">@TestDataLifecycle.Documentation(catalog.Assets)</pre>
-                    </ReviewDisclosure>
-                }
+                <p class="td-note" data-testid="td-how">How Test Data works: Test Data owns reusable assets (JSON payloads, simple values, XML payloads, file fixtures, expected/reference data) with an explicit status (Draft → Needs review → Approved → Deprecated) and scope (an environment or Shared). Source candidates and Schema Studio propose; approval is always explicit. Consumers register what they need and bind approved assets by reference; sensitive values stay in the backend. <a href="@P.UserGuideHref">User guide</a></p>
             </ReviewDisclosure>
-            <p class="td-note" data-testid="td-how">How Test Data works: Test Data owns reusable assets (JSON payloads, simple values, XML payloads, file fixtures, expected/reference data) with an explicit status (Draft → Needs review → Approved → Deprecated) and scope (an environment or Shared). Source candidates and Schema Studio propose; approval is always explicit. Consumers register what they need and bind approved assets by reference; sensitive values stay in the backend. <a href="@P.UserGuideHref">User guide</a></p>
+        </section>
+
+        @* 8 · Technical documentation: the metadata inventory (no values) for maintainers, never in the tester's default view. *@
+        <section class="td-card" aria-labelledby="td-docs-heading" data-testid="td-docs">
+            <h2 id="td-docs-heading">Technical documentation</h2>
+            <p class="td-note"><a href="@P.UserGuideHref" data-testid="td-user-guide">User guide</a></p>
+            @if (catalog.Assets.Count > 0)
+            {
+                <ReviewDisclosure Text="View technical documentation" CollapseText="Hide technical documentation" TestId="td-documentation" Class="disclosure-inline">
+                    <pre class="td-preview" tabindex="0" aria-label="Test data documentation" data-testid="td-documentation-text">@TestDataLifecycle.Documentation(catalog.Assets)</pre>
+                </ReviewDisclosure>
+            }
         </section>
     }
 </div>

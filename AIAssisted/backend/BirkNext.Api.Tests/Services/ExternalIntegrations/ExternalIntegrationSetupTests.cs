@@ -594,7 +594,7 @@ public sealed class ExternalIntegrationSetupTests
         Dep(result, SetupDependencyKind.TestData, "Child").State.Should().Be(SetupDependencyState.Resolved);
         Dep(result, SetupDependencyKind.Contract).Cause.Should().Be(SetupDependencyCause.IntegrationNotConfigured);
         Dep(result, SetupDependencyKind.TestData, AltinnProviderHandler.XmlFixtureRole).Should().Match<SetupDependencyResolution>(d =>
-            d.State == SetupDependencyState.Missing && d.Phase == SetupDependencyPhase.Test && d.ActionLabel == "Open Test Data" && d.Hint!.Contains("Schema Studio"));
+            d.State == SetupDependencyState.Missing && d.Phase == SetupDependencyPhase.Test && d.ActionLabel == "Open Test Data" && d.Hint!.Contains("Create XML fixture in Test Data"));
         result.RequiredResolved.Should().Be(0); result.RequiredTotal.Should().Be(1, "only the integration reference is needed to apply safely");
         result.CanApply.Should().BeFalse();
 

@@ -7,7 +7,19 @@ namespace BirkNext.Web.Services;
 /// imported snapshot, and no configured integration fulfilling it yet. <see cref="Ready"/> when nothing needs a person's choice; otherwise
 /// <see cref="Decision"/> names exactly what does. Adding goes through the normal Add integration form with the template preselected.
 /// </summary>
-public sealed record IntegrationPackProposal(IntegrationTemplateView Template, bool Ready, string? Decision, IReadOnlyList<string> Evidence);
+public sealed record IntegrationPackProposal(IntegrationTemplateView Template, bool Ready, string? Decision, IReadOnlyList<string> Evidence)
+{
+    /// <summary>What the decision is about: none, which evidence source (ambiguous), or environment values still missing.</summary>
+    public ProposalDecisionKind DecisionKind { get; init; }
+    /// <summary>The decision's options or missing values, one per line (archives to choose from, or field labels).</summary>
+    public IReadOnlyList<string> DecisionItems { get; init; } = [];
+    /// <summary>The evidence role whose source must be chosen (e.g. "MU (Meldingsutveksleren)").</summary>
+    public string? DecisionRole { get; init; }
+    /// <summary>Evidence as compact rows: the Test Pack requirement, the recognized source, the built-in reference.</summary>
+    public IReadOnlyList<string> EvidenceItems { get; init; } = [];
+}
+
+public enum ProposalDecisionKind { None, ChooseEvidenceSource, MissingEnvironmentValues }
 
 /// <summary>
 /// Test Pack proposals for the Integration Catalog. Deterministic and read-only: a template is proposed only when its evidence source role is
@@ -34,7 +46,18 @@ public static class IntegrationPackProposals
             $"{template.PackName} Test Pack — integration requirement" + (template.Journeys.Count > 0 ? $" ({string.Join(", ", template.Journeys)})" : ""),
             $"{source.Role.Label} source: {string.Join(", ", archives)}",
         ];
-        if (template.ReferenceSource is { State: TestPackSourceState.ReferenceAvailable } reference) evidence.Add($"{reference.Role.Label}: built-in Test Pack reference");
-        return new(template, decision is null, decision, evidence);
+        List<string> rows = [$"{template.PackName} Test Pack", .. archives.Select(a => $"{source.Role.Label} source: {a}")];
+        if (template.ReferenceSource is { State: TestPackSourceState.ReferenceAvailable } reference)
+        {
+            evidence.Add($"{reference.Role.Label}: built-in Test Pack reference");
+            rows.Add($"{reference.Role.Label} Test Pack reference");
+        }
+        return new(template, decision is null, decision, evidence)
+        {
+            DecisionKind = ambiguous ? ProposalDecisionKind.ChooseEvidenceSource : template.NeedsConfiguration.Count > 0 ? ProposalDecisionKind.MissingEnvironmentValues : ProposalDecisionKind.None,
+            DecisionItems = ambiguous ? archives : [.. template.NeedsConfiguration.Select(IntegrationTemplatePresentation.FieldLabel)],
+            DecisionRole = ambiguous ? source.Role.Label : null,
+            EvidenceItems = rows,
+        };
     }
 }

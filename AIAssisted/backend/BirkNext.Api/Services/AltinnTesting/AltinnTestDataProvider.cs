@@ -13,7 +13,7 @@ namespace BirkNext.Api.Services.AltinnTesting;
 /// </summary>
 public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options) : ITestDataProvider
 {
-    public const string SourceLabel = "Local approved configuration";
+    public const string SourceLabel = "Approved local test data";
     public const string Reporter = "reporter";
     public const string Child = "child";
     public const string KnownToPerson = "known-to-person";

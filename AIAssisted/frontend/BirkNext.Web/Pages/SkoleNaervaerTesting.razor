@@ -49,12 +49,29 @@
         </nav>
     }
 
+    @* Shared Target Environment context: read from Target Environments (the owner), stated once for every tab. *@
+    @if (_initialized)
+    {
+        <div class="snt-env-context" role="status" data-testid="snt-env-context" data-selected="@(_profile is null ? "false" : "true")">
+            @if (_profile is null)
+            {
+                <p><strong>Target environment not selected.</strong> Readiness and verification cannot be assessed.</p>
+                <a class="btn-primary" href="/admin/system-settings?section=target-environments" data-testid="snt-select-environment">Select target environment</a>
+            }
+            else
+            {
+                <p><span class="snt-dimension-label">Target environment</span> <strong data-testid="snt-env-name">@(string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</strong>
+                    <a class="snt-inline-link" href="/admin/system-settings?section=target-environments" data-testid="snt-change-environment">Change</a></p>
+            }
+        </div>
+    }
+
     @if (CurrentView is { Kind: TestPackViewKind.Overview })
     {
         <section id="snt-overview" class="snt-panel" aria-labelledby="snt-overview-heading">
             <h2 id="snt-overview-heading" tabindex="-1">Overview</h2>
             <dl class="snt-context" data-testid="snt-context">
-                <div><dt>Target environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
+                <div><dt>Target environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
                 @if (Workspace.ProjectName is { } project) { <div><dt>Project workspace</dt><dd data-testid="snt-workspace">@project</dd></div> }
                 <div><dt>Source evidence</dt><dd data-testid="snt-source">Provided by Integration Quality Review bindings · @_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=setup-evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
                 @if (_profile is not null && _pack is not null)
@@ -121,6 +138,11 @@
                 </section>
             }
 
+            @* Test Data readiness: the shared Test Data rule and component (owner: Test Data); read-only here, no second definition. *@
+            <section class="snt-summary-card" data-testid="snt-test-data">
+                <BirkNext.Web.Components.TestDataTesterReadiness Heading="Test Data" ShowOwnerLink="true" TestId="snt-test-data-readiness" />
+            </section>
+
             @if (_pack is not null && Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>().ToList() is { Count: > 0 } setupViews)
             {
                 @* Guided Setup: progress per journey from the authoritative readiness (nothing stored); Continue resumes at the first unresolved step. *@
@@ -166,7 +188,7 @@
             }
             @if (_initialized && _profile is null)
             {
-                <p role="status" data-testid="snt-journeys-not-ready">Journey readiness is not available until a Target Environment is selected. Nothing has been run or assessed.</p>
+                <p role="status" data-testid="snt-journeys-not-ready">Not assessed — no target environment selected. Nothing has failed; nothing has been run.</p>
             }
             <div class="snt-scroll" role="region" aria-labelledby="snt-journeys-heading">
                 <table class="snt-table snt-stack" role="table" data-testid="snt-journeys">
@@ -183,12 +205,30 @@
                                     {
                                         <span class="snt-journey-sources" data-testid="snt-journey-sources">Source: @string.Join(" · ", sources.Select(SourceGuidancePresentation.SourceShort))</span>
                                     }</td>
-                                <td role="cell" data-label="Contract" data-testid="snt-matrix-contract">@Dimension("Contract", view is null ? Unknown : MatrixValue(view, JourneyDimension.Contracts, "Not assessed"))</td>
-                                <td role="cell" data-label="Test Data" data-testid="snt-matrix-test-data">@Dimension("Test Data", view is null ? Unknown : MatrixValue(view, JourneyDimension.TestData, "Not assessed"))</td>
-                                <td role="cell" data-label="Execution" data-testid="snt-journey-status">@Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))</td>
-                                <td role="cell" data-label="Verification" data-testid="snt-matrix-verification">@Dimension("Verification", view is null ? Unknown : MatrixValue(view, JourneyDimension.Verification, "Not assessed"))
+                                <td role="cell" data-label="Contract" data-testid="snt-matrix-contract">@Dimension("Contract", view is null ? Unknown : MatrixValue(view, JourneyDimension.Contracts, "Not assessed"))@Reason(view, JourneyDimension.Contracts)</td>
+                                <td role="cell" data-label="Test Data" data-testid="snt-matrix-test-data">@Dimension("Test Data", view is null ? Unknown : MatrixValue(view, JourneyDimension.TestData, "Not assessed"))@Reason(view, JourneyDimension.TestData)</td>
+                                <td role="cell" data-label="Execution" data-testid="snt-journey-status">@if (view is not null && journey.JourneyId == RapportmottakId && _altinn is { } altinn)
+                                    {
+                                        <span class="snt-exec" data-testid="snt-exec-manual">@Dimension("Manual testing", "Manual: " + AltinnState(altinn.ManualReadiness.State))</span>
+                                        <span class="snt-exec" data-testid="snt-exec-automated">@Dimension("Automated execution", "Automated: " + AltinnState(altinn.AutomatedReadiness.State))</span>
+                                    }
+                                    else
+                                    {
+                                        @Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))
+                                    }</td>
+                                <td role="cell" data-label="Verification" data-testid="snt-matrix-verification">@Dimension("Verification", view is null ? Unknown : VerificationValue(view))@if (view is not null) { <span class="snt-reason" data-testid="snt-observability">@Observability(view)</span> }
                                     @if (view is not null) { <span class="snt-journey-sources" data-testid="snt-matrix-assessment">Last run: @JourneyReadinessPresentation.AssessmentLabel(view.Assessment)</span> }</td>
-                                <td role="cell" data-label="Attention" data-testid="snt-journey-blockers">@(view is null ? "—" : actions == 0 ? "None" : $"{actions} action{(actions == 1 ? "" : "s")}")</td>
+                                <td role="cell" data-label="Attention" data-testid="snt-journey-blockers">@if (view is null)
+                                    {
+                                        @if (_initialized && _profile is null) { <a href="/admin/system-settings?section=target-environments" data-testid="snt-attention-select-environment">Select environment</a> } else { <span>Not assessed</span> }
+                                    }
+                                    else if (actions == 0) { <span>None</span> }
+                                    else
+                                    {
+                                        var first = AttentionGroups(journey.JourneyId).OrderBy(PrerequisiteOrder).First();
+                                        <span data-testid="snt-attention-count">@actions issue@(actions == 1 ? "" : "s")</span>
+                                        @if (first.ActionHref is { } firstHref) { <a class="snt-attention-action" href="@firstHref" data-testid="snt-attention-action" aria-label="@($"{first.ActionLabel} ({journey.DisplayName}) — owner: {first.Owner}")">@first.ActionLabel</a> }
+                                    }</td>
                                 <td role="cell"><a class="btn-secondary snt-open" href="@TabHref(journey.JourneyId)" @onclick="() => SelectTabAsync(journey.JourneyId)" @onclick:preventDefault
                                        aria-label="@($"Open {journey.DisplayName}")" data-testid="snt-journey-open">Open</a></td>
                             </tr>
@@ -227,8 +267,7 @@
             <p class="snt-flow" data-testid="snt-flow"><span class="snt-dimension-label">Flow</span> @(journey?.Flow ?? "")</p>
             @if (_profile is null)
             {
-                <p role="status" data-testid="snt-not-ready">Not ready: select a Target Environment to load this journey's readiness. Nothing has been run or assessed.</p>
-                <p><a class="btn-secondary" href="/admin/system-settings?section=target-environments">Open Target Environment</a></p>
+                <p role="status" data-testid="snt-not-ready">Not assessed — no target environment selected. Nothing has been run.</p>
             }
             else if (view is null)
             {
@@ -296,10 +335,7 @@
             <p class="snt-muted"><span class="snt-dimension-label">Runtime verification</span> What actually happened to one message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only: nothing is sent.</p>
             @if (_profile is null)
             {
-                <div class="snt-empty" role="status" data-testid="snt-verification-not-ready">
-                    <p><strong>Not ready:</strong> select a Target Environment to verify a message. Nothing has been read.</p>
-                    <p><a class="btn-secondary" href="/admin/system-settings?section=target-environments">Open Target Environments</a></p>
-                </div>
+                <p class="snt-empty" role="status" data-testid="snt-verification-not-ready">Not assessed — no target environment selected. Nothing has been read.</p>
             }
             else
             {
@@ -310,11 +346,11 @@
     else if (CurrentView is { Kind: TestPackViewKind.Rules })
     {
         <section id="snt-rules" class="snt-panel" aria-labelledby="snt-rules-heading">
-            <h2 id="snt-rules-heading" tabindex="-1">Architecture Rules</h2>
+            <h2 id="snt-rules-heading" tabindex="-1">Source / Architecture Checks</h2>
             <p class="snt-muted"><span class="snt-dimension-label">Source-based checks</span> Each rule is assessed only on Source Analysis dependency evidence from the logical source it needs, bound in Integration Quality Review. No evidence is Not assessed, never a pass.</p>
             @if (_profile is null)
             {
-                <p role="status" data-testid="snt-rules-not-ready">Not assessed: select a Target Environment and bind source evidence.</p>
+                <p role="status" data-testid="snt-rules-not-ready">Not assessed — no target environment selected, so no source evidence is bound.</p>
             }
             else if (_rules is { } report)
             {
@@ -361,10 +397,10 @@
     {
         <section id="snt-security" class="snt-panel" aria-labelledby="snt-security-heading" data-testid="snt-security">
             <h2 id="snt-security-heading" tabindex="-1">@securityView.DisplayName</h2>
-            <p class="snt-muted">@securityView.Description Shared requirements come from the one Security Classification review; the Skolenærvær rules below are this extension's own. Nothing runs from this page.</p>
+            <p class="snt-muted" data-testid="snt-security-purpose">Checks whether security classification and graded-access expectations are preserved through Skolenærvær journeys. Evidence comes from the shared Security Classification review; nothing is configured or run here.</p>
             @if (_profile is null)
             {
-                <p role="status" data-testid="snt-security-not-ready">Not available until a Target Environment is selected.</p>
+                <p role="status" data-testid="snt-security-not-ready">Not assessed — no target environment selected.</p>
             }
             else
             {
@@ -378,7 +414,7 @@
             <h2 id="snt-history-heading" tabindex="-1">History</h2>
             @if (_profile is null)
             {
-                <p role="status">Not available until a Target Environment is selected. Nothing has been run.</p>
+                <p role="status" data-testid="snt-history-not-ready">No test or verification history: no target environment selected.</p>
             }
             else
             {
@@ -395,7 +431,7 @@
     private const string PeriodeavslutningId = "periodeavslutning";
     private const string NotLoaded = "Loading";
     /// <summary>A dimension without a journey view: still loading, Not ready without a Target Environment, else Not available.</summary>
-    private string Unknown => !_initialized ? NotLoaded : _profile is null ? "Not ready" : "Not available";
+    private string Unknown => !_initialized ? NotLoaded : _profile is null ? "Not assessed" : "Not available";
 
     /// <summary>The section to show (?tab=); anything the pack does not declare is the Overview.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
@@ -467,6 +503,8 @@
               : $"Needs {source.SourceRoleLabel} · {(source.AvailableArchive is { } available ? $"available: {available} (not bound)" : SourceGuidancePresentation.SourceStateLabel(source.State).ToLowerInvariant())}"
             : report.SourceArchive ?? "Not bound";
     private IntegrationJourneyPackView? _pack;
+    /// <summary>Connected Systems → Altinn for this environment (manual vs automated readiness); read-only, never edited here.</summary>
+    private AltinnEnvironmentView? _altinn;
     private TestPackDescriptor? _descriptor;
     private ArchitectureRuleReport? _rules;
     private string? _rulesError;
@@ -491,8 +529,8 @@
         new("Journeys", [new("utdanningsdata", "Utdanningsdata", TestPackViewKind.Journey, "utdanningsdata"), new(RapportmottakId, "Rapportmottak", TestPackViewKind.Journey, RapportmottakId),
             new(PeriodeavslutningId, "Periodeavslutning", TestPackViewKind.Journey, PeriodeavslutningId)]),
         new("Security", [new("security", "Security / Gradert tilgang", TestPackViewKind.Security)]),
-        new("Verify", [new("message-verification", "Message Verification", TestPackViewKind.Verification, RapportmottakId, "message-verification", "Read-only verification of what happened to one message."),
-            new("architecture-rules", "Architecture Rules", TestPackViewKind.Rules)]),
+        new("Verify", [new("message-verification", "Runtime Message Verification", TestPackViewKind.Verification, RapportmottakId, "message-verification", "Read-only verification of what happened to one message."),
+            new("architecture-rules", "Source / Architecture Checks", TestPackViewKind.Rules)]),
         new("History", [new("history", "History", TestPackViewKind.History)]),
     ];
 
@@ -523,7 +561,7 @@
     private int BlockerCount(string journeyId) => Blockers(journeyId).Count;
 
     private string VerificationAvailability(TestPackView verification) =>
-        !_initialized ? NotLoaded : _profile is null ? "Not ready" : verification.JourneyId is { } journey && View(journey) is { } view && verification.ScenarioId is { } scenario
+        !_initialized ? NotLoaded : _profile is null ? "Not assessed" : verification.JourneyId is { } journey && View(journey) is { } view && verification.ScenarioId is { } scenario
             ? view.RunnableScenarios.Contains(scenario, StringComparer.Ordinal) ? "Available (read-only)" : "Not available" : "Not available";
 
     /// <summary>A status always names its dimension, so "Not ready" never stands alone.</summary>
@@ -534,9 +572,9 @@
 
     private static string Tone(string value) => value switch
     {
-        "Configured" or "Verified" or "Ready" or "Available (read-only)" => "ready",
+        "Configured" or "Verified" or "Ready" or "Available (read-only)" or "Manual: Ready" or "Automated: Ready" => "ready",
         "Partial" or "Review required" or "Partially verified" or "Executed · not verified" => "attention",
-        "Not configured" or "Missing" or "Missing integration" or "Blocked" or "Not available" or "Not ready" or "Available · needs binding" => "attention",
+        "Not configured" or "Missing" or "Missing integration" or "Blocked" or "Not available" or "Not ready" or "Available · needs binding" or "Manual: Blocked" or "Automated: Blocked" or "Manual: Partial" or "Automated: Partial" => "attention",
         _ => "neutral",
     };
 
@@ -549,6 +587,61 @@
             <span><span class="snt-dimension-label">Assessment</span> @Dimension("Assessment", JourneyReadinessPresentation.AssessmentLabel(view.Assessment))</span>
         </div>
         <JourneyReadinessDimensions View="view" ProfileId="@_profile?.Id" />
+    };
+
+    /// <summary>One concise reason under a cell that needs attention (the precise label, else the first unresolved supporting fact).</summary>
+    private static RenderFragment Reason(IntegrationJourneyView? view, JourneyDimension dimension) => __builder =>
+    {
+        if (view is not null && JourneyReadinessPresentation.Get(view, dimension) is { } d && JourneyReadinessPresentation.NeedsAttention(d)
+            && (JourneyReadinessPresentation.PreciseLabel(view, d) is var precise && precise != d.Label ? precise : ShortReason(d.Items)) is { Length: > 0 } reason)
+        {
+            <span class="snt-reason" data-testid="snt-reason" title="@d.Evidence">@reason</span>
+        }
+    };
+
+    /// <summary>The first unresolved, required supporting fact, without its explanation ("Approved test reporter: NotConfigured").</summary>
+    private static string? ShortReason(IReadOnlyList<string> items)
+    {
+        static bool Resolved(string status) => status.StartsWith("Ready", StringComparison.Ordinal) || status.StartsWith("Available", StringComparison.Ordinal)
+            || status.StartsWith("approved", StringComparison.OrdinalIgnoreCase) || status.StartsWith("Resolved", StringComparison.Ordinal) || status.StartsWith("Confirmed", StringComparison.Ordinal);
+        foreach (var item in items)
+        {
+            var head = item.Split(" — ", 2)[0].Trim();
+            var colon = head.IndexOf(": ", StringComparison.Ordinal);
+            if (colon < 0 || head.Contains("optional", StringComparison.OrdinalIgnoreCase) || Resolved(head[(colon + 2)..])) continue;
+            return head.Length <= 70 ? head : head[..69] + "…";
+        }
+        return null;
+    }
+
+    /// <summary>Verification is runtime evidence only: nothing observed is "Not verified", never "Not ready" or "Not assessed" with an environment.</summary>
+    private static string VerificationValue(IntegrationJourneyView view) =>
+        view.Assessment == JourneyAssessmentState.Verified ? "Verified"
+        : JourneyReadinessPresentation.Get(view, JourneyDimension.Verification) is { State: JourneyDimensionState.Blocked } ? "Blocked"
+        : view.Assessment == JourneyAssessmentState.Partial ? "Partially verified" : "Not verified";
+
+    /// <summary>Whether runtime evidence can be observed at all (the Verification dimension is observability, not an outcome).</summary>
+    private static string Observability(IntegrationJourneyView view) => JourneyReadinessPresentation.Get(view, JourneyDimension.Verification)?.State switch
+    {
+        JourneyDimensionState.Ready => "Every step observable",
+        JourneyDimensionState.Partial => "Some steps observable",
+        _ => "No runtime evidence available",
+    };
+
+    /// <summary>The earliest prerequisite first: integration, then source, contract evidence, Test Data, and execution last (by owner, never by text).</summary>
+    private static int PrerequisiteOrder(TestPackPresentation.BlockerGroup group) => group.ActionHref switch
+    {
+        { } href when href.Contains("tab=integrations", StringComparison.Ordinal) => 0,
+        { } href when href.Contains("project-import", StringComparison.Ordinal) || href.Contains("source-analysis", StringComparison.Ordinal) => 1,
+        { } href when href.Contains("integration-quality-review", StringComparison.Ordinal) => 2,
+        { } href when href.Contains("test-data", StringComparison.Ordinal) => 3,
+        _ => 4,
+    };
+
+    /// <summary>Connected Systems' own manual / automated readiness words.</summary>
+    private static string AltinnState(AltinnReadinessState state) => state switch
+    {
+        AltinnReadinessState.Ready => "Ready", AltinnReadinessState.Partial => "Partial", AltinnReadinessState.Blocked => "Blocked", _ => "Not assessed",
     };
 
     /// <summary>A matrix cell from the journey's shared readiness dimension (fallback when the backend sent none).</summary>
@@ -710,6 +803,7 @@
             }
         </dl>
         <AltinnEnvironmentStatus EnvironmentId="@_profile!.Id" />
+        <BirkNext.Web.Components.TestDataTesterReadiness Heading="Test Data" ShowOwnerLink="true" TestId="snt-rapport-test-data" />
         @ReadinessDimensions(view.Journey.JourneyId)
         @if (ApplicableSourceValues.Count > 0 && _applyResult is null)
         {
@@ -971,6 +1065,11 @@
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
             try { if (journeysApi.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token) is { } guidance) _guidance = (await guidance)?.Value is { } loaded ? SourceGuidancePresentation.Resolved(loaded) : null; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+        }
+        if (Services.GetService<IAltinnEnvironmentApiService>() is { } altinnApi)
+        {
+            try { _altinn = (await altinnApi.GetAsync(_profile.Id, _disposed.Token)).Value; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _altinn = null; }
         }
         try
         {

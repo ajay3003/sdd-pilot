@@ -241,7 +241,7 @@
                 @if (choices.Count <= 1) { <p class="ip-muted" data-testid="ip-edit-evidence-meaning">@IntegrationTemplatePresentation.Meaning(EvidenceState)</p> }
                 @if (choices.Count == 0)
                 {
-                    <p class="ip-editor-actions"><a class="ip-link" href="project-import" data-testid="ip-edit-evidence-import">Import @status.Role.Label source</a></p>
+                    <p class="ip-editor-actions"><a class="ip-link" href="@BirkNext.Web.Services.ProjectImport.ProjectImportPresentation.ImportSourceHref" data-testid="ip-edit-evidence-import">Import @status.Role.Label source</a></p>
                 }
                 else if (choices.Count == 1)
                 {

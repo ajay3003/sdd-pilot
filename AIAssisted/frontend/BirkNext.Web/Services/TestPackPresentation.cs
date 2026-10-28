@@ -184,7 +184,7 @@ public static class TestPackPresentation
                     // The source is bound; what is missing is the correlation of a logical role to its technical implementation.
                     ? new BlockerGroup(g.Key, Title(g.Key, "Source correlation"), "Source bound · component not correlated",
                         items[0].Detail, "Integration Quality Review → Setup & Evidence", "Review source evidence", SourceGuidancePresentation.ActionHref("iqr-evidence"), null, items)
-                    : new BlockerGroup(g.Key, Title(g.Key, "Source evidence"), "Missing", "No matching source has been imported.", "Import Project", "Import source", "/project-import", null, items),
+                    : new BlockerGroup(g.Key, Title(g.Key, "Source evidence"), "Missing", "No matching source has been imported.", "Import Project", "Import source", ProjectImport.ProjectImportPresentation.ImportSourceHref, null, items),
                 "run-configuration" => new BlockerGroup(g.Key, Title(g.Key, "Run configuration"), "Known · not saved for active run",
                     "These values are already known. An active run uses only values you explicitly save for it.", "Test pack run configuration",
                     "Review & apply safe configuration", SafeConfigurationAnchor, null, items)

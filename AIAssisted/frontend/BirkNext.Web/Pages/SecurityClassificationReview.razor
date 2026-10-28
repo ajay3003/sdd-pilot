@@ -20,10 +20,13 @@
    for one run and never stored; no mutation and no search for real classified children. Selecting snapshots only reads Source Analysis. *@
 <div class="sc-page">
     <PageHeader Title="M01 – Gradert tilgang (Kode 6/7)"
-                Description="This review covers M01 graded access and Kode 6 / Kode 7 classification, including classification propagation and authorization evidence: does the classification survive the change-capture (CDC) pipeline into the consuming service, and is a Kode 6 / Kode 7 child protected from unauthorized access? The same shared capability is also consumed by extensions such as Skolenærvær Testing.">
+                Description="Reviews Kode 6/7 classification, propagation and graded-access protection across the M2LB flow.">
         @if (_result is not null) { <button type="button" class="btn-secondary" data-testid="sc-export" @onclick="ExportAsync">Export HTML</button> }
     </PageHeader>
-    <p class="sc-muted" role="note" data-testid="sc-domain-extension">M01-specific review of graded access and Kode 6 / Kode 7 handling in M2LB (BiRK → M2LB). The underlying classification and authorization evidence is reusable by other domain extensions, including Skolenærvær. It is not a generic security review; see Technology Coverage for the reviews that apply to your project.</p>
+    <p class="sc-note" role="note" data-testid="sc-runtime-rule">Source/config evidence does not prove runtime enforcement.</p>
+    <ReviewDisclosure Text="About this review" CollapseText="Hide" TestId="sc-about" Class="disclosure-inline disclosure-small">
+        <p class="sc-muted" data-testid="sc-domain-extension">M01-specific review of graded access and Kode 6 / Kode 7 handling in M2LB (BiRK → M2LB): does the classification survive the change-capture (CDC) pipeline into the consuming service, and is a Kode 6 / Kode 7 child protected from unauthorized access? The underlying classification and authorization evidence comes from the shared Security Classification capability and is reused by other domain extensions, including Skolenærvær Testing. It is not a generic security review; see Technology Coverage for the reviews that apply to your project.</p>
+    </ReviewDisclosure>
 
     @if (_contextError is not null)
     {
@@ -70,6 +73,26 @@
             </dl>
         </section>
 
+        @* Security readiness: the shared capability's five dimensions in M01 words, each with its reason, its sources and one owner action.
+           Source dimensions are assessed without an environment; runtime authorization never follows from source. *@
+        <section class="sc-card sc-readiness" aria-labelledby="sc-readiness-heading" data-testid="sc-readiness">
+            <h2 id="sc-readiness-heading">Security readiness</h2>
+            <p class="sc-muted" data-testid="sc-source-summary"><span class="sc-label">Source evidence</span> @SourceSummary</p>
+            <ul class="sc-readiness-list">
+                @foreach (var row in ReadinessRows)
+                {
+                    <li class="sc-readiness-row" data-testid="sc-readiness-row" data-row="@row.Id" data-state="@row.State">
+                        <span class="sc-readiness-title">@row.Title</span>
+                        <span class="sc-badge sc-badge-@row.Tone" data-testid="sc-readiness-state">@row.State</span>
+                        <span class="sc-muted sc-readiness-reason">@row.Reason</span>
+                        @if (row.Sources is { Length: > 0 } sources) { <span class="sc-muted sc-readiness-sources" data-testid="sc-readiness-sources">Sources: @sources</span> }
+                        @if (row.Action is { } action) { <a class="sc-link" href="@action.Href" data-testid="sc-readiness-action">@action.Label</a> }
+                    </li>
+                }
+            </ul>
+            <p class="sc-muted">@ClassificationSourceCoverage.RuntimeNote</p>
+        </section>
+
         @* Stored reviews and the temporary test context come from one request; source evidence is loaded separately and stays usable if it fails. *@
         @if (_profile is not null)
         {
@@ -78,24 +101,27 @@
         }
         <section class="sc-card sc-source" aria-labelledby="sc-source-heading" data-testid="sc-source-evidence">
             <h2 id="sc-source-heading" tabindex="-1" @ref="_sourceHeading">Source evidence</h2>
-            <p class="sc-muted">Security source analysis uses snapshots managed by Source Analysis — one primary snapshot plus any related source you include, each kept with its own fingerprint. Nothing is uploaded here, and choosing a snapshot only reads Source Analysis (no runtime, Azure, database or GraphQL call).</p>
+            <p class="sc-muted">Snapshots are owned by Source Analysis. The source is chosen by its content — only a snapshot whose analysis holds classification or authorization evidence — never because it is the newest or the current project.</p>
             <SourceEvidencePrerequisite State="_scope" Prefix="sc" SourceAnalysisEnabled="FeatureViz.SourceAnalysis" ConsumerName="M01 – Gradert tilgang (Kode 6/7)" LoadError="@_sourceError"
                                         ReturnTo="security-classification-review" OtherSectionsNote="The runtime test context below stays configurable without source; source checks are not run without a snapshot.">
-                <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="sc" Busy="_busy" MissingEvidenceLabel="no security source evidence" OnPrimaryChanged="PrimaryChangedAsync" />
-                <ReviewSourceScopePanel State="_scope" Prefix="sc" Busy="_busy" EvidenceLabel="Security source evidence" MissingEvidenceLabel="no security source evidence"
-                                        RelatedExplanation="Suggested only when the primary snapshot's evidence ties another source to classification or authorization (a classification type it uses but does not declare, an imported security namespace, or a reference to a source with its own security evidence)."
-                                        NoRelatedText="No related security source detected in the primary snapshot's evidence."
-                                        OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusPrimaryAsync" OnRefresh="RefreshSourceAsync" />
-                <section class="sc-coverage" aria-labelledby="sc-coverage-heading" data-testid="sc-coverage-summary">
-                    <h3 id="sc-coverage-heading">Security source coverage</h3>
-                    <dl class="sc-coverage-list">
-                        @foreach (var row in _options!.Coverage)
-                        {
-                            <div data-testid="sc-coverage-row" data-row="@row.Id"><dt>@row.Title</dt><dd><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(row.State)">@ClassificationSourceCoverage.Label(row.State)</span> <span class="sc-muted">@row.Detail</span></dd></div>
-                        }
-                    </dl>
-                    <p class="sc-muted" data-testid="sc-coverage-note">@ClassificationSourceCoverage.RuntimeNote</p>
-                </section>
+                @if (_scope.PrimaryId is null && _scope.EvidenceRepositories.Count > 1)
+                {
+                    <p class="sc-decision" role="status" data-testid="sc-source-decision"><strong>Needs decision:</strong> @_scope.EvidenceRepositories.Count imported sources hold security evidence
+                        (@string.Join(", ", _scope.EvidenceRepositories)). Choose the primary source under Advanced source evidence; none is chosen for you.</p>
+                }
+                else if (_scope.Snapshots.Count > 0 && _scope.EvidenceRepositories.Count == 0)
+                {
+                    <p class="sc-decision" role="status" data-testid="sc-source-missing"><strong>Missing:</strong> none of the @_scope.Snapshots.Count imported source snapshot(s) contains classification or authorization evidence —
+                        infrastructure or messaging sources cannot prove application logic. <a class="sc-link" href="@BirkNext.Web.Services.ProjectImport.ProjectImportPresentation.ImportSourceHref">Import the M01/M2LB application source</a></p>
+                }
+                <ReviewDisclosure Text="Advanced source evidence (manual source binding)" CollapseText="Hide advanced source evidence" TestId="sc-advanced-source" Class="disclosure-inline"
+                                  Expanded="_advancedOpen" ExpandedChanged="open => _advancedOpen = open">
+                    <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="sc" Busy="_busy" MissingEvidenceLabel="no security source evidence" OnPrimaryChanged="PrimaryChangedAsync" />
+                    <ReviewSourceScopePanel State="_scope" Prefix="sc" Busy="_busy" EvidenceLabel="Security source evidence" MissingEvidenceLabel="no security source evidence"
+                                            RelatedExplanation="Suggested only when the primary snapshot's evidence ties another source to classification or authorization (a classification type it uses but does not declare, an imported security namespace, or a reference to a source with its own security evidence)."
+                                            NoRelatedText="No related security source detected in the primary snapshot's evidence."
+                                            OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusPrimaryAsync" OnRefresh="RefreshSourceAsync" />
+                </ReviewDisclosure>
 
                 @if (_options!.Evidence is { } evidence)
                 {
@@ -438,7 +464,7 @@
     private ClassificationReviewResult? _result;
     private ClassificationScopeOptions? _options;
     /// <summary>The source scope being edited (shared source components; never chosen automatically).</summary>
-    private readonly ReviewSourceScopeState _scope = new();
+    private readonly ReviewSourceScopeState _scope = new() { RecommendByEvidenceOnly = true };
     private SourceSnapshotSelector? _selector;
     private bool _busy;
     private string? _status;
@@ -530,7 +556,82 @@
         _status = _options?.Scope is not null ? $"Source evidence refreshed for {ScopeLabel}." : _status;
     }
 
-    private async Task FocusPrimaryAsync() { if (_selector is not null) await _selector.FocusAsync(); }
+    private bool _advancedOpen, _focusSelector, _autoPrimary;
+
+    /// <summary>"Choose source snapshot" opens Advanced source evidence, then focuses the picker after it renders.</summary>
+    private Task FocusPrimaryAsync() { _advancedOpen = true; _focusSelector = true; StateHasChanged(); return Task.CompletedTask; }
+
+    /// <summary>
+    /// The deterministic source: when nothing was restored and exactly one imported repository's analysis holds security evidence, it is used
+    /// (labelled as such, changeable under Advanced). Several → Needs decision; none → Missing. Never the newest or the current project by default.
+    /// </summary>
+    private async Task UseDeterministicSourceAsync()
+    {
+        if (_scope.PrimaryId is not null || _scope.EvidenceRepositories.Count != 1 || _scope.Current is not { } only) return;
+        _scope.PickPrimary(only.SnapshotId);
+        _autoPrimary = true;
+        await LoadScopeAsync();
+    }
+
+    private string SourceSummary => !FeatureViz.SourceAnalysis ? "Not available — Source Analysis is hidden."
+        : _sourceError is not null ? "Not available — Source Analysis could not be read."
+        : _scope.Primary is { } primary ? $"{(_options?.Evidence?.Detected == true ? "Ready" : "Partial")} · {primary.ArchiveName}{(_autoPrimary ? " (only imported source with security evidence)" : "")}"
+            + (_scope.Related.Count > 0 ? $" + {_scope.Related.Count} related source(s)" : "")
+        : _scope.EvidenceRepositories.Count > 1 ? "Needs decision — several sources hold security evidence."
+        : "Missing — no imported source holds classification or authorization evidence.";
+
+    private sealed record ReadinessAction(string Label, string Href);
+    private sealed record ReadinessRow(string Id, string Title, string State, string Tone, string Reason, string? Sources, ReadinessAction? Action);
+
+    /// <summary>The five dimensions: four from source (shared capability), runtime from the safe live checks of the latest review only.</summary>
+    private IReadOnlyList<ReadinessRow> ReadinessRows
+    {
+        get
+        {
+            var evidence = _options?.Evidence;
+            var coverage = _options?.Coverage is { Count: > 0 } rows ? rows : ClassificationSourceCoverage.Rows(evidence);
+            // Missing/partial source evidence is fixed by importing the application source (Import Project owns imports); an ambiguous choice is made
+            // under Advanced source evidence just below, so it has no second action here.
+            ReadinessAction? sourceAction = _scope.EvidenceRepositories.Count > 1 ? null
+                : new("Import application source", BirkNext.Web.Services.ProjectImport.ProjectImportPresentation.ImportSourceHref);
+            var list = new List<ReadinessRow>();
+            foreach (var row in coverage.Where(r => r.Id != "runtime"))
+            {
+                var (state, tone) = row.State switch
+                {
+                    ClassificationCoverageState.Detected => ("Ready", "ready"),
+                    ClassificationCoverageState.Partial => ("Partial", "attention"),
+                    ClassificationCoverageState.NotFound => ("Missing", "attention"),
+                    _ => (_scope.PrimaryId is null && _scope.Snapshots.Count > 0 && _scope.EvidenceRepositories.Count == 0 ? "Missing" : "Not assessed", "muted"),
+                };
+                list.Add(new(row.Id, row.Title, state, tone, row.Detail, DimensionSources(evidence, row.Id), state is "Missing" or "Partial" ? sourceAction : null));
+            }
+            var (runtimeState, runtimeTone, runtimeReason, runtimeAction) = _profile is null
+                ? ("Not assessed", "muted", "No target environment selected.", new ReadinessAction("Select target environment", TargetHref(null)))
+                : _overview?.Latest is not { } latest || latest.Live.State is IntegrationEvidenceState.Unavailable or IntegrationEvidenceState.NotConfigured or IntegrationEvidenceState.NotFound or IntegrationEvidenceState.Stale or IntegrationEvidenceState.Error
+                    ? ("Not verified", "muted", "No runtime evidence from the safe live checks in this environment.", (ReadinessAction?)null)
+                : latest.Live.State is IntegrationEvidenceState.NotAuthorized or IntegrationEvidenceState.NotSupported
+                    ? ("Blocked", "attention", latest.Live.Reason is { Length: > 0 } why ? why : "A runtime prerequisite prevents the safe live checks.", null)
+                    : ("Verified", "ready", $"Safe live checks · {ClassificationLabels.Overall(latest.Overall)} · {latest.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC", null);
+            list.Add(new("runtime", "Runtime authorization", runtimeState, runtimeTone, runtimeReason, null, runtimeAction));
+            return list;
+        }
+    }
+
+    /// <summary>Merged provenance of one dimension: the sources of the facts it was read from.</summary>
+    private static string? DimensionSources(ClassificationSourceEvidence? evidence, string id)
+    {
+        if (evidence is null) return null;
+        var facts = id switch
+        {
+            "model" => evidence.Facts.Where(f => f.Id == "model-reference"),
+            "cdc" => evidence.Facts.Where(f => f.Area == ClassificationArea.Pipeline),
+            "guard" => evidence.Facts.Where(f => f.Id == "guard-logic"),
+            _ => evidence.Facts.Where(f => f.Area is ClassificationArea.DirectAccess or ClassificationArea.Search or ClassificationArea.GraphQL or ClassificationArea.ChildAccess or ClassificationArea.AuditAccess),
+        };
+        var sources = facts.SelectMany(f => f.Sources).ToList();
+        return sources.Count == 0 ? null : ClassificationPresentation.Sources(sources);
+    }
 
     // ── Readiness ──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -701,6 +802,7 @@
         // Stored reviews and the test context belong to an environment; source evidence belongs to the snapshot and loads without one.
         if (_profile is not null) await LoadOverviewAsync();
         await LoadScopeAsync();
+        await UseDeterministicSourceAsync();
     }
 
     private async Task LoadOverviewAsync()
@@ -722,6 +824,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusSelector && _selector is not null) { _focusSelector = false; await _selector.FocusAsync(); }
         if (_focusForm) { _focusForm = false; await _focus.FocusAsync(); }
         if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
     }

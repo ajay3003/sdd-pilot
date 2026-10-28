@@ -100,3 +100,9 @@
 .td-request-facts dd { overflow-wrap: anywhere; min-width: 0; }
 /* Link buttons in the candidates table need the darker primary for AA contrast on the table background. */
 ::deep [data-testid=td-candidates-panel] .btn-link { color: var(--clr-primary-hover, #1d4ed8); }
+
+/* Sources & configuration: compact per-source summary above the collapsed details. */
+.td-source-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .4rem .75rem; margin: .5rem 0; }
+.td-source-summary > div { border: 1px solid var(--clr-border, #ddd); border-radius: 6px; padding: .35rem .55rem; min-width: 0; }
+.td-source-summary dt { font-size: .75rem; color: var(--clr-text-subtle, #64748b); }
+.td-source-summary dd { margin: 0; font-weight: 600; }

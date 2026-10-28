@@ -292,3 +292,14 @@
 ::deep .ip-readiness-list { margin: .2rem 0 0; padding: 0; list-style: none; font-size: .8125rem; }
 ::deep .ip-readiness-list li { margin: .1rem 0; }
 ::deep .ip-small { font-size: .75rem; }
+
+/* Relevant integration proposals: stacked blocks (title, flow/journey, why, evidence, decision, action) — readable at any width. */
+.ip-proposal-list { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .75rem; }
+.ip-proposal-card { border: 1px solid var(--clr-border, #d5dbe5); border-radius: 8px; padding: .75rem .9rem; min-width: 0; overflow-wrap: anywhere; display: grid; gap: .35rem; }
+.ip-proposal-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; justify-content: space-between; }
+.ip-proposal-title { margin: 0; font-size: 1rem; }
+.ip-proposal-flow { margin: 0; font-weight: 600; }
+.ip-proposal-journey, .ip-proposal-block { margin: 0; }
+.ip-proposal-evidence, .ip-proposal-decision ul { margin: .15rem 0 0; padding-left: 1.1rem; }
+.ip-proposal-decision { border-left: 3px solid #b45309; padding-left: .5rem; }
+.ip-label { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: var(--clr-text-subtle, #64748b); margin-right: .35rem; }

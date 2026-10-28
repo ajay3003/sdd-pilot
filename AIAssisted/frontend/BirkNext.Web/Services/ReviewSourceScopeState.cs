@@ -20,7 +20,18 @@ public sealed class ReviewSourceScopeState
     public IReadOnlyList<ReviewSourceSnapshot> Snapshots => Options?.Snapshots ?? [];
     public ReviewSourceSnapshot? Primary => PrimaryId is { } id ? Snapshots.FirstOrDefault(s => s.SnapshotId == id) : null;
     /// <summary>Source Analysis' newest snapshot this review can use — offered as "Use this snapshot", never selected silently.</summary>
-    public ReviewSourceSnapshot? Current => Snapshots.Where(s => s.HasConsumerEvidence).MaxBy(s => s.AnalyzedAt) ?? Snapshots.MaxBy(s => s.AnalyzedAt);
+    public ReviewSourceSnapshot? Current => RecommendByEvidenceOnly
+        ? EvidenceRepositories.Count == 1 ? Snapshots.Where(HoldsSubject).MaxBy(s => s.AnalyzedAt) : null
+        : Snapshots.Where(s => s.HasConsumerEvidence).MaxBy(s => s.AnalyzedAt) ?? Snapshots.MaxBy(s => s.AnalyzedAt);
+    /// <summary>
+    /// Opt-in (a review whose evidence has a content-defined source role): only a snapshot whose own analysis holds this review's evidence is
+    /// recommended, and only when exactly one repository has it — never the newest snapshot overall (e.g. an infrastructure-only current project).
+    /// </summary>
+    public bool RecommendByEvidenceOnly { get; init; }
+    /// <summary>Repositories whose snapshots hold this review's evidence (several = a decision for the user, never guessed).</summary>
+    public IReadOnlyList<string> EvidenceRepositories => [.. Snapshots.Where(HoldsSubject).Select(s => s.Repository).Distinct(StringComparer.OrdinalIgnoreCase)];
+    /// <summary>The snapshot's analysis holds the review's subject (falls back to "has evidence" for reviews that do not distinguish).</summary>
+    private static bool HoldsSubject(ReviewSourceSnapshot s) => s.HasConsumerSubject ?? s.HasConsumerEvidence;
     public List<RelatedSourceCandidate> NotIncluded => Options?.Candidates.Where(c => !Related.ContainsKey(c.RepositoryKey)).ToList() ?? [];
     public List<ReviewSourceSnapshot> Newer => (Options?.Newer ?? []).Where(n => !KeptNewer.Contains(n.SnapshotId)).ToList();
     /// <summary>A selection the backend resolved exactly (bound to a run only when it is run).</summary>

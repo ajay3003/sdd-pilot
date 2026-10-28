@@ -31,7 +31,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     public void FourPrimaryCardsAndActionableConfirmationFilter()
     {
         var cut = Open();
-        cut.FindAll(".ip-summary dt").Select(d => d.TextContent).Should().Equal("Environment", "Configured integrations", "Source-discovered candidates", "Runtime evidence");
+        cut.FindAll(".ip-summary dt").Select(d => d.TextContent).Should().Equal("Environment", "Configured integrations", "Relevant proposals", "Technical relationships", "Runtime evidence");
         cut.FindAll("[data-testid=ip-summary-ready]").Should().BeEmpty("no source report, so there is no ready-to-review count to show");
         cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Setup required");
         cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("15 mappings need confirmation");

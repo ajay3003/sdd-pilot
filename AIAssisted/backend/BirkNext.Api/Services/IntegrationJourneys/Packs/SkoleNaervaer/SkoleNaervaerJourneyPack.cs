@@ -71,7 +71,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     /// <summary>Message Verification: the read-only Rapportmottak scenario, offered as the pack's verification view (nothing is sent).</summary>
     public IReadOnlyList<TestPackView> VerificationViews { get; } =
-        [new("message-verification", "Message Verification", TestPackViewKind.Verification, RapportmottakId, MessageVerificationScenario,
+        [new("message-verification", "Runtime Message Verification", TestPackViewKind.Verification, RapportmottakId, MessageVerificationScenario,
             "Read-only verification of what happened to one message, from recorded and telemetry evidence.")];
 
     public IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities { get; } =
@@ -151,6 +151,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             // MU's source implements the receiving side of the webhook; the Altinn app reference describes what the sender submits.
             EvidenceSourceSide = BirkNext.Integrations.IntegrationSourceSide.Consumer,
             // A report fixture: the child is form data (the form binding's own element path); the reporter is the Altinn actor, never in the XML.
+            // A valid fixture created in Test Data is this pack's valid report payload (the journey's "Valid report payload" role).
+            FixtureCapabilities = ["skolenaervaer-report"],
             FixtureBindings =
             [
                 new("Child", "child", new SkoleNaervaerAltinnForm().Fields.Single(field => field.Key == SkoleNaervaerAltinnForm.ChildIdentifier).Path, "The child the report is about."),

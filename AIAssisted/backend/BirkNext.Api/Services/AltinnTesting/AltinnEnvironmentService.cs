@@ -19,7 +19,8 @@ namespace BirkNext.Api.Services.AltinnTesting;
 /// </summary>
 public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore store, IIntegrationMessageFlowStore messageFlows, AltinnTestingPolicy policy,
     AltinnAppContractService contracts, IIntegrationCatalogService catalog, ITrustedExecutionEnvironmentRegistry trusted, IHttpClientFactory http,
-    IEnumerable<IIntegrationJourneyPack>? packs = null)
+    IEnumerable<IIntegrationJourneyPack>? packs = null, BirkNext.Api.Services.TestData.TestDataCatalog? testData = null,
+    BirkNext.Api.Services.TestData.ITestDataSchemaSource? schemas = null)
 {
     public const string FormDataTypeKey = "Application.FormDataType";
     public const string ContentTypeKey = "Payload.ContentType";
@@ -182,8 +183,12 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         });
 
         var identities = Identities();
-        var view = Assess(environmentId, saved, fields, identities, config, contract, targetBlock, approved is not null, clientProblem);
-        return view with { Detected = detect, Notes = notes, Contract = ContractItem(contract) };
+        var formDataType = fields.FirstOrDefault(field => field.Key == "form-data-type");
+        // The payload is looked up by the form's contract identifier, applied or only suggested (a lookup, not configuration); the contract card's
+        // "identifier known" still requires an applied value.
+        var xml = await XmlFixtureAsync(formDataType?.Value, ct);
+        var view = Assess(environmentId, saved, fields, identities, config, contract, targetBlock, approved is not null, clientProblem, xml);
+        return view with { Detected = detect, Notes = notes, Contract = ContractItem(contract, formDataType is not null && Satisfied(formDataType)) };
     }
 
     /// <summary>The value one semantic key has in the built-in test pack references scoped exactly to <paramref name="appId"/>, with a provenance
@@ -208,7 +213,37 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         return values.Count == 1 ? facts[0] : null;
     }
 
-    private static AltinnReadinessItem ContractItem(AltinnAppContractView contract)
+    /// <summary>
+    /// The report payload in canonical Test Data: approved positive XML fixtures for the form's contract, judged by the shared rule
+    /// (<see cref="BirkNext.TestData.TestDataXmlReadiness"/>) — the same one Test Data, Setup Library preflight and Skolenærvær use. Null when Test
+    /// Data is not available in this host (then payload readiness is not part of the assessment) or the contract identifier is unknown.
+    /// </summary>
+    private async Task<(BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)?> XmlFixtureAsync(string? contract, CancellationToken ct)
+    {
+        if (testData is null || string.IsNullOrWhiteSpace(contract)) return null;
+        var fixtures = testData.Assets().Where(asset => BirkNext.TestData.TestDataXmlReadiness.IsFixtureFor(asset.MediaType, asset.Schema, asset.Capabilities, contract)).ToList();
+        var facts = new List<BirkNext.TestData.TestDataXmlFixtureFacts>();
+        foreach (var asset in fixtures)
+        {
+            var check = asset.Approval == BirkNext.TestData.TestDataApproval.Approved && schemas is not null
+                ? BirkNext.Api.Services.TestData.TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct)) : null;
+            facts.Add(new(asset.Alias, asset.Approval == BirkNext.TestData.TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId));
+        }
+        var (state, fixture) = BirkNext.TestData.TestDataXmlReadiness.Evaluate(facts);
+        return (state, fixture?.Alias);
+    }
+
+    private static string XmlProblem(BirkNext.TestData.TestDataXmlReadinessState state) => state switch
+    {
+        BirkNext.TestData.TestDataXmlReadinessState.Missing => "missing",
+        BirkNext.TestData.TestDataXmlReadinessState.NotApproved => "not approved",
+        BirkNext.TestData.TestDataXmlReadinessState.Invalid => "invalid against its XSD",
+        BirkNext.TestData.TestDataXmlReadinessState.Outdated => "needs revalidation",
+        BirkNext.TestData.TestDataXmlReadinessState.SchemaUnavailable => "cannot be validated (schema unavailable)",
+        _ => "not validated",
+    };
+
+    private static AltinnReadinessItem ContractItem(AltinnAppContractView contract, bool identifierKnown = false)
     {
         var sources = contract.Sources.Select(source => source.Source switch
         {
@@ -220,11 +255,15 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var from = sources.Count == 0 ? "No contract evidence" : string.Join(" · ", sources);
         return contract.Complete ? new("contract", "Report contract", AltinnReadinessState.Ready, from)
             : sources.Count > 0 ? new("contract", "Report contract", AltinnReadinessState.Partial, $"{from} · missing: {string.Join("; ", contract.Missing.DefaultIfEmpty("not confirmed"))}")
+            // A known contract identifier is evidence maturity "Identifier known" — Partial, never Missing; deployed/source evidence is still incomplete.
+            : identifierKnown ? new("contract", "Report contract", AltinnReadinessState.Partial,
+                $"Contract identifier known · deployed/source contract evidence incomplete{(contract.Missing.Count > 0 ? $" ({string.Join("; ", contract.Missing)})" : "")}")
             : new("contract", "Report contract", AltinnReadinessState.Blocked, "No contract evidence yet. Read the public TT02 metadata or use the app's Source Analysis.");
     }
 
     private AltinnEnvironmentView Assess(string environmentId, AltinnEnvironmentSettings saved, List<AltinnSettingField> fields, IReadOnlyList<AltinnIdentitySummary> identities,
-        AltinnTestConfiguration config, AltinnAppContractView contract, string? targetBlock, bool appApproved, string? clientProblem)
+        AltinnTestConfiguration config, AltinnAppContractView contract, string? targetBlock, bool appApproved, string? clientProblem,
+        (BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)? xml = null)
     {
         AltinnSettingField F(string key) => fields.First(field => field.Key == key);
         var environmentValue = F("environment");
@@ -247,11 +286,16 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             }
         if (!reporter) { manualGaps.Add("Reporter: missing"); manualMissing.Add("Reporter"); }
         if (!child) { manualGaps.Add("Synthetic child: missing"); manualMissing.Add("Child"); }
+        // The report payload: identities are who is involved, the XML fixture is what is submitted — manual submission needs both.
+        var xmlReady = xml is null || xml.Value.State == BirkNext.TestData.TestDataXmlReadinessState.Ready;
+        if (!xmlReady) { manualGaps.Add($"XML fixture: {XmlProblem(xml!.Value.State)}"); manualMissing.Add("XML fixture"); }
+        var contractNote = contract.Complete ? "Contract evidence is complete." : "Contract evidence is still incomplete.";
         var manual = production
             ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Blocked, "The environment is Production; Altinn testing never runs there.")
             : manualGaps.Count == 0
-                ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Ready, "TT02 app, reporter, child, integration and contract are known.")
-                : new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Partial, string.Join(" · ", manualGaps));
+                ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Ready,
+                    $"Ready for manual submission preparation: app, reporter, child and integration are configured{(xml is null ? "" : ", the XML fixture is valid")} and the contract identifier is known. {contractNote}")
+                : new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Partial, string.Join(" · ", manualGaps) + $". {contractNote}");
 
         // Automated execution additionally needs the unattended client, the secret, trust and approval; every reason stays explicit.
         var blockers = new List<string>(manualGaps);
@@ -278,13 +322,21 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var summary = new List<AltinnReadinessItem>
         {
             new("app", "App", appState, appState == AltinnReadinessState.Ready ? $"{F("environment").Value} · {F("app").Value}" : "Environment, app or base URL is missing, in conflict or only suggested (not applied)."),
-            new("authentication", "Authentication", authState, authState == AltinnReadinessState.Ready ? "Unattended client complete." : "Unattended client incomplete — only automated execution needs it."),
             new("identities", "Test identities", reporter && child ? AltinnReadinessState.Ready : reporter || child ? AltinnReadinessState.Partial : AltinnReadinessState.Blocked,
-                $"Reporter {(reporter ? confirmedReporter ? "configured · profile confirmed" : "configured · profile not confirmed" : "missing")} · child {(child ? "configured" : "missing")}"),
+                $"Who is involved: reporter {(reporter ? confirmedReporter ? "configured · profile confirmed" : "configured · profile not confirmed" : "missing")} · child {(child ? "configured" : "missing")}"),
+        };
+        if (xml is { } payload)
+            summary.Add(new("testdata", "Test data", payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready ? AltinnReadinessState.Ready
+                : payload.State == BirkNext.TestData.TestDataXmlReadinessState.Missing ? AltinnReadinessState.Blocked : AltinnReadinessState.Partial,
+                payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready ? $"What is submitted: XML fixture {payload.Alias} · valid against its XSD (schema-valid is not business-valid)"
+                    : $"What is submitted: XML fixture {XmlProblem(payload.State)}{(payload.Alias is { } alias ? $" ({alias})" : "")} · owner: Test Data"));
+        summary.AddRange(new List<AltinnReadinessItem>
+        {
+            new("authentication", "Authentication", authState, authState == AltinnReadinessState.Ready ? "Unattended client complete." : "Unattended client incomplete — only automated execution needs it."),
             new("runtime", "Runtime", observations.Count > 0 ? AltinnReadinessState.Partial : AltinnReadinessState.NotAssessed,
                 observations.Count > 0 ? $"Observed ({observations.Count} observation{(observations.Count == 1 ? "" : "s")}); not verified by BirkNext." : "Not verified."),
             new("automated", "Automated execution", automated.State, automated.Reason),
-        };
+        });
 
         var required = fields.Where(field => field.Requirement != AltinnRequirement.Optional).ToList();
         var gaps = required.Where(field => field.State is AltinnSettingState.Missing or AltinnSettingState.Conflict or AltinnSettingState.Declared)

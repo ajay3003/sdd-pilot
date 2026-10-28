@@ -63,7 +63,7 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
     {
         UseRichSource();
         var cut = Open();
-        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().Equal("Configured integrations", "Integration candidates from Source Analysis", "Source evidence", "Advanced");
+        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().Equal("Configured integrations", "Relevant integration proposals", "Technical relationships from Source Analysis", "Source evidence", "Advanced");
         cut.Find("[data-testid=ip-summary-env]").TextContent.Should().Be("Development · m2lbdev.bufetat.no");
         cut.Find("[data-testid=ip-summary-suggestions]").TextContent.Should().Be("32");
         cut.FindAll("[data-testid=ip-suggestion]").Should().BeEmpty("32 candidate rows are never listed until requested");
@@ -109,13 +109,14 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         UseRichSource(5);
         _api.Catalog = new IntegrationCatalog { EnvironmentId = "dev" };
         var cut = Open();
-        cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured for Development.").And.Contain("5 integration candidates were discovered from Source Analysis.");
-        cut.Find("[data-testid=ip-empty-review]").TextContent.Should().Be("Review integration candidates");
+        cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured for Development.")
+            .And.Contain("No relevant integration proposals currently require review. 5 technical relationships were discovered from source.", "technical relationships are not proposals");
+        cut.Find("[data-testid=ip-empty-review]").TextContent.Should().Be("Show technical relationships");
         cut.Find("[data-testid=ip-empty-add]").TextContent.Should().Be("Add manually");
-        cut.FindAll("button").Count(b => b.TextContent.Trim() == "Review integration candidates").Should().Be(1, "exactly one review CTA");
+        cut.FindAll("button").Count(b => b.TextContent.Trim() == "Show technical relationships").Should().Be(1, "exactly one review CTA");
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Contains("Review suggestions"));
-        cut.Find("[data-testid=ip-empty-review]").ClassList.Should().Contain("btn-primary", "reviewing the candidates is the next action");
-        cut.Find("[data-testid=ip-empty-add]").ClassList.Should().Contain("btn-secondary");
+        cut.Find("[data-testid=ip-empty-review]").ClassList.Should().Contain("btn-secondary", "technical evidence is secondary; without proposals manual add is the primary action");
+        cut.Find("[data-testid=ip-empty-add]").ClassList.Should().Contain("btn-primary");
         cut.FindAll("[data-testid=ip-add], [data-testid=ip-review-suggestions]").Should().BeEmpty("the empty state owns the actions; nothing is duplicated above it");
         cut.Find("[data-testid=ip-empty-review]").Click();
         cut.FindAll("[data-testid=ip-suggestion]").Should().NotBeEmpty();

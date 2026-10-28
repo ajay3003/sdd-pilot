@@ -65,10 +65,22 @@
         <div class="mfr-view" data-testid="mfr-view-overview" hidden="@(_section != "overview")">
         <section class="mfr-card" aria-labelledby="mfr-flow-heading">
             <h3 id="mfr-flow-heading">Overview and flow</h3>
-            <label>Flow name <input @bind="_name" /></label>
+            @if (FlowSequence(package.Flow) is { Length: > 0 } sequence) { <p class="mfr-sequence" data-testid="mfr-sequence">@sequence</p> }
             <p>@package.Flow.Description</p>
-            @if (package.Flow.Limitations.Count > 0) { <ul class="mfr-limitations">@foreach (var limitation in package.Flow.Limitations) { <li>@limitation</li> }</ul> }
-            <details class="mfr-editor"><summary>Edit flow nodes and hops</summary>
+            <p class="mfr-note" data-testid="mfr-maturity-note">Technical status is derived from evidence maturity. Runtime/deployed behavior has not been verified.</p>
+            <ol class="mfr-flow" data-testid="mfr-hops">
+                @foreach (var hop in package.Flow.Hops)
+                {
+                    var from = package.Flow.Nodes.FirstOrDefault(n => n.Id == hop.FromNodeId);
+                    var to = package.Flow.Nodes.FirstOrDefault(n => n.Id == hop.ToNodeId);
+                    <li data-testid="mfr-hop" data-state="@hop.Evidence.State"><strong>@from?.Name → @to?.Name</strong><span>@hop.Mechanism</span><small><span class="mfr-maturity">@hop.Evidence.State</span> · owner: @to?.StateOwner</small>@if (hop.PayloadMode is FlowPayloadMode.Reference or FlowPayloadMode.EncryptedReference) { <small>Payload mode: @hop.PayloadMode. The broker may carry a reference, not business content.</small> }</li>
+                }
+            </ol>
+            <p class="mfr-note">Documented or source-declared flows do not prove runtime delivery. Transport receipt, application receipt and business completion remain distinct.</p>
+            @if (package.Flow.Limitations.Count > 0) { <ReviewDisclosure Text="@($"Flow limitations ({package.Flow.Limitations.Count})")" CollapseText="Hide flow limitations" TestId="mfr-limitations" Class="disclosure-inline disclosure-small"><ul class="mfr-limitations">@foreach (var limitation in package.Flow.Limitations) { <li>@limitation</li> }</ul></ReviewDisclosure> }
+            <ReviewDisclosure Text="Advanced / Edit flow" CollapseText="Hide flow editor" TestId="mfr-edit-flow" Class="disclosure-inline disclosure-small">
+            <label>Flow name <input @bind="_name" /></label>
+            <div class="mfr-editor">
                 <div class="mfr-form">
                     <label>New node name<input @bind="_newNode" /></label>
                     <label>Role<select @bind="_newRole">@foreach (var role in Enum.GetValues<FlowNodeRole>()) { <option value="@role">@role</option> }</select></label>
@@ -80,20 +92,18 @@
                     <button type="button" class="btn-secondary" @onclick="AddHop" disabled="@(package.Flow.Nodes.Count < 2)">Add hop (Not assessed)</button>
                 </div>
                 <p>Manual entries are not source-confirmed until evidence is supplied; current editor records them as Not assessed.</p>
-            </details>
-            <ol class="mfr-flow">
-                @foreach (var hop in package.Flow.Hops)
-                {
-                    var from = package.Flow.Nodes.FirstOrDefault(n => n.Id == hop.FromNodeId);
-                    var to = package.Flow.Nodes.FirstOrDefault(n => n.Id == hop.ToNodeId);
-                    <li><strong>@from?.Name → @to?.Name</strong><span>@hop.Mechanism</span><small>@hop.Evidence.State · owner: @to?.StateOwner</small>@if (hop.PayloadMode is FlowPayloadMode.Reference or FlowPayloadMode.EncryptedReference) { <small>Payload mode: @hop.PayloadMode. The broker may carry a reference, not business content.</small> }</li>
-                }
-            </ol>
-            <p class="mfr-note">Documented or source-declared flows do not prove runtime delivery. Transport receipt, application receipt and business completion remain distinct.</p>
+            </div>
+            </ReviewDisclosure>
         </section>
             <section class="mfr-card" aria-labelledby="mfr-validate-heading"><h3 id="mfr-validate-heading">Validation and error paths</h3>
                 @if (package.Flow.Validation.Count > 0) { <ul>@foreach (var v in package.Flow.Validation) { <li><strong>@v.Layer</strong> — @v.Outcome <small>(@v.Owner · @v.Evidence.State)</small></li> }</ul> }
-                @foreach (var error in package.Flow.ErrorPaths) { <article class="mfr-error"><strong>@error.Condition</strong><span>Owner: @error.Owner</span><span>@error.ExpectedHandling</span><small>Retry: @Display(error.RetryPolicy) · Hold: @Display(error.HoldPolicy) · Dead-letter: @Display(error.DeadLetterPolicy)</small><small>Final state: @error.FinalState · @error.Evidence.State</small></article> }
+                @if (package.Flow.ErrorPaths.Count > 0)
+                {
+                    <ul class="mfr-error-summary" data-testid="mfr-error-summary">@foreach (var error in package.Flow.ErrorPaths) { <li><strong>@error.Condition</strong> <span class="mfr-maturity">@error.Evidence.State</span></li> }</ul>
+                    <ReviewDisclosure Text="Show error-path details" CollapseText="Hide error-path details" TestId="mfr-error-details" Class="disclosure-inline disclosure-small">
+                        @foreach (var error in package.Flow.ErrorPaths) { <article class="mfr-error"><strong>@error.Condition</strong><span>Owner: @error.Owner</span><span>@error.ExpectedHandling</span><small>Retry: @Display(error.RetryPolicy) · Hold: @Display(error.HoldPolicy) · Dead-letter: @Display(error.DeadLetterPolicy)</small><small>Final state: @error.FinalState · @error.Evidence.State</small></article> }
+                    </ReviewDisclosure>
+                }
                 <details><summary>Add a documented error path</summary><div class="mfr-form"><label>Condition<input @bind="_errorCondition" /></label><label>State owner<input @bind="_errorOwner" /></label><label>Expected handling<input @bind="_errorHandling" /></label><label>Transport retry policy<input @bind="_retryPolicy" /></label><label>Domain hold policy<input @bind="_holdPolicy" /></label><label>Dead-letter policy<input @bind="_deadLetterPolicy" /></label><button type="button" class="btn-secondary" @onclick="AddErrorPath">Add error path</button></div></details>
             </section>
         </div>
@@ -279,6 +289,16 @@
 </section>
 
 @code {
+    /// <summary>The flow as one compact node sequence ("Altinn → MU → Queue → …"), following the hops in order; empty without hops.</summary>
+    private static string FlowSequence(MessageFlowDefinition flow)
+    {
+        if (flow.Hops.Count == 0) return "";
+        string Name(string id) => flow.Nodes.FirstOrDefault(n => n.Id == id)?.Name ?? id;
+        var names = new List<string> { Name(flow.Hops[0].FromNodeId) };
+        foreach (var hop in flow.Hops) { var to = Name(hop.ToNodeId); if (names[^1] != Name(hop.FromNodeId)) names.Add(Name(hop.FromNodeId)); names.Add(to); }
+        return string.Join(" → ", names);
+    }
+
     [Parameter] public string? EnvironmentId { get; set; }
     /// <summary>True when Target Environment → Connected Systems has an Altinn system: its owned fields are read-only here (one owner).</summary>
     private bool _altinnOwned;

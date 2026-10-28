@@ -50,7 +50,9 @@ public sealed class ClassificationSourceScopeService(IReviewSourceEvidenceProvid
     };
 
     /// <summary>Whether a snapshot carries this review's security classification observations.</summary>
-    public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => new(s.SecurityClassificationEvidence is { Unavailable: null }, EvidenceNote(s), SourceSecurityContext(s));
+    /// <summary>Available = classification evidence was extracted; Subject = that extraction found a classification model (levels) in this snapshot.</summary>
+    public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => new(s.SecurityClassificationEvidence is { Unavailable: null }, EvidenceNote(s), SourceSecurityContext(s),
+        s.SecurityClassificationEvidence is { Unavailable: null, Levels.Count: > 0 });
 
     /// <summary>Security-relevant Source Analysis evidence beside this review's own observations: identity/security configuration, IaC access
     /// assignments and contract fields named like a classification. Context only — a declared role or a classification field is not enforcement;

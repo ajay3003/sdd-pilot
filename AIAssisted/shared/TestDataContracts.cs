@@ -225,3 +225,43 @@ public sealed record TestDataResolutionResult(List<TestDataRoleResolution> Roles
 
     public TestDataRoleResolution? Role(string role) => Roles.FirstOrDefault(item => string.Equals(item.Role, role, StringComparison.Ordinal));
 }
+
+/// <summary>How ready a contract's XML fixture is for test use (Test Data readiness only, never runtime delivery).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataXmlReadinessState { Missing, NotApproved, Ready, Outdated, Invalid, NotValidated, SchemaUnavailable }
+
+/// <summary>One saved XML fixture as the readiness rule needs it: approval, the schema check's status and the snapshot it was checked against.</summary>
+public sealed record TestDataXmlFixtureFacts(string Alias, bool Approved, TestDataSchemaStatus? SchemaStatus, Guid? SchemaSnapshotId);
+
+/// <summary>
+/// The one XML fixture readiness rule, shared by Test Data and its consumers (browser) and Setup Library preflight (backend), so a fixture
+/// never reads Ready in one place and Invalid in another. Only approved fixtures count; a positive fixture is Ready when its schema check is
+/// Validated against the current schema snapshot (when one is known). Outdated: validated against another snapshot. Invalid wins over
+/// not-validated. Schema-valid is not business-valid.
+/// </summary>
+public static class TestDataXmlReadiness
+{
+    /// <summary>A positive XML fixture for the contract: XML media type, schema file (or label) named exactly the contract, not a negative test.</summary>
+    public static bool IsFixtureFor(string? mediaType, TestDataSchemaReference? schema, IEnumerable<string> capabilities, string contract) =>
+        string.Equals(mediaType, "application/xml", StringComparison.OrdinalIgnoreCase) && schema is not null
+        && (string.Equals(Stem(schema.SchemaPath), contract, StringComparison.OrdinalIgnoreCase) || string.Equals(Stem(schema.Label), contract, StringComparison.OrdinalIgnoreCase))
+        && !capabilities.Contains("negative-test", StringComparer.OrdinalIgnoreCase);
+
+    private static string Stem(string? path) => path is { Length: > 0 } ? System.IO.Path.GetFileNameWithoutExtension(path.Replace('\\', '/').Split('/').Last()) : "";
+
+    /// <summary>The state and the fixture it is about (the ready one, else the most relevant one); null fixture only when Missing.</summary>
+    public static (TestDataXmlReadinessState State, TestDataXmlFixtureFacts? Fixture) Evaluate(IReadOnlyList<TestDataXmlFixtureFacts> fixtures, Guid? currentSnapshot = null)
+    {
+        if (fixtures.Count == 0) return (TestDataXmlReadinessState.Missing, null);
+        var approved = fixtures.Where(f => f.Approved).ToList();
+        if (approved.Count == 0) return (TestDataXmlReadinessState.NotApproved, fixtures[0]);
+        var validated = approved.Where(f => f.SchemaStatus == TestDataSchemaStatus.Validated).ToList();
+        if (validated.FirstOrDefault(f => currentSnapshot is null || f.SchemaSnapshotId is null || f.SchemaSnapshotId == currentSnapshot) is { } ready)
+            return (TestDataXmlReadinessState.Ready, ready);
+        if (validated.Count > 0) return (TestDataXmlReadinessState.Outdated, validated[0]);
+        if (approved.FirstOrDefault(f => f.SchemaStatus == TestDataSchemaStatus.Invalid) is { } invalid) return (TestDataXmlReadinessState.Invalid, invalid);
+        if (approved.FirstOrDefault(f => f.SchemaStatus is TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved) is { } unavailable)
+            return (TestDataXmlReadinessState.SchemaUnavailable, unavailable);
+        return (TestDataXmlReadinessState.NotValidated, approved[0]);
+    }
+}

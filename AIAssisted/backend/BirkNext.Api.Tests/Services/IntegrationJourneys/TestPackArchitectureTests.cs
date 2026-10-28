@@ -168,7 +168,7 @@ public sealed class TestPackArchitectureTests
             ("periodeavslutning", "Periodeavslutning", "Skolenærværsrapport → Service Bus → Bufdata"));
         descriptor.Journeys[0].ExecutionMode.Should().Be(JourneyExecutionMode.DelegatedToActiveEvent);
         descriptor.Journeys[0].ExecutionProvider.Should().Be("skolenaervaer.cdc");
-        descriptor.VerificationViews.Should().ContainSingle().Which.Should().Be(new TestPackView("message-verification", "Message Verification", TestPackViewKind.Verification,
+        descriptor.VerificationViews.Should().ContainSingle().Which.Should().Be(new TestPackView("message-verification", "Runtime Message Verification", TestPackViewKind.Verification,
             "rapportmottak", "message-verification", "Read-only verification of what happened to one message, from recorded and telemetry evidence."));
         descriptor.RuleIds.Should().Equal("mm-no-person", "skoleadapter-no-person", "utdanning-person", "rapport-person");
         descriptor.Navigation.Select(group => group.Label).Should().Equal("Overview", "Journeys", "Security", "Verify", "History");

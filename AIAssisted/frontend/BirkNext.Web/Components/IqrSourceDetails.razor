@@ -13,9 +13,9 @@
         <dt>Coverage gaps</dt><dd>Cross-layer: @Snapshot.Dataflows.Count(f => f.Gap.StartsWith("Cross-layer gap:")) · Runtime: @Snapshot.Coverage.Count(c => c.Statuses.Contains(SourceCoverageStatus.RuntimeGap)) · E2E: @Snapshot.Coverage.Count(c => c.Statuses.Contains(SourceCoverageStatus.E2EGap)) (not exercised)</dd>
     </dl>
     <p>Implementation contract derived from source. Formal schema and runtime compatibility are assessed separately. Developer tests exist; execution results are unavailable.</p>
-    <details><summary>Projects and services (@Snapshot.Projects.Count)</summary><ul>@foreach (var project in Snapshot.Projects) { <li>@project.Name — @project.Classification · @project.Path · @project.Confidence</li> }</ul></details>
-    @if (Snapshot.Configurations.Count > 0) { <details><summary>Configuration keys (values excluded)</summary><ul>@foreach (var configuration in Snapshot.Configurations) { <li>@configuration.File · @configuration.Confidence · @string.Join(", ", configuration.Keys)</li> }</ul></details> }
-    <details><summary>Contract rules, routes, operations and coverage (@Snapshot.Rules.Count)</summary>
+    <ReviewDisclosure Text="@($"Projects & services · {Snapshot.Projects.Count} discovered")" CollapseText="Hide projects & services" TestId="iqr-src-projects" Class="disclosure-inline"><ul>@foreach (var project in Snapshot.Projects) { <li>@project.Name — @project.Classification · @project.Path · @project.Confidence</li> }</ul></ReviewDisclosure>
+    @if (Snapshot.Configurations.Count > 0) { <ReviewDisclosure Text="@($"Configuration keys · {Snapshot.Configurations.Count} files / {Snapshot.Configurations.Sum(c => c.Keys.Count)} keys inspected (values excluded)")" CollapseText="Hide configuration keys" TestId="iqr-src-config" Class="disclosure-inline"><ul>@foreach (var configuration in Snapshot.Configurations) { <li>@configuration.File · @configuration.Confidence · @string.Join(", ", configuration.Keys)</li> }</ul></ReviewDisclosure> }
+    <ReviewDisclosure Text="@($"Contract rule evidence · {Snapshot.Rules.Count} rules/routes/operations inspected")" CollapseText="Hide rule evidence" TestId="iqr-src-rules" Class="disclosure-inline">
         <div class="source-table" tabindex="0" role="region" aria-label="Contract coverage matrix">
             <table><thead><tr><th>Rule</th><th>Source</th><th>Developer coverage</th><th>Runtime evidence / gap</th></tr></thead><tbody>
             @foreach (var rule in Snapshot.Rules)
@@ -28,18 +28,18 @@
             }
             </tbody></table>
         </div>
-    </details>
-    <details><summary>Security dataflow and cross-layer gaps (@Snapshot.Dataflows.Count)</summary>
+    </ReviewDisclosure>
+    <ReviewDisclosure Text="@($"Security dataflow and cross-layer gaps · {Snapshot.Dataflows.Count}")" CollapseText="Hide security dataflow" TestId="iqr-src-dataflow" Class="disclosure-inline">
         @foreach (var flow in Snapshot.Dataflows) { <p><strong>@flow.Field</strong> · @flow.Confidence<br />@string.Join(" → ", flow.Steps)<br />Guard: @flow.GuardSymbol<br />@flow.Gap</p>
             @foreach (var test in Snapshot.Tests.Where(t => flow.DeveloperTestIds?.Contains(t.Id) == true)) { <p>Isolated guard developer @test.Layer.ToString().ToLowerInvariant() test exists: @test.Class.@test.Method. This does not establish raw-payload wiring.</p> }
         }
         @if (Snapshot.Dataflows.Count == 0) { <p>No security dataflow resolved. Protection is not confirmed.</p> }
-    </details>
-    <details><summary>Existing developer tests (@Snapshot.Tests.Count)</summary><ul>
+    </ReviewDisclosure>
+    <ReviewDisclosure Text="@($"Developer tests · {Snapshot.Tests.Count} discovered · not executed")" CollapseText="Hide developer tests" TestId="iqr-src-tests" Class="disclosure-inline"><p>Tests were found in source. Execution results were not available.</p><ul>
         @foreach (var test in Snapshot.Tests) { <li>@test.Project · @test.Class.@test.Method · @test.Framework · @test.Layer (@test.Confidence) · Categories: @string.Join(", ", test.Categories)<br />@test.ExecutionResult<br />Assertion intent: @test.AssertionIntent · @test.Location.File:@test.Location.Line</li> }
-    </ul></details>
+    </ul></ReviewDisclosure>
     @if (Snapshot.IntegrationPath is { } path) { <IqrIntegrationPathDetails Snapshot="Snapshot" Path="path" /> }
-    <details><summary>Analysis limitations / what was not assessed</summary><ul>@foreach (var limitation in Snapshot.Limitations) { <li>@limitation</li> }</ul></details>
+    <ReviewDisclosure Text="@($"Analysis limitations · {Snapshot.Limitations.Count}")" CollapseText="Hide analysis limitations" TestId="iqr-src-limitations" Class="disclosure-inline"><ul>@foreach (var limitation in Snapshot.Limitations) { <li>@limitation</li> }</ul></ReviewDisclosure>
 </section>
 
 @code { [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = new(); }

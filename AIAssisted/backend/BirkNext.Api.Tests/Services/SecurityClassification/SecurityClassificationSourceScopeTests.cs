@@ -541,4 +541,20 @@ public sealed class SecurityClassificationSourceScopeTests
         allowAll.Detail.Should().Contain("AuthExtensions.AddAuthDev").And.Contain("not assessed from source");
         evidence.Facts.Single(f => f.Id == "graphql-hentBarn").Sources.Single().Repository.Should().Be("PolicyApp", "the resolver fact stays with its own snapshot");
     }
+
+    [Fact]
+    public void Extracted_evidence_without_a_classification_model_is_evidence_but_not_the_review_subject()
+    {
+        IqrSourceSnapshot Snap(params ClassificationLevel[] levels) => new()
+        {
+            Id = Guid.NewGuid(), IntegrationId = "source-analysis", Archive = new SourceArchive("x.zip", new string('c', 64), 10), AnalyzedAt = DateTimeOffset.UtcNow,
+            SecurityClassificationEvidence = new ClassificationSnapshotEvidence { Levels = [.. levels] },
+        };
+        var infrastructure = ClassificationSourceScopeService.Evidence(Snap());
+        (infrastructure.Available, infrastructure.Subject).Should().Be((true, false), "an IaC/MU snapshot was analyzed but holds no classification model");
+        var application = ClassificationSourceScopeService.Evidence(Snap(new ClassificationLevel { Nivaa = 6, KreverGradertTilgang = true }));
+        (application.Available, application.Subject).Should().Be((true, true));
+        ClassificationSourceScopeService.Evidence(new IqrSourceSnapshot { Id = Guid.NewGuid(), IntegrationId = "source-analysis", Archive = new SourceArchive("old.zip", new string('d', 64), 1) })
+            .Subject.Should().BeFalse("no evidence captured");
+    }
 }

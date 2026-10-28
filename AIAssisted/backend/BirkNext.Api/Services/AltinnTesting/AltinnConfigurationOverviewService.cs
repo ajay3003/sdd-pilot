@@ -90,9 +90,16 @@ public sealed class AltinnConfigurationOverviewService(IIntegrationMessageFlowSt
         items.Add(new("scopes", "Scopes", scopes.Length == 0 ? null : string.Join(", ", scopes), scopes.Length == 0 ? "Missing" : openid ? $"{scopes.Length} configured" : "Missing openid",
             "Integration Quality Review → Altinn test configuration",
             (openid ? "" : "The current authentication requires openid. ") + "Not checked against the client registration: BirkNext cannot see it."));
+        // Precedence: an explicit per-run identity set (run input) > the canonical Test Data child (the approved default / session child, the same
+        // identities Connected Systems → Test identities and Setup Library preflight resolve) > missing. Identifiers are never shown.
         var childDeclared = config.ApprovedSyntheticData && !string.IsNullOrWhiteSpace(config.SyntheticIdentitySetReference);
-        items.Add(new("child", "Synthetic child", null, childDeclared ? "Declared" : "Missing", $"{RunInput} + approved identity set (IQR)",
-            childDeclared ? "Entered per run; must differ from the reporter. Declared ≠ verified: whether Person knows the child is not checked." : "No approved synthetic identity set is declared."));
+        var provider = new AltinnTestDataProvider(policy.Options);
+        var testDataChild = policy.Options.SyntheticChildren.FirstOrDefault(child => !string.IsNullOrWhiteSpace(child.Alias) && provider.ChildProblem(child) is null);
+        items.Add(childDeclared
+            ? new("child", "Synthetic child", null, "Declared", $"{RunInput} + approved identity set (IQR)", "Explicit per-run identity set; must differ from the reporter. Declared ≠ verified: whether Person knows the child is not checked.")
+            : testDataChild is not null
+                ? new("child", "Synthetic child", null, "Configured", "Test Data", $"Resolved from Test Data ({(string.IsNullOrWhiteSpace(testDataChild.Label) ? testDataChild.Alias : testDataChild.Label)}); an explicit run input overrides it. Not verified by BirkNext.")
+                : new("child", "Synthetic child", null, "Missing", "Test Data", "No approved synthetic child in Test Data and no explicit run input. Add one in Test Data → Session test identities."));
         if (contract.ImportedOpenApi is { } imported)
             items.Add(new("imported", "Imported OpenAPI", $"{Short(imported.Fingerprint)} · app-lib {imported.DeployedProcess?.AppLibVersion ?? "unknown"}", "Not live-verified", "Imported OpenAPI",
                 contract.ImportedComparedToLive is { } compared

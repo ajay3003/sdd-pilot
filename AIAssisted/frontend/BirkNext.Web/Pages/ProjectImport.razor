@@ -112,7 +112,7 @@
                     {
                         <button type="button" class="btn-secondary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">@(_retrying ? "Retrying…" : "Retry creating source analysis")</button>
                     }
-                    <button type="button" class="btn-secondary" data-testid="pi-current-import-another" aria-expanded="@(_showUpload ? "true" : "false")" aria-controls="pi-choose" @onclick="ShowUpload">Import another project</button>
+                    <button type="button" class="btn-secondary" id="pi-current-import-another" data-testid="pi-current-import-another" aria-expanded="@(_showUpload ? "true" : "false")" aria-controls="pi-choose" @onclick="ShowUpload">Import another project</button>
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Clear current project</button>
                 </div>
                 <p class="pi-muted" data-testid="pi-close-help">Clearing only stops showing this as the current project. Imported data remains available in history: nothing is deleted, and Integration Quality Review bindings do not change.</p>
@@ -260,8 +260,12 @@
         @if (Activation.Current is null || _showUpload)
         {
         <section class="pi-card pi-choose" id="pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
-            <h2 id="pi-choose-heading">@(Activation.Current is null ? "Choose a project archive" : "Import another project")</h2>
+            <h2 id="pi-choose-heading" tabindex="-1">@(Activation.Current is null ? "Choose a project archive" : "Import another project")</h2>
             <p>Upload one ZIP containing project source, project documents, or both. BirkNext shows what it found before anything is imported.</p>
+            @if (Activation.Current is { } keep)
+            {
+                <p class="pi-muted" data-testid="pi-choose-keeps">@keep.ProjectName stays the current project until the new import succeeds; the new import then becomes current. Imported projects remain available in history.</p>
+            }
             <ul class="pi-outcomes" data-testid="pi-outcomes">
                 <li>Project documents</li>
                 <li>Source code</li>
@@ -275,6 +279,7 @@
                     <span aria-hidden="true">Choose project ZIP</span>
                 </label>
                 <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
+                @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
             </div>
             <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
         </section>
@@ -500,6 +505,11 @@
     protected override async Task OnInitializedAsync()
     {
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is { } projection) projection.Changed += OnWorkspaceChanged;
+        if (ServiceProvider.GetService<NavigationManager>() is { } navigation)
+        {
+            navigation.LocationChanged += OnLocationChanged;
+            if (ImportRequested(navigation.Uri)) ShowUpload();
+        }
         await LoadEnvironmentAsync();
         await LoadSetupAsync();
         await LoadWorkspaceAsync();
@@ -551,6 +561,34 @@
     {
         _showUpload = true;
         _focusId = "pi-choose-file";
+    }
+
+    /// <summary>?import=… (every "Import source" action) opens import mode; also when it arrives while this page is already shown.</summary>
+    private static bool ImportRequested(string uri) =>
+        Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.Query.TrimStart('?').Split('&').Any(part => part.Split('=')[0] == "import");
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (ImportRequested(e.Location) && _phase is Phase.Choose) { _ = InvokeAsync(() => { ShowUpload(); StateHasChanged(); }); return; }
+        // Cancel dropped ?import from the address: focus returns to its origin after the router's own focus-on-navigate (h1) has run.
+        if (_focusAfterNavigation is { } origin) { _focusAfterNavigation = null; _ = InvokeAsync(async () => { await Task.Yield(); _focusId = origin; StateHasChanged(); }); }
+    }
+
+    private string? _focusAfterNavigation;
+
+    /// <summary>Cancel import mode: the chosen file (if any) is dropped; the current project and history are unchanged. Not "Clear current project".</summary>
+    private void CloseUpload()
+    {
+        Reset();
+        _failure = null;
+        _showUpload = false;
+        _focusId = "pi-current-import-another";
+        // Leave import mode in the address too, so a reload does not reopen it.
+        if (ServiceProvider.GetService<NavigationManager>() is { } navigation && ImportRequested(navigation.Uri))
+        {
+            _focusAfterNavigation = _focusId;
+            navigation.NavigateTo("project-import", replace: true);
+        }
     }
 
     private void UseExisting(string importId)
@@ -784,6 +822,7 @@
     {
         _elapsedTimer?.Dispose();
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is { } projection) projection.Changed -= OnWorkspaceChanged;
+        if (ServiceProvider.GetService<NavigationManager>() is { } navigation) navigation.LocationChanged -= OnLocationChanged;
     }
 
     private void StartElapsedTimer()

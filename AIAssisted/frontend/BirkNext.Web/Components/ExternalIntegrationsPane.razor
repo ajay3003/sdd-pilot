@@ -55,16 +55,28 @@
 
         @if (_view.Proposals.Count > 0)
         {
-            <section class="ei-proposals" data-testid="ei-proposals" aria-label="Detected systems">
-                <h4 class="ei-h4">Detected systems</h4>
+            @* Detected proposals: Accept is the next safe action (primary), one per proposal and always explicit; nothing is saved by Detect. An
+               ambiguous proposal or one that matches a configured system never offers a blind Accept. *@
+            <section class="ei-proposals" data-testid="ei-proposals" aria-labelledby="ei-proposals-heading">
+                <h4 class="ei-h4" id="ei-proposals-heading" tabindex="-1">Detected systems <span class="ei-muted">(@_view.Proposals.Count pending · nothing saved)</span></h4>
                 @foreach (var proposal in _view.Proposals)
                 {
-                    <div class="ei-proposal" data-testid="ei-proposal" data-provider="@proposal.ProviderType">
+                    var configured = IsConfigured(proposal);
+                    <div class="ei-proposal" data-testid="ei-proposal" data-provider="@proposal.ProviderType" data-state="@(configured ? "configured" : proposal.Ambiguous ? "ambiguous" : "pending")">
                         <strong>@proposal.Name</strong> · @ExternalIntegrationPresentation.ProviderLabel(proposal.ProviderType, _view.Providers)
-                        <span class="ei-muted">Detected from: @proposal.DetectedFrom · @proposal.Reason</span>
-                        @if (!proposal.Ambiguous)
+                        <span class="ei-muted" data-testid="ei-proposal-provenance">Detected from: @proposal.DetectedFrom · @proposal.Reason</span>
+                        @if (configured)
                         {
-                            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-accept" disabled="@_busy" @onclick="() => AcceptAsync(proposal)">Accept detected system</button>
+                            <span class="ei-muted" data-testid="ei-proposal-configured">Already configured — nothing to accept.</span>
+                        }
+                        else if (proposal.Ambiguous)
+                        {
+                            <span class="ei-proposal-decision" data-testid="ei-proposal-ambiguous">Needs a decision: the evidence matches more than one system. Review it and add the right one with Add system; nothing is accepted for you.</span>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-accept" disabled="@_busy" @onclick="() => AcceptAsync(proposal)"
+                                    aria-label="@($"Accept detected system {proposal.Name}")">Accept detected system</button>
                         }
                     </div>
                 }
@@ -179,12 +191,22 @@
         try { await js.InvokeVoidAsync("birknextFocusElement", target); } catch (JSException) { } catch (InvalidOperationException) { }
     }
 
+    /// <summary>A proposal that names an already configured system (same provider and name) offers no Accept.</summary>
+    private bool IsConfigured(ExternalIntegrationProposal proposal) => _view?.Integrations.Any(i => i.Integration.ProviderType == proposal.ProviderType
+        && string.Equals(i.Integration.Name.Trim(), proposal.Name.Trim(), StringComparison.OrdinalIgnoreCase)) == true;
+
     private async Task Run(Func<Task> action) { _busy = true; _error = null; try { await action(); } finally { _busy = false; } }
 
     private Task DetectAsync() => Run(async () =>
     {
         var result = await _api!.DetectAsync(EnvironmentId);
-        if (result.Value is { } view) { _view = view; _notice = view.Proposals.Count == 0 ? "Nothing new detected. Nothing was saved." : $"{view.Proposals.Count} integration(s) detected. Nothing was saved: review and accept."; }
+        if (result.Value is { } view)
+        {
+            _view = view;
+            _notice = view.Proposals.Count == 0 ? "Nothing new detected. Nothing was saved." : $"{view.Proposals.Count} integration(s) detected. Nothing was saved: review and accept.";
+            // The result region takes focus (it is what the user asked for): the next Tab reaches the first Accept.
+            if (view.Proposals.Count > 0) _focusToggle = "ei-proposals-heading";
+        }
         else _error = result.Error;
     });
 
@@ -207,7 +229,15 @@
     private Task AcceptAsync(ExternalIntegrationProposal proposal) => Run(async () =>
     {
         var result = await _api!.SaveAsync(EnvironmentId, null, new ExternalIntegrationRequest(proposal.Name, proposal.ProviderType, proposal.EnvironmentName, true, proposal.Settings));
-        if (result.Value is { } created) { _view = _view! with { Proposals = [.. _view.Proposals.Where(p => p != proposal)] }; await ReloadAsync(); _notice = $"{created.Integration.Name} accepted · review it."; _open.Add(created.Integration.Id); }
+        if (result.Value is { } created)
+        {
+            // The other proposals stay pending: a reload returns configured systems only, so they are carried over (minus any now configured).
+            var pending = _view!.Proposals.Where(p => p != proposal).ToList();
+            await ReloadAsync();
+            if (_view is not null) _view = _view with { Proposals = [.. pending.Where(p => !IsConfigured(p))] };
+            _notice = $"{created.Integration.Name} accepted · review it.{(pending.Count > 0 ? $" {pending.Count} detected system(s) still pending." : "")}";
+            _open.Add(created.Integration.Id);
+        }
         else _error = result.Error;
     });
 

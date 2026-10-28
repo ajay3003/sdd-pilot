@@ -58,6 +58,8 @@ public sealed class TestDataXmlFixtureTests
         asset.Alias.Should().Be("skolenaervaer-valid-report");
         asset.MediaType.Should().Be("application/xml");
         asset.Schema!.RootElement.Should().Be("Skolenaervaer", "validation also checks the message root");
+        asset.Capabilities.Should().BeEquivalentTo(["schema-derived", "skolenaervaer-report"],
+            "the pack-declared capability makes it the journey's valid payload; malformed tokens and negative-test are never taken from facts");
         asset.Provenance.Should().Contain(p => p.Label == "Contract" && p.Value == "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn")
             .And.Contain(p => p.Label == "Test Data roles" && p.Value.Contains("Child: skolenaervaer-child-default"));
     }
@@ -82,6 +84,7 @@ public sealed class TestDataXmlFixtureTests
                         ExpectedResult = "Valid", ValidationStatus = "Valid", RootElement = "Skolenaervaer", GeneratorVersion = "Test Data XML fixture v1",
                         Contract = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn",
                         TestDataBindings = "Child: skolenaervaer-child-default; Reporter (not in the XML): skolenaervaer-reporter-default",
+                        Capabilities = new[] { "skolenaervaer-report", "Bad Token", "negative-test" },
                     },
                 },
             },

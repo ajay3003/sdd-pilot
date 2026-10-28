@@ -1,0 +1,14 @@
+/* Test Data readiness (shared by Test Data and consumers): status words carry the meaning; colour only supports them. */
+.tdr-heading { font-size: 1rem; margin: 0 0 .5rem; }
+.tdr-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem .9rem; margin: 0; }
+.tdr-list > div { border: 1px solid var(--clr-border, #d5dbe5); border-radius: 6px; padding: .45rem .6rem; min-width: 0; overflow-wrap: anywhere; }
+.tdr-list dt { font-size: .75rem; color: var(--clr-text-subtle, #64748b); }
+.tdr-list dd { margin: .15rem 0 0; }
+.tdr-pill { display: inline-block; font-weight: 700; font-size: .8rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid currentColor; }
+.tdr-ready { color: #166534; background: #f0fdf4; }
+.tdr-attention { color: #92400e; background: #fffbeb; }
+.tdr-label { font-weight: 600; }
+.tdr-muted { color: var(--clr-text-subtle, #64748b); font-size: .82rem; }
+.tdr-note { display: block; }
+.tdr-scope { margin: .5rem 0 0; }
+.tdr-owner { margin: .35rem 0 0; font-size: .85rem; }

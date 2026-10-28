@@ -43,6 +43,11 @@ public sealed record ReviewSourceSnapshot
     /// <summary>Newest snapshot of its repository in Source Analysis.</summary>
     public bool Latest { get; init; }
     public bool HasConsumerEvidence { get; init; } = true;
+    /// <summary>
+    /// The snapshot's own analysis holds the review's subject (e.g. a classification model for Security Classification), not merely an extraction
+    /// result that may be empty. Null when the review does not distinguish; a role-based recommendation then falls back to <see cref="HasConsumerEvidence"/>.
+    /// </summary>
+    public bool? HasConsumerSubject { get; init; }
     public string? ConsumerEvidenceNote { get; init; }
     /// <summary>A short consumer-written summary of what the snapshot holds for this review (e.g. "397 declared dependencies").</summary>
     public string? ConsumerSummary { get; init; }

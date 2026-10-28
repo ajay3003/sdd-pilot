@@ -175,6 +175,13 @@ public static class ProjectImportPresentation
         };
     }
 
+    /// <summary>
+    /// "Import source" from anywhere (this page's testing setup, Skolenærvær, Integration Catalog): Import Project opened in import mode, the
+    /// upload form shown and focused even while another project is current. A same-page fragment (#pi-choose-heading) resolved against the
+    /// app base and navigated to the Dashboard, and the form is not rendered while a project is current, so those actions did nothing useful.
+    /// </summary>
+    public const string ImportSourceHref = "project-import?import=source";
+
     /// <summary>Source Analysis opened on one exact snapshot (by id, never by name or "the newest").</summary>
     public static string SourceAnalysisHref(Guid snapshotId) => $"source-analysis?snapshot={snapshotId:D}";
 

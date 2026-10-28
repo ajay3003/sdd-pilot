@@ -80,7 +80,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     {
         SnapshotId = Guid.Parse(id), RepositoryKey = repository.ToLowerInvariant(), Repository = repository, IdentityBasis = "Archive file name", ArchiveName = archive,
         Fingerprint = fingerprint + new string('0', 64 - fingerprint.Length), AnalyzedAt = DateTimeOffset.Parse(at), SourceStatus = status, Latest = latest,
-        HasConsumerEvidence = evidence, ConsumerEvidenceNote = evidence ? null : "Analyzed before security classification evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.",
+        HasConsumerEvidence = evidence, HasConsumerSubject = evidence, ConsumerEvidenceNote = evidence ? null : "Analyzed before security classification evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.",
     };
     private static readonly ReviewSourceSnapshot AppOld = Snapshot("bbbbbbbb-0000-0000-0000-000000000001", "M2LB", "M2LB (1).zip", "0ld0ld00", "2026-09-30T07:21:00Z", "Partial", latest: false);
     private static readonly ReviewSourceSnapshot App = Snapshot("bbbbbbbb-0000-0000-0000-000000000002", "M2LB", "M2LB _2_.zip", "c850a1b2", "2026-10-01T12:30:00Z", "Partial", latest: true);
@@ -560,7 +560,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         var cut = Page();
 
         var order = cut.FindAll("section[data-testid]").Select(e => e.GetAttribute("data-testid")).ToList();
-        order.Should().Equal("sc-target", "sc-source-evidence", "sc-coverage-summary", "sc-setup", "sc-needed", "sc-run-card", "sc-consumers-section");
+        order.Should().Equal("sc-target", "sc-readiness", "sc-source-evidence", "sc-setup", "sc-needed", "sc-run-card", "sc-consumers-section");
         cut.Find("[data-item='counts']").GetAttribute("data-status").Should().Be("Missing", "no run has provided count evidence yet");
     }
 
@@ -668,27 +668,67 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     }
 
     [Fact]
-    public void NotSelectedOffersTheCurrentSnapshotWithoutSelectingIt()
+    public void TwoSourcesWithSecurityEvidence_NeedADecision_AndNothingIsSelectedOrOfferedByDate()
     {
         var cut = Page();
 
         cut.Find("[data-testid='sc-source-state']").TextContent.Should().Be("Not selected");
         _api.ScopeRequests.Should().Equal(new ReviewSourceScopeRequest?[] { null }, "nothing is selected silently");
-        cut.Find("[data-testid='sc-current-snapshot']").TextContent.Should().Contain("M2LB").And.Contain("M2LB _2_.zip").And.Contain("c850a1b2…");
-        cut.FindAll("[data-testid='sc-coverage-row']").Select(r => r.TextContent).Should().OnlyContain(t => t.Contains("Not assessed"));
-        cut.FindAll("[data-testid='sc-primary'] option").Select(o => o.TextContent).Should().Contain(o => o.Contains("M2LB (1).zip") && !o.Contains("latest")).And.Contain(o => o.Contains("M2LB _2_.zip") && o.Contains("latest"));
-        cut.FindAll("[data-testid='sc-primary'] optgroup").Select(g => g.GetAttribute("label")).Should().Equal("M2LB", "Shared.Security");
+        cut.Find("[data-testid='sc-source-decision']").TextContent.Should().Contain("2 imported sources hold security evidence").And.Contain("M2LB").And.Contain("Shared.Security");
+        cut.FindAll("[data-testid='sc-current-snapshot']").Should().BeEmpty("the newest snapshot is never offered by date");
+        cut.FindAll("[data-testid='sc-readiness-row']").Where(r => r.GetAttribute("data-row") != "runtime").Select(r => r.GetAttribute("data-state")).Should().OnlyContain(st => st == "Not assessed");
+        cut.Find("[data-testid='sc-advanced-source-body']").HasAttribute("hidden").Should().BeTrue("the manual source binding is advanced");
 
-        cut.Find("[data-testid='sc-use-current']").Click();
+        cut.Find("[data-testid='sc-advanced-source-toggle']").Click();
+        cut.FindAll("[data-testid='sc-primary'] optgroup").Select(g => g.GetAttribute("label")).Should().Equal("M2LB", "Shared.Security");
+        cut.Find("[data-testid='sc-primary']").Change(App.SnapshotId.ToString());
 
         _api.ScopeRequests.Last()!.PrimarySnapshotId.Should().Be(App.SnapshotId);
         cut.Find("[data-testid='sc-source-state']").TextContent.Should().Be("Selected");
-        cut.Find("[data-testid='sc-primary-fingerprint']").GetAttribute("title").Should().Be(App.Fingerprint);
-        cut.Find("[data-testid='sc-primary-status']").TextContent.Should().Contain("Partial").And.Contain("not a review result");
-        cut.Find("[data-testid='sc-coverage-row'][data-row='model']").TextContent.Should().Contain("Detected").And.Contain("4 level(s)");
-        cut.Find("[data-testid='sc-coverage-row'][data-row='runtime']").TextContent.Should().Contain("Not assessed");
-        cut.Find("[data-testid='sc-coverage-note']").TextContent.Should().Be("Source evidence shows implementation/configuration paths only. It does not prove runtime enforcement.");
-        cut.FindAll("[data-testid='sc-coverage-row'] .sc-badge").Select(b => b.TextContent).Should().NotContain(new[] { "Pass", "Fail", "Secure", "Protected" });
+        var model = cut.Find("[data-testid='sc-readiness-row'][data-row='model']");
+        model.GetAttribute("data-state").Should().Be("Ready");
+        model.TextContent.Should().Contain("4 level(s)");
+        cut.Find("[data-testid='sc-readiness-row'][data-row='runtime']").GetAttribute("data-state").Should().Be("Not verified", "an environment without live evidence is not verified, never Ready");
+        cut.FindAll("[data-testid='sc-readiness-state']").Select(b => b.TextContent).Should().NotContain(new[] { "Pass", "Fail", "Secure", "Protected", "Verified" });
+    }
+
+    [Fact]
+    public void One_source_with_security_evidence_is_used_deterministically_and_a_newer_infrastructure_snapshot_is_ignored()
+    {
+        var terraform = Snapshot("bbbbbbbb-0000-0000-0000-00000000000f", "Terraform-iac-meldingsutveksler", "Terraform-iac-meldingsutveksler.zip", "7e77a000", "2026-10-28T09:00:00Z", "Partial", latest: true, evidence: false);
+        _api.Snapshots = [App, terraform];
+        var cut = Page();
+
+        cut.WaitForAssertion(() => _api.ScopeRequests.Last()!.PrimarySnapshotId.Should().Be(App.SnapshotId, "the only source whose analysis holds security evidence"));
+        _api.ScopeRequests.Should().NotContain(r => r != null && r.PrimarySnapshotId == terraform.SnapshotId, "newest / current project is never the security source by date");
+        cut.Find("[data-testid='sc-source-summary']").TextContent.Should().Contain("M2LB _2_.zip").And.Contain("only imported source with security evidence");
+        cut.Find("[data-testid='sc-readiness-row'][data-row='model'] [data-testid='sc-readiness-sources']").TextContent.Should().Contain("M2LB", "provenance per dimension");
+    }
+
+    [Fact]
+    public void Only_infrastructure_sources_mean_missing_application_evidence_with_an_import_action()
+    {
+        _api.Snapshots = [Snapshot("bbbbbbbb-0000-0000-0000-00000000000f", "Terraform-iac-meldingsutveksler", "Terraform-iac-meldingsutveksler.zip", "7e77a000", "2026-10-28T09:00:00Z", "Partial", latest: true, evidence: false)];
+        var cut = Page();
+
+        _api.ScopeRequests.Should().Equal(new ReviewSourceScopeRequest?[] { null }, "an infrastructure-only snapshot is not the M01 source");
+        cut.Find("[data-testid='sc-source-missing']").TextContent.Should().Contain("cannot prove application logic");
+        var model = cut.Find("[data-testid='sc-readiness-row'][data-row='model']");
+        model.GetAttribute("data-state").Should().Be("Missing");
+        model.QuerySelector("[data-testid='sc-readiness-action']")!.GetAttribute("href").Should().Be("project-import?import=source");
+    }
+
+    [Fact]
+    public void Without_an_environment_runtime_is_not_assessed_with_one_select_action_and_source_is_still_assessed()
+    {
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisContextFactory>(c => c.GetActiveContextAsync() == Task.FromResult(new FrontendAnalysisContext())));
+        _api.Snapshots = [App];
+        var cut = Page();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid='sc-readiness-row'][data-row='model']").GetAttribute("data-state").Should().Be("Ready", "source evidence does not need an environment"));
+        var runtime = cut.Find("[data-testid='sc-readiness-row'][data-row='runtime']");
+        runtime.GetAttribute("data-state").Should().Be("Not assessed");
+        runtime.QuerySelector("[data-testid='sc-readiness-action']")!.TextContent.Should().Be("Select target environment");
     }
 
     [Fact]

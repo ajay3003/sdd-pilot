@@ -56,6 +56,8 @@ public static class IntegrationTemplates
             ReferenceSource = reference, AuthenticationReference = Pick(template.Reference?.AuthenticationFacts), ContractReference = Pick(template.Reference?.ContractFacts),
             SchemaName = schemaName, SchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName),
             FixtureBindings = template.FixtureBindings,
+            FixtureCapabilities = template.FixtureCapabilities,
+            Flow = requirement is null ? null : $"{requirement.Producer} → {requirement.Consumer}",
         };
     }
 

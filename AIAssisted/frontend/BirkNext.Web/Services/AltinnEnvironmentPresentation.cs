@@ -189,9 +189,12 @@ public static class AltinnEnvironmentPresentation
         if (safety.Count > 0) groups.Add(new("safety", "Execution safety", "Backend execution policy", "Review execution safety", FixAction.Safety, safety));
         var identities = IdentityGaps(view).Select(gap => new FixItem(gap.Role, gap.Problem)).ToList();
         if (identities.Count > 0) groups.Add(new("identities", "Test identities", "Test Data", "Manage test identities", FixAction.TestData, identities));
+        // The payload (what is submitted) is Test Data too, but a different gap than the identities (who is involved): one group, owner Test Data.
+        if (view.Summary.FirstOrDefault(item => item.Key == "testdata") is { State: not AltinnReadinessState.Ready } payload)
+            groups.Add(new("testdata", "Test data", "Test Data", "Open Test Data", FixAction.TestData, [new("XML fixture", PayloadProblem(payload))]));
         if (view.Contract.State is AltinnReadinessState.Partial or AltinnReadinessState.Blocked)
-            groups.Add(new("contract", "Report contract", "Altinn contract evidence", "Review contract", FixAction.Contract,
-                [new("Report contract", view.Contract.State == AltinnReadinessState.Partial ? "Incomplete" : "Missing")]));
+            groups.Add(new("contract", "Report contract", "IQR / Altinn contract evidence", "Review contract", FixAction.Contract,
+                [new("Report contract", view.Contract.State == AltinnReadinessState.Partial ? view.Contract.Reason : "Missing")]));
         return groups;
     }
 
@@ -212,6 +215,10 @@ public static class AltinnEnvironmentPresentation
     }
 
     /// <summary>The short reason under a summary card: empty when ready, otherwise one phrase (details live in the sections below).</summary>
+    /// <summary>"missing", "invalid against its XSD", "needs revalidation" … from the backend's payload reason (the shared Test Data rule decided it).</summary>
+    public static string PayloadProblem(AltinnReadinessItem payload) =>
+        System.Text.RegularExpressions.Regex.Match(payload.Reason, @"XML fixture (?<p>.+?)(?: \(| ·|$)") is { Success: true } match ? match.Groups["p"].Value : payload.Reason;
+
     public static string CardReason(AltinnReadinessItem item, AltinnEnvironmentView view)
     {
         if (item.State == AltinnReadinessState.Ready) return "";
@@ -227,6 +234,7 @@ public static class AltinnEnvironmentPresentation
             "authentication" => Count("automated") > 0 ? Settings(Count("automated"), "automated ") : "",
             "identities" => gaps.Count == 2 && gaps.All(gap => gap.Problem == "Missing") ? "Reporter and child missing"
                 : string.Join(" · ", gaps.Select(gap => $"{gap.Role} {gap.Problem.ToLowerInvariant()}")),
+            "testdata" => $"XML fixture {PayloadProblem(item)}",
             "runtime" => item.State == AltinnReadinessState.Partial ? $"{observations} observation{(observations == 1 ? "" : "s")} · not verified" : "",
             "automated" => view.AutomatedBlockers.Count > 0 ? $"{view.AutomatedBlockers.Count} requirement{(view.AutomatedBlockers.Count == 1 ? "" : "s")}" : "",
             _ => "",

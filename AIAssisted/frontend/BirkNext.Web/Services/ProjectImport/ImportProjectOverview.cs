@@ -214,7 +214,7 @@ public static class ImportProjectOverview
     {
         var label = status.Role.Label;
         var optional = !SourceSetupPresentation.IsReference(status) && status.Role.Requirement != TestPackSourceRequirement.Required;
-        var primary = SourceSetupPresentation.Primary(status, "#pi-choose-heading");
+        var primary = SourceSetupPresentation.Primary(status, ProjectImportPresentation.ImportSourceHref);
         var infrastructure = status.Role.RequiresInfrastructureAsCode;
         var (state, attention) = status.State switch
         {

@@ -268,7 +268,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         Row("app").QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("No matching imported source found.");
         Row("app").QuerySelector("[data-testid=pi-setup-requirement-text]")!.TextContent.Should().Be("Required for application metadata.");
         Row("app").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Import source");
-        Row("app").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("href").Should().Be("#pi-choose-heading");
+        Row("app").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("href").Should().Be("project-import?import=source");
 
         var infra = Row("infra");
         infra.GetAttribute("data-requirement").Should().Be("Optional");

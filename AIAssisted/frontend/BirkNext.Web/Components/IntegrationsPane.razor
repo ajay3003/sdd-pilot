@@ -38,15 +38,20 @@
             <dl class="ip-summary" data-testid="ip-summary">
                 <div><dt>Environment</dt><dd data-testid="ip-summary-env">@IntegrationsOverviewPresentation.Environment(Profile)</dd></div>
                 <div><dt>Configured integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
-                <div><dt>Source-discovered candidates</dt><dd data-testid="ip-summary-suggestions" title="Integrations Source Analysis detected that are not configured here — not contract candidates and not consumer mapping candidates.">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
-                @if (suggestions.Available) { <div><dt>Ready to review</dt><dd data-testid="ip-summary-ready">@suggestions.StronglySupported</dd></div> }
+                <div><dt>Relevant proposals</dt><dd data-testid="ip-summary-proposals" title="Integrations an applicable Test Pack requires, backed by recognized source evidence and not configured yet.">@packProposals.Count</dd></div>
+                @if (packProposals.Count > 0)
+                {
+                    <div><dt>Ready to review</dt><dd data-testid="ip-summary-ready">@packProposals.Count(p => p.Ready)</dd></div>
+                    <div><dt>Need decisions</dt><dd data-testid="ip-summary-decisions">@packProposals.Count(p => !p.Ready)</dd></div>
+                }
+                <div><dt>Technical relationships</dt><dd data-testid="ip-summary-suggestions" title="Relationships Source Analysis detected in source — evidence, not proposals.">@(sourceSummary.Available ? sourceSummary.Total.ToString() : "Unavailable")</dd></div>
                 <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime" title="@IntegrationsOverviewPresentation.Meaning(runtime)">@IntegrationsOverviewPresentation.OverviewRuntimeLabel(_catalog, runtime)</span></dd></div>
             </dl>
             @* The one way into the candidate review once integrations exist; while none exist, the empty state below carries it instead. *@
-            @if (_catalog.Integrations.Count > 0 && suggestions.Available && suggestions.Total > 0)
+            @if (_catalog.Integrations.Count > 0 && (packProposals.Count > 0 || sourceSummary.Available && sourceSummary.Total > 0))
             {
                 <div class="ip-actions-row">
-                    <button type="button" class="btn-secondary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review integration candidates</button>
+                    <button type="button" class="btn-secondary" data-testid="ip-review-suggestions" @onclick="() => OpenSuggestions(packProposals.Count > 0)">@(packProposals.Count > 0 ? "Review proposals" : "Show technical relationships")</button>
                 </div>
             }
             <p class="ip-save-note" data-testid="ip-save-note">Changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.</p>
@@ -93,15 +98,19 @@
             {
                 <div class="ip-empty" data-testid="ip-empty">
                     <p><strong>No integrations configured for @Profile.EnvironmentType.</strong></p>
-                    <p class="ip-muted" data-testid="ip-empty-suggestions">@(suggestions.Available
-                        ? suggestions.Total == 0 ? "No integration candidates were found from Source Analysis." : $"{suggestions.Total} integration candidate{(suggestions.Total == 1 ? " was" : "s were")} discovered from Source Analysis."
-                        : "Integration candidates are unavailable — no source snapshot is linked.")
-                        @if (suggestions.Available && suggestions.StronglySupported > 0) { <span data-testid="ip-empty-ready"> @suggestions.StronglySupported @(suggestions.StronglySupported == 1 ? "is" : "are") ready to review first.</span> }</p>
+                    <p class="ip-muted" data-testid="ip-empty-suggestions">@(packProposals.Count > 0
+                        ? $"{packProposals.Count} relevant integration proposal{(packProposals.Count == 1 ? "" : "s")} from Test Packs."
+                        : !sourceSummary.Available ? "No integration proposals discovered — no source snapshot is linked."
+                        : sourceSummary.Total == 0 ? "No integration proposals discovered."
+                        : $"No relevant integration proposals currently require review. {sourceSummary.Total} technical relationship{(sourceSummary.Total == 1 ? " was" : "s were")} discovered from source.")
+                        @if (packProposals.Count(p => p.Ready) is > 0 and var ready) { <span data-testid="ip-empty-ready"> @ready @(ready == 1 ? "is" : "are") ready to review first.</span> }</p>
                     @if (_editing is null)
                     {
                         <div class="ip-actions-row">
-                            @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review integration candidates</button> }
-                            <button type="button" class="@(suggestions.Available && suggestions.Total > 0 ? "btn-secondary" : "btn-primary")" id="ip-add-trigger" data-testid="ip-empty-add" @ref="_addTrigger" @onclick="BeginAdd">Add manually</button>
+                            @if (packProposals.Count > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="() => OpenSuggestions(true)">Review proposals</button> }
+                            else if (sourceSummary.Available && sourceSummary.Total > 0) { <button type="button" class="btn-secondary" data-testid="ip-empty-review" @onclick="() => OpenSuggestions(false)">Show technical relationships</button> }
+                            else if (!sourceSummary.Available) { <a class="btn-secondary" href="/project-import" data-testid="ip-empty-sources">Review source / imports</a> }
+                            <button type="button" class="@(packProposals.Count > 0 ? "btn-secondary" : "btn-primary")" id="ip-add-trigger" data-testid="ip-empty-add" @ref="_addTrigger" @onclick="BeginAdd">Add manually</button>
                         </div>
                     }
                 </div>
@@ -371,8 +380,78 @@
                 : "Review can run with limitations while mapping or runtime evidence is unavailable.")</span></p>
         </section>
 
+        <section class="ip-section" aria-labelledby="ip-proposals-heading" data-testid="ip-proposals">
+            <h3 id="ip-proposals-heading" tabindex="-1">Relevant integration proposals</h3>
+            @if (packProposals.Count == 0)
+            {
+                <p class="ip-muted" data-testid="ip-proposals-none">@(sourceSummary.Available && sourceSummary.Total > 0
+                    ? $"No relevant integration proposals currently require review. {sourceSummary.Total} technical relationship{(sourceSummary.Total == 1 ? " was" : "s were")} discovered from source (below)."
+                    : "No integration proposals discovered.")</p>
+            }
+            else
+            {
+                <p class="ip-muted" data-testid="ip-proposals-note">Integrations an applicable Test Pack requires, backed by recognized source evidence. Review &amp; add opens the normal form with the proposal prefilled; nothing is saved until you save it.</p>
+                <ul class="ip-proposal-list" data-testid="ip-pack-proposals">
+                    @foreach (var proposal in packProposals)
+                    {
+                        var current = proposal;
+                        var cardId = $"ip-proposal-{Slug(proposal.Template.Key)}";
+                        <li class="ip-proposal-card" data-testid="ip-pack-proposal" data-template="@proposal.Template.Key" data-ready="@(proposal.Ready ? "true" : "false")" aria-labelledby="@($"{cardId}-title")">
+                            <div class="ip-proposal-head">
+                                <h4 class="ip-proposal-title" id="@($"{cardId}-title")">@proposal.Template.DisplayName</h4>
+                                <span class="ip-pill ip-pill-@(proposal.Ready ? "info" : "attention")" data-testid="ip-pack-proposal-state">@(proposal.Ready ? "Ready to review" : "Needs decision")</span>
+                            </div>
+                            @if (proposal.Template.Flow is { } flow) { <p class="ip-proposal-flow" data-testid="ip-pack-proposal-flow">@flow</p> }
+                            @if (proposal.Template.Journeys.Count > 0) { <p class="ip-proposal-journey" data-testid="ip-pack-proposal-journey"><span class="ip-label">Journey:</span> @string.Join(", ", proposal.Template.Journeys)</p> }
+                            <div class="ip-proposal-block" data-testid="ip-pack-proposal-why"><span class="ip-label">Why proposed</span> Required by the @proposal.Template.PackName Test Pack.</div>
+                            <div class="ip-proposal-block"><span class="ip-label" id="@($"{cardId}-evidence")">Evidence</span>
+                                <ul class="ip-proposal-evidence" aria-labelledby="@($"{cardId}-evidence")" data-testid="ip-pack-proposal-evidence-items">
+                                    @foreach (var item in proposal.EvidenceItems) { <li><span aria-hidden="true">✓ </span>@item</li> }
+                                </ul>
+                            </div>
+                            @if (proposal.DecisionKind == ProposalDecisionKind.ChooseEvidenceSource)
+                            {
+                                <div class="ip-proposal-block ip-proposal-decision" data-testid="ip-pack-proposal-decision" data-kind="ambiguous">
+                                    <span class="ip-label" id="@($"{cardId}-decision")">Needs decision</span> @proposal.DecisionRole evidence source is ambiguous — candidates:
+                                    <ul aria-labelledby="@($"{cardId}-decision")">@foreach (var option in proposal.DecisionItems) { <li>@option</li> }</ul>
+                                    <span class="ip-muted">The choice is made in the review form; none is selected for you.</span>
+                                </div>
+                            }
+                            else if (proposal.DecisionKind == ProposalDecisionKind.MissingEnvironmentValues)
+                            {
+                                <div class="ip-proposal-block ip-proposal-decision" data-testid="ip-pack-proposal-decision" data-kind="missing-values">
+                                    <span class="ip-label" id="@($"{cardId}-decision")">Needs decision</span> Missing environment-specific values:
+                                    <ul aria-labelledby="@($"{cardId}-decision")">@foreach (var value in proposal.DecisionItems) { <li>@value</li> }</ul>
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="ip-proposal-block" data-testid="ip-pack-proposal-ready-note">No unresolved discovery decision. Ready to review is not configured.</p>
+                            }
+                            <div class="ip-actions-row">
+                                <button type="button" class="btn-primary ip-btn-sm" data-testid="ip-pack-proposal-review" aria-label="@($"Review and add {proposal.Template.DisplayName}")" @onclick="() => BeginAddFromTemplate(current.Template.Key)">Review &amp; add</button>
+                            </div>
+                            <ReviewDisclosure Text="Evidence details" CollapseText="Hide evidence details" TestId="@($"{cardId}-details")" Class="disclosure-inline disclosure-small">
+                                <p class="ip-muted" data-testid="ip-pack-proposal-evidence">@string.Join(" · ", proposal.Evidence)</p>
+                                @if (proposal.Template.EvidenceSource is { } evidenceSource)
+                                {
+                                    <ul class="ip-proposal-provenance" data-testid="ip-pack-proposal-provenance">
+                                        @foreach (var candidate in evidenceSource.Candidates)
+                                        {
+                                            <li>@evidenceSource.Role.Label · @candidate.ArchiveFileName · <code title="@candidate.Fingerprint">@candidate.Fingerprint[..Math.Min(12, candidate.Fingerprint.Length)]</code>@(candidate.Bound ? " · bound in IQR" : "")</li>
+                                        }
+                                    </ul>
+                                }
+                                @if (proposal.Decision is { } decisionText) { <p class="ip-muted">@decisionText</p> }
+                            </ReviewDisclosure>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
         <section class="ip-section" aria-labelledby="ip-suggestions-heading" data-testid="ip-suggestions">
-            <h3 id="ip-suggestions-heading">Integration candidates from Source Analysis</h3>
+            <h3 id="ip-suggestions-heading">Technical relationships from Source Analysis</h3>
             @if (!suggestions.Available)
             {
                 <p class="ip-muted" data-testid="ip-suggestions-unavailable"><strong>Unavailable.</strong> No source snapshot is linked. Configured integrations work without it.
@@ -381,44 +460,27 @@
             }
             else
             {
-                <p class="ip-muted" data-testid="ip-suggestions-note">Discovered in source and not configured here. <strong>A candidate is never configured or confirmed automatically</strong>; adding one keeps its consumer mapping unconfirmed until you confirm it.</p>
+                <p class="ip-muted" data-testid="ip-suggestions-note">Relationships discovered in source — evidence, not proposals. They do not count as relevant proposals. Review one only if it should become a logical integration; <strong>nothing is configured or confirmed automatically</strong>.</p>
                 <dl class="ip-suggestion-summary" data-testid="ip-suggestions-summary">
-                    <div><dt>Candidates</dt><dd data-testid="ip-suggestions-total">@suggestions.Total</dd></div>
-                    <div><dt>Ready to review</dt><dd data-testid="ip-suggestions-strong">@suggestions.StronglySupported</dd></div>
-                    <div><dt>Needs confirmation</dt><dd data-testid="ip-suggestions-suggested">@suggestions.Suggested</dd></div>
-                    <div><dt>Needs mapping</dt><dd data-testid="ip-suggestions-unassigned">@suggestions.Unassigned</dd></div>
-                    @if (suggestions.Conflicts > 0) { <div><dt>Conflicting evidence</dt><dd data-testid="ip-suggestions-conflicts">@suggestions.Conflicts</dd></div> }
+                    <div><dt>Technical relationships</dt><dd data-testid="ip-suggestions-total">@sourceSummary.Total</dd></div>
+                    <div><dt>Explicit wiring</dt><dd data-testid="ip-suggestions-strong">@sourceSummary.StronglySupported</dd></div>
+                    <div><dt>Needs confirmation</dt><dd data-testid="ip-suggestions-suggested">@sourceSummary.Suggested</dd></div>
+                    <div><dt>Needs mapping</dt><dd data-testid="ip-suggestions-unassigned">@sourceSummary.Unassigned</dd></div>
+                    @if (sourceSummary.Conflicts > 0) { <div><dt>Conflicting evidence</dt><dd data-testid="ip-suggestions-conflicts">@sourceSummary.Conflicts</dd></div> }
                 </dl>
-                <p class="ip-muted ip-small" data-testid="ip-suggestions-legend">Ready to review: explicit source wiring or several independent indicators. Needs confirmation: naming or convention only. Needs mapping: no consumer identified in source.</p>
+                <p class="ip-muted ip-small" data-testid="ip-suggestions-legend">Explicit wiring: explicit source wiring or several independent indicators. Needs confirmation: naming or convention only. Needs mapping: no consumer identified in source.</p>
                 @if (_sources?.ContributingSources is { Count: > 0 } contributing)
                 {
-                    <p class="ip-muted ip-small" data-testid="ip-contributing-sources">Sources read: @string.Join(" · ", contributing.Select(s => $"{s.ArchiveName} ({s.Reason})"))</p>
-                }
-                @if (packProposals.Count > 0)
-                {
-                    <h4 class="ip-h4" data-testid="ip-pack-proposals-heading">Proposed by test packs</h4>
-                    <ul class="ip-suggestion-items" data-testid="ip-pack-proposals">
-                        @foreach (var proposal in packProposals)
-                        {
-                            var current = proposal;
-                            <li class="ip-suggestion" data-testid="ip-pack-proposal" data-template="@proposal.Template.Key" data-ready="@(proposal.Ready ? "true" : "false")">
-                                <div class="ip-suggestion-main">
-                                    <strong>@proposal.Template.DisplayName</strong>
-                                    <span class="ip-cell-sub">@proposal.Template.Description</span>
-                                    <dl class="ip-suggestion-facts">
-                                        <div><dt>Evidence</dt><dd data-testid="ip-pack-proposal-evidence">@string.Join(" · ", proposal.Evidence)</dd></div>
-                                        @if (proposal.Decision is { } decision) { <div><dt>Needs decision</dt><dd data-testid="ip-pack-proposal-decision">@decision</dd></div> }
-                                    </dl>
-                                </div>
-                                <span class="ip-pill ip-pill-@(proposal.Ready ? "info" : "attention")" data-testid="ip-pack-proposal-state">@(proposal.Ready ? "Ready to review" : "Needs decision")</span>
-                                <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-pack-proposal-review" aria-label="@($"Review and add {proposal.Template.DisplayName}")" @onclick="() => BeginAddFromTemplate(current.Template.Key)">Review &amp; add</button>
-                            </li>
-                        }
-                    </ul>
+                    <ReviewDisclosure Text="@($"Source evidence · {contributing.Count} source{(contributing.Count == 1 ? "" : "s")} contributing")" CollapseText="Hide source evidence" TestId="ip-source-evidence" Class="disclosure-inline disclosure-small">
+                        <ul class="ip-muted ip-small" data-testid="ip-contributing-sources">@foreach (var s in contributing) { <li>@s.ArchiveName (@s.Reason)@(s.CorroboratingOnly ? " · corroborating only" : "")</li> }</ul>
+                    </ReviewDisclosure>
                 }
                 @if (sourceSummary.Total > 0)
                 {
-                    <button type="button" class="ip-disclosure" data-testid="ip-suggestions-toggle" aria-expanded="@(_suggestionsOpen ? "true" : "false")" aria-controls="ip-suggestion-list" @onclick="() => _suggestionsOpen = !_suggestionsOpen">@(_suggestionsOpen ? "Hide candidates" : $"Show source candidates ({sourceSummary.Total})")</button>
+                    <div class="ip-actions-row">
+                        <button type="button" class="ip-disclosure" data-testid="ip-suggestions-toggle" aria-expanded="@(_suggestionsOpen ? "true" : "false")" aria-controls="ip-suggestion-list" @onclick="() => _suggestionsOpen = !_suggestionsOpen">@(_suggestionsOpen ? "Hide technical relationships" : $"Show technical relationships ({sourceSummary.Total})")</button>
+                        <a class="ip-link" href="/source-analysis" data-testid="ip-technical-open-source">Open Source Analysis</a>
+                    </div>
                 }
                 @if (_suggestionsOpen)
                 {
@@ -758,6 +820,7 @@
         if (_focusContracts) { _focusContracts = false; await _contractsFocus.FocusAsync(); }
         if (_focusConfirm) { _focusConfirm = false; try { await _confirmFocus.FocusAsync(); } catch (InvalidOperationException) { } }
         if (_focusSuggestions) { _focusSuggestions = false; try { await _suggestionsFocus.FocusAsync(); } catch (InvalidOperationException) { } }
+        if (_focusProposals && ServiceProvider.GetService<IJSRuntime>() is { } focusJs) { _focusProposals = false; try { await focusJs.InvokeVoidAsync("birknextFocusElement", "ip-proposals-heading"); } catch (JSException) { } }
         if (_focusAddTrigger) { _focusAddTrigger = false; try { await _addTrigger.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } }
         if (_viewing is { } viewing && !_discoveries.ContainsKey(viewing) && _discoveryLoading.Add(viewing))
         {
@@ -771,7 +834,14 @@
 
     private SourceIntegrationFilter Filter() => new(_search, _stateFilter, "", _mappingFilter);
 
-    private void OpenSuggestions() { _suggestionsOpen = true; _focusSuggestions = true; }
+    /// <summary>Review proposals (focus the proposals heading) or, when there are none, open the technical relationships list.</summary>
+    private void OpenSuggestions(bool proposals)
+    {
+        if (proposals) { _focusProposals = true; return; }
+        _suggestionsOpen = true; _focusSuggestions = true;
+    }
+
+    private bool _focusProposals;
 
     /// <summary>
     /// One candidate: the relationship in words first (producer → consumer, kind, channel, evidence), technical source details behind a disclosure.

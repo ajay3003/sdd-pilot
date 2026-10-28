@@ -484,7 +484,7 @@ public sealed class SkoleNaervaerRunResolutionTests
         var result = new SkoleNaervaerTestData(kit.Options).Resolve(knownToPerson: true);
 
         result.Satisfied.Should().BeTrue(string.Join("; ", result.Roles.Select(role => role.Reason)));
-        result.Role(SkoleNaervaerTestData.ReporterRole)!.Should().Match<BirkNext.TestData.TestDataRoleResolution>(role => role.AssetAlias == AltinnTestKit.ReporterAlias && role.Source == "Local approved configuration");
+        result.Role(SkoleNaervaerTestData.ReporterRole)!.Should().Match<BirkNext.TestData.TestDataRoleResolution>(role => role.AssetAlias == AltinnTestKit.ReporterAlias && role.Source == "Approved local test data");
         result.Role(SkoleNaervaerTestData.ChildRole)!.AssetAlias.Should().Be("synthetic-child-1");
         NothingSensitive(JsonSerializer.Serialize(result), "a resolution carries aliases only");
 

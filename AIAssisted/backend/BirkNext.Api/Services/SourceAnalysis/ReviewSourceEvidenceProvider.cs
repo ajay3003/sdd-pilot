@@ -6,7 +6,7 @@ using BirkNext.Integrations;
 namespace BirkNext.Api.Services.SourceAnalysis;
 
 /// <summary>What one consumer can use from a snapshot: whether its own evidence was captured, why not, and a short summary.</summary>
-public sealed record ConsumerSourceEvidence(bool Available, string? Note = null, string? Summary = null);
+public sealed record ConsumerSourceEvidence(bool Available, string? Note = null, string? Summary = null, bool? Subject = null);
 
 /// <summary>
 /// The one way review features consume Source Analysis. Source Analysis owns ingestion and the immutable snapshots (<see cref="IqrSourceStore"/>);
@@ -65,7 +65,7 @@ public sealed class ReviewSourceEvidenceProvider(IqrSourceStore store, bool sour
         {
             SnapshotId = s.Id, RepositoryKey = identity.Key, Repository = identity.DisplayName, IdentityBasis = identity.Basis, ArchiveName = s.Archive.FileName,
             Fingerprint = s.Archive.Sha256, AnalyzedAt = s.AnalyzedAt, SourceStatus = SourceStatus(s.Status), Latest = latest,
-            HasConsumerEvidence = evidence.Available, ConsumerEvidenceNote = evidence.Note, ConsumerSummary = evidence.Summary,
+            HasConsumerEvidence = evidence.Available, HasConsumerSubject = evidence.Subject, ConsumerEvidenceNote = evidence.Note, ConsumerSummary = evidence.Summary,
         };
     }
 

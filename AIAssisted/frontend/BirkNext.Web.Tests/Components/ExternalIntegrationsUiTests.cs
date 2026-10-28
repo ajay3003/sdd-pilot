@@ -99,6 +99,58 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle(s => s.Name == "Payments API" && s.ProviderType == ExternalProviderType.RestApi));
     }
 
+    private static ExternalIntegrationProposal Proposal(string name, bool ambiguous = false, ExternalProviderType type = ExternalProviderType.RestApi) =>
+        new(name, type, "QA", "Integration Quality Review", ambiguous ? "Two services match." : "Ready to configure.", new() { ["baseUrl"] = "https://x.example" }, ambiguous);
+
+    [Fact]
+    public void Each_detected_system_has_its_own_primary_accept_and_accepting_one_keeps_the_rest_pending()
+    {
+        _api.Proposals = [Proposal("Payments API"), Proposal("Orders API")];
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        cut.Find("[data-testid=ei-detect]").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-accept]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=ei-accept]").Should().OnlyContain(b => b.ClassList.Contains("btn-primary"), "accepting a detected system is the next safe action");
+        cut.Find("[data-testid=ei-detect]").ClassList.Should().Contain("btn-primary");
+        cut.Find("[data-testid=ei-add]").ClassList.Should().Contain("btn-secondary", "manual add stays the fallback");
+        cut.FindAll("[data-testid=ei-proposal-provenance]").Select(p => p.TextContent).Should().OnlyContain(t => t.Contains("Detected from: Integration Quality Review"));
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("ei-proposals-heading", "the result region takes focus; the next Tab reaches the first Accept");
+        cut.Find("#ei-proposals-heading").GetAttribute("tabindex").Should().Be("-1");
+        _api.Saved.Should().BeEmpty();
+
+        cut.Find("[data-testid=ei-proposal] [data-testid=ei-accept]").Click();
+        cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle(r => r.Name == "Payments API"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-proposal]").Select(p => p.QuerySelector("strong")!.TextContent).Should().Equal("Orders API"));
+        cut.Find("[data-testid=ei-notice]").TextContent.Should().Contain("1 detected system(s) still pending");
+    }
+
+    [Fact]
+    public void Ambiguous_and_already_configured_detections_offer_no_blind_accept()
+    {
+        _api.Proposals = [Proposal("Two candidates", ambiguous: true), Proposal("Person API")];
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        cut.Find("[data-testid=ei-detect]").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-proposal]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=ei-accept]").Should().BeEmpty();
+        cut.Find("[data-testid=ei-proposal][data-state=ambiguous] [data-testid=ei-proposal-ambiguous]").TextContent.Should().Contain("Needs a decision");
+        cut.Find("[data-testid=ei-proposal][data-state=configured] [data-testid=ei-proposal-configured]").TextContent.Should().Be("Already configured — nothing to accept.");
+    }
+
+    [Fact]
+    public void Nothing_detected_says_so_and_saves_nothing()
+    {
+        _api.Proposals = [];
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        cut.Find("[data-testid=ei-detect]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-notice]").TextContent.Should().Be("Nothing new detected. Nothing was saved."));
+        cut.FindAll("[data-testid=ei-proposals]").Should().BeEmpty();
+        _api.Saved.Should().BeEmpty();
+    }
+
     [Fact]
     public void Blocked_import_shows_owner_links_and_apply_needs_every_conflict_decided()
     {
@@ -372,12 +424,14 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         };
 
         public bool NoSystems { get; set; }
+        /// <summary>What Detect returns (null = the default single proposal).</summary>
+        public List<ExternalIntegrationProposal>? Proposals { get; set; }
 
         private ExternalIntegrationsView View(bool detect) => new(Env,
             NoSystems ? [] :
             [Card("dev:altinn", "Altinn – Skolenærvær", ExternalProviderType.Altinn, SetupReadinessState.Observed, SetupReadinessState.Blocked),
              Card("dev:restapi:person", "Person API", ExternalProviderType.RestApi, SetupReadinessState.NotAssessed, SetupReadinessState.NotAssessed)],
-            detect ? [new("Payments API", ExternalProviderType.RestApi, "QA", "Integration Quality Review", "Ready to configure.", new() { ["baseUrl"] = "https://pay.example" }, false)] : [],
+            detect ? Proposals ?? [new("Payments API", ExternalProviderType.RestApi, "QA", "Integration Quality Review", "Ready to configure.", new() { ["baseUrl"] = "https://pay.example" }, false)] : [],
             BirkNext.Web.Tests.Components.ExternalIntegrationsUiTests.CatalogDescriptors);
 
         public Task<ActiveEventApiResult<ExternalIntegrationsView>> ListAsync(string environmentId, CancellationToken ct = default) => Ok(View(false));

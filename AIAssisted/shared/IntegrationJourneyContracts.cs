@@ -653,6 +653,8 @@ public sealed record IntegrationTemplateDefinition(string Key, string DisplayNam
 {
     /// <summary>Test Data roles of a message fixture for this template's contract (Test Data → Create XML fixture).</summary>
     public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
+    /// <summary>Test Data capabilities a valid fixture for <see cref="SchemaName"/> satisfies (e.g. the pack's payload role), recorded when it is saved.</summary>
+    public IReadOnlyList<string> FixtureCapabilities { get; init; } = [];
     /// <summary>The pack integration requirement the template fulfils (also how an existing record is recognized as already configured).</summary>
     public string? RequirementKey { get; init; }
     public string? SystemName { get; init; }
@@ -723,4 +725,8 @@ public sealed record IntegrationTemplateView(string Key, string DisplayName, str
     public IReadOnlyList<IntegrationTemplateSchemaCandidate> SchemaCandidates { get; init; } = [];
     /// <summary>Test Data roles of a message fixture for <see cref="SchemaName"/> (see <see cref="TestDataFixtureBinding"/>).</summary>
     public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
+    /// <summary>Test Data capabilities a valid fixture for <see cref="SchemaName"/> satisfies (e.g. the pack's payload role), recorded when it is saved.</summary>
+    public IReadOnlyList<string> FixtureCapabilities { get; init; } = [];
+    /// <summary>The integration requirement's producer → consumer ("Altinn → MU"), from the pack definition.</summary>
+    public string? Flow { get; init; }
 }

@@ -27,7 +27,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
 
     private static readonly TestDataSourceSummary Configured = new("configured", "Configured catalog", "Typed assets supplied by TestData configuration.", 0, 0,
         TestDataSourceStatus.NotConfigured, "Read from the TestData configuration section.") { StatusLabel = "Not configured" };
-    private static readonly TestDataSourceSummary Local = new("altinn-local", "Local approved configuration", "Approved local test references supplied by environment or test configuration.", 0, 0,
+    private static readonly TestDataSourceSummary Local = new("altinn-local", "Approved local test data", "Approved local test references supplied by environment or test configuration.", 0, 0,
         TestDataSourceStatus.NotConfigured, "Currently includes approved synthetic TestID reporters and synthetic persons.") { StatusLabel = "No approved assets" };
     private static readonly TestDataSourceSummary Studio = new("schema-studio", "Schema Studio", "Reusable schema-derived XML explicitly registered as Test Data.", 0, 0,
         TestDataSourceStatus.NotConfigured, "Only saved XML that was registered for reuse appears here.") { StatusLabel = "No registered fixtures" };
@@ -125,7 +125,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
 
         // Domain-specific wording is never on a card's face; it is in the collapsed source detail.
         var local = page.Find("[data-testid=td-source][data-source=altinn-local]");
-        local.QuerySelector("h3")!.TextContent.Should().Be("Local approved configuration");
+        local.QuerySelector("h3")!.TextContent.Should().Be("Approved local test data", "the provider names its approved local data in tester words");
         page.Find("[data-testid=td-source-details-altinn-local-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.Find("[data-testid=td-source-details-altinn-local-body]").TextContent.Should().Contain("TestID");
         page.Find("[data-testid=td-lead]").TextContent.Should().NotContainAny("Altinn", "TestID", "Skolenærvær", "reporter");
@@ -196,7 +196,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         var page = Page(Populated());
         foreach (var row in Rows(page).Values)
         {
-            row.QuerySelector("[data-testid=td-asset-source]")!.TextContent.Should().NotBeNullOrWhiteSpace();
+            row.QuerySelector("[data-testid=td-asset-source]").Should().BeNull("the compact table keeps Source in Details");
             row.NextElementSibling!.QuerySelector("[data-testid=td-provenance-source]")!.TextContent.Should().NotBeNullOrWhiteSpace();
         }
         var studio = Rows(page)["valid-report"].NextElementSibling!;
