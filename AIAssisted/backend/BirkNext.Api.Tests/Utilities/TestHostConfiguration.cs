@@ -137,26 +137,40 @@ public static class TestHostConfiguration
             });
     }
 
+    /// <summary>
+    /// Snapshot of the real appsettings.Local.json, restored byte for byte. Test classes run in parallel: without the process-wide gate a second
+    /// test could snapshot the file while the first one's save is still in it and "restore" that rewritten copy (reformatted JSON, LF line
+    /// endings) — leaving the developer's file modified. The gate serializes every test that may write the file, from snapshot to restore.
+    /// </summary>
     private sealed class LocalSettingsSnapshot : IDisposable
     {
+        private static readonly SemaphoreSlim Gate = new(1, 1);
         private readonly string _path;
         private readonly byte[]? _content;
+        private bool _disposed;
 
         public LocalSettingsSnapshot(string path)
         {
+            Gate.Wait();
             _path = path;
             _content = File.Exists(path) ? File.ReadAllBytes(path) : null;
         }
 
         public void Dispose()
         {
-            if (_content is null)
+            if (_disposed) return;
+            _disposed = true;
+            try
             {
-                if (File.Exists(_path)) File.Delete(_path);
-                return;
-            }
+                if (_content is null)
+                {
+                    if (File.Exists(_path)) File.Delete(_path);
+                    return;
+                }
 
-            File.WriteAllBytes(_path, _content);
+                File.WriteAllBytes(_path, _content);
+            }
+            finally { Gate.Release(); }
         }
     }
 }
