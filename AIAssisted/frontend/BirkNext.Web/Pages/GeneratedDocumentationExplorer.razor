@@ -5,6 +5,7 @@
 @using Gde = BirkNext.Web.Services.GeneratedDocumentationExplorer
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>Generated Documentation Explorer — QA Review Studio</PageTitle>
 
@@ -44,11 +45,12 @@
                 @foreach (var d in ModuleDocuments)
                 {
                     var doc = d;
-                    <li class="gde-card @(doc.Path == _selectedPath ? "is-selected" : "")" data-testid="gde-document-card" data-role="@doc.Role">
-                        <p><strong>@doc.RoleLabel</strong></p>
+                    <li class="gde-card @(doc.Path == _selectedPath ? "is-selected" : "") @(doc.ContentAvailable ? "" : "is-unavailable")" data-testid="gde-document-card" data-role="@doc.Role"
+                        data-state="@(doc.ContentAvailable ? "available" : "unavailable")" aria-current="@(doc.Path == _selectedPath ? "true" : null)">
+                        <p><strong>@doc.RoleLabel</strong>@if (doc.Path == _selectedPath) { <span class="gde-selected-mark"> · Selected</span> }</p>
                         <p class="gde-muted gde-wrap"><code>@doc.Path</code></p>
-                        <p class="gde-muted" data-testid="gde-card-state">@(doc.ContentAvailable ? "Available" : "Content unavailable")</p>
-                        <button type="button" class="btn-secondary btn-small" data-testid="gde-open" @onclick="() => Select(doc.Path)">Open<span class="visually-hidden"> @doc.Path</span></button>
+                        <p class="gde-card-state gde-state-@(doc.ContentAvailable ? "available" : "unavailable")" data-testid="gde-card-state">@Gde.Availability(doc)</p>
+                        <button type="button" class="@(doc.ContentAvailable ? "btn-primary" : "btn-secondary") btn-small" data-testid="gde-open" @onclick="() => Select(doc.Path)">@(doc.ContentAvailable ? "Open" : "Details")<span class="visually-hidden"> @doc.Path</span></button>
                     </li>
                 }
             </ul>
@@ -58,7 +60,7 @@
         {
             var d = view.Document;
             <section class="gde-document" aria-labelledby="gde-doc-h" data-testid="gde-document">
-                <h2 id="gde-doc-h">@d.Module · Generated @d.RoleLabel</h2>
+                <h2 id="gde-doc-h" tabindex="-1">@d.Module · Generated @d.RoleLabel</h2>
                 <dl class="gde-facts">
                     <div><dt>Source</dt><dd><code class="gde-wrap" data-testid="gde-source-path">@d.Path</code></dd></div>
                     <div><dt>Origin</dt><dd data-testid="gde-origin">@Gde.Origin</dd></div>
@@ -70,27 +72,28 @@
                     {
                         <a class="btn-secondary btn-small" data-testid="gde-compare-drift" href="@($"documentation-drift?tab=compare&import={Uri.EscapeDataString(_importId)}&module={Uri.EscapeDataString(d.Module)}&concern={concern}")">Compare in Documentation Drift</a>
                     }
-                    <a class="btn-link" data-testid="gde-open-health" href="@NavigationCatalog.GeneratedDocumentationHealthRoute">Open Generated Documentation Health</a>
+                    <a class="btn-link" data-testid="gde-open-health" href="@($"{NavigationCatalog.GeneratedDocumentationHealthRoute}?import={Uri.EscapeDataString(_importId)}{(d.Document.SourceSnapshotId is { } healthSnapshot ? $"&snapshot={healthSnapshot}" : "")}")">Open Generated Documentation Health</a>
                     @if (d.Document.SourceSnapshotId is { } snapshot)
                     {
                         <a class="btn-link" data-testid="gde-open-source" href="@($"source-analysis?snapshot={snapshot}")">Related Source Analysis snapshot</a>
                     }
                 </p>
-                <nav class="gde-tabs" aria-label="Document views" data-testid="gde-tabs">
+                <div class="gde-tabs gde-sticky" role="tablist" aria-label="Document views" data-testid="gde-tabs">
                     @foreach (var tab in new[] { "Overview", "Structure", "Source", "Provenance" })
                     {
                         var t = tab;
-                        <button type="button" class="@(_tab == t ? "is-current" : "")" aria-pressed="@(_tab == t ? "true" : "false")" data-testid="gde-tab" data-tab="@t" @onclick="() => _tab = t">@t</button>
+                        <button type="button" role="tab" class="@(_tab == t ? "is-current" : "")" aria-selected="@(_tab == t ? "true" : "false")" aria-controls="gde-tabpanel" data-testid="gde-tab" data-tab="@t" @onclick="() => _tab = t">@t</button>
                     }
-                </nav>
+                </div>
                 <label class="gde-field gde-search">Search this document <input type="search" @bind="_search" @bind:event="oninput" data-testid="gde-search" /></label>
                 @if (!string.IsNullOrWhiteSpace(_search))
                 {
                     <ul class="gde-plain" data-testid="gde-search-results">@foreach (var (line, text) in Gde.Search(view.Content, _search)) { <li><span class="gde-muted">L@(line)</span> @text</li> }</ul>
                 }
+                <div id="gde-tabpanel" role="tabpanel" aria-label="@_tab">
                 @if (view.State == GeneratedDocumentParseState.ContentUnavailable && _tab is "Structure" or "Source")
                 {
-                    <p class="gde-note" role="status" data-testid="gde-content-unavailable"><strong>Content unavailable for structured view.</strong> @Gde.ContentUnavailableText</p>
+                    <p class="gde-note" role="status" data-testid="gde-content-unavailable"><strong>Detected — content unavailable.</strong> @Gde.ContentUnavailableText</p>
                 }
                 else
                 {
@@ -102,6 +105,7 @@
                         default: @Provenance(view) break;
                     }
                 }
+                </div>
             </section>
         }
     }
@@ -114,7 +118,8 @@
     private IReadOnlyList<DriftImport> _imports = [];
     private string _importId = "", _module = "", _selectedPath = "", _tab = "Overview", _search = "";
     private GeneratedDocumentView? _view;
-    private bool _showRaw;
+    private BirkNext.SourceDomains.SourceContract? _contract;
+    private bool _contractLoading, _focusDocument;
 
     private WorkspaceArtifactRepository? Repository => ServiceProvider.GetService(typeof(IWorkspaceArtifactRepository)) as WorkspaceArtifactRepository
         ?? ServiceProvider.GetService(typeof(WorkspaceArtifactRepository)) as WorkspaceArtifactRepository;
@@ -142,9 +147,58 @@
     private void Select(string path)
     {
         if (Repository?.SddLifecycle is not { } state || ModuleDocuments.FirstOrDefault(d => d.Path == path) is not { } doc) return;
-        _selectedPath = path; _tab = "Overview"; _search = "";
-        _view = Gde.View(doc, DocumentationDrift.Text(state, doc.Document), Parser);
+        _selectedPath = path; _tab = "Overview"; _search = ""; _contract = null;
+        var content = DocumentationDrift.Text(state, doc.Document);
+        _view = Gde.View(doc, content, Parser);
+        _focusDocument = true;
+        // OpenAPI / GraphQL: the backend's Source Analysis readers give the structure (stateless; no remote refs, no introspection).
+        if (doc.Role is GeneratedDocumentRole.ApiContract or GeneratedDocumentRole.GraphQlSchema && content is not null && !DocumentationDrift.IsMarkdown(doc.Path)
+            && ServiceProvider.GetService(typeof(IGeneratedDocumentationApiService)) is IGeneratedDocumentationApiService api)
+            _ = LoadContractAsync(api, doc.Path, content);
     }
+
+    private async Task LoadContractAsync(IGeneratedDocumentationApiService api, string path, string content)
+    {
+        _contractLoading = true;
+        try { var contract = await api.StructureAsync(path, content); if (_selectedPath == path) _contract = contract; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _contract = null; }
+        finally { _contractLoading = false; await InvokeAsync(StateHasChanged); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusDocument) return;
+        _focusDocument = false;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", "gde-doc-h"); } catch (JSException) { }
+    }
+
+    /// <summary>A fenced block: a recognised diagram as participants/steps or nodes/edges (source behind a disclosure); other code as code.</summary>
+    private static RenderFragment CodeBlock(string block, string heading) => __builder =>
+    {
+        if (!GeneratedDiagrams.IsDiagram(block)) { <pre class="gde-code">@block</pre> return; }
+        var diagram = GeneratedDiagrams.Read(block);
+        <div class="gde-diagram" data-testid="gde-diagram" data-kind="@(diagram?.Kind.ToString() ?? "Unavailable")">
+            @if (diagram is null)
+            {
+                <p class="gde-muted" data-testid="gde-diagram-unavailable">Diagram preview unavailable for this diagram type. Its source is kept below and in the Source tab.</p>
+            }
+            else if (diagram.Kind == GeneratedDiagramKind.Sequence)
+            {
+                <p class="gde-diagram-facts"><strong>Participants (@diagram.Participants.Count)</strong> @string.Join(" · ", diagram.Participants)</p>
+                <ol class="gde-steps" data-testid="gde-diagram-steps" aria-label="@($"{heading} sequence steps")">
+                    @foreach (var step in diagram.Steps) { <li>@step.From → @step.To: @step.Message@if (step.Branch is { } branch) { <span class="gde-muted"> (@branch)</span> }</li> }
+                </ol>
+                @if (diagram.Branches.Count > 0) { <p class="gde-diagram-facts" data-testid="gde-diagram-branches"><strong>Alternative / failure paths</strong> @string.Join(" · ", diagram.Branches)</p> }
+            }
+            else
+            {
+                @if (diagram.Groups.Count > 0) { <ul class="gde-plain" data-testid="gde-diagram-groups">@foreach (var (name, members) in diagram.Groups) { <li><strong>@name</strong>: @string.Join(", ", members)</li> }</ul> }
+                <p class="gde-diagram-facts"><strong>Components (@diagram.Nodes.Count)</strong></p>
+                <ul class="gde-plain" data-testid="gde-diagram-edges" aria-label="@($"{heading} relationships")">@foreach (var edge in diagram.Edges) { <li>@edge.From → @edge.To@(edge.Label is { Length: > 0 } label ? $" ({label})" : "")</li> }</ul>
+            }
+            <ReviewDisclosure Text="Show diagram source" CollapseText="Hide diagram source" Class="disclosure-inline disclosure-small"><pre class="gde-code gde-raw">@block</pre></ReviewDisclosure>
+        </div>
+    };
 
     private RenderFragment Overview(GeneratedDocumentView v) => __builder =>
     {
@@ -182,12 +236,20 @@
         }
         else if (v.ChangeLog.Count > 0)
         {
-            @foreach (var version in v.ChangeLog)
+            <p class="gde-muted" data-testid="gde-changelog-summary">@v.ChangeLog.Count release@(v.ChangeLog.Count == 1 ? "" : "s") · latest @v.ChangeLog[0].Version@(v.ChangeLog[0].Date is { } latestDate ? $" ({latestDate})" : "")</p>
+            @for (var i = 0; i < v.ChangeLog.Count; i++)
             {
-                <section class="gde-version" data-testid="gde-changelog-version"><h3>@version.Version@(version.Date is { } date ? $" · {date}" : "")</h3>
-                    @foreach (var (category, entries) in version.Groups) { <p><strong data-testid="gde-changelog-category">@category</strong></p><ul class="gde-plain">@foreach (var entry in entries) { <li>@entry</li> }</ul> }
+                var version = v.ChangeLog[i];
+                <section class="gde-version" data-testid="gde-changelog-version">
+                    <ReviewDisclosure Text="@($"{version.Version}{(version.Date is { } date ? $" · {date}" : "")} · {version.Groups.Sum(g => g.Entries.Count)} change(s)")" Expanded="@(i == 0)" Class="disclosure-inline">
+                        @foreach (var (category, entries) in version.Groups) { <p><strong data-testid="gde-changelog-category">@category</strong></p><ul class="gde-plain">@foreach (var entry in entries) { <li>@entry</li> }</ul> }
+                    </ReviewDisclosure>
                 </section>
             }
+        }
+        else if (v.Document.Role is GeneratedDocumentRole.ApiContract or GeneratedDocumentRole.GraphQlSchema && !DocumentationDrift.IsMarkdown(v.Document.Path))
+        {
+            @ContractStructure(v)
         }
         else
         {
@@ -202,7 +264,7 @@
                         <div class="gde-table-wrap" tabindex="0" role="region" aria-label="@s.Heading table"><table class="gde-table" data-testid="gde-table"><thead><tr>@foreach (var h in t.Header) { <th>@h</th> }</tr></thead>
                             <tbody>@foreach (var row in t.Rows) { <tr>@foreach (var cell in row) { <td>@cell</td> }</tr> }</tbody></table></div>
                     }
-                    @foreach (var block in s.CodeBlocks) { <pre class="gde-code">@block</pre> }
+                    @foreach (var block in s.CodeBlocks) { @CodeBlock(block, s.Heading) }
                     @if (s.Prose.Count > 0) { <details><summary>Text (@s.Prose.Count)</summary>@foreach (var p in s.Prose) { <p>@p</p> }</details> }
                 </section>
             }
@@ -216,23 +278,65 @@
         </div>
     };
 
+    /// <summary>Source: exactly what was imported/generated — raw, in its own format (never transformed into Markdown).</summary>
     private RenderFragment Source(GeneratedDocumentView v) => __builder =>
     {
         <div data-testid="gde-source">
-            <label class="gde-check"><input type="checkbox" @bind="_showRaw" data-testid="gde-raw-toggle" /> Show raw Markdown</label>
-            @if (_showRaw) { <pre class="gde-code gde-raw" data-testid="gde-raw">@v.Content</pre> }
-            else
-            {
-                <ul class="gde-plain" data-testid="gde-outline">@foreach (var s in v.Sections.Where(s => s.Level > 0)) { <li class="gde-level-@Math.Min(s.Level, 4)">@s.Heading <span class="gde-muted">L@(s.Line)</span></li> }</ul>
-                <pre class="gde-code" data-testid="gde-readable">@v.Content</pre>
-            }
+            <p class="gde-muted" data-testid="gde-source-language">Raw @Gde.SourceLanguage(v.Document.Path) · @v.LineCount lines · @v.ByteSize bytes</p>
+            <pre class="gde-code gde-raw" data-testid="gde-raw">@v.Content</pre>
             <p class="gde-muted">Read-only. Generated documentation is never edited here.</p>
+        </div>
+    };
+
+    /// <summary>OpenAPI / GraphQL structure from the backend's Source Analysis readers: operations grouped by path or kind, types with their fields.</summary>
+    private RenderFragment ContractStructure(GeneratedDocumentView v) => __builder =>
+    {
+        if (_contractLoading) { <p class="gde-muted" role="status">Reading the contract structure…</p> return; }
+        if (_contract is not { } c) { <p class="gde-note" role="status" data-testid="gde-contract-unparsed">The structure could not be read from this artifact. Its full content is in the Source tab.</p> return; }
+        var graphQl = v.Document.Role == GeneratedDocumentRole.GraphQlSchema;
+        <div data-testid="gde-contract" data-kind="@(graphQl ? "graphql" : "openapi")">
+            <p class="gde-muted" data-testid="gde-contract-summary">@c.Name@(c.Version is { } version ? $" · {version}" : "") · @c.Operations.Count operation@(c.Operations.Count == 1 ? "" : "s") · @c.Types.Count type@(c.Types.Count == 1 ? "" : "s")@(c.ParseSupport == BirkNext.SourceDomains.DomainSupport.Partial ? " · partially parsed" : "")</p>
+            @foreach (var group in c.Operations.GroupBy(o => graphQl ? o.Kind : o.Path ?? o.Name))
+            {
+                <section class="gde-section" data-testid="gde-contract-group">
+                    <h3>@group.Key <span class="gde-muted">@group.Count()</span></h3>
+                    <ul class="gde-plain">
+                        @foreach (var op in group)
+                        {
+                            <li data-testid="gde-contract-operation"><strong>@op.Name</strong>@if (op.Summary is { } summary) { <span> — @summary</span> }
+                                @if (op.OperationId is { } opId) { <span class="gde-muted"> · @opId</span> }
+                                @if (op.Parameters.Count > 0) { <span class="gde-muted"> · parameters: @string.Join(", ", op.Parameters)</span> }
+                                @if (op.RequestSchema is { } request) { <span class="gde-muted"> · request: @request</span> }
+                                @if (op.ResponseCodes.Count > 0) { <span class="gde-muted"> · responses: @string.Join(", ", op.ResponseCodes)</span> }
+                                @if (op.Security.Count > 0) { <span class="gde-muted"> · security: @string.Join(", ", op.Security)</span> }
+                                @if (op.ResultType is { } result) { <span class="gde-muted"> · returns @result</span> }</li>
+                        }
+                    </ul>
+                </section>
+            }
+            @if (c.Types.Count > 0)
+            {
+                <ReviewDisclosure Text="@($"Show {(graphQl ? "types" : "schemas")} ({c.Types.Count})")" CollapseText="Hide types" Class="disclosure-inline">
+                    @foreach (var type in c.Types)
+                    {
+                        <details class="gde-entity" data-testid="gde-contract-type"><summary><strong>@type.Name</strong> <span class="gde-muted">@type.Kind · @type.Fields.Count field@(type.Fields.Count == 1 ? "" : "s")</span></summary>
+                            <table class="gde-table"><thead><tr><th>Field</th><th>Type</th><th>Required</th></tr></thead><tbody>
+                                @foreach (var f in type.Fields) { <tr><td>@f.Name</td><td>@f.Type</td><td>@(f.Required ? "Yes" : "No")</td></tr> }
+                            </tbody></table>
+                            @if (type.Values.Count > 0) { <p class="gde-muted">Values: @string.Join(", ", type.Values)</p> }
+                        </details>
+                    }
+                </ReviewDisclosure>
+            }
+            @if (c.Limitations.Count > 0) { <p class="gde-muted" data-testid="gde-contract-limitations">@string.Join(" ", c.Limitations)</p> }
+            <p class="gde-muted">Static, imported document only: no remote reference is resolved and no endpoint is called.</p>
         </div>
     };
 
     private RenderFragment Provenance(GeneratedDocumentView v) => __builder =>
     {
         var d = v.Document.Document;
+        <p data-testid="gde-provenance-summary">Generated by @(d.Generator ?? "an unidentified generator") from Source Analysis snapshot @(d.SourceSnapshotId is { } snap ? snap.ToString()[..8] : "(not known)")@(d.ImportedAt is { } importedAt ? $", imported {importedAt.ToLocalTime():g}" : "").</p>
         <dl class="gde-facts" data-testid="gde-provenance">
             <div><dt>Project / import</dt><dd>@(d.ProjectRevision ?? "—")</dd></div>
             <div><dt>Module</dt><dd>@v.Document.Module</dd></div>

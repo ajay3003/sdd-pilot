@@ -437,3 +437,15 @@
     .pte-card-head { grid-template-columns: auto minmax(0, 1fr); }
     .pte-card-head > :last-child { grid-column: 1 / -1; justify-self: start; }
 }
+
+/* Local execution setup: Container TLS trust */
+.pte-trust:focus { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.pte-stages { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .3rem; }
+.pte-stages li { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; }
+.pte-stage-name { min-width: 11rem; font-weight: 600; }
+.pte-stage-detail { color: var(--clr-text-muted, #475569); font-size: .85rem; }
+.pte-ca-form { display: grid; gap: .35rem; margin-top: .5rem; min-width: 0; }
+.pte-ca-label { font-weight: 600; font-size: .875rem; }
+.pte-ca-row { display: flex; flex-wrap: wrap; gap: .5rem; min-width: 0; }
+.pte-ca-input { flex: 1 1 18rem; min-width: 0; max-width: 40rem; padding: .35rem .5rem; border: 1px solid var(--clr-border, #cbd5e1); border-radius: .375rem; background: var(--clr-surface-white, #fff); color: inherit; font-family: var(--font-mono, monospace); }
+.pte-back { white-space: nowrap; }

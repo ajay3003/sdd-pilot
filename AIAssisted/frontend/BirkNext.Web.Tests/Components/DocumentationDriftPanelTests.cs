@@ -109,17 +109,91 @@ public sealed class DocumentationDriftPanelTests : BunitContext
         cut.Find("[data-testid=dd-mode]").Change(nameof(DriftIntent.Manual));
         var cart = Catalog().Single(d => d.ProjectImportId == "import-a" && d.Origin == DriftOrigin.Authored);
         var terraform = Catalog().Single(d => d.ProjectImportId == "import-t");
-        cut.Find("[data-testid=dd-left-document]").Change(cart.Id);
-        cut.Find("[data-testid=dd-right-document]").Change(cart.Id);
+        cut.Find("[data-testid=dd-left-search]").GetAttribute("role").Should().Be("combobox");
+        cut.Find("[data-testid=dd-left-search]").GetAttribute("list").Should().Be("dd-document-options");
+        cut.FindAll("#dd-document-options option").Should().HaveCount(Catalog().Count(d => d.Supported), "every document is searchable by type, path and import");
+        cut.Find("[data-testid=dd-left-search]").Change(DocumentationDriftPresentation.SearchText(cart));
+        cut.Find("[data-testid=dd-right-search]").Change(DocumentationDriftPresentation.SearchText(cart));
         cut.Find("[data-testid=dd-guard]").TextContent.Should().Be("Select two different document versions or artifacts.");
         cut.Find("[data-testid=dd-run]").HasAttribute("disabled").Should().BeTrue();
 
-        cut.Find("[data-testid=dd-right-document]").Change(terraform.Id);
+        cut.Find("[data-testid=dd-right-search]").Change(DocumentationDriftPresentation.SearchText(terraform));
         cut.Find("[data-testid=dd-revision-context]").TextContent.Should().StartWith(DocumentationDrift.UnrelatedImports);
         cut.Find("[data-testid=dd-manual-note]").TextContent.Should().Contain("not assumed to describe equivalent scope");
+        cut.Find("[data-testid=dd-compatibility]").GetAttribute("data-level").Should().Be(nameof(DriftCompatibility.Partial), "both are specifications of different projects");
+        cut.Find("[data-testid=dd-run]").TextContent.Should().Be("Compare");
         cut.Find("[data-testid=dd-run]").Click();
-        cut.Find("[data-testid=dd-result-manual]").TextContent.Should().Contain("Manual document comparison");
+        cut.Find("[data-testid=dd-result-manual]").TextContent.Should().Contain("Scope equivalence not assumed").And.Contain("Compatibility: Partial");
         cut.Find("[data-testid=dd-outcome]").TextContent.Should().StartWith("Document differences");
+    }
+
+    [Fact]
+    public void Advanced_comparison_of_different_types_warns_and_offers_compare_anyway_never_blocks()
+    {
+        var cut = Render<DocumentationDriftPanel>();
+        cut.Find("[data-testid=dd-mode]").Change(nameof(DriftIntent.Manual));
+        var spec = Catalog().Single(d => d.Origin == DriftOrigin.Authored);
+        var architecture = Catalog().Single(d => d.Origin == DriftOrigin.Generated);
+        cut.Find("[data-testid=dd-left-search]").Change(DocumentationDriftPresentation.SearchText(spec));
+        cut.Find("[data-testid=dd-right-search]").Change(DocumentationDriftPresentation.SearchText(architecture));
+        cut.Find("[data-testid=dd-compatibility]").GetAttribute("data-level").Should().Be(nameof(DriftCompatibility.Low));
+        cut.Find("[data-testid=dd-compatibility-warning]").TextContent.Should().Contain("You can still compare them");
+        var run = cut.Find("[data-testid=dd-run]");
+        run.TextContent.Should().Be("Compare anyway");
+        run.HasAttribute("disabled").Should().BeFalse("a low compatibility is a warning, never a hard block");
+        run.Click();
+        cut.Find("[data-testid=dd-result-manual]").TextContent.Should().Contain("Scope equivalence not assumed").And.Contain("Compatibility: Low");
+    }
+
+    [Fact]
+    public void Results_are_summary_first_grouped_filterable_and_searchable()
+    {
+        var cut = Render<DocumentationDriftPanel>();
+        cut.Find("[data-testid=dd-left-document]").Change(Catalog().Single(d => d.Origin == DriftOrigin.Authored).Id);
+        cut.Find("[data-testid=dd-right-document]").Change(Catalog().Single(d => d.Origin == DriftOrigin.Generated).Id);
+        cut.Find("[data-testid=dd-run]").Click();
+
+        var counts = cut.FindAll("[data-testid=dd-status-count]");
+        counts.Should().NotBeEmpty();
+        counts.Should().OnlyContain(c => c.ClassList.Any(k => k.StartsWith("dd-status-")) && c.TextContent.Contains(" · "), "colour always comes with text");
+        cut.FindAll("[data-testid=dd-result-group]").Should().NotBeEmpty();
+        var all = cut.FindAll("[data-testid=dd-item]").Count;
+        var filters = cut.FindAll("[data-testid=dd-result-filter]");
+        filters[0].TextContent.Should().Be($"All ({all})");
+        filters[1].Click();
+        var status = cut.FindAll("[data-testid=dd-result-filter]")[1].GetAttribute("data-status");
+        cut.FindAll("[data-testid=dd-result-filter]")[1].GetAttribute("aria-pressed").Should().Be("true");
+        cut.FindAll("[data-testid=dd-item]").Should().OnlyContain(i => i.GetAttribute("data-status") == status);
+
+        cut.FindAll("[data-testid=dd-result-filter]")[0].Click();
+        cut.Find("[data-testid=dd-result-search]").Input("no-such-term-anywhere");
+        cut.Find("[data-testid=dd-result-empty]").TextContent.Should().Be("No item matches this filter.");
+    }
+
+    [Fact]
+    public void Overview_dashboard_summarises_one_import_and_shows_missing_generated_docs_neutrally()
+    {
+        SecondImportOfCart();
+        var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "overview"));
+        cut.Find("[data-testid=dd-dashboard]").TextContent.Should().Contain("Documentation review status");
+        cut.Find("[data-testid=dd-dash-authored]").TextContent.Should().Be("1");
+        cut.Find("[data-testid=dd-dash-generated]").TextContent.Should().Be("1 docs · 1 modules");
+        cut.FindAll("[data-testid=dd-generated-missing]").Should().BeEmpty();
+        cut.Find("[data-testid=dd-overview-all-toggle]").GetAttribute("aria-expanded").Should().Be("false", "the full inventory is secondary");
+
+        cut.Find("[data-testid=dd-overview-import]").Change("import-b");
+        cut.Find("[data-testid=dd-dash-generated]").TextContent.Should().Be("Not present");
+        cut.Find("[data-testid=dd-generated-missing]").TextContent.Should().Contain("neutral state");
+        cut.Find("[data-testid=dd-generated-missing-health]").GetAttribute("href").Should().Be($"{NavigationCatalog.GeneratedDocumentationHealthRoute}?import=import-b");
+        cut.Find("[data-testid=dd-generated-missing-explorer]").GetAttribute("href").Should().Be($"{NavigationCatalog.GeneratedDocumentationExplorerRoute}?import=import-b");
+        _repository.SddLifecycle.DocumentationDriftComparisons.Should().BeEmpty("the dashboard never compares");
+    }
+
+    [Fact]
+    public void Changes_and_drift_say_what_they_are()
+    {
+        Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "changes")).Find("[data-testid=dd-changes-intro]").TextContent.Should().StartWith("Changes = same-lineage revisions.");
+        Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "drift")).Find("[data-testid=dd-drift-intro]").TextContent.Should().StartWith("Drift = divergence inventory.");
     }
 
     [Fact]

@@ -274,6 +274,24 @@ public sealed class DocumentationDriftCompositeTests : BunitContext
         _repository.SddLifecycle.DocumentationDriftComparisons.Should().ContainSingle().Which.Contributors.Should().HaveCount(2);
     }
 
+    // UI: separate Module and Documentation area selectors with an availability card; a single available area is preselected.
+    [Fact]
+    public void Module_and_documentation_area_are_separate_selectors_with_availability()
+    {
+        PersonModule(Model(Person, BarnType), ("Person/specs/001-person-module/data-model.md", Model(Person)));
+        var cut = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "compare"));
+        cut.Find("[data-testid=dd-composite-area]").HasAttribute("disabled").Should().BeTrue("choose a module first");
+        cut.Find("[data-testid=dd-composite-module]").Change("Person");
+        cut.Find("[data-testid=dd-composite-area] option[selected]").GetAttribute("value").Should().Be(Group().Key);
+        var availability = cut.Find("[data-testid=dd-availability]");
+        availability.GetAttribute("data-state").Should().Be(nameof(DriftGroupState.ComparisonAvailable));
+        availability.TextContent.Should().Contain("1 document").And.Contain("Present").And.Contain("Available");
+        cut.Find("[data-testid=dd-composite-run]").HasAttribute("disabled").Should().BeFalse();
+        cut.Find("[data-testid=dd-composite-run]").Click();
+        cut.FindAll("[data-testid=dd-result-group]").Should().NotBeEmpty("rows are grouped by entity");
+        cut.FindAll("[data-testid=dd-result-group]").Select(g => g.GetAttribute("data-group")).Should().OnlyHaveUniqueItems();
+    }
+
     // UI: compare disabled when a side is absent.
     [Fact]
     public void Compare_is_disabled_when_the_generated_side_is_absent()
@@ -286,5 +304,7 @@ public sealed class DocumentationDriftCompositeTests : BunitContext
         cut.Find("[data-testid=dd-composite-group]").Change(Group("Person").Key);
         cut.Find("[data-testid=dd-composite-state]").TextContent.Should().Contain("generated documentation not present");
         cut.Find("[data-testid=dd-composite-run]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=dd-generated-missing]").TextContent.Should().Contain("neutral state");
+        cut.Find("[data-testid=dd-generated-missing-health]").GetAttribute("href").Should().EndWith("?import=i1");
     }
 }

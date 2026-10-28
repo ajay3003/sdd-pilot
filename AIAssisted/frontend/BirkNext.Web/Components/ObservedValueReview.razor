@@ -1,0 +1,116 @@
+@using BirkNext.PerformanceTests
+@using BirkNext.TestData
+@using BirkNext.Web.Services
+@inject IServiceProvider ServiceProvider
+
+@* Review observed value for Test Data: the bridge from a Live Discovery value to central Test Data. The value stays hidden unless the person
+   explicitly shows it here; it is compared with approved Test Data in the backend (alias only comes back), or the parameter is registered as an
+   unapproved Test Data candidate (metadata only — the value is never sent for registration). Nothing is approved, nothing runs. *@
+<section class="ovr" role="dialog" aria-modal="false" aria-labelledby="@_titleId" data-testid="ovr">
+    <h4 id="@_titleId" tabindex="-1" class="ovr-title">Review observed value for Test Data · <code>@Placeholder</code></h4>
+    <dl class="ovr-facts" data-testid="ovr-provenance">
+        <div><dt>Parameter</dt><dd>@Evidence.Variable</dd></div>
+        <div><dt>Location</dt><dd>@Location(Evidence.In)</dd></div>
+        <div><dt>Endpoint template</dt><dd><code class="ptc-break">@Method @Evidence.Template</code></dd></div>
+        <div><dt>Target environment</dt><dd>@(EnvironmentName ?? "Not set")</dd></div>
+        <div><dt>Source</dt><dd>Live Discovery</dd></div>
+        <div><dt>Observations</dt><dd data-testid="ovr-count">@Evidence.Observations · last seen @(Evidence.LastSeen?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") ?? "unknown") UTC</dd></div>
+        <div><dt>Successful HTTP observations</dt><dd>@Evidence.SuccessfulObservations</dd></div>
+        <div><dt>Authenticated traffic</dt><dd>@(Evidence.AuthenticatedTraffic ? "Yes (bearer observed; no token kept)" : "No")</dd></div>
+        <div><dt>Observed value</dt><dd data-testid="ovr-value">
+            @if (_show && Evidence.Values.Count > 0) { <code class="ptc-break">@Evidence.Values[0]</code>@if (Evidence.Values.Count > 1) { <span class="ptc-sub"> (+@(Evidence.Values.Count - 1) other observed value@(Evidence.Values.Count == 2 ? "" : "s"))</span> } }
+            else { <span>@(Evidence.Values.Count == 0 ? "Not available" : "Available · hidden")</span> }
+            @if (Evidence.Values.Count > 0)
+            {
+                <button type="button" class="ptc-link" aria-pressed="@(_show ? "true" : "false")" @onclick="() => _show = !_show" data-testid="ovr-show">@(_show ? "Hide value" : "Show value")</button>
+            }
+        </dd></div>
+    </dl>
+    <p class="ptc-sub">An observed value is evidence, not Test Data: it is never copied into the scenario and never approved automatically.</p>
+
+    @if (_match is { Matched: true } match)
+    {
+        <p class="ovr-match" role="status" data-testid="ovr-match"><strong>Existing approved Test Data match found</strong> · <code>@match.Alias</code></p>
+    }
+    else if (_match is { Matched: false } none)
+    {
+        <p class="ptc-sub" role="status" data-testid="ovr-no-match">@none.Detail</p>
+    }
+    @if (_message is { } message) { <p class="@(_error ? "ptc-save-error" : "ptc-sub")" role="@(_error ? "alert" : "status")" data-testid="ovr-message">@message</p> }
+
+    <div class="ovr-actions">
+        @if (_match is { Matched: true, Alias: { } alias })
+        {
+            <button type="button" class="btn-primary" @onclick="() => OnUseAlias.InvokeAsync(alias)" data-testid="ovr-use-match">Use this asset</button>
+        }
+        else if (Evidence.Values.Count > 0)
+        {
+            <button type="button" class="btn-secondary" disabled="@_busy" @onclick="CheckAsync" data-testid="ovr-check">@(_busy ? "Checking…" : "Check for approved Test Data")</button>
+        }
+        @if (OnUseExisting.HasDelegate) { <button type="button" class="btn-secondary" @onclick="OnUseExisting" data-testid="ovr-use-existing">Use existing approved Test Data</button> }
+        <button type="button" class="btn-secondary" disabled="@(_busy || _registered)" @onclick="RegisterAsync" data-testid="ovr-register">@(_registered ? "Registered · Needs review" : "Register as Test Data candidate")</button>
+        <button type="button" class="ptc-link" @onclick="OnCancel" data-testid="ovr-cancel">Cancel</button>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ObservedValueEvidence Evidence { get; set; } = default!;
+    [Parameter] public string Method { get; set; } = "GET";
+    [Parameter] public string? EnvironmentName { get; set; }
+    [Parameter] public string? EnvironmentId { get; set; }
+    [Parameter] public TestDataDataType DataType { get; set; } = TestDataDataType.SimpleValues;
+    [Parameter] public EventCallback<string> OnUseAlias { get; set; }
+    /// <summary>Opens the compatible approved Test Data choice (the scenario's mapping dialog).</summary>
+    [Parameter] public EventCallback OnUseExisting { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly string _titleId = $"ovr-{Guid.NewGuid():N}";
+    private bool _show, _busy, _error, _registered;
+    private ObservedValueMatchResult? _match;
+    private string? _message;
+
+    private string Placeholder => Evidence.In == "variable" ? "$" + Evidence.Variable : "{" + Evidence.Variable + "}";
+    public static string Location(string place) => place switch { "path" => "Path parameter", "query" => "Query parameter", "body" => "Request body", "variable" => "GraphQL variable", "header" => "Header", _ => place };
+
+    /// <summary>The registered client, or the host's HttpClient factory (the WASM host does not register the interface itself).</summary>
+    private ITestDataApiService? Api => ServiceProvider.GetService(typeof(ITestDataApiService)) is not null || ServiceProvider.GetService(typeof(IHttpClientFactory)) is not null
+        ? TestDataApiService.Resolve(ServiceProvider) : null;
+
+    /// <summary>Backend-only comparison with approved Test Data: the most recent observed value goes in a POST body; only an alias comes back.</summary>
+    private async Task CheckAsync()
+    {
+        if (Api is null || Evidence.Values.Count == 0) return;
+        _busy = true;
+        var (result, error) = await Api.MatchObservedValueAsync(new ObservedValueMatchRequest(Evidence.Values[0], DataType, EnvironmentName));
+        _busy = false;
+        _match = result;
+        _error = error is not null;
+        _message = error;
+    }
+
+    /// <summary>Registers the parameter as an unapproved Test Data candidate (metadata only: alias, label, type, environment, field name). The value
+    /// is not sent; Test Data's own lifecycle (candidate → needs review → approved) applies.</summary>
+    private async Task RegisterAsync()
+    {
+        if (Api is null) { _error = true; _message = "Test Data is not available in this host."; return; }
+        _busy = true;
+        var alias = Alias(Evidence.Variable, EnvironmentName);
+        var (_, error) = await Api.RegisterAsync(new TestDataRegistrationRequest
+        {
+            Alias = alias, Label = $"{Evidence.Variable} for {Method} {Evidence.Template} (observed by Live Discovery)", DataType = DataType, EnvironmentId = EnvironmentName,
+            Fields = [Evidence.Variable], Tags = ["live-discovery", "observed-parameter"],
+        });
+        _busy = false;
+        _error = error is not null;
+        _registered = error is null;
+        _message = error ?? $"Registered {alias} as a Test Data candidate — Needs review. It is not approved: supply and approve its value in Test Data before mapping it.";
+    }
+
+    /// <summary>A Test Data alias from safe names only (parameter + environment): lowercase letters, digits and hyphens.</summary>
+    public static string Alias(string variable, string? environment)
+    {
+        var raw = $"observed-{variable}{(string.IsNullOrWhiteSpace(environment) ? "" : "-" + environment)}";
+        var slug = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(raw, "([a-z])([A-Z])", "$1-$2").ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+        return slug.Length > 64 ? slug[..64].Trim('-') : slug;
+    }
+}

@@ -3,6 +3,7 @@
 @using P = BirkNext.Web.Services.PerformanceEngineCapabilityPresentation
 @inject IServiceProvider ServiceProvider
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 @* System Settings → Performance Test Engines: what this installation can run (engines, their execution runtime and image) and what
    Resource Stability can observe. Capability only — test definitions live in Performance Test Review, the target in Target Environment.
@@ -17,7 +18,14 @@
         </div>
         <div class="pte-actions">
             <button type="button" class="btn-secondary pte-refresh" @onclick="LoadAsync" disabled="@_loading" data-testid="pte-refresh">@(_loading ? "Checking…" : "Refresh")</button>
-            <a class="pte-link" href="performance-test-review">Open Performance Test Review</a>
+            @if (P.SafeReturn(_returnTo) is { } back)
+            {
+                <a class="btn-secondary pte-back" href="@back" data-testid="pte-back-to-review">← Back to Performance Test Review</a>
+            }
+            else
+            {
+                <a class="pte-link" href="performance-test-review">Open Performance Test Review</a>
+            }
         </div>
     </header>
 
@@ -51,6 +59,10 @@
             {
                 <div><dt>Execution</dt><dd>@P.RuntimeText(runtime)</dd></div>
             }
+            <div data-testid="pte-summary-local">
+                <dt>Local execution</dt>
+                <dd>@if (_local is { } le) { @Pill(P.Trust(le.TrustState), "Container TLS trust") <span class="pte-muted">Container TLS trust</span> } else { <span class="pte-muted">Not loaded</span> }</dd>
+            </div>
             <div>
                 <dt>Resource observation</dt>
                 <dd>@if (resourceSummary is { } rs) { @Pill(rs, "Resource observation") } else { <span class="pte-muted">No providers</span> }</dd>
@@ -131,6 +143,8 @@
             }
         </section>
 
+        @LocalExecutionSection()
+
         <section class="pte-section" aria-labelledby="pte-resources-heading">
             <h3 id="pte-resources-heading" class="pte-section-title">Resource Stability</h3>
             <p class="pte-section-sub">Runtime and container evidence BirkNext can observe during a performance test. Unavailable metrics are shown as unavailable, never as zero.</p>
@@ -203,6 +217,11 @@
 
 @code {
     private List<PerformanceProviderStatus>? _providers;
+    private PerformanceLocalExecutionStatus? _local;
+    private string _caPath = "";
+    private string? _caMessage;
+    private bool _caBusy, _caError, _focusTrust;
+    private string? _returnTo;
     private List<ResourceProviderCapability>? _resources;
     private IPerformanceTestApiService? _api;
     private bool _loading;
@@ -213,7 +232,19 @@
     protected override async Task OnInitializedAsync()
     {
         _api = ServiceProvider.GetService(typeof(IPerformanceTestApiService)) as IPerformanceTestApiService;
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        _returnTo = query.TryGetValue("returnTo", out var back) ? back.ToString() : null;
+        _focusTrust = query.TryGetValue("focus", out var focus) && focus.ToString() == "container-tls-trust";
         await LoadAsync();
+    }
+
+    /// <summary>A readiness deep link ("Open local execution setup") focuses the Container TLS trust card once it is rendered.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusTrust || _local is null) return;
+        _focusTrust = false;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", "container-tls-trust"); }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { }
     }
 
     /// <summary>Re-probes on request (no polling). Previous values stay on screen while checking, so the layout does not jump.</summary>
@@ -225,11 +256,124 @@
         {
             var providers = _api.ProvidersOrNullAsync();
             var resources = _api.ResourceProvidersOrNullAsync();
+            var local = _api.LocalExecutionAsync();
             _providers = await providers;
             _resources = await resources;
+            _local = await local;
+            if (_local?.Source == ContainerTlsTrustSources.SystemSettings && _caPath.Length == 0) _caPath = _local.BundlePath ?? "";
         }
         finally { _loading = false; }
     }
+
+    private async Task SaveCaAsync()
+    {
+        if (_api is null) return;
+        _caBusy = true;
+        var result = await _api.ConfigureCaBundleAsync(_caPath);
+        _caBusy = false;
+        _caError = result.Value is null;
+        if (result.Value is { } status) { _local = status; _caMessage = "CA bundle saved for this machine. Run a container network check from Performance Test Review to validate it."; _providers = await _api.ProvidersOrNullAsync(); }
+        else _caMessage = $"Not saved: {result.Error}";
+    }
+
+    private async Task RemoveCaAsync()
+    {
+        if (_api is null) return;
+        _caBusy = true;
+        var result = await _api.RemoveCaBundleAsync();
+        _caBusy = false;
+        _caError = result.Value is null;
+        if (result.Value is { } status) { _local = status; _caPath = ""; _caMessage = "CA bundle removed from this machine's settings. The file itself was not changed."; _providers = await _api.ProvidersOrNullAsync(); }
+        else _caMessage = $"Not removed: {result.Error}";
+    }
+
+    /// <summary>
+    /// Local execution setup: the machine-local prerequisites of running k6 here, separate from engine readiness. Container TLS trust = an
+    /// optional corporate CA bundle mounted read-only into the container and validated by the container network check. TLS verification is
+    /// never disabled and nothing here is stored in a Target Environment, the Setup Library or an import.
+    /// </summary>
+    private RenderFragment LocalExecutionSection() => __builder =>
+    {
+        <section class="pte-section" aria-labelledby="pte-local-heading" data-testid="pte-local">
+            <h3 id="pte-local-heading" class="pte-section-title">Local execution setup</h3>
+            <p class="pte-section-sub">What this machine needs to run the k6 container against a target. Separate from engine readiness: the engine can be ready while the container still cannot trust the target's certificate.</p>
+            @if (_local is not { } le)
+            {
+                <p class="pte-error" role="alert" data-testid="pte-local-error">Local execution status could not be loaded.</p>
+            }
+            else
+            {
+                var trust = P.Trust(le.TrustState);
+                <article id="container-tls-trust" tabindex="-1" class="pte-card pte-trust pte-tone-@trust.Tone.ToString().ToLowerInvariant()" data-testid="pte-ca-card" data-state="@le.TrustState" aria-labelledby="pte-ca-title">
+                    <div class="pte-card-head">
+                        <span class="pte-icon pte-icon-engine" aria-hidden="true"></span>
+                        <div class="pte-card-titles">
+                            <h4 id="pte-ca-title" class="pte-card-title">Container TLS trust</h4>
+                            <p class="pte-card-kind">Corporate CA bundle for the k6 container</p>
+                        </div>
+                        <span data-testid="pte-ca-state">@Pill(trust, "Container TLS trust")</span>
+                    </div>
+                    <p class="pte-card-summary" role="status" data-testid="pte-ca-detail">@le.TrustDetail</p>
+                    <p class="pte-guidance" data-testid="pte-ca-safety">TLS verification is never disabled. The bundle is mounted read-only into the container and used identically by the network check and the run.</p>
+
+                    <dl class="pte-facts" data-testid="pte-ca-facts">
+                        <div><dt>Source</dt><dd data-testid="pte-ca-source">@le.Source</dd></div>
+                        <div><dt>CA bundle</dt><dd data-testid="pte-ca-file">@(le.BundleFileName ?? "None — default container CA store")</dd></div>
+                        @if (le.BundleFileName is not null)
+                        {
+                            <div><dt>Bundle check</dt><dd data-testid="pte-ca-bundle-status">@le.BundleStatus@(le.Certificates > 0 ? $" · {le.Certificates} certificate{(le.Certificates == 1 ? "" : "s")}" : "")</dd></div>
+                        }
+                        @if (le.LastValidation is { } v)
+                        {
+                            <div><dt>Last network check</dt><dd data-testid="pte-ca-last-check">@v.TargetOrigin · @v.CheckedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @(v.Passed ? "reached" : "failed")</dd></div>
+                        }
+                    </dl>
+
+                    <ol class="pte-stages" aria-label="Container network check stages" data-testid="pte-ca-stages">
+                        @foreach (var stage in le.Stages)
+                        {
+                            <li data-testid="pte-ca-stage" data-stage="@stage.Key" data-state="@stage.State"><span class="pte-stage-name">@stage.Name</span> @Pill(P.Stage(stage.State), null)@if (stage.Detail.Length > 0) { <span class="pte-stage-detail">@stage.Detail</span> }</li>
+                        }
+                    </ol>
+                    @if (le.LastValidation is null)
+                    {
+                        <p class="pte-guidance" data-testid="pte-ca-how-to-validate">Validate by running “Check container network” for a saved definition in Performance Test Review. It sends one request from the k6 container — never a load test.</p>
+                    }
+
+                    <form class="pte-ca-form" @onsubmit="SaveCaAsync" @onsubmit:preventDefault="true" data-testid="pte-ca-form">
+                        <label for="pte-ca-path" class="pte-ca-label">CA bundle file on this machine (.pem, .crt or .cer — public certificates only)</label>
+                        <div class="pte-ca-row">
+                            <input id="pte-ca-path" type="text" class="pte-ca-input" data-testid="pte-ca-path" value="@_caPath" @oninput="e => _caPath = e.Value?.ToString() ?? string.Empty"
+                                   placeholder="Full path, e.g. corporate-roots.pem" autocomplete="off" spellcheck="false" aria-describedby="pte-ca-help" />
+                            <button type="submit" class="btn-primary" disabled="@(_caBusy || _caPath.Trim().Length == 0)" data-testid="pte-ca-save">@(_caBusy ? "Checking…" : "Validate and save")</button>
+                            @if (le.Source == ContainerTlsTrustSources.SystemSettings)
+                            {
+                                <button type="button" class="btn-secondary" disabled="@_caBusy" @onclick="RemoveCaAsync" data-testid="pte-ca-remove">Remove</button>
+                            }
+                        </div>
+                        <p id="pte-ca-help" class="pte-section-sub">The file is checked before it is saved: it must load as X.509 certificates; private keys and PFX/PKCS#12 files are refused. Only its path, file name, fingerprint and certificate count are stored for this machine — never the certificate content, and never in a Target Environment, the Setup Library or an import package.</p>
+                        @if (_caMessage is { } msg) { <p class="@(_caError ? "pte-error" : "pte-guidance")" role="@(_caError ? "alert" : "status")" data-testid="pte-ca-message">@msg</p> }
+                    </form>
+
+                    <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="pte-ca-technical" Class="disclosure-inline disclosure-small">
+                        <dl class="pte-tech">
+                            @TechRow("Configuration key", le.ConfigurationKey, copy: true)
+                            @TechRow("Bundle path", le.BundlePath)
+                            @TechRow("Bundle fingerprint (SHA-256, first 16)", le.Fingerprint)
+                            <div><dt>Bundle detail</dt><dd>@le.BundleDetail</dd></div>
+                            @TechRow("Container image", le.Image)
+                            @TechRow("Container network", le.Network ?? "Podman default")
+                            <div><dt>Proxy</dt><dd>@(le.ProxyConfigured ? "Configured" : "None")</dd></div>
+                            @if (le.LastValidation is { } tv)
+                            {
+                                <div><dt>Last check</dt><dd>@P.Stage(tv.Passed ? "Passed" : "Failed").Label · @tv.ProbeState@(tv.ErrorCode is { } code ? $" · code {code}" : "")</dd></div>
+                            }
+                        </dl>
+                    </ReviewDisclosure>
+                </article>
+            }
+        </section>
+    };
 
     private async Task PullAsync(string providerId)
     {

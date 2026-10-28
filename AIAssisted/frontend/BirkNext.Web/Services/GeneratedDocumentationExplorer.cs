@@ -68,7 +68,7 @@ public sealed record GeneratedDocumentView(
 public static partial class GeneratedDocumentationExplorer
 {
     public const string RepositoryLevel = "Repository level";
-    public const string ContentUnavailableText = "The generated document was detected, but its Markdown content was not captured during Project Import.";
+    public const string ContentUnavailableText = "The generated artifact was detected, but its content was not captured during Project Import (imports made before non-Markdown capture keep metadata only). Re-import the project to capture it; nothing is fabricated.";
     public const string Origin = "Generated · implementation-derived documentation";
     public const string PartialCoverage = "Some content could not be mapped to structured concepts. All source content remains available in Source view.";
 
@@ -158,12 +158,23 @@ public static partial class GeneratedDocumentationExplorer
             return new(document, versions.Count > 0 ? GeneratedDocumentParseState.Parsed : GeneratedDocumentParseState.PartiallyParsed, content, sections, null, versions, unmapped);
         }
         if (document.Role is GeneratedDocumentRole.ApiContract or GeneratedDocumentRole.GraphQlSchema)
-            return new(document, GeneratedDocumentParseState.UnsupportedStructuredFormat, content, [], null, [], 0);
+            return new(document, IsMarkdownContract(document) ? GeneratedDocumentParseState.UnsupportedStructuredFormat : GeneratedDocumentParseState.Parsed, content, [], null, [], 0);
         var headings = sections.Count(s => s.Level > 0);
         var state2 = headings == 0 ? GeneratedDocumentParseState.UnsupportedStructuredFormat
             : sections.Any(s => s.Level == 0 && s.Prose.Count > 0) ? GeneratedDocumentParseState.PartiallyParsed : GeneratedDocumentParseState.Parsed;
         return new(document, state2, content, sections, null, [], unmapped);
     }
+
+    private static bool IsMarkdownContract(GeneratedExplorerDocument d) => DocumentationDrift.IsMarkdown(d.Path);
+
+    /// <summary>Card state: what a tester can do with the artifact before opening it.</summary>
+    public static string Availability(GeneratedExplorerDocument d) => d.ContentAvailable ? "Available" : "Detected — content unavailable";
+
+    /// <summary>The raw-content language of an artifact (Source tab label).</summary>
+    public static string SourceLanguage(string path) => System.IO.Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".yaml" or ".yml" => "YAML", ".json" => "JSON", ".graphql" or ".graphqls" or ".gql" => "GraphQL SDL", _ => "Markdown",
+    };
 
     /// <summary>Deterministic section structure from the shared tokenizer: headings, bullets, ordered steps, tables, code and prose per section.</summary>
     public static IReadOnlyList<GeneratedSection> Sections(string markdown)

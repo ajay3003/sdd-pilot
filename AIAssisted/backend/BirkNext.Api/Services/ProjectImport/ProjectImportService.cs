@@ -64,6 +64,12 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             ProjectNameBasis = basis,
             Documents = documents,
             SkippedDocuments = skipped,
+            // Non-Markdown generated-documentation text (bounded by the reader's documentation limits); Markdown documents are already in Documents.
+            GeneratedArtifactTexts = [.. (workspace.DocumentationCandidates ?? [])
+                .Where(d => !BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.DocumentExtensions.Contains(Path.GetExtension(d.Path))
+                    && BirkNext.Api.Services.SourceAnalysis.GeneratedDocumentation.GeneratedDocumentationDetector.IsDocumentFile(d.Path))
+                .OrderBy(d => d.Path, StringComparer.Ordinal).Take(500)
+                .Select(d => new ProjectImportDocument(d.Path, Path.GetFileName(d.Path), System.Text.Encoding.UTF8.GetByteCount(d.Content), d.Content))],
             Source = source,
             OtherFiles = other,
             StagedAt = staged.StagedAt,

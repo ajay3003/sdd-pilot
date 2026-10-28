@@ -217,6 +217,9 @@ public static class IqrSourceArchiveReader
                     continue;
                 }
                 if (IsDocumentationWorkflowCandidate(path) && CaptureDocumentationCandidate(MaxWorkflowFileBytes) is { } workflowRejection) return workflowRejection;
+                // Non-Markdown generated-documentation artifacts (OpenAPI/AsyncAPI YAML or JSON, GraphQL SDL, XSD, proto) keep their text as documentation
+                // candidates under the same limits, so generated documentation can show them; they are still processed as source below.
+                if (BirkNext.Api.Services.SourceAnalysis.GeneratedDocumentation.GeneratedDocumentationDetector.IsDocumentFile(path) && CaptureDocumentationCandidate(MaxDocumentBytes) is { } artifactRejection) return artifactRejection;
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".tfstate" || path.EndsWith(".tfstate.backup", StringComparison.OrdinalIgnoreCase))
                 { limitations.Add("Terraform state file present but not read: state can hold secrets and is runtime state, not source."); continue; }

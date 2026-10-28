@@ -90,7 +90,8 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         var cut = Render(Persons(), Hendelse());
         cut.WaitForAssertion(() => cut.Find("[data-testid=psb-snapshot]"));
         cut.Find("[data-testid=psb-snapshot]").GetAttribute("value").Should().BeEmpty("the newest snapshot is never chosen for the user");
-        cut.Find("[data-testid=psb-observations]").TextContent.Should().Contain("1 observed API endpoint").And.Contain("a call count is never a workload");
+        cut.Find("[data-testid=psb-count-observed]").TextContent.Should().Be("1 unique runtime endpoint on this target");
+        cut.Find("[data-testid=psb-observations]").TextContent.Should().Contain("a call count is never a workload");
         cut.Find("[data-testid=psb-snapshot]").Change(SnapshotId.ToString());
         cut.WaitForAssertion(() => cut.Find("[data-testid=psb-scope]").GetAttribute("data-state").Should().Be("Resolved"));
         cut.Find("[data-testid=psb-scope]").TextContent.Should().Contain("Persons API").And.NotContain("Hendelse");
@@ -99,7 +100,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         first.GetAttribute("data-level").Should().Be("Recommended");
         first.QuerySelector("[data-testid=psb-declared]")!.TextContent.Should().Contain("Declared").And.Contain(": yes");
         first.QuerySelector("[data-testid=psb-observed]")!.TextContent.Should().Contain(": yes");
-        first.QuerySelector("[data-testid=psb-observation]")!.TextContent.Should().StartWith("44 calls · last seen 2026-10-23 08:54 UTC");
+        first.QuerySelector("[data-testid=psb-observation]")!.TextContent.Should().StartWith("44 calls · HTTP 200 · last seen 2026-10-23 08:54 UTC");
         first.QuerySelector("[data-testid=psb-auth]")!.TextContent.Should().StartWith("Bearer observed").And.Contain("no token is copied");
         first.QuerySelector("[data-testid=psb-data-recommended]")!.TextContent.Should().Be("Recommended Test Data: person-id-baseline");
         first.QuerySelector("[data-testid=psb-because]")!.TextContent.Should().StartWith("Recommended because declared in OpenAPI · Persons API (M2LB.zip)");
@@ -132,7 +133,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         _changed.Scenario.Name.Should().Be("Person lookup baseline");
         _changed.Scenario.ContractSnapshotId.Should().Be(SnapshotId);
         _changed.Scenario.SourceKind.Should().Be("recommended");
-        cut.Find("[data-testid=psb-message]").TextContent.Should().Contain("nothing runs until you start a run");
+        cut.Find("[data-testid=psb-message]").TextContent.Should().EndWith("Nothing has run.");
     }
 
     [Fact]
@@ -157,7 +158,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         selected.WaitForAssertion(() => selected.FindAll("[data-testid=psb-operation]").Should().NotBeEmpty());
         var get = selected.FindAll("[data-testid=psb-operation]").Single(o => o.GetAttribute("data-key")!.EndsWith("GET /api/person/{personId}"));
         get.GetAttribute("data-evidence").Should().Be("DeclaredOnly");
-        get.QuerySelector("[data-testid=psb-data-missing]")!.TextContent.Should().Contain("Test Data missing");
+        get.QuerySelector("[data-testid=psb-data-missing]")!.TextContent.Should().Contain("Missing");
         get.QuerySelector("[data-testid=psb-open-test-data]")!.GetAttribute("href").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&dataType=SimpleValues&in=path&contentType=string&environment=Development");
     }

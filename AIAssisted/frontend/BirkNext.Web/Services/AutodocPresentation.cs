@@ -13,16 +13,23 @@ public static class AutodocPresentation
 {
     public static readonly IReadOnlyList<AutodocFilter> Filters = Enum.GetValues<AutodocFilter>();
 
+    /// <summary>The filters shown by default; the rest sit behind "Advanced filters".</summary>
+    public static readonly IReadOnlyList<AutodocFilter> BasicFilters = [AutodocFilter.All, AutodocFilter.WithAutodoc, AutodocFilter.WithoutAutodoc, AutodocFilter.NeedsReview];
+    public static readonly IReadOnlyList<AutodocFilter> AdvancedFilters = [.. Filters.Except(BasicFilters)];
+
+    /// <summary>The project policy statement shown when no module has generated documentation: neutral, never a failure.</summary>
+    public const string NeutralExplanation = "No project policy requiring generated documentation was detected.";
+
     public static string Label(AutodocFilter filter) => filter switch
     {
-        AutodocFilter.All => "All modules",
-        AutodocFilter.WithAutodoc => "With autodoc",
-        AutodocFilter.WithoutAutodoc => "Without autodoc (not configured)",
-        AutodocFilter.MaintainDocs => "maintain-docs detected",
-        AutodocFilter.Partial => "Partial",
+        AutodocFilter.All => "All",
+        AutodocFilter.WithAutodoc => "With generated docs",
+        AutodocFilter.WithoutAutodoc => "Without",
+        AutodocFilter.MaintainDocs => "Generator workflow (maintain-docs)",
+        AutodocFilter.Partial => "Partial output",
         AutodocFilter.PotentiallyStale => "Potentially stale",
         AutodocFilter.UnknownFreshness => "Unknown freshness",
-        AutodocFilter.NeedsReview => "Review suggested",
+        AutodocFilter.NeedsReview => "Needs review",
         _ => "Parse/errors",
     };
 
@@ -52,6 +59,36 @@ public static class AutodocPresentation
         : GeneratedDocumentationText.Label(module.Freshness);
 
     public static string Health(AutodocModuleInventory module) => module.Health is { } health ? GeneratedDocumentationText.Label(health) : "Neutral";
+
+    /// <summary>"Generated docs: Configured / Partial / Error / Not configured" — the column value; "Not configured" is neutral.</summary>
+    public static string Usage(AutodocUsage usage) => GeneratedDocumentationText.Label(usage);
+
+    /// <summary>A module is a review item when its health suggests review or its generated output does not parse.</summary>
+    public static bool IsReviewItem(AutodocModuleInventory module) => module.Health == GeneratedDocumentationHealthStatus.Warning || module.ParseErrors > 0 || module.Usage == AutodocUsage.Error;
+
+    public static IReadOnlyList<AutodocModuleInventory> ReviewItems(AutodocDiagnostics diagnostics) => [.. diagnostics.Modules.Where(IsReviewItem)];
+
+    /// <summary>Overall generated-documentation state of the snapshot: Available, Partial or Not configured (neutral).</summary>
+    public static string State(AutodocDiagnostics diagnostics) =>
+        diagnostics.ModulesUsingAutodoc == 0 ? "Not configured"
+        : diagnostics.Modules.Any(m => m.Usage == AutodocUsage.Partial) ? "Partial"
+        : "Available";
+
+    /// <summary>Overall health: Neutral (nothing configured), Error (parse failures), Review suggested, Partial, Available. Deterministic precedence.</summary>
+    public static string OverallHealth(AutodocDiagnostics diagnostics) =>
+        diagnostics.ModulesUsingAutodoc == 0 && diagnostics.ParseErrors == 0 ? "Neutral"
+        : diagnostics.ParseErrors > 0 || diagnostics.Modules.Any(m => m.Usage == AutodocUsage.Error) ? "Error"
+        : diagnostics.Modules.Any(m => m.Health == GeneratedDocumentationHealthStatus.Warning) ? "Review suggested"
+        : diagnostics.Modules.Any(m => m.Usage == AutodocUsage.Partial) ? "Partial"
+        : "Available";
+
+    public static string OverallTone(string health) => health switch
+    {
+        "Available" => "complete",
+        "Partial" => "partial",
+        "Review suggested" or "Error" => "attention",
+        _ => "muted",
+    };
 
     public static string UsageTone(AutodocUsage usage) => usage switch
     {

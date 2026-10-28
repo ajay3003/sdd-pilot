@@ -427,3 +427,16 @@
 .ptc-callout-legacy { display: grid; gap: 0.4rem; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--clr-warning-border, #fcd34d); border-radius: var(--radius-md, 6px); background: var(--clr-warning-bg-light); }
 .ptc-callout-legacy p { margin: 0; }
 .pt-section select { max-width: 100%; }
+
+/* Steps: full endpoint above the fields, subtle evidence provenance, one row per input requirement. */
+.ptc-step-title { margin: 0; font-size: .95rem; }
+.ptc-step-title:focus { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.ptc-step-endpoint { margin: .25rem 0; font-size: 1rem; font-weight: 600; }
+.ptc-step-source-evidence { background: rgba(22, 163, 74, .06); border-left: 3px solid rgba(22, 163, 74, .45); padding: .2rem .5rem; border-radius: .25rem; }
+.ptc-step-origin { font-weight: 600; }
+.ptc-step-inputs-title { margin: .5rem 0 .25rem; font-size: .9rem; }
+.ptc-requirement { border-top: 1px solid var(--clr-border, #e2e8f0); padding: .4rem 0; display: grid; gap: .2rem; }
+.ptc-requirement:focus { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.ptc-req-head, .ptc-req-state, .ptc-req-actions { margin: 0; display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; }
+.ptc-req-mapped { color: #166534; }
+@media (prefers-color-scheme: dark) { .ptc-req-mapped { color: #86efac; } }

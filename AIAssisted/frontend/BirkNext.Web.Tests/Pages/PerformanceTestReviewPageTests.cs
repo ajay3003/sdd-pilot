@@ -488,11 +488,23 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-delta][data-metric=LatencyP95Ms]").TextContent.Should().Contain("+80 ms (+23.5 %)");
     }
 
+    /// <summary>A new definition starts with zero steps (no silent "GET /"): the tester adds a manual step explicitly, then returns to Overview.</summary>
+    private void AddManualStep(IRenderedComponent<PerformanceTestReview> cut)
+    {
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-scenario]"));
+        Tab(cut, "scenario");
+        cut.Find("[data-testid=pt-steps-empty]").TextContent.Should().Contain("never starts with a placeholder request");
+        cut.Find("[data-testid=pt-add-step]").Click();
+        Tab(cut, "overview");
+    }
+
     [Fact]
     public void NewProject_StartsFromAGenericDefinition_BasedOnTheTargetEnvironment()
     {
         Register(definitions: []);
         var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft · incomplete", "a new definition has no placeholder step"));
+        AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Draft"));
         cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Be("Check readiness saves the draft as v1 automatically, then evaluates it.");
         Tab(cut, "scenario");
@@ -605,6 +617,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        AddManualStep(cut);
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft"));
 
         cut.Find("[data-testid=pt-status] .sd-pill").ClassList.Should().Contain("sd-pill-partial").And.NotContain("sd-pill-attention", "an unsaved draft is not a failure");
@@ -623,6 +636,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-primary-action]"));
         cut.Find("[data-testid=pt-primary-action]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-message]").TextContent.Should().Be("Definition saved as v1 before readiness evaluation."));
@@ -638,6 +652,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-run-open]"));
         cut.Find("[data-testid=pt-run-open]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-run]").GetAttribute("aria-pressed").Should().Be("true"));
@@ -734,7 +749,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Markup.Should().NotContainAny("--insecure", "insecureSkipTLSVerify", "Skip certificate");
         cut.Find("[data-testid=pt-blocker-headline]").TextContent.Should().Be("Container TLS trust is not configured");
         cut.Find("[data-testid=pt-blocker-owner]").TextContent.Should().Be("Owner: Local execution configuration · Configuration: PerformanceTests:Container:CaBundlePath");
-        cut.Find("[data-testid=pt-blocker-action]").GetAttribute("href").Should().Be("admin/system-settings?section=performance-test-engines");
+        var href = cut.Find("[data-testid=pt-blocker-action]").GetAttribute("href")!;
+        href.Should().StartWith("admin/system-settings?section=performance-test-engines&focus=container-tls-trust&returnTo=", "the blocker deep-links to the Container TLS trust card");
+        Uri.UnescapeDataString(href.Split("returnTo=")[1]).Should().MatchRegex(@"^performance-test-review\?definition=[^&]+&tab=readiness$", "Back returns to the same definition's readiness");
         cut.Find("[data-testid=pt-readiness-group][data-group='Execution setup']").TextContent.Should().Contain("Corporate CA trust").And.Contain("Missing");
         cut.Find("[data-testid=pt-item-technical]").TextContent.Should().Contain("code 1310");
         cut.Find("[data-testid=pt-item-action-network]").TextContent.Should().Be("Re-check container network", "after fixing the CA, readiness refreshes independently");
@@ -1031,6 +1048,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        AddManualStep(cut);
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft"));
 
         Tab(cut, "resources");
@@ -1059,7 +1077,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-engine-meaning]").TextContent.Should().Contain("Target execution readiness is evaluated separately"));
         cut.Find("#pt-card-ready-h").TextContent.Should().Contain("Test readiness");
         cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Test readiness status: ");
-        Status(cut, "pt-status").Should().Be("Draft", "an available engine does not make an unsaved draft ready");
+        Status(cut, "pt-status").Should().StartWith("Draft", "an available engine does not make an unsaved draft ready");
     }
 
     // ── Smart Scenario: steps reference central Test Data; inline authoring is gone ────────────────────────────────────────────────
@@ -1088,9 +1106,11 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "scenario");
         cut.Find("#pt-scenario-context-h").TextContent.Should().StartWith("Target service");
         cut.Find("[data-testid=psb]");
-        var sources = cut.FindAll("[data-testid=pt-step-source]").Select(e => e.TextContent).ToList();
-        sources[0].Should().Be("Declared + Observed · OpenAPI · Persons API · observed 44× (last 2026-10-23 08:54 UTC)");
+        var sources = cut.FindAll("[data-testid=pt-step-source]").Select(e => System.Text.RegularExpressions.Regex.Replace(e.TextContent, @"\s+", " ").Trim()).ToList();
+        sources[0].Should().Be("Added from detected operation · Declared + Observed · OpenAPI · Persons API · observed 44× (last 2026-10-23 08:54 UTC)");
         sources[1].Should().Be("Manual step");
+        cut.FindAll("[data-testid=pt-step-origin]").Should().ContainSingle("only the evidence-backed step carries the detected-operation provenance");
+        cut.FindAll("[data-testid=pt-step-endpoint]")[0].TextContent.Should().StartWith("GET /", "the full method and path are shown above the editable fields");
         cut.FindAll("[data-testid=pt-data-save]").Should().BeEmpty("Performance Review no longer authors reusable Test Data");
         cut.Markup.Should().NotContain("Rows (one per line");
         cut.Find("[data-testid=pt-legacy-profile]").TextContent.Should().Contain("Old local rows").And.Contain("not shared");
@@ -1111,7 +1131,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.FindAll("[data-testid=pt-step-expected-error]").Should().BeEmpty();
         cut.FindAll("[data-testid=pt-step-expected]")[0].GetAttribute("value").Should().Be("200, 204");
         cut.FindAll("[data-testid=pt-step-path]")[0].Change("/api/person/{personId}/details");
-        cut.FindAll("[data-testid=pt-step-source]")[0].TextContent.Should().StartWith("Modified from declared operation");
+        cut.FindAll("[data-testid=pt-step-source]")[0].TextContent.Trim().Should().StartWith("Added from detected operation · Modified from declared operation");
         cut.FindAll("[data-testid=pt-step-down]")[0].Click();
         cut.FindAll("[data-testid=pt-step-name]").Select(e => e.GetAttribute("value")).Should().Equal("health", "getperson");
         cut.FindAll("[data-testid=pt-step-enabled]")[1].Change(false);
@@ -1130,5 +1150,53 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-step-mapping-missing]").TextContent.Should().Contain("Test Data missing for {personId}");
         cut.Find("[data-testid=pt-step-open-test-data]").GetAttribute("href").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&environment=PaymentHub%20QA&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&in=path&dataType=SimpleValues");
+    }
+
+    [Fact]
+    public void ScenarioStep_MapTestData_OffersOnlyCompatibleApprovedAssets_StoresTheAlias_AndReturnsFocus()
+    {
+        var testData = new Mock<ITestDataApiService>();
+        testData.Setup(t => t.CatalogAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new BirkNext.TestData.TestDataCatalogView(
+        [
+            new BirkNext.TestData.TestDataAssetSummary { Id = "a", Alias = "person-id-qa", Kind = BirkNext.TestData.TestDataKind.Scalar, Approval = BirkNext.TestData.TestDataApproval.Approved, Capabilities = ["personId"], Source = "Configured" },
+            new BirkNext.TestData.TestDataAssetSummary { Id = "b", Alias = "draft-person-id", Kind = BirkNext.TestData.TestDataKind.Scalar, Approval = BirkNext.TestData.TestDataApproval.Unapproved, Source = "Configured" },
+            new BirkNext.TestData.TestDataAssetSummary { Id = "c", Alias = "person-payload", Kind = BirkNext.TestData.TestDataKind.Structured, MediaType = "application/json", Approval = BirkNext.TestData.TestDataApproval.Approved, Source = "Configured" },
+        ], [], []), (string?)null));
+        Services.AddSingleton(testData.Object);
+        Register(definitions: [Definition with { Scenario = new PerformanceScenario { Steps = [new HttpPerformanceStep { Name = "lookup", RelativePath = "/api/person/{personId}" }] } }]);
+        var cut = Page();
+        Tab(cut, "scenario");
+        cut.Find("[data-testid=pt-data-selection-note]").TextContent.Should().Be("Selection strategy applies after Test Data is mapped.");
+        var row = cut.Find("[data-testid=pt-step-mapping][data-variable=personId]");
+        row.TextContent.Should().Contain("Path parameter").And.Contain("Required");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Not mapped");
+
+        cut.Find("[data-testid=pt-step-map]").Click();
+        cut.Find("[data-testid=pt-step-map]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid=tdm]").GetAttribute("role").Should().Be("dialog");
+        cut.FindAll("[data-testid=tdm-option]").Select(o => o.GetAttribute("value")).Should().Equal(["person-id-qa"], "only approved assets of the compatible data type");
+        cut.Find("[data-testid=tdm-use]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=tdm-option]").Change("person-id-qa");
+        cut.Find("[data-testid=tdm-use]").Click();
+
+        cut.Find("[data-testid=pt-step-mapping][data-variable=personId]").GetAttribute("data-state").Should().Be("mapped");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Be("Mapped to person-id-qa");
+        cut.Find("[data-testid=pt-step-message]").TextContent.Should().Contain("personId mapped to person-id-qa").And.Contain("The value stays in Test Data");
+        cut.FindAll("[data-testid=tdm]").Should().BeEmpty();
+        cut.FindAll("[data-testid=pt-data-selection-note]").Should().BeEmpty();
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments[0]).Should().Contain("pt-req-0-personId", "focus returns to the requirement row");
+    }
+
+    [Fact]
+    public void ScenarioStep_WithoutCompatibleTestData_SaysSo_AndOffersOpenTestData()
+    {
+        Register(definitions: [Definition with { Scenario = new PerformanceScenario { Steps = [new HttpPerformanceStep { Name = "lookup", RelativePath = "/api/person/{personId}" }] } }]);
+        var cut = Page();
+        Tab(cut, "scenario");
+        cut.Find("[data-testid=pt-step-map]").Click();
+        cut.Find("[data-testid=tdm-none]").TextContent.Should().Be("No compatible approved Test Data found.");
+        cut.Find("[data-testid=tdm-open-test-data]").GetAttribute("href").Should().StartWith("/test-data?consumer=performance-test-review");
+        cut.Find("[data-testid=tdm-cancel]").Click();
+        cut.FindAll("[data-testid=tdm]").Should().BeEmpty();
     }
 }

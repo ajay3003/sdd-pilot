@@ -7,7 +7,7 @@ using BirkNext.PerformanceTests;
 namespace BirkNext.Api.Services.PerformanceTests;
 
 /// <summary>Resolves the provider for a definition by stable id.</summary>
-public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTestProvider> providers, PerformanceTestOptions? options = null)
+public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTestProvider> providers, PerformanceTestOptions? options = null, PerformanceLocalExecutionStore? localExecution = null)
 {
     private readonly Dictionary<string, IPerformanceTestProvider> _byId = providers.ToDictionary(p => p.ProviderId, StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, PerformanceProviderStatus Status)> _status = new();
@@ -26,6 +26,8 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
         // Stamped with the network/TLS configuration it ran with: a later change (CA bundle, proxy, runtime, image, target) makes it stale.
         var result = await provider.CheckReachabilityAsync(d, ct) with { NetworkFingerprint = NetworkFingerprint(d) };
         _reachability[$"{d.ProviderId}|{d.TargetOrigin}"] = result;
+        // The same check validates Container TLS trust (System Settings → Performance Test Engines): one trust for the check and the run.
+        localExecution?.Record(result);
         return result;
     }
 
@@ -33,7 +35,7 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
     public string NetworkFingerprint(PerformanceTestDefinition d)
     {
         var container = options?.Container ?? new PerformanceContainerOptions();
-        return PerformanceCaBundleInspector.NetworkFingerprint(d, container, PerformanceCaBundleInspector.Inspect(container.CaBundlePath));
+        return PerformanceCaBundleInspector.NetworkFingerprint(d, container, PerformanceCaBundleInspector.Inspect(container.EffectiveCaBundlePath));
     }
 
     public void InvalidateStatus(string providerId) => _status.TryRemove(providerId, out _);
@@ -97,7 +99,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         var issues = PerformanceTestSafety.Check(d, data, options);
         var provider = await providers.StatusAsync(d.ProviderId, ct);
         var providerIssues = providers.Find(d.ProviderId)?.Validate(d) ?? [];
-        var ca = PerformanceCaBundleInspector.Inspect(options.Container.CaBundlePath);
+        var ca = PerformanceCaBundleInspector.Inspect(options.Container.EffectiveCaBundlePath);
         var items = new List<PerformanceReadinessItem>();
         const string Definition = PerformanceReadinessCategories.Definition, Setup = PerformanceReadinessCategories.ExecutionSetup,
             Safety = PerformanceReadinessCategories.Safety, Optional = PerformanceReadinessCategories.Optional;

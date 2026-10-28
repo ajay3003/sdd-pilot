@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using BirkNext.Api.Data;
 using BirkNext.ProjectImport;
@@ -63,6 +64,61 @@ public sealed class ProjectImportPipelineTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(expected, body);
         return JsonDocument.Parse(body);
+    }
+
+    private const string GeneratedOpenApi = """
+        openapi: 3.0.1
+        info:
+          title: Person API
+          version: '1'
+        paths:
+          /barn/{id}:
+            get:
+              operationId: hentBarn
+              responses:
+                '200':
+                  description: ok
+
+        """;
+    private const string GeneratedSdl = """
+        type Query {
+          hentBarn(id: ID!): Barn
+        }
+
+        type Barn {
+          id: ID!
+          navn: String
+        }
+
+        """;
+
+    [Fact]
+    public async Task Generated_openapi_and_graphql_artifacts_keep_their_text_without_becoming_project_documents()
+    {
+        using var preview = await PreviewAsync(ProjectImportServiceTests.Zip([.. ProjectImportServiceTests.Documents, .. ProjectImportServiceTests.Source,
+            ("Person/autodoc/openapi.yaml", GeneratedOpenApi), ("Person/autodoc/schema.graphql", GeneratedSdl)]), "shop.zip");
+        var texts = preview.RootElement.GetProperty("generatedArtifactTexts").EnumerateArray().ToDictionary(d => d.GetProperty("relativePath").GetString()!, d => d.GetProperty("content").GetString());
+        texts.Should().ContainKey("Person/autodoc/openapi.yaml").WhoseValue.Should().Be(GeneratedOpenApi);
+        texts.Should().ContainKey("Person/autodoc/schema.graphql").WhoseValue.Should().Be(GeneratedSdl);
+        preview.RootElement.GetProperty("documents").EnumerateArray().Select(d => d.GetProperty("relativePath").GetString()).Should().NotContain(p => p!.EndsWith(".yaml") || p!.EndsWith(".graphql"),
+            "they are generated artifacts, never classified as project documents");
+    }
+
+    [Fact]
+    public async Task The_structure_endpoint_reads_openapi_yaml_and_graphql_sdl_locally_and_refuses_unreadable_text()
+    {
+        using var openApi = await _client.PostAsJsonAsync("/api/system-diagnostics/generated-documentation/structure", new { Path = "Person/autodoc/openapi.yaml", Content = GeneratedOpenApi });
+        openApi.StatusCode.Should().Be(HttpStatusCode.OK);
+        var contract = JsonDocument.Parse(await openApi.Content.ReadAsStringAsync()).RootElement;
+        contract.GetProperty("name").GetString().Should().Be("Person API");
+        contract.GetProperty("operations").EnumerateArray().Select(o => o.GetProperty("operationId").GetString()).Should().Contain("hentBarn");
+
+        using var sdl = await _client.PostAsJsonAsync("/api/system-diagnostics/generated-documentation/structure", new { Path = "Person/autodoc/schema.graphql", Content = GeneratedSdl });
+        sdl.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonDocument.Parse(await sdl.Content.ReadAsStringAsync()).RootElement.GetProperty("types").EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().Contain("Barn");
+
+        using var bad = await _client.PostAsJsonAsync("/api/system-diagnostics/generated-documentation/structure", new { Path = "Person/autodoc/openapi.json", Content = "{ not json" });
+        bad.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]

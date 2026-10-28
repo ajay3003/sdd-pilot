@@ -54,7 +54,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
                 Detail = $"The k6 image {C.Image} is not available locally. {(C.AllowImagePull ? "Pull it from System Settings → Performance Test Engines." : $"Pull it once: podman pull {C.Image}")}" };
         status = status with { ImagePresent = true, ImageDigest = image.Digest };
         // An invalid CA bundle is never mounted and never bypassed: the provider is misconfigured (after the image is known, so image state stays truthful) until the bundle is fixed (readiness says how).
-        if (PerformanceCaBundleInspector.Inspect(C.CaBundlePath) is { Configured: true, Usable: false } ca)
+        if (PerformanceCaBundleInspector.Inspect(C.EffectiveCaBundlePath) is { Configured: true, Usable: false } ca)
             return status with { Availability = ProviderAvailability.Misconfigured, Detail = $"The configured CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}) is invalid: {ca.Detail}" };
         var version = await VersionAsync(image.Digest ?? C.Image, ct);
         if (version is null) return status with { Availability = ProviderAvailability.Misconfigured, Detail = "The k6 container started but did not report a recognisable version." };
@@ -122,7 +122,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
         if (!string.IsNullOrWhiteSpace(C.HttpProxy)) env["HTTP_PROXY"] = C.HttpProxy!;
         if (!string.IsNullOrWhiteSpace(C.HttpsProxy)) env["HTTPS_PROXY"] = C.HttpsProxy!;
         if (!string.IsNullOrWhiteSpace(C.NoProxy)) env["NO_PROXY"] = C.NoProxy!;
-        if (C.CaBundlePath is not null) env["SSL_CERT_FILE"] = CaFile;
+        if (C.EffectiveCaBundlePath is not null) env["SSL_CERT_FILE"] = CaFile;
         return env;
     }
 
@@ -130,7 +130,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
     {
         var mounts = new List<ContainerMount> { new(inDir, InDir, true), new(outDir, OutDir, false) };
         // The bundle file itself, read-only, at the path SSL_CERT_FILE names (whatever the host file is called).
-        if (C.CaBundlePath is { } ca) mounts.Add(new ContainerMount(ca, CaFile, true));
+        if (C.EffectiveCaBundlePath is { } ca) mounts.Add(new ContainerMount(ca, CaFile, true));
         return mounts;
     }
 

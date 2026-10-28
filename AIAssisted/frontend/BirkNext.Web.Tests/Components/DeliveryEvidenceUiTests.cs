@@ -59,6 +59,18 @@ public sealed class DeliveryEvidenceUiTests : BunitContext
     }
 
     [Fact]
+    public void A_known_snapshot_is_offered_as_a_suggestion_and_used_only_on_explicit_acceptance()
+    {
+        var cut = Render<DeliveryEvidencePanel>(p => p.Add(x => x.Categories, [ValidationCategory.Performance]).Add(x => x.SuggestedSnapshotId, SnapshotId).Add(x => x.SuggestedReason, "this scenario's contract source"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=delivery-suggested]"));
+        cut.Find("[data-testid=delivery-suggested]").TextContent.Should().Contain("Suggested source snapshot").And.Contain("shop.zip").And.Contain("this scenario's contract source");
+        cut.Find("[data-testid=delivery-snapshot]").GetAttribute("value").Should().BeEmpty("a suggestion is never selected silently");
+        cut.Find("[data-testid=delivery-use-suggested]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=delivery-suggested]").Should().BeEmpty());
+        cut.FindAll("[data-testid=delivery-gate-state]").Should().BeEmpty("the accepted snapshot is now the explicit choice");
+    }
+
+    [Fact]
     public void Environments_are_mapping_candidates_with_a_ladder_that_never_says_deployed()
     {
         var cut = Render<DeliveryEvidencePanel>(p => p.Add(x => x.Environments, true).Add(x => x.Targets, [("QA", "Test"), ("QA2", "Test"), ("shop-prod", "Production")]));

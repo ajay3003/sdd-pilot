@@ -180,6 +180,7 @@
                 {
                     <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Performance])" ScopeTargetOrigin="@_draft.TargetOrigin"
                         ScopeEnvironmentName="@_draft.EnvironmentName" ScopeEnvironmentType="@_draft.EnvironmentType" ConfirmedPipelineIds="_draft.DeliveryPipelineIds ?? []" OnConfirmPipelines="ConfirmPipelines"
+                        SuggestedSnapshotId="@_draft.Scenario.ContractSnapshotId" SuggestedReason="this scenario's contract source"
                         Note="Performance gates as the pipelines that deliver this target define them — not every pipeline in the source. Choose the snapshot; none is selected automatically." />
                 }
             </ReviewDisclosure>
@@ -335,7 +336,7 @@
     /// <summary>One dispatcher for every action (header, Overview, Readiness, Guided Setup): the same operation wherever it is offered.</summary>
     private async Task PerformAction(string? action)
     {
-        if (action is not null && D.ActionHref(action) is { } href) { Nav.NavigateTo(href); return; }
+        if (action is not null && D.ActionHref(action, ContextDefinitionId) is { } href) { Nav.NavigateTo(href); return; }
         switch (action)
         {
             case "check-readiness": await CheckReadinessAsync(); break;
@@ -385,6 +386,14 @@
         else { _tab = Tab.Readiness; await FocusFirstBlockerAsync(); }
     }
 
+    /// <summary>Moves focus once a pending target (new step heading, requirement row after mapping) is rendered.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusTarget is not { } target) return;
+        _focusTarget = null;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", target); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
+
     private async Task FocusFirstBlockerAsync()
     {
         if (_readiness?.Items.FirstOrDefault(i => i.Blocking) is not { } first) return;
@@ -403,7 +412,7 @@
     {
         var label = D.ActionLabel(action, item);
         var css = primary ? "btn-primary" : "btn-secondary";
-        if (D.ActionHref(action) is { } href) { <a class="@css ptc-action" href="@href" data-testid="@testId" data-action="@action">@label</a> }
+        if (D.ActionHref(action, ContextDefinitionId) is { } href) { <a class="@css ptc-action" href="@href" data-testid="@testId" data-action="@action">@label</a> }
         else
         {
             var busy = action == PerformanceReadinessActions.CheckNetwork && _checkingNetwork || action is "check-readiness" or "save-version" && _saving;
@@ -459,9 +468,16 @@
     {
         // No active Target Environment is the "no performance target" state; it is never sent as an empty environment id.
         _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
-        if (_profile is not null) { await ReloadAsync(null); await LoadScenarioEvidenceAsync(); }
+        // "Back to Performance Test Review" from local execution setup returns to the same saved definition and tab (ids only).
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var returnDefinition = query.TryGetValue("definition", out var definition) ? definition.ToString() : null;
+        if (_profile is not null) { await ReloadAsync(returnDefinition); await LoadScenarioEvidenceAsync(); }
+        if (query.TryGetValue("tab", out var tab) && Enum.TryParse<Tab>(tab.ToString(), ignoreCase: true, out var requested)) _tab = requested;
         _loaded = true;
     }
+
+    /// <summary>The saved definition the page is on (null for an unsaved draft) — context for owner-page links.</summary>
+    private string? ContextDefinitionId => _isNew ? null : _draft.Id;
 
     private async Task ReloadAsync(string? select)
     {
@@ -786,7 +802,7 @@
             new("Open Performance Test Engines", D.ActionHref(PerformanceReadinessActions.OpenEngines), null),
         BirkNext.Integrations.JourneySetupStepKind.NetworkReachability => _isNew || _dirty ? new("Check readiness", null, null, "check-readiness")
             : new("Check container network", null, $"Sends one request from the k6 container to the {_draft.EnvironmentName} target. It is not a load test.", PerformanceReadinessActions.CheckNetwork),
-        BirkNext.Integrations.JourneySetupStepKind.CaTrust => new("Open local execution setup", D.ActionHref(PerformanceReadinessActions.OpenLocalExecutionSetup),
+        BirkNext.Integrations.JourneySetupStepKind.CaTrust => new("Open local execution setup", D.ActionHref(PerformanceReadinessActions.OpenLocalExecutionSetup, ContextDefinitionId),
             "Configuration: PerformanceTests:Container:CaBundlePath (a PEM bundle of the corporate CA). TLS verification is never disabled."),
         BirkNext.Integrations.JourneySetupStepKind.Authentication => new("Review authentication", null,
             "Authenticated scenarios use approved non-interactive credentials from the existing authentication mechanisms; Performance Test Review never issues or stores credentials."),
@@ -835,25 +851,30 @@
         </div>
 
         <BirkNext.Web.Components.PerformanceScenarioBuilder Definition="_draft" EnvironmentId="@(_profile?.Id ?? "")" EnvironmentName="@_draft.EnvironmentName"
-            Observations="_observations" Assets="_testDataAssets" OnChange="Changed" />
+            Observations="_observations" Assets="_testDataAssets" OnChange="Changed" OnStepAdded="FocusStep" OnNewGraphQlDefinition="NewGraphQlDefinition" />
 
         <h3>Steps</h3>
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
-        @if (_draft.Scenario.Steps.Count == 0) { <p class="ptc-inline-empty" data-testid="pt-steps-empty">No steps yet — add an operation from the candidates above, or a manual step.</p> }
+        @if (_draft.Scenario.Steps.Count == 0) { <p class="ptc-inline-empty" data-testid="pt-steps-empty">No steps yet — add an operation from the candidates above, or a manual step. A new definition never starts with a placeholder request.</p> }
+        @if (_stepMessage is { } stepMessage) { <p class="ptc-sub" role="status" aria-live="polite" data-testid="pt-step-message">@stepMessage</p> }
         @for (var i = 0; i < _draft.Scenario.Steps.Count; i++)
         {
             var index = i; var s = _draft.Scenario.Steps[i];
             <fieldset class="sd-panel pt-step @(s.Disabled ? "pt-step-disabled" : "")" data-testid="pt-step" data-disabled="@(s.Disabled ? "true" : "false")">
                 <legend class="visually-hidden">Step @(index + 1)</legend>
                 <div class="ptc-step-head">
-                    <span class="ptc-step-title" aria-hidden="true">Step @(index + 1)@(s.Disabled ? " · disabled" : "")</span>
+                    <h4 class="ptc-step-title" id="@($"pt-step-h-{index + 1}")" tabindex="-1" data-testid="pt-step-heading">Step @(index + 1)@(s.Disabled ? " · disabled" : "")</h4>
                     <span class="ptc-step-moves">
                         <button type="button" class="ptc-link" disabled="@(index == 0)" @onclick="() => MoveStep(index, -1)" aria-label="Move step @(index + 1) up" data-testid="pt-step-up">Move up</button>
                         <button type="button" class="ptc-link" disabled="@(index == _draft.Scenario.Steps.Count - 1)" @onclick="() => MoveStep(index, 1)" aria-label="Move step @(index + 1) down" data-testid="pt-step-down">Move down</button>
                         <button type="button" class="ptc-remove" @onclick="() => Changed(_draft with { Scenario = _draft.Scenario with { Steps = _draft.Scenario.Steps.Where((_, j) => j != index).ToList() } })" aria-label="Remove step @(index + 1)" data-testid="pt-remove-step">Remove step</button>
                     </span>
                 </div>
-                <p class="ptc-step-source" data-testid="pt-step-source" data-evidence="@(s.Source?.Evidence.ToString() ?? "Manual")">@D.StepSource(s)</p>
+                <p class="ptc-step-endpoint" data-testid="pt-step-endpoint"><code class="ptc-break">@(s.Method) @(s.RelativePath)</code></p>
+                <p class="ptc-step-source @(D.FromEvidence(s) ? "ptc-step-source-evidence" : "")" data-testid="pt-step-source" data-evidence="@(s.Source?.Evidence.ToString() ?? "Manual")">
+                    @if (D.FromEvidence(s)) { <span class="ptc-step-origin" data-testid="pt-step-origin">Added from detected operation</span><span> · </span> }
+                    @D.StepSource(s)
+                </p>
                 <div class="pt-form ptc-step-form">
                     <label>Name <input value="@s.Name" @onchange="e => UpdateStep(index, x => x with { Name = Str(e) })" data-testid="pt-step-name" /></label>
                     <label>Method
@@ -883,20 +904,41 @@
                 @if (placeholders.Count > 0)
                 {
                     <div class="ptc-step-data" data-testid="pt-step-data">
-                        <p class="ptc-sub">Test Data mapping — references to approved central Test Data; values never enter this definition.</p>
+                        <h5 class="ptc-step-inputs-title">Inputs</h5>
+                        <p class="ptc-sub">The scenario stores which approved Test Data asset maps to each input; Test Data keeps the value. Values never enter this definition.</p>
                         @foreach (var (variable, place, type) in placeholders)
                         {
                             var mapping = s.DataMappings?.FirstOrDefault(m => m.Variable == variable);
-                            var selectId = $"pt-map-{index}-{variable}";
+                            var mapped = mapping is { AssetAliases.Count: > 0 };
+                            var rowId = $"pt-req-{index}-{variable}";
+                            var dialogKey = $"{index}|{variable}";
                             var options = _testDataAssets.Where(a => a.Approval == BirkNext.TestData.TestDataApproval.Approved && BirkNext.TestData.TestDataDataTypes.Of(a) == type).Select(a => a.Alias).OrderBy(a => a, StringComparer.Ordinal).ToList();
-                            <div class="ptc-mapping" data-testid="pt-step-mapping" data-variable="@variable" data-state="@(mapping is { AssetAliases.Count: > 0 } ? "mapped" : "missing")">
-                                <label for="@selectId"><code>@(place == "body" ? "request body" : place == "variable" ? "$" + variable : "{" + variable + "}")</code> → @BirkNext.TestData.TestDataDataTypes.Label(type)</label>
-                                <select id="@selectId" value="@(mapping?.AssetAliases.FirstOrDefault() ?? "")" @onchange="e => MapData(index, variable, place, type, e.Value?.ToString())" data-testid="pt-step-mapping-select">
-                                    <option value="">Not mapped</option>
-                                    @foreach (var alias in options.Union(mapping?.AssetAliases ?? []).Distinct()) { <option value="@alias">@alias@(options.Contains(alias) ? "" : " (not approved / other type)")</option> }
-                                </select>
-                                @if (mapping is not { AssetAliases.Count: > 0 }) { <span class="psb-data-missing" data-testid="pt-step-mapping-missing"><span aria-hidden="true">!</span> Test Data missing for @(place == "body" ? "the request body" : "{" + variable + "}")</span> }
-                                <a class="sd-link" href="@D.TestDataHref(_draft, s, variable, place, type)" data-testid="pt-step-open-test-data">@(options.Count == 0 ? "Open Test Data" : "Find matching Test Data")</a>
+                            var observedEvidence = ObservedEvidence(s, variable, place);
+                            <div class="ptc-mapping ptc-requirement" id="@rowId" tabindex="-1" data-testid="pt-step-mapping" data-variable="@variable" data-state="@(mapped ? "mapped" : "missing")">
+                                <p class="ptc-req-head"><code>@variable</code> · <span data-testid="pt-req-location">@BirkNext.Web.Components.ObservedValueReview.Location(place)</span> · Required · @BirkNext.TestData.TestDataDataTypes.Label(type)</p>
+                                <p class="ptc-req-state" aria-live="polite"><span class="ptc-sub">Test Data</span>
+                                    @if (mapped) { <strong class="ptc-req-mapped" data-testid="pt-step-mapping-state">Mapped to @string.Join(", ", mapping!.AssetAliases)</strong> }
+                                    else { <strong class="psb-data-missing" data-testid="pt-step-mapping-state"><span aria-hidden="true">!</span> Not mapped</strong><span class="visually-hidden" data-testid="pt-step-mapping-missing">Test Data missing for @(place == "body" ? "the request body" : "{" + variable + "}")</span> }
+                                    @if (observedEvidence is not null) { <span class="ptc-sub" data-testid="pt-req-observed"> · Observed value available · hidden</span> }
+                                </p>
+                                <p class="ptc-req-actions">
+                                    <button type="button" class="btn-secondary btn-small" aria-expanded="@(_mapping == dialogKey ? "true" : "false")" @onclick="() => OpenMapping(dialogKey)" data-testid="pt-step-map">@(mapped ? "Change Test Data" : "Map Test Data")</button>
+                                    @if (mapped) { <button type="button" class="ptc-link" @onclick="() => Unmap(index, variable, place, type)" data-testid="pt-step-unmap">Remove mapping</button> }
+                                    <a class="sd-link" href="@D.TestDataHref(_draft, s, variable, place, type)" data-testid="pt-step-open-test-data">@(options.Count == 0 ? "Open Test Data" : "Find matching Test Data")</a>
+                                </p>
+                                @if (_mapping == dialogKey)
+                                {
+                                    <BirkNext.Web.Components.TestDataMappingDialog Need="@(new BirkNext.Web.Components.TestDataMappingDialog.MappingNeed(variable, place, type, null, _draft.EnvironmentName))"
+                                        Assets="_testDataAssets" Current="@mapping?.AssetAliases.FirstOrDefault()" TestDataHref="@D.TestDataHref(_draft, s, variable, place, type)"
+                                        OnUse="alias => MapAndReturn(index, variable, place, type, alias)" OnCancel="() => CloseMapping(index, variable)"
+                                        OnReviewObserved="@(observedEvidence is null ? default(EventCallback) : EventCallback.Factory.Create(this, () => { _mapping = null; _observedReview = dialogKey; }))" />
+                                }
+                                @if (_observedReview == dialogKey && observedEvidence is not null)
+                                {
+                                    <BirkNext.Web.Components.ObservedValueReview Evidence="observedEvidence" Method="@s.Method" EnvironmentName="@_draft.EnvironmentName" EnvironmentId="@_draft.EnvironmentId" DataType="type"
+                                        OnUseAlias="alias => MapAndReturn(index, variable, place, type, alias)" OnUseExisting="() => { _observedReview = null; _mapping = dialogKey; }"
+                                        OnCancel="() => CloseMapping(index, variable)" />
+                                }
                             </div>
                         }
                     </div>
@@ -920,6 +962,7 @@
                     }
                 </ul>
             }
+            @if (used.Count == 0) { <p class="ptc-sub" data-testid="pt-data-selection-note">Selection strategy applies after Test Data is mapped.</p> }
             <label class="ptc-inline-field">Selection strategy
                 <select value="@(_draft.Scenario.DataSelection ?? TestDataSelection.RoundRobin)" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { DataSelection = Enum.Parse<TestDataSelection>(e.Value!.ToString()!) } })" data-testid="pt-data-selection">
                     @foreach (var sel in Enum.GetValues<TestDataSelection>()) { <option value="@sel">@P.Selection(sel)</option> }
@@ -953,9 +996,10 @@
             }
             catch (Exception ex) when (ex is JSException or InvalidOperationException or System.Text.Json.JsonException) { _observations = []; }
         }
-        if (ServiceProvider.GetService(typeof(ITestDataApiService)) is ITestDataApiService testData)
+        // The registered client, or the host's HttpClient factory (the WASM host does not register the interface itself).
+        if (ServiceProvider.GetService(typeof(ITestDataApiService)) is not null || ServiceProvider.GetService(typeof(IHttpClientFactory)) is not null)
         {
-            try { _testDataAssets = (await testData.CatalogAsync()).Catalog?.Assets ?? []; }
+            try { _testDataAssets = (await TestDataApiService.Resolve(ServiceProvider).CatalogAsync()).Catalog?.Assets ?? []; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _testDataAssets = []; }
         }
     }
@@ -980,6 +1024,51 @@
         if (parts.Length == 0 || codes.Any(c => c is null or < 100 or > 599)) { _statusErrors[index] = "Use HTTP status codes 100–599, comma-separated (e.g. 200 or 200, 204). The previous value is kept."; return; }
         _statusErrors.Remove(index);
         UpdateStep(index, x => x with { ExpectedStatusCodes = [.. codes.Select(c => c!.Value).Distinct()] });
+    }
+
+    private string? _mapping, _observedReview, _stepMessage;
+    private string? _focusTarget;
+
+    private void OpenMapping(string key) { _mapping = _mapping == key ? null : key; _observedReview = null; }
+
+    private void CloseMapping(int index, string variable) { _mapping = null; _observedReview = null; _focusTarget = $"pt-req-{index}-{variable}"; }
+
+    /// <summary>Map Test Data in scenario context: store the alias (never the value), close the dialog and return focus to the requirement row.</summary>
+    private void MapAndReturn(int index, string variable, string place, BirkNext.TestData.TestDataDataType type, string alias)
+    {
+        MapData(index, variable, place, type, alias);
+        _stepMessage = $"Step {index + 1}: {variable} mapped to {alias}. The value stays in Test Data.";
+        CloseMapping(index, variable);
+    }
+
+    private void Unmap(int index, string variable, string place, BirkNext.TestData.TestDataDataType type)
+    {
+        MapData(index, variable, place, type, null);
+        _stepMessage = $"Step {index + 1}: mapping for {variable} removed.";
+        _focusTarget = $"pt-req-{index}-{variable}";
+    }
+
+    /// <summary>Observed values behind a step's path placeholder (evidence for an explicit review only; nothing is copied).</summary>
+    private BirkNext.PerformanceTests.ObservedValueEvidence? ObservedEvidence(HttpPerformanceStep step, string variable, string place) =>
+        place != "path" || step.Source is not { Evidence: ScenarioEvidence.ObservedOnly or ScenarioEvidence.DeclaredAndObserved } source ? null
+        : BirkNext.PerformanceTests.PerformanceScenarioEngine.ObservedValues(new ScenarioOperation { Key = source.OperationKey ?? "", Origin = source.Origin, Method = step.Method, Path = step.RelativePath },
+            variable, _observations, _draft.TargetOrigin);
+
+    /// <summary>After "Add to scenario": focus the new step's heading (the builder announces "Added … as step N. Nothing has run.").</summary>
+    private void FocusStep(int number) => _focusTarget = $"pt-step-h-{number}";
+
+    /// <summary>"+ New GraphQL definition" / "Review &amp; create GraphQL definition": an unsaved GraphQL draft (REST and GraphQL are never mixed). Nothing runs.</summary>
+    private void NewGraphQlDefinition(HttpPerformanceStep? proposed)
+    {
+        if (_profile is null) return;
+        _draft = P.NewDefinition(_profile) with
+        {
+            Name = proposed is null ? "GraphQL baseline" : $"GraphQL {proposed.GraphQlOperationName}", TargetType = PerformanceTargetType.GraphQlHttp,
+            Scenario = new PerformanceScenario { Name = proposed is null ? "Main scenario" : $"GraphQL {proposed.GraphQlOperationName} (proposed)", Steps = proposed is null ? [] : [proposed], SourceKind = "graphql" },
+        };
+        _isNew = true; _dirty = true; _readiness = null; _runs = []; _baselines = []; _selectedRun = null; _tab = Tab.Scenario;
+        _message = proposed is null ? "New GraphQL definition (unsaved). Add GraphQL query operations to it." : "Proposed GraphQL definition created from the captured query document (unsaved). Review the query, map Test Data for its variables and save. Nothing has run.";
+        _focusTarget = proposed is null ? null : "pt-step-h-1";
     }
 
     private void MapData(int index, string variable, string place, BirkNext.TestData.TestDataDataType type, string? alias) => UpdateStep(index, x =>

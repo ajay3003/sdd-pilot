@@ -57,8 +57,17 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
     public void Shows_disclaimer_actual_counts_and_the_selected_snapshot()
     {
         var cut = Section();
-        cut.Find("#gdh-autodoc-title").TextContent.Should().Be("Autodoc diagnostics");
-        cut.Find("[data-testid=gdh-autodoc-disclaimer]").TextContent.Should().Be(GeneratedDocumentationText.AutodocDisclaimer);
+        cut.Find("#gdh-autodoc-title").TextContent.Should().Be("Modules with generated documentation");
+        cut.FindAll("[data-testid=gdh-autodoc-disclaimer]").Should().BeEmpty("the page carries the single disclaimer");
+        cut.Find("[data-testid=gdh-overview-state]").TextContent.Should().Be("Available");
+        cut.Find("[data-testid=gdh-overview-health]").TextContent.Should().Be("Error", "a parser error outranks review suggested");
+        cut.Find("[data-testid=gdh-overview-modules]").TextContent.Should().Be("5 · 3 with docs");
+        cut.Find("[data-testid=gdh-overview-api]").TextContent.Should().Be("3 · 2 with docs");
+        cut.Find("[data-testid=gdh-overview-review]").TextContent.Should().Be("2");
+        cut.Find("[data-testid=gdh-overview-errors]").TextContent.Should().Be("1");
+        cut.FindAll("[data-testid=gdh-review-item]").Select(i => i.GetAttribute("data-module")).Should().Equal("Skole", "Jobs");
+        cut.Find("[data-testid=gdh-advanced-body]").HasAttribute("hidden").Should().BeTrue("every metric sits behind Advanced diagnostics");
+        cut.Markup.Should().NotContain("autodoc diagnostics").And.NotContain("Show APIs without autodoc");
         cut.Find("[data-testid=gdh-autodoc-workflow]").TextContent.Should().Be("Yes");
         cut.Find("[data-testid=gdh-autodoc-using]").TextContent.Should().Be("3 of 5");
         cut.Find("[data-testid=gdh-autodoc-apis-using]").TextContent.Should().Be("2 of 3");
@@ -87,7 +96,7 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
     {
         var cut = Section();
         var mu = cut.FindAll("[data-testid=gdh-autodoc-row]").Single(r => r.GetAttribute("data-module") == "Mu");
-        mu.QuerySelector("[data-testid=gdh-autodoc-usage]")!.TextContent.Should().Be("Autodoc: Not configured");
+        mu.QuerySelector("[data-testid=gdh-autodoc-usage]")!.TextContent.Should().Be("Generated docs: Not configured");
         mu.QuerySelector("[data-testid=gdh-autodoc-usage]")!.ClassList.Should().Contain("sd-pill-muted", "neutral, not attention");
         mu.QuerySelector("[data-testid=gdh-autodoc-freshness]")!.TextContent.Should().Be("Not applicable");
         mu.QuerySelector("[data-testid=gdh-autodoc-health]")!.TextContent.Should().Be("Neutral");
@@ -114,10 +123,45 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
     }
 
     [Fact]
+    public void Basic_filters_first_with_counts_and_the_rest_behind_advanced_filters()
+    {
+        var cut = Section();
+        cut.FindAll("[data-testid=gdh-autodoc-filters] [data-testid=gdh-autodoc-filter]").Select(b => b.TextContent.Trim()).Should().Equal(
+            "All (5)", "With generated docs (3)", "Without (2)", "Needs review (1)");
+        cut.Find("[data-testid=gdh-advanced-filters-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        cut.Find("[data-testid=gdh-autodoc-apis-without-action]").TextContent.Should().Be("Show APIs without generated docs (1)");
+        cut.Find("[data-testid=gdh-autodoc-apis-without-action]").Click();
+        cut.Find("[data-testid=gdh-advanced-filters-toggle]").GetAttribute("aria-expanded").Should().Be("true", "the active module-type scope stays visible");
+    }
+
+    [Fact]
+    public void No_generated_documentation_is_neutral_with_the_policy_explanation()
+    {
+        var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, new AutodocDiagnostics
+        {
+            DetectedModules = 2, ApiModules = 1, ModulesWithoutAutodoc = 2, ApisWithoutAutodoc = 1, Modules = [NotConfigured("Mu", api: true), NotConfigured("Common", api: false)],
+        }));
+        cut.Find("[data-testid=gdh-overview-state]").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid=gdh-overview-health]").TextContent.Should().Be("Neutral");
+        cut.Find("[data-testid=gdh-overview-health]").ClassList.Should().Contain("sd-pill-muted");
+        cut.Find("[data-testid=gdh-overview-neutral]").TextContent.Should().Contain("No project policy requiring generated documentation was detected.");
+        cut.Find("[data-testid=gdh-review-none]").TextContent.Should().Be("No generated-documentation review items.");
+        cut.FindAll("[data-testid=gdh-autodoc-explorer]").Should().BeEmpty("no generated output to open");
+    }
+
+    [Fact]
+    public void Explorer_link_is_offered_only_for_modules_with_generated_output()
+    {
+        var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, Diagnostics()).Add(x => x.ExplorerHref, "generated-documentation-explorer?import=imp-1"));
+        cut.FindAll("[data-testid=gdh-autodoc-explorer]").Select(a => a.GetAttribute("href")).Should().Equal(
+            "generated-documentation-explorer?import=imp-1&module=Persons", "generated-documentation-explorer?import=imp-1&module=Skole", "generated-documentation-explorer?import=imp-1&module=Jobs");
+    }
+
+    [Fact]
     public void Repository_level_documentation_is_listed_apart_from_modules()
     {
         var cut = Section();
-        cut.Find("[data-testid=gdh-autodoc-repository]").TextContent.Should().Contain("not a module or API");
+        cut.Find("[data-testid=gdh-autodoc-repository]").TextContent.Should().Contain("not counted as module or API coverage");
         Rows(cut).Should().NotContain("autodoc");
     }
 

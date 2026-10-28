@@ -18,7 +18,8 @@ public static class PerformanceTestPresentation
         Id = "", EnvironmentId = profile.Id, Name = "Baseline check", TargetType = PerformanceTargetType.RestHttp,
         TargetOrigin = Uri.TryCreate(profile.TargetUrl, UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Authority) : "",
         EnvironmentType = profile.EnvironmentType.ToString(), EnvironmentName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name,
-        Scenario = new PerformanceScenario { Name = "Main scenario", Steps = [new HttpPerformanceStep { Name = "home", Method = "GET", RelativePath = "/", ExpectedStatusCodes = [200], ThinkTimeMs = 500 }] },
+        // No placeholder step: a new definition starts empty, so no enabled "GET /" can silently become load traffic. Saved definitions keep theirs.
+        Scenario = new PerformanceScenario { Name = "Main scenario", Steps = [] },
         Workload = new PerformanceWorkload(),
         Thresholds =
         [

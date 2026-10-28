@@ -10,6 +10,8 @@ namespace BirkNext.Web.Services;
 public interface IGeneratedDocumentationApiService
 {
     Task<GeneratedDocumentationDiagnosticRun?> RunAsync(GeneratedDocumentationDiagnosticRequest request, CancellationToken ct = default);
+    /// <summary>Operations/types of a captured OpenAPI or GraphQL artifact (stateless; nothing stored or fetched). Null when unreadable.</summary>
+    Task<BirkNext.SourceDomains.SourceContract?> StructureAsync(string path, string content, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceContract?>(null);
 }
 
 public sealed class GeneratedDocumentationApiService(HttpClient http) : IGeneratedDocumentationApiService
@@ -21,6 +23,12 @@ public sealed class GeneratedDocumentationApiService(HttpClient http) : IGenerat
         using var response = await http.PostAsJsonAsync("api/system-diagnostics/generated-documentation/run", request, Json, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<GeneratedDocumentationDiagnosticRun>(Json, ct);
+    }
+
+    public async Task<BirkNext.SourceDomains.SourceContract?> StructureAsync(string path, string content, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/system-diagnostics/generated-documentation/structure", new { Path = path, Content = content }, Json, ct);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<BirkNext.SourceDomains.SourceContract>(Json, ct) : null;
     }
 
     /// <summary>The request for the current workspace: its imported-project identity (when it is one) and the selected Constitution,

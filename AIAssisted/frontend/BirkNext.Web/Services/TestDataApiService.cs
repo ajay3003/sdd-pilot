@@ -24,6 +24,13 @@ public interface ITestDataApiService
     Task<(List<TestDataMatch>? Matches, string? Error)> MatchesAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) => Task.FromResult<(List<TestDataMatch>?, string?)>((null, Unavailable));
     Task<(TestDataUsageReference? Usage, string? Error)> BindAsync(TestDataUsageReference usage, CancellationToken ct = default) => Task.FromResult<(TestDataUsageReference?, string?)>((null, Unavailable));
 
+    /// <summary>
+    /// The one call that sends a value: a Live Discovery value, in the POST body only, for a backend-only comparison with approved Test Data. The
+    /// answer is an alias or nothing; nothing is stored, approved or created (POST api/test-data/observed-value/match).
+    /// </summary>
+    Task<(ObservedValueMatchResult? Result, string? Error)> MatchObservedValueAsync(ObservedValueMatchRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ObservedValueMatchResult?, string?)>((null, Unavailable));
+
     /// <summary>Fills generated XML with Test Data values by alias (POST api/test-data/xml-fixtures/bind); the values are resolved by the backend.</summary>
     Task<(string? Xml, IReadOnlyList<string> Problems)> BindXmlFixtureAsync(TestDataXmlBindRequest request, CancellationToken ct = default) =>
         Task.FromResult<(string?, IReadOnlyList<string>)>((null, [Unavailable]));
@@ -113,6 +120,12 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
     {
         var (body, error) = await PostAsync("api/test-data/usages", usage, ct);
         return (body?.Deserialize<TestDataUsageReference>(Json), error);
+    }
+
+    public async Task<(ObservedValueMatchResult? Result, string? Error)> MatchObservedValueAsync(ObservedValueMatchRequest request, CancellationToken ct = default)
+    {
+        var (body, error) = await PostAsync("api/test-data/observed-value/match", request, ct);
+        return (body?.Deserialize<ObservedValueMatchResult>(Json), error);
     }
 
     /// <summary>POST with the backend's own refusal text (400/409 "message") surfaced as the error.</summary>

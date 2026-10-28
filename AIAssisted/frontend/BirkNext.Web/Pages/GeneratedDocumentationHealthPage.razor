@@ -2,21 +2,25 @@
 @using BirkNext.GeneratedDocumentation
 @using BirkNext.Web.Components.GeneratedDocumentation
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 @using BirkNext.Web.Services.Explorers
 @using BirkNext.Web.Services.ProjectImport
+@using Microsoft.AspNetCore.WebUtilities
 @inject IArtifactExplorerContext ArtifactContext
 @inject IWorkspaceSessionService Workspace
+@inject NavigationManager Navigation
 @implements IDisposable
 
 <PageTitle>Generated Documentation Health — QA Review Studio</PageTitle>
 
-@* Project analysis of the CURRENT imported project's generated documentation (autodoc …): its target is the imported project and its Source
-   Analysis snapshot — never BirkNext itself, never another project's snapshot. The diagnostics are the existing panel; this page owns the
-   target context. Settings configure analyzers; this page shows what the analyzer found in the target project. *@
+@* Project analysis of an imported project's generated documentation: the target is an explicitly selected imported project and one of its
+   Source Analysis snapshots — never BirkNext itself, never another project's snapshot, never "the newest" by date. Selecting here does not
+   change the workspace's current project. Precedence: deep link (import, snapshot) > the current project's own snapshot > the last selection
+   on this page > ask. The diagnostics are the existing panel; this page owns the target context. *@
 <div class="gdh-page" data-testid="gdh-page">
     <PageHeader Title="@Title" Description="@Intro" />
 
-    @if (Import is not { } import)
+    @if (_projects.Count == 0)
     {
         <section class="gdh-target gdh-target-empty" role="status" data-testid="gdh-no-project">
             <p>@NoProjectMessage</p>
@@ -25,29 +29,52 @@
     }
     else
     {
-        <dl class="gdh-target" data-testid="gdh-target">
-            <div><dt>Current project</dt><dd data-testid="gdh-target-project">@import.ProjectName</dd></div>
-            <div><dt>Source snapshot</dt><dd data-testid="gdh-target-snapshot">@(import.SourceSnapshotId is null ? "Not available for this import" : import.ArchiveFileName)</dd></div>
-            @if (import.SourceSnapshotId is { } snapshotId)
-            {
-                <div><dt>Snapshot ID</dt><dd><code class="gdh-wrap" data-testid="gdh-target-snapshot-id">@snapshotId</code></dd></div>
-                <div><dt>Analyzed</dt><dd>@(import.SourceAnalyzedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "Unknown")</dd></div>
-                <div><dt>Selected by</dt><dd data-testid="gdh-target-basis">Snapshot of the current imported project</dd></div>
-            }
-        </dl>
-        <p class="gdh-boundary" data-testid="gdh-page-boundary">
-            Authored documentation ≠ generated documentation ≠ source evidence ≠ runtime evidence. Source is stronger implementation evidence than
-            generated documentation. A discrepancy is a review candidate, not proof of a defect. A module without generated documentation is shown as
-            “Autodoc: Not configured” — a neutral state, not a failure.
-        </p>
+        <div class="gdh-selectors" data-testid="gdh-selectors">
+            <label class="gdh-field">Project / import
+                <select data-testid="gdh-project" @onchange="ProjectChanged">
+                    @if (_lineage is null) { <option value="" selected>Select a project</option> }
+                    @foreach (var p in _projects) { <option value="@p.Lineage" selected="@(p.Lineage == _lineage)">@p.Label</option> }
+                </select>
+            </label>
+            <label class="gdh-field">Source snapshot
+                <select data-testid="gdh-snapshot-select" @onchange="SnapshotChanged" disabled="@(Snapshots.Count == 0)">
+                    @if (Selected is null) { <option value="" selected>@(Snapshots.Count == 0 ? "No source snapshot" : "Select a source snapshot")</option> }
+                    @foreach (var s in Snapshots) { <option value="@s.SourceSnapshotId" selected="@(s.SourceSnapshotId == Selected?.SourceSnapshotId)">@SnapshotLabel(s)</option> }
+                </select>
+            </label>
+        </div>
 
-        @if (import.SourceSnapshotId is null)
+        @if (Selected is { SourceSnapshotId: { } snapshotId } import)
         {
-            <p class="gdh-note" role="status" data-testid="gdh-no-snapshot">The current imported project has no Source Analysis snapshot, so its generated documentation cannot be analysed. Snapshots of other projects are not used.</p>
+            <section class="gdh-target" aria-labelledby="gdh-analyzing-h" data-testid="gdh-target">
+                <h2 id="gdh-analyzing-h" class="gdh-h3">Analyzing</h2>
+                <dl class="gdh-target-facts">
+                    <div><dt>Project</dt><dd data-testid="gdh-target-project">@ProjectName(import)</dd></div>
+                    <div><dt>Source snapshot</dt><dd data-testid="gdh-target-snapshot">@import.ArchiveFileName</dd></div>
+                    <div><dt>Analyzed</dt><dd>@(import.SourceAnalyzedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "Unknown")</dd></div>
+                    <div><dt>Snapshot ID</dt><dd><code class="gdh-wrap" data-testid="gdh-target-snapshot-id">@snapshotId</code></dd></div>
+                    <div><dt>Selected by</dt><dd data-testid="gdh-target-basis">@_basis</dd></div>
+                </dl>
+                @if (ExplorerVisible)
+                {
+                    <p class="gdh-note"><a class="btn-link" data-testid="gdh-open-explorer-page" href="@($"{NavigationCatalog.GeneratedDocumentationExplorerRoute}?import={Uri.EscapeDataString(import.ImportId)}")">Open Generated Documentation Explorer</a></p>
+                }
+            </section>
+            <p class="gdh-boundary" data-testid="gdh-page-boundary">
+                Authored documentation ≠ generated documentation ≠ source evidence ≠ runtime evidence. 
+                A discrepancy is a review candidate, not proof of a defect, and BirkNext does not decide which side is wrong.
+                A module without generated documentation is shown as “Generated docs: Not configured” — a neutral state, not a failure. Coverage and health of generated documentation say nothing about source correctness or runtime behavior.
+            </p>
+            <GeneratedDocumentationHealthPanel Embedded="true" RequireImportedProject="true" ProjectImportId="@import.ImportId" SnapshotId="@snapshotId"
+                                               IncludeAuthoredArtifacts="@(import.ImportId == CurrentImportId)" />
+        }
+        else if (_lineage is not null && Snapshots.Count == 0)
+        {
+            <p class="gdh-note" role="status" data-testid="gdh-no-snapshot">The selected imported project has no Source Analysis snapshot, so its generated documentation cannot be analysed. Snapshots of other projects are not used.</p>
         }
         else
         {
-            <GeneratedDocumentationHealthPanel Embedded="true" RequireImportedProject="true" />
+            <p class="gdh-note" role="status" data-testid="gdh-select-prompt">Select an imported project and one of its source snapshots. The newest snapshot is never chosen automatically.</p>
         }
 
         <p class="gdh-note">Related: <a href="documentation-drift">Documentation Drift</a> compares documentation artifacts (authored ↔ generated, revision ↔ revision) · <a href="source-analysis">Source Analysis</a> holds the raw source evidence.</p>
@@ -56,23 +83,103 @@
 
 @code {
     public const string NoProjectMessage = "No imported project/source snapshot is currently available for Generated Documentation Health analysis.";
-    public const string IntroText = "Review the availability, provenance, freshness and consistency of generated documentation for the current project.";
+    public const string IntroText = "Review generated-documentation availability, provenance, freshness and consistency for a selected imported project and source snapshot.";
 
-    private SddProjectImportRecord? Import
-    {
-        get
-        {
-            // The imported project the workspace currently shows; a Demo Project or the manual workspace has no imported source snapshot.
-            var importId = ProjectImportScope.ImportIdOf(ArtifactContext.CurrentScope);
-            return importId is null ? null : Workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId);
-        }
-    }
+    /// <summary>Last explicit selection on this page in this session (lineage, snapshot); used only when no deep link and no current-project snapshot applies.</summary>
+    private static (string Lineage, Guid Snapshot)? _stored;
 
-    // Project-neutral feature identity; the current project is shown as context in the target list, never in the title.
+    private sealed record ProjectOption(string Lineage, string Label);
+
+    private IReadOnlyList<ProjectOption> _projects = [];
+    private IReadOnlyList<DriftImport> _imports = [];
+    private string? _lineage;
+    private Guid? _snapshot;
+    private string _basis = "";
+
+    private string? CurrentImportId => ProjectImportScope.ImportIdOf(ArtifactContext.CurrentScope);
+
+    /// <summary>Distinct Source Analysis snapshots of the selected project lineage, oldest first.</summary>
+    private IReadOnlyList<SddProjectImportRecord> Snapshots => _lineage is null ? []
+        : [.. _imports.Where(i => i.LineageKey == _lineage && i.SourceSnapshotId is not null)
+            .Select(i => Workspace.SddLifecycle.ProjectImports.FirstOrDefault(r => r.ImportId == i.ImportId)).OfType<SddProjectImportRecord>()
+            .DistinctBy(r => r.SourceSnapshotId)]; // a re-import of an identical archive reuses the snapshot: listed once, under the import that created it
+
+    private SddProjectImportRecord? Selected => _snapshot is { } id ? Snapshots.FirstOrDefault(s => s.SourceSnapshotId == id) : null;
+
+    public static string SnapshotLabel(SddProjectImportRecord import) =>
+        $"{import.ArchiveFileName} · analyzed {import.SourceAnalyzedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "unknown"} · {import.SourceSnapshotId?.ToString("N")[..8]}";
+
+    private string ProjectName(SddProjectImportRecord import) => _imports.FirstOrDefault(i => i.ImportId == import.ImportId)?.ProjectName ?? import.ProjectName;
+
+    // Project-neutral feature identity; the selected project is shown as context, never in the title.
     private const string Title = "Generated Documentation Health";
     private static string Intro => IntroText;
 
-    protected override void OnInitialized() => ArtifactContext.Changed += OnContextChanged;
+    private bool ExplorerVisible => (ServiceProvider.GetService(typeof(FeatureVisibilityService)) as FeatureVisibilityService)?.GeneratedDocumentationExplorer ?? true;
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        ArtifactContext.Changed += OnContextChanged;
+        Load();
+    }
+
+    private void Load()
+    {
+        _imports = DocumentationDrift.Imports(Workspace.SddLifecycle);
+        _projects = [.. _imports.GroupBy(i => i.LineageKey).Select(g => new ProjectOption(g.Key, g.First().ProjectName))];
+        var query = QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(Navigation.Uri).Query);
+        var linked = query.TryGetValue("import", out var import) ? _imports.FirstOrDefault(i => i.ImportId == import.ToString()) : null;
+        var current = _imports.FirstOrDefault(i => i.ImportId == CurrentImportId);
+
+        if (linked is not null)
+        {
+            _lineage = linked.LineageKey;
+            var requested = query.TryGetValue("snapshot", out var s) && Guid.TryParse(s.ToString(), out var id) && Snapshots.Any(x => x.SourceSnapshotId == id) ? id : (Guid?)null;
+            _snapshot = requested ?? linked.SourceSnapshotId;
+            _basis = requested is not null ? "Link from Generated Documentation Explorer" : "Snapshot of the linked import";
+            if (_snapshot is null) _basis = "";
+        }
+        else if (current is not null)
+        {
+            _lineage = current.LineageKey;
+            _snapshot = current.SourceSnapshotId;
+            _basis = "Snapshot of the current imported project";
+        }
+        else if (_stored is { } stored && _projects.Any(p => p.Lineage == stored.Lineage))
+        {
+            _lineage = stored.Lineage;
+            _snapshot = Snapshots.Any(x => x.SourceSnapshotId == stored.Snapshot) ? stored.Snapshot : null;
+            _basis = "Your last selection on this page";
+        }
+        else if (_projects.Count == 1)
+        {
+            // The only imported project; its snapshot is still chosen explicitly unless exactly one exists.
+            _lineage = _projects[0].Lineage;
+            _snapshot = Snapshots.Count == 1 ? Snapshots[0].SourceSnapshotId : null;
+            _basis = "Only imported project with a source snapshot";
+        }
+    }
+
+    private void ProjectChanged(ChangeEventArgs e)
+    {
+        _lineage = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        var current = _imports.FirstOrDefault(i => i.ImportId == CurrentImportId && i.LineageKey == _lineage);
+        // Canonical: the current project's own snapshot; otherwise only an unambiguous single snapshot — never the newest of several.
+        _snapshot = current?.SourceSnapshotId ?? (Snapshots.Count == 1 ? Snapshots[0].SourceSnapshotId : null);
+        _basis = current?.SourceSnapshotId is not null ? "Snapshot of the current imported project" : "Only source snapshot of the selected project";
+        Remember();
+    }
+
+    private void SnapshotChanged(ChangeEventArgs e)
+    {
+        _snapshot = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        _basis = "Selected on this page";
+        Remember();
+    }
+
+    private void Remember() { if (_lineage is not null && _snapshot is { } id) _stored = (_lineage, id); }
+
     private void OnContextChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
     public void Dispose() => ArtifactContext.Changed -= OnContextChanged;
 }

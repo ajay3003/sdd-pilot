@@ -23,4 +23,31 @@ public sealed class GeneratedDocumentationController(GeneratedDocumentationDiagn
                 detail: $"At most {MaxAuthoredArtifacts} authored artifacts of up to {MaxAuthoredCharacters / (1024 * 1024)} MB each are compared.");
         return Ok(await diagnostics.RunAsync(request, cancellationToken));
     }
+
+    /// <summary>
+    /// The structure of one captured generated contract artifact (OpenAPI/Swagger YAML or JSON, GraphQL SDL) for the read-only Generated
+    /// Documentation Explorer: the same deterministic readers Source Analysis uses. Stateless; nothing is stored, executed, fetched or resolved
+    /// remotely. 422 when the text is not a readable document of that type.
+    /// </summary>
+    [HttpPost("structure")]
+    [RequestSizeLimit(2 * 1024 * 1024)]
+    public ActionResult<BirkNext.SourceDomains.SourceContract> Structure([FromBody] GeneratedArtifactStructureRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Path) || request.Content is null) return BadRequest();
+        var ext = System.IO.Path.GetExtension(request.Path).ToLowerInvariant();
+        try
+        {
+            var contract = ext switch
+            {
+                ".graphql" or ".graphqls" or ".gql" => BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadGraphQl(request.Path, request.Content),
+                ".yaml" or ".yml" or ".json" => BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadOpenApi(request.Path, request.Content),
+                _ => null,
+            };
+            return contract is null ? UnprocessableEntity() : Ok(contract);
+        }
+        catch (System.Text.Json.JsonException) { return UnprocessableEntity(); }
+    }
 }
+
+/// <summary>A captured generated artifact's path (for its type) and text.</summary>
+public sealed record GeneratedArtifactStructureRequest(string Path, string? Content);

@@ -41,3 +41,33 @@
 .psb-contracts summary { cursor: pointer; font-weight: 600; }
 .psb-contracts fieldset { display: grid; gap: 0.3rem; margin: 0.4rem 0 0; padding: 0; border: 0; min-width: 0; }
 .psb-contracts .sd-check { overflow-wrap: anywhere; }
+
+/* Candidate states. Green = selected/added to the scenario, never "ready to execute"; unresolved inputs inside stay amber with text. */
+.psb-operation.psb-is-added { background: rgba(22, 163, 74, .07); border-left: 4px solid rgba(22, 163, 74, .65); box-shadow: inset 0 0 0 1px rgba(22, 163, 74, .25); }
+.psb-chip { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .78rem; font-weight: 600; border: 1px solid var(--clr-border, #cbd5e1); }
+.psb-chip-added { background: rgba(22, 163, 74, .12); color: #166534; border-color: rgba(22, 163, 74, .4); }
+.psb-chip-warn { background: rgba(217, 119, 6, .12); color: #92400e; border-color: rgba(217, 119, 6, .4); }
+.psb-chip-muted { color: var(--clr-text-muted, #475569); }
+@media (prefers-color-scheme: dark) { .psb-chip-added { color: #86efac; } .psb-chip-warn { color: #fcd34d; } }
+.psb-warn { color: #92400e; font-weight: 600; }
+.psb-op-name { font-family: var(--font-mono, ui-monospace, monospace); font-size: .95rem; }
+.psb-evidence-line { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: center; margin: .25rem 0; }
+.psb-need-name { margin-right: .5rem; }
+.psb-observed-value { margin-left: .5rem; color: var(--clr-text-muted, #475569); font-size: .85rem; }
+.psb-filters { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin: .5rem 0; }
+.psb-filter { border: 1px solid var(--clr-border, #cbd5e1); background: var(--clr-surface, #fff); color: inherit; border-radius: 999px; padding: .15rem .65rem; font-size: .85rem; cursor: pointer; }
+.psb-filter.is-active { font-weight: 700; box-shadow: inset 0 0 0 1px var(--clr-primary, #2563eb); border-color: var(--clr-primary, #2563eb); }
+.psb-filter:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.psb-tech-toggle { margin-left: .5rem; }
+.psb-counts { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; margin: .25rem 0; }
+.psb-counts dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.psb-counts dd { margin: 0; }
+.psb-contract-group { border-top: 1px solid var(--clr-border, #e2e8f0); padding: .35rem 0; }
+.psb-group-head { margin: 0 0 .25rem; }
+.psb-graphql-doc { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; font-size: .8rem; padding: .5rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: .375rem; }
+.psb-review-host { list-style: none; }
+.ovr { border: 1px solid var(--clr-border, #cbd5e1); border-radius: .5rem; padding: .6rem .8rem; margin: .5rem 0; display: grid; gap: .35rem; }
+.ovr-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .25rem 1rem; margin: 0; }
+.ovr-facts dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.ovr-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ovr-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }

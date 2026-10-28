@@ -1,0 +1,61 @@
+@using BirkNext.PerformanceTests
+@using BirkNext.TestData
+@using E = BirkNext.PerformanceTests.PerformanceScenarioEngine
+
+@* Map Test Data (scenario context): only approved assets compatible with the requirement — same data type, usable in the environment; assets whose
+   alias/label/capability names the parameter are listed first. The scenario stores the alias (mapping); Test Data keeps the value. *@
+<section class="tdm" role="dialog" aria-modal="false" aria-labelledby="@_titleId" data-testid="tdm">
+    <h4 id="@_titleId" tabindex="-1" class="tdm-title">Map Test Data · <code>@E.Placeholder(Need)</code></h4>
+    <p class="ptc-sub">@ObservedValueReview.Location(Need.In) · @TestDataDataTypes.Label(Need.DataType)@(Need.Type is { } type ? $" · {type}" : "")@(Need.Environment is { } env ? $" · environment {env}" : "")</p>
+    @if (Compatible.Count == 0)
+    {
+        <p role="status" data-testid="tdm-none"><strong>No compatible approved Test Data found.</strong></p>
+        <div class="tdm-actions">
+            <a class="sd-link" href="@TestDataHref" data-testid="tdm-open-test-data">Open Test Data</a>
+            @if (OnReviewObserved.HasDelegate) { <button type="button" class="btn-secondary" @onclick="OnReviewObserved" data-testid="tdm-review-observed">Review observed candidate value</button> }
+            <button type="button" class="ptc-link" @onclick="OnCancel" data-testid="tdm-cancel">Cancel</button>
+        </div>
+    }
+    else
+    {
+        <fieldset class="tdm-options" data-testid="tdm-options">
+            <legend>Approved assets compatible with this input</legend>
+            @foreach (var alias in Compatible)
+            {
+                var id = $"{_titleId}-{alias}";
+                var asset = Assets.FirstOrDefault(a => a.Alias == alias);
+                <label for="@id" class="sd-check"><input type="radio" id="@id" name="@_titleId" value="@alias" checked="@(_selected == alias)" @onchange="() => _selected = alias" data-testid="tdm-option" />
+                    <code>@alias</code>@if (asset?.Label is { Length: > 0 } label) { <span class="ptc-sub"> · @label</span> }</label>
+            }
+        </fieldset>
+        <div class="tdm-actions">
+            <button type="button" class="btn-primary" disabled="@(_selected is null)" @onclick="() => OnUse.InvokeAsync(_selected!)" data-testid="tdm-use">Use selection</button>
+            <a class="sd-link" href="@TestDataHref" data-testid="tdm-open-test-data">Open Test Data</a>
+            <button type="button" class="ptc-link" @onclick="OnCancel" data-testid="tdm-cancel">Cancel</button>
+        </div>
+    }
+</section>
+
+@code {
+    /// <summary>The requirement to map (variable, location, data type, declared type) and the environment it runs in.</summary>
+    [Parameter, EditorRequired] public MappingNeed Need { get; set; } = default!;
+    [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
+    [Parameter] public string? Current { get; set; }
+    [Parameter] public string TestDataHref { get; set; } = "test-data";
+    [Parameter] public EventCallback<string> OnUse { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback OnReviewObserved { get; set; }
+
+    public sealed record MappingNeed(string Variable, string In, TestDataDataType DataType, string? Type, string? Environment)
+    {
+        public static implicit operator ScenarioDataNeed(MappingNeed n) => new(n.Variable, n.In, n.DataType, true, null, n.Type);
+    }
+
+    private readonly string _titleId = $"tdm-{Guid.NewGuid():N}";
+    private string? _selected;
+
+    /// <summary>Approved, same data type, environment-compatible — named matches first (the engine's own matching).</summary>
+    private IReadOnlyList<string> Compatible => E.Match(Need, Assets, Need.Environment).Aliases;
+
+    protected override void OnParametersSet() => _selected ??= Current is not null && Compatible.Contains(Current) ? Current : null;
+}

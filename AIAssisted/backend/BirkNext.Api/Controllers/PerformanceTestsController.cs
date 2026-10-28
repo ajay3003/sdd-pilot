@@ -12,8 +12,37 @@ namespace BirkNext.Api.Controllers;
 [ApiController]
 [Route("api/performance-tests")]
 public sealed class PerformanceTestsController(PerformanceTestStore store, PerformanceTestReadinessService readiness, PerformanceTestExecutionService execution,
-    PerformanceTestProviderRegistry providers, PerformanceTestOptions options, TimeProvider? clock = null, Services.PerformanceTests.Resources.ResourceObservationRegistry? resources = null) : ControllerBase
+    PerformanceTestProviderRegistry providers, PerformanceTestOptions options, TimeProvider? clock = null, Services.PerformanceTests.Resources.ResourceObservationRegistry? resources = null,
+    PerformanceLocalExecutionStore? localExecution = null) : ControllerBase
 {
+    // ── Local execution setup: Container TLS trust (machine-local; metadata only; TLS verification is never disabled) ─────────
+
+    /// <summary>Local execution summary and the Container TLS trust card. Never returns certificate content.</summary>
+    [HttpGet("local-execution")]
+    public ActionResult<PerformanceLocalExecutionStatus> LocalExecution() =>
+        localExecution is null ? NotFound() : Ok(localExecution.Status());
+
+    /// <summary>Validates and stores a CA bundle host path (.pem/.crt/.cer PEM certificates only; keys and PFX refused). Nothing is mounted unless it loads.</summary>
+    [HttpPut("local-execution/ca-bundle")]
+    public ActionResult<PerformanceLocalExecutionStatus> ConfigureCaBundle([FromBody] ContainerCaBundleRequest request)
+    {
+        if (localExecution is null) return NotFound();
+        var (ok, message, _) = localExecution.Configure(request?.Path, (clock ?? TimeProvider.System).GetUtcNow());
+        if (!ok) return UnprocessableEntity(new { message });
+        providers.InvalidateStatus(PerformanceProviderIds.K6);
+        return Ok(localExecution.Status());
+    }
+
+    /// <summary>Removes the CA bundle chosen in System Settings; the file on disk is not touched.</summary>
+    [HttpDelete("local-execution/ca-bundle")]
+    public ActionResult<PerformanceLocalExecutionStatus> RemoveCaBundle()
+    {
+        if (localExecution is null) return NotFound();
+        localExecution.Remove();
+        providers.InvalidateStatus(PerformanceProviderIds.K6);
+        return Ok(localExecution.Status());
+    }
+
     /// <summary>Approved Resource Stability targets of an environment with their provider status (configured targets only — no container enumeration).</summary>
     [HttpGet("resource-targets")]
     public async Task<ActionResult<IReadOnlyList<ResourceTargetStatus>>> ResourceTargets([FromQuery] string environmentId, [FromQuery] string? environmentType, CancellationToken ct)

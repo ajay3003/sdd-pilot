@@ -79,7 +79,7 @@ public static class DocumentationDrift
     public const string Neutral = "The authored documentation and generated documentation describe this differently.";
     public const string NeutralReview = "Authored documentation represents intent/design. Generated documentation is implementation-derived. A discrepancy requires review; neither side is automatically authoritative.";
     public const string SourceBoundary = "Generated documentation is implementation-derived. Use Source Analysis for raw source evidence.";
-    public const string ManualNote = "Manual document comparison — these artifacts are not assumed to describe equivalent scope. The result lists document differences only.";
+    public const string ManualNote = "Advanced comparison — scope equivalence not assumed. These artifacts are not assumed to describe equivalent scope; the result lists document differences only.";
     public const string NotPresent = "Not present";
     public const string SelectDocument = "Select a document to compare.";
     public const string NoResult = "Select two documents and run Compare.";
@@ -265,7 +265,7 @@ public static class DocumentationDrift
 
     // ── Modes ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Same identity → Version comparison; authored ↔ generated in one import → consistency; anything else → Manual comparison.</summary>
+    /// <summary>Same identity → Version comparison; authored ↔ generated in one import → consistency; anything else → Advanced comparison.</summary>
     public static DriftIntent SuggestIntent(DriftDocument left, DriftDocument right) =>
         Eligibility(DriftIntent.VersionDrift, left, right) is null ? DriftIntent.VersionDrift
         : Eligibility(DriftIntent.ConsistencyDrift, left, right) is null ? DriftIntent.ConsistencyDrift
@@ -280,7 +280,7 @@ public static class DocumentationDrift
     public static string? Eligibility(DriftIntent intent, DriftDocument left, DriftDocument right) => intent switch
     {
         DriftIntent.VersionDrift when left.LogicalKey != right.LogicalKey || left.LineageKey != right.LineageKey =>
-            "Version comparison needs the same document identity in two imports or revisions of one project. Use Manual comparison for other documents.",
+            "Version comparison needs the same document identity in two imports or revisions of one project. Use Advanced comparison for other documents.",
         DriftIntent.ConsistencyDrift or DriftIntent.AuthoredVsGenerated when left.Origin == right.Origin || left.ProjectImportId is null || left.ProjectImportId != right.ProjectImportId =>
             "Authored ↔ generated consistency compares an authored and a generated document of the same import.",
         _ => null,
@@ -290,7 +290,7 @@ public static class DocumentationDrift
     public static string ComparisonType(DriftIntent intent) => intent switch
     {
         DriftIntent.VersionDrift => "Version comparison (same document across imports)",
-        DriftIntent.Manual => "Manual comparison",
+        DriftIntent.Manual => "Advanced comparison",
         DriftIntent.CompositeConsistency => "Authored intent ↔ generated documentation",
         DriftIntent.ContributionConsistency => "Specific authored document ↔ generated documentation",
         _ => "Authored ↔ generated consistency (document text)",

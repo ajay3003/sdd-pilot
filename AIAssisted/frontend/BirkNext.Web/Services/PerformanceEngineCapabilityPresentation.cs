@@ -28,6 +28,30 @@ public sealed record CapabilityChip(string Label, bool Supported);
 public static class PerformanceEngineCapabilityPresentation
 {
     /// <summary>Engine status. "Ready" only when the backend probe says the provider, runtime and image are usable (Available).</summary>
+    /// <summary>Container TLS trust card state. Green only when the container network check proved trust with TLS verification on.</summary>
+    public static CapabilityStatus Trust(string state) => state switch
+    {
+        ContainerTlsTrustStates.Validated => new("Validated", "✓", CapabilityTone.Positive),
+        ContainerTlsTrustStates.Configured => new("Configured", "○", CapabilityTone.Neutral),
+        ContainerTlsTrustStates.NeedsRecheck => new("Needs recheck", "!", CapabilityTone.Caution),
+        ContainerTlsTrustStates.ValidationFailed => new("Validation failed", "!", CapabilityTone.Danger),
+        _ => new("Not configured", "○", CapabilityTone.Neutral),
+    };
+
+    /// <summary>Network check stage pill.</summary>
+    public static CapabilityStatus Stage(string state) => state switch
+    {
+        "Passed" => new("Passed", "✓", CapabilityTone.Positive),
+        "Failed" => new("Failed", "!", CapabilityTone.Danger),
+        "Not applicable" => new("Not applicable", "–", CapabilityTone.Neutral),
+        "Not reached" => new("Not reached", "○", CapabilityTone.Neutral),
+        _ => new("Not checked", "○", CapabilityTone.Neutral),
+    };
+
+    /// <summary>Only a relative Performance Test Review URL is a valid "Back" target (no open redirect).</summary>
+    public static string? SafeReturn(string? returnTo) =>
+        returnTo is { Length: > 0 } r && r.StartsWith("performance-test-review", StringComparison.Ordinal) && !r.Contains("//", StringComparison.Ordinal) && !r.Contains(':') ? r : null;
+
     public static CapabilityStatus Engine(ProviderAvailability availability) => availability switch
     {
         ProviderAvailability.Available => new("Ready", "✓", CapabilityTone.Positive),

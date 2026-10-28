@@ -63,6 +63,11 @@ public sealed record ProjectImportPreview
     public ProjectNameBasis ProjectNameBasis { get; init; }
     public List<ProjectImportDocument> Documents { get; init; } = [];
     public List<ProjectImportSkippedDocument> SkippedDocuments { get; init; } = [];
+    /// <summary>
+    /// Text of non-Markdown generated-documentation artifacts (OpenAPI/AsyncAPI YAML or JSON, GraphQL SDL, XSD, proto) the archive holds, so the
+    /// browser can keep generated-documentation content for them. Never project documents: they are not classified into artifact roles.
+    /// </summary>
+    public List<ProjectImportDocument> GeneratedArtifactTexts { get; init; } = [];
     public ProjectImportSourceDetection Source { get; init; } = new();
     /// <summary>Files that are neither readable documents nor source files that Source Analysis reads (images, scripts, binaries…). A count, not a failure.</summary>
     public int OtherFiles { get; init; }

@@ -1,0 +1,8 @@
+/* Review observed value for Test Data. */
+.ovr { border: 1px solid var(--clr-border, #cbd5e1); border-radius: .5rem; padding: .6rem .8rem; margin: .5rem 0; display: grid; gap: .35rem; min-width: 0; }
+.ovr-title { margin: 0; font-size: .95rem; }
+.ovr-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .25rem 1rem; margin: 0; }
+.ovr-facts dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.ovr-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ovr-match { margin: 0; padding: .35rem .6rem; border-radius: .375rem; background: rgba(22, 163, 74, .08); }
+.ovr-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }

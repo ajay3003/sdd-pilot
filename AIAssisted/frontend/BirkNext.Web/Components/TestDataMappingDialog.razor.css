@@ -1,0 +1,6 @@
+/* Map Test Data (scenario context). */
+.tdm { border: 1px solid var(--clr-border, #cbd5e1); border-radius: .5rem; padding: .6rem .8rem; margin: .5rem 0; display: grid; gap: .35rem; min-width: 0; }
+.tdm-title { margin: 0; font-size: .95rem; }
+.tdm-options { border: 0; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.tdm-options legend { font-size: .85rem; font-weight: 600; margin-bottom: .25rem; }
+.tdm-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }

@@ -155,9 +155,17 @@ public static class PerformanceTestReviewDashboard
     };
 
     /// <summary>Owner pages for link actions (null = an in-page action).</summary>
-    public static string? ActionHref(string action) => action switch
+    public static string? ActionHref(string action) => ActionHref(action, null);
+
+    /// <summary>
+    /// With the definition in context, "Open local execution setup" focuses Container TLS trust and offers "Back to Performance Test Review"
+    /// returning to the same definition's Readiness tab. Only ids go in the URL — never certificate data or targets.
+    /// </summary>
+    public static string? ActionHref(string action, string? definitionId) => action switch
     {
-        PerformanceReadinessActions.OpenLocalExecutionSetup or PerformanceReadinessActions.OpenEngines => "admin/system-settings?section=performance-test-engines",
+        PerformanceReadinessActions.OpenLocalExecutionSetup => "admin/system-settings?section=performance-test-engines&focus=container-tls-trust"
+            + $"&returnTo={Uri.EscapeDataString(definitionId is { Length: > 0 } id ? $"performance-test-review?definition={id}&tab=readiness" : "performance-test-review?tab=readiness")}",
+        PerformanceReadinessActions.OpenEngines => "admin/system-settings?section=performance-test-engines",
         PerformanceReadinessActions.ConfigureTarget => "admin/system-settings?section=target-environments",
         _ => null,
     };
@@ -363,6 +371,9 @@ public static class PerformanceTestReviewDashboard
     }
 
     /// <summary>"Declared + Observed · OpenAPI · Persons API" / "Modified from declared operation" / "Manual step" — provenance of a step.</summary>
+    /// <summary>True for a step created from a detected operation (contract and/or Live Discovery), false for a manual step.</summary>
+    public static bool FromEvidence(HttpPerformanceStep step) => step.Source is { } source && !(source.Evidence == ScenarioEvidence.Manual && source.Origin == ScenarioOperationOrigin.Manual);
+
     public static string StepSource(HttpPerformanceStep step) => step.Source is not { } source || source.Evidence == ScenarioEvidence.Manual && source.Origin == ScenarioOperationOrigin.Manual
         ? "Manual step"
         : source.Modified ? $"Modified from declared operation · {source.ContractName ?? source.ContractFile ?? "contract"} (no longer an exact contract match)"

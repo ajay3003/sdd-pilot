@@ -84,7 +84,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         record.AmbiguousRoles = discovery.AmbiguousRoles.Select(r => r.Role.ToString()).ToList();
         record.ArtifactDocumentCount = discovery.ArtifactDocuments.Count;
         ApplySource(record, commit?.Source, preview.Source.Detected, commit?.StagingId, commit?.StagedUntil);
-        RecordGeneratedSet(preview.ImportId, commit?.Source, preview.Documents);
+        RecordGeneratedSet(preview.ImportId, commit?.Source, [.. preview.Documents, .. preview.GeneratedArtifactTexts]);
 
         lifecycle.CurrentProjectImportId = preview.ImportId;
         var scope = ProjectImportScope.For(preview.ImportId)!;
@@ -152,6 +152,10 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
 
     public const int MaxGeneratedDocumentBytes = 512 * 1024;
 
+    /// <summary>Generated artifacts whose text is kept: Markdown and the structured text formats the Explorer reads (OpenAPI YAML/JSON, GraphQL SDL).</summary>
+    public static bool CapturableGenerated(string path) => DocumentationDrift.IsMarkdown(path)
+        || System.IO.Path.GetExtension(path).ToLowerInvariant() is ".yaml" or ".yml" or ".json" or ".graphql" or ".graphqls" or ".gql";
+
     /// <summary>
     /// The import's Generated Documentation Set, derived from the same import (no separate autodoc import): references to the generated
     /// documents the import's source snapshot identified, linked to the import and the snapshot. Markdown text the import carried is kept once
@@ -170,7 +174,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         set.Artifacts = [.. (source?.GeneratedDocuments ?? []).Select(d =>
         {
             var text = documents?.FirstOrDefault(p => string.Equals(p.RelativePath, d.RelativePath, StringComparison.Ordinal))?.Content;
-            var captured = text is not null && DocumentationDrift.IsMarkdown(d.RelativePath) && System.Text.Encoding.UTF8.GetByteCount(text) <= MaxGeneratedDocumentBytes;
+            var captured = text is not null && CapturableGenerated(d.RelativePath) && System.Text.Encoding.UTF8.GetByteCount(text) <= MaxGeneratedDocumentBytes;
             if (captured) lifecycle.GeneratedDocumentContents[d.Fingerprint] = text!;
             return new SddGeneratedDocumentArtifact
             {

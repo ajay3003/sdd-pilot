@@ -489,6 +489,10 @@ builder.Services.AddSingleton(sp => BirkNext.Api.Services.PerformanceTests.Perfo
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IProcessRunner, BirkNext.Api.Services.PerformanceTests.SystemProcessRunner>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ContainerRuntime.IContainerExecutionRuntime, BirkNext.Api.Services.ContainerRuntime.PodmanContainerExecutionRuntime>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider, BirkNext.Api.Services.PerformanceTests.K6PerformanceTestProvider>();
+// Machine-local Container TLS trust (metadata only). A test host never reads or writes the user's real local file.
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(sp => new(sp.GetRequiredService<BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions>(), sp.GetRequiredService<IConfiguration>(),
+    System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name is "testhost" or "ReSharperTestRunner" && sp.GetRequiredService<IConfiguration>()["PerformanceTests:LocalExecution:StateDirectory"] is null
+        ? System.IO.Path.Combine(System.IO.Path.GetTempPath(), "birknext-test-local-execution", Guid.NewGuid().ToString("N")) : null));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceScenarioSources>();

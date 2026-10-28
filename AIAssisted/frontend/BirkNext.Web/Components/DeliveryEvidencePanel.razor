@@ -19,6 +19,12 @@
                 @foreach (var s in _sources.Snapshots.Where(s => s.Pipelines > 0)) { <option value="@s.Id">@s.ArchiveName · @s.Pipelines pipeline(s) · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
             </select>
         </label>
+        @if (string.IsNullOrEmpty(_selected) && SuggestedSnapshotId is { } suggested && _sources.Snapshots.FirstOrDefault(s => s.Id == suggested && s.Pipelines > 0) is { } hint)
+        {
+            @* Reuse known context as a suggestion only: the person accepts it explicitly (evidence ownership differs from the scenario's contract source). *@
+            <p class="sd-muted" role="status" data-testid="delivery-suggested">Suggested source snapshot: <strong>@hint.ArchiveName</strong>@(SuggestedReason is { } why ? $" — {why}" : "")
+                <button type="button" class="btn-secondary btn-small" @onclick="() => SelectAsync(new ChangeEventArgs { Value = hint.Id.ToString() })" data-testid="delivery-use-suggested">Use suggested snapshot</button></p>
+        }
         @if (string.IsNullOrEmpty(_selected) && !_loading) { <p class="sd-muted" role="status" data-testid="delivery-gate-state">@DeliveryGateStates.NoSnapshot</p> }
         @if (_loading) { <p class="sd-muted" role="status">Loading delivery evidence…</p> }
         else if (_delivery is { } e)
@@ -139,6 +145,9 @@
     [Parameter] public IReadOnlyList<ValidationCategory> Categories { get; set; } = [];
     /// <summary>Environment mode: pipeline environment labels, their mapping to Target Environments and the evidence ladder.</summary>
     [Parameter] public bool Environments { get; set; }
+    /// <summary>A snapshot already used by the consumer (e.g. the scenario's contract source) offered as "Use suggested snapshot" — never selected silently.</summary>
+    [Parameter] public Guid? SuggestedSnapshotId { get; set; }
+    [Parameter] public string? SuggestedReason { get; set; }
     [Parameter] public IReadOnlyList<(string Name, string Kind)> Targets { get; set; } = [];
     [Parameter] public string Note { get; set; } = "Quality gates as the pipelines of a Source Analysis snapshot define them. Choose the snapshot — none is selected automatically.";
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;

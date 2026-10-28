@@ -31,8 +31,57 @@ public enum ScenarioContractScopeState { Selected, Resolved, Candidate, Unresolv
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ScenarioDataMatchState { Recommended, Possible, Missing }
 
-/// <summary>A value an operation needs: where it goes (path, query, header, body, GraphQL variable), its data type and declared type/schema.</summary>
-public sealed record ScenarioDataNeed(string Variable, string In, TestDataDataType DataType, bool Required, string? Schema, string? Type);
+/// <summary>
+/// The one parameter requirement model for every candidate source: name, location (path, query, header, body, GraphQL variable), data type and
+/// declared type/schema, whether it is required, where the requirement comes from (<see cref="ScenarioNeedSources"/>) and whether Live Discovery
+/// observed a concrete value for it. An observed value is evidence only: it is never shown by default, never copied into a scenario and never
+/// satisfies Test Data readiness — the requirement stays until approved Test Data is mapped.
+/// </summary>
+public sealed record ScenarioDataNeed(string Variable, string In, TestDataDataType DataType, bool Required, string? Schema, string? Type,
+    string Source = ScenarioNeedSources.Declared, bool ObservedValueAvailable = false);
+
+/// <summary>Where a requirement comes from.</summary>
+public static class ScenarioNeedSources
+{
+    public const string Declared = "Declared contract";
+    /// <summary>A runtime path segment Live Discovery normalised to a placeholder ("/brukere/{id}/barn").</summary>
+    public const string Observed = "Live Discovery (normalised path segment)";
+    /// <summary>A variable of a captured (redacted) GraphQL query document.</summary>
+    public const string CapturedQuery = "Captured GraphQL query document";
+}
+
+/// <summary>Whether running the operation needs Test Data. "Not required" only when the evidence proves no runtime value is needed.</summary>
+public static class ScenarioTestDataStates
+{
+    public const string NotRequired = "Not required";
+    public const string Required = "Required";
+    /// <summary>The evidence does not show the operation's inputs (e.g. only a GraphQL operation name was observed).</summary>
+    public const string Unknown = "Unknown";
+}
+
+/// <summary>What kind of traffic an operation is: normal application/API workload, a diagnostic/smoke endpoint, or technical/background traffic
+/// (SPA shell, appsettings*.json, static resources, configuration/bootstrap). Classification only — evidence is never deleted.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScenarioTrafficKind { Application, DiagnosticSmoke, TechnicalBackground }
+
+/// <summary>GraphQL evidence kept separate: operation name, query document state, variables, declared schema match, observations, authentication.</summary>
+public sealed record ScenarioGraphQlEvidence(string OperationName, string Kind, string DocumentState, string? Document, IReadOnlyList<(string Name, string Type)> Variables,
+    bool DeclaredSchemaMatch, int ObservedCount, bool AuthObserved);
+
+public static class ScenarioGraphQlDocumentStates
+{
+    public const string Captured = "Captured (literals redacted)";
+    public const string NotCaptured = "Not captured";
+    public const string OverLimit = "Not retained (over the size limit; hash only)";
+}
+
+/// <summary>One logical API contract (e.g. "Autorisasjon GraphQL"): the preferred evidence file, supporting copies, and whether they agree.
+/// Disagreeing variants are never merged silently — the state is "Needs decision" and a person chooses the file.</summary>
+public sealed record ScenarioContractGroup(string Key, string Name, SourceContractType Type, SourceContract Canonical, IReadOnlyList<SourceContract> Supporting, string State, int Operations)
+{
+    public const string Consistent = "Consistent", NeedsDecision = "Needs decision", SingleSource = "Single source";
+    public IEnumerable<SourceContract> All => [Canonical, .. Supporting];
+}
 
 /// <summary>Observation summary of an operation: metadata only. A count is relevance evidence, never a workload (44 calls ≠ 44 req/s).</summary>
 public sealed record ScenarioObservation(int Count, DateTimeOffset LastSeen, bool AuthObserved, int LastStatus, IReadOnlyList<string> Pages, int Variants);
@@ -72,6 +121,14 @@ public sealed record ScenarioOperation
     public IReadOnlyList<ScenarioDataNeed> Needs { get; init; } = [];
     public IReadOnlyList<ScenarioDataMatch> Data { get; init; } = [];
     public bool RequiresAuthentication { get; init; }
+    /// <summary><see cref="ScenarioTestDataStates"/>.</summary>
+    public string TestDataState { get; init; } = ScenarioTestDataStates.NotRequired;
+    public ScenarioTrafficKind Traffic { get; init; }
+    /// <summary>Deterministic evidence tier (1 = declared + observed application operation … 6 = technical/background). Lower ranks first.</summary>
+    public int Tier { get; init; }
+    public ScenarioGraphQlEvidence? GraphQl { get; init; }
+    /// <summary>Observed GraphQL with a captured query document: offered as "Review &amp; create GraphQL definition", never added directly.</summary>
+    public bool ProposedDefinition { get; init; }
     public bool Runnable { get; init; }
     public string? NotRunnableReason { get; init; }
     public ScenarioRecommendationLevel Level { get; init; }
@@ -82,6 +139,16 @@ public sealed record ScenarioOperation
     public bool Detailed { get; init; }
 }
 
+/// <summary>
+/// Safe provenance of the values Live Discovery observed for one path placeholder. <see cref="Values"/> are evidence for an explicit "Review
+/// observed value for Test Data" only — never rendered by default, never put in a URL, log, export or scenario, and never Test Data by themselves.
+/// </summary>
+public sealed record ObservedValueEvidence(string Variable, string In, string Template, int Observations, DateTimeOffset? LastSeen, int SuccessfulObservations,
+    bool AuthenticatedTraffic, IReadOnlyList<string> Values)
+{
+    public override string ToString() => $"{Variable} ({In}) · {Observations} observation(s) · value hidden";
+}
+
 public sealed record ScenarioContractScope(ScenarioContractScopeState State, string Summary, IReadOnlyList<SourceContract> Relevant, IReadOnlyList<SourceContract> Other);
 
 /// <summary>A Source Analysis snapshot that holds API contracts — listed for an explicit choice (never auto-selected).</summary>
@@ -90,7 +157,10 @@ public sealed record ScenarioSourceSnapshot(Guid Id, string Archive, DateTimeOff
 /// <summary>The API contracts (OpenAPI, GraphQL schema) of one exact snapshot, as stored by Source Analysis.</summary>
 public sealed record ScenarioContractCatalog(Guid SnapshotId, string Archive, DateTimeOffset AnalyzedAt, IReadOnlyList<SourceContract> Contracts);
 
-public sealed record ScenarioCatalog(ScenarioContractScope Scope, IReadOnlyList<ScenarioOperation> Operations, int ObservationsOnTarget);
+/// <param name="ObservationsOnTarget">Discovery records on the target (raw, before templating).</param>
+/// <param name="ObservedEndpoints">Unique runtime endpoints on the target (method + templated path, or GraphQL operation).</param>
+/// <param name="CorrelatedOperations">Declared operations matched by at least one observation across the contracts in scope.</param>
+public sealed record ScenarioCatalog(ScenarioContractScope Scope, IReadOnlyList<ScenarioOperation> Operations, int ObservationsOnTarget, int ObservedEndpoints = 0, int CorrelatedOperations = 0);
 
 /// <summary>A difference between the declared operation a step was built from and the same operation in a newer analysis of the same source.</summary>
 public sealed record ScenarioDrift(string Section, string Before, string After);
@@ -237,7 +307,13 @@ public static partial class PerformanceScenarioEngine
                 var matches = graphQl ? onTarget.Where(o => GraphQlMatches(op, o)).ToList()
                     : op.Path is { } p ? onTarget.Where(o => o.Category != ObservedTrafficCategory.GraphQl && string.Equals(o.Method, op.Kind, StringComparison.OrdinalIgnoreCase) && BestTemplate(o) == p).ToList() : [];
                 correlated.UnionWith(matches);
-                operations.Add(Declared(contract, op, types, graphQl, Observe(matches), snapshotId, snapshotName));
+                var declared = Declared(contract, op, types, graphQl, Observe(matches), snapshotId, snapshotName);
+                // A path value the runtime used is available as evidence (hidden); the requirement itself stays.
+                if (declared.Observation is not null)
+                    declared = declared with { Needs = [.. declared.Needs.Select(n => n.In == "path" ? n with { ObservedValueAvailable = true } : n)] };
+                if (graphQl && matches.Count > 0)
+                    declared = declared with { GraphQl = GraphQlEvidence(Field(op), op.Kind, matches, declaredSchema: true) };
+                operations.Add(declared);
             }
         }
         // Observed only: traffic on the target that no declared operation explains (templated — observed identifiers never kept).
@@ -245,28 +321,179 @@ public static partial class PerformanceScenarioEngine
             .GroupBy(o => (Method: o.Method.ToUpperInvariant(), Path: Template(o.Path))).OrderBy(g => g.Key.Path, StringComparer.Ordinal).ThenBy(g => g.Key.Method, StringComparer.Ordinal))
         {
             var placeholders = Placeholders(group.Key.Path).ToList();
-            operations.Add(new ScenarioOperation
+            var observedOnly = new ScenarioOperation
             {
                 Key = $"observed:{group.Key.Method} {group.Key.Path}", Origin = ScenarioOperationOrigin.Observed, Evidence = ScenarioEvidence.ObservedOnly,
                 Method = group.Key.Method, Path = group.Key.Path, Name = $"{group.Key.Method} {group.Key.Path}", Observation = Observe([.. group]),
                 Parameters = [.. placeholders.Select(n => new ContractParameter(n, "path", true, null))], Use = UseOf(group.Key.Method, group.Key.Path, [], null),
                 Signature = $"{group.Key.Method} {group.Key.Path}",
-            });
+            };
+            // Same requirement model as declared operations: every normalised runtime placeholder is a path input that needs Test Data. The
+            // concrete value was observed (evidence, hidden) — it never makes the requirement go away.
+            operations.Add(observedOnly with { Needs = [.. Needs(observedOnly).Select(n => n with { Source = ScenarioNeedSources.Observed, ObservedValueAvailable = true })] });
         }
         foreach (var group in onTarget.Where(o => !correlated.Contains(o) && o.Category == ObservedTrafficCategory.GraphQl && o.OperationName is { Length: > 0 })
             .GroupBy(o => (Kind: o.OperationType == GraphQlOperationType.Mutation ? "mutation" : "query", o.OperationName!)).OrderBy(g => g.Key.Item2, StringComparer.Ordinal))
-            operations.Add(new ScenarioOperation
+        {
+            var evidence = GraphQlEvidence(group.Key.Item2, group.Key.Kind, [.. group], declaredSchema: false);
+            var observedGraphQl = new ScenarioOperation
             {
                 Key = $"observed:graphql {group.Key.Kind} {group.Key.Item2}", Origin = ScenarioOperationOrigin.Observed, Evidence = ScenarioEvidence.ObservedOnly, Method = "POST",
                 Name = $"{group.Key.Kind} {group.Key.Item2}", GraphQlKind = group.Key.Kind, Observation = Observe([.. group]), Use = group.Key.Kind == "mutation" ? "GraphQL mutation" : "GraphQL query",
-                Signature = $"graphql {group.Key.Kind} {group.Key.Item2}",
+                Signature = $"graphql {group.Key.Kind} {group.Key.Item2}", GraphQl = evidence,
+                Parameters = [.. evidence.Variables.Select(v => new ContractParameter(v.Name, "argument", v.Type.EndsWith('!'), v.Type))],
+            };
+            // Variables come only from a captured query document; without one the inputs are unknown (never "no Test Data needed").
+            operations.Add(observedGraphQl with
+            {
+                Needs = [.. evidence.Variables.Select(v => new ScenarioDataNeed(v.Name, "variable", GraphQlScalars.Contains(v.Type.Trim('!', '[', ']')) ? TestDataDataType.SimpleValues : TestDataDataType.JsonPayload,
+                    v.Type.EndsWith('!'), null, v.Type, ScenarioNeedSources.CapturedQuery))],
             });
+        }
         var finished = operations.Select(op => Finish(op, assets, environment, authenticated)).ToList();
-        return new ScenarioCatalog(scope, [.. Order(finished)], onTarget.Count);
+        var observedEndpoints = onTarget.Where(o => o.Category != ObservedTrafficCategory.GraphQl).Select(o => $"{o.Method.ToUpperInvariant()} {Template(o.Path)}")
+            .Concat(onTarget.Where(o => o.Category == ObservedTrafficCategory.GraphQl).Select(o => $"graphql {o.OperationName ?? o.Path}")).Distinct(StringComparer.Ordinal).Count();
+        var correlatedOperations = operations.Count(o => o.Evidence == ScenarioEvidence.DeclaredAndObserved);
+        return new ScenarioCatalog(scope, [.. Order(finished)], onTarget.Count, observedEndpoints, correlatedOperations);
     }
 
+    /// <summary>
+    /// Deterministic ranking (no AI): evidence tier first — 1 declared + observed application operation, 2 declared only, 4 observed only,
+    /// 5 diagnostic/smoke, 6 technical/background — then recommendation level, score, observed count and name.
+    /// </summary>
     public static IEnumerable<ScenarioOperation> Order(IEnumerable<ScenarioOperation> operations) =>
-        operations.OrderBy(o => o.Level).ThenByDescending(o => o.Score).ThenByDescending(o => o.Observation?.Count ?? 0).ThenBy(o => o.Name, StringComparer.Ordinal);
+        operations.OrderBy(o => o.Tier).ThenBy(o => o.Level).ThenByDescending(o => o.Score).ThenByDescending(o => o.Observation?.Count ?? 0).ThenBy(o => o.Name, StringComparer.Ordinal);
+
+    public static int TierOf(ScenarioEvidence evidence, ScenarioTrafficKind traffic) => traffic switch
+    {
+        ScenarioTrafficKind.TechnicalBackground => 6,
+        ScenarioTrafficKind.DiagnosticSmoke => 5,
+        _ => evidence switch { ScenarioEvidence.DeclaredAndObserved => 1, ScenarioEvidence.DeclaredOnly => 2, ScenarioEvidence.ObservedOnly => 4, _ => 3 },
+    };
+
+    private static readonly HashSet<string> HealthSegments = new(StringComparer.OrdinalIgnoreCase) { "health", "healthz", "healthcheck", "health-check", "ping", "alive", "liveness", "readiness" };
+    private static readonly HashSet<string> TechnicalPrefixes = new(StringComparer.OrdinalIgnoreCase) { "_framework", "_content", ".well-known", "static", "assets", "_next", "favicon.ico", "robots.txt" };
+    private static readonly HashSet<string> TechnicalExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".json", ".js", ".mjs", ".css", ".map", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".woff", ".woff2", ".ttf", ".html", ".htm", ".txt", ".xml", ".webmanifest", ".wasm", ".dll", ".pdb", ".br", ".gz" };
+    private static readonly HashSet<string> BootstrapNames = new(StringComparer.OrdinalIgnoreCase) { "config", "configuration", "bootstrap", "settings", "manifest", "env", "environment", "runtime-config" };
+
+    /// <summary>
+    /// Traffic kind of a REST path: technical/background (SPA shell "/", appsettings*.json, static resources, configuration/bootstrap), diagnostic/
+    /// smoke (/health, /health/live, /health/ready, /ping …) or application. Deterministic; a classification never removes evidence.
+    /// </summary>
+    public static ScenarioTrafficKind Classify(string? path)
+    {
+        if (path is null) return ScenarioTrafficKind.Application; // GraphQL field
+        var segments = path.Split('?')[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return ScenarioTrafficKind.TechnicalBackground;
+        var last = segments[^1];
+        if (last.StartsWith("appsettings", StringComparison.OrdinalIgnoreCase) || TechnicalPrefixes.Contains(segments[0])
+            || TechnicalExtensions.Contains(System.IO.Path.GetExtension(last)) || segments.Length <= 2 && BootstrapNames.Contains(last))
+            return ScenarioTrafficKind.TechnicalBackground;
+        if (segments.Any(HealthSegments.Contains)) return ScenarioTrafficKind.DiagnosticSmoke;
+        return ScenarioTrafficKind.Application;
+    }
+
+    public static string TrafficLabel(ScenarioTrafficKind kind) => kind switch
+    {
+        ScenarioTrafficKind.DiagnosticSmoke => "Diagnostic / smoke",
+        ScenarioTrafficKind.TechnicalBackground => "Technical / background",
+        _ => "Application / API",
+    };
+
+    [GeneratedRegex(@"^\s*(query|mutation|subscription)\b\s*[_A-Za-z0-9]*\s*\((?<defs>[^)]*)\)")]
+    private static partial Regex OperationVariables();
+    [GeneratedRegex(@"\$(?<name>[_A-Za-z][_A-Za-z0-9]*)\s*:\s*(?<type>[\[\]!_A-Za-z0-9]+)")]
+    private static partial Regex VariableDefinition();
+
+    /// <summary>Variables declared by a GraphQL operation document ("query HentBarn($id: ID!)" → id: ID!). Empty when the document declares none.</summary>
+    public static IReadOnlyList<(string Name, string Type)> GraphQlVariables(string document) =>
+        OperationVariables().Match(document) is { Success: true } m
+            ? [.. VariableDefinition().Matches(m.Groups["defs"].Value).Select(v => (v.Groups["name"].Value, v.Groups["type"].Value)).DistinctBy(v => v.Item1)]
+            : [];
+
+    /// <summary>What Live Discovery retained for a GraphQL operation: the most recent kept document (redacted), never variables' values.</summary>
+    private static ScenarioGraphQlEvidence GraphQlEvidence(string operationName, string kind, IReadOnlyList<ObservedNetworkEndpoint> matches, bool declaredSchema)
+    {
+        var documents = matches.SelectMany(m => m.GraphQlDocuments).OrderByDescending(d => d.LastObservedAt).ToList();
+        var kept = documents.FirstOrDefault(d => d.Document.Length > 0);
+        var state = kept is not null ? ScenarioGraphQlDocumentStates.Captured
+            : documents.Count > 0 ? ScenarioGraphQlDocumentStates.OverLimit : ScenarioGraphQlDocumentStates.NotCaptured;
+        return new(operationName, kind, state, kept?.Document, kept is null ? [] : GraphQlVariables(kept.Document), declaredSchema,
+            matches.Sum(m => m.Count), matches.Any(m => m.AuthObserved));
+    }
+
+    /// <summary>
+    /// The observed values behind one {placeholder} of a REST candidate: the matching discovery records on the target (same method, path matching
+    /// the template) and the concrete segment at the placeholder's position. Query strings are never retained by discovery, so only path
+    /// placeholders can have an observed value.
+    /// </summary>
+    public static ObservedValueEvidence? ObservedValues(ScenarioOperation op, string variable, IEnumerable<ObservedNetworkEndpoint> observed, string targetOrigin)
+    {
+        if (op.Path is not { } template || op.GraphQlKind is not null) return null;
+        var t = template.Split('?')[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var position = Array.FindIndex(t, seg => seg == $"{{{variable}}}");
+        if (position < 0) return null;
+        var records = OnTarget(observed, targetOrigin).Where(o => o.Category != ObservedTrafficCategory.GraphQl && string.Equals(o.Method, op.Method, StringComparison.OrdinalIgnoreCase)
+            && (op.Origin == ScenarioOperationOrigin.Observed ? Template(o.Path) == template : Matches(template, o.Path))).ToList();
+        if (records.Count == 0) return null;
+        var values = records.OrderByDescending(r => r.LastObservedAt).Select(r =>
+        {
+            var o = r.Path.Split('?')[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var offset = o.Length - t.Length;
+            return offset >= 0 && position + offset < o.Length ? Uri.UnescapeDataString(o[position + offset]) : null;
+        }).OfType<string>().Where(v => v.Length > 0).Distinct(StringComparer.Ordinal).Take(20).ToList();
+        return new ObservedValueEvidence(variable, "path", template, records.Sum(r => r.Count), records.Max(r => r.LastObservedAt),
+            records.Where(r => r.LastStatus is >= 200 and < 400).Sum(r => r.Count), records.Any(r => r.AuthObserved), values);
+    }
+
+    // ── Logical contracts ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static int CanonicalRank(SourceContract c)
+    {
+        var file = c.File.Replace('\\', '/').ToLowerInvariant();
+        var rank = 0;
+        if (!file.Contains("/autodoc/", StringComparison.Ordinal)) rank += 1;
+        if (file.Contains("snapshot", StringComparison.Ordinal) || file.Contains("copy", StringComparison.Ordinal) || file.Contains("frontend", StringComparison.Ordinal)
+            || file.Contains("node_modules", StringComparison.Ordinal) || file.Contains("generated", StringComparison.Ordinal)) rank += 2;
+        if (c.Producer is null) rank += 1;
+        return rank;
+    }
+
+    private static int IndexOf(IReadOnlyList<SourceContract> contracts, SourceContract c)
+    {
+        for (var i = 0; i < contracts.Count; i++) if (ReferenceEquals(contracts[i], c)) return i;
+        return int.MaxValue;
+    }
+
+    private static HashSet<string> OperationNames(SourceContract c) =>
+        [.. c.Operations.Select(o => c.Type == SourceContractType.GraphQlSchema ? $"{o.Kind} {Field(o)}" : $"{o.Kind.ToUpperInvariant()} {o.Path}")];
+
+    /// <summary>
+    /// Groups the API contracts of a snapshot into logical contracts: variants of the same API (same type, mostly the same operations — e.g.
+    /// schema.graphql, schema.snapshot.graphql and a frontend SDL copy) form one group with a preferred (canonical) file and supporting files.
+    /// Identical operation sets = Consistent; any difference = Needs decision (never merged or chosen silently). Deterministic.
+    /// </summary>
+    public static IReadOnlyList<ScenarioContractGroup> ContractGroups(IReadOnlyList<SourceContract> contracts)
+    {
+        var groups = new List<(SourceContract Canonical, List<SourceContract> Members, HashSet<string> Ops)>();
+        foreach (var c in contracts.Where(IsApiContract).OrderBy(CanonicalRank).ThenBy(c => c.File.Length).ThenBy(c => c.File, StringComparer.Ordinal))
+        {
+            var ops = OperationNames(c);
+            var home = groups.FirstOrDefault(g => g.Canonical.Type == c.Type && g.Ops.Count > 0 && ops.Count > 0
+                && (double)g.Ops.Intersect(ops).Count() / Math.Min(g.Ops.Count, ops.Count) >= 0.6);
+            if (home.Canonical is null) groups.Add((c, [c], ops));
+            else home.Members.Add(c);
+        }
+        return [.. groups.Select(g =>
+        {
+            var supporting = g.Members.Skip(1).ToList();
+            var state = supporting.Count == 0 ? ScenarioContractGroup.SingleSource
+                : supporting.All(s => OperationNames(s).SetEquals(g.Ops)) ? ScenarioContractGroup.Consistent : ScenarioContractGroup.NeedsDecision;
+            var name = $"{g.Canonical.Producer ?? g.Canonical.Name} {(g.Canonical.Type == SourceContractType.GraphQlSchema ? "GraphQL" : "REST")}";
+            return new ScenarioContractGroup(g.Canonical.Id, name, g.Canonical.Type, g.Canonical, supporting, state, g.Canonical.Operations.Count);
+        }).OrderBy(g => g.All.Min(c => IndexOf(contracts, c)))];
+    }
 
     private static ScenarioObservation? Observe(List<ObservedNetworkEndpoint> matches) => matches.Count == 0 ? null
         : new(matches.Sum(m => m.Count), matches.Max(m => m.LastObservedAt), matches.Any(m => m.AuthObserved), matches.OrderByDescending(m => m.LastObservedAt).First().LastStatus,
@@ -378,7 +605,14 @@ public static partial class PerformanceScenarioEngine
             : ReadMethods.Contains(op.Method) ? (true, null)
             : op.Method == "POST" ? (false, "A POST is a write unless it only reads: add it and mark the step \"POST only reads\" if that is true; otherwise performance safety blocks it.")
             : (false, $"{op.Method} changes data; performance tests use read-only operations.");
-        if (op.Origin == ScenarioOperationOrigin.Observed && op.GraphQlKind is not null) (runnable, why) = (false, "Observed GraphQL operation without a declared schema: add it manually with its query document.");
+        var proposed = false;
+        if (op.Origin == ScenarioOperationOrigin.Observed && op.GraphQlKind is not null)
+        {
+            if (op.GraphQlKind != "query") (runnable, why) = (false, $"GraphQL {op.GraphQlKind}s are blocked by performance safety (queries only).");
+            else if (op.GraphQl is { DocumentState: ScenarioGraphQlDocumentStates.Captured })
+                (runnable, why, proposed) = (false, "Captured query document, not declared in a schema: review it and create a GraphQL definition (proposed manual definition).", true);
+            else (runnable, why) = (false, "The operation name was observed, but the GraphQL query document was not retained. BirkNext cannot construct an executable test safely.");
+        }
         else if (runnable && op.GraphQlKind is not null && op.Needs.Any(n => n.DataType == TestDataDataType.JsonPayload))
             (runnable, why) = (false, "Input-object GraphQL variables are not supported by the load generator yet (scalar variables only).");
         else if (runnable && op.Needs.Any(n => n.In == "body" && n.DataType == TestDataDataType.FileFixture))
@@ -397,15 +631,28 @@ public static partial class PerformanceScenarioEngine
         if (op.Evidence == ScenarioEvidence.DeclaredOnly) reasons.Add("not observed in the current discovery window");
         if (op.Evidence == ScenarioEvidence.ObservedOnly) reasons.Add("observed only — potential undocumented API");
         var missing = data.Where(d => d.State == ScenarioDataMatchState.Missing).ToList();
-        if (op.Needs.Count == 0) reasons.Add("no Test Data needed");
+        // "Not required" only when the evidence proves it: a declared operation without inputs, or a captured query declaring no variables.
+        var testData = op.Needs.Count > 0 ? ScenarioTestDataStates.Required
+            : op.Origin == ScenarioOperationOrigin.Observed && op.GraphQlKind is not null && op.GraphQl?.DocumentState != ScenarioGraphQlDocumentStates.Captured ? ScenarioTestDataStates.Unknown
+            : ScenarioTestDataStates.NotRequired;
+        if (testData == ScenarioTestDataStates.Unknown) reasons.Add("Test Data unknown — the query document (and its variables) was not captured");
+        else if (op.Needs.Count == 0) reasons.Add("Test Data not required");
         else if (missing.Count == 0) { score += 2; reasons.Add($"Test Data available for {string.Join(", ", data.Select(d => Placeholder(d.Need)))}"); }
         else reasons.Add(string.Join(" ", missing.Select(m => m.Detail)));
         if (requiresAuth) { if (authenticated) { score += 1; reasons.Add("authentication reference configured"); } else reasons.Add($"requires authentication ({(op.Observation?.AuthObserved == true ? "bearer observed" : string.Join(", ", op.Security))}) — not configured"); }
-        var level = !runnable ? ScenarioRecommendationLevel.NotRunnable
-            : op.Evidence == ScenarioEvidence.ObservedOnly || missing.Count > 0 || requiresAuth && !authenticated ? ScenarioRecommendationLevel.ReviewRequired
+        var traffic = Classify(op.Path);
+        if (traffic == ScenarioTrafficKind.TechnicalBackground) reasons.Add("technical/background traffic (not a normal workload)");
+        else if (traffic == ScenarioTrafficKind.DiagnosticSmoke) reasons.Add("diagnostic/smoke endpoint (not a business baseline)");
+        var level = proposed ? ScenarioRecommendationLevel.ReviewRequired
+            : !runnable ? ScenarioRecommendationLevel.NotRunnable
+            : op.Evidence == ScenarioEvidence.ObservedOnly || missing.Count > 0 || requiresAuth && !authenticated || traffic != ScenarioTrafficKind.Application ? ScenarioRecommendationLevel.ReviewRequired
             : op.Evidence == ScenarioEvidence.DeclaredAndObserved ? ScenarioRecommendationLevel.Recommended
             : ScenarioRecommendationLevel.Candidate;
-        return op with { Data = data, Runnable = runnable, NotRunnableReason = why, RequiresAuthentication = requiresAuth, Level = level, Score = score, Reasons = reasons };
+        return op with
+        {
+            Data = data, Runnable = runnable, NotRunnableReason = why, RequiresAuthentication = requiresAuth, Level = level, Score = score, Reasons = reasons,
+            TestDataState = testData, Traffic = traffic, Tier = TierOf(op.Evidence, traffic), ProposedDefinition = proposed,
+        };
     }
 
     /// <summary>"Recommended because declared + observed + Test Data available".</summary>
@@ -482,6 +729,26 @@ public static partial class PerformanceScenarioEngine
             Name = name, Method = op.Method, RelativePath = op.Path ?? "/", ExpectedStatusCodes = success.Count > 0 ? [success[0]] : [200], ThinkTimeMs = 500,
             QueryParameters = query, ContentType = body is null ? null : op.RequestContentType, BodyTemplate = body is null ? null : "{body}",
             Source = source, DataMappings = mappings.Count == 0 ? null : mappings,
+        };
+    }
+
+    /// <summary>
+    /// The proposed step of "Review &amp; create GraphQL definition": the captured (literal-redacted) query document as the step's query and every
+    /// variable as a {placeholder} mapped later to approved Test Data. No header, cookie, token or observed value is copied. Null without a document.
+    /// </summary>
+    public static HttpPerformanceStep? ProposedGraphQlStep(ScenarioOperation op)
+    {
+        if (op.GraphQl is not { DocumentState: ScenarioGraphQlDocumentStates.Captured, Document: { Length: > 0 } document } evidence) return null;
+        return new HttpPerformanceStep
+        {
+            Name = Slug(evidence.OperationName), Method = "POST", RelativePath = "/graphql", ExpectedStatusCodes = [200], ThinkTimeMs = 500,
+            GraphQlQuery = document, GraphQlOperationName = evidence.OperationName,
+            GraphQlVariablesJson = evidence.Variables.Count == 0 ? null : JsonSerializer.Serialize(evidence.Variables.ToDictionary(v => v.Name, v => $"{{{v.Name}}}")),
+            Source = new ScenarioStepSource
+            {
+                OperationKey = op.Key, Origin = op.Origin, Evidence = op.Evidence, OperationFingerprint = op.Signature,
+                ObservedCount = op.Observation?.Count ?? 0, ObservedLastSeen = op.Observation?.LastSeen,
+            },
         };
     }
 

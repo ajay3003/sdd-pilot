@@ -1,55 +1,69 @@
 @using BirkNext.GeneratedDocumentation
 @using BirkNext.Web.Services
 
-@* Generated Documentation Health → Autodoc diagnostics: which modules/APIs of the snapshot have module-specific generated documentation and
-   which do not. A presentation of the same evidence (no parser, no store). Usage, freshness and health are separate; "Not configured" is neutral. *@
+@* Generated Documentation Health → modules with generated documentation: which modules/APIs of the snapshot have module-specific generated
+   documentation and which do not. Summary first (state, health, counts, review items), the module table next, every metric and the panel's
+   detailed diagnostics behind one "Advanced diagnostics" disclosure. A presentation of the same evidence (no parser, no store). Usage,
+   freshness and health are separate; "Not configured" is neutral. *@
 <section class="gdh-autodoc" aria-labelledby="gdh-autodoc-title" data-testid="gdh-autodoc">
-    <h3 id="gdh-autodoc-title" class="gdh-h3">Autodoc diagnostics</h3>
-    <p class="gdh-note gdh-autodoc-disclaimer" data-testid="gdh-autodoc-disclaimer"><strong>@GeneratedDocumentationText.AutodocDisclaimer</strong></p>
+    <h3 id="gdh-autodoc-title" class="gdh-h3">Modules with generated documentation</h3>
 
-    <dl class="gdh-cards" data-testid="gdh-autodoc-summary">
-        <div class="gdh-card" data-metric="workflow"><dt>maintain-docs workflow detected</dt><dd data-testid="gdh-autodoc-workflow">@(Diagnostics.MaintainDocsWorkflowDetected ? "Yes" : "No")</dd></div>
-        <div class="gdh-card" data-metric="detected"><dt>Detected modules/projects</dt><dd data-testid="gdh-autodoc-detected">@Diagnostics.DetectedModules</dd></div>
-        <div class="gdh-card" data-metric="api"><dt>Detected API-capable modules</dt><dd data-testid="gdh-autodoc-api">@Diagnostics.ApiModules</dd></div>
-        <div class="gdh-card" data-metric="using"><dt>Modules using autodoc</dt><dd data-testid="gdh-autodoc-using">@Diagnostics.ModulesUsingAutodoc of @Diagnostics.DetectedModules</dd></div>
-        <div class="gdh-card" data-metric="without"><dt>Modules without autodoc</dt><dd data-testid="gdh-autodoc-without">@Diagnostics.ModulesWithoutAutodoc</dd></div>
-        <div class="gdh-card" data-metric="apis-using"><dt>APIs using autodoc</dt><dd data-testid="gdh-autodoc-apis-using">@Diagnostics.ApisUsingAutodoc of @Diagnostics.ApiModules</dd></div>
-        <div class="gdh-card" data-metric="apis-without"><dt>APIs without autodoc</dt><dd data-testid="gdh-autodoc-apis-without">@Diagnostics.ApisWithoutAutodoc</dd></div>
-        <div class="gdh-card" data-metric="partial"><dt>Modules with partial output</dt><dd data-testid="gdh-autodoc-partial">@Diagnostics.ModulesPartial</dd></div>
-        <div class="gdh-card" data-metric="artifacts"><dt>Generated artifacts detected</dt><dd data-testid="gdh-autodoc-artifacts">@Diagnostics.GeneratedArtifacts</dd></div>
-        <div class="gdh-card" data-metric="fresh"><dt>Fresh</dt><dd>@Diagnostics.Fresh</dd></div>
-        <div class="gdh-card" data-metric="stale"><dt>Potentially stale</dt><dd>@Diagnostics.PotentiallyStale</dd></div>
-        <div class="gdh-card" data-metric="unknown"><dt>Freshness unknown</dt><dd>@Diagnostics.FreshnessUnknown</dd></div>
-        <div class="gdh-card" data-metric="missing"><dt>Required generated docs missing</dt><dd>@Diagnostics.MissingExpectedDocs</dd></div>
-        <div class="gdh-card" data-metric="discrepancies"><dt>Source consistency candidates</dt><dd>@Diagnostics.DiscrepancyCandidates</dd></div>
-        <div class="gdh-card" data-metric="errors"><dt>Parse/errors</dt><dd data-testid="gdh-autodoc-errors">@Diagnostics.ParseErrors</dd></div>
+    @{ var health = AutodocPresentation.OverallHealth(Diagnostics); var reviewItems = AutodocPresentation.ReviewItems(Diagnostics); }
+    <dl class="gdh-cards gdh-overview" data-testid="gdh-overview">
+        <div class="gdh-card" data-metric="state"><dt>Generated documentation</dt><dd data-testid="gdh-overview-state">@AutodocPresentation.State(Diagnostics)</dd></div>
+        <div class="gdh-card" data-metric="health"><dt>Health</dt><dd><span class="sd-pill sd-pill-@AutodocPresentation.OverallTone(health)" data-testid="gdh-overview-health">@health</span></dd></div>
+        <div class="gdh-card" data-metric="modules"><dt>Modules</dt><dd data-testid="gdh-overview-modules">@Diagnostics.DetectedModules · @Diagnostics.ModulesUsingAutodoc with docs</dd></div>
+        <div class="gdh-card" data-metric="api"><dt>API-capable</dt><dd data-testid="gdh-overview-api">@Diagnostics.ApiModules · @Diagnostics.ApisUsingAutodoc with docs</dd></div>
+        <div class="gdh-card" data-metric="review"><dt>Review items</dt><dd data-testid="gdh-overview-review">@reviewItems.Count</dd></div>
+        <div class="gdh-card" data-metric="parse"><dt>Parser errors</dt><dd data-testid="gdh-overview-errors">@Diagnostics.ParseErrors</dd></div>
     </dl>
-    <p class="gdh-note" data-testid="gdh-autodoc-snapshot">Source snapshot: <span class="gdh-wrap">@(Snapshot?.ArchiveName ?? "Unknown")</span>@(Snapshot is { } s ? $" · {s.SnapshotId}" : "") · inventory from @Diagnostics.InventoryBasis. Repository-level workflow ≠ module usage: a module counts as using autodoc only with module-specific generated output.</p>
-    @if (Diagnostics.WorkflowSources.Count > 0)
+    @if (Diagnostics.ModulesUsingAutodoc == 0)
     {
-        <p class="gdh-note gdh-wrap" data-testid="gdh-autodoc-workflow-sources">Workflow sources: @string.Join(", ", Diagnostics.WorkflowSources)</p>
+        <p class="gdh-note" data-testid="gdh-overview-neutral">@AutodocPresentation.NeutralExplanation Modules without generated documentation are a neutral state, not a failure.</p>
     }
+
+    <section aria-labelledby="gdh-review-title" data-testid="gdh-review-items">
+        <h4 id="gdh-review-title" class="gdh-h4">Needs review</h4>
+        @if (reviewItems.Count == 0)
+        {
+            <p class="gdh-note" data-testid="gdh-review-none">No generated-documentation review items.</p>
+        }
+        else
+        {
+            <ul class="gdh-plain">
+                @foreach (var item in reviewItems)
+                {
+                    <li data-testid="gdh-review-item" data-module="@item.Name"><strong class="gdh-wrap">@item.Name</strong> — @AutodocPresentation.Health(item)@(item.ParseErrors > 0 ? $" · {item.ParseErrors} parser error(s)" : "")</li>
+                }
+            </ul>
+        }
+    </section>
 
     <div class="gdh-autodoc-quick" role="group" aria-label="Quick answers">
         <button type="button" class="btn-secondary" data-testid="gdh-autodoc-apis-without-action" aria-pressed="@(_filter == AutodocFilter.WithoutAutodoc && _scope == AutodocApiScope.Api ? "true" : "false")"
-                @onclick="() => Set(AutodocFilter.WithoutAutodoc, AutodocApiScope.Api)">Show APIs without autodoc (@AutodocPresentation.Count(Diagnostics, AutodocFilter.WithoutAutodoc, AutodocApiScope.Api))</button>
+                @onclick="() => Set(AutodocFilter.WithoutAutodoc, AutodocApiScope.Api)">Show APIs without generated docs (@AutodocPresentation.Count(Diagnostics, AutodocFilter.WithoutAutodoc, AutodocApiScope.Api))</button>
         <button type="button" class="btn-secondary" data-testid="gdh-autodoc-using-action" aria-pressed="@(_filter == AutodocFilter.WithAutodoc && _scope == AutodocApiScope.All ? "true" : "false")"
-                @onclick="() => Set(AutodocFilter.WithAutodoc, AutodocApiScope.All)">Show modules using autodoc (@AutodocPresentation.Count(Diagnostics, AutodocFilter.WithAutodoc, AutodocApiScope.All))</button>
+                @onclick="() => Set(AutodocFilter.WithAutodoc, AutodocApiScope.All)">Show modules with generated docs (@AutodocPresentation.Count(Diagnostics, AutodocFilter.WithAutodoc, AutodocApiScope.All))</button>
     </div>
-    <div class="gdh-filters" role="group" aria-label="Filter the autodoc inventory" data-testid="gdh-autodoc-filters">
-        @foreach (var filter in AutodocPresentation.Filters)
+    <div class="gdh-filters" role="group" aria-label="Filter modules by generated documentation" data-testid="gdh-autodoc-filters">
+        @foreach (var filter in AutodocPresentation.BasicFilters)
         {
-            var f = filter;
-            <button type="button" class="gdh-filter @(f == _filter ? "is-active" : "")" aria-pressed="@(f == _filter ? "true" : "false")" data-testid="gdh-autodoc-filter" data-filter="@f" @onclick="() => _filter = f">
-                @AutodocPresentation.Label(f) <span class="gdh-count">(@AutodocPresentation.Count(Diagnostics, f, _scope))</span>
-            </button>
+            @FilterButton(filter)
         }
-        <label class="gdh-autodoc-scope">Module type
-            <select data-testid="gdh-autodoc-scope" value="@_scope" @onchange="ScopeChanged">
-                @foreach (var scope in Enum.GetValues<AutodocApiScope>()) { <option value="@scope">@AutodocPresentation.Label(scope)</option> }
-            </select>
-        </label>
     </div>
+    <ReviewDisclosure Text="Advanced filters" CollapseText="Hide advanced filters" TestId="gdh-advanced-filters" @bind-Expanded="_advancedFiltersOpen">
+        <div class="gdh-filters" role="group" aria-label="Advanced filters">
+            @foreach (var filter in AutodocPresentation.AdvancedFilters)
+            {
+                @FilterButton(filter)
+            }
+            <label class="gdh-autodoc-scope">Module type
+                <select data-testid="gdh-autodoc-scope" value="@_scope" @onchange="ScopeChanged">
+                    @foreach (var scope in Enum.GetValues<AutodocApiScope>()) { <option value="@scope">@AutodocPresentation.Label(scope)</option> }
+                </select>
+            </label>
+        </div>
+    </ReviewDisclosure>
 
     @{ var visible = Diagnostics.Modules.Where(m => AutodocPresentation.Matches(m, _filter, _scope)).ToList(); }
     <p class="gdh-note" role="status" data-testid="gdh-autodoc-count">@visible.Count of @Diagnostics.Modules.Count modules · @AutodocPresentation.Label(_filter) · @AutodocPresentation.Label(_scope)</p>
@@ -59,9 +73,9 @@
     }
     else
     {
-        <div class="gdh-scroll" tabindex="0" role="region" aria-label="Autodoc inventory">
+        <div class="gdh-scroll" tabindex="0" role="region" aria-label="Modules with generated documentation">
             <table class="gdh-table" data-testid="gdh-autodoc-table">
-                <thead><tr><th scope="col">Module/API</th><th scope="col">Type</th><th scope="col">Autodoc</th><th scope="col">Generated output</th><th scope="col">Artifacts</th><th scope="col">Freshness</th><th scope="col">Health</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                <thead><tr><th scope="col">Module/API</th><th scope="col">Type</th><th scope="col">Generated docs</th><th scope="col">Output</th><th scope="col">Artifacts</th><th scope="col">Freshness</th><th scope="col">Health</th><th scope="col">Action</th></tr></thead>
                 <tbody>
                     @foreach (var module in visible)
                     {
@@ -71,18 +85,24 @@
                         <tr data-testid="gdh-autodoc-row" data-module="@m.Name" data-usage="@m.Usage" data-api="@(m.ApiCapable ? "true" : "false")">
                             <th scope="row"><span class="gdh-wrap">@m.Name</span>@if (m.FromGeneratedDocumentationOnly) { <span class="gdh-sub">Generated documentation only</span> }</th>
                             <td class="gdh-wrap">@m.ModuleType</td>
-                            <td><span class="sd-pill sd-pill-@AutodocPresentation.UsageTone(m.Usage)" data-testid="gdh-autodoc-usage">Autodoc: @GeneratedDocumentationText.Label(m.Usage)</span></td>
+                            <td><span class="sd-pill sd-pill-@AutodocPresentation.UsageTone(m.Usage)" data-testid="gdh-autodoc-usage">Generated docs: @AutodocPresentation.Usage(m.Usage)</span></td>
                             <td>@(m.GeneratedOutputPresent ? "Present" : "Not present")</td>
                             <td>@m.ArtifactCount</td>
                             <td data-testid="gdh-autodoc-freshness">@AutodocPresentation.Freshness(m)</td>
                             <td data-testid="gdh-autodoc-health">@AutodocPresentation.Health(m)</td>
-                            <td><button type="button" class="btn-link gdh-autodoc-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="gdh-autodoc-toggle" @onclick="() => Toggle(m.Identity)">@(open ? "Hide" : "Details")<span class="visually-hidden"> for @m.Name</span></button></td>
+                            <td class="gdh-actions">
+                                @if (ExplorerHref is not null && m.GeneratedOutputPresent)
+                                {
+                                    <a class="btn-link" data-testid="gdh-autodoc-explorer" href="@($"{ExplorerHref}&module={Uri.EscapeDataString(m.Name)}")">Open in Explorer<span class="visually-hidden"> for @m.Name</span></a>
+                                }
+                                <button type="button" class="btn-link gdh-autodoc-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="gdh-autodoc-toggle" @onclick="() => Toggle(m.Identity)">@(open ? "Hide" : "Details")<span class="visually-hidden"> for @m.Name</span></button>
+                            </td>
                         </tr>
                         @if (open)
                         {
                             <tr id="@detailId" data-testid="gdh-autodoc-detail"><td colspan="8">
                                 <dl class="gdh-facts">
-                                    <div><dt>Autodoc</dt><dd>@GeneratedDocumentationText.Label(m.Usage) — @m.UsageReason</dd></div>
+                                    <div><dt>Generated docs</dt><dd>@AutodocPresentation.Usage(m.Usage) — @m.UsageReason</dd></div>
                                     <div><dt>Generator/workflow</dt><dd class="gdh-wrap">@(m.Generator ?? "Not detected for this module")@(m.WorkflowSources.Count > 0 ? $" · {string.Join(", ", m.WorkflowSources)}" : "")</dd></div>
                                     <div><dt>Output</dt><dd class="gdh-wrap">@(m.OutputPath ?? "Not present")</dd></div>
                                     <div><dt>Generated artifacts</dt><dd>@m.ArtifactCount@(m.ArtifactKinds.Count > 0 ? " · " + string.Join(", ", m.ArtifactKinds.Select(GeneratedDocumentationText.Label)) : "")</dd></div>
@@ -92,7 +112,7 @@
                                     {
                                         <div><dt>Required docs missing</dt><dd>@m.MissingExpectedDocs</dd></div>
                                         <div><dt>Source consistency candidates</dt><dd>@(m.DiscrepancyCandidates == 0 ? "0" : $"{m.DiscrepancyCandidates} — review suggested, not a failure")</dd></div>
-                                        <div><dt>Parse/errors</dt><dd>@m.ParseErrors</dd></div>
+                                        <div><dt>Parser errors</dt><dd>@m.ParseErrors</dd></div>
                                     }
                                     <div><dt>Project</dt><dd class="gdh-wrap"><code>@m.ProjectPath</code></dd></div>
                                     <div><dt>Type basis</dt><dd class="gdh-wrap">@m.TypeBasis</dd></div>
@@ -106,25 +126,64 @@
         </div>
     }
 
-    <h4 class="gdh-h4" data-testid="gdh-autodoc-repository-title">Repository-level generated documentation</h4>
-    @if (Diagnostics.RepositoryLevelDocuments.Count == 0) { <p class="gdh-note" data-testid="gdh-autodoc-repository">None detected at the repository root.</p> }
-    else
-    {
-        <p class="gdh-note" data-testid="gdh-autodoc-repository">@Diagnostics.RepositoryLevelDocuments.Count document(s) at the repository root — not a module or API, and not counted in module/API coverage.</p>
-        <ul class="gdh-plain">@foreach (var path in Diagnostics.RepositoryLevelDocuments.Take(30)) { <li><code class="gdh-wrap">@path</code></li> }</ul>
-    }
-    <ul class="gdh-plain gdh-note" data-testid="gdh-autodoc-limitations">@foreach (var limitation in Diagnostics.Limitations) { <li class="gdh-wrap">@limitation</li> }</ul>
+    <p class="gdh-note" data-testid="gdh-autodoc-repository">@(Diagnostics.RepositoryLevelDocuments.Count == 0
+        ? "Repository-level generated documentation: none detected at the repository root."
+        : $"Repository-level generated documentation: {Diagnostics.RepositoryLevelDocuments.Count} document(s) at the repository root — not counted as module or API coverage.")</p>
+
+    <ReviewDisclosure Text="Advanced diagnostics" CollapseText="Hide advanced diagnostics" TestId="gdh-advanced" Hint="All metrics, generator evidence and per-module details">
+        <h4 class="gdh-h4">Generated documentation metrics</h4>
+        <dl class="gdh-cards" data-testid="gdh-autodoc-summary">
+            <div class="gdh-card" data-metric="workflow" title="A documentation generator workflow (maintain-docs) is declared in the repository. Repository-level workflow ≠ module usage."><dt>Generator workflow detected (maintain-docs)</dt><dd data-testid="gdh-autodoc-workflow">@(Diagnostics.MaintainDocsWorkflowDetected ? "Yes" : "No")</dd></div>
+            <div class="gdh-card" data-metric="detected" title="Modules/projects from the Source Analysis inventory."><dt>Detected modules/projects</dt><dd data-testid="gdh-autodoc-detected">@Diagnostics.DetectedModules</dd></div>
+            <div class="gdh-card" data-metric="api" title="Modules whose source identifies them as an API."><dt>Detected API-capable modules</dt><dd data-testid="gdh-autodoc-api">@Diagnostics.ApiModules</dd></div>
+            <div class="gdh-card" data-metric="using" title="Modules with module-specific generated output."><dt>Modules with generated docs</dt><dd data-testid="gdh-autodoc-using">@Diagnostics.ModulesUsingAutodoc of @Diagnostics.DetectedModules</dd></div>
+            <div class="gdh-card" data-metric="without" title="Neutral: no policy requiring generated documentation was detected."><dt>Modules without generated docs</dt><dd data-testid="gdh-autodoc-without">@Diagnostics.ModulesWithoutAutodoc</dd></div>
+            <div class="gdh-card" data-metric="apis-using" title="API-capable modules with module-specific generated output."><dt>APIs with generated docs</dt><dd data-testid="gdh-autodoc-apis-using">@Diagnostics.ApisUsingAutodoc of @Diagnostics.ApiModules</dd></div>
+            <div class="gdh-card" data-metric="apis-without" title="Neutral: not a failure."><dt>APIs without generated docs</dt><dd data-testid="gdh-autodoc-apis-without">@Diagnostics.ApisWithoutAutodoc</dd></div>
+            <div class="gdh-card" data-metric="partial" title="Generated output present but declared outputs incomplete."><dt>Modules with partial output</dt><dd data-testid="gdh-autodoc-partial">@Diagnostics.ModulesPartial</dd></div>
+            <div class="gdh-card" data-metric="artifacts" title="Generated documents found in the snapshot."><dt>Generated artifacts detected</dt><dd data-testid="gdh-autodoc-artifacts">@Diagnostics.GeneratedArtifacts</dd></div>
+            <div class="gdh-card" data-metric="fresh" title="Generated evidence is not older than relevant same-scope source evidence."><dt>Fresh</dt><dd>@Diagnostics.Fresh</dd></div>
+            <div class="gdh-card" data-metric="stale" title="Relevant source evidence is newer than the generated documentation."><dt>Potentially stale</dt><dd>@Diagnostics.PotentiallyStale</dd></div>
+            <div class="gdh-card" data-metric="unknown" title="Not enough dated evidence to decide freshness."><dt>Freshness unknown</dt><dd>@Diagnostics.FreshnessUnknown</dd></div>
+            <div class="gdh-card" data-metric="missing" title="Outputs a generator declares as required but which are absent."><dt>Required generated docs missing</dt><dd>@Diagnostics.MissingExpectedDocs</dd></div>
+            <div class="gdh-card" data-metric="discrepancies" title="Comparable conflicting claims between generated docs and source — review candidates, not defects."><dt>Source consistency candidates</dt><dd>@Diagnostics.DiscrepancyCandidates</dd></div>
+            <div class="gdh-card" data-metric="errors" title="Generated contracts that do not parse."><dt>Parser errors</dt><dd data-testid="gdh-autodoc-errors">@Diagnostics.ParseErrors</dd></div>
+        </dl>
+        <p class="gdh-note" data-testid="gdh-autodoc-snapshot">Source snapshot: <span class="gdh-wrap">@(Snapshot?.ArchiveName ?? "Unknown")</span>@(Snapshot is { } s ? $" · {s.SnapshotId}" : "") · inventory from @Diagnostics.InventoryBasis. Repository-level workflow ≠ module usage: a module counts as having generated documentation only with module-specific generated output.</p>
+        @if (Diagnostics.WorkflowSources.Count > 0)
+        {
+            <p class="gdh-note gdh-wrap" data-testid="gdh-autodoc-workflow-sources">Generator workflow sources: @string.Join(", ", Diagnostics.WorkflowSources)</p>
+        }
+        @if (Diagnostics.RepositoryLevelDocuments.Count > 0)
+        {
+            <ul class="gdh-plain" data-testid="gdh-autodoc-repository-list">@foreach (var path in Diagnostics.RepositoryLevelDocuments.Take(30)) { <li><code class="gdh-wrap">@path</code></li> }</ul>
+        }
+        <ul class="gdh-plain gdh-note" data-testid="gdh-autodoc-limitations">@foreach (var limitation in Diagnostics.Limitations) { <li class="gdh-wrap">@limitation</li> }</ul>
+        @AdvancedContent
+    </ReviewDisclosure>
 </section>
 
 @code {
     [Parameter, EditorRequired] public AutodocDiagnostics Diagnostics { get; set; } = default!;
     [Parameter] public GeneratedDocumentationSnapshotBinding? Snapshot { get; set; }
+    /// <summary>Generated Documentation Explorer link for the analysed import ("…?import=…"), or null when the Explorer is not shown.</summary>
+    [Parameter] public string? ExplorerHref { get; set; }
+    /// <summary>The panel's detailed diagnostics (health/consistency metrics, generators, per-module details), shown inside "Advanced diagnostics".</summary>
+    [Parameter] public RenderFragment? AdvancedContent { get; set; }
 
     private AutodocFilter _filter = AutodocFilter.All;
     private AutodocApiScope _scope = AutodocApiScope.All;
     private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+    private bool _advancedFiltersOpen;
 
-    private void Set(AutodocFilter filter, AutodocApiScope scope) { _filter = filter; _scope = scope; }
+    private RenderFragment FilterButton(AutodocFilter f) => __builder =>
+    {
+        <button type="button" class="gdh-filter @(f == _filter ? "is-active" : "")" aria-pressed="@(f == _filter ? "true" : "false")" data-testid="gdh-autodoc-filter" data-filter="@f" @onclick="() => _filter = f">
+            @AutodocPresentation.Label(f) <span class="gdh-count">(@AutodocPresentation.Count(Diagnostics, f, _scope))</span>
+        </button>
+    };
+
+    private void Set(AutodocFilter filter, AutodocApiScope scope) { _filter = filter; _scope = scope; if (scope != AutodocApiScope.All) _advancedFiltersOpen = true; }
     private void ScopeChanged(ChangeEventArgs e) => _scope = Enum.TryParse<AutodocApiScope>(e.Value?.ToString(), out var scope) ? scope : AutodocApiScope.All;
     private void Toggle(string id) { if (!_open.Remove(id)) _open.Add(id); }
     private static string Slug(string value) => System.Text.RegularExpressions.Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');

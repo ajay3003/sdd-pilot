@@ -248,7 +248,7 @@ public sealed class PerformanceSetupProfileService(PerformanceTestStore store, P
         var definitions = await store.DefinitionsAsync(environmentId, false, ct);
         var d = definitions.FirstOrDefault(x => x.Id == definitionId) ?? (definitionId is null ? definitions.FirstOrDefault(x => !x.Archived) : null);
         if (d is null) return null;
-        var document = Document(d, environmentId, PerformanceCaBundleInspector.Inspect(options.Container.CaBundlePath).Configured);
+        var document = Document(d, environmentId, PerformanceCaBundleInspector.Inspect(options.Container.EffectiveCaBundlePath).Configured);
         var text = format == SetupProfileFormat.Json ? JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }) : SetupProfileService.Yaml(document, 0);
         return new SetupProfileExport(format, $"performance-{SetupProfileService.Slug(d.Name)}-{SetupProfileService.Slug(d.EnvironmentName)}.setup.{(format == SetupProfileFormat.Json ? "json" : "yaml")}",
             text, ExportExcluded);

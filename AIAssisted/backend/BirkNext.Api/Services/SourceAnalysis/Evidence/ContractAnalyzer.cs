@@ -289,6 +289,19 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         return OpenApiOperations(JsonTree(json.RootElement, 1));
     }
 
+    /// <summary>One OpenAPI/Swagger document (JSON or YAML) as a contract — operations and schemas, the same generic tree reader Source Analysis
+    /// uses. Local only: no <c>$ref</c> outside the document is followed and nothing is fetched. Null when the text is not a readable document.</summary>
+    internal static SourceContract? ReadOpenApi(string path, string content)
+    {
+        var file = new EvidenceFile(path, content, SourceFileRole.Contract, "OpenAPI");
+        if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            using var json = JsonDocument.Parse(content, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+            return OpenApiTree(file, JsonTree(json.RootElement, 1), "json");
+        }
+        return MiniYaml.Parse(content) is { } yaml ? OpenApiTree(file, yaml, "yaml") : null;
+    }
+
     /// <summary>One GraphQL document as Source Analysis stores it (schema or client operations).</summary>
     internal static SourceContract? ReadGraphQl(string path, string content) =>
         GraphQl(new EvidenceFile(path, content, SourceFileRole.Contract, "GraphQL"), []);

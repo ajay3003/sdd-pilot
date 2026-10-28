@@ -112,3 +112,6 @@
 .gdh-consistency { margin-top: 1.25rem; padding-top: .75rem; border-top: 1px solid var(--clr-border, #e2e8f0); }
 .gdh-unresolved { margin-top: .6rem; }
 .gdh-unresolved > summary { cursor: pointer; }
+.gdh ::deep .gdh-overview { margin-bottom: .5rem; }
+.gdh ::deep .gdh-actions { white-space: nowrap; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.gdh ::deep .disclosure { margin: .75rem 0; }

@@ -28,6 +28,7 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
 
     public GeneratedDocumentationExplorerTests()
     {
+        JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton(_repository);
         Services.AddSingleton<IWorkspaceArtifactRepository>(_repository);
         var state = _repository.SddLifecycle;
@@ -153,12 +154,11 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
         cut.Find("[data-testid=gde-origin]").TextContent.Should().Be("Generated · implementation-derived documentation");
         cut.Find("[data-testid=gde-generator]").TextContent.Should().Be("maintain-docs");
         cut.Find("[data-testid=gde-compare-drift]").GetAttribute("href").Should().Be("documentation-drift?tab=compare&import=i1&module=Person&concern=DataModel");
-        cut.Find("[data-testid=gde-open-health]").GetAttribute("href").Should().Be(NavigationCatalog.GeneratedDocumentationHealthRoute);
+        cut.Find("[data-testid=gde-open-health]").GetAttribute("href").Should().Be($"{NavigationCatalog.GeneratedDocumentationHealthRoute}?import=i1&snapshot=11111111-2222-3333-4444-555555555555", "Health opens on this import and its exact snapshot");
         cut.Markup.Should().NotContainAny("source truth is", "Passed", "Healthy", "verified implementation");
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Structure").Click();
         cut.FindAll("[data-testid=gde-entity]").Should().HaveCount(2);
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Source").Click();
-        cut.Find("[data-testid=gde-raw-toggle]").Change(true);
         cut.Find("[data-testid=gde-raw]").TextContent.Should().Be(DataModel);
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Provenance").Click();
         cut.Find("[data-testid=gde-fingerprint]").TextContent.Should().Be("fp-Person-data-model.md");
@@ -174,7 +174,7 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
         cut.Find("[data-testid=gde-module]").Change("Hendelse");
         cut.FindAll("[data-testid=gde-document-card]").Single(c => c.TextContent.Contains("eventhub-routing")).QuerySelector("[data-testid=gde-open]")!.Click();
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Structure").Click();
-        cut.Find("[data-testid=gde-content-unavailable]").TextContent.Should().Contain("Content unavailable for structured view").And.Contain("not captured during Project Import");
+        cut.Find("[data-testid=gde-content-unavailable]").TextContent.Should().Contain("Detected — content unavailable").And.Contain("not captured during Project Import").And.Contain("nothing is fabricated");
         cut.FindAll("[data-testid=gde-compare-drift]").Should().BeEmpty("Drift has no authored counterpart for messaging documents");
     }
 

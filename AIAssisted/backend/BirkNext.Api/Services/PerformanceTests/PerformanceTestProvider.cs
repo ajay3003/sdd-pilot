@@ -80,6 +80,10 @@ public sealed record PerformanceContainerOptions
     public double Cpus { get; init; } = 2;
     /// <summary>PEM bundle (corporate + public roots) mounted read-only and used via SSL_CERT_FILE. TLS verification is never disabled.</summary>
     public string? CaBundlePath { get; init; }
+    /// <summary>The CA bundle chosen in System Settings → Performance Test Engines on this machine (<see cref="PerformanceLocalExecutionStore"/>); wins over <see cref="CaBundlePath"/>.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public string? CaBundleOverridePath { get; set; }
+    /// <summary>The bundle the network check and the run both mount.</summary>
+    public string? EffectiveCaBundlePath => CaBundleOverridePath ?? CaBundlePath;
     public string? HttpProxy { get; init; }
     public string? HttpsProxy { get; init; }
     public string? NoProxy { get; init; }

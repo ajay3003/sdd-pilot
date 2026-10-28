@@ -315,6 +315,6 @@ public sealed class GeneratedDocumentationHealthPanelTests : BunitContext
         GeneratedDocumentationText.Label(CrossArtifactDriftType.SpecificationDrift).Should().StartWith("Authored/generated consistency");
         GeneratedDocumentationText.Label(ExpectedDocumentState.RequiredMissing).Should().Be("Required and missing");
         GeneratedDocumentationText.Label(GeneratedDocumentationReviewState.ReviewSuggested).Should().Be("Review suggested");
-        AutodocPresentation.Label(AutodocFilter.NeedsReview).Should().Be("Review suggested");
+        AutodocPresentation.Label(AutodocFilter.NeedsReview).Should().Be("Needs review", "the tester-facing filter names the review items; module states stay \"Review suggested\"");
     }
 }

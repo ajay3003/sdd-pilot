@@ -33,6 +33,28 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
         public Task<List<PerformanceBaseline>> BaselinesAsync(string e, string? d, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PerformanceBaselinePromotionResult> PromoteAsync(string e, PerformanceBaselinePromotion r, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PerformanceRunComparison?> CompareAsync(string e, Guid c, Guid? r, string? b, CancellationToken ct = default) => throw new NotSupportedException();
+        public PerformanceLocalExecutionStatus? Local { get; set; } = new() { TrustDetail = "No CA bundle: the container uses its default CA store.", Stages = PerformanceNetworkStages.From(null) };
+        public List<string> Configured { get; } = [];
+        public int Removed { get; private set; }
+        public string? RefuseWith { get; set; }
+        public Task<PerformanceLocalExecutionStatus?> LocalExecutionAsync(CancellationToken ct = default) => Task.FromResult(Local);
+        public Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> ConfigureCaBundleAsync(string path, CancellationToken ct = default)
+        {
+            Configured.Add(path);
+            if (RefuseWith is { } refusal) return Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail(refusal));
+            Local = new PerformanceLocalExecutionStatus
+            {
+                TrustState = ContainerTlsTrustStates.Configured, TrustDetail = "The CA bundle loads and will be mounted read-only.", Source = ContainerTlsTrustSources.SystemSettings,
+                BundlePath = path, BundleFileName = Path.GetFileName(path), BundleStatus = "Ready", Certificates = 2, Fingerprint = "0123456789abcdef", Stages = PerformanceNetworkStages.From(null),
+            };
+            return Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Ok(Local));
+        }
+        public Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> RemoveCaBundleAsync(CancellationToken ct = default)
+        {
+            Removed++;
+            Local = new PerformanceLocalExecutionStatus { Stages = PerformanceNetworkStages.From(null) };
+            return Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Ok(Local));
+        }
     }
 
     private readonly Api _api = new();
@@ -242,8 +264,9 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
         var cut = RenderPage();
 
         cut.Find("h2").TextContent.Should().Be("Performance Test Engines");
-        cut.FindAll("h3").Select(h => h.TextContent).Should().Equal("Engine", "Resource Stability", "Unsupported and planned");
-        cut.FindAll("article.pte-card").Should().OnlyContain(a => a.GetAttribute("tabindex") == null && a.GetAttribute("onclick") == null);
+        cut.FindAll("h3").Select(h => h.TextContent).Should().Equal("Engine", "Local execution setup", "Resource Stability", "Unsupported and planned");
+        // Cards are not tab stops; only the Container TLS trust card is a programmatic focus target (tabindex -1) for the readiness deep link.
+        cut.FindAll("article.pte-card").Should().OnlyContain(a => (a.GetAttribute("tabindex") == null || a.Id == "container-tls-trust" && a.GetAttribute("tabindex") == "-1") && a.GetAttribute("onclick") == null);
     }
 
     [Fact]
@@ -258,5 +281,92 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
         P.ShortImage("registry.example.com/k6:1").Should().Be("registry.example.com/k6:1");
         P.ResourceSummary(Resources())!.Label.Should().Be("Partial");
         P.ResourceSummary(Resources().Where(r => r.Availability is "Unsupported" or "Not implemented").ToList()).Should().BeNull();
+    }
+
+    // ── Local execution setup → Container TLS trust ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Local_execution_is_a_separate_summary_and_section_from_engine_readiness()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        var cut = RenderPage();
+        cut.Find("[data-testid=pte-summary-local]").TextContent.Should().Contain("Local execution").And.Contain("Not configured");
+        cut.Find("[data-testid=pte-summary]").TextContent.Should().Contain("Performance engine").And.Contain("Ready", "the engine can be ready while trust is not configured");
+        var card = cut.Find("[data-testid=pte-ca-card]");
+        card.Id.Should().Be("container-tls-trust", "the readiness deep link focuses this card");
+        card.GetAttribute("tabindex").Should().Be("-1");
+        card.GetAttribute("data-state").Should().Be(ContainerTlsTrustStates.NotConfigured);
+        cut.Find("[data-testid=pte-ca-safety]").TextContent.Should().Contain("TLS verification is never disabled");
+        cut.FindAll("[data-testid=pte-ca-stage]").Select(s => s.GetAttribute("data-state")).Should().OnlyContain(s => s == "Not checked");
+        cut.Find("[data-testid=pte-ca-how-to-validate]").TextContent.Should().Contain("never a load test");
+        cut.Markup.Should().NotContainAny("insecure", "Skip certificate", "skipTls");
+    }
+
+    [Fact]
+    public void Configure_validates_on_the_backend_saves_metadata_and_never_shows_certificate_content()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        var cut = RenderPage();
+        cut.Find("[data-testid=pte-ca-save]").HasAttribute("disabled").Should().BeTrue("nothing to save yet");
+        cut.Find("[data-testid=pte-ca-path]").Input("C:/certs/corporate-roots.pem");
+        cut.Find("[data-testid=pte-ca-form]").Submit();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pte-ca-card]").GetAttribute("data-state").Should().Be(ContainerTlsTrustStates.Configured));
+        _api.Configured.Should().Equal("C:/certs/corporate-roots.pem");
+        cut.Find("[data-testid=pte-ca-file]").TextContent.Should().Be("corporate-roots.pem");
+        cut.Find("[data-testid=pte-ca-source]").TextContent.Should().Be(ContainerTlsTrustSources.SystemSettings);
+        cut.Find("[data-testid=pte-ca-message]").TextContent.Should().Contain("Run a container network check");
+        cut.Markup.Should().NotContain("BEGIN CERTIFICATE");
+
+        cut.Find("[data-testid=pte-ca-remove]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pte-ca-card]").GetAttribute("data-state").Should().Be(ContainerTlsTrustStates.NotConfigured));
+        _api.Removed.Should().Be(1);
+        cut.Find("[data-testid=pte-ca-message]").TextContent.Should().Contain("file itself was not changed");
+    }
+
+    [Fact]
+    public void A_refused_bundle_is_announced_as_an_alert_and_nothing_changes()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        _api.RefuseWith = "PFX/PKCS#12 and key files are refused.";
+        var cut = RenderPage();
+        cut.Find("[data-testid=pte-ca-path]").Input("C:/certs/corp.pfx");
+        cut.Find("[data-testid=pte-ca-form]").Submit();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pte-ca-message]").GetAttribute("role").Should().Be("alert"));
+        cut.Find("[data-testid=pte-ca-message]").TextContent.Should().Contain("PFX");
+        cut.Find("[data-testid=pte-ca-card]").GetAttribute("data-state").Should().Be(ContainerTlsTrustStates.NotConfigured);
+    }
+
+    [Fact]
+    public void A_failed_validation_shows_the_failing_stage_and_needs_recheck_is_distinct()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        var failed = new ContainerTlsValidation { TargetOrigin = "https://qa.example.test", ProbeState = PerformanceProbeStates.TlsTrustFailure, ErrorCode = 1310, CheckedAt = DateTimeOffset.UnixEpoch };
+        _api.Local = new PerformanceLocalExecutionStatus { TrustState = ContainerTlsTrustStates.ValidationFailed, TrustDetail = "TLS trust: the certificate chain is not trusted.", LastValidation = failed, Stages = PerformanceNetworkStages.From(failed) };
+        var cut = RenderPage();
+        cut.Find("[data-testid=pte-ca-state]").TextContent.Should().Contain("Validation failed");
+        cut.Find("[data-testid=pte-ca-stage][data-stage=tls]").GetAttribute("data-state").Should().Be("Failed");
+        cut.Find("[data-testid=pte-ca-stage][data-stage=http]").GetAttribute("data-state").Should().Be("Not reached");
+        P.Trust(ContainerTlsTrustStates.NeedsRecheck).Should().Match<CapabilityStatus>(t => t.Label == "Needs recheck" && t.Tone == CapabilityTone.Caution);
+        P.Trust(ContainerTlsTrustStates.Validated).Tone.Should().Be(CapabilityTone.Positive);
+    }
+
+    [Fact]
+    public void Back_to_performance_test_review_is_offered_only_for_a_safe_relative_return()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>()
+            .NavigateTo("admin/system-settings?section=performance-test-engines&focus=container-tls-trust&returnTo=" + Uri.EscapeDataString("performance-test-review?definition=d1&tab=readiness"));
+        var cut = RenderPage();
+        cut.Find("[data-testid=pte-back-to-review]").GetAttribute("href").Should().Be("performance-test-review?definition=d1&tab=readiness");
+        JSInterop.VerifyInvoke("birknextFocusElement").Arguments.Should().Equal("container-tls-trust");
+
+        P.SafeReturn("https://evil.example/performance-test-review").Should().BeNull();
+        P.SafeReturn("//evil.example").Should().BeNull();
+        P.SafeReturn("performance-test-review?tab=readiness").Should().Be("performance-test-review?tab=readiness");
     }
 }

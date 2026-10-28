@@ -276,4 +276,33 @@ public sealed class TestDataCatalogServiceTests : IDisposable
         TestDataCatalogRules.Match(requirement with { SchemaRef = null }, [schemaAsset]).Single().State.Should().Be(TestDataMatchState.Possible);
         TestDataCatalogRules.Match(requirement with { RequestedDataType = TestDataDataType.JsonPayload }, [schemaAsset]).Should().BeEmpty();
     }
+
+    // Observed value bridge (Performance Test Review → Scenario): backend-only comparison, alias only; registration never approves.
+    [Fact]
+    public void ObservedValue_MatchesAnApprovedAsset_ByAliasOnly_AndIsNeverStored()
+    {
+        var (service, registry, _, configured) = Create();
+        configured.Items.Add(Configured("child-id-dev", "123456", "Development", TestDataApproval.Approved));
+        configured.Items.Add(Configured("child-id-unapproved", "777777", "Development"));
+        var match = service.MatchObservedValue(new ObservedValueMatchRequest("123456", TestDataDataType.SimpleValues, "Development"));
+        match.Should().Match<ObservedValueMatchResult>(m => m.Matched && m.Alias == "child-id-dev");
+        JsonSerializer.Serialize(match).Should().NotContain("123456", "only the alias comes back");
+        service.MatchObservedValue(new ObservedValueMatchRequest("777777", TestDataDataType.SimpleValues, "Development")).Matched.Should().BeFalse("an unapproved asset is never a match");
+        service.MatchObservedValue(new ObservedValueMatchRequest("123456", TestDataDataType.SimpleValues, "QA")).Matched.Should().BeFalse("the environment must be compatible");
+        registry.Assets().Should().BeEmpty("comparing stores nothing");
+    }
+
+    [Fact]
+    public async Task ObservedParameter_RegistersAsAnUnapprovedCandidate_WithoutItsValue()
+    {
+        var (service, registry, _, _) = Create();
+        var (asset, _, error) = await service.RegisterAsync(new TestDataRegistrationRequest
+        {
+            Alias = "observed-user-id-development", Label = "userId (observed by Live Discovery)", DataType = TestDataDataType.SimpleValues, EnvironmentId = "Development",
+            Fields = ["userId"], Tags = ["live-discovery"],
+        }, CancellationToken.None);
+        error.Should().BeNull();
+        asset!.Fields.Should().Equal("userId");
+        (await service.ViewAsync(CancellationToken.None)).Assets.Single(a => a.Alias == "observed-user-id-development").Approval.Should().NotBe(TestDataApproval.Approved, "registration never approves");
+    }
 }

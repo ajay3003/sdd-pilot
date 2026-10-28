@@ -30,9 +30,9 @@ public sealed class GeneratedDocumentationHealthPageTests : BunitContext
         Services.AddSingleton<IGeneratedDocumentationApiService>(_api);
     }
 
-    private void Import(Guid? snapshot, string projectName = "M2LB")
+    private void Import(Guid? snapshot, string projectName = "M2LB", char sha = 'g')
     {
-        var preview = Preview(new string('g', 64), source: snapshot is not null, ("specs/001-x/spec.md", Spec)) with { ProjectName = projectName };
+        var preview = Preview(new string(sha, 64), source: snapshot is not null, ("specs/001-x/spec.md", Spec)) with { ProjectName = projectName };
         new ProjectImportActivation(_repository).Activate(preview, ProjectImportArtifactDiscovery.From(preview),
             Commit(preview, snapshot is null ? ProjectImportSourceState.NotDetected : ProjectImportSourceState.Created, snapshot));
     }
@@ -71,16 +71,73 @@ public sealed class GeneratedDocumentationHealthPageTests : BunitContext
         var cut = Render<GeneratedDocumentationHealthPage>();
 
         cut.Find("h1").TextContent.Should().Be("Generated Documentation Health", "the feature identity is project-neutral");
-        cut.Find("[data-testid=gdh-target]").TextContent.Should().Contain("Current project").And.Contain("M2LB");
+        cut.Find("[data-testid=gdh-target]").TextContent.Should().Contain("Analyzing").And.Contain("M2LB");
         cut.Find("[data-testid=gdh-target-project]").TextContent.Should().Be("M2LB");
         cut.Find("[data-testid=gdh-target-snapshot]").TextContent.Should().Be("shop.zip");
         cut.Find("[data-testid=gdh-target-snapshot-id]").TextContent.Should().Be(snapshot.ToString());
         cut.Find("[data-testid=gdh-target-basis]").TextContent.Should().Be("Snapshot of the current imported project");
-        cut.Markup.Should().Contain(GeneratedDocumentationHealthPage.IntroText).And.Contain("Autodoc: Not configured");
+        cut.Markup.Should().Contain(GeneratedDocumentationHealthPage.IntroText).And.Contain("Generated docs: Not configured");
         cut.Find("[data-testid=gdh-page-boundary]").TextContent.Should().Contain("A discrepancy is a review candidate, not proof of a defect");
 
         cut.Find("[data-testid=gdh-run]").Click();
-        _api.Requests.Should().ContainSingle().Which.ProjectImportId.Should().Be(_repository.SddLifecycle.CurrentProjectImportId, "only the current import's snapshot is analysed");
+        var request = _api.Requests.Should().ContainSingle().Subject;
+        request.ProjectImportId.Should().Be(_repository.SddLifecycle.CurrentProjectImportId, "only the current import's snapshot is analysed");
+        request.SnapshotId.Should().Be(snapshot, "the exact selected snapshot, never the newest");
+        cut.Find("[data-testid=gdh-open-explorer-page]").GetAttribute("href").Should().Be($"generated-documentation-explorer?import={_repository.SddLifecycle.CurrentProjectImportId}");
+    }
+
+    [Fact]
+    public void Selectors_list_projects_and_their_snapshots_and_switching_runs_the_selected_snapshot_without_changing_the_current_project()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        Import(first, sha: 'a');
+        var firstImport = _repository.SddLifecycle.CurrentProjectImportId;
+        Import(second, sha: 'b');
+        var current = _repository.SddLifecycle.CurrentProjectImportId;
+        var cut = Render<GeneratedDocumentationHealthPage>();
+
+        cut.FindAll("[data-testid=gdh-project] option").Select(o => o.TextContent).Should().Equal("M2LB");
+        var options = cut.FindAll("[data-testid=gdh-snapshot-select] option");
+        options.Select(o => o.GetAttribute("value")).Should().Equal(first.ToString(), second.ToString());
+        options[0].TextContent.Should().MatchRegex(@"^shop\.zip · analyzed .+ · [0-9a-f]{8}$");
+        cut.Find("[data-testid=gdh-target-snapshot-id]").TextContent.Should().Be(second.ToString(), "the current project's own snapshot");
+
+        cut.Find("[data-testid=gdh-snapshot-select]").Change(first.ToString());
+        cut.Find("[data-testid=gdh-target-basis]").TextContent.Should().Be("Selected on this page");
+        cut.Find("[data-testid=gdh-run]").Click();
+        _api.Requests.Should().ContainSingle().Which.Should().Match<GeneratedDocumentationDiagnosticRequest>(r => r.SnapshotId == first && r.ProjectImportId == firstImport);
+        _api.Requests[0].AuthoredArtifacts.Should().BeEmpty("authored artifacts of the current project are not compared with another import's snapshot");
+        _repository.SddLifecycle.CurrentProjectImportId.Should().Be(current, "selecting never changes the global current project");
+
+        cut.Find("[data-testid=gdh-snapshot-select]").Change(second.ToString());
+        cut.FindAll("[data-testid=gdh-run-status]").Should().BeEmpty("a result is never shown for a selection it was not run for");
+    }
+
+    [Fact]
+    public void A_deep_link_from_the_explorer_wins_over_the_current_project()
+    {
+        var first = Guid.NewGuid();
+        Import(first, sha: 'a');
+        var firstImport = _repository.SddLifecycle.CurrentProjectImportId;
+        Import(Guid.NewGuid(), sha: 'b');
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"generated-documentation-health?import={firstImport}&snapshot={first}");
+        var cut = Render<GeneratedDocumentationHealthPage>();
+
+        cut.Find("[data-testid=gdh-target-snapshot-id]").TextContent.Should().Be(first.ToString());
+        cut.Find("[data-testid=gdh-target-basis]").TextContent.Should().Be("Link from Generated Documentation Explorer");
+    }
+
+    [Fact]
+    public void A_deep_link_to_an_unknown_snapshot_falls_back_to_the_linked_imports_own_snapshot()
+    {
+        var own = Guid.NewGuid();
+        Import(own);
+        var import = _repository.SddLifecycle.CurrentProjectImportId;
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"generated-documentation-health?import={import}&snapshot={Guid.NewGuid()}");
+        var cut = Render<GeneratedDocumentationHealthPage>();
+
+        cut.Find("[data-testid=gdh-target-snapshot-id]").TextContent.Should().Be(own.ToString(), "an unknown or other-project snapshot is never borrowed");
     }
 
     [Fact]

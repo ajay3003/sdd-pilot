@@ -133,6 +133,23 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
         return stored is null ? (null, existing, "This candidate or alias is already a Test Data asset.") : (stored, null, null);
     }
 
+    /// <summary>
+    /// Does an observed runtime value equal the value of an approved Test Data asset (same data type, usable in the environment)? Compared here,
+    /// in the backend; only the alias is returned. Nothing is stored, approved or created.
+    /// </summary>
+    public ObservedValueMatchResult MatchObservedValue(ObservedValueMatchRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Value)) return new(false, null, "No observed value to compare.");
+        var match = catalog.Assets()
+            .Where(a => a.Approval == TestDataApproval.Approved && a.Value is not null && TestDataDataTypes.Of(a.Kind, a.MediaType) == request.DataType
+                && (a.Environment is null || request.EnvironmentId is null || string.Equals(a.Environment, request.EnvironmentId, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(a => a.Alias, StringComparer.Ordinal)
+            .FirstOrDefault(a => a.Value!.Is(request.Value));
+        return match is null
+            ? new(false, null, "No approved Test Data asset holds this value. You can register the parameter as a Test Data candidate for review.")
+            : new(true, match.Alias, $"Existing approved Test Data match found: {match.Alias}.");
+    }
+
     /// <summary>Explicit approval of the asset's current version (fingerprint). A deprecated asset is not approved for new usage.</summary>
     public string? Approve(string assetId)
     {

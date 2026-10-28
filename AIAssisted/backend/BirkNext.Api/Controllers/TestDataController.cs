@@ -28,6 +28,11 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
     public async Task<ActionResult<IReadOnlyList<TestDataCandidate>>> Candidates([FromServices] TestDataCandidateService candidates, [FromQuery] Guid snapshotId, [FromQuery] string? environmentId, CancellationToken ct) =>
         await candidates.CandidatesAsync(environmentId ?? "", snapshotId, ct) is { } list ? Ok(list) : NotFound();
 
+    /// <summary>Compares a Live Discovery value with approved Test Data in the backend; returns an alias or nothing (never a value). Not stored.</summary>
+    [HttpPost("observed-value/match")]
+    [RequestSizeLimit(16 * 1024)]
+    public ActionResult<ObservedValueMatchResult> MatchObservedValue([FromBody] ObservedValueMatchRequest request) => Ok(service.MatchObservedValue(request));
+
     /// <summary>Registers asset metadata (a reviewed candidate, re-derived on the server, or a manual entry). Never approves it.</summary>
     [HttpPost("registrations")]
     public async Task<IActionResult> Register([FromBody] TestDataRegistrationRequest request, CancellationToken ct)

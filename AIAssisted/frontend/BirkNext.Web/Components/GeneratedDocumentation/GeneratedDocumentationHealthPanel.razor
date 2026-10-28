@@ -18,7 +18,10 @@
             <h2 id="gdh-title" class="gdh-title">Generated Documentation Health</h2>
             <p class="gdh-description" data-testid="gdh-description">@GeneratedDocumentationText.Description</p>
         }
-        <p class="gdh-boundary">@GeneratedDocumentationText.Boundary</p>
+        @if (!Embedded)
+        {
+            <p class="gdh-boundary">@GeneratedDocumentationText.Boundary</p>
+        }
         <button type="button" class="btn btn-primary gdh-run" data-testid="gdh-run" disabled="@_running" @onclick="RunAsync">
             @(_running ? "Running diagnostics…" : "Run diagnostics")
         </button>
@@ -34,7 +37,7 @@
         <p class="gdh-status" role="status" data-testid="gdh-run-status">
             Completed @run.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") in @run.DurationMilliseconds ms@(run.FromCache ? " (cached result for the same evidence)" : "").
         </p>
-        @if (run.Snapshot is { } snapshot)
+        @if (run.Snapshot is { } snapshot && (!Embedded || snapshot.SnapshotId != SnapshotId))
         {
             <dl class="gdh-binding" data-testid="gdh-snapshot">
                 <div><dt>Source snapshot</dt><dd><span class="gdh-wrap">@snapshot.ArchiveName</span> · analyzed @snapshot.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
@@ -54,6 +57,85 @@
         }
         else
         {
+            @if (run.Autodoc is { } autodoc)
+            {
+                <AutodocDiagnosticsSection Diagnostics="autodoc" Snapshot="run.Snapshot" ExplorerHref="@ExplorerHref" AdvancedContent="@Detailed(run)" />
+            }
+            else
+            {
+                @Detailed(run)
+            }
+        }
+    }
+    else if (!_running && _error is null)
+    {
+        <p class="gdh-note" data-testid="gdh-not-run">Not run yet. The diagnostic reads the generated-documentation evidence of a stored Source Analysis snapshot; it does not upload or rescan source.</p>
+    }
+</section>
+
+@code {
+    /// <summary>Test seam: the API is resolved from DI when not set.</summary>
+    [Parameter] public IGeneratedDocumentationApiService? Api { get; set; }
+    /// <summary>Hosted by the analysis page: the page shows the title, the target project and the source snapshot.</summary>
+    [Parameter] public bool Embedded { get; set; }
+    /// <summary>Fail safe: without a current imported project nothing runs — never another project's or the newest snapshot.</summary>
+    [Parameter] public bool RequireImportedProject { get; set; }
+
+    /// <summary>The selected import to analyse; when set it replaces the current workspace project (the global project is never changed).</summary>
+    [Parameter] public string? ProjectImportId { get; set; }
+    /// <summary>The exact Source Analysis snapshot to analyse; never the newest by date.</summary>
+    [Parameter] public Guid? SnapshotId { get; set; }
+    /// <summary>Authored artifacts of the workspace are compared only when the selected import is the current project.</summary>
+    [Parameter] public bool IncludeAuthoredArtifacts { get; set; } = true;
+
+    private GeneratedDocumentationDiagnosticRun? _run;
+    private (string?, Guid?) _selection;
+    private string? _error;
+    private bool _running;
+    private GeneratedDocumentationFilter _filter = GeneratedDocumentationFilter.All;
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private const int _driftLimit = 200;
+
+    private async Task RunAsync()
+    {
+        if (_running) return;
+        _running = true;
+        _error = null;
+        try
+        {
+            var api = Api ?? Services.GetService<IGeneratedDocumentationApiService>();
+            if (api is null) { _error = "The generated-documentation diagnostic is not available in this host."; return; }
+            TraceabilityInputs? inputs = null;
+            if (Services.GetService<IArtifactExplorerContext>() is { } context)
+            {
+                try { inputs = await TraceabilityInputs.ResolveAsync(context); }
+                catch (Exception) { inputs = null; }
+            }
+            var request = GeneratedDocumentationApiService.Request(IncludeAuthoredArtifacts ? inputs : null);
+            if (ProjectImportId is not null) request = request with { ProjectImportId = ProjectImportId, SnapshotId = SnapshotId };
+            if (RequireImportedProject && string.IsNullOrWhiteSpace(request.ProjectImportId))
+            {
+                _error = BirkNext.Web.Pages.GeneratedDocumentationHealthPage.NoProjectMessage;
+                return;
+            }
+            _run = await api.RunAsync(request);
+            if (_run is null) _error = "The diagnostic returned no result.";
+            _expanded.Clear();
+            _filter = GeneratedDocumentationFilter.All;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "The generated-documentation diagnostic is unavailable because the local API could not be reached.";
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    /// <summary>The detailed diagnostics (health and consistency metrics, generator evidence, per-module details, workspace drift, limitations).</summary>
+    private RenderFragment Detailed(GeneratedDocumentationDiagnosticRun run) => __builder =>
+    {
             <section aria-labelledby="gdh-summary-title" data-testid="gdh-summary">
                 <h3 id="gdh-summary-title" class="gdh-h3">Summary</h3>
                 <h4 class="gdh-h4" id="gdh-summary-health">Generated documentation health</h4>
@@ -101,7 +183,6 @@
                 </section>
             }
 
-            @if (run.Autodoc is { } autodoc) { <AutodocDiagnosticsSection Diagnostics="autodoc" Snapshot="run.Snapshot" /> }
 
             <section aria-labelledby="gdh-modules-title" data-testid="gdh-modules">
                 <h3 id="gdh-modules-title" class="gdh-h3">Modules</h3>
@@ -320,64 +401,19 @@
                     <ul class="gdh-plain">@foreach (var l in run.Limitations) { <li class="gdh-wrap">@l</li> }</ul>
                 </section>
             }
-        }
-    }
-    else if (!_running && _error is null)
+    };
+
+    /// <summary>A different import or snapshot clears the shown result: a result is never shown for a selection it was not run for.</summary>
+    protected override void OnParametersSet()
     {
-        <p class="gdh-note" data-testid="gdh-not-run">Not run yet. The diagnostic reads the generated-documentation evidence of a stored Source Analysis snapshot; it does not upload or rescan source.</p>
-    }
-</section>
-
-@code {
-    /// <summary>Test seam: the API is resolved from DI when not set.</summary>
-    [Parameter] public IGeneratedDocumentationApiService? Api { get; set; }
-    /// <summary>Hosted by the analysis page: the page shows the title, the target project and the source snapshot.</summary>
-    [Parameter] public bool Embedded { get; set; }
-    /// <summary>Fail safe: without a current imported project nothing runs — never another project's or the newest snapshot.</summary>
-    [Parameter] public bool RequireImportedProject { get; set; }
-
-    private GeneratedDocumentationDiagnosticRun? _run;
-    private string? _error;
-    private bool _running;
-    private GeneratedDocumentationFilter _filter = GeneratedDocumentationFilter.All;
-    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
-    private const int _driftLimit = 200;
-
-    private async Task RunAsync()
-    {
-        if (_running) return;
-        _running = true;
+        if (_selection == (ProjectImportId, SnapshotId)) return;
+        _selection = (ProjectImportId, SnapshotId);
+        _run = null;
         _error = null;
-        try
-        {
-            var api = Api ?? Services.GetService<IGeneratedDocumentationApiService>();
-            if (api is null) { _error = "The generated-documentation diagnostic is not available in this host."; return; }
-            TraceabilityInputs? inputs = null;
-            if (Services.GetService<IArtifactExplorerContext>() is { } context)
-            {
-                try { inputs = await TraceabilityInputs.ResolveAsync(context); }
-                catch (Exception) { inputs = null; }
-            }
-            var request = GeneratedDocumentationApiService.Request(inputs);
-            if (RequireImportedProject && string.IsNullOrWhiteSpace(request.ProjectImportId))
-            {
-                _error = BirkNext.Web.Pages.GeneratedDocumentationHealthPage.NoProjectMessage;
-                return;
-            }
-            _run = await api.RunAsync(request);
-            if (_run is null) _error = "The diagnostic returned no result.";
-            _expanded.Clear();
-            _filter = GeneratedDocumentationFilter.All;
-        }
-        catch (HttpRequestException)
-        {
-            _error = "The generated-documentation diagnostic is unavailable because the local API could not be reached.";
-        }
-        finally
-        {
-            _running = false;
-        }
+        _expanded.Clear();
     }
+
+    private string? ExplorerHref => ExplorerVisible && ProjectImportId is not null ? $"{NavigationCatalog.GeneratedDocumentationExplorerRoute}?import={Uri.EscapeDataString(ProjectImportId)}" : null;
 
     private static void Toggle(HashSet<string> set, string id) { if (!set.Remove(id)) set.Add(id); }
 

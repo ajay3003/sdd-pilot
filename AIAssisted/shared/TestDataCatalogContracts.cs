@@ -101,6 +101,14 @@ public sealed record TestDataRegistrationRequest
     public List<string> Tags { get; init; } = [];
 }
 
+/// <summary>
+/// Backend-only comparison of a value observed by Live Discovery with approved Test Data. The value travels in the request body only (never a URL,
+/// log or export) and is not stored; the answer is an alias or nothing — never a value.
+/// </summary>
+public sealed record ObservedValueMatchRequest(string Value, TestDataDataType DataType, string? EnvironmentId);
+
+public sealed record ObservedValueMatchResult(bool Matched, string? Alias, string Detail);
+
 /// <summary>The test lead's overview: counts only, from the enriched catalog and the registered requirements.</summary>
 public sealed record TestDataOverview(int Approved, int NeedsReview, int Draft, int Deprecated, int OpenRequirements, int RequiredResolved, int RequiredTotal,
     int EnvironmentMismatches, int ContractMismatches);

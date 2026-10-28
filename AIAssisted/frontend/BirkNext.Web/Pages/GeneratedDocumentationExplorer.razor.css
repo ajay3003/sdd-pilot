@@ -26,3 +26,17 @@
 .gde-section { border-left: 3px solid var(--clr-border, #e2e8f0); padding-left: .75rem; }
 .gde-level-2 { margin-left: 0; } .gde-level-3 { margin-left: .75rem; } .gde-level-4 { margin-left: 1.5rem; }
 .gde-entity { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; padding: .35rem .6rem; }
+
+/* Availability is text first; the unavailable card is visibly quieter and its action is Details. */
+.gde-card.is-unavailable { border-style: dashed; background: var(--clr-surface-muted, #f8fafc); }
+.gde-card-state { margin: 0; font-weight: 600; font-size: .85rem; }
+.gde-state-available { color: #166534; }
+.gde-state-unavailable { color: var(--clr-text-subtle, #64748b); }
+.gde-selected-mark { font-weight: 400; font-size: .8rem; }
+/* Long documents: the view tabs stay reachable. */
+.gde-sticky { position: sticky; top: 0; z-index: 2; background: var(--clr-surface, #fff); padding: .35rem 0; }
+/* Diagrams read as structure (no inner scroll); raw source only on request. */
+.gde-diagram { border: 1px solid var(--clr-border, #d5dbe5); border-radius: 6px; padding: .5rem .75rem; margin: .5rem 0; }
+.gde-diagram-facts { margin: .25rem 0; }
+.gde-steps { margin: .25rem 0 .5rem; padding-left: 1.4rem; }
+.gde-raw { max-height: 70vh; overflow: auto; }
