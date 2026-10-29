@@ -26,8 +26,22 @@ public interface IProjectEvidenceService
     Task<bool> SetTestPackAsync(string environmentId, string packId, bool active);
     Task<bool> ClearProjectAsync(string environmentId);
 
+    /// <summary>Project names already used by Target Environments (detected or manually created) — the picker offers them across environments.</summary>
+    IReadOnlyList<string> KnownProjectNames() => [];
+
+    /// <summary>
+    /// Saves Project setup in one step: the logical project (by name; <paramref name="draft"/>'s main package when it is a detected one, none
+    /// for a manual project), the checklist decisions applied to the canonical bindings, and expected evidence as named requirements. A
+    /// different project replaces the environment's project; imports, snapshots and documents are never touched.
+    /// </summary>
+    Task<bool> SaveProjectAsync(string environmentId, ProjectSetupDraft draft) => Task.FromResult(false);
+
     event Action? Changed;
 }
+
+/// <summary>What Project setup saves: the logical project, its checklist decisions and new expected evidence (label + capability).</summary>
+public sealed record ProjectSetupDraft(string Name, string? Description, string? MainImportId, IReadOnlyList<ProjectSetupPlanner.RoleDecision> Decisions,
+    IReadOnlyList<(string Label, ProjectEvidenceCapability Capability)> Expected);
 
 public sealed class ProjectEvidenceService : IProjectEvidenceService
 {
@@ -142,13 +156,49 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
     }
 
     public Task<bool> RemoveRoleAsync(string environmentId, string roleKey) => MutateAsync(environmentId, profile =>
-        profile.Project is { } project && project.Evidence.RemoveAll(r => r.RoleKey == roleKey && r.Origin == ProjectEvidenceRoleOrigin.UserAdded) > 0);
+        profile.Project is { } project && project.Evidence.RemoveAll(r => r.RoleKey == roleKey && r.Origin is ProjectEvidenceRoleOrigin.UserAdded or ProjectEvidenceRoleOrigin.Expected) > 0);
 
     public Task<bool> SetTestPackAsync(string environmentId, string packId, bool active) => MutateAsync(environmentId, profile =>
     {
         if (profile.Project is not { } project) return false;
         if (active) { if (project.TestPacks.Contains(packId, StringComparer.Ordinal)) return false; project.TestPacks.Add(packId); return true; }
         return project.TestPacks.RemoveAll(p => p == packId) > 0;
+    });
+
+    public IReadOnlyList<string> KnownProjectNames() =>
+        [.. _settings.Settings.Profiles.Select(p => p.Project?.ProjectName).OfType<string>().Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    public Task<bool> SaveProjectAsync(string environmentId, ProjectSetupDraft draft) => MutateAsync(environmentId, profile =>
+    {
+        var name = draft.Name.Trim();
+        if (name.Length is 0 or > 120) return false;
+        var packages = ProjectEvidencePackages.All(_workspace.SddLifecycle, _setup.GetValueOrDefault(environmentId));
+        var main = draft.MainImportId is { } id ? packages.FirstOrDefault(p => p.ImportId == id) : null;
+        var now = _time.GetUtcNow();
+        if (profile.Project is not { } project || !string.Equals(project.ProjectName, name, StringComparison.OrdinalIgnoreCase))
+        {
+            // A new (or different) logical project for this environment. Its main package's own evidence is decided by the checklist below.
+            project = new EnvironmentProject
+            {
+                ProjectName = name, ProjectImportId = main?.ImportId, ArchiveSha256 = main?.ArchiveSha256, SelectedAt = now, Manual = main is null,
+                Evidence = [.. ProjectEvidenceRoles.Defaults()],
+            };
+            profile.Project = project;
+        }
+        project.Description = string.IsNullOrWhiteSpace(draft.Description) ? null : draft.Description.Trim();
+        foreach (var (label, capability) in draft.Expected)
+        {
+            var text = label.Trim();
+            if (text.Length == 0 || project.Evidence.Any(r => r.Origin == ProjectEvidenceRoleOrigin.Expected && string.Equals(r.Label, text, StringComparison.OrdinalIgnoreCase))) continue;
+            var slug = new string([.. text.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-')]).Trim('-');
+            var key = "expected-" + (slug.Length == 0 ? "evidence" : slug);
+            for (var n = 2; project.Evidence.Any(r => r.RoleKey == key); n++) key = $"expected-{slug}-{n}";
+            project.Evidence.Add(ProjectEvidenceRoles.Role(key, text, capability, ProjectEvidenceRequirement.Required,
+                capability is ProjectEvidenceCapability.ApplicationSource ? ProjectEvidenceCardinality.Single : ProjectEvidenceCardinality.Multiple,
+                "Expected evidence (Project setup)", ProjectEvidenceRoleOrigin.Expected));
+        }
+        ProjectSetupPlanner.Apply(project, packages, draft.Decisions, now);
+        return true;
     });
 
     public Task<bool> ClearProjectAsync(string environmentId) => MutateAsync(environmentId, profile =>

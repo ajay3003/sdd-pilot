@@ -18,6 +18,7 @@
             <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)">Setup Library</a>
         </div>
     </header>
+    <ProjectContextStrip EnvironmentId="@EnvironmentId" />
     <p class="ei-muted ei-intro" data-testid="ei-intro">Configure the systems available in this environment. <a class="ug-learn-more" href="/user-guide#connected-systems" data-testid="ei-learn-more">Learn more</a></p>
     @if (_error is { } error) { <p class="ei-banner ei-banner-error" role="alert" data-testid="ei-error">@error</p> }
     @if (_notice is { } notice) { <p class="ei-banner" role="status" data-testid="ei-notice">@notice</p> }

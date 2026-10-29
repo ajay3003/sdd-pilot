@@ -72,56 +72,145 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     private IRenderedComponent<TargetEnvironmentProjectPane> RenderPane(string? focus = null) =>
         Render<TargetEnvironmentProjectPane>(p => p.Add(x => x.EnvironmentId, "dev").Add(x => x.Focus, focus));
 
+    /// <summary>Project setup through the checklist: choose the project, keep the defaults (optionally check more), Save.</summary>
+    private void Configure(IRenderedComponent<TargetEnvironmentProjectPane> cut, string project = "M2LB", Action? adjust = null)
+    {
+        cut.Find($"[data-testid=psp-option][data-name='{project}']").Click();
+        adjust?.Invoke();
+        cut.Find("[data-testid=psp-save]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be(project));
+    }
+
+    private static AngleSharp.Dom.IElement Item(IRenderedComponent<TargetEnvironmentProjectPane> cut, string role, string import) =>
+        cut.Find($"[data-testid=psp-role][data-role={role}] [data-testid=psp-item][data-import={import}]");
+
     [Fact]
-    public void NotConfigured_ShowsEmptyStateFirst_ThenGroupsApplicationCandidatesApartFromSupportingPackages()
+    public void NotConfigured_OffersLogicalProjectsOnly_NeverAnInfrastructurePackage()
     {
         var cut = RenderPane();
 
-        cut.Find("[data-testid=tep-empty]").TextContent.Should().Contain("Project not configured").And.Contain("Choose which application/system");
+        cut.Find("[data-testid=psp]").TextContent.Should().Contain("Project not configured").And.Contain("Choose the logical application/system");
         cut.FindAll("[data-testid=tep-roles]").Should().BeEmpty("evidence lists are not shown before a project is chosen");
-
-        cut.Find("[data-testid=tep-select-project]").Click();
-        cut.Find("[data-testid=tep-project-candidates]").QuerySelectorAll("[data-testid=tep-package]").Select(e => e.GetAttribute("data-import")).Should().Equal("a");
-        var supporting = cut.Find("[data-testid=tep-supporting-candidates]").QuerySelectorAll("[data-testid=tep-package]");
-        supporting.Select(e => e.GetAttribute("data-classification")).Should().BeEquivalentTo(["Documentation source", "Infrastructure source"]);
-        supporting.Single(e => e.GetAttribute("data-import") == "b").TextContent.Should().Contain("No application source").And.NotContain("Partial");
+        cut.Find("#psp-search").GetAttribute("role").Should().Be("combobox");
+        cut.FindAll("[data-testid=psp-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB", "M2LB-docs"],
+            "the application first, then the documentation project; Terraform-iac is evidence, never a project");
+        cut.Find("[data-testid=psp-search]").Input("docs");
+        cut.FindAll("[data-testid=psp-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB-docs"]);
+        cut.Find("[data-testid=psp-search]").Input("terraform");
+        cut.FindAll("[data-testid=psp-option]").Should().BeEmpty("package file names are not project names");
     }
 
     [Fact]
-    public void SelectingTheApplication_BindsItsOwnSource_SuggestsTheDocsPackage_AndBindingIsAReferenceOnly()
+    public void ChoosingTheProject_ShowsTheChecklist_StrongPreselected_PossibleNot_AndSaveBindsReferencesOnly()
     {
         var cut = RenderPane();
-        cut.Find("[data-testid=tep-select-project]").Click();
-        cut.Find("[data-testid=tep-project-candidates] [data-testid=tep-use-as-project]").Click();
+        cut.Find("[data-testid=psp-option][data-name=M2LB]").Click();
+
+        var app = Item(cut, ProjectEvidenceRoles.ApplicationSource, "a");
+        app.GetAttribute("data-strength").Should().Be("Strong");
+        app.QuerySelector("[data-testid=psp-check]")!.HasAttribute("checked").Should().BeTrue("strong evidence is selected by default");
+        app.QuerySelector("[data-testid=psp-why]")!.TextContent.Should().Contain("The project's own package provides it");
+        var docs = Item(cut, ProjectEvidenceRoles.Documentation, "b");
+        docs.GetAttribute("data-strength").Should().Be("Possible");
+        docs.QuerySelector("[data-testid=psp-check]")!.HasAttribute("checked").Should().BeFalse("a name resemblance is never preselected");
+        docs.QuerySelector("[data-testid=psp-why]")!.TextContent.Should().Contain("name similarity only");
+        cut.FindAll($"[data-testid=psp-role][data-role={ProjectEvidenceRoles.Infrastructure}] [data-testid=psp-item]").Should().BeEmpty();
+
+        docs.QuerySelector("[data-testid=psp-check]")!.Change(true);
+        cut.Find($"[data-testid=psp-role][data-role={ProjectEvidenceRoles.Infrastructure}] [data-testid=psp-add-package]").Change("i");
+        cut.Find("[data-testid=psp-summary]").TextContent.Should().Contain("Infrastructure: 1 selected").And.Contain("Project documentation: 1 selected");
+        cut.Find("[data-testid=psp-save]").Click();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB"));
         var rows = cut.FindAll("[data-testid=tep-role]");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.ApplicationSource).GetAttribute("data-state").Should().Be("Ready");
-        rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Suggested");
-        rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Infrastructure).GetAttribute("data-state").Should().Be("Suggested");
-
-        rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).QuerySelector("[data-testid=tep-role-action]")!.Click();
-        var picker = cut.Find("[data-testid=tep-picker]");
-        picker.QuerySelectorAll("[data-testid=tep-picker-candidate]").Select(c => c.GetAttribute("data-import")).Should().Equal("b");
-        picker.QuerySelector("[data-testid=tep-picker-why]")!.TextContent.Should().Contain("Specification");
-        cut.Find("[data-testid=tep-picker-incompatible]").TextContent.Should().Contain("2 other imported packages");
-        cut.Find("[data-testid=tep-bind]").Click();
-
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-role]").Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation)
-            .GetAttribute("data-state").Should().Be("Ready"));
+        rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Ready");
+        rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Infrastructure).GetAttribute("data-state").Should().Be("Ready");
+        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Advanced evidence bindings", "the checklist and the table show the same bindings");
         _js.Json.Should().Contain("\"importId\":\"b\"").And.NotContain("FR-001", "only references are stored");
-        _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull("selecting the environment's project never changes the current project");
+        _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull("configuring the environment's project never changes the current project");
+        _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "no package is created or copied");
     }
 
     [Fact]
-    public void OneApplicationCandidate_IsProposed_NotPersisted_AndUseAppliesIt()
+    public void A_deselected_suggestion_is_remembered_and_never_silently_reselected()
+    {
+        Configure(RenderPane());
+        var project = _settings.Settings.Profiles.Single(p => p.Id == "dev").Project!;
+        project.Evidence.Single(r => r.RoleKey == ProjectEvidenceRoles.ApplicationSource).Sources.Should().ContainSingle(s => s.ImportId == "a");
+
+        // Deselect the strong application source suggestion of the own package, save, reopen: it stays unselected and says why.
+        var edit = RenderPane();
+        edit.Find("[data-testid=tep-edit-evidence]").Click();
+        Item(edit, ProjectEvidenceRoles.ApplicationSource, "a").QuerySelector("[data-testid=psp-check]")!.Change(false);
+        edit.Find("[data-testid=psp-save]").Click();
+        edit.WaitForAssertion(() => project.Declined.Should().ContainSingle(d => d.RoleKey == ProjectEvidenceRoles.ApplicationSource && d.ImportId == "a"));
+        project.Evidence.Single(r => r.RoleKey == ProjectEvidenceRoles.ApplicationSource).Sources.Should().BeEmpty();
+
+        var reopened = RenderPane();
+        reopened.Find("[data-testid=tep-edit-evidence]").Click();
+        var item = Item(reopened, ProjectEvidenceRoles.ApplicationSource, "a");
+        item.QuerySelector("[data-testid=psp-check]")!.HasAttribute("checked").Should().BeFalse("an explicit deselection is not undone by the next suggestion");
+        item.QuerySelector("[data-testid=psp-badge]")!.TextContent.Should().Be("Deselected earlier");
+    }
+
+    [Fact]
+    public void Expected_evidence_is_a_missing_requirement_until_a_matching_package_is_imported_and_no_package_is_created()
     {
         var cut = RenderPane();
-        var suggested = cut.Find("[data-testid=tep-suggested-project]");
-        suggested.TextContent.Should().Contain("Suggested project").And.Contain("M2LB").And.Contain("Not saved until you choose it");
-        _settings.Settings.Profiles.Single(p => p.Id == "dev").Project.Should().BeNull();
-        cut.Find("[data-testid=tep-use-suggested]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB"));
+        Configure(cut, adjust: () =>
+        {
+            cut.Find("[data-testid=psp-expected-label]").Input("SkoleAdapter source");
+            cut.Find("[data-testid=psp-expected-capability]").Change(nameof(ProjectEvidenceCapability.SupportingSource));
+            cut.Find("[data-testid=psp-expected-add]").Click();
+        });
+        var row = cut.FindAll("[data-testid=tep-role]").Single(r => r.TextContent.Contains("SkoleAdapter source"));
+        row.GetAttribute("data-state").Should().Be("Missing");
+        cut.Find("[data-testid=tep-problems]").TextContent.Should().Contain("required roles missing", "the expected source and the unselected documentation");
+        _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "expected evidence never creates a package");
+
+        // A later import that names it becomes its candidate (shown, never bound silently); unrelated packages never are.
+        Import("s", "SkoleAdapter.zip", Guid.NewGuid());
+        var later = RenderPane();
+        var expected = later.FindAll("[data-testid=tep-role]").Single(r => r.TextContent.Contains("SkoleAdapter source"));
+        expected.GetAttribute("data-state").Should().Be("Suggested");
+        expected.QuerySelector("[data-testid=tep-role-action]")!.Click();
+        later.FindAll("[data-testid=tep-picker-candidate]").Select(c => c.GetAttribute("data-import")).Should().Equal(["s"]);
+    }
+
+    [Fact]
+    public void A_project_can_be_created_by_name_before_any_evidence_exists()
+    {
+        var cut = RenderPane();
+        cut.Find("[data-testid=psp-create-manual]").Click();
+        cut.Find("[data-testid=psp-manual-name]").Input("Skolenærvær");
+        cut.Find("[data-testid=psp-manual-description]").Change("School attendance reporting");
+        cut.Find("[data-testid=psp-manual-create]").Click();
+        cut.Find("[data-testid=psp-chosen]").TextContent.Should().Contain("Skolenærvær").And.Contain("Manual");
+        cut.Find("[data-testid=psp-save]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("Skolenærvær"));
+        var project = _settings.Settings.Profiles.Single(p => p.Id == "dev").Project!;
+        project.Manual.Should().BeTrue();
+        project.ProjectImportId.Should().BeNull("a manual project is not a package");
+        project.Description.Should().Be("School attendance reporting");
+        cut.Find("[data-testid=tep-role][data-role=application-source]").GetAttribute("data-state").Should().NotBe("Ready", "evidence is incomplete until bound");
+    }
+
+    [Fact]
+    public void Changing_the_project_asks_first_and_never_deletes_evidence()
+    {
+        var cut = RenderPane();
+        Configure(cut);
+        cut.Find("[data-testid=tep-change-project]").Click();
+        cut.Find("[data-testid=psp-option][data-name=M2LB-docs]").Click();
+        cut.Find("[data-testid=psp-save]").Click();
+
+        cut.Find("[data-testid=psp-switch-confirm]").TextContent.Should().Contain("from M2LB to M2LB-docs").And.Contain("Imports, Source Analysis snapshots and documents stay");
+        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB", "nothing is applied before confirmation");
+        cut.Find("[data-testid=psp-switch-confirm-button]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB-docs"));
+        _repository.SddLifecycle.ProjectImports.Should().HaveCount(3);
     }
 
     [Fact]
@@ -130,7 +219,7 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         Import("i2", "Terraform-dns.zip", Guid.NewGuid(), infrastructureOnly: true);
         Import("i3", "Terraform-net.zip", Guid.NewGuid(), infrastructureOnly: true);
         var cut = RenderPane();
-        cut.Find("[data-testid=tep-use-suggested]").Click();
+        Configure(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=tep-problems]"));
         cut.Find("[data-testid=tep-problems]").TextContent.Should().Contain("Needs attention").And.Contain("1 required role missing");
         cut.Find("[data-testid=tep-dimension][data-key=required]").TextContent.Should().Contain("Needs attention").And.Contain("1 / 2 bound · 1 ready");
@@ -152,33 +241,9 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     }
 
     [Fact]
-    public void ChangingTheProject_ShowsTheImpactFirst_AndAppliesOnlyOnConfirm()
-    {
-        Import("x", "Tiltak2.zip", Guid.NewGuid());
-        var cut = RenderPane();
-        cut.Find("[data-testid=tep-select-project]").Click();
-        cut.FindAll("[data-testid=tep-project-candidates] [data-testid=tep-use-as-project]").First(b => b.GetAttribute("aria-label")!.Contains("M2LB")).Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB"));
-
-        cut.Find("[data-testid=tep-change-project]").Click();
-        cut.FindAll("[data-testid=tep-project-candidates] [data-testid=tep-use-as-project]").First(b => b.GetAttribute("aria-label")!.Contains("Tiltak2")).Click();
-        cut.Find("[data-testid=tep-change-preview]").TextContent.Should().Contain("Change project to Tiltak2?");
-        cut.Find("[data-testid=tep-change-impact]").TextContent.Should().Contain("Imported packages, Source Analysis snapshots and document history are unchanged.");
-        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB", "nothing is applied before confirmation");
-        cut.Find("[data-testid=tep-change-cancel]").Click();
-        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB");
-
-        cut.FindAll("[data-testid=tep-project-candidates] [data-testid=tep-use-as-project]").First(b => b.GetAttribute("aria-label")!.Contains("Tiltak2")).Click();
-        cut.Find("[data-testid=tep-change-confirm]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("Tiltak2"));
-    }
-
-    [Fact]
     public void DeepLinkFocus_OpensThatRolesPicker()
     {
-        var cut = RenderPane();
-        cut.Find("[data-testid=tep-select-project]").Click();
-        cut.Find("[data-testid=tep-project-candidates] [data-testid=tep-use-as-project]").Click();
+        Configure(RenderPane());
 
         var focused = RenderPane(ProjectEvidenceRoles.Infrastructure);
         focused.Find($"#tep-picker-{ProjectEvidenceRoles.Infrastructure}").Should().NotBeNull();

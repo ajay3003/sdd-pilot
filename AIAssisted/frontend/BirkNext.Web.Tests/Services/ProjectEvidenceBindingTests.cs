@@ -465,7 +465,8 @@ public sealed class ProjectEvidenceBindingTests
 
         var readiness = await ReadinessAsync(workspace, view);
 
-        readiness.NextRecommendedAction!.Title.Should().Be("Bind Infrastructure");
+        readiness.NextRecommendedAction!.Title.Should().Be("Complete project evidence: bind Infrastructure");
+        readiness.NextRecommendedAction.Description.Should().Contain("required roles ready. Missing: Infrastructure");
         readiness.NextRecommendedAction.Description.Should().Contain("Terraform-iac.zip");
         readiness.NextRecommendedAction.Route.Should().Contain("focus=infrastructure");
     }
@@ -481,8 +482,8 @@ public sealed class ProjectEvidenceBindingTests
         var readiness = await ReadinessAsync(workspace, view);
 
         readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.ConfigureProjectKey);
-        readiness.NextRecommendedAction.Title.Should().Be("Configure project context");
-        readiness.NextRecommendedAction.Description.Should().Contain("does not yet know which logical system").And.Contain("Suggested: M2LB");
+        readiness.NextRecommendedAction.Title.Should().Be("Configure Project");
+        readiness.NextRecommendedAction.Description.Should().Contain("Select the logical system").And.Contain("confirm the evidence packages").And.Contain("Suggested: M2LB");
         readiness.NextRecommendedAction.Route.Should().Contain("tab=project").And.Contain("profile=dev");
     }
 

@@ -10,6 +10,7 @@
 
 <section class="axh" data-testid="artifact-explorer" data-role="@Role" data-status="@StatusKey"
          data-birknext-document-id="@DocumentIdentity">
+    <ProjectContextStrip RequiresEnvironment="false" />
     @if (_state is null)
     {
         <div class="axh-card axh-loading" role="status" aria-live="polite" data-testid="artifact-explorer-loading">

@@ -31,7 +31,7 @@ public enum ProjectEvidenceCardinality { Single, Multiple }
 
 /// <summary>Where an evidence role comes from.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ProjectEvidenceRoleOrigin { ProjectDefinition, TestPack, UserAdded }
+public enum ProjectEvidenceRoleOrigin { ProjectDefinition, TestPack, UserAdded, Expected }
 
 /// <summary>
 /// The logical project a Target Environment tests, and which already imported packages provide its evidence. Owned by the Target Environment;
@@ -48,6 +48,20 @@ public sealed class EnvironmentProject
     [JsonPropertyName("evidence")] public List<EnvironmentProjectEvidenceBinding> Evidence { get; set; } = [];
     /// <summary>Test Packs whose logical source roles the user activated for this project (by pack id). Roles of other packs are not required.</summary>
     [JsonPropertyName("testPacks")] public List<string> TestPacks { get; set; } = [];
+    /// <summary>Optional description of the logical project (a manually created project may have no package yet).</summary>
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    /// <summary>The project was created by name in Project setup, not from a detected application package.</summary>
+    [JsonPropertyName("manual")] public bool Manual { get; set; }
+    /// <summary>Suggested evidence the user deselected (role + import): later detection never reselects it silently.</summary>
+    [JsonPropertyName("declined")] public List<ProjectEvidenceDecline> Declined { get; set; } = [];
+}
+
+/// <summary>An explicit "not this package for this role" decision from the Project evidence checklist.</summary>
+public sealed class ProjectEvidenceDecline
+{
+    [JsonPropertyName("roleKey")] public string RoleKey { get; set; } = "";
+    [JsonPropertyName("importId")] public string ImportId { get; set; } = "";
+    [JsonPropertyName("at")] public DateTimeOffset At { get; set; }
 }
 
 /// <summary>One evidence role of the project and the imported sources bound to it (references only, never content).</summary>

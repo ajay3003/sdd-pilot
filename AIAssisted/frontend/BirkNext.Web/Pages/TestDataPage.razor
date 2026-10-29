@@ -13,6 +13,7 @@
    Order: what exists → what needs review → who needs Test Data → candidates → sources and configuration. *@
 <div class="td-page" data-testid="td-page" aria-busy="@(_loading ? "true" : "false")">
     <PageHeader Title="Test Data" Description="Reusable approved test data assets, owned centrally and referenced by every consumer." />
+    <ProjectContextStrip />
     <p class="td-lead" data-testid="td-lead">Test Data owns reusable assets — values, payloads, files, entity references and expected results — with type, status, scope and provenance. Consumers reference assets; they never copy values.</p>
     <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs. BirkNext never generates identities or business data.</p>
 

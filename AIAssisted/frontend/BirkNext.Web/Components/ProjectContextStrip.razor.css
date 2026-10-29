@@ -1,0 +1,5 @@
+/* Shared Project / Environment context strip. */
+.pcs { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; align-items: baseline; font-size: .85rem; margin: 0 0 .75rem; padding: .35rem .6rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: .375rem; background: var(--clr-surface-subtle, #f6f8fa); }
+.pcs-item { display: inline-flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.pcs-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted, #57606a); }
+.pcs-state { color: var(--clr-text-muted, #57606a); }

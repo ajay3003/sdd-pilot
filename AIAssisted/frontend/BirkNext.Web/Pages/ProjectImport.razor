@@ -29,6 +29,7 @@
             <button type="button" class="btn-secondary" data-testid="pi-back" @onclick="BackToImportProject">Back to Import Project</button>
         }
     </PageHeader>
+    <BirkNext.Web.Components.ProjectContextStrip RequiresEnvironment="false" />
 
     @if (_phase == Phase.Choose)
     {

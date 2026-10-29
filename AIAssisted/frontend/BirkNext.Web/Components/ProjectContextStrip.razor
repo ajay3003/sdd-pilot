@@ -1,0 +1,74 @@
+@using BirkNext.Web.Services.ProjectEvidence
+@implements IDisposable
+@inject IServiceProvider Services
+
+@* The one compact context strip pages share: which logical Project (Target Environment → Project) and which active Target Environment the page
+   works with. A documentation-only page says the environment is not required instead of implying a runtime dependency. Read only. *@
+@if (Visible)
+{
+    <nav class="pcs" aria-label="Project context" data-testid="project-context">
+        <span class="pcs-item">
+            <span class="pcs-label">Project</span>
+            @if (_view?.IsConfigured == true)
+            {
+                <a href="@ProjectEvidenceResolver.ProjectTabHref(_view.EnvironmentId)" data-testid="project-context-project" aria-label="@($"Project {_view.ProjectName}: open Project setup")">@_view.ProjectName</a>
+                <span class="pcs-state" data-testid="project-context-evidence">@(_view.RequiredReadyAll ? "Evidence ready" : $"Evidence {_view.RequiredReady} / {_view.RequiredTotal} ready")</span>
+            }
+            else if (_view?.EnvironmentId is { Length: > 0 } env)
+            {
+                <a href="@ProjectEvidenceResolver.ProjectTabHref(env)" data-testid="project-context-project">Not configured · Configure Project</a>
+            }
+            else { <span data-testid="project-context-project">Not configured</span> }
+        </span>
+        <span class="pcs-item">
+            <span class="pcs-label">Environment</span>
+            @if (_environmentName is { } name)
+            {
+                <a href="@NavigationCatalog.TargetEnvironmentsRoute" data-testid="project-context-environment" aria-label="@($"{(EnvironmentId is null ? "Active" : "Selected")} Target Environment {name}: open Target Environments")">@name</a>
+            }
+            else
+            {
+                <span data-testid="project-context-environment">@(RequiresEnvironment ? "None active" : "Not required for this review")</span>
+            }
+        </span>
+    </nav>
+}
+
+@code {
+    /// <summary>False for documentation-only reviews: without an active environment the strip says it is not required.</summary>
+    [Parameter] public bool RequiresEnvironment { get; set; } = true;
+    /// <summary>The selected Target Environment (Target Environment panes); default: the active one.</summary>
+    [Parameter] public string? EnvironmentId { get; set; }
+
+    private ProjectEvidenceView? _view;
+    private string? _environmentName;
+    private IProjectEvidenceService? Evidence => Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
+    private IFrontendAnalysisSettingsService? Settings => Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService;
+    private bool Visible => Evidence is not null;
+
+    protected override void OnInitialized()
+    {
+        if (Evidence is { } evidence) evidence.Changed += OnChanged;
+        if (Settings is { } settings) settings.Changed += OnChanged;
+        Load();
+    }
+
+    private void Load()
+    {
+        try
+        {
+            _view = Evidence?.Peek(EnvironmentId);
+            var profile = EnvironmentId is { Length: > 0 } id ? Settings?.Settings.Profiles.FirstOrDefault(p => p.Id == id) : Settings?.ActiveProfile;
+            _environmentName = profile?.Name is { Length: > 0 } n ? n : null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException) { _view = null; }
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() => { Load(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        if (Evidence is { } evidence) evidence.Changed -= OnChanged;
+        if (Settings is { } settings) settings.Changed -= OnChanged;
+    }
+}

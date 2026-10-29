@@ -167,6 +167,8 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     public const string EstablishSourceBindingKey = "EstablishSourceBinding";
     public const string BindProjectEvidenceKey = "BindProjectEvidence";
     public const string ConfigureProjectKey = "ConfigureProject";
+    public const string ChooseTargetEnvironmentKey = "ChooseTargetEnvironment";
+    public const string ChooseTargetEnvironmentDetail = "Environment context determines which Project, configuration and runtime evidence reviews use. Choosing one needs no runtime or authentication settings; document reviews stay available.";
     public const string ImportProjectDocumentsKey = "ImportProjectDocuments";
     public const string ImplementationEvidenceRoute = "implementation-review";
     public const string ChangeTraceabilityRoute = "implementation-traceability";
@@ -421,6 +423,15 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles, SourceBindingState binding,
         ProjectEvidence.ProjectEvidenceView? evidence = null)
     {
+        // An environment without a Project, with imported evidence: configure the Project first — it decides which packages' documents and
+        // source the reviews read (binding documents before that would bind them to no project).
+        if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } projectEnvironment } && workspace.Evidence is not null && evidence.Packages.Any(p => p.Capabilities.Count > 0)
+            && artifactLoad == ArtifactLoadState.Required)
+            return Synthetic(ConfigureProjectKey, "Configure Project",
+                "Select the logical system this environment represents and confirm the evidence packages that belong to it. A project unlocks document reviews, source-scoped reviews, integration discovery, contract selection and generated-documentation context."
+                + (evidence.SuggestedProject is { } first ? $" Suggested: {first.DisplayName}." : ""),
+                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(projectEnvironment), "Configure Project");
+
         if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
         {
             // Never "load project artifacts" when BirkNext already holds them: bind what is imported, import only what nobody has.
@@ -436,6 +447,20 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             }
             else return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
         }
+
+        // Imported evidence but no Target Environment to hold its Project: choose (or create) one first — no runtime settings needed.
+        if (evidence is null or { EnvironmentId: null or "" } && inputs.Target.Status == ProjectInputStatus.Absent && workspace.Evidence is not null)
+            return Synthetic(ChooseTargetEnvironmentKey, "Choose Target Environment", ChooseTargetEnvironmentDetail, NavigationCatalog.TargetEnvironmentsRoute, "Open Target Environments");
+
+        // Imported evidence but no logical project for the active Target Environment: configuring it is the next step (never forced at import).
+        if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } environmentId } && evidence.Packages.Any(p => p.Capabilities.Count > 0))
+            return Synthetic(ConfigureProjectKey, "Configure Project",
+                "Select the logical system this environment represents and confirm the evidence packages that belong to it. A project unlocks document reviews, source-scoped reviews, integration discovery, contract selection and generated-documentation context."
+                + (evidence.SuggestedProject is { } suggested ? $" Suggested: {suggested.DisplayName}." : evidence.ProjectCandidates.Count > 1 ? $" {evidence.ProjectCandidates.Count} application candidates need a choice." : ""),
+                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Configure Project");
+
+        // Required project evidence (Target Environment → Project, activated Test Pack roles) that is not bound: bind or import exactly that role.
+        if (evidence is { IsConfigured: true } && MissingEvidenceAction(evidence) is { } missingEvidence) return missingEvidence;
 
         // A monorepo without a chosen module: reviews read one module's documents, so the user picks where to start. Navigation, not an
         // ambiguity — "needs selection" is kept for several candidates in the same pack.
@@ -461,15 +486,6 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 ExplorerRoute(unresolved.Role), $"Open {unresolved.Label} Explorer");
         }
 
-        // Imported evidence but no logical project for the active Target Environment: configuring it is the next step (never forced at import).
-        if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } environmentId } && evidence.Packages.Any(p => p.Capabilities.Count > 0))
-            return Synthetic(ConfigureProjectKey, "Configure project context",
-                "Imported evidence exists, but BirkNext does not yet know which logical system this environment represents. A project unlocks document reviews, source-scoped reviews, integration discovery, contract selection and generated-documentation context."
-                + (evidence.SuggestedProject is { } suggested ? $" Suggested: {suggested.DisplayName} ({suggested.Classification})." : evidence.ProjectCandidates.Count > 1 ? $" {evidence.ProjectCandidates.Count} application candidates need a choice." : ""),
-                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Configure Project");
-
-        // Required project evidence (Target Environment → Project, activated Test Pack roles) that is not bound: bind or import exactly that role.
-        if (evidence is { IsConfigured: true } && MissingEvidenceAction(evidence) is { } missingEvidence) return missingEvidence;
 
         if (inputs.Source.Status == ProjectInputStatus.NeedsAttention)
             return Synthetic(RefreshSourceKey, "Analyze the source again", inputs.Source.Detail, ProjectInputPresentation.SourceAnalysisRoute, "Open Source Analysis");
@@ -528,9 +544,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 ProjectEvidence.EvidenceRoleState.Unavailable => "The bound package is not imported in this workspace.",
                 _ => "No imported package provides it yet: import it, then bind it.",
             };
-            return Synthetic(BindProjectEvidenceKey, $"{verb} {row.Role.Label}",
-                $"{row.Role.Label} is required by {row.Role.RequiredBy} for {evidence.ProjectName} and is {row.StatusLabel.ToLowerInvariant()}. {why}",
-                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(evidence.EnvironmentId, row.Role.RoleKey), $"{verb} {row.Role.Label}");
+            return Synthetic(BindProjectEvidenceKey, $"Complete project evidence: {verb.ToLowerInvariant()} {row.Role.Label}",
+                $"{evidence.RequiredReady} of {evidence.RequiredTotal} required roles ready. Missing: {string.Join(", ", evidence.BlockingLabels)}. "
+                + $"{row.Role.Label} is required by {row.Role.RequiredBy} for {evidence.ProjectName} and is {row.StatusLabel.ToLowerInvariant()}. {why}",
+                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(evidence.EnvironmentId, row.Role.RoleKey), "Review Project evidence");
         }
         if (evidence.TestPackRows.FirstOrDefault(r => r.Blocks) is { } pack)
         {

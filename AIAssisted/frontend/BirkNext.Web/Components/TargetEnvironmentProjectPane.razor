@@ -37,75 +37,16 @@
             }
         </dl>
 
-        @if (!_view.IsConfigured && !_choosing)
+        @if (!_view.IsConfigured && _view.Packages.Count == 0)
         {
-            <div class="tep-empty" data-testid="tep-empty">
-                <h4 class="tep-subtitle">Project not configured</h4>
-                <p>Choose which application/system this Target Environment represents. Explorers, Recommended Workflow and source reviews then read this project's bound evidence instead of whichever package was imported last.</p>
-                @if (_view.Packages.Count == 0)
-                {
-                    <p class="tep-muted" data-testid="tep-no-imports">No project packages are imported in this workspace yet.</p>
-                    <a class="btn btn-primary btn-sm" href="@ProjectImportPresentation.ImportSourceHref">Import Project</a>
-                }
-                else if (_view.SuggestedProject is { } suggested)
-                {
-                    <div class="tep-suggested" data-testid="tep-suggested-project">
-                        <p><span class="tep-muted">Suggested project</span> <strong>@suggested.DisplayName</strong> <span class="tep-classification">@suggested.Classification</span></p>
-                        <p class="tep-why">Reason: @suggested.ClassificationReason@(suggested.Has(ProjectEvidenceCapability.Documentation) ? " Project documents available." : "") Not saved until you choose it.</p>
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="tep-use-suggested" @onclick="() => SelectProjectAsync(suggested)">Use @suggested.DisplayName</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-select-project" @onclick="() => _choosing = true">Choose another</button>
-                    </div>
-                }
-                else
-                {
-                    @if (_view.ProjectCandidates.Count > 1)
-                    {
-                        <p data-testid="tep-needs-selection"><strong>Project needs selection.</strong> Candidates: @string.Join(", ", _view.ProjectCandidates.Select(p => p.DisplayName)). The newest import is never chosen automatically.</p>
-                    }
-                    <button type="button" class="btn btn-primary btn-sm" data-testid="tep-select-project" @onclick="() => _choosing = true">Select project</button>
-                }
-            </div>
+            <p class="tep-muted" data-testid="tep-no-imports">No project packages are imported in this workspace yet. You can still name the project now and add its evidence later. <a href="@ProjectImportPresentation.ImportSourceHref">Import Project</a></p>
         }
-
-        @if (_choosing)
+        @if (!_view.IsConfigured || _setup)
         {
-            <section class="tep-dialog" data-testid="tep-project-dialog" aria-labelledby="tep-dialog-title">
-                <h4 id="tep-dialog-title" class="tep-subtitle">@(_view.IsConfigured ? "Change project" : "Select project")</h4>
-                @if (_view.IsConfigured)
-                {
-                    <p class="tep-muted" data-testid="tep-change-impact-note">Changing the project keeps every import, Source Analysis snapshot and document history. Bindings you made stay when their package still provides the role; the previous project's own evidence is unbound.</p>
-                }
-                @{ var candidates = _view.Packages.Where(p => p.IsApplicationCandidate).ToList(); var supporting = _view.Packages.Where(p => !p.IsApplicationCandidate).ToList(); }
-                <h5 class="tep-group-title">Recommended application/project candidates</h5>
-                @if (candidates.Count == 0)
-                {
-                    <p class="tep-muted" data-testid="tep-no-candidates">No imported package holds application source. Import the application, or choose a supporting package below.</p>
-                }
-                <ul class="tep-candidates" data-testid="tep-project-candidates">
-                    @foreach (var package in candidates) { @PackageItem(package, true) }
-                </ul>
-                @if (supporting.Count > 0)
-                {
-                    <p class="tep-muted">The groups below contribute evidence to a project without becoming the project.</p>
-                    <div data-testid="tep-supporting-candidates">
-                        @foreach (var (title, group) in SupportingGroups(supporting))
-                        {
-                            <h5 class="tep-group-title" data-testid="tep-candidate-group">@title</h5>
-                            <ul class="tep-candidates">@foreach (var package in group) { @PackageItem(package, false) }</ul>
-                        }
-                    </div>
-                }
-                @if (_pendingChange is { } pending)
-                {
-                    <section class="tep-change-preview" role="alertdialog" aria-modal="false" aria-labelledby="tep-change-h" data-testid="tep-change-preview">
-                        <h5 id="tep-change-h" tabindex="-1">Change project to @pending.DisplayName?</h5>
-                        <ul class="tep-impact" data-testid="tep-change-impact">@foreach (var line in _pendingImpact) { <li>@line</li> }</ul>
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="tep-change-confirm" @onclick="() => ApplyChangeAsync(pending)">Change project</button>
-                        <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-change-cancel" @onclick="() => { _pendingChange = null; _pendingImpact = []; }">Keep current project</button>
-                    </section>
-                }
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-dialog-cancel" @onclick="() => { _choosing = false; _pendingChange = null; }">Cancel</button>
-            </section>
+            @* Project setup: the logical project, then its evidence checklist. Saves into the same bindings the advanced table below shows. *@
+            <ProjectSetupPanel @key="@($"{EnvironmentId}|{_view.ProjectName}|{_setupPick}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
+                               Packages="_view.Packages" Current="_view.Project" KnownProjects="Evidence!.KnownProjectNames()" Evidence="Evidence!" StartPicking="_setupPick"
+                               OnSaved="SetupSavedAsync" OnCancel="@(_view.IsConfigured ? EventCallback.Factory.Create(this, () => _setup = false) : default)" />
         }
 
         @if (_view.IsConfigured)
@@ -115,7 +56,8 @@
                 <p class="tep-banner" role="status" data-testid="tep-main-unavailable">The main package of @_view.ProjectName is not imported in this workspace. Consumers fall back to the current project until it is imported again or the project is changed.</p>
             }
             <div class="tep-project-actions">
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-change-project" @onclick="() => _choosing = true">Change project</button>
+                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-edit-evidence" @onclick="() => OpenSetup(pick: false)">Edit project evidence</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-change-project" @onclick="() => OpenSetup(pick: true)">Change project</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove project binding</button>
             </div>
             @if (_impact.Count > 0)
@@ -146,7 +88,8 @@
                 </section>
             }
 
-            <h4 class="tep-subtitle">Project evidence</h4>
+            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Advanced evidence bindings</h4>
+            <p class="tep-muted">Per-role readiness, provenance and Change / add for troubleshooting. The checklist above and this table use the same bindings.</p>
             <div class="tep-table-wrap">
             <table class="tep-table" data-testid="tep-roles">
                 <thead><tr><th scope="col">Role / capability</th><th scope="col">Requirement</th><th scope="col">Selected source</th><th scope="col">Capabilities</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
@@ -272,7 +215,8 @@
     [Parameter] public string? Focus { get; set; }
 
     private ProjectEvidenceView? _view;
-    private bool _choosing;
+    private bool _setup, _setupPick;
+    private int _setupVersion;
     private string? _openRole;
     private string? _error, _notice;
     private string? _appliedFocus;
@@ -332,47 +276,16 @@
         await ReloadAsync();
     }
 
-    private ProjectEvidencePackage? _pendingChange;
-    private IReadOnlyList<string> _pendingImpact = [];
-
-    /// <summary>Selecting a project when none is configured applies it; changing an existing project first shows the impact (explicit confirm).</summary>
-    private async Task SelectProjectAsync(ProjectEvidencePackage package)
-    {
-        _error = null;
-        if (Evidence is null) return;
-        if (_view is { IsConfigured: true, Project: { } current })
-        {
-            _pendingChange = package;
-            _pendingImpact = ProjectEvidenceResolver.PreviewChange(current, package, _view.Packages, DateTimeOffset.UtcNow);
-            _focusTarget = "tep-change-h";
-            return;
-        }
-        try
-        {
-            _impact = [];
-            await Evidence.SelectProjectAsync(EnvironmentId, package.ImportId);
-            _notice = $"Project set to {package.DisplayName}.";
-        }
-        catch (Exception ex) { _error = $"The project could not be saved: {ex.Message}"; }
-        _choosing = false;
-        await ReloadAsync();
-    }
-
-    private async Task ApplyChangeAsync(ProjectEvidencePackage package)
-    {
-        _error = null;
-        if (Evidence is null) return;
-        try
-        {
-            _impact = await Evidence.ChangeProjectAsync(EnvironmentId, package.ImportId);
-            _notice = $"Project changed to {package.DisplayName}. Imports and snapshots are unchanged.";
-        }
-        catch (Exception ex) { _error = $"The project could not be saved: {ex.Message}"; }
-        _choosing = false; _pendingChange = null; _pendingImpact = [];
-        await ReloadAsync();
-    }
-
     private string? _focusTarget;
+
+    private void OpenSetup(bool pick) { _setup = true; _setupPick = pick; _setupVersion++; _impact = []; }
+
+    private async Task SetupSavedAsync(string name)
+    {
+        _setup = false; _setupPick = false;
+        _notice = $"Project {name} saved. Imports, Source Analysis snapshots and documents are unchanged.";
+        await ReloadAsync();
+    }
 
     private string? FirstProblemRole() => _view?.Rows.FirstOrDefault(r => r.State == EvidenceRoleState.Conflict)?.Role.RoleKey
         ?? _view?.Rows.FirstOrDefault(r => r.Blocks)?.Role.RoleKey
@@ -388,25 +301,6 @@
         ProjectEvidenceCapability.SupportingSource => "Shared",
         _ => ProjectEvidencePackages.CapabilityLabel(capability),
     };
-
-    /// <summary>Non-application packages grouped by what they are: never presented as equal project candidates.</summary>
-    private static IEnumerable<(string Title, List<ProjectEvidencePackage> Packages)> SupportingGroups(IReadOnlyList<ProjectEvidencePackage> packages)
-    {
-        var groups = new (string Title, Func<ProjectEvidencePackage, bool> Match)[]
-        {
-            ("Supporting evidence sources", p => p.Has(ProjectEvidenceCapability.SupportingSource) || p.Classification == "Contract/schema source" || p.Classification == "Generated documentation"),
-            ("Documentation-only sources", p => p.Classification == "Documentation source"),
-            ("Infrastructure sources", p => p.Classification == "Infrastructure source"),
-        };
-        var placed = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (title, match) in groups)
-        {
-            var members = packages.Where(p => !placed.Contains(p.ImportId) && match(p)).ToList();
-            placed.UnionWith(members.Select(p => p.ImportId));
-            if (members.Count > 0) yield return (title, members);
-        }
-        if (packages.Where(p => !placed.Contains(p.ImportId)).ToList() is { Count: > 0 } rest) yield return ("Unknown", rest);
-    }
 
     private RenderFragment BoundSource(EvidenceRoleRow row, ProjectEvidencePackage bound) => __builder =>
     {
@@ -448,34 +342,6 @@
         await RunAsync(() => Evidence!.ClearProjectAsync(EnvironmentId), "Project binding removed. Imports, snapshots and documents are unchanged.");
         _impact = [];
     }
-
-    private RenderFragment PackageItem(ProjectEvidencePackage package, bool candidate) => __builder =>
-    {
-        <li class="tep-candidate" data-testid="tep-package" data-import="@package.ImportId" data-classification="@package.Classification">
-            <div class="tep-candidate-main">
-                <strong>@package.DisplayName</strong> <span class="tep-muted">@package.ArchiveFileName · imported @package.ImportedAt.ToLocalTime().ToString("d MMM yyyy")</span>
-                <span class="tep-classification" data-testid="tep-package-classification">@package.Classification</span>
-                <p class="tep-why" data-testid="tep-package-reason">@package.ClassificationReason</p>
-                @CapabilityBadges(package)
-            </div>
-            <button type="button" class="btn btn-sm @(candidate ? "btn-primary" : "btn-secondary")" data-testid="tep-use-as-project"
-                    aria-label="@($"Use {package.DisplayName} as the project")" @onclick="() => SelectProjectAsync(package)">@(candidate ? "Use as project" : "Use anyway")</button>
-        </li>
-    };
-
-    private RenderFragment CapabilityBadges(ProjectEvidencePackage package) => __builder =>
-    {
-        <ul class="tep-badges" aria-label="Capabilities">
-            @foreach (var capability in package.Capabilities)
-            {
-                <li class="tep-badge" data-testid="tep-capability" data-capability="@capability.Capability" data-status="@capability.Status">@ProjectEvidencePackages.CapabilityLabel(capability.Capability) · @capability.Fact@(capability.Status == PackageCapabilityStatus.Ready ? "" : $" · {capability.Status}")</li>
-            }
-            @foreach (var lacking in package.NotProvided)
-            {
-                <li class="tep-badge tep-badge-neutral" data-testid="tep-not-provided">@lacking</li>
-            }
-        </ul>
-    };
 
     /// <summary>The compatible-source picker: compatible packages only, each with what it provides and why it matches. Incompatible packages are
     /// counted, never offered (an infrastructure-only package never satisfies an application or documentation role).</summary>
@@ -527,7 +393,7 @@
             {
                 <p class="tep-muted" data-testid="tep-picker-incompatible">@incompatible other imported package@(incompatible == 1 ? " does" : "s do") not provide this capability and @(incompatible == 1 ? "is" : "are") not offered.</p>
             }
-            @if (row.Role.Origin == ProjectEvidenceRoleOrigin.UserAdded)
+            @if (row.Role.Origin is ProjectEvidenceRoleOrigin.UserAdded or ProjectEvidenceRoleOrigin.Expected)
             {
                 <button type="button" class="btn btn-link btn-sm" data-testid="tep-remove-role" @onclick="() => RemoveRoleAsync(row)">Remove this role</button>
             }

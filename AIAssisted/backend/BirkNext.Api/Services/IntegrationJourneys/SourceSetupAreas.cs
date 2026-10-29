@@ -26,7 +26,9 @@ public static class SourceSetupAreas
                 // No production project at all is "not detected" (e.g. an infrastructure-only repository); production projects that could not be
                 // read are a failed analysis.
                 _ => snapshot.Projects.Any(project => !project.IsTest) ? "Failed" : "NotDetected",
-            }),
+            } is var code && code != "NotDetected" && snapshot.Projects.Where(project => !project.IsTest).All(IsDocumentationSample)
+                // Only sample/template projects inside a documentation tree (an infrastructure repository's docs/templates/…/sample): no application code.
+                ? "NotDetected" : code),
             new(Architecture, snapshot.Architecture?.Status switch
             {
                 null => "NotAnalyzed",
@@ -43,8 +45,20 @@ public static class SourceSetupAreas
 
     /// <summary>Production projects the analyzer classified from their project file as a web/service host (Web SDK) or an Event Hub
     /// application — the deterministic "application, not only a library" evidence used for package classification.</summary>
-    public static int ServiceProjects(IqrSourceSnapshot snapshot) => snapshot.Projects.Count(project => !project.IsTest
+    public static int ServiceProjects(IqrSourceSnapshot snapshot) => snapshot.Projects.Count(project => !project.IsTest && !IsDocumentationSample(project)
         && (project.Classification.StartsWith("Application/service", StringComparison.Ordinal) || project.Classification.StartsWith("Event Hub SDK", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// A project inside a documentation tree (a folder named docs, doc or documentation): a template or sample that documentation ships, never a
+    /// production application of the package. Structural only — package classification (application candidate vs evidence) reads it; the
+    /// Source Analysis analyzers are unchanged.
+    /// </summary>
+    public static bool IsDocumentationSample(SourceProject project)
+    {
+        var folders = project.Path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return folders[..^1].Any(f => f.Equals("docs", StringComparison.OrdinalIgnoreCase) || f.Equals("doc", StringComparison.OrdinalIgnoreCase)
+            || f.Equals("documentation", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static string Domain(SourceDomainResult? result) => result?.Status switch
     {

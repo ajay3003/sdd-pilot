@@ -228,7 +228,9 @@ public static class ProjectEvidenceResolver
             if (Find(packages, source.ImportId, source.ArchiveSha256) is { } package) bound.Add(package);
             else unavailable.Add(source);
         }
-        var candidates = packages.Where(p => ProjectEvidencePackages.Satisfies(p, role.Capability))
+        // Expected evidence ("SkoleAdapter source") is a named requirement: only a package that names it is a candidate — never any compatible one.
+        var candidates = packages.Where(p => ProjectEvidencePackages.Satisfies(p, role.Capability)
+                && (role.Origin != ProjectEvidenceRoleOrigin.Expected || ProjectSetupPlanner.NamesExpected(p, role.Label)))
             .Select(p => new EvidenceCandidate(p, ProjectEvidencePackages.WhyMatches(p, role.Capability), bound.Any(b => b.ImportId == p.ImportId)))
             // Compatible, bound first; then by name — never by import date (newest is not a reason).
             .OrderByDescending(c => c.Bound).ThenBy(c => c.Package.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Package.ImportId, StringComparer.Ordinal)
@@ -291,13 +293,13 @@ public static class ProjectEvidenceResolver
     };
 
     /// <summary>Binds a package to a role: a Single role is replaced, a Multiple role aggregates. Only a compatible package can be bound.</summary>
-    public static bool Bind(EnvironmentProject project, string roleKey, ProjectEvidencePackage package, DateTimeOffset now)
+    public static bool Bind(EnvironmentProject project, string roleKey, ProjectEvidencePackage package, DateTimeOffset now, string boundBy = "User")
     {
         var role = project.Evidence.FirstOrDefault(r => r.RoleKey == roleKey);
         if (role is null || !ProjectEvidencePackages.Satisfies(package, role.Capability)) return false;
         if (role.Cardinality == ProjectEvidenceCardinality.Single) role.Sources.Clear();
         else role.Sources.RemoveAll(s => s.ImportId == package.ImportId);
-        role.Sources.Add(Reference(package, role.Capability, now));
+        role.Sources.Add(Reference(package, role.Capability, now, boundBy));
         return true;
     }
 

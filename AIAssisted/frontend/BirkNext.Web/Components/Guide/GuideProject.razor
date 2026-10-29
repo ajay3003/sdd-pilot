@@ -31,8 +31,10 @@
         </tbody>
     </table></div>
     <ul class="ug-list">
-        <li><strong>Select the project:</strong> when exactly one application candidate exists, BirkNext suggests it — nothing is saved until you confirm.</li>
-        <li><strong>Change or add:</strong> the picker groups packages (Supporting, Documentation-only, Infrastructure, Unknown) and shows a preview of the impact before you confirm. Rows show where a binding came from (<em>Bound from Project setup</em> or <em>Bound manually</em>).</li>
+        <li><strong>1 · Choose the project:</strong> a searchable list of logical systems — detected applications, documentation projects and project names already used by a Target Environment. Infrastructure, contract, shared-library and generated-docs packages are evidence, never a project. <em>+ Create project manually</em> names a project before any evidence exists.</li>
+        <li><strong>2 · Confirm its evidence:</strong> a checklist per role. <em>Strong match</em> (the project's own package, an existing binding, an import recorded under the project's name) is selected by default; <em>Possible match</em> (name similarity only) never is. Each suggestion says why. Deselect anything; a deselection is remembered and never silently undone. <em>+ Add imported package</em> adds another compatible import.</li>
+        <li><strong>3 · Expected evidence:</strong> <em>+ Add expected evidence</em> (for example “SkoleAdapter source”) records a required role that stays Missing until a matching package is imported and bound — no package is created.</li>
+        <li><strong>4 · Save Project:</strong> one save stores the project, its bindings and expected evidence. The <em>Advanced evidence bindings</em> table below uses the same bindings for per-role readiness, provenance (<em>Bound from Project setup</em>, <em>Bound manually</em>) and Change / add. Switching to another project asks first.</li>
         <li><strong>Test Pack evidence:</strong> an activated Test Pack can add required roles; they appear with the pack that needs them.</li>
         <li><strong>Remove safely:</strong> removing or changing a binding never deletes an imported package or a Source Analysis snapshot, and BirkNext never silently selects the latest import.</li>
     </ul>

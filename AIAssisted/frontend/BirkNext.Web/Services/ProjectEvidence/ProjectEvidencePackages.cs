@@ -100,8 +100,10 @@ public static class ProjectEvidencePackages
         if (snapshotId is not null)
         {
             var code = Area("Application code");
-            // Older backends report no areas: the recorded import state is the only evidence, and a snapshot means application source.
-            var hasCode = snapshot is null ? record.SourceState is "Created" or "Reused" : areas.Count == 0 ? snapshot.Status is not "Failed" : Present(code);
+            // Older backends report no areas: the recorded import state is the only evidence, and a snapshot means application source —
+            // unless the snapshot reports only infrastructure (a Terraform package is never an application by default).
+            var hasCode = snapshot is null ? record.SourceState is "Created" or "Reused"
+                : areas.Count == 0 ? snapshot.Status is not "Failed" && snapshot.InfrastructureFormats.Count == 0 : Present(code);
             if (hasCode)
             {
                 var library = snapshot is { ServiceProjectCount: 0, SharedProjectCount: > 0 };

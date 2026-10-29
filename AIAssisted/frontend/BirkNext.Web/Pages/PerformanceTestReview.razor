@@ -22,6 +22,7 @@
    a metric without a threshold is measured, not passed; a missing provider is a tool limitation, never a performance failure. The backend owns
    every safety rule (production refused, relative paths only, read-only methods, query-only GraphQL, load limits). *@
 <div class="sd-workspace pt-page ptc" data-testid="pt-page" aria-busy="@(_loaded ? "false" : "true")">
+    <BirkNext.Web.Components.ProjectContextStrip />
     <header class="ptc-header">
         <div class="ptc-header-text">
             <h1 class="pt-title">Performance Test Review</h1>

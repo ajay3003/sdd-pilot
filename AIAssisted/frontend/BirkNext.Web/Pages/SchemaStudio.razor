@@ -18,6 +18,7 @@
    disclosures, Export/More menu, sub-navigation); plain language first, exact XSD terms as secondary detail. *@
 <div class="ss-page" data-testid="ss-page">
     <PageHeader Title="Schema Studio" Description="Explore, compare and test XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
+    <ProjectContextStrip RequiresEnvironment="false" />
     @if (_handoffRequested && _handoffFailed is { } failed)
     {
         <div class="ss-error" role="alert" data-testid="ss-handoff-not-found"><strong>Requested contract not found in this snapshot.</strong> @failed No other schema was opened.

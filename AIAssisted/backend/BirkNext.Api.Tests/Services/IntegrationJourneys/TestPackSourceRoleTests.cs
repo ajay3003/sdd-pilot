@@ -509,6 +509,23 @@ public sealed class TestPackSourceRoleTests
     }
 
     [Fact]
+    public void A_sample_project_inside_a_documentation_tree_is_not_application_code()
+    {
+        // The real Terraform-iac-m2lb.zip ships docs/templates/new-api/sample/template-api.csproj next to 129 Terraform files.
+        var infrastructure = new IqrSourceSnapshot
+        {
+            Status = SourceAnalysisStatus.Partial,
+            Projects = [new SourceProject("template-api", "docs/templates/new-api/sample/template-api.csproj", false, "Application/service project", SourceConfidence.StrongSourceEvidence)],
+        };
+        SourceSetupAreas.ServiceProjects(infrastructure).Should().Be(0);
+        SourceSetupAreas.Of(infrastructure).Single(a => a.Area == SourceSetupAreas.ApplicationCode).Status.Should().Be("NotDetected");
+
+        var application = infrastructure with { Projects = [.. infrastructure.Projects, new SourceProject("Orders.Api", "src/Orders.Api/Orders.Api.csproj", false, "Application/service project", SourceConfidence.StrongSourceEvidence)] };
+        SourceSetupAreas.ServiceProjects(application).Should().Be(1, "real application projects still count");
+        SourceSetupAreas.Of(application).Single(a => a.Area == SourceSetupAreas.ApplicationCode).Status.Should().Be("Partial");
+    }
+
+    [Fact]
     public async Task SourceSetup_ForAFailedCodeAnalysis_KeepsAreasEnvironmentLabelsAndTheInfrastructureRole()
     {
         await using var harness = new IntegrationJourneyHarness();
