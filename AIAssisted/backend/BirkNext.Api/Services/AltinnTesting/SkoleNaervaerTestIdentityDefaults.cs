@@ -12,6 +12,14 @@ public static class SkoleNaervaerTestIdentityDefaults
     public const string ReporterLabel = "Skolenærvær default reporter", ChildLabel = "Skolenærvær default child";
     private const string ReporterIdentifier = "05859497324", ChildIdentifier = "04061076692";
 
+    /// <summary>The seeded identifier of a built-in default ("Restore default value"), or null for any other alias.</summary>
+    public static string? Seed(string role, string alias) => (role, alias) switch
+    {
+        (AltinnTestDataProvider.Reporter, ReporterAlias) => ReporterIdentifier,
+        (AltinnTestDataProvider.Child, ChildAlias) => ChildIdentifier,
+        _ => null,
+    };
+
     public static AltinnTestingOptions Apply(AltinnTestingOptions options)
     {
         if (!options.BuiltInSkolenaervaerIdentities) return options;

@@ -81,6 +81,11 @@ public sealed class SyntheticReporterOptions
     public bool Default { get; set; }
     /// <summary>A built-in default identity (not backend configuration and not a session entry).</summary>
     public bool BuiltIn { get; internal set; }
+    /// <summary>Increments whenever the identifier is edited or restored in Test Data (a safe change marker; never derived from the value).</summary>
+    public int ValueVersion { get; internal set; }
+    public DateTimeOffset? ValueUpdatedAt { get; internal set; }
+    /// <summary>A built-in default whose identifier was edited (differs from its seeded value).</summary>
+    public bool ValueModified { get; internal set; }
 }
 
 /// <summary>
@@ -102,6 +107,11 @@ public sealed class SyntheticChildOptions
     public DateTimeOffset? SessionExpiresAt { get; internal set; }
     /// <summary>A built-in default identity (not backend configuration and not a session entry).</summary>
     public bool BuiltIn { get; internal set; }
+    /// <summary>Increments whenever the identifier is edited or restored in Test Data (a safe change marker; never derived from the value).</summary>
+    public int ValueVersion { get; internal set; }
+    public DateTimeOffset? ValueUpdatedAt { get; internal set; }
+    /// <summary>A built-in default whose identifier was edited (differs from its seeded value).</summary>
+    public bool ValueModified { get; internal set; }
 }
 
 public sealed class AltinnAppPolicyConfirmation

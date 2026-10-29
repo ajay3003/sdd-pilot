@@ -1,0 +1,351 @@
+@using BirkNext.TestData
+@using BirkNext.Web.Services.SchemaStudio
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+@* Test Data asset lifecycle in one place: Edit (value only where Test Data owns it; id, type, role, scope and origin read-only), View usages,
+   Delete (simple confirmation when unused; usage-aware with Replace references… or Delete and mark references unresolved when used) and
+   Replace references (compatible approved assets only). Nothing deletes a consumer or re-points a reference without an explicit choice. *@
+<section class="tda" role="@(Destructive ? "alertdialog" : "dialog")" aria-modal="false" aria-labelledby="@_titleId" aria-describedby="@_descId" data-testid="tda" data-mode="@_mode">
+    <h3 id="@_titleId" class="tda-title" tabindex="-1">@Title</h3>
+    <p class="tda-asset"><span class="tda-alias" data-testid="tda-alias">@Asset.Alias</span>@if (Asset.Label is { Length: > 0 } label && label != Asset.Alias) { <span class="tda-muted"> · @label</span> }
+        @if (Asset.ProtectedDefault) { <span class="tda-badge" data-testid="tda-protected">Protected default</span> }</p>
+    <div id="@_descId">
+        @if (_loading)
+        {
+            <p class="tda-muted" role="status">Loading…</p>
+        }
+        else if (_mode == Mode.Edit)
+        {
+            @EditBody
+        }
+        else if (_mode == Mode.Usages)
+        {
+            @UsageList(Usages)
+            <div class="tda-actions"><button type="button" class="btn-secondary" data-testid="tda-close" @onclick="CloseAsync">Close</button></div>
+        }
+        else if (_mode == Mode.Delete)
+        {
+            @DeleteBody
+        }
+        else if (_mode == Mode.Replace)
+        {
+            @ReplaceBody
+        }
+    </div>
+    @if (_error is not null) { <p class="tda-error" role="alert" data-testid="tda-error">@_error</p> }
+</section>
+
+@code {
+    public enum Mode { Edit, Usages, Delete, Replace }
+
+    [Parameter, EditorRequired] public TestDataAssetSummary Asset { get; set; } = default!;
+    [Parameter] public Mode Initial { get; set; } = Mode.Edit;
+    /// <summary>The whole catalog (replacement candidates are filtered by the backend; regeneration impact is read from it after a change).</summary>
+    [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
+    /// <summary>Called when the dialog closes; the message (or null when cancelled) is announced by the page, which then reloads.</summary>
+    [Parameter] public EventCallback<string?> OnClose { get; set; }
+
+    private readonly string _titleId = $"tda-{Guid.NewGuid():N}", _descId = $"tda-d-{Guid.NewGuid():N}";
+    private Mode _mode;
+    private bool _loading = true, _busy, _confirmImpact, _confirmRestore;
+    private string? _error, _label, _value, _replacement;
+    private TestDataEditView? _edit;
+    private List<TestDataAssetUsage> _backendUsages = [];
+    private IReadOnlyList<TestDataAssetSummary> _replacements = [];
+    private ITestDataApiService? Api => TestDataApiService.Resolve(Services);
+    private IWorkspaceArtifactRepository? Repository => Services.GetService(typeof(IWorkspaceArtifactRepository)) as IWorkspaceArtifactRepository;
+
+    private bool Destructive => _mode is Mode.Delete or Mode.Replace;
+    private string Title => _mode switch
+    {
+        Mode.Edit => "Edit Test Data asset",
+        Mode.Usages => "Where this asset is used",
+        Mode.Delete => "Delete Test Data asset?",
+        _ => "Replace references",
+    };
+
+    /// <summary>Backend references plus the workspace's XML field mappings.</summary>
+    private IReadOnlyList<TestDataAssetUsage> Usages =>
+        [.. _backendUsages, .. TestDataAssetWorkspace.XmlUsages(Repository, Assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal)).Where(u => u.Alias == Asset.Alias)];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mode = Initial;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", _titleId); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            if (Api is not { } api) { _error = "Test Data is not available in this host."; return; }
+            if (_mode == Mode.Edit)
+            {
+                (_edit, _error) = await api.EditViewAsync(Asset.Id);
+                _backendUsages = [.. _edit?.Usages ?? []];
+                _label = _edit?.Asset.Label;
+                _value = _edit?.Value;
+            }
+            else
+            {
+                var (all, error) = await api.ReferencesAsync();
+                _error = error;
+                _backendUsages = [.. (all ?? []).Where(u => u.Alias == Asset.Alias)];
+                if (_mode == Mode.Replace) (_replacements, _error) = await LoadReplacementsAsync(api);
+            }
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task<(IReadOnlyList<TestDataAssetSummary>, string?)> LoadReplacementsAsync(ITestDataApiService api)
+    {
+        var (list, error) = await api.ReplacementsAsync(Asset.Id);
+        return (list ?? [], error);
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync(null);
+
+    // ── Usages ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment UsageList(IReadOnlyList<TestDataAssetUsage> usages) => __builder =>
+    {
+        if (usages.Count == 0)
+        {
+            <p class="tda-muted" data-testid="tda-unused">No consumer references this asset.</p>
+            return;
+        }
+        <p class="tda-muted" data-testid="tda-usage-count">Used by @usages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count() consumer@(usages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count() == 1 ? "" : "s") · @usages.Count reference@(usages.Count == 1 ? "" : "s")</p>
+        <ul class="tda-usages" data-testid="tda-usages">
+            @foreach (var usage in usages)
+            {
+                <li data-testid="tda-usage" data-consumer="@usage.ConsumerType">
+                    <span class="tda-consumer">@usage.ConsumerType</span>
+                    <span>@usage.ConsumerName · @usage.Location</span>
+                    @if (usage.Unresolved) { <span class="tda-badge tda-badge-attention">Test Data reference missing</span> }
+                    @if (TestDataAssetWorkspace.Href(usage) is { } href) { <a href="@href" class="tda-link">@TestDataAssetWorkspace.OpenLabel(usage)<span class="visually-hidden"> @usage.ConsumerName</span></a> }
+                </li>
+            }
+        </ul>
+    };
+
+    // ── Edit ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment EditBody => __builder =>
+    {
+        if (_edit is not { } view) return;
+        var usageCount = Usages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count();
+        <dl class="tda-facts" data-testid="tda-facts">
+            <div><dt>Asset</dt><dd>@(view.Asset.Label ?? view.Asset.Alias)</dd></div>
+            <div><dt>Canonical ID</dt><dd class="tda-mono" data-testid="tda-id">@view.Asset.Id</dd></div>
+            <div><dt>Type</dt><dd data-testid="tda-type">@TestDataDataTypes.Label(view.Asset.DataType ?? TestDataDataTypes.Of(view.Asset.Kind, view.Asset.MediaType))</dd></div>
+            @if (view.Role is { } role) { <div><dt>Role</dt><dd data-testid="tda-role">@role</dd></div> }
+            <div><dt>Scope</dt><dd data-testid="tda-scope">@(view.Asset.Environment ?? "Shared")</dd></div>
+            <div><dt>Owner</dt><dd data-testid="tda-owner">@TestDataOwnerships.Label(view.Asset.Ownership)@(view.Asset.ValueModified ? " · Modified" : "")</dd></div>
+            <div><dt>Usage</dt><dd data-testid="tda-usage-summary">@TestDataAssetWorkspace.UsedBy(usageCount)</dd></div>
+        </dl>
+        <p class="tda-muted">The id, type, role, scope and owner stay as they are, so every consumer keeps referencing this asset.</p>
+        if (_confirmRestore)
+        {
+            <p data-testid="tda-restore-confirm"><strong>Restore the default value of @view.Asset.Alias?</strong> Future uses resolve the seeded value; completed runs and saved fixtures stay as they are.</p>
+            <div class="tda-actions">
+                <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="() => _confirmRestore = false">Cancel</button>
+                <button type="button" class="btn-primary" data-testid="tda-restore-confirm-button" disabled="@_busy" @onclick="RestoreAsync">Restore default value</button>
+            </div>
+            return;
+        }
+        if (_confirmImpact)
+        {
+            <div role="alert" data-testid="tda-impact">
+                <p><strong>Update Test Data asset?</strong> This asset is used by:</p>
+                @UsageList(Usages)
+                <p>Changing the value affects future uses of this shared asset. Completed runs and saved fixtures are not rewritten.</p>
+            </div>
+            <div class="tda-actions">
+                <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="() => _confirmImpact = false">Cancel</button>
+                <button type="button" class="btn-primary" data-testid="tda-save-confirm" disabled="@_busy" @onclick="() => SaveAsync(confirmed: true)">Save changes</button>
+            </div>
+            return;
+        }
+        <div class="tda-form">
+            @if (view.LabelEditable)
+            {
+                <label for="@($"{_titleId}-label")">Name</label>
+                <input id="@($"{_titleId}-label")" class="form-control" maxlength="100" data-testid="tda-label" @bind="_label" />
+            }
+            @if (view.ValueEditable)
+            {
+                <label for="@($"{_titleId}-value")">Value@(view.Role is { } valueRole ? $" ({valueRole.ToLowerInvariant()} identifier)" : "")</label>
+                <input id="@($"{_titleId}-value")" class="form-control tda-mono" autocomplete="off" spellcheck="false" inputmode="numeric" data-testid="tda-value" @bind="_value"
+                       aria-describedby="@($"{_titleId}-value-help")" />
+                <p id="@($"{_titleId}-value-help")" class="tda-muted">Validated with the same rule as entry. Shown only here, never in the asset table.</p>
+            }
+            else if (view.ValueNote is { } note)
+            {
+                <p class="tda-muted" data-testid="tda-value-note">@note</p>
+            }
+        </div>
+        <div class="tda-actions">
+            <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="CloseAsync">Cancel</button>
+            @if (view.LabelEditable || view.ValueEditable) { <button type="button" class="btn-primary" data-testid="tda-save" disabled="@_busy" @onclick="() => SaveAsync(confirmed: false)">Save changes</button> }
+            @if (view.CanRestoreDefault) { <button type="button" class="btn-secondary" data-testid="tda-restore" @onclick="() => _confirmRestore = true">Restore default value</button> }
+        </div>
+    };
+
+    private async Task SaveAsync(bool confirmed)
+    {
+        if (Api is not { } api || _edit is not { } view) return;
+        var valueChanged = view.ValueEditable && (_value?.Trim() ?? "") != (view.Value ?? "") && !string.IsNullOrWhiteSpace(_value);
+        // A value change of an asset in use needs the impact confirmation first.
+        if (valueChanged && !confirmed && Usages.Count > 0) { _confirmImpact = true; return; }
+        _busy = true; _error = null;
+        try
+        {
+            var (result, error) = await api.EditAsync(Asset.Id, new TestDataEditRequest(_label?.Trim() != view.Asset.Label ? _label : null, valueChanged ? _value : null));
+            if (result is not { Updated: true }) { _error = error ?? result?.Message ?? "The asset was not updated."; _confirmImpact = false; return; }
+            await OnClose.InvokeAsync(await Feedback("Test Data asset updated.", result.ValueChanged));
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (result, error) = await api.RestoreDefaultAsync(Asset.Id);
+            if (result is not { Updated: true }) { _error = error ?? result?.Message; return; }
+            await OnClose.InvokeAsync(await Feedback(result.Message, result.ValueChanged));
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>"Test Data asset updated. 1 dependent XML fixture needs regeneration." — read from the catalog after the change.</summary>
+    private async Task<string> Feedback(string message, bool valueChanged)
+    {
+        if (!valueChanged || Api is not { } api) return message;
+        var (catalog, _) = await api.CatalogAsync();
+        var stale = TestDataAssetWorkspace.FixturesNeedingRegeneration(catalog?.Assets ?? [], Asset.Alias).Count;
+        return stale == 0 ? message : $"{message} {stale} dependent XML fixture{(stale == 1 ? " needs" : "s need")} regeneration (saved fixtures are not rewritten).";
+    }
+
+    // ── Delete ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment DeleteBody => __builder =>
+    {
+        var usages = Usages;
+        if (usages.Count == 0)
+        {
+            <p data-testid="tda-delete-simple">This cannot be undone.</p>
+            <div class="tda-actions">
+                <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="CloseAsync">Cancel</button>
+                <button type="button" class="btn-danger" data-testid="tda-delete" disabled="@_busy" @onclick="() => DeleteAsync(leaveUnresolved: false)">Delete</button>
+            </div>
+            return;
+        }
+        @UsageList(usages)
+        <p data-testid="tda-delete-warning"><strong>Deleting it will leave these references unresolved.</strong> The consumers stay; each shows its reference as missing until it is remapped.</p>
+        <div class="tda-actions">
+            <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="CloseAsync">Cancel</button>
+            <button type="button" class="btn-secondary" data-testid="tda-replace" @onclick="ToReplaceAsync">Replace references…</button>
+            <button type="button" class="btn-danger" data-testid="tda-delete-unresolved" disabled="@_busy" @onclick="() => DeleteAsync(leaveUnresolved: true)">Delete and mark references unresolved</button>
+        </div>
+    };
+
+    private async Task ToReplaceAsync()
+    {
+        _mode = Mode.Replace;
+        if (Api is { } api) (_replacements, _error) = await LoadReplacementsAsync(api);
+    }
+
+    private async Task DeleteAsync(bool leaveUnresolved)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null;
+        try
+        {
+            var references = Usages.Count;
+            if (Asset.Ownership == TestDataOwnership.Generated)
+            {
+                // Generated fixtures live in the workspace's saved XML: removed there (the saved document goes with the registration).
+                var removed = TestDataAssetWorkspace.RemoveGeneratedFixtures(Repository, Services.GetService(typeof(SchemaGeneratedXmlStore)) as SchemaGeneratedXmlStore,
+                    new HashSet<string>([Asset.Alias], StringComparer.Ordinal));
+                if (removed == 0 || !await PersistAsync()) { _error = "The generated fixture could not be removed from the workspace."; return; }
+                await OnClose.InvokeAsync($"Deleted {Asset.Alias}.{(references > 0 ? $" {references} reference{(references == 1 ? " is" : "s are")} now unresolved." : "")}");
+                return;
+            }
+            var (result, error) = await api.DeleteAsync(Asset.Id, leaveUnresolved);
+            if (result is not { Deleted: true })
+            {
+                // An in-use refusal from the backend (another consumer appeared) shows its references here.
+                _error = error ?? result?.Message;
+                if (result?.UnresolvedReferences is { Count: > 0 } refs) _backendUsages = [.. refs];
+                return;
+            }
+            var xml = TestDataAssetWorkspace.XmlUsages(Repository, Assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal)).Count(u => u.Alias == Asset.Alias);
+            var total = result.UnresolvedReferences.Count + xml;
+            await OnClose.InvokeAsync(total == 0 ? $"Deleted {Asset.Alias}." : $"Deleted {Asset.Alias}. {total} reference{(total == 1 ? " is" : "s are")} now unresolved and require remapping.");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task<bool> PersistAsync() =>
+        Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave && await autoSave.SaveNowAsync();
+
+    // ── Replace references ──────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment ReplaceBody => __builder =>
+    {
+        <p>Replace <span class="tda-mono">@Asset.Alias</span> in <strong data-testid="tda-affected">@Usages.Count affected reference@(Usages.Count == 1 ? "" : "s")</strong>, then delete the original.</p>
+        if (_replacements.Count == 0)
+        {
+            <p class="tda-muted" role="status" data-testid="tda-no-replacement">No compatible approved asset: a replacement needs the same type, data type and role, a compatible scope and approval.</p>
+            <div class="tda-actions"><button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="CloseAsync">Cancel</button></div>
+            return;
+        }
+        <fieldset class="tda-options" data-testid="tda-replacements">
+            <legend>Compatible approved assets</legend>
+            @foreach (var candidate in _replacements)
+            {
+                var id = $"{_titleId}-{candidate.Alias}";
+                <label for="@id"><input type="radio" id="@id" name="@_titleId" checked="@(_replacement == candidate.Id)" @onchange="() => _replacement = candidate.Id" data-testid="tda-replacement" data-alias="@candidate.Alias" />
+                    <span class="tda-mono">@candidate.Alias</span>@if (candidate.Label is { Length: > 0 } label) { <span class="tda-muted"> · @label</span> }</label>
+            }
+        </fieldset>
+        <div class="tda-actions">
+            <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="CloseAsync">Cancel</button>
+            <button type="button" class="btn-danger" data-testid="tda-replace-delete" disabled="@(_busy || _replacement is null)" @onclick="ReplaceAndDeleteAsync">Replace and delete original</button>
+        </div>
+    };
+
+    private async Task ReplaceAndDeleteAsync()
+    {
+        if (Api is not { } api || _replacement is null || _replacements.FirstOrDefault(r => r.Id == _replacement) is not { } replacement) return;
+        _busy = true; _error = null;
+        try
+        {
+            var (result, error) = await api.ReplaceAsync(Asset.Id, replacement.Id);
+            if (result is not { Replaced: true }) { _error = error ?? result?.Message; return; }
+            var xml = TestDataAssetWorkspace.ReplaceXmlMappings(Repository, Asset.Alias, replacement.Alias);
+            if (xml > 0 && !await PersistAsync()) { _error = "The XML mappings were re-pointed but could not be saved; the original was kept."; return; }
+            var (deleted, deleteError) = Asset.Ownership == TestDataOwnership.Generated ? (null, null) : await api.DeleteAsync(Asset.Id, leaveReferencesUnresolved: false);
+            if (Asset.Ownership != TestDataOwnership.Generated && deleted is not { Deleted: true }) { _error = $"References now use {replacement.Alias}, but the original was not deleted: {deleteError ?? deleted?.Message}"; return; }
+            if (Asset.Ownership == TestDataOwnership.Generated)
+            {
+                TestDataAssetWorkspace.RemoveGeneratedFixtures(Repository, Services.GetService(typeof(SchemaGeneratedXmlStore)) as SchemaGeneratedXmlStore, new HashSet<string>([Asset.Alias], StringComparer.Ordinal));
+                await PersistAsync();
+            }
+            var total = result.ReferencesUpdated + xml;
+            await OnClose.InvokeAsync($"{total} reference{(total == 1 ? "" : "s")} now use {replacement.Alias}; {Asset.Alias} was deleted.");
+        }
+        finally { _busy = false; }
+    }
+}

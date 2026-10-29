@@ -187,7 +187,7 @@ public sealed class TestDataTesterViewTests : BunitContext
         positions.Should().OnlyContain(p => p >= 0).And.BeInAscendingOrder();
 
         page.Find("#td-assets-heading").TextContent.Should().StartWith("Test Data assets");
-        page.FindAll(".td-table thead th").Select(th => th.TextContent).Should().Equal("Name", "Type", "Status", "Scope", "Contract", "Consumers", "Action");
+        page.FindAll(".td-table thead th").Select(th => th.TextContent).Should().Equal("Name", "Type", "Status", "Scope", "Contract", "Consumers", "Actions");
         page.FindAll("[data-testid=td-consumers]").Select(c => c.TextContent).Should().AllBe("No consumer references yet");
         page.FindAll("[data-testid=td-detail-row]").Should().OnlyContain(r => r.HasAttribute("hidden"), "asset details are collapsed");
         page.Find("[data-testid=td-overview-coverage]").TextContent.Should().Be("None registered");

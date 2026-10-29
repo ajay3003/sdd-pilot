@@ -10,13 +10,15 @@ namespace BirkNext.Api.Services.TestData;
 /// returns a value: approval, matching and binding work on ids, fingerprints and metadata.
 /// </summary>
 public sealed class TestDataCatalogService(TestDataSchemaValidationService validation, TestDataCatalog catalog, TestDataRegistryStore registry,
-    TestDataCandidateService candidates, IReviewSourceEvidenceProvider sources, TimeProvider time)
+    TestDataCandidateService candidates, IReviewSourceEvidenceProvider sources, TimeProvider time, TestDataLifecycleService? lifecycle = null)
 {
     /// <summary>The page view: summaries enriched with consumer counts and contract status (drift against the latest snapshot of the repository).</summary>
     public async Task<TestDataCatalogView> ViewAsync(CancellationToken ct)
     {
         var view = await validation.ViewAsync(ct);
         var usages = registry.Usages();
+        // "Used by N": every consumer that references the alias (performance scenarios, Critical E2E flows, explicit bindings), not only bindings.
+        var references = lifecycle is null ? null : (await lifecycle.UsagesAsync(ct)).ToLookup(u => u.Alias, StringComparer.Ordinal);
         var registered = registry.Assets().ToDictionary(a => a.Id, StringComparer.Ordinal);
         var drift = await DriftAsync(registered.Values, ct);
         return view with
@@ -25,7 +27,10 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
             {
                 var (contract, note) = ContractStatus(asset, registered.GetValueOrDefault(asset.Id), drift);
                 var status = contract == TestDataContractStatus.NeedsReview && asset.Status == TestDataAssetStatus.Approved ? TestDataAssetStatus.NeedsReview : asset.Status;
-                return asset with { Consumers = usages.Where(u => u.AssetId == asset.Id).Select(u => u.Consumer.Key).Distinct().Count(), ContractStatus = contract, ContractNote = note, Status = status };
+                var consumers = references is not null
+                    ? references[asset.Alias].Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct(StringComparer.Ordinal).Count()
+                    : usages.Where(u => u.AssetId == asset.Id).Select(u => u.Consumer.Key).Distinct().Count();
+                return asset with { Consumers = consumers, ContractStatus = contract, ContractNote = note, Status = status };
             })],
         };
     }

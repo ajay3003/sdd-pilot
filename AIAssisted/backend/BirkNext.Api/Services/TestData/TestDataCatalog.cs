@@ -142,6 +142,8 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
             Tags = asset.Tags.Count > 0 ? [.. asset.Tags] : null,
             CandidateId = asset.CandidateId,
             Reviewable = true,
+            Ownership = asset.Ownership,
+            ValueVersion = asset.ValueVersion, ValueUpdatedAt = asset.ValueUpdatedAt, ValueModified = asset.ValueModified, ValueEditable = asset.ValueEditable,
         };
     }
 }

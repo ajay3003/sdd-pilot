@@ -106,3 +106,8 @@
 .td-source-summary > div { border: 1px solid var(--clr-border, #ddd); border-radius: 6px; padding: .35rem .55rem; min-width: 0; }
 .td-source-summary dt { font-size: .75rem; color: var(--clr-text-subtle, #64748b); }
 .td-source-summary dd { margin: 0; font-weight: 600; }
+/* Row actions: Details · Edit · Delete (destructive, set apart) or the protected note. Wraps instead of widening the table. */
+.td-row-actions { display: inline-flex; flex-wrap: wrap; gap: .35rem; justify-content: flex-end; align-items: center; }
+.td-row-actions .td-delete { margin-left: .5rem; }
+.td-protected-note { font-size: .8rem; color: var(--clr-text-muted, #57606a); border: 1px dashed var(--clr-border, #d0d7de); border-radius: 999px; padding: 0 .5rem; }
+.td-table td[data-label="Scope"] { white-space: nowrap; }

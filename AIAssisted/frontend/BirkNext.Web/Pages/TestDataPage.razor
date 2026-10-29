@@ -3,6 +3,7 @@
 @using BirkNext.Web.Components
 @using P = BirkNext.Web.Services.TestDataPresentation
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 
 <PageTitle>Test Data</PageTitle>
 
@@ -110,7 +111,7 @@
 
         @* XML fixtures: reusable message payloads for a test pack's contract, created here from the identities above (generation and validation
            reuse Schema Studio; values come from Test Data). *@
-        <section class="td-card" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
+        <section class="td-card" id="td-xml-fixtures" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
             <h2 id="td-xml-heading">XML fixtures</h2>
             <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" />
         </section>
@@ -192,7 +193,9 @@
         else
         {
             var usages = _consumers?.Usages ?? [];
-            var shown = Filtered(catalog, usages);
+            var workspaceUsages = TestDataAssetWorkspace.XmlUsages(Services.GetService(typeof(IWorkspaceArtifactRepository)) as IWorkspaceArtifactRepository,
+                catalog.Assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal));
+            var shown = Filtered(catalog, usages, workspaceUsages);
             <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
                 <h2 id="td-assets-heading">Test Data assets <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
                 <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
@@ -206,6 +209,11 @@
                     @Filter("Consumer", "td-filter-consumer", _consumer, v => _consumer = v, usages.Select(u => P.Consumer(u.Consumer)).Distinct().Order().Select(c => (c, c)))
                     @if (FiltersActive) { <button type="button" class="btn-secondary td-clear" data-testid="td-clear-filters" @onclick="ClearFilters">Clear filters</button> }
                 </div>
+                @if (_dialogFor is { } dialogAsset)
+                {
+                    @* One lifecycle dialog at a time, above the table: focus moves to its heading; closing returns focus to the row's button. *@
+                    <TestDataAssetDialog @key="@($"{dialogAsset.Id}|{_dialogMode}")" Asset="dialogAsset" Initial="_dialogMode" Assets="catalog.Assets" OnClose="DialogClosedAsync" />
+                }
                 @if (shown.Count == 0)
                 {
                     <p class="td-inline-empty" data-testid="td-no-match">No test data matches the selected filters. <button type="button" class="td-link-button" @onclick="ClearFilters">Clear filters</button></p>
@@ -214,7 +222,7 @@
                 {
                     <table class="td-table" data-testid="td-asset-table">
                         <caption class="visually-hidden">Reusable Test Data assets with type, status, scope, source, contract status and consumers</caption>
-                        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Contract</th><th scope="col">Consumers</th><th scope="col">Action</th></tr></thead>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Contract</th><th scope="col">Consumers</th><th scope="col">Actions</th></tr></thead>
                         <tbody>
                             @foreach (var asset in shown)
                             {
@@ -223,14 +231,33 @@
                                 var status = P.Status(asset);
                                 var assetUsages = usages.Where(u => u.AssetId == asset.Id).ToList();
                                 <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind" data-status="@status">
-                                    <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }</th>
+                                    <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }
+                                        @if (asset.ProtectedDefault) { <span class="td-pill td-pill-neutral" data-testid="td-protected">Protected default@(asset.ValueModified ? " · Modified" : "")</span> }
+                                        @if (asset.Ownership == TestDataOwnership.Generated && TestDataValueVersions.Changed(asset, catalog.Assets).Count > 0) { <span class="td-pill td-pill-attention" data-testid="td-mapped-changed">Mapped Test Data changed</span> }</th>
                                     <td data-label="Type" data-testid="td-data-type">@TestDataDataTypes.Label(P.DataType(asset))</td>
                                     <td data-label="Status"><span class="td-pill td-pill-@P.StatusTone(status)" data-testid="td-status">@TestDataCatalogRules.Label(status)</span></td>
                                     <td data-label="Scope" data-testid="td-scope">@P.Scope(asset)</td>
                                     <td data-label="Contract"><span class="td-pill td-pill-@P.ContractTone(asset)" data-testid="td-contract">@P.ContractLabel(asset)</span></td>
-                                    <td data-label="Consumers" data-testid="td-consumers">@P.UsedBy(asset.Consumers)</td>
-                                    <td class="td-row-action"><button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId"
-                                                aria-label="@($"{(open ? "Hide" : "Show")} details for {asset.Alias}")" data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button></td>
+                                    @{ var consumerCount = TestDataAssetWorkspace.Consumers(asset, workspaceUsages); }
+                                    <td data-label="Consumers" data-testid="td-consumers"><span data-testid="td-used-count">@P.UsedBy(consumerCount)</span>
+                                        @if (consumerCount > 0) { <button type="button" class="td-link-button" data-testid="td-view-usages" aria-label="@($"View usages of {asset.Alias}")" @onclick="() => OpenDialog(asset, TestDataAssetDialog.Mode.Usages)">View usages</button> }</td>
+                                    <td class="td-row-action"><div class="td-row-actions">
+                                        <button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId"
+                                                aria-label="@($"{(open ? "Hide" : "Show")} details for {asset.Alias}")" data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button>
+                                        @* Configuration-owned assets are changed in the backend configuration, so Test Data offers no Edit for them. *@
+                                        @if (asset.Ownership is not (TestDataOwnership.Configuration or TestDataOwnership.Unknown))
+                                        {
+                                            <button type="button" class="btn-secondary" id="@($"td-edit-{Slug(asset.Id)}")" data-testid="td-edit" aria-label="@($"Edit {asset.Alias}")" @onclick="() => OpenDialog(asset, TestDataAssetDialog.Mode.Edit)">Edit</button>
+                                        }
+                                        @if (asset.Deletable)
+                                        {
+                                            <button type="button" class="btn-danger td-delete" id="@($"td-delete-{Slug(asset.Id)}")" data-testid="td-delete" aria-label="@($"Delete {asset.Alias}")" @onclick="() => OpenDialog(asset, TestDataAssetDialog.Mode.Delete)">Delete</button>
+                                        }
+                                        else
+                                        {
+                                            <span class="td-protected-note" data-testid="td-not-deletable" title="@TestDataOwnerships.WhyNotDeletable(asset.Ownership)">@(asset.ProtectedDefault ? "Protected" : "Not deletable")<span class="visually-hidden">: @TestDataOwnerships.WhyNotDeletable(asset.Ownership)</span></span>
+                                        }
+                                    </div></td>
                                 </tr>
                                 <tr class="td-detail-row" id="@detailId" hidden="@(!open)" data-testid="td-detail-row">
                                     <td colspan="8">
@@ -461,14 +488,14 @@
         (_consumers, _) = await _api.ConsumersAsync();
     }
 
-    private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog, IReadOnlyList<TestDataUsageReference> usages) => catalog.Assets
+    private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog, IReadOnlyList<TestDataUsageReference> usages, IReadOnlyList<TestDataAssetUsage> workspaceUsages) => catalog.Assets
         .Where(asset => P.Matches(asset, _query, usages))
         .Where(asset => _type.Length == 0 || P.DataType(asset).ToString() == _type)
         .Where(asset => _status.Length == 0 || P.Status(asset).ToString() == _status)
         .Where(asset => _scope.Length == 0 || P.Scope(asset) == _scope)
         .Where(asset => _source.Length == 0 || asset.Source == _source)
         .Where(asset => _contract.Length == 0 || P.ContractLabel(asset) == _contract)
-        .Where(asset => _usage.Length == 0 || (_usage == "used") == (asset.Consumers > 0))
+        .Where(asset => _usage.Length == 0 || (_usage == "used") == (TestDataAssetWorkspace.Consumers(asset, workspaceUsages) > 0))
         .Where(asset => _consumer.Length == 0 || usages.Any(u => u.AssetId == asset.Id && P.Consumer(u.Consumer) == _consumer))
         // Deprecated assets stay visible (history), after the rest.
         .OrderBy(asset => P.Status(asset) == TestDataAssetStatus.Deprecated).ThenBy(asset => asset.Alias, StringComparer.Ordinal).ToList();
@@ -585,4 +612,29 @@
     }
 
     private static string Slug(string id) => new(id.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
+
+    // ── Asset lifecycle dialog (Edit, View usages, Delete, Replace references) ─────────────────────────────────────────────────────────
+
+    private TestDataAssetSummary? _dialogFor;
+    private TestDataAssetDialog.Mode _dialogMode;
+    private string? _returnFocus;
+
+    private void OpenDialog(TestDataAssetSummary asset, TestDataAssetDialog.Mode mode)
+    {
+        _dialogFor = asset; _dialogMode = mode;
+        _returnFocus = mode == TestDataAssetDialog.Mode.Delete ? $"td-delete-{Slug(asset.Id)}" : $"td-edit-{Slug(asset.Id)}";
+    }
+
+    /// <summary>Closes the dialog, announces its outcome (null = cancelled), reloads the catalog and returns focus to the row (when it still exists).</summary>
+    private async Task DialogClosedAsync(string? message)
+    {
+        _dialogFor = null;
+        if (message is not null) { _actionStatus = message; await ReloadAsync(null); }
+        StateHasChanged();
+        if (_returnFocus is { } id)
+        {
+            try { await JS.InvokeVoidAsync("birknextFocusElement", message is not null && _catalog?.Assets.All(a => id != $"td-edit-{Slug(a.Id)}" && id != $"td-delete-{Slug(a.Id)}") == true ? "td-assets-heading" : id); }
+            catch (JSException) { } catch (InvalidOperationException) { }
+        }
+    }
 }

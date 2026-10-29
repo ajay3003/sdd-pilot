@@ -1,0 +1,110 @@
+@using BirkNext.TestData
+@using BirkNext.Web.Services.SchemaStudio
+@inject IServiceProvider Services
+
+@* Maintenance → Reset Test Data: scoped to Test Data only (not the full local data reset). A preview first (what is preserved, removed and
+   affected), then an explicit confirmation. Protected defaults keep their current values; consumers are never deleted — references to removed
+   assets are reported as requiring remapping. Source Analysis evidence is untouched, so candidates can be rediscovered. *@
+<section class="tdr" aria-labelledby="tdr-heading" data-testid="tdr">
+    <h3 id="tdr-heading" class="tdr-title">Reset Test Data</h3>
+    <p class="tdr-muted">Removes local Test Data only: registered, source-candidate and observed assets, session identities and generated XML fixtures.
+        Protected defaults and their current values are kept; Source Analysis, projects and consumers are not touched.</p>
+    @if (_result is { } result)
+    {
+        <div role="status" data-testid="tdr-summary">
+            <p><strong>Test Data reset complete</strong></p>
+            <ul class="tdr-list">
+                <li data-testid="tdr-preserved">@Count(result.Summary.ProtectedDefaultsPreserved, "protected default") preserved</li>
+                <li data-testid="tdr-removed">@Count(result.Summary.AssetsRemoved, "Test Data asset") removed</li>
+                <li data-testid="tdr-fixtures">@Count(result.Summary.GeneratedFixturesRemoved, "generated fixture") removed</li>
+                <li data-testid="tdr-remap">@Count(result.ReferencesRequiringRemapping.Count + _xmlUnresolved, "consumer reference") @((result.ReferencesRequiringRemapping.Count + _xmlUnresolved) == 1 ? "requires" : "require") remapping</li>
+                @if (result.Summary.ConfigurationAssetsPreserved > 0) { <li>@Count(result.Summary.ConfigurationAssetsPreserved, "configuration-owned asset") kept (change the backend configuration to remove)</li> }
+            </ul>
+            @if (result.ReferencesRequiringRemapping.Count > 0)
+            {
+                <ReviewDisclosure Text="View affected consumers" CollapseText="Hide affected consumers" TestId="tdr-affected" Class="disclosure-inline">
+                    <ul class="tdr-list">@foreach (var u in result.ReferencesRequiringRemapping) { <li data-testid="tdr-affected-item">@u.ConsumerType · @u.ConsumerName · @u.Location · Test Data reference missing (@u.Alias)</li> }</ul>
+                </ReviewDisclosure>
+            }
+        </div>
+    }
+    @if (_preview is { } preview)
+    {
+        <div class="tdr-preview" role="alertdialog" aria-modal="false" aria-labelledby="tdr-preview-heading" data-testid="tdr-preview">
+            <h4 id="tdr-preview-heading" tabindex="-1">Reset Test Data?</h4>
+            <dl class="tdr-facts">
+                <div><dt>Will preserve</dt><dd data-testid="tdr-will-preserve">@Count(preview.ProtectedDefaults.Count, "protected default") (@string.Join(", ", preview.ProtectedDefaults)) with their current values@(preview.ConfigurationAssets > 0 ? $"; {Count(preview.ConfigurationAssets, "configuration-owned asset")}" : "")</dd></div>
+                <div><dt>Will remove</dt><dd data-testid="tdr-will-remove">@Count(preview.AssetsToRemove.Count - preview.GeneratedFixturesToRemove, "asset") · @Count(preview.GeneratedFixturesToRemove, "XML fixture")</dd></div>
+                <div><dt>Will affect</dt><dd data-testid="tdr-will-affect">@Count(preview.AffectedReferences.Count + _xmlAffected, "consumer reference") (left unresolved, never deleted)</dd></div>
+            </dl>
+            @if (preview.AssetsToRemove.Count > 0)
+            {
+                <ReviewDisclosure Text="Show assets to remove" CollapseText="Hide assets to remove" TestId="tdr-remove-list" Class="disclosure-inline">
+                    <ul class="tdr-list">@foreach (var alias in preview.AssetsToRemove) { <li class="tdr-mono">@alias</li> }</ul>
+                </ReviewDisclosure>
+            }
+            <div class="tdr-actions">
+                <button type="button" class="btn-secondary" data-testid="tdr-cancel" disabled="@_busy" @onclick="() => _preview = null">Cancel</button>
+                <button type="button" class="btn-danger" data-testid="tdr-confirm" disabled="@_busy" @onclick="ResetAsync">@(_busy ? "Resetting…" : "Reset Test Data")</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <button type="button" class="tdr-open" data-testid="tdr-open" disabled="@(_busy || Disabled)" @onclick="PreviewAsync">Reset Test Data…</button>
+    }
+    @if (_error is not null) { <p class="tdr-error" role="alert" data-testid="tdr-error">@_error</p> }
+</section>
+
+@code {
+    [Parameter] public bool Disabled { get; set; }
+
+    private TestDataResetPreview? _preview;
+    private TestDataResetResult? _result;
+    private IReadOnlyList<TestDataAssetSummary> _generated = [];
+    private int _xmlAffected, _xmlUnresolved;
+    private bool _busy;
+    private string? _error;
+    private IWorkspaceArtifactRepository? Repository => Services.GetService(typeof(IWorkspaceArtifactRepository)) as IWorkspaceArtifactRepository;
+
+    private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
+
+    private async Task PreviewAsync()
+    {
+        _error = null; _result = null; _busy = true;
+        try
+        {
+            var api = TestDataApiService.Resolve(Services);
+            (_preview, _error) = await api.ResetPreviewAsync();
+            var (catalog, _) = await api.CatalogAsync();
+            var assets = catalog?.Assets ?? [];
+            _generated = [.. assets.Where(a => a.Ownership == TestDataOwnership.Generated)];
+            var removed = (_preview?.AssetsToRemove ?? []).ToHashSet(StringComparer.Ordinal);
+            _xmlAffected = TestDataAssetWorkspace.XmlUsages(Repository, assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal)).Count(u => removed.Contains(u.Alias));
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Generated fixtures first (workspace, persisted), then the backend reset — so the summary counts what was really removed.</summary>
+    private async Task ResetAsync()
+    {
+        if (_preview is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            var api = TestDataApiService.Resolve(Services);
+            var removedFixtures = TestDataAssetWorkspace.RemoveGeneratedFixtures(Repository, Services.GetService(typeof(SchemaGeneratedXmlStore)) as SchemaGeneratedXmlStore,
+                _generated.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal));
+            if (removedFixtures > 0 && !(Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave && await autoSave.SaveNowAsync()))
+            { _error = "The generated XML fixtures could not be removed durably; nothing else was reset. Check that the backend is running."; return; }
+            var (result, error) = await api.ResetAsync(removedFixtures);
+            if (result is null) { _error = error ?? "Reset Test Data failed."; return; }
+            var (catalog, _) = await api.CatalogAsync();
+            var known = (catalog?.Assets ?? []).Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
+            _xmlUnresolved = TestDataAssetWorkspace.XmlUsages(Repository, known).Count(u => u.Unresolved);
+            _result = result;
+            _preview = null;
+        }
+        finally { _busy = false; }
+    }
+}

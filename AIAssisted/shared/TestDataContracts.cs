@@ -144,6 +144,18 @@ public sealed record TestDataAssetSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CandidateId { get; init; }
     /// <summary>The asset can be approved or deprecated in Test Data (its source does not own approval exclusively).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Reviewable { get; init; }
+    /// <summary>Who owns the asset (declared by its provider). Decides whether Delete and Maintenance reset may remove it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public TestDataOwnership Ownership { get; init; }
+    [JsonIgnore] public bool Deletable => TestDataOwnerships.Deletable(Ownership);
+    [JsonIgnore] public bool ProtectedDefault => Ownership == TestDataOwnership.ProtectedDefault;
+    /// <summary>Safe change marker of the value (incremented on each edit/restore; never derived from the value). Generated fixtures record it per
+    /// mapped alias so a later value change is detected without storing or hashing the value.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int ValueVersion { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ValueUpdatedAt { get; init; }
+    /// <summary>A protected default whose value was edited ("Protected default · Modified").</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ValueModified { get; init; }
+    /// <summary>The actual value can be edited in Test Data.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ValueEditable { get; init; }
 }
 
 public sealed record TestDataRoleBinding(string Role, string AssetAlias);

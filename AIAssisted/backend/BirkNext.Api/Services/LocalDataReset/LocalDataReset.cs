@@ -9,6 +9,8 @@ using BirkNext.Api.Services.HeadlessAuthDiagnostic;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.Api.Services.PerformanceTests;
 using BirkNext.Api.Services.SecurityClassification;
+using BirkNext.Api.Services.TestData;
+using BirkNext.TestData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -98,6 +100,8 @@ public sealed record LocalDataResetResult
     public List<string> ClearedDomains { get; init; } = [];
     public List<string> PreservedDomains { get; init; } = [];
     public List<string> Warnings { get; init; } = [];
+    /// <summary>What the reset did to Test Data (protected defaults preserved with their current values; everything local removed).</summary>
+    public BirkNext.TestData.TestDataResetSummary? TestData { get; init; }
 }
 
 /// <summary>
@@ -119,6 +123,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Integration, dependency, SCIM, security classification, security expectation and Azure environment results",
         "Performance test definitions, data profiles, runs, baselines and drift history; Active CDC run history",
         "Critical E2E flows and run history (App_Data/critical-e2e)",
+        "Test Data: registered, source-candidate and observed assets (App_Data/test-data registry), their approvals, requirements and bindings, session identities and generated XML fixtures",
         "BirkNext-owned authenticated browser sessions, the running local HTTPS proxy session (and the dedicated browser it opened), Browser Companion pairings, captured API credentials, temporary security-classification test contexts",
         "Diagnostic, reachability and review caches",
         "Project Import archives staged for commit (memory and staging directory)",
@@ -133,6 +138,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "The HTTPS inspection certificate (Windows user store), local proxy port configuration and capability, browser profiles and the Azure sign-in of this machine",
         "Uploaded or external files outside the database (Source Analysis archives are never stored on disk)",
         "The highest synthetic CDC key per environment and the highest reserved synthetic identity per scope (so test keys are never reused)",
+        "Protected Test Data defaults (skolenaervaer-reporter-default, skolenaervaer-child-default) with their current, possibly edited, values; Test Data supplied by backend configuration",
     ];
 
     public async Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default)
@@ -143,6 +149,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             if (services.GetService<PerformanceTestExecutionService>()?.HasActiveRuns == true || services.GetService<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunCoordinator>()?.HasRunning == true)
                 return new() { Status = "Blocked", Message = "Reset is blocked while a CDC or performance test is running. Cancel it first." };
 
+            // Test Data before the database is cleared (generated fixtures and consumer references live there), so the summary has real counts.
+            var testDataBefore = services.GetService<TestDataLifecycleService>() is { } preview ? await TryAsync(() => preview.PreviewResetAsync(ct)) : null;
             var floors = await CdcFloorsAsync(ct);
             var identityFloors = await SyntheticIdentityFloorsAsync(ct);
             var (success, message, deleted, at) = await admin.ResetLocalDatabaseAsync();
@@ -169,16 +177,23 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             await Step(warnings, "browser diagnostic results", () => { services.GetService<BrowserAutomationEvidenceStore>()?.Clear(); return Task.CompletedTask; });
             await Step(warnings, "performance reachability checks", () => { services.GetService<PerformanceTestProviderRegistry>()?.ClearReachability(); return Task.CompletedTask; });
             await Step(warnings, "review caches", () => { (services.GetService<IMemoryCache>() as MemoryCache)?.Compact(1.0); return Task.CompletedTask; });
+            TestDataResetSummary? testData = null;
+            await Step(warnings, "Test Data assets", async () =>
+            {
+                if (services.GetService<TestDataLifecycleService>() is { } lifecycle)
+                    testData = await lifecycle.CompleteFullResetAsync(testDataBefore ?? new TestDataResetPreview(), ct);
+            });
 
             logger.LogWarning("Local data reset {Epoch} completed: {Deleted} database rows, {Warnings} warning(s)", epoch, deleted, warnings.Count);
             return new()
             {
                 Status = warnings.Count == 0 ? "Completed" : "CompletedWithWarnings",
-                Message = warnings.Count == 0
+                Message = (warnings.Count == 0
                     ? $"Local data reset completed. {deleted} database records and all project, workspace, review and evidence state were removed. Installation settings and provider capabilities were preserved."
-                    : $"Local data reset completed with {warnings.Count} warning(s). The database was cleared ({deleted} records).",
+                    : $"Local data reset completed with {warnings.Count} warning(s). The database was cleared ({deleted} records).")
+                    + (testData is { } td ? $" Test Data: {td.ProtectedDefaultsPreserved} protected default(s) preserved with their current values, {td.AssetsRemoved} asset(s) removed ({td.GeneratedFixturesRemoved} generated fixture(s))." : ""),
                 ResetAt = at, ResetEpoch = epoch, DatabaseCleared = true, DeletedRows = deleted, BackendStateCleared = warnings.Count == 0,
-                ClearedDomains = [.. Cleared], PreservedDomains = [.. Preserved], Warnings = warnings,
+                ClearedDomains = [.. Cleared], PreservedDomains = [.. Preserved], Warnings = warnings, TestData = testData,
             };
         }
         finally { Gate.Release(); }
@@ -197,6 +212,16 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         var rows = await db.ActiveEventSyntheticIdentities.AsNoTracking()
             .GroupBy(r => new { r.EnvironmentId, r.Scope }).Select(g => new { g.Key.EnvironmentId, g.Key.Scope, Max = g.Max(r => r.Value) }).ToListAsync(ct);
         return rows.ToDictionary(r => LocalDataResetState.IdentityKey(r.EnvironmentId, r.Scope), r => r.Max, StringComparer.Ordinal);
+    }
+
+    private async Task<T?> TryAsync<T>(Func<Task<T>> action) where T : class
+    {
+        try { return await action(); }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Local data reset: the Test Data preview could not be read");
+            return null;
+        }
     }
 
     private async Task Step(List<string> warnings, string what, Func<Task> action)

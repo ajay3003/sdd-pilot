@@ -1,0 +1,17 @@
+/* Maintenance → Reset Test Data: preview, confirmation and summary. */
+.tdr { display: grid; gap: .5rem; padding: .75rem 1rem 1rem; border-top: 1px solid var(--clr-border, #e2e8f0); }
+.tdr-title { margin: 0; font-size: 1rem; }
+.tdr-muted { margin: 0; color: var(--clr-text-muted, #64748b); font-size: .875rem; }
+.tdr-preview { border: 1px solid var(--clr-danger-border, #fca5a5); border-radius: .5rem; padding: .75rem 1rem; display: grid; gap: .5rem; }
+.tdr-preview h4 { margin: 0; font-size: .95rem; }
+.tdr-facts { display: grid; gap: .3rem; margin: 0; }
+.tdr-facts dt { font-weight: 600; font-size: .8rem; }
+.tdr-facts dd { margin: 0; overflow-wrap: anywhere; }
+.tdr-list { margin: 0; padding-left: 1.1rem; }
+.tdr-mono { font-family: var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.tdr-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.tdr-error { color: var(--clr-danger, #b91c1c); margin: 0; }
+/* The opener: a destructive outline button that does not invite a misclick (the confirmation follows the preview). */
+.tdr-open { justify-self: start; background: transparent; color: var(--clr-danger, #b91c1c); border: 1px solid var(--clr-danger-border, #fca5a5); border-radius: .375rem; padding: .4rem .9rem; font: inherit; font-weight: 600; cursor: pointer; }
+.tdr-open:hover:not(:disabled) { background: var(--clr-danger-bg, #fef2f2); }
+.tdr-open:disabled { opacity: .5; cursor: not-allowed; }

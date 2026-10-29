@@ -1,0 +1,20 @@
+/* Test Data asset lifecycle dialog (Edit, usages, Delete, Replace references). */
+.tda { border: 1px solid var(--clr-border, #cbd5e1); border-radius: .5rem; padding: .75rem 1rem; margin: .5rem 0 1rem; display: grid; gap: .5rem; min-width: 0; background: var(--clr-surface, #fff); }
+.tda[role="alertdialog"] { border-color: var(--clr-danger-border, #fca5a5); }
+.tda-title { margin: 0; font-size: 1rem; }
+.tda-asset { margin: 0; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.tda-alias, .tda-mono { font-family: var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.tda-muted { color: var(--clr-text-muted, #64748b); font-size: .875rem; margin: 0; }
+.tda-badge { display: inline-block; border: 1px solid var(--clr-border, #cbd5e1); border-radius: 999px; padding: 0 .5rem; font-size: .75rem; }
+.tda-badge-attention { border-color: var(--clr-warning-border, #f59e0b); }
+.tda-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .35rem 1rem; margin: 0; }
+.tda-facts dt { font-size: .75rem; color: var(--clr-text-muted, #64748b); }
+.tda-facts dd { margin: 0; overflow-wrap: anywhere; }
+.tda-form { display: grid; gap: .3rem; max-width: 32rem; }
+.tda-usages { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
+.tda-usages li { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.tda-consumer { font-weight: 600; }
+.tda-options { border: 0; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.tda-options legend { font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
+.tda-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.tda-error { color: var(--clr-danger, #b91c1c); margin: 0; }

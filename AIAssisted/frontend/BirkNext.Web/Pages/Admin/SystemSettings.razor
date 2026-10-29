@@ -1401,8 +1401,8 @@ else if (_settings is not null)
                         <div class="danger-zone-action">
                             <div class="danger-zone-description">
                                 <strong>Reset Local Data</strong>
-                                <p data-testid="reset-scope">Removes all local project and workspace data: workspaces and SDD artifacts, Source Analysis snapshots and evidence, Target Environments (back to generic defaults), integration catalogs and applied templates such as M2LB, review and test results, performance definitions and history, Critical E2E flows, and the browser's cached project state. This operation cannot be undone.</p>
-                                <p data-testid="reset-preserved">Preserved: installation and provider settings (feature visibility, logging, k6/Podman, Azure/AI providers), the database schema, the Sample Project catalog, and files outside BirkNext. Uploaded source archives are not stored on disk.</p>
+                                <p data-testid="reset-scope">Removes all local project and workspace data: workspaces and SDD artifacts, Source Analysis snapshots and evidence, Target Environments (back to generic defaults), integration catalogs and applied templates such as M2LB, review and test results, performance definitions and history, Critical E2E flows, local Test Data (registered, observed and source-candidate assets, session identities, generated XML fixtures), and the browser's cached project state. This operation cannot be undone.</p>
+                                <p data-testid="reset-preserved">Preserved: installation and provider settings (feature visibility, logging, k6/Podman, Azure/AI providers), the database schema, the Sample Project catalog, protected Test Data defaults with their current values, and files outside BirkNext. Uploaded source archives are not stored on disk.</p>
                                 @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                                 {
                                     <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
@@ -1414,6 +1414,7 @@ else if (_settings is not null)
                                 Reset Local Data
                             </button>
                         </div>
+                        <TestDataResetPanel Disabled="@(_isResetting || _isEditMode)" />
                     </div>
                     </ChildContent>
                 </DiagnosticPageRenderer>

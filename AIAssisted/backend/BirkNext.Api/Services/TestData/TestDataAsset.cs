@@ -56,6 +56,15 @@ public sealed record TestDataAsset
     public bool ReviewRequested { get; init; }
     /// <summary>Deprecated in Test Data: kept for history and existing references, never offered for new usage by default.</summary>
     public bool Deprecated { get; init; }
+    /// <summary>Who owns the asset, declared by its provider (never inferred from the alias). Decides Delete and Maintenance reset.</summary>
+    public TestDataOwnership Ownership { get; init; }
+    /// <summary>Safe change marker of the value (incremented on edit/restore), never derived from the value. 0 = as supplied.</summary>
+    public int ValueVersion { get; init; }
+    public DateTimeOffset? ValueUpdatedAt { get; init; }
+    /// <summary>A protected default whose value was edited (differs from its seeded value).</summary>
+    public bool ValueModified { get; init; }
+    /// <summary>The value can be edited in Test Data (a protected default or a session entry; never backend configuration).</summary>
+    public bool ValueEditable { get; init; }
 }
 
 /// <summary>A data set: role → asset alias bindings chosen together for one purpose.</summary>

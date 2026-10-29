@@ -243,3 +243,134 @@ public sealed record TestDataXmlBinding(string Alias, string ElementPath);
 public sealed record TestDataXmlBindRequest(string Xml, IReadOnlyList<TestDataXmlBinding> Bindings);
 
 public sealed record TestDataXmlBindResult(string? Xml, IReadOnlyList<string> Problems);
+
+/// <summary>
+/// Who owns an asset, declared by its provider — never inferred from its alias. Only <see cref="ProtectedDefault"/> (system-seeded canonical
+/// defaults) and <see cref="Configuration"/> (explicit backend configuration, changed only by editing it) are kept by Delete and Maintenance reset;
+/// session-entered, registered (manual, source candidate, observed) and generated assets are local data.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataOwnership { Unknown, ProtectedDefault, Configuration, SessionEntered, Registered, Generated }
+
+public static class TestDataOwnerships
+{
+    /// <summary>Local Test Data that Delete may remove and Maintenance reset removes.</summary>
+    public static bool Deletable(TestDataOwnership ownership) => ownership is TestDataOwnership.SessionEntered or TestDataOwnership.Registered or TestDataOwnership.Generated;
+
+    public static string Label(TestDataOwnership ownership) => ownership switch
+    {
+        TestDataOwnership.ProtectedDefault => "Protected default",
+        TestDataOwnership.Configuration => "Backend configuration",
+        TestDataOwnership.SessionEntered => "Entered for this session",
+        TestDataOwnership.Registered => "Registered in Test Data",
+        TestDataOwnership.Generated => "Generated fixture",
+        _ => "Unknown owner",
+    };
+
+    /// <summary>Why an asset cannot be deleted in Test Data, or null when it can.</summary>
+    public static string? WhyNotDeletable(TestDataOwnership ownership) => ownership switch
+    {
+        TestDataOwnership.ProtectedDefault => "Protected default: system-seeded and always available. It cannot be deleted and survives a reset.",
+        TestDataOwnership.Configuration => "Supplied by the backend's configuration; remove it there. BirkNext never edits explicit configuration.",
+        TestDataOwnership.Unknown => "Its owner is unknown, so BirkNext does not delete it.",
+        _ => null,
+    };
+}
+
+/// <summary>
+/// One place that references a Test Data asset by alias (or, for an explicit binding, by id): a performance scenario step or variable, a
+/// Critical E2E flow, an explicit consumer binding, or (added by the browser) an XML field mapping. Names and locations only, never values.
+/// </summary>
+public sealed record TestDataAssetUsage(string Alias, string ConsumerType, string ConsumerId, string ConsumerName, string Location)
+{
+    public string? EnvironmentId { get; init; }
+    /// <summary>The alias no longer resolves to any asset in the catalog: the consumer shows "Test Data reference missing".</summary>
+    public bool Unresolved { get; init; }
+}
+
+/// <summary>Result of deleting one asset: what was removed and which references were left unresolved (never deleted or silently re-pointed).</summary>
+public sealed record TestDataDeleteResult(string AssetId, string Alias, bool Deleted, string Message, IReadOnlyList<TestDataAssetUsage> UnresolvedReferences);
+
+/// <summary>Re-points every reference of an asset to a compatible replacement before (or instead of) deleting it.</summary>
+public sealed record TestDataReplaceRequest(string ReplacementAssetId);
+
+public sealed record TestDataReplaceResult(bool Replaced, string Message, int ReferencesUpdated, IReadOnlyList<TestDataAssetUsage> Updated);
+
+/// <summary>What a Maintenance reset did to Test Data. Counts only.</summary>
+public sealed record TestDataResetSummary
+{
+    public int ProtectedDefaultsPreserved { get; init; }
+    public int ConfigurationAssetsPreserved { get; init; }
+    public int AssetsRemoved { get; init; }
+    public int GeneratedFixturesRemoved { get; init; }
+    /// <summary>References whose consumers were removed by the same reset (performance scenarios, Critical E2E flows, XML setups).</summary>
+    public int ReferencesRemovedWithConsumers { get; init; }
+    /// <summary>References that survived the reset but now point at a removed asset (require remapping). Expected to be zero.</summary>
+    public int ReferencesRequiringRemapping { get; init; }
+}
+
+/// <summary>
+/// The Edit surface of one asset. <see cref="Value"/> is filled only here, and only for an asset whose value Test Data may edit (a protected
+/// default or a session entry) — never in the asset table. Type, role, scope and the asset id are shown read-only.
+/// </summary>
+public sealed record TestDataEditView
+{
+    public TestDataAssetSummary Asset { get; init; } = new();
+    /// <summary>"Reporter" or "Child" for identity defaults; null otherwise.</summary>
+    public string? Role { get; init; }
+    public string? Value { get; init; }
+    public bool LabelEditable { get; init; }
+    public bool ValueEditable { get; init; }
+    /// <summary>Why the value cannot be edited here (configuration-owned, metadata-only registration, payload → new draft).</summary>
+    public string? ValueNote { get; init; }
+    /// <summary>A protected default with a seeded value to go back to ("Restore default value").</summary>
+    public bool CanRestoreDefault { get; init; }
+    public IReadOnlyList<TestDataAssetUsage> Usages { get; init; } = [];
+}
+
+public sealed record TestDataEditRequest(string? Label, string? Value);
+
+public sealed record TestDataEditResult(bool Updated, string Message, bool ValueChanged, TestDataAssetSummary? Asset, IReadOnlyList<TestDataAssetUsage> AffectedUsages);
+
+/// <summary>What "Reset Test Data" would do, before it runs (counts and the references it would leave unresolved).</summary>
+public sealed record TestDataResetPreview
+{
+    public IReadOnlyList<string> ProtectedDefaults { get; init; } = [];
+    public int ConfigurationAssets { get; init; }
+    public IReadOnlyList<string> AssetsToRemove { get; init; } = [];
+    public int GeneratedFixturesToRemove { get; init; }
+    public IReadOnlyList<TestDataAssetUsage> AffectedReferences { get; init; } = [];
+}
+
+/// <summary>Result of "Reset Test Data": the summary plus the references that now require remapping.</summary>
+public sealed record TestDataResetResult(TestDataResetSummary Summary, IReadOnlyList<TestDataAssetUsage> ReferencesRequiringRemapping);
+
+/// <summary>
+/// The Test Data value versions a generated fixture was built from ("child-default@v2; observed-id@v0"): asset references plus each asset's safe
+/// change marker at generation time. A later edit of a mapped asset is detected by comparing versions — no value is stored or hashed.
+/// </summary>
+public static class TestDataValueVersions
+{
+    public const string Label = "Test Data value versions";
+
+    public static string Format(IEnumerable<TestDataAssetSummary> assets) =>
+        string.Join("; ", assets.DistinctBy(a => a.Alias).OrderBy(a => a.Alias, StringComparer.Ordinal).Select(a => $"{a.Alias}@v{a.ValueVersion}"));
+
+    public static IReadOnlyDictionary<string, int> Parse(string? text)
+    {
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var part in (text ?? "").Split("; ", StringSplitOptions.RemoveEmptyEntries))
+            if (part.LastIndexOf("@v", StringComparison.Ordinal) is var at and > 0 && int.TryParse(part[(at + 2)..], out var version)) result[part[..at]] = version;
+        return result;
+    }
+
+    /// <summary>The mapped assets whose value changed since the fixture was generated (or that no longer exist). Empty when nothing was recorded.</summary>
+    public static IReadOnlyList<(string Alias, bool Missing)> Changed(TestDataAssetSummary fixture, IEnumerable<TestDataAssetSummary> current)
+    {
+        var recorded = Parse(fixture.Provenance.FirstOrDefault(p => p.Label == Label)?.Value);
+        if (recorded.Count == 0) return [];
+        var byAlias = current.GroupBy(a => a.Alias, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        return [.. recorded.Where(r => !byAlias.TryGetValue(r.Key, out var asset) || asset.ValueVersion != r.Value)
+            .Select(r => (r.Key, !byAlias.ContainsKey(r.Key)))];
+    }
+}

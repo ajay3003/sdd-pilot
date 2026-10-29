@@ -219,13 +219,17 @@ public static partial class PerformanceScenarioRuntime
     private static string Step(int index) => $"Step {index + 1}";
 
     /// <summary>Why a parameter has no usable value in this position of the scenario — null when it resolves.</summary>
-    public static string? Problem(PerformanceScenario scenario, int stepIndex, RuntimeParameter p, ScenarioDataMapping? m)
+    /// <remarks><paramref name="knownAliases"/> (the Test Data catalog, when the caller has it): a mapped alias that no longer exists is reported as a
+    /// missing reference — never silently treated as mapped, never replaced by another asset.</remarks>
+    public static string? Problem(PerformanceScenario scenario, int stepIndex, RuntimeParameter p, ScenarioDataMapping? m, IReadOnlySet<string>? knownAliases = null)
     {
         if (m is null) return "Runtime value source not configured";
         switch (m.Source)
         {
             case RuntimeValueSource.TestData:
-                return m.AssetAliases.Count == 0 ? "Test Data asset not chosen" : null;
+                if (m.AssetAliases.Count == 0) return "Test Data asset not chosen";
+                return knownAliases is not null && m.AssetAliases.FirstOrDefault(a => !knownAliases.Contains(a)) is { } missing
+                    ? $"Test Data reference missing: {missing} no longer exists — remap this value" : null;
             case RuntimeValueSource.PreviousStep:
                 var producer = IndexOf(scenario.Steps, m.FromStepId);
                 if (producer < 0) return "References a step that is no longer in the scenario";
@@ -256,13 +260,13 @@ public static partial class PerformanceScenarioRuntime
         };
 
     /// <summary>The Runtime values rows of one step.</summary>
-    public static IReadOnlyList<RuntimeValueRow> Rows(PerformanceScenario scenario, int stepIndex)
+    public static IReadOnlyList<RuntimeValueRow> Rows(PerformanceScenario scenario, int stepIndex, IReadOnlySet<string>? knownAliases = null)
     {
         var step = scenario.Steps[stepIndex];
         return [.. Parameters(step).Select(p =>
         {
             var m = step.DataMappings?.FirstOrDefault(x => x.Variable == p.Variable);
-            return new RuntimeValueRow(p, m, m is null ? "Not configured" : SourceLabel(m.Source), m is null ? "—" : ValueText(scenario, m), Problem(scenario, stepIndex, p, m));
+            return new RuntimeValueRow(p, m, m is null ? "Not configured" : SourceLabel(m.Source), m is null ? "—" : ValueText(scenario, m), Problem(scenario, stepIndex, p, m, knownAliases));
         })];
     }
 
@@ -280,7 +284,7 @@ public static partial class PerformanceScenarioRuntime
     /// One primary status per step: Disabled; Blocked (performance safety: write method, REST POST not marked read-only, missing/invalid path,
     /// invalid ordering); Needs configuration (an unresolved runtime value); otherwise Ready. Reasons are precise ("Step 2 · brukerId: …").
     /// </summary>
-    public static StepReadiness Readiness(PerformanceTestDefinition d, int index)
+    public static StepReadiness Readiness(PerformanceTestDefinition d, int index, IReadOnlySet<string>? knownAliases = null)
     {
         var s = d.Scenario.Steps[index];
         if (s.Disabled) return new(StepStatus.Disabled, ["Disabled — stays in the definition but does not run"]);
@@ -291,7 +295,7 @@ public static partial class PerformanceScenarioRuntime
             blocked.Add($"{Step(index)}: a REST POST runs only when marked \"This POST only reads\"");
         if (string.IsNullOrWhiteSpace(s.RelativePath)) blocked.Add($"{Step(index)}: enter the request path");
         else if (!s.RelativePath.StartsWith('/')) blocked.Add($"{Step(index)}: the path must start with '/'");
-        var rows = Rows(d.Scenario, index);
+        var rows = Rows(d.Scenario, index, knownAliases);
         blocked.AddRange(rows.Where(r => r.Problem?.Contains("invalid execution order", StringComparison.Ordinal) == true).Select(r => $"{Step(index)} · {r.Parameter.Variable}: {r.Problem}"));
         foreach (var o in s.Outputs ?? [])
             if (!ValidName(o.Name) || !ValidOutputPath(o.Path)) blocked.Add($"{Step(index)}: output '{o.Name}' needs a name and a JSON path such as $.id");
@@ -308,9 +312,9 @@ public static partial class PerformanceScenarioRuntime
     };
 
     /// <summary>Scenario-level summary of the step statuses: Blocked wins, then Needs configuration; Ready only with at least one enabled step.</summary>
-    public static StepReadiness ScenarioReadiness(PerformanceTestDefinition d)
+    public static StepReadiness ScenarioReadiness(PerformanceTestDefinition d, IReadOnlySet<string>? knownAliases = null)
     {
-        var steps = Enumerable.Range(0, d.Scenario.Steps.Count).Select(i => Readiness(d, i)).ToList();
+        var steps = Enumerable.Range(0, d.Scenario.Steps.Count).Select(i => Readiness(d, i, knownAliases)).ToList();
         var reasons = steps.SelectMany(r => r.Status == StepStatus.Disabled ? [] : r.Reasons).ToList();
         reasons.AddRange((d.Scenario.Variables ?? []).Select(VariableProblem).OfType<string>());
         var status = steps.Any(r => r.Status == StepStatus.Blocked) ? StepStatus.Blocked

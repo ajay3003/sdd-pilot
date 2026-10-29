@@ -135,6 +135,68 @@ public sealed class TestDataRegistryStore
         }
     }
 
+    /// <summary>Removes a registered asset and its lifecycle record. Usage references to it are kept: they become unresolved, never deleted.</summary>
+    public bool RemoveAsset(string alias)
+    {
+        lock (_gate)
+        {
+            var asset = _registry.Assets.FirstOrDefault(a => a.Alias == alias);
+            if (asset is null) return false;
+            _registry = _registry with { Assets = [.. _registry.Assets.Where(a => a.Alias != alias)], Lifecycle = [.. _registry.Lifecycle.Where(l => l.AssetId != asset.Id)] };
+            Write();
+            return true;
+        }
+    }
+
+    /// <summary>Changes a registered asset's label (metadata only; registered assets hold no value). False when no such asset.</summary>
+    public bool UpdateLabel(string alias, string label)
+    {
+        lock (_gate)
+        {
+            if (_registry.Assets.All(a => a.Alias != alias)) return false;
+            _registry = _registry with { Assets = [.. _registry.Assets.Select(a => a.Alias == alias ? a with { Label = label } : a)] };
+            Write();
+            return true;
+        }
+    }
+
+    /// <summary>Drops the lifecycle record of an asset removed at its source (session identity, generated fixture).</summary>
+    public void ForgetLifecycle(string assetId)
+    {
+        lock (_gate)
+        {
+            if (_registry.Lifecycle.All(l => l.AssetId != assetId)) return;
+            _registry = _registry with { Lifecycle = [.. _registry.Lifecycle.Where(l => l.AssetId != assetId)] };
+            Write();
+        }
+    }
+
+    /// <summary>Re-points explicit usage references from one asset to another (Replace references). Returns how many changed.</summary>
+    public int ReplaceUsages(string fromAssetId, string toAssetId)
+    {
+        lock (_gate)
+        {
+            var count = _registry.Usages.Count(u => u.AssetId == fromAssetId);
+            if (count == 0) return 0;
+            // The fingerprint belonged to the old asset; the new binding is reviewed against the replacement as it is now.
+            _registry = _registry with { Usages = [.. _registry.Usages.Select(u => u.AssetId == fromAssetId ? u with { AssetId = toAssetId, AssetFingerprint = null } : u)] };
+            Write();
+            return count;
+        }
+    }
+
+    /// <summary>Maintenance reset: removes every registered asset, lifecycle decision, requirement and usage reference. Returns the assets removed.</summary>
+    public int ClearAll()
+    {
+        lock (_gate)
+        {
+            var removed = _registry.Assets.Count;
+            _registry = new Registry();
+            Write();
+            return removed;
+        }
+    }
+
     public bool Unbind(string id)
     {
         lock (_gate)
@@ -205,7 +267,7 @@ public sealed class RegisteredTestDataProvider(TestDataRegistryStore store) : IT
             Id = a.Id, Alias = a.Alias, Label = a.Label, Kind = kind, MediaType = media, Environment = a.EnvironmentId, Approval = TestDataApproval.Unapproved,
             ApprovalDetail = "Registered in Test Data; approve it explicitly here before consumers use it.", Sensitivity = TestDataSensitivity.Sensitive,
             Source = "Registered assets", Provenance = provenance, Fields = [.. a.Fields], Tags = [.. a.Tags], SchemaRef = a.SchemaRef, CandidateId = a.CandidateId,
-            ReviewRequested = a.CandidateId is not null,
+            ReviewRequested = a.CandidateId is not null, Ownership = TestDataOwnership.Registered,
             Schema = a.DataType == TestDataDataType.XmlPayload && a.SchemaRef is { } xsd && xsd.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)
                 ? new TestDataSchemaReference(xsd, a.SnapshotId, null, null, xsd) : null,
         };

@@ -45,6 +45,13 @@
             <p class="xf-notice" role="status" data-testid="xf-regenerate-notice">@string.Join(" ", changed.Select(c => $"{current.Alias} was generated with {c.Role.ToLowerInvariant()} {c.Was}; {c.Now} is now selected."))
                 The saved fixture stays unchanged — regenerate the XML as a new draft to use the new selection.</p>
         }
+        @if (current is not null && TestDataValueVersions.Changed(current, Assets) is { Count: > 0 } valueChanged)
+        {
+            @* The same asset, a new value (Test Data → Edit): the approved fixture keeps the value it was generated with; never rewritten. Only
+               assets inside the XML are recorded, so a reporter (submission context) edit never marks the fixture. *@
+            <p class="xf-notice" role="status" data-testid="xf-value-changed"><strong>Mapped Test Data changed.</strong> @current.Alias was generated using an earlier value of
+                @string.Join(", ", valueChanged.Select(c => c.Missing ? $"{c.Alias} (no longer in Test Data)" : c.Alias)). The saved fixture stays unchanged — regenerate it as a new draft to use the current value.</p>
+        }
         @if (!_open)
         {
             @* The primary action follows the state: a ready fixture is opened, not created again; anything else is created (or revalidated). *@
@@ -52,7 +59,7 @@
                 @if (readiness == TestDataXmlReadinessState.Ready && current is not null)
                 {
                     <button type="button" class="btn btn-primary btn-sm" data-testid="xf-open-ready" aria-controls="@DetailId(current)" aria-expanded="@(_detailFor == current.Id ? "true" : "false")" @onclick="() => ToggleDetail(current)">@(_detailFor == current.Id ? "Hide fixture" : "Open fixture")</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">@(ChangedRoles(context, current).Count > 0 ? "Regenerate XML as new draft" : "Create another")</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">@(ChangedRoles(context, current).Count > 0 || TestDataValueVersions.Changed(current, Assets).Count > 0 ? "Regenerate as new draft" : "Create another")</button>
                     <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-use-existing" aria-expanded="@(_useExisting ? "true" : "false")" aria-controls="xf-existing" @onclick="() => _useExisting = !_useExisting">Use existing XML fixture</button>
                 }
                 else if (readiness == TestDataXmlReadinessState.NotApproved && current is not null)
@@ -229,6 +236,11 @@
                             {
                                 case XmlValueSourceKind.TestDataAsset:
                                     var compatible = XmlValueMappings.CompatibleAssets(Assets, row.Path, context.FixtureBindings);
+                                    @* A mapped asset that was deleted is shown as missing; nothing falls back to another asset. *@
+                                    if (row.AssetAlias is { } mappedAlias && Assets.Count > 0 && Assets.All(a => a.Alias != mappedAlias))
+                                    {
+                                        <span class="xf-badge xf-badge-attention" role="status" data-testid="xf-map-missing">XML mapping requires remapping: @mappedAlias no longer exists in Test Data</span>
+                                    }
                                     if (compatible.Count == 0)
                                     {
                                         <span class="xf-muted" data-testid="xf-map-no-assets">No compatible Test Data assets found.</span>
@@ -406,6 +418,16 @@
 
     private TestDataAssetSummary? Chosen(TestDataFixtureBinding binding) =>
         XmlFixturePresentation.Chosen(XmlFixturePresentation.Candidates(Assets, binding.Capability), _explicit.GetValueOrDefault(binding.Role));
+
+    /// <summary>The Test Data assets placed inside the XML (mapped fields and in-payload roles; never the submitting reporter) with their value versions.</summary>
+    private string? ValueVersions(IntegrationTemplateView context)
+    {
+        var inXml = context.FixtureBindings.Where(b => b.ElementPath is not null).Select(b => Aliases(context).GetValueOrDefault(b.Role))
+            .Concat(_mappings.Where(m => m.Kind == XmlValueSourceKind.TestDataAsset).Select(m => m.AssetAlias))
+            .OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var used = Assets.Where(a => inXml.Contains(a.Alias)).ToList();
+        return used.Count == 0 ? null : TestDataValueVersions.Format(used);
+    }
 
     private Dictionary<string, string?> Aliases(IntegrationTemplateView context) => context.FixtureBindings.ToDictionary(b => b.Role,
         b => (b.ElementPath is { } path ? _mappings.FirstOrDefault(m => m.Path == path && m.Kind == XmlValueSourceKind.TestDataAsset)?.AssetAlias : null) ?? Chosen(b)?.Alias);
@@ -637,6 +659,8 @@
             if (mapped.GroupBy(m => m.Path).FirstOrDefault(g => g.Count() > 1) is { } twice) { _error = $"{XmlValueMappings.Display(_parameters, twice.Key)} is mapped more than once; nothing was generated."; return; }
             if (mapped.FirstOrDefault(m => m.Kind == XmlValueSourceKind.TestDataAsset && m.AssetAlias is null) is { } unset)
             { _error = $"Choose a Test Data asset for {XmlValueMappings.Display(_parameters, unset.Path)}; nothing was generated."; return; }
+            if (Assets.Count > 0 && mapped.FirstOrDefault(m => m.Kind == XmlValueSourceKind.TestDataAsset && Assets.All(a => a.Alias != m.AssetAlias)) is { } gone)
+            { _error = $"{XmlValueMappings.Display(_parameters, gone.Path)} maps {gone.AssetAlias}, which no longer exists in Test Data — remap it; nothing was generated."; return; }
             _package ??= await LoadPackageAsync(xsd);
             if (_package is null) return;
             if (_parameters.Count == 0) _parameters = XmlValueMappings.Parameters(_package);
@@ -693,7 +717,7 @@
             var root = XDocument.Parse(_xml).Root?.Name.LocalName;
             var facts = new SchemaXmlRegistrationFacts("Valid", "Valid", GeneratorVersion: "Test Data XML fixture v2", RootElement: root, EnvironmentId: _environmentId,
                 Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)), Capabilities: context.FixtureCapabilities,
-                ValueMappings: XmlValueMappings.ProvenanceText(_mappings), ManualChanges: _manualEdit,
+                ValueMappings: XmlValueMappings.ProvenanceText(_mappings), ManualChanges: _manualEdit, TestDataValueVersions: ValueVersions(context),
                 SourceSelection: $"{Selection(context).SnapshotReason} · {Selection(context).ContractReason}");
             // Never overwrite a saved fixture: a regenerated XML is saved as a new draft under a free alias.
             _alias = XmlValueMappings.FreeAlias(_alias!.Trim(), Assets);

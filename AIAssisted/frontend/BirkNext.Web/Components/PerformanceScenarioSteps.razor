@@ -11,7 +11,7 @@
    variable, fixed or generated value), its response outputs, its authentication (inherit / none / override) and its request details. Order is
    execution order: drag ⋮⋮ or Move up / Move down; a move that would run a step before the step whose output it uses is refused with options. *@
 <section class="pss" aria-labelledby="pss-summary-h" data-testid="pss">
-    @{ var readiness = R.ScenarioReadiness(Definition); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
+    @{ var readiness = R.ScenarioReadiness(Definition, KnownAliases); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
     <div class="pss-header" data-testid="pss-header">
         <h3 id="pss-summary-h" class="visually-hidden">Scenario summary</h3>
         <dl class="pss-facts">
@@ -70,6 +70,8 @@
     [Parameter, EditorRequired] public PerformanceTestDefinition Definition { get; set; } = new();
     [Parameter] public EventCallback<PerformanceTestDefinition> OnChange { get; set; }
     [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
+    /// <summary>The catalog's aliases when it was loaded (null before): a mapped alias that no longer exists shows "Test Data reference missing".</summary>
+    private IReadOnlySet<string>? KnownAliases => Assets.Count == 0 ? null : Assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
     [Parameter] public IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> Observations { get; set; } = [];
 
     /// <summary>Approved authentication configurations a scenario may reference (references only; credentials stay with their owner).</summary>
@@ -298,9 +300,9 @@
 
     private RenderFragment StepCard(int index, HttpPerformanceStep s) => __builder =>
     {
-        var status = R.Readiness(Definition, index);
+        var status = R.Readiness(Definition, index, KnownAliases);
         var open = Expanded(s);
-        var rows = R.Rows(Definition.Scenario, index);
+        var rows = R.Rows(Definition.Scenario, index, KnownAliases);
         var bodyId = $"pt-step-body-{s.Id}";
         @* Native dragover cancellation enables drop without dispatching every pointer movement through Blazor. *@
         <li @key="s.Id" class="pt-step pss-step pss-tone-@Tone(status.Status) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"

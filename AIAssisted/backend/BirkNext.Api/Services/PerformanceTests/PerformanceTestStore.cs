@@ -24,6 +24,13 @@ public sealed class PerformanceTestStore(AppDbContext db)
         return rows.Select(r => JsonSerializer.Deserialize<PerformanceTestDefinition>(r.DocumentJson, Json)!).OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Id).ToList();
     }
 
+    /// <summary>Every active (not archived) definition across environments: Test Data usage and reference replacement read them.</summary>
+    public async Task<List<PerformanceTestDefinition>> AllActiveDefinitionsAsync(CancellationToken ct = default)
+    {
+        var rows = await db.PerformanceTestDefinitions.AsNoTracking().Where(r => !r.Archived).ToListAsync(ct);
+        return [.. rows.Select(r => JsonSerializer.Deserialize<PerformanceTestDefinition>(r.DocumentJson, Json)!).OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Id)];
+    }
+
     public async Task<PerformanceTestDefinition?> DefinitionAsync(string environmentId, string id, CancellationToken ct = default)
     {
         var row = await db.PerformanceTestDefinitions.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.EnvironmentId == environmentId, ct);

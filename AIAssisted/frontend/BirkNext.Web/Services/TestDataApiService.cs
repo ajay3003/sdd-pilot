@@ -25,7 +25,7 @@ public interface ITestDataApiService
     Task<(TestDataUsageReference? Usage, string? Error)> BindAsync(TestDataUsageReference usage, CancellationToken ct = default) => Task.FromResult<(TestDataUsageReference?, string?)>((null, Unavailable));
 
     /// <summary>
-    /// The one call that sends a value: a Live Discovery value, in the POST body only, for a backend-only comparison with approved Test Data. The
+    /// Sends a value (with <see cref="EditAsync"/>, the only calls that do): a Live Discovery value, in the POST body only, for a backend-only comparison with approved Test Data. The
     /// answer is an alias or nothing; nothing is stored, approved or created (POST api/test-data/observed-value/match).
     /// </summary>
     Task<(ObservedValueMatchResult? Result, string? Error)> MatchObservedValueAsync(ObservedValueMatchRequest request, CancellationToken ct = default) =>
@@ -34,6 +34,27 @@ public interface ITestDataApiService
     /// <summary>Fills generated XML with Test Data values by alias (POST api/test-data/xml-fixtures/bind); the values are resolved by the backend.</summary>
     Task<(string? Xml, IReadOnlyList<string> Problems)> BindXmlFixtureAsync(TestDataXmlBindRequest request, CancellationToken ct = default) =>
         Task.FromResult<(string?, IReadOnlyList<string>)>((null, [Unavailable]));
+
+    // Asset lifecycle: references, Edit, Restore default value, Delete, Replace references, Reset Test Data. Results carry the backend's own
+    // outcome (also for a refusal), so a dialog can show exactly why — for example the references an in-use asset still has.
+    Task<(IReadOnlyList<TestDataAssetUsage>? References, string? Error)> ReferencesAsync(CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<TestDataAssetUsage>?, string?)>((null, Unavailable));
+    /// <summary>The Edit surface. The one read that may carry an actual value: only for an asset whose value Test Data may edit.</summary>
+    Task<(TestDataEditView? View, string? Error)> EditViewAsync(string assetId, CancellationToken ct = default) => Task.FromResult<(TestDataEditView?, string?)>((null, Unavailable));
+    /// <summary>Saves an edit (PUT api/test-data/assets/{id}); a changed value is sent in the body only.</summary>
+    Task<(TestDataEditResult? Result, string? Error)> EditAsync(string assetId, TestDataEditRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataEditResult?, string?)>((null, Unavailable));
+    Task<(TestDataEditResult? Result, string? Error)> RestoreDefaultAsync(string assetId, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataEditResult?, string?)>((null, Unavailable));
+    Task<(TestDataDeleteResult? Result, string? Error)> DeleteAsync(string assetId, bool leaveReferencesUnresolved, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataDeleteResult?, string?)>((null, Unavailable));
+    Task<(IReadOnlyList<TestDataAssetSummary>? Replacements, string? Error)> ReplacementsAsync(string assetId, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<TestDataAssetSummary>?, string?)>((null, Unavailable));
+    Task<(TestDataReplaceResult? Result, string? Error)> ReplaceAsync(string assetId, string replacementAssetId, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataReplaceResult?, string?)>((null, Unavailable));
+    Task<(TestDataResetPreview? Preview, string? Error)> ResetPreviewAsync(CancellationToken ct = default) => Task.FromResult<(TestDataResetPreview?, string?)>((null, Unavailable));
+    Task<(TestDataResetResult? Result, string? Error)> ResetAsync(int generatedFixturesRemoved, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataResetResult?, string?)>((null, Unavailable));
 
     const string Unavailable = "This Test Data action is not available in this host.";
 }
@@ -126,6 +147,53 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
     {
         var (body, error) = await PostAsync("api/test-data/observed-value/match", request, ct);
         return (body?.Deserialize<ObservedValueMatchResult>(Json), error);
+    }
+
+    public Task<(IReadOnlyList<TestDataAssetUsage>? References, string? Error)> ReferencesAsync(CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<TestDataAssetUsage>>(HttpMethod.Get, "api/test-data/references", null, ct);
+
+    public Task<(TestDataEditView? View, string? Error)> EditViewAsync(string assetId, CancellationToken ct = default) =>
+        SendAsync<TestDataEditView>(HttpMethod.Get, $"api/test-data/assets/{Uri.EscapeDataString(assetId)}/edit", null, ct);
+
+    public Task<(TestDataEditResult? Result, string? Error)> EditAsync(string assetId, TestDataEditRequest request, CancellationToken ct = default) =>
+        SendAsync<TestDataEditResult>(HttpMethod.Put, $"api/test-data/assets/{Uri.EscapeDataString(assetId)}", request, ct);
+
+    public Task<(TestDataEditResult? Result, string? Error)> RestoreDefaultAsync(string assetId, CancellationToken ct = default) =>
+        SendAsync<TestDataEditResult>(HttpMethod.Post, $"api/test-data/assets/{Uri.EscapeDataString(assetId)}/restore-default", new { }, ct);
+
+    public Task<(TestDataDeleteResult? Result, string? Error)> DeleteAsync(string assetId, bool leaveReferencesUnresolved, CancellationToken ct = default) =>
+        SendAsync<TestDataDeleteResult>(HttpMethod.Delete, $"api/test-data/assets/{Uri.EscapeDataString(assetId)}?leaveReferencesUnresolved={(leaveReferencesUnresolved ? "true" : "false")}", null, ct);
+
+    public Task<(IReadOnlyList<TestDataAssetSummary>? Replacements, string? Error)> ReplacementsAsync(string assetId, CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<TestDataAssetSummary>>(HttpMethod.Get, $"api/test-data/assets/{Uri.EscapeDataString(assetId)}/replacements", null, ct);
+
+    public Task<(TestDataReplaceResult? Result, string? Error)> ReplaceAsync(string assetId, string replacementAssetId, CancellationToken ct = default) =>
+        SendAsync<TestDataReplaceResult>(HttpMethod.Post, $"api/test-data/assets/{Uri.EscapeDataString(assetId)}/replace", new TestDataReplaceRequest(replacementAssetId), ct);
+
+    public Task<(TestDataResetPreview? Preview, string? Error)> ResetPreviewAsync(CancellationToken ct = default) =>
+        SendAsync<TestDataResetPreview>(HttpMethod.Get, "api/test-data/reset/preview", null, ct);
+
+    public Task<(TestDataResetResult? Result, string? Error)> ResetAsync(int generatedFixturesRemoved, CancellationToken ct = default) =>
+        SendAsync<TestDataResetResult>(HttpMethod.Post, $"api/test-data/reset?generatedFixturesRemoved={generatedFixturesRemoved}", new { }, ct);
+
+    /// <summary>A typed call whose body is returned also on a refusal (409/422 carry the outcome); the error is the outcome's message or the status.</summary>
+    private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? payload, CancellationToken ct) where T : class
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(method, path);
+            if (payload is not null) request.Content = JsonContent.Create(payload, options: Json);
+            using var response = await http.SendAsync(request, ct);
+            var text = await response.Content.ReadAsStringAsync(ct);
+            T? body = null;
+            if (text.Length > 0) { try { body = JsonSerializer.Deserialize<T>(text, Json); } catch (JsonException) { } }
+            if (response.IsSuccessStatusCode) return (body, null);
+            string? message = null;
+            if (text.Length > 0) { try { message = JsonSerializer.Deserialize<JsonElement>(text, Json) is { ValueKind: JsonValueKind.Object } o && o.TryGetProperty("message", out var m) ? m.GetString() : null; } catch (JsonException) { } }
+            return (body, message ?? $"The request failed ({(int)response.StatusCode}).");
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
+        { return (null, BackendRequestClassifier.FromException(Title, e, $"{method} {path}", ct).UserMessage); }
     }
 
     /// <summary>POST with the backend's own refusal text (400/409 "message") surfaced as the error.</summary>

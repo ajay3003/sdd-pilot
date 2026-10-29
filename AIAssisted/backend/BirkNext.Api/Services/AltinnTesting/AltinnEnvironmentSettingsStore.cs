@@ -249,6 +249,83 @@ public sealed class AltinnSessionStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Edits a built-in default or session reporter/child in place: its label and/or identifier. The alias (the asset id consumers reference),
+    /// the role, the type and the built-in/session origin never change. Backend-configured identities are not edited (their configuration owns
+    /// them). Validation is the same as on entry. Returns the problem (never containing an identifier) or null.
+    /// </summary>
+    public string? UpdateIdentity(string role, string alias, string? label, string? identifier, DateTimeOffset now, bool valueModified = true)
+    {
+        label = label?.Trim();
+        identifier = identifier?.Trim();
+        if (label is { Length: > 100 }) return "The label is too long.";
+        lock (_identityLock)
+        {
+            if (string.Equals(role, AltinnTestDataProvider.Reporter, StringComparison.OrdinalIgnoreCase))
+            {
+                var reporter = _options.UnattendedIdPortenTest.Reporters.FirstOrDefault(item => item.Alias == alias);
+                if (reporter is null) return $"No reporter {alias} exists.";
+                if (!reporter.BuiltIn && reporter.SessionExpiresAt is null) return $"The reporter {alias} is supplied by the backend's configuration; change it there.";
+                if (identifier is { Length: > 0 } && identifier != reporter.TestIdPersonIdentifier?.Trim())
+                {
+                    if (!SyntheticPersonIdentifier.IsSynthetic(identifier)) return "The reporter identifier is not a synthetic TestID identifier (11 digits; Test-Norge month + 80).";
+                    if (_options.SyntheticChildren.Any(child => string.Equals(child.TestPersonIdentifier?.Trim(), identifier, StringComparison.Ordinal)))
+                        return "The reporter and the child must be different persons.";
+                    if (_options.UnattendedIdPortenTest.Reporters.Any(item => item.Alias != alias && string.Equals(item.TestIdPersonIdentifier?.Trim(), identifier, StringComparison.Ordinal)))
+                        return "Another reporter already uses this identifier.";
+                    reporter.TestIdPersonIdentifier = identifier;
+                    reporter.ValueVersion++;
+                    reporter.ValueUpdatedAt = now;
+                    reporter.ValueModified = reporter.BuiltIn && valueModified;
+                }
+                if (label is { Length: > 0 }) reporter.Label = label;
+                return null;
+            }
+            if (string.Equals(role, AltinnTestDataProvider.Child, StringComparison.OrdinalIgnoreCase))
+            {
+                var child = _options.SyntheticChildren.FirstOrDefault(item => item.Alias == alias);
+                if (child is null) return $"No child {alias} exists.";
+                if (!child.BuiltIn && child.SessionExpiresAt is null) return $"The child {alias} is supplied by the backend's configuration; change it there.";
+                if (identifier is { Length: > 0 } && identifier != child.TestPersonIdentifier?.Trim())
+                {
+                    if (!SyntheticPersonIdentifier.IsTestPerson(identifier)) return "The child identifier is not a valid 11-digit person identifier (date part and control digits).";
+                    if (_options.UnattendedIdPortenTest.Reporters.Any(reporter => string.Equals(reporter.TestIdPersonIdentifier?.Trim(), identifier, StringComparison.Ordinal)))
+                        return "The reporter and the child must be different persons.";
+                    if (_options.SyntheticChildren.Any(item => item.Alias != alias && string.Equals(item.TestPersonIdentifier?.Trim(), identifier, StringComparison.Ordinal)))
+                        return "Another child already uses this identifier.";
+                    child.TestPersonIdentifier = identifier;
+                    child.ValueVersion++;
+                    child.ValueUpdatedAt = now;
+                    child.ValueModified = child.BuiltIn && valueModified;
+                }
+                if (label is { Length: > 0 }) child.Label = label;
+                return null;
+            }
+            return "The role must be reporter or child.";
+        }
+    }
+
+    /// <summary>Removes one session reporter or child (configured and built-in identities are never removed). False when no such session identity.</summary>
+    public bool RemoveIdentity(string role, string alias)
+    {
+        lock (_identityLock)
+        {
+            if (string.Equals(role, AltinnTestDataProvider.Reporter, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_options.UnattendedIdPortenTest.Reporters.Any(item => item.Alias == alias && item.SessionExpiresAt is not null && !item.BuiltIn)) return false;
+                _options.UnattendedIdPortenTest.Reporters = [.. _options.UnattendedIdPortenTest.Reporters.Where(item => !(item.Alias == alias && item.SessionExpiresAt is not null))];
+                return true;
+            }
+            if (string.Equals(role, AltinnTestDataProvider.Child, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_options.SyntheticChildren.Any(item => item.Alias == alias && item.SessionExpiresAt is not null && !item.BuiltIn)) return false;
+                _options.SyntheticChildren = [.. _options.SyntheticChildren.Where(item => !(item.Alias == alias && item.SessionExpiresAt is not null))];
+                return true;
+            }
+            return false;
+        }
+    }
+
     /// <summary>Removes every session identity (configured identities stay).</summary>
     public void ClearIdentities()
     {

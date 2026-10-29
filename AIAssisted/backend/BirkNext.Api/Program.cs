@@ -598,13 +598,20 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCatalogService
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataSchemaSource, BirkNext.Api.Services.TestData.SourceAnalysisTestDataSchemaSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataSchemaValidationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCandidateService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataLifecycleService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataAssetEditor, BirkNext.Api.Services.AltinnTesting.AltinnTestDataEditor>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.PerformanceTests.PerformanceTestDataReferences>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.CriticalE2E.CriticalE2ETestDataReferences>();
 
 // Altinn app testing (Skolenærvær Rapportmottak): TT02 App API steps executed by the shared journey runner after the tester's own
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.
 // Test Data's built-in Skolenærvær default reporter and child are added once here (fill-if-absent; configuration and session entries win).
-builder.Services.AddSingleton(sp => BirkNext.Api.Services.AltinnTesting.SkoleNaervaerTestIdentityDefaults.Apply(
+// A tester's edits of those protected defaults (Test Data → Edit) are applied on top; Maintenance reset preserves them.
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.ProtectedTestDataDefaultsStore>();
+builder.Services.AddSingleton(sp => sp.GetRequiredService<BirkNext.Api.Services.AltinnTesting.ProtectedTestDataDefaultsStore>().Overlay(
+    BirkNext.Api.Services.AltinnTesting.SkoleNaervaerTestIdentityDefaults.Apply(
     sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions.Section)
-    .Get<BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions>() ?? new BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions()));
+    .Get<BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions>() ?? new BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions())));
 // Target Environment → Connected Systems → Altinn: saved non-secret settings (database + in-memory cache for the policy) and session-only values (memory).
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsCache>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnSessionStore>();

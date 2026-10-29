@@ -82,7 +82,7 @@ public sealed class ConfiguredTestDataProvider(TestDataOptions options, string c
         var (value, problem) = item.File is { Length: > 0 } file ? ReadFile(file) : (item.Value, null);
         return new TestDataAsset
         {
-            Id = $"{Id}:{item.Alias.Trim()}", Alias = item.Alias.Trim(), Label = item.Label, Kind = item.Kind, ValueType = item.Kind == TestDataKind.Scalar ? item.ValueType : TestDataValueType.None,
+            Id = $"{Id}:{item.Alias.Trim()}", Alias = item.Alias.Trim(), Label = item.Label, Kind = item.Kind, Ownership = TestDataOwnership.Configuration, ValueType = item.Kind == TestDataKind.Scalar ? item.ValueType : TestDataValueType.None,
             MediaType = item.MediaType, EntityType = item.EntityType, Environment = string.IsNullOrWhiteSpace(item.Environment) ? null : item.Environment.Trim(),
             Approval = item.Approval, Capabilities = [.. item.Capabilities.Select(cap => cap.Trim()).Where(cap => cap.Length > 0)], Sensitivity = item.Sensitivity,
             Source = Label, IsDefault = item.IsDefault, ExpiresAt = item.ExpiresAt, ExpectsAbsence = item.ExpectsAbsence,

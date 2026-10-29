@@ -84,4 +84,61 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
 
     [HttpDelete("usages/{id}")]
     public IActionResult Unbind(string id) => service.Unbind(id) ? NoContent() : NotFound();
+
+    // ── Asset lifecycle: references, Edit, Restore default value, Delete, Replace references, Reset Test Data ──────────────────────
+
+    /// <summary>Every place an asset alias is referenced (performance scenarios, Critical E2E flows, explicit bindings), unresolved ones marked.</summary>
+    [HttpGet("references")]
+    public async Task<ActionResult<IReadOnlyList<TestDataAssetUsage>>> References([FromServices] TestDataLifecycleService lifecycle, CancellationToken ct) =>
+        Ok(await lifecycle.UsagesAsync(ct));
+
+    /// <summary>The Edit surface. Carries the actual value only for an asset whose value Test Data may edit (protected default, session entry).</summary>
+    [HttpGet("assets/{id}/edit")]
+    public async Task<ActionResult<TestDataEditView>> EditView([FromServices] TestDataLifecycleService lifecycle, string id, CancellationToken ct) =>
+        await lifecycle.EditViewAsync(id, ct) is { } view ? Ok(view) : NotFound();
+
+    [HttpPut("assets/{id}")]
+    [RequestSizeLimit(16 * 1024)]
+    public async Task<ActionResult<TestDataEditResult>> Edit([FromServices] TestDataLifecycleService lifecycle, string id, [FromBody] TestDataEditRequest request, CancellationToken ct)
+    {
+        var (result, notFound) = await lifecycle.EditAsync(id, request, ct);
+        return notFound ? NotFound(result) : result.Updated || result.Message == "Nothing changed." ? Ok(result) : UnprocessableEntity(result);
+    }
+
+    [HttpPost("assets/{id}/restore-default")]
+    public async Task<ActionResult<TestDataEditResult>> RestoreDefault([FromServices] TestDataLifecycleService lifecycle, string id, CancellationToken ct)
+    {
+        var (result, notFound) = await lifecycle.RestoreDefaultAsync(id, ct);
+        return notFound ? NotFound(result) : result.Updated ? Ok(result) : Conflict(result);
+    }
+
+    /// <summary>Deletes a local asset. Protected defaults and configuration-owned assets are always refused; an asset in use is refused unless
+    /// <paramref name="leaveReferencesUnresolved"/> is set, and then its references stay (unresolved) — consumers are never deleted.</summary>
+    [HttpDelete("assets/{id}")]
+    public async Task<ActionResult<TestDataDeleteResult>> Delete([FromServices] TestDataLifecycleService lifecycle, string id, [FromQuery] bool leaveReferencesUnresolved, CancellationToken ct)
+    {
+        var (result, status) = await lifecycle.DeleteAsync(id, leaveReferencesUnresolved, ct);
+        return StatusCode(status, result);
+    }
+
+    /// <summary>The compatible replacements of an asset (same type, data type and role, compatible scope, approved). Never a "closest" guess.</summary>
+    [HttpGet("assets/{id}/replacements")]
+    public ActionResult<IReadOnlyList<TestDataAssetSummary>> Replacements([FromServices] TestDataLifecycleService lifecycle, string id) => Ok(lifecycle.Replacements(id));
+
+    /// <summary>Re-points every reference of the asset to a compatible approved replacement (aliases only; no value is copied).</summary>
+    [HttpPost("assets/{id}/replace")]
+    public async Task<ActionResult<TestDataReplaceResult>> Replace([FromServices] TestDataLifecycleService lifecycle, string id, [FromBody] TestDataReplaceRequest request, CancellationToken ct)
+    {
+        var (result, status) = await lifecycle.ReplaceAsync(id, request.ReplacementAssetId, ct);
+        return StatusCode(status, result);
+    }
+
+    [HttpGet("reset/preview")]
+    public async Task<ActionResult<TestDataResetPreview>> ResetPreview([FromServices] TestDataLifecycleService lifecycle, CancellationToken ct) =>
+        Ok(await lifecycle.PreviewResetAsync(ct));
+
+    /// <summary>Reset Test Data only (Maintenance): protected defaults keep their current values; local assets are removed; consumers stay.</summary>
+    [HttpPost("reset")]
+    public async Task<ActionResult<TestDataResetResult>> Reset([FromServices] TestDataLifecycleService lifecycle, [FromQuery] int generatedFixturesRemoved, CancellationToken ct) =>
+        Ok(await lifecycle.ResetAsync(Math.Max(0, generatedFixturesRemoved), ct));
 }

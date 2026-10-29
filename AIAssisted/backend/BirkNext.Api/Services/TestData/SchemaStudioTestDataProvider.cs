@@ -62,6 +62,8 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
             if (facts.TestDataBindings is { Length: > 0 } bound) provenance.Add(new("Test Data roles", bound));
             // How each mapped element got its value (Test Data asset alias, fixed or generated) — references and rules, never a resolved identifier.
             if (facts.ValueMappings is { Length: > 0 } mappings) provenance.Add(new("Value mappings", mappings[..Math.Min(1000, mappings.Length)]));
+            // Asset reference + value version used at generation ("alias@v2"): a later value change is detected without storing or hashing the value.
+            if (facts.TestDataValueVersions is { Length: > 0 } versions) provenance.Add(new(TestDataValueVersions.Label, versions[..Math.Min(1000, versions.Length)]));
             // Generated from mappings vs. edited by hand: a manual override is recorded, never presented as purely mapping-generated.
             if (facts.ManualChanges is { } manual) provenance.Add(new("Manual XML changes", manual ? "Present (edited after generation)" : "None"));
             if (facts.SourceSelection is { Length: > 0 } selection) provenance.Add(new("Source/XSD selection", selection[..Math.Min(400, selection.Length)]));
@@ -75,7 +77,7 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
         provenance.Add(new("Registered", registration.RegisteredAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")));
         return new TestDataAsset
         {
-            Id = $"{Id}:{alias}", Alias = alias, Label = registration.Label, Kind = TestDataKind.Structured, MediaType = "application/xml",
+            Id = $"{Id}:{alias}", Alias = alias, Label = registration.Label, Kind = TestDataKind.Structured, MediaType = "application/xml", Ownership = TestDataOwnership.Generated,
             Approval = problem is null && registration.Approved ? TestDataApproval.Approved : TestDataApproval.Unapproved,
             ApprovalDetail = problem ?? (registration.Approved ? null : "Registered from Schema Studio; review and approve it in Test Data before it is used."),
             ReviewRequested = !registration.Approved, Environment = registration.Facts?.EnvironmentId,
@@ -98,5 +100,6 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
     private sealed record Registration(string Alias, string? Label, string Intent, bool Approved, DateTimeOffset RegisteredAt, Facts? Facts);
     private sealed record Facts(string ExpectedResult, string ValidationStatus, string? Mutation, string? TargetRule, string? Path, string? ProfileId,
         string? ProfileVersion, string? GeneratorVersion, string? RootElement, string? EnvironmentId, string? Contract = null, string? TestDataBindings = null,
-        IReadOnlyList<string>? Capabilities = null, string? ValueMappings = null, bool? ManualChanges = null, string? SourceSelection = null);
+        IReadOnlyList<string>? Capabilities = null, string? ValueMappings = null, bool? ManualChanges = null, string? SourceSelection = null,
+        string? TestDataValueVersions = null);
 }
