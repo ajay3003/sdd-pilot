@@ -100,7 +100,7 @@ public sealed class NavMenuLayoutTests : BunitContext
             Tech("cloud.aws", "Amazon Web Services", TechnologyArea.Cloud),
         ]);
         var cut = Render<NavMenu>();
-        cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("Unsupported"));
+        cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("Unavailable", "product availability outranks applicability"));
 
         Status(cut, "quality-review").Should().Be("No evidence");
         Status(cut, "pipeline-review").Should().Be("Partial");
@@ -108,7 +108,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         Status(cut, "api-quality-review").Should().Be("N/A", "an analyzed snapshot without an API");
         cut.Find("[data-testid=nav-applicability-quality-review]").GetAttribute("data-kind").Should().Be("NoEvidence");
         cut.Find("[data-testid=nav-applicability-frontend-quality-review]").GetAttribute("data-kind").Should().Be("NotApplicable");
-        cut.Find("[data-testid=nav-applicability-azure-environment]").GetAttribute("title").Should().Contain("Amazon Web Services");
+        cut.Find("[data-testid=nav-applicability-azure-environment]").GetAttribute("title").Should().Contain("not currently available for normal use");
     }
 
     [Fact]
@@ -137,13 +137,13 @@ public sealed class NavMenuLayoutTests : BunitContext
         _api.Coverage = Snapshot([Tech("cloud.azure", "Microsoft Azure", TechnologyArea.Cloud)]);
         var cut = Render<NavMenu>();
 
-        cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("Azure"));
+        cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("Unavailable", "an unavailable feature never reads as a provider overlay"));
         cut.Find("a[href='azure-environment'] .nav-label").TextContent.Should().Be("Environment Analysis");
-        cut.Find("a[href='azure-environment'] .visually-hidden").TextContent.Should().Be(", Provider: Azure");
+        cut.Find("a[href='azure-environment'] .visually-hidden").TextContent.Should().Be(", Feature unavailable");
 
         _api.Coverage = Snapshot([Tech("lang.java", "Java", TechnologyArea.Language)]);
         _workspace.Raise(w => w.Changed += null);
-        cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("N/A"));
+        cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("Unavailable"));
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class NavMenuLayoutTests : BunitContext
 
         cut.WaitForAssertion(() => Status(cut, "quality-review").Should().Be("No evidence"));
         Status(cut, "security-classification-review").Should().Be("N/A");
-        Status(cut, "azure-environment").Should().Be("No evidence");
+        Status(cut, "azure-environment").Should().Be("Unavailable");
         Status(cut, "api-quality-review").Should().Be("Setup");
         cut.Find("[data-testid=nav-applicability-api-quality-review]").GetAttribute("data-kind").Should().Be("Setup");
         cut.FindAll(".nav-status-extension, .nav-status-provider").Should().BeEmpty();
@@ -172,7 +172,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.WaitForAssertion(() => Status(cut, "dependency-review").Should().Be("No evidence"));
         Status(cut, "quality-review").Should().BeNull("an applicable review needs no badge");
         cut.FindAll(".nav-applicability").Select(b => b.GetAttribute("data-kind"))
-            .Should().OnlyContain(k => k == "NoEvidence" || k == "Setup" || k == "NotApplicable");
+            .Should().OnlyContain(k => k == "NoEvidence" || k == "Setup" || k == "NotApplicable" || k == "Unavailable");
     }
 
     [Fact]

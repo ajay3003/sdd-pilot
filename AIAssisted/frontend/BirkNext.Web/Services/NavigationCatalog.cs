@@ -218,7 +218,7 @@ public static class NavigationCatalog
     }
 }
 
-public enum NavStatusKind { Partial, Setup, NeedsRefresh, NoEvidence, NotApplicable, Unsupported, Extension, Provider }
+public enum NavStatusKind { Partial, Setup, NeedsRefresh, NoEvidence, NotApplicable, Unsupported, Extension, Provider, Unavailable }
 
 /// <summary>Compact sidebar status. <see cref="Text"/> is the short badge, <see cref="Spoken"/> its full words for screen readers,
 /// <see cref="Tooltip"/> the reason.</summary>
@@ -235,6 +235,9 @@ public static class NavStatusPresentation
 {
     public static NavStatus? For(NavItem item, ReviewApplicability? applicability)
     {
+        // Product availability outranks applicability, setup and provider overlays: an unavailable feature never reads as "Setup" or "Azure".
+        if (FeatureAvailabilityCatalog.Find(item.FeatureId) is { IsUnavailable: true } unavailable)
+            return new(NavStatusKind.Unavailable, "Unavailable", "Feature unavailable", unavailable.Summary);
         if (applicability is null) return null;
         var reason = applicability.Reason;
         if (applicability.Status == ApplicabilityStatus.Applicable)

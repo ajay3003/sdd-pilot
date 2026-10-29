@@ -12,7 +12,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
     public NavMenuSourceAnalysisTests() => Services.AddSingleton<FeatureVisibilityService>();
 
     private static IReadOnlyList<string> Entries(IRenderedComponent<NavMenu> cut) =>
-        cut.FindAll("nav .nav-section, nav .nav-item").Select(e => (e.ClassList.Contains("nav-section") ? "§" : "") + e.TextContent.Trim()).ToList();
+        cut.FindAll("nav .nav-section, nav .nav-item").Select(e => (e.ClassList.Contains("nav-section") ? "§" : "") + (e.QuerySelector(".nav-label")?.TextContent ?? e.TextContent).Trim()).ToList();
 
     [Fact]
     public void SourceAnalysisIsAProjectInput_AndItsConsumersFormTheSourceReviewGroup_EachAppearingOnce()

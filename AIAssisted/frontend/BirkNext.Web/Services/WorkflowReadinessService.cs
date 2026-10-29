@@ -654,7 +654,9 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private IReadOnlyList<WorkflowReviewOption> ApplicableReviews(ChangeProvenanceState change)
     {
         var reviews = NavigationCatalog.Sections
-            .SelectMany(section => section.Items.Where(item => item.ReviewId is not null && FeatureVisible(item.Route)).Select(item => (section, item)))
+            // An unavailable capability is never recommended, whatever its applicability or configuration.
+            .SelectMany(section => section.Items.Where(item => item.ReviewId is not null && FeatureVisible(item.Route) && !FeatureAvailabilityCatalog.IsUnavailable(item.FeatureId))
+                .Select(item => (section, item)))
             .Select(x => (x.section, x.item, applicability: _applicability.For(x.item.ReviewId!)))
             .Where(x => x.applicability?.Status is ApplicabilityStatus.Applicable or ApplicabilityStatus.PartiallyApplicable)
             .Select(x => new WorkflowReviewOption(x.item.ReviewId!, x.item.Label, x.item.Route, x.section.Label, x.applicability!.Status, x.applicability.Reason))

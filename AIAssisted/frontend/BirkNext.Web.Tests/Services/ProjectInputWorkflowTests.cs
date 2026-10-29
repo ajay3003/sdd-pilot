@@ -650,4 +650,16 @@ public sealed class ProjectInputWorkflowTests
 
         changed.Should().Be(0);
     }
+
+    [Fact]
+    public async Task UnavailableFeature_IsNeverRecommended_EvenWhenItsReviewIsApplicable()
+    {
+        Source(detected: [Nuget, AzurePipelines, ("cloud.azure", Capability.CloudHosted)]);
+
+        var r = await ReadinessAsync();
+
+        r.ApplicableReviews.Should().NotContain(x => x.ReviewId == "azure-environment", "Azure Environment Analysis is unavailable as a product capability");
+        r.NextRecommendedAction!.Key.Should().NotContain("azure");
+        r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain("dependency-review", "unrelated readiness is not blocked");
+    }
 }

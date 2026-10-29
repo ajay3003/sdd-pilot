@@ -12,23 +12,63 @@
 <PageTitle>Azure Environment Analysis</PageTitle>
 
 <div class="sd-workspace az-page" data-testid="az-page">
-    <h1 class="az-title">Azure Environment Analysis</h1>
-    <p class="sd-boundary" data-testid="az-boundary">@AzureEnvironmentText.Boundary</p>
+    @* Priority: 1 feature availability, 2 connection/configuration, 3 evidence semantics. Availability is product maturity — never "Not configured". *@
+    <div class="az-title-row">
+        <h1 class="az-title" id="az-title">Azure Environment Analysis</h1>
+        @if (Availability is { } availability)
+        {
+            <span class="sd-pill sd-pill-@(availability.IsUnavailable ? "attention" : "partial") az-availability-badge" data-testid="az-availability-badge" data-state="@availability.State">
+                <span aria-hidden="true">⊘ </span>@FeatureAvailabilityCatalog.Label(availability.State)<span class="visually-hidden"> — feature availability</span></span>
+        }
+    </div>
+    @if (Availability is { IsUnavailable: true } unavailable)
+    {
+        <section class="az-unavailable" role="note" aria-labelledby="az-unavailable-h" data-testid="az-unavailable-banner">
+            <h2 id="az-unavailable-h">Feature unavailable</h2>
+            <p>@unavailable.Summary</p>
+            <dl class="az-states" data-testid="az-states">
+                <div><dt>Feature availability</dt><dd data-testid="az-state-feature">Unavailable</dd></div>
+                <div><dt>Azure connection</dt><dd data-testid="az-state-connection">@P.Connection(_status).Label</dd></div>
+                <div><dt>Runtime evidence</dt><dd data-testid="az-state-evidence">Not verified</dd></div>
+            </dl>
+            <details class="az-details" data-testid="az-implementation-status">
+                <summary>Implementation status</summary>
+                <ul class="az-capabilities">
+                    @foreach (var c in unavailable.Capabilities)
+                    {
+                        <li data-testid="az-capability" data-key="@c.Key" data-status="@c.Status"><strong>@c.Label</strong> <span class="sd-pill sd-pill-@FeatureAvailabilityCatalog.Tone(c.Status)">@c.Status</span> <span class="sd-muted">@c.Detail</span></li>
+                    }
+                </ul>
+            </details>
+        </section>
+    }
 
     @* ── Connection ─────────────────────────────────────────────────────────────────────────────────────── *@
     <section class="sd-panel" aria-labelledby="az-connection-h" data-testid="az-connection">
         @{ var (connectionLabel, connectionTone) = P.Connection(_status); }
         <h2 id="az-connection-h">Azure connection <span class="@P.Css(connectionTone)" data-testid="az-connection-state">@connectionLabel</span></h2>
-        <p class="sd-reason" data-testid="az-next-step">@P.NextStep(_status, _summaries.Count > 0)</p>
+        @if (Availability is { IsUnavailable: true })
+        {
+            @* Not a configuration problem for anyone to fix: the product capability itself is unavailable. *@
+            <p class="sd-muted" data-testid="az-connection-scope">Connection setup exists, but the overall Azure Environment Analysis capability remains unavailable and has not been verified against a live tenant. Configuring it is for evaluation only.</p>
+        }
+        else
+        {
+            <p class="sd-reason" data-testid="az-next-step">@P.NextStep(_status, _summaries.Count > 0)</p>
+        }
         @if (!string.IsNullOrWhiteSpace(_status.Message))
         {
             <p class="sd-muted" role="status" data-testid="az-connection-message">@_status.Message</p>
         }
         @if (_status.State == AzureConnectionState.NotConfigured)
         {
-            <ul class="sd-list" data-testid="az-requirements">
-                @foreach (var r in _status.Requirements) { <li>@r</li> }
-            </ul>
+            <details class="az-details" data-testid="az-setup-reference">
+                <summary>Connection setup reference</summary>
+                <p class="sd-muted">For evaluation of the unverified implementation. Completing these steps does not make the feature available.</p>
+                <ul class="sd-list" data-testid="az-requirements">
+                    @foreach (var r in _status.Requirements) { <li>@r</li> }
+                </ul>
+            </details>
         }
         else
         {
@@ -51,7 +91,7 @@
                 {
                     @if (_status.DedicatedEdgeAvailable)
                     {
-                        <button class="btn-primary" @onclick="SignInEdge" disabled="@_busy" data-testid="az-sign-in-edge">Sign in with dedicated Edge profile</button>
+                        <button class="@(Availability is { IsUnavailable: true } ? "btn-secondary" : "btn-primary")" @onclick="SignInEdge" disabled="@_busy" aria-describedby="az-connection-scope" data-testid="az-sign-in-edge">Sign in with dedicated Edge profile</button>
                     }
                     @if (_status.DeviceCodeAllowed)
                     {
@@ -141,14 +181,17 @@
             @RenderSnapshot(snap)
         }
     }
+    <p class="sd-boundary" data-testid="az-boundary">@AzureEnvironmentText.Boundary</p>
     <section class="sd-panel" aria-labelledby="az-quality-h" data-testid="az-quality">
-        <h2 id="az-quality-h">Runtime quality evidence</h2>
+        <h2 id="az-quality-h">Runtime quality evidence @CapabilityBadge("runtime-quality")</h2>
+        @CapabilityNote("runtime-quality")
         <ReviewDisclosure Text="Show recorded quality evidence" CollapseText="Hide recorded quality evidence" TestId="az-quality-disclosure" Class="disclosure-inline" @bind-Expanded="_qualityExpanded">
             @if (_qualityExpanded) { <BirkNext.Web.Components.QualityEvidenceSummary ProfileId="@_qualityProfileId" /> }
         </ReviewDisclosure>
     </section>
     <section class="sd-panel" aria-labelledby="az-delivery-h" data-testid="az-delivery">
-        <h2 id="az-delivery-h">Delivery path (pipeline source)</h2>
+        <h2 id="az-delivery-h">Delivery path (pipeline source) @CapabilityBadge("delivery")</h2>
+        @CapabilityNote("delivery")
         <ReviewDisclosure Text="Show delivery evidence ladder" CollapseText="Hide delivery evidence ladder" TestId="az-delivery-disclosure" Class="disclosure-inline" @bind-Expanded="_deliveryExpanded">
             @if (_deliveryExpanded)
             {
@@ -160,6 +203,22 @@
 </div>
 
 @code {
+    /// <summary>Product availability from the shared catalog (the same source as the sidebar badge and Recommended Workflow).</summary>
+    private static FeatureAvailabilityInfo? Availability => FeatureAvailabilityCatalog.Find(FeatureAvailabilityCatalog.AzureEnvironmentAnalysis);
+
+    private static RenderFragment CapabilityBadge(string key) => __builder =>
+    {
+        if (Availability?.Capability(key) is { } c)
+        {
+            <span class="sd-pill sd-pill-@FeatureAvailabilityCatalog.Tone(c.Status)" data-testid="@($"az-capability-badge-{key}")">@c.Status</span>
+        }
+    };
+
+    private static RenderFragment CapabilityNote(string key) => __builder =>
+    {
+        if (Availability?.Capability(key) is { } c) { <p class="sd-muted" data-testid="@($"az-capability-note-{key}")">@c.Detail</p> }
+    };
+
     private bool _deliveryExpanded, _qualityExpanded;
     /// <summary>The active Target Environment whose recorded FQR/AQR evidence is shown (read from the reviews' own history, never re-run).</summary>
     private string _qualityProfileId => (ServiceProvider.GetService(typeof(BirkNext.Web.Services.IFrontendAnalysisSettingsService)) as BirkNext.Web.Services.IFrontendAnalysisSettingsService)?.Settings.ActiveProfileId ?? "";

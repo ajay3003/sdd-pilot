@@ -61,7 +61,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     {
         Register(PaymentHub());
         var cut = Render<NavMenu>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=nav-applicability-azure-environment]").TextContent.Should().Be("Unsupported"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=nav-applicability-azure-environment]").TextContent.Should().Be("Unavailable"));
         cut.Find("[data-testid=nav-applicability-pipeline-review]").TextContent.Should().Be("Partial");
         cut.Find("[data-testid=nav-applicability-dependency-review]").TextContent.Should().Be("Unsupported");
         cut.Find("[data-testid=nav-applicability-frontend-quality-review]").TextContent.Should().Be("N/A", "no browser frontend in the analyzed source and no target");
@@ -78,7 +78,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     {
         Services.AddSingleton<FeatureVisibilityService>();
         var cut = Render<NavMenu>();
-        cut.FindAll(".nav-applicability").Should().BeEmpty();
+        cut.FindAll(".nav-applicability").Should().OnlyContain(b => b.GetAttribute("data-kind") == "Unavailable", "only product availability, which needs no applicability state");
         cut.FindAll("a[href='pipeline-review']").Should().ContainSingle();
     }
 

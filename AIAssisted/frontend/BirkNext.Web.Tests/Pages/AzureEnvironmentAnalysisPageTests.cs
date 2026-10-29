@@ -89,6 +89,36 @@ public sealed class AzureEnvironmentAnalysisPageTests : BunitContext
     }
 
     [Fact]
+    public void Feature_unavailable_is_the_page_state_and_stays_separate_from_connection_and_evidence()
+    {
+        _status = new() { State = AzureConnectionState.NotConfigured, Requirements = ["Set AzureEnvironment:ClientId to a public client."] };
+        var page = Page();
+        var badge = page.Find("[data-testid=az-availability-badge]");
+        badge.TextContent.Should().Contain("Unavailable").And.Contain("feature availability", "the state is spoken, not only coloured");
+        badge.ParentElement!.QuerySelector("h1")!.TextContent.Should().Be("Azure Environment Analysis", "the badge sits beside the page title");
+        var banner = page.Find("[data-testid=az-unavailable-banner]");
+        banner.GetAttribute("role").Should().Be("note");
+        banner.TextContent.Should().Contain("Feature unavailable").And.Contain("not currently available for normal use").And.Contain("Configuration alone will not make it fully usable");
+        page.Find("[data-testid=az-state-feature]").TextContent.Should().Be("Unavailable");
+        page.Find("[data-testid=az-state-connection]").TextContent.Should().Be("Not configured", "connection is its own state");
+        page.Find("[data-testid=az-state-evidence]").TextContent.Should().Be("Not verified");
+        page.Find("[data-testid=az-implementation-status]").HasAttribute("open").Should().BeFalse("implementation details are collapsed");
+        page.FindAll("[data-testid=az-capability]").Select(c => (c.GetAttribute("data-key"), c.GetAttribute("data-status")))
+            .Should().Contain([("connection", "Not verified"), ("runtime-quality", "Partial"), ("delivery", "Partial")]);
+        page.Markup.Should().NotContain("An administrator must configure", "the blocker is the product capability, not someone's missing setup");
+        page.Find("[data-testid=az-connection-scope]").TextContent.Should().Contain("overall Azure Environment Analysis capability remains unavailable");
+        page.Find("[data-testid=az-setup-reference]").HasAttribute("open").Should().BeFalse("setup instructions are reference material, not the main content");
+        page.Find("[data-testid=az-setup-reference]").TextContent.Should().Contain("does not make the feature available");
+        page.Find("[data-testid=az-capability-badge-runtime-quality]").TextContent.Should().Be("Partial");
+        page.Find("[data-testid=az-capability-badge-delivery]").TextContent.Should().Be("Partial");
+        page.Find("[data-testid=az-capability-note-delivery]").TextContent.Should().Contain("not correlated");
+        // Reading order: availability, then connection, then evidence semantics.
+        var markup = page.Markup;
+        markup.IndexOf("az-unavailable-banner", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("az-connection-state", StringComparison.Ordinal));
+        markup.IndexOf("az-connection-state", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"az-boundary\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Signed_out_offers_the_dedicated_profile_and_device_code_with_PIM_guidance()
     {
         var page = Page();
