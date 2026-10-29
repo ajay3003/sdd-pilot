@@ -160,6 +160,47 @@ public sealed class ModuleScopedConsumersTests : BunitContext
     }
 
     [Fact]
+    public async Task CandidateReview_WithAFocusedModule_ShowsThatModulesCandidates_NotWorkspaceTotals()
+    {
+        ImportMonorepo();
+        Services.AddSingleton<IArtifactExplorerContext>(_explorers);
+        var autoSave = new Mock<IWorkspaceAutoSaveService>();
+        autoSave.Setup(a => a.SaveNowAsync()).ReturnsAsync(true);
+        Services.AddSingleton(autoSave.Object);
+        var cut = Render<ProjectArtifactCandidateReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pac-scope]").TextContent.Should().Contain("Showing all modules"));
+
+        await cut.InvokeAsync(() => cut.Find("[data-testid=pac-focus]").Change("billing"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid=pac-scope]").TextContent.Should().Contain("Showing billing only");
+            var spec = cut.Find("[data-testid=pac-role][data-role=Specification]");
+            spec.QuerySelector("[data-testid=pac-role-count]")!.TextContent.Should().Be("2 specifications for billing");
+            spec.QuerySelector("[data-testid=pac-role-review]")!.TextContent.Should().Be("Review specifications for billing");
+            // billing has no constitution, plan or tasks of its own and no project-wide one applies: those rows belong to cart only.
+            cut.FindAll("[data-testid=pac-role]").Select(r => r.GetAttribute("data-role")).Should().Equal("Specification");
+            cut.FindAll("[data-testid=pac-module]").Select(m => m.GetAttribute("data-module")).Should().OnlyContain(m => m == "billing");
+            cut.Markup.Should().NotContain("across 2 modules");
+        });
+    }
+
+    [Fact]
+    public async Task ReviewNext_NamesTheFocusedModule_OrTheSharedConstitution()
+    {
+        ImportMonorepo();
+        WorkspaceArtifactType[] detected = [WorkspaceArtifactType.Constitution, WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan];
+
+        ImportProjectOverview.ReviewNext(detected, await _explorers.GetModuleOverviewAsync())!.Value.Label
+            .Should().Be("Review documents in Constitution Explorer", "no module is chosen yet");
+        await _explorers.SelectModuleAsync("billing");
+        ImportProjectOverview.ReviewNext(detected, await _explorers.GetModuleOverviewAsync())
+            .Should().Be(("specification-explorer", "Review billing in Specification Explorer"), "billing has specifications but no constitution of its own");
+        await _explorers.SelectModuleAsync("cart");
+        ImportProjectOverview.ReviewNext(detected, await _explorers.GetModuleOverviewAsync())!.Value.Label.Should().Be("Review cart in Constitution Explorer");
+    }
+
+    [Fact]
     public async Task DemoProject_UsesTheSameModuleModel_AsAnImportedProject()
     {
         _samples.AddDocument("demo", WorkspaceArtifactType.Specification, "orders/specs/001-a/spec.md", Spec);

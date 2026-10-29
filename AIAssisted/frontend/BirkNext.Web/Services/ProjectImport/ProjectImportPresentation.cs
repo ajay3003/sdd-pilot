@@ -2,6 +2,7 @@ using BirkNext.Integrations;
 using BirkNext.ProjectImport;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services.Explorers;
+using BirkNext.Web.Services.ProjectEvidence;
 using BirkNext.Web.Services.SampleProjects;
 
 namespace BirkNext.Web.Services.ProjectImport;
@@ -189,9 +190,28 @@ public static class ProjectImportPresentation
     /// The Target Environment beside an import. Never a prerequisite or a note about the import: source snapshots and documents need no
     /// target; a target is runtime context that only deployed/runtime reviews use, and it can be added or changed later without re-importing.
     /// </summary>
-    public static ProjectImportSourceRow TargetEnvironment(bool configured) => configured
-        ? new(ProjectImportTone.Neutral, "Selected", "Runtime reviews use it. It does not own or change the source snapshot.")
-        : new(ProjectImportTone.Neutral, "Not configured", "Required only for runtime reviews (Frontend, API and Integration Quality Review). Add one later without importing again.");
+    public static ProjectImportSourceRow TargetEnvironment(bool configured) => TargetEnvironment(configured, null, false, null);
+
+    /// <summary>
+    /// The active Target Environment (from the canonical environment settings) and, when known, the Project it binds (Target Environment →
+    /// Project). Selected but unresolvable is "Unavailable", never "Not selected"; a missing Project binding is stated, never treated as no
+    /// environment.
+    /// </summary>
+    public static ProjectImportSourceRow TargetEnvironment(bool selected, string? name, bool unavailable, ProjectEvidenceView? project)
+    {
+        if (!selected)
+            return unavailable
+                ? new(ProjectImportTone.Partial, "Unavailable", "An active Target Environment is set but could not be loaded. Open Target Environments to select or repair it.")
+                : new(ProjectImportTone.Neutral, "Not selected", "Required only for runtime reviews (Frontend, API and Integration Quality Review). Add one later without importing again.");
+        var status = name is { Length: > 0 } ? $"Selected: {name}" : "Selected";
+        var binding = project switch
+        {
+            null => "",
+            { IsConfigured: true } => $" Project: {project.ProjectName}.",
+            _ => " No Project is bound to it yet (Target Environment → Project).",
+        };
+        return new(ProjectImportTone.Neutral, status, "Runtime reviews use it. It does not own or change the source snapshot." + binding);
+    }
 
     /// <summary>Research artifacts are kept and counted, but no explorer opens them.</summary>
     private static bool HasExplorer(WorkspaceArtifactType role) => role != WorkspaceArtifactType.Research;

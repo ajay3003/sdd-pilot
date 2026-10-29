@@ -25,7 +25,11 @@
     else
     {
         var packOverview = ProjectPackOverview.Build(_overview);
-        var summaries = ImportProjectOverview.Contents(packOverview).ToDictionary(r => r.Role);
+        // A chosen module is reviewed on its own documents: its rows count that module (plus project-wide shared documents), never the
+        // workspace totals, which the project summary already shows.
+        var focus = _overview.HasModules ? _overview.Focus : null;
+        var summaries = (focus is not null ? ImportProjectOverview.ModuleContents(packOverview, _overview, focus) : ImportProjectOverview.Contents(packOverview))
+            .ToDictionary(r => r.Role);
         @if (_overview.HasModules)
         {
             <div class="pac-focus">
@@ -34,7 +38,9 @@
                     @if (_overview.Focus is null) { <option value="@NoFocus">Choose a module</option> }
                     @foreach (var module in _overview.Modules) { <option value="@module">@ArtifactModules.Label(module)</option> }
                 </select>
-                <span class="pac-muted">Choose a module to inspect its features and project documents. Each module is reviewed on its own documents.</span>
+                <span class="pac-muted" data-testid="pac-scope">@(focus is null
+                    ? "Showing all modules. Choose a module to inspect its features and project documents; each module is reviewed on its own documents."
+                    : $"Showing {ArtifactModules.Label(focus)} only: its own documents and the project-wide documents that apply to it.")</span>
             </div>
         }
         var focusPacks = packOverview.Packs.Where(p => _overview.Focus is { } f ? p.Module == f : !_overview.HasModules).ToList();
@@ -48,7 +54,7 @@
             </details>
         }
         <ul class="pac-roles">
-            @foreach (var role in _overview.Roles.Where(r => r.Candidates.Count > 0))
+            @foreach (var role in _overview.Roles.Where(r => r.Candidates.Count > 0 && (focus is null || summaries.ContainsKey(r.Role))))
             {
                 var label = ArtifactExplorerRoles.Label(role.Role);
                 var summary = summaries.GetValueOrDefault(role.Role);
@@ -56,13 +62,13 @@
                     <div class="pac-role-head">
                         <h3 class="pac-role-name">@(summary?.Title ?? label)</h3>
                         <span class="pac-role-count" data-testid="pac-role-count">@(summary?.Found ?? CountText(role))</span>
-                        <span class="pac-badge pac-badge-@(role.ModulesNeedingSelection > 0 ? "attention" : "clear")" data-testid="pac-role-state">@StateText(role, summary)</span>
+                        <span class="pac-badge pac-badge-@((summary?.RequiresClarification ?? role.ModulesNeedingSelection) > 0 ? "attention" : "clear")" data-testid="pac-role-state">@StateText(role, summary)</span>
                         @if (summary?.Note is { } note) { <span class="pac-muted" data-testid="pac-role-note">@note</span> }
                         @if (summary?.Href is { } reviewHref) { <a class="pac-review" href="@reviewHref" data-testid="pac-role-review">@summary.ActionLabel</a> }
                     </div>
                     <details>
                         <summary>Show details<span class="visually-hidden"> of @label documents</span></summary>
-                        @foreach (var module in role.Modules.Where(m => m.Candidates > 0))
+                        @foreach (var module in role.Modules.Where(m => m.Candidates > 0 && (focus is null || m.Module == focus || m.Module == ArtifactModules.ProjectLevel)))
                         {
                             var candidates = role.Candidates.Where(c => !_overview.HasModules || c.Module == module.Module).ToList();
                             <div class="pac-module" data-testid="pac-module" data-module="@module.Module">

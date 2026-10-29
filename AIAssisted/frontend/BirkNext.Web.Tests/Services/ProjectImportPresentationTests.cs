@@ -80,7 +80,9 @@ public sealed class ProjectImportPresentationTests
         ProjectImportPresentation.SourcePreview(detected).Status.Should().NotContain("Target");
         ProjectImportPresentation.SourcePreview(new ProjectImportSourceDetection()).Tone.Should().Be(ProjectImportTone.Neutral);
         ProjectImportPresentation.TargetEnvironment(configured: false).Should().Match<ProjectImportSourceRow>(r =>
-            r.Tone == ProjectImportTone.Neutral && r.Status == "Not configured" && r.Detail.Contains("Required only for runtime reviews"));
+            r.Tone == ProjectImportTone.Neutral && r.Status == "Not selected" && r.Detail.Contains("Required only for runtime reviews"));
+        ProjectImportPresentation.TargetEnvironment(false, null, unavailable: true, null).Status.Should().Be("Unavailable", "a stored but unresolvable environment is not 'none'");
+        ProjectImportPresentation.TargetEnvironment(true, "Development", false, null).Status.Should().Be("Selected: Development");
         ProjectImportPresentation.TargetEnvironment(configured: true).Tone.Should().Be(ProjectImportTone.Neutral);
     }
 

@@ -123,6 +123,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.Find("[data-testid=pi-open-source]").GetAttribute("href").Should().Be($"source-analysis?snapshot={snapshot:D}", "the exact snapshot is linked by id");
         cut.Find("[data-testid=pi-open-documents]").GetAttribute("href").Should().Be("constitution-explorer");
         cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Selected").And.Contain("does not own or change the source snapshot");
+        cut.Find("[data-testid=pi-open-documents]").TextContent.Should().Be("Review documents in Constitution Explorer");
         _previews.Should().Be(1, "the archive is uploaded once");
         _repository.SddLifecycle.ProjectImports.Single().SourceSnapshotId.Should().Be(snapshot);
         _autoSave.Verify(a => a.SaveNowAsync(), Times.Once);
@@ -230,6 +231,42 @@ public sealed class ProjectImportPageTests : BunitContext
     }
 
     [Fact]
+    public void SelectedTargetEnvironment_IsRead_EvenWhenTheReviewContextFails()
+    {
+        // The review context also checks the authenticated session and the profile; its failure must not make a selected environment
+        // read as none. The canonical environment settings decide.
+        var failing = new Mock<IFrontendAnalysisContextFactory>();
+        failing.Setup(c => c.GetActiveContextAsync()).ThrowsAsync(new HttpRequestException("session status unavailable"));
+        var settings = new Mock<IFrontendAnalysisSettingsService>();
+        settings.SetupGet(s => s.ActiveProfile).Returns(new FrontendAnalysisProfile { Id = "dev", Name = "Development" });
+        settings.SetupGet(s => s.Settings).Returns(new FrontendAnalysisSettings { ActiveProfileId = "dev" });
+        Services.AddSingleton(failing.Object);
+        Services.AddSingleton(settings.Object);
+        _preview = WithSource(ProjectImportActivationTests.Preview(new string('f', 64), source: true, Docs));
+        _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid());
+
+        var cut = ChooseArchive();
+
+        cut.Find("[data-testid=pi-target]").GetAttribute("data-state").Should().Be("selected");
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Selected: Development").And.NotContain("Not selected");
+    }
+
+    [Fact]
+    public void StoredButUnresolvableTargetEnvironment_IsUnavailable_NotNone()
+    {
+        _profile = null;
+        var settings = new Mock<IFrontendAnalysisSettingsService>();
+        settings.SetupGet(s => s.Settings).Returns(new FrontendAnalysisSettings { ActiveProfileId = "deleted-env" });
+        Services.AddSingleton(settings.Object);
+        _preview = WithSource(ProjectImportActivationTests.Preview(new string('9', 64), source: true, Docs));
+
+        var cut = ChooseArchive();
+
+        cut.Find("[data-testid=pi-target]").GetAttribute("data-state").Should().Be("unavailable");
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Unavailable").And.Contain("could not be loaded");
+    }
+
+    [Fact]
     public void NoTargetEnvironment_MixedImport_CreatesTheSourceSnapshot_AndTheTargetIsOnlyRuntimeContext()
     {
         _profile = null;
@@ -237,7 +274,7 @@ public sealed class ProjectImportPageTests : BunitContext
         _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid());
         var cut = ChooseArchive();
         cut.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Source detected").And.Contain("a new Source Analysis snapshot will be created").And.NotContain("Target");
-        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not configured").And.Contain("Required only for runtime reviews");
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not selected").And.Contain("Required only for runtime reviews");
         cut.FindAll("[data-testid=pi-select-target]").Should().BeEmpty("a Target Environment is not a prerequisite of the import");
 
         cut.Find("[data-testid=pi-import]").Click();
@@ -245,7 +282,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-source]").GetAttribute("data-state").Should().Be("Created"));
         cut.FindAll("[data-testid=pi-retry-source]").Should().BeEmpty("no retry is needed because a target is absent");
         cut.FindAll("[data-testid=pi-notes] li").Select(n => n.TextContent).Should().NotContain(n => n.Contains("Target Environment"));
-        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not configured");
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not selected");
         _repository.SddLifecycle.ProjectImports.Single().SourceState.Should().Be("Created");
         _api.Verify(a => a.CommitWithProgressAsync(_preview.StagingId, It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()), Times.Once);
     }

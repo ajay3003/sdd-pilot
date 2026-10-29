@@ -210,6 +210,61 @@ public static class ImportProjectOverview
             return new ImportRoleSummary(r.Role, Title(r.Role), found, note, r.Ambiguities.Count, label, href);
         })];
 
+    /// <summary>
+    /// The same summaries for one focused module only ("2 specifications for Autorisasjon"): the module's own documents plus the project-level
+    /// shared documents that apply to it, and only the module's own ambiguities. Never the workspace totals, which belong to the project summary.
+    /// </summary>
+    public static IReadOnlyList<ImportRoleSummary> ModuleContents(ProjectPackOverview overview, ArtifactModuleOverview modules, string module)
+    {
+        var label = ArtifactModules.Label(module);
+        var summaries = new List<ImportRoleSummary>();
+        foreach (var role in modules.Roles)
+        {
+            var own = role.Candidates.Where(a => a.Module == module).ToList();
+            var projectShared = module == ArtifactModules.ProjectLevel ? 0
+                : role.Candidates.Count(a => a.Module == ArtifactModules.ProjectLevel && a.Feature is null);
+            if (own.Count == 0 && projectShared == 0) continue;
+            var found = own.Count > 0
+                ? $"{own.Count} {Noun(role.Role, own.Count)} for {label}" + (projectShared > 0 ? $" · plus {projectShared} project-wide" : "")
+                : $"Uses {projectShared} project-wide {Noun(role.Role, projectShared)}";
+            var ownShared = own.Count(a => a.Feature is null);
+            var note = role.Role switch
+            {
+                WorkspaceArtifactType.Constitution when own.Count == 0 => "Shared project-wide constitution",
+                WorkspaceArtifactType.Constitution when ownShared > 0 => "Shared by this module's feature packs",
+                WorkspaceArtifactType.DataModel when ownShared > 0 && own.Count > ownShared => "Includes shared/base models",
+                WorkspaceArtifactType.Research => "Context for reviewers; not reviewed on its own",
+                _ => null,
+            };
+            var clarify = overview.Role(role.Role).Ambiguities.Count(a => a.Module == module);
+            var (action, href) = ReviewAction(role.Role);
+            if (href is not null) action = own.Count > 0 ? $"{action} for {label}" : role.Role == WorkspaceArtifactType.Constitution ? "Review shared constitution" : $"{action} (project-wide)";
+            summaries.Add(new ImportRoleSummary(role.Role, Title(role.Role), found, note, clarify, action, href));
+        }
+        return summaries;
+    }
+
+    /// <summary>
+    /// The primary "next step" on Import Project, in the context the tester chose: with a focused module the first explorer that holds that
+    /// module's own documents ("Review Autorisasjon in Specification Explorer"), else the shared constitution ("Review shared constitution");
+    /// without modules (or before one is chosen) the first explorer with documents. Research has no explorer.
+    /// </summary>
+    public static (string Route, string Label)? ReviewNext(IEnumerable<WorkspaceArtifactType> detected, ArtifactModuleOverview? modules)
+    {
+        var roles = detected.Where(r => r != WorkspaceArtifactType.Research).Distinct().ToList();
+        if (roles.Count == 0) return null;
+        static string Explorer(WorkspaceArtifactType role) => ArtifactExplorerRoles.Label(role) + " Explorer";
+        if (modules is { HasModules: true, Focus: { } focus })
+        {
+            var label = ArtifactModules.Label(focus);
+            if (roles.Cast<WorkspaceArtifactType?>().FirstOrDefault(r => modules.Roles.Any(o => o.Role == r && o.Candidates.Any(a => a.Module == focus))) is { } own)
+                return (ProjectInputPresentation.ExplorerRoute(own), $"Review {label} in {Explorer(own)}");
+            if (roles.Contains(WorkspaceArtifactType.Constitution))
+                return (ProjectInputPresentation.ExplorerRoute(WorkspaceArtifactType.Constitution), "Review shared constitution");
+        }
+        return (ProjectInputPresentation.ExplorerRoute(roles[0]), $"Review documents in {Explorer(roles[0])}");
+    }
+
     public static string Clarification(int count) => count == 1 ? "1 requires clarification" : $"{count} require clarification";
 
     // ── Testing setup ────────────────────────────────────────────────────────────────

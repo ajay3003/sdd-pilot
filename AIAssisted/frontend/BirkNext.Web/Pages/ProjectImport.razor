@@ -4,6 +4,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.ProjectImport
 @using BirkNext.Web.Services.ProjectEvidence
+@using BirkNext.Web.Services.Explorers
 @using BirkNext.Web.Services.SampleProjects
 @using BirkNext.Web.Models
 @using BirkNext.Web.Components.ProjectImport
@@ -453,7 +454,7 @@
             <section class="pi-action-group" aria-labelledby="pi-next-heading">
                 <h2 id="pi-next-heading" class="pi-action-heading">Next steps</h2>
                 <div class="pi-actions" data-testid="pi-next">
-                    @if (doneDiscovery.HasArtifacts && FirstExplorerFor(doneDiscovery) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">Review documents in @explorer.Label</a> }
+                    @if (doneDiscovery.HasArtifacts && ImportProjectOverview.ReviewNext(doneDiscovery.DetectedRoles.Select(r => r.Role), _modules) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">@explorer.Label</a> }
                     @if (_commit?.Source.SnapshotId is { } resultSnapshot)
                     {
                         <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="@ProjectImportPresentation.SourceAnalysisHref(resultSnapshot)" data-testid="pi-open-source">Open Source Analysis</a>
@@ -513,6 +514,8 @@
     protected override async Task OnInitializedAsync()
     {
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is { } projection) projection.Changed += OnWorkspaceChanged;
+        if (ServiceProvider.GetService<IArtifactExplorerContext>() is { } explorer) explorer.Changed += OnExplorerChanged;
+        if (ServiceProvider.GetService<IFrontendAnalysisSettingsService>() is { } settings) settings.Changed += OnEnvironmentChanged;
         if (ServiceProvider.GetService<NavigationManager>() is { } navigation)
         {
             navigation.LocationChanged += OnLocationChanged;
@@ -521,7 +524,22 @@
         await LoadEnvironmentAsync();
         await LoadSetupAsync();
         await LoadWorkspaceAsync();
+        await LoadModulesAsync();
     }
+
+    /// <summary>The module the tester focused under Artifact candidates, so the next step names it; null without an explorer context.</summary>
+    private ArtifactModuleOverview? _modules;
+
+    private async Task LoadModulesAsync()
+    {
+        if (ServiceProvider.GetService<IArtifactExplorerContext>() is not { } explorer) return;
+        try { _modules = await explorer.GetModuleOverviewAsync(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { _modules = null; }
+    }
+
+    private void OnExplorerChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () => { await LoadModulesAsync(); StateHasChanged(); });
+
+    private void OnEnvironmentChanged() => _ = InvokeAsync(async () => { await LoadEnvironmentAsync(); await LoadProjectEvidenceAsync(); StateHasChanged(); });
 
     private async Task LoadWorkspaceAsync()
     {
@@ -560,16 +578,38 @@
         </div>
     };
 
+    /// <summary>An active Target Environment id is stored but it cannot be resolved (deleted, invalid) — not the same as none selected.</summary>
+    private bool _targetUnavailable;
+
+    /// <summary>
+    /// The active Target Environment, read from the canonical environment settings. The review context is only a convenience: it also checks
+    /// the authenticated session and the profile's configuration, and its failure must never make a selected environment read "not selected".
+    /// </summary>
     private async Task LoadEnvironmentAsync()
     {
+        _hasTarget = false; _targetUnavailable = false; _environmentId = null; _environmentName = null;
         try
         {
             var context = await ContextFactory.GetActiveContextAsync();
             _environmentId = context.ActiveProfileOrNull?.Id;
             _environmentName = context.ActiveProfileOrNull?.Name is { Length: > 0 } name ? name : null;
-            _hasTarget = !string.IsNullOrWhiteSpace(_environmentId);
         }
-        catch (Exception) { _hasTarget = false; _environmentId = null; _environmentName = null; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        if (string.IsNullOrWhiteSpace(_environmentId) && ServiceProvider.GetService<IFrontendAnalysisSettingsService>() is { } settings)
+        {
+            try
+            {
+                await settings.LoadAsync(JS);
+                if (settings.ActiveProfile is { Id: { Length: > 0 } id } active)
+                {
+                    _environmentId = id;
+                    _environmentName = active.Name is { Length: > 0 } activeName ? activeName : null;
+                }
+                else _targetUnavailable = !string.IsNullOrWhiteSpace(settings.Settings?.ActiveProfileId);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        }
+        _hasTarget = !string.IsNullOrWhiteSpace(_environmentId);
     }
 
     private async Task LoadSetupAsync()
@@ -859,6 +899,8 @@
     {
         _elapsedTimer?.Dispose();
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is { } projection) projection.Changed -= OnWorkspaceChanged;
+        if (ServiceProvider.GetService<IArtifactExplorerContext>() is { } explorer) explorer.Changed -= OnExplorerChanged;
+        if (ServiceProvider.GetService<IFrontendAnalysisSettingsService>() is { } settings) settings.Changed -= OnEnvironmentChanged;
         if (ServiceProvider.GetService<NavigationManager>() is { } navigation) navigation.LocationChanged -= OnLocationChanged;
     }
 
@@ -983,14 +1025,11 @@
 
     private RenderFragment TargetEnvironmentFact => __builder =>
     {
-        var row = ProjectImportPresentation.TargetEnvironment(_hasTarget);
-        <dl class="pi-facts pi-target" data-testid="pi-target">
+        var project = _projectView is { EnvironmentId: { Length: > 0 } viewEnvironment } view && viewEnvironment == _environmentId ? view : null;
+        var row = ProjectImportPresentation.TargetEnvironment(_hasTarget, _environmentName, _targetUnavailable, project);
+        <dl class="pi-facts pi-target" data-testid="pi-target" data-state="@(_hasTarget ? "selected" : _targetUnavailable ? "unavailable" : "none")">
             <div><dt>Target Environment</dt><dd>@row.Status <span class="pi-muted">— @row.Detail</span></dd></div>
         </dl>
     };
 
-    private static (string Route, string Label)? FirstExplorerFor(ProjectImportArtifactDiscovery discovery) =>
-        discovery.DetectedRoles.Where(r => r.Role != WorkspaceArtifactType.Research).Select(r => r.Role).Cast<WorkspaceArtifactType?>().FirstOrDefault() is { } role
-            ? (ProjectInputPresentation.ExplorerRoute(role), BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(role) + " Explorer")
-            : null;
 }
