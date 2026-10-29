@@ -1,0 +1,30 @@
+@* User Guide callout: a labelled note. The visible label (Important, Review required, Safety, Tip, Unavailable) carries the meaning, so
+   colour is never required. Styles: wwwroot/css/user-guide.css (.ug-callout-*). *@
+
+<aside class="ug-callout ug-callout-@Kind.ToString().ToLowerInvariant()" role="note" aria-label="@Label" data-kind="@Kind">
+    <p class="ug-callout-label"><span class="ug-callout-glyph" aria-hidden="true">@Glyph</span>@Label</p>
+    <div class="ug-callout-body">@ChildContent</div>
+</aside>
+
+@code {
+    public enum CalloutKind { Important, Review, Safety, Tip, Unavailable }
+
+    [Parameter] public CalloutKind Kind { get; set; } = CalloutKind.Tip;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string Label => Kind switch
+    {
+        CalloutKind.Review => "Review required",
+        CalloutKind.Unavailable => "Unavailable",
+        _ => Kind.ToString(),
+    };
+
+    private string Glyph => Kind switch
+    {
+        CalloutKind.Important => "!",
+        CalloutKind.Review => "?",
+        CalloutKind.Safety => "◆",
+        CalloutKind.Unavailable => "○",
+        _ => "i",
+    };
+}

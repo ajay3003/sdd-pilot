@@ -1,0 +1,146 @@
+@* User Guide — Testing: runtime testing and authentication, discovery, Performance Test Review, quality reviews, Skolenærvær Testing,
+   Test Coverage & Overlap, Code Risk Review and Pipeline Review. *@
+@using BirkNext.Web.Services
+@using static BirkNext.Web.Components.Guide.GuideCallout
+
+<section id="testing" class="ug-section ug-topic" data-topic="testing" aria-labelledby="testing-title">
+    <h2 id="testing-title" class="ug-section-title" tabindex="-1">Runtime testing</h2>
+    <p class="ug-lead">Runtime reviews run against a configured Target Environment: <a href="/frontend-quality-review">Frontend Quality Review</a>, <a href="/api-quality-review">API Quality Review</a>, <a href="/integration-quality-review">Integration Quality Review</a>, <a href="/performance-test-review">Performance Test Review</a> and <a href="/critical-e2e-regression">Critical E2E Regression</a>. Every active test is safety-gated.</p>
+    <h3 class="ug-subtitle">Authentication tab: four separate answers</h3>
+    <div class="ug-card-grid">
+        <article class="ug-card"><h3>Configuration</h3><p>The saved provider and identifiers. Detection that matches it is source evidence, not verification.</p></article>
+        <article class="ug-card"><h3>Verification</h3><p>A check of the sign-in workflow; it becomes stale when the configuration changes.</p></article>
+        <article class="ug-card"><h3>Prerequisites</h3><p>HTTPS inspection certificate, Local HTTPS Proxy and the dedicated Edge browser. A stopped proxy is “Proxy not started”, not a fault.</p></article>
+        <article class="ug-card"><h3>Testing context</h3><p>What a running proxy session has captured. Saving authentication never installs or removes the certificate and never stops the proxy.</p></article>
+    </div>
+    <p>Critical E2E Regression covers configured browser journeys and their safety-gated execution; it is not a general proof of application correctness.</p>
+</section>
+
+<section id="browser-endpoint-discovery" class="ug-section ug-topic" data-topic="browser-endpoint-discovery" aria-labelledby="browser-endpoint-discovery-title">
+    <h2 id="browser-endpoint-discovery-title" class="ug-section-title" tabindex="-1">Browser and Endpoint Discovery</h2>
+    <div class="ug-card-grid ug-card-grid-2">
+        <article class="ug-card"><h3><a href="@UserGuideContent.TargetEnvironmentTab("browser")">Browser Discovery</a></h3>
+            <p>The Browser Companion records evidence per page while you use the application: <strong>DOM</strong>, <strong>accessibility</strong> and <strong>performance</strong> evidence, with live and historical sessions. It is evidence only — Frontend Quality Review interprets it.</p>
+            <p>Generic page evidence is not authentication evidence. A sign-in counts as observed only when the provider flow starts from and returns to the exact application.</p></article>
+        <article class="ug-card"><h3><a href="@UserGuideContent.TargetEnvironmentTab("endpoint")">Endpoint Discovery</a></h3>
+            <p>Observed network and API traffic: endpoints are normalized (path IDs become parameters), correlated with declared contracts where possible, and shown with freshness and page correlation. It also owns API review safety settings.</p>
+            <p>An observed path ID is a dynamic observation, not Test Data.</p></article>
+    </div>
+</section>
+
+<section id="performance-test-review" class="ug-section ug-topic" data-topic="performance-test-review" aria-labelledby="performance-test-review-title">
+    <h2 id="performance-test-review-title" class="ug-section-title" tabindex="-1">Performance Test Review</h2>
+    <p class="ug-lead"><a href="/performance-test-review">Performance Test Review</a> defines, checks, runs and analyzes a controlled load test for the active environment. Host capability (k6, Podman, images, resource providers) is in System Settings → Performance Test Engines.</p>
+    <div class="ug-table-scroll" role="region" aria-label="Performance Test Review tabs" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Group</th><th scope="col">Tabs</th><th scope="col">Purpose</th></tr></thead>
+        <tbody>
+            <tr><th scope="row">Overview</th><td>Overview</td><td>State of the definition, readiness and latest run.</td></tr>
+            <tr><th scope="row">Define</th><td>Scenario · Workload · Thresholds · Resources</td><td>What to test, the load shape, expected limits and resource providers.</td></tr>
+            <tr><th scope="row">Execute</th><td>Readiness · Run</td><td>Whether and when it can run.</td></tr>
+            <tr><th scope="row">Analyze</th><td>Results · Compare · History</td><td>What happened, against a baseline, across runs.</td></tr>
+        </tbody>
+    </table></div>
+
+    <h3 id="performance-scenario" class="ug-subtitle">Scenario: discovery proposes, the scenario owns steps</h3>
+    <p>Candidate operations come from <em>Recommended</em>, <em>OpenAPI / Swagger</em>, <em>GraphQL</em>, <em>Live Discovery</em> and <em>Manual</em>. A candidate is a proposal; adding it creates an executable step that the scenario owns. Contracts come from the saved choice, else a single Project-bound snapshot — never simply the newest.</p>
+
+    <h3 id="dynamic-parameters" class="ug-subtitle">Dynamic parameters need a runtime value</h3>
+    <p>A path such as <code>/api/users/{brukerId}</code> has a dynamic parameter. It is <strong>not automatically Test Data</strong>: each one needs a runtime value source, chosen on the step.</p>
+    <ul class="ug-list">
+        <li><strong>Test Data</strong> — an approved asset (suggested, never mapped silently).</li>
+        <li><strong>Previous-step output</strong> — a value read from an earlier step’s response.</li>
+        <li><strong>Scenario variable</strong> — one value shared by several steps.</li>
+        <li><strong>Fixed value</strong> — a literal.</li>
+        <li><strong>Generated value</strong> — only for query/header parameters or correlation, request, trace and timestamp values.</li>
+        <li><strong>Observed sample</strong> — a value seen in Live Discovery, used only after you review it.</li>
+    </ul>
+
+    <h3 id="step-ordering" class="ug-subtitle">Step order and dependencies</h3>
+    <p>Reorder steps by dragging the handle, or with <em>Move up</em> / <em>Move down</em> from the keyboard. Order is execution order and is validated: a step that uses another step’s output cannot run before it. A conflicting move shows the dependency and offers to move the dependent steps along. Each step inherits the scenario’s authentication, or sets none or its own.</p>
+
+    <h3 id="rest-graphql" class="ug-subtitle">REST and GraphQL</h3>
+    <p>REST and GraphQL operations remain separate definitions. A GraphQL operation seen only in Live Discovery needs a captured query document, your review, and runtime values for its variables — an operation name alone is not executable.</p>
+
+    <h3 id="performance-readiness" class="ug-subtitle">Readiness</h3>
+    <div class="ug-chip-row" role="list" aria-label="Readiness checks">
+        <span class="ug-chip" role="listitem">Target reachability</span><span class="ug-chip" role="listitem">TLS trust</span><span class="ug-chip" role="listitem">Scenario values</span>
+        <span class="ug-chip" role="listitem">Authentication</span><span class="ug-chip" role="listitem">Execution safety</span><span class="ug-chip" role="listitem">Workload and thresholds</span>
+    </div>
+    <GuideCallout Kind="CalloutKind.Safety"><p>A readiness check never runs a load test. Authenticated load tests stay blocked by the backend; runs need explicit start.</p></GuideCallout>
+
+    <h3 id="performance-results" class="ug-subtitle">Results: one run</h3>
+    <p><strong>Results</strong> analyzes a single run: one primary status (execution first; thresholds only for a completed run), required vs advisory thresholds, percentiles and failures, per-operation details, status-code distribution (new runs), a compact baseline snapshot with <em>Open full comparison</em>, the configuration used by that run, advanced metrics and logs.</p>
+    <GuideCallout Kind="CalloutKind.Important"><p>Response bodies are not retained: Results shows <em>Response body not retained</em>. Do not expect stored API responses for any performance run.</p></GuideCallout>
+
+    <h3 id="performance-compare-history" class="ug-subtitle">Compare and History</h3>
+    <div class="ug-compare">
+        <div class="ug-compare-col"><p class="ug-compare-label">Compare</p><p>Full baseline comparison: current run vs baseline run, deltas per metric and compatibility of the two scenarios. <em>Back to run results</em> returns to Results.</p></div>
+        <div class="ug-compare-col"><p class="ug-compare-label">History</p><p>The run inventory and <em>Promote to baseline</em> (with a reason). Old results keep the configuration that run used. The latest run never becomes baseline automatically.</p></div>
+    </div>
+    <p>Resource Stability is not a memory-leak detector: it evaluates available Podman resource data and BirkNext API runtime metrics. States include StableWithinPolicy, PotentialRegression, Regression, InsufficientEvidence, Unavailable and NotComparable.</p>
+</section>
+
+<section id="quality-reviews" class="ug-section ug-topic" data-topic="quality-reviews" aria-labelledby="quality-reviews-title">
+    <h2 id="quality-reviews-title" class="ug-section-title" tabindex="-1">Quality reviews</h2>
+    <div class="ug-card-grid">
+        <article class="ug-card"><h3><a href="/quality/document">Document Quality Review</a></h3><p>Evaluates project artifacts without a source snapshot. Its packs — quality, data model, constitution, documentation standards (WCAG 2.2, OWASP, GDPR, ISO 25010) and readiness — inspect documents only: documentation coverage, not conformance or legal compliance.</p></article>
+        <article class="ug-card"><h3>Frontend, API and Integration reviews</h3><p>Consume target, runtime, configuration and source evidence. Browser findings do not prove full WCAG conformance, source configuration does not prove runtime enforcement, and configured integrations do not prove a successful flow.</p></article>
+        <article class="ug-card"><h3>Specialist source pages</h3><p>Source Analysis is the source evidence provider; Technology Coverage, Dependency Review and Pipeline Review are specialist pages. There is no generic Source Quality Review.</p></article>
+    </div>
+    <h3 class="ug-subtitle">Bounded security checks</h3>
+    <p data-testid="ug-security-testing">BirkNext performs bounded non-production security checks. These are not a penetration test. API Quality Review checks TLS scheme, expected security headers (presence only), GraphQL introspection policy and authentication enforcement; anonymous API documentation exposure and CORS probes are disabled in Production. Authorization scenarios compare identities with explicit Allow/Deny expectations; safe fuzzing sends deterministic invalid/boundary read requests from the published contract. State-changing body fuzzing, DELETE and GraphQL mutations are never run.</p>
+    <ReviewDisclosure Text="Advanced details: security testing scope" CollapseText="Hide advanced details" TestId="ug-security-advanced">
+        <p>Request-body cases run only for operations explicitly opted in as read-only body safe, on a Target Environment the server registers as trusted. Frontend Quality Review inspects cookie attributes (never values). Runtime review policy is under Target Environment → Endpoint Discovery → API review safety settings. Passive Web Security (OWASP ZAP) is optional. Not implemented: aggressive fuzzing, GraphQL mutation fuzzing, brute-force authentication, DoS testing, automatic exploit confirmation and full penetration testing. Details: docs/api-security-testing.md.</p>
+        <p>Where a stable rule has a defensible standards relationship, a reference is attached to the existing finding (for example axe metadata to a WCAG criterion). The reference does not establish conformance or certification.</p>
+    </ReviewDisclosure>
+    <h3 id="integration-journeys" class="ug-subtitle">Active tests and integration journeys</h3>
+    <p><strong>Active event tests</strong> (Integration Quality Review → Active tests) send synthetic events through one backend-gated engine. A run needs source evidence of the consuming adapter, the CDC capture, a configured Event Hub integration, a backend-trusted DEV/QA environment, the ActiveEventExecute permission and an agreed synthetic test-data policy. <strong>Integration journeys</strong> follow a business flow across integrations; configured, observed and verified are different, and a journey is completed only when every mandatory step is verified. <a href="/integration-topology">Integration Topology</a> shows components, interfaces and connections with the source of every fact.</p>
+</section>
+
+<section id="skolenaervaer" class="ug-section ug-topic" data-topic="skolenaervaer" aria-labelledby="skolenaervaer-title">
+    <h2 id="skolenaervaer-title" class="ug-section-title" tabindex="-1">Skolenærvær Testing <span class="ug-scope">Extension</span></h2>
+    <p class="ug-lead"><a href="/extensions/skolenaervaer">Skolenærvær Testing</a> brings the Skolenærvær test pack into one view: Overview, Journeys, Security / Gradert tilgang, Verify and History. It is an example of a domain extension — the patterns apply to other packs, the names do not.</p>
+    <h3 class="ug-subtitle">Journeys and who owns each interaction</h3>
+    <ol class="ug-hops">
+        <li><span class="ug-hop-path">Rapportmottak: Altinn → MU → MM → Skolenærværsrapport</span><span class="ug-hop-kind">The reporter (or BirkNext, when automated execution is ready) submits in the Altinn app. MU receives from Altinn with its own integration authentication; what happens after Altinn is checked read-only by Runtime Message Verification where evidence exists.</span></li>
+        <li><span class="ug-hop-path">Periodeavslutning: Skolenærværsrapport → Service Bus → Bufdata</span><span class="ug-hop-kind">Messaging between internal systems; evidence comes from source and the configured integrations.</span></li>
+        <li><span class="ug-hop-path">Utdanningsdata: BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning</span><span class="ug-hop-kind">CDC flow; runs through Active tests.</span></li>
+    </ol>
+    <p>The Overview matrix shows each journey’s Integration, Contract, Test Data, Execution and Verification state with the earliest owner action. <em>Ready</em>, <em>Partial</em>, <em>Not ready</em>, <em>Not configured</em> and <em>Not assessed</em> keep distinct meanings; architecture rules are checked against Source Analysis evidence.</p>
+    <h3 class="ug-subtitle">Test Data example</h3>
+    <div class="ug-chip-row" role="list" aria-label="Skolenærvær Test Data">
+        <span class="ug-chip" role="listitem">Reporter asset · <code>skolenaervaer-reporter-default</code></span>
+        <span class="ug-chip" role="listitem">Child asset · <code>skolenaervaer-child-default</code></span>
+        <span class="ug-chip" role="listitem">XML fixture · approved</span>
+        <span class="ug-chip" role="listitem">XSD · from the contract snapshot</span>
+    </div>
+    <p>The reporter signs in and submits; the child is mapped into the payload. Refer to assets by alias — this guide never shows real identifiers. See <a href="@UserGuideContent.Href("reporter-vs-child")">Reporter is not child</a> and <a href="@UserGuideContent.Href("manual-vs-automated")">manual vs automated readiness</a>.</p>
+</section>
+
+<section id="test-coverage-review" class="ug-section ug-topic" data-topic="test-coverage-review" aria-labelledby="test-coverage-review-title">
+    <h2 id="test-coverage-review-title" class="ug-section-title" tabindex="-1">Test Coverage &amp; Overlap Review</h2>
+    <p class="ug-lead"><a href="/test-coverage-review">Test Coverage &amp; Overlap Review</a> shows what is already tested, what each test proves, at which level and boundary, which parts of each journey are not verified, and where QA may repeat developer tests. <strong>It never removes or rejects a test</strong> — the test lead decides.</p>
+    <ul class="ug-list">
+        <li>A test that was found is not a test that ran; a test that ran is not a covered requirement.</li>
+        <li>A mocked broker is not a verified broker; an in-memory database is not the deployed database.</li>
+        <li>Overlap needs several matching dimensions (requirement, behaviour, expected result, level, boundary); the same requirement alone is never a duplicate.</li>
+    </ul>
+    <ReviewDisclosure Text="Advanced details: limits" CollapseText="Hide advanced details" TestId="ug-tcr-advanced">
+        <p>Per-test facts are read from C# test code (xUnit, NUnit, MSTest); other languages are counted, not analyzed. There is no code coverage percentage unless a real coverage report exists. Execution results come only from imported test results (TRX). Each run is stored with the exact snapshot it reviewed.</p>
+    </ReviewDisclosure>
+</section>
+
+<section id="code-risk-review" class="ug-section ug-topic" data-topic="code-risk-review" aria-labelledby="code-risk-review-title">
+    <h2 id="code-risk-review-title" class="ug-section-title" tabindex="-1">Code Risk Review</h2>
+    <p class="ug-lead"><a href="/code-risk-review">Code Risk Review</a> (formerly “AI-Generated Code Review”) reviews source and changes for deterministic implementation risks, evidence gaps and drift. <strong>It does not determine whether code was written by AI.</strong> No language model is called and there is no score.</p>
+    <p>Read it summary first, then <em>What should I fix first?</em>, review coverage (a coverage limitation is never a code defect), findings by category and rule, and change risk (Limited without a baseline snapshot). Source-level rules exist for C# only; other languages are listed as unsupported, never as clean.</p>
+    <ReviewDisclosure Text="Advanced details: rules" CollapseText="Hide advanced details" TestId="ug-crr-advanced">
+        <p>Each rule has an id such as CRR-SEC-001 (stored as AIC-SEC-001 so earlier runs stay readable) and reports Executed, Not applicable, Not assessed, Unsupported or Failed. Areas: requirements alignment, unresolved imports and undeclared configuration keys, duplicates, introduced dependencies without usage, authorization removed or missing, permissive CORS, exception handling, weak or skipped tests, stubs and placeholders, unused private methods, contract and configuration changes between snapshots, and generated documentation not refreshed.</p>
+    </ReviewDisclosure>
+</section>
+
+<section id="pipeline" class="ug-section ug-topic" data-topic="pipeline" aria-labelledby="pipeline-title">
+    <h2 id="pipeline-title" class="ug-section-title" tabindex="-1">Pipeline Review</h2>
+    <p class="ug-lead"><a href="/pipeline-review">Pipeline Review</a> interprets CI/CD definitions captured by Source Analysis — Overview, Flow, Gaps, Tests, Environments, Dependencies and Changes. A detected definition does not mean the pipeline executed, passed or deployed.</p>
+    <p><strong>Ready</strong>, <strong>Partial</strong>, <strong>Needs refresh</strong>, <strong>Unsupported</strong> and <strong>N/A</strong> keep distinct meanings; Needs refresh means the source evidence is outdated, not that the review does not apply. Azure DevOps metadata is optional enrichment.</p>
+</section>

@@ -1,0 +1,154 @@
+@* User Guide — Test setup: Target Environment, Connected Systems, Integration Catalog / IQR, Test Data, Schema Studio and Setup Library. *@
+@using BirkNext.Web.Services
+@using static BirkNext.Web.Components.Guide.GuideCallout
+
+<section id="target-environment" class="ug-section ug-topic" data-topic="target-environment" aria-labelledby="target-environment-title">
+    <h2 id="target-environment-title" class="ug-section-title" tabindex="-1">Target Environment</h2>
+    <p class="ug-lead">A <a href="/admin/system-settings?section=target-environments">Target Environment</a> describes one deployed system under test and the setup around it. It is configuration scoped to that target, separate from imported project evidence. Links from this guide open the active environment.</p>
+    <div class="ug-table-scroll" role="region" aria-label="Target Environment tabs" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Tab</th><th scope="col">Owns</th></tr></thead>
+        <tbody>@foreach (var tab in DocumentationCatalog.DocumentedTargetTabs) { <tr><th scope="row">@tab.Name</th><td>@tab.Purpose</td></tr> }</tbody>
+    </table></div>
+    <p>An environment with no URL, or with the example URL it was created with, is <em>Partial</em>. The Authentication tab keeps configuration, verification, verification prerequisites and the testing context apart — see <a href="@UserGuideContent.Href("testing")">Runtime testing</a>.</p>
+</section>
+
+<section id="connected-systems" class="ug-section ug-topic" data-topic="connected-systems" aria-labelledby="connected-systems-title">
+    <h2 id="connected-systems-title" class="ug-section-title" tabindex="-1">Connected Systems</h2>
+    <p class="ug-lead"><a href="@UserGuideContent.TargetEnvironmentTab("external")">Connected Systems</a> holds the provider instances this environment talks to — Altinn, REST, GraphQL, Service Bus, Event Hub, databases, file/SFTP. Each system shows what it needs before testing, who owns each gap, and one next action.</p>
+    <h3 class="ug-subtitle">Summary dimensions (Altinn example)</h3>
+    <div class="ug-table-scroll" role="region" aria-label="Connected system summary dimensions" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Card</th><th scope="col">Answers</th></tr></thead>
+        <tbody>
+            <tr><th scope="row">App</th><td>Is the application (environment, app identifier, base URL, form data type, integration) configured?</td></tr>
+            <tr><th scope="row">Test identities</th><td>Are approved test identities (who is involved) available?</td></tr>
+            <tr><th scope="row">Test data</th><td>Is the payload (what is submitted), such as an XML fixture, available and approved?</td></tr>
+            <tr><th scope="row">Reporter access</th><td>How the reporter signs in to the app, and whether that sign-in has been observed.</td></tr>
+            <tr><th scope="row">Integration authentication</th><td>How the app authenticates to the integration consumer — its own hop, never inherited from the reporter’s sign-in.</td></tr>
+            <tr><th scope="row">BirkNext execution credentials</th><td>What BirkNext itself needs to submit automatically.</td></tr>
+            <tr><th scope="row">Runtime</th><td>Recorded manual observations and verification.</td></tr>
+            <tr><th scope="row">Automated execution</th><td>Whether every requirement for an automated BirkNext run is met.</td></tr>
+        </tbody>
+    </table></div>
+
+    <h3 id="per-hop-authentication" class="ug-subtitle">Authentication is per hop</h3>
+    <p>There is no single “authentication” for a connected system. Each interaction has its own requirement, evidence and status:</p>
+    <ol class="ug-hops">
+        <li><span class="ug-hop-path">Reporter → Altinn app</span><span class="ug-hop-kind">Browser/OIDC sign-in (for example ID-porten). Evidence: Browser Discovery.</span></li>
+        <li><span class="ug-hop-path">Altinn app → integration consumer (MU)</span><span class="ug-hop-kind">Integration authentication. <em>Unknown</em> until configured or reviewed for that integration.</span></li>
+        <li><span class="ug-hop-path">BirkNext → Altinn</span><span class="ug-hop-kind">Execution credentials for automated submission. Secrets are entered per session and never shown.</span></li>
+    </ol>
+    <p>Sources in precedence order: explicit configuration, reviewed integration, source declaration, runtime suggestion, Test Pack proposal. A conflict is raised only between authoritative sources. <em>Not required</em> is an explicit configured answer; <em>Unknown</em> means nobody has answered.</p>
+
+    <h3 id="needs-attention" class="ug-subtitle">Needs attention</h3>
+    <p>Issues are grouped by owner with one action each, blockers first, and counted in the header (for example “2 blockers · 1 review item”).</p>
+    <div class="ug-compare">
+        <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-critical">Blocked</span></p><p>Stops the activity it names. Example: missing BirkNext execution credentials block automated execution.</p></div>
+        <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-warning">Review required</span></p><p>A person should look before relying on it. Example: contract identifier known but source/deployed contract evidence incomplete — this does not block manual preparation.</p></div>
+    </div>
+    <p>With nothing to fix the panel reads <em>Ready for current configured use</em>. Details stay behind <em>Show details</em>.</p>
+
+    <h3 id="manual-vs-automated" class="ug-subtitle">Manual readiness is not automated readiness</h3>
+    <div class="ug-compare">
+        <div class="ug-compare-col"><p class="ug-compare-label">Manual test readiness</p><p>Can a tester prepare and submit by hand? Needs the app, identities and Test Data.</p></div>
+        <div class="ug-compare-col"><p class="ug-compare-label">Automated BirkNext execution</p><p>Can BirkNext run it? Additionally needs execution credentials, execution safety (approved app and a backend-trusted target) and runtime values.</p></div>
+    </div>
+
+    <h3 id="detection-vs-configuration" class="ug-subtitle">Detection does not save</h3>
+    <ul class="ug-list">
+        <li><strong>Detected values</strong> (<em>Detect systems</em>, <em>Detect Altinn settings</em>) are proposals: review them and apply the ones you want.</li>
+        <li><strong>Authoritative internal bindings</strong> may be used directly — for example a single matching Integration Catalog integration reads <em>Configured · Integration Catalog (internal reference)</em>.</li>
+        <li><strong>Explicit saved configuration is protected:</strong> a different detected value shows as a conflict and is never applied silently.</li>
+    </ul>
+    <GuideCallout Kind="CalloutKind.Important"><p>Browser authentication evidence never configures BirkNext unattended execution. Observed sign-in is evidence, not verification and not credentials.</p></GuideCallout>
+</section>
+
+<section id="integrations" class="ug-section ug-topic" data-topic="integrations" aria-labelledby="integrations-title">
+    <h2 id="integrations-title" class="ug-section-title" tabindex="-1">Integration Catalog and Integration Quality Review</h2>
+    <p class="ug-lead">The <a href="@UserGuideContent.TargetEnvironmentTab("integrations")">Integration Catalog</a> holds the logical producer → consumer integrations of an environment. <a href="/integration-quality-review">Integration Quality Review</a> (IQR) is the evidence and review layer over them.</p>
+    <div class="ug-card-grid ug-card-grid-2">
+        <article class="ug-card"><h3>Discovery in the catalog</h3><ul class="ug-list">
+            <li><strong>Integration proposals</strong> come from Test Pack roles whose evidence is available and that are not configured yet.</li>
+            <li><strong>Technical relationships</strong> are source candidates (collapsed and counted separately). Infrastructure as code corroborates; it never originates one.</li>
+            <li>Discovery reads the current import, IQR-bound snapshots and Test Pack-recognized snapshots, with the source of each fact.</li>
+            <li>A proposal is not a configured integration. <em>Review / Add</em> creates it; once configured it is reused by Connected Systems, Schema Studio and Test Data.</li>
+        </ul></article>
+        <article class="ug-card"><h3>What IQR reviews</h3><ul class="ug-list">
+            <li>Consumer mapping and source binding (which snapshot holds producer and consumer).</li>
+            <li>Authentication evidence per integration.</li>
+            <li>Contract relationship between producer and consumer contracts.</li>
+            <li>Runtime evidence where an adapter exists — optional and off by default for cloud providers.</li>
+            <li>Confirmed IQR evidence is reused by Connected Systems, Test Data and contract selection; it is not re-entered.</li>
+        </ul></article>
+    </div>
+    <p>Configured is not observed, and observed is not verified. Listed integration types have unequal support — check Technology Coverage.</p>
+</section>
+
+<section id="test-data" class="ug-section ug-topic" data-topic="test-data" aria-labelledby="test-data-title">
+    <h2 id="test-data-title" class="ug-section-title" tabindex="-1">Test Data</h2>
+    <p class="ug-lead"><a href="/test-data">Test Data</a> is the one catalog of reusable, centrally owned assets. Consumers — Connected Systems, performance scenarios, API reviews, test packs — reference assets by alias; they never copy them. Sensitive values stay in the backend and are never shown.</p>
+    <div class="ug-chip-row" role="list" aria-label="Asset kinds">
+        <span class="ug-chip" role="listitem">Reporter identities</span><span class="ug-chip" role="listitem">Child identities</span><span class="ug-chip" role="listitem">Scalar/simple values</span>
+        <span class="ug-chip" role="listitem">XML fixtures</span><span class="ug-chip" role="listitem">JSON payloads</span><span class="ug-chip" role="listitem">Files and expected results</span>
+    </div>
+    <p>Each asset has a status (Draft → Needs review → Approved → Deprecated) and a scope (one environment or Shared). Sources and Schema Studio propose; approval is always explicit. Approval, validation and intent are separate: an approved negative fixture can be deliberately invalid. BirkNext never generates identities or business data.</p>
+    <ReviewDisclosure Text="Advanced details: asset sources" CollapseText="Hide advanced details" TestId="ug-testdata-advanced">
+        <p>Assets come from the configured catalog (the <code>TestData</code> configuration section — <code>TestData:Assets</code> and <code>TestData:Sets</code>, with files read only from <code>TestData:Root</code>), approved local test configuration, and XML explicitly registered as Test Data. Drafts, generated previews and unregistered XML never appear.</p>
+    </ReviewDisclosure>
+
+    <h3 id="reporter-vs-child" class="ug-subtitle">Reporter is not child</h3>
+    <div class="ug-compare">
+        <div class="ug-compare-col"><p class="ug-compare-label">Reporter</p><p>The submission and authentication context — who signs in and submits. Not part of the XML payload.</p></div>
+        <div class="ug-compare-col"><p class="ug-compare-label">Child</p><p>The business identity inside the payload, for example mapped to <span class="ug-path">Klient → Identifikator → Fodselsnummer</span>.</p></div>
+    </div>
+
+    <h3 id="asset-names" class="ug-subtitle">Display name and asset alias</h3>
+    <p>An asset has a friendly display name and a canonical alias that consumers reference — for example <em>Skolenærvær default child</em> with alias <code>skolenaervaer-child-default</code>. Use the alias to tell assets apart when several reporters or children exist; the name can change, the reference cannot.</p>
+
+    <h3 id="xml-fixtures" class="ug-subtitle">Create an XML fixture</h3>
+    <ol class="ug-steps ug-steps-compact">
+        <li><span class="ug-step-title">Choose source snapshot</span><span class="ug-step-text">Resolved from explicit choice, the bound contract, the Project or IQR — never by date. Several candidates need your decision.</span></li>
+        <li><span class="ug-step-title">Choose XSD</span><span class="ug-step-text">From that snapshot.</span></li>
+        <li><span class="ug-step-title">Map values</span><span class="ug-step-text">Fill required fields from value sources.</span></li>
+        <li><span class="ug-step-title">Generate XML</span><span class="ug-step-text">Generated locally from the XSD.</span></li>
+        <li><span class="ug-step-title">Validate</span><span class="ug-step-text">Against the same XSD.</span></li>
+        <li><span class="ug-step-title">Save and approve</span><span class="ug-step-text">Saving retains content; approval makes it usable by tests.</span></li>
+    </ol>
+
+    <h3 id="xml-field-mappings" class="ug-subtitle">Field mappings</h3>
+    <p>A mapping names the full field path, such as <span class="ug-path">Klient → Identifikator → Fodselsnummer</span>, and one value source:</p>
+    <ul class="ug-list">
+        <li><strong>Test Data asset</strong> — a scalar-compatible asset, such as the child’s identifier.</li>
+        <li><strong>Fixed value</strong> — a literal you enter.</li>
+        <li><strong>Generated value</strong> — UUID, timestamp or date.</li>
+        <li><strong>Schema default</strong> — the XSD’s own default.</li>
+    </ul>
+    <GuideCallout Kind="CalloutKind.Important"><p>Field mappings use scalar-compatible assets only. A whole XML or JSON payload asset is a payload, never a field value.</p></GuideCallout>
+
+    <h3 id="xml-provenance" class="ug-subtitle">Provenance and change safety</h3>
+    <p>A saved fixture keeps its XSD, source snapshot and file, the value mappings with the Test Data aliases they reference, manual XML changes and the validation result. Changing the child, the XSD or the snapshot later never silently changes an approved fixture: a new snapshot needs <em>Use this XSD</em> review, and an XSD change marks affected mappings <em>Needs review</em> before you can generate again.</p>
+</section>
+
+<section id="schema-studio" class="ug-section ug-topic" data-topic="schema-studio" aria-labelledby="schema-studio-title">
+    <h2 id="schema-studio-title" class="ug-section-title" tabindex="-1">Schema Studio</h2>
+    <p class="ug-lead"><a href="/schema-studio">Schema Studio</a> inspects, validates and compares XSD contracts. It is the shared XSD capability that Test Data and Contract Evolution also use. <span class="status-chip status-chip-partial">Partial</span></p>
+    <ul class="ug-list">
+        <li><strong>Source snapshot:</strong> open XSDs from an exact Source Analysis snapshot (Project-bound snapshots are listed first) or upload XSD files and bounded ZIP packages. The origin stays visible as provenance.</li>
+        <li><strong>Inspection:</strong> readable views of the effective schema with its own documentation, dependencies (imports/includes with status), references and constraints.</li>
+        <li><strong>Validation:</strong> generate and validate XML locally. Schema validity is not business validity, and generated tests are candidates, not executed tests.</li>
+        <li><strong>Test Data:</strong> saved XML can be registered as Test Data explicitly; the XML fixture workflow in Test Data uses the same engine.</li>
+    </ul>
+    <GuideCallout Kind="CalloutKind.Tip"><p>Full structured Designer editing and Source Analysis archive reprocessing are not implemented. Older snapshots that did not retain XSD contents cannot be rescanned; import the archive again.</p></GuideCallout>
+    <ReviewDisclosure Text="Advanced details: parsing and safety" CollapseText="Hide advanced details" TestId="ug-schema-advanced">
+        <p>XSD imports are treated as data: DTDs and external resolution are disabled, and linked schemas resolve only within the selected package. Contract-test candidates are bounded to 5,000 with truncation disclosed. Generation profiles are schema-specific settings (not the Test Data catalog) with deterministic synthetic generation and occurrence counts bounded by the schema.</p>
+    </ReviewDisclosure>
+</section>
+
+<section id="setup-library" class="ug-section ug-topic" data-topic="setup-library" aria-labelledby="setup-library-title">
+    <h2 id="setup-library-title" class="ug-section-title" tabindex="-1">Setup Library</h2>
+    <p class="ug-lead">The <a href="@UserGuideContent.TargetEnvironmentTab("library")">Setup Library</a> keeps reusable, sanitized setup packages with immutable versions. Save one from Connected Systems → <em>Export setup</em>, then apply it to another environment.</p>
+    <div class="ug-compare">
+        <div class="ug-compare-col ug-compare-yes"><p class="ug-compare-label">Portable</p><ul><li>Safe configuration values</li><li>References: integrations, Test Data aliases, Test Pack requirements</li></ul></div>
+        <div class="ug-compare-col ug-compare-no"><p class="ug-compare-label">Never portable</p><ul><li>Secrets and raw identities</li><li>Runtime evidence</li><li>Target trust and execution verification</li></ul></div>
+    </div>
+    <p><strong>Apply preflight</strong> runs before anything is written and keeps two answers apart: <em>Setup apply readiness</em> (can this package be applied here — blocking dependencies, conflicts) and <em>Test readiness</em> (what the destination still needs before testing, such as Test Data). Conflicts with existing values need an explicit keep/apply decision; apply is all-or-nothing.</p>
+</section>

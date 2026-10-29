@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Pages/UserGuide.razor" LogicalName="BirkNext.UserGuide.source" />
+    <EmbeddedResource Include="Components/Guide/*.razor" LogicalName="BirkNext.UserGuide.%(Filename).source" />
     <Compile Include="../../shared/ManagedEdgeCdpContracts.cs" Link="Models/ManagedEdgeCdpContracts.cs" />
     <Compile Include="../../shared/HeadlessAuthDiagnosticContracts.cs" Link="Models/HeadlessAuthDiagnosticContracts.cs" />
     <Compile Include="../../shared/LocalHttpsProxyContracts.cs" Link="Models/LocalHttpsProxyContracts.cs" />

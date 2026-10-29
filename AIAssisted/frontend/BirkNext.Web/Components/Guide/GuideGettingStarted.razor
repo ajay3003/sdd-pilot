@@ -1,0 +1,114 @@
+@* User Guide — Getting started: what BirkNext does, the first-time path, core concepts, importing and Recommended Workflow.
+   Anchors here are literal: Documentation Health and the guide tests read this file. *@
+@using BirkNext.Web.Services
+@using static BirkNext.Web.Components.Guide.GuideCallout
+
+<section id="overview" class="ug-section ug-topic" data-topic="overview" aria-labelledby="overview-title">
+    <h2 id="overview-title" class="ug-section-title" tabindex="-1">What BirkNext does</h2>
+    <p class="ug-lead">BirkNext brings together project documents, source analysis, traceability, quality reviews and controlled runtime testing. It shows the evidence it has and the limits of that evidence, and it never treats every feature as relevant to every project.</p>
+    <div class="ug-pillars">
+        <div class="ug-pillar"><h3>Project &amp; evidence</h3><p>Import packages, bind them to a logical Project, and explore documents, source and generated documentation.</p></div>
+        <div class="ug-pillar"><h3>Test setup</h3><p>Configure the Target Environment, connected systems, integrations, Test Data and schemas.</p></div>
+        <div class="ug-pillar"><h3>Testing</h3><p>Run safety-gated runtime, integration and performance tests, and read results with their evidence.</p></div>
+        <div class="ug-pillar"><h3>Review &amp; governance</h3><p>Record review decisions, follow documentation drift and see what blocks readiness — and who owns the fix.</p></div>
+    </div>
+</section>
+
+<section id="start-here" class="ug-section ug-topic" data-topic="start-here" aria-labelledby="start-here-title">
+    <h2 id="start-here-title" class="ug-section-title" tabindex="-1">Start here</h2>
+    <p class="ug-lead">A first-time path. Skip any step your project does not need: no step is required of every project, and one package rarely contains everything.</p>
+    <ol class="ug-steps">
+        <li><span class="ug-step-title">Import project evidence</span><span class="ug-step-text">One or more ZIPs: source and docs together, or separate packages for docs, contracts or infrastructure. <a href="/project-import">Import Project</a></span></li>
+        <li><span class="ug-step-title">Analyze source where it exists</span><span class="ug-step-text">Import creates the Source Analysis snapshot automatically; a docs-only package has none and is still valid.</span></li>
+        <li><span class="ug-step-title">Configure the logical Project</span><span class="ug-step-text">Tell the environment which system it tests. <a href="@UserGuideContent.Href("project-model")">Project model</a></span></li>
+        <li><span class="ug-step-title">Bind required evidence</span><span class="ug-step-text">Bind each required role (application source, documentation, contracts …) to a package; optional roles never block.</span></li>
+        <li><span class="ug-step-title">Configure the Target Environment</span><span class="ug-step-text">URL, authentication and discovery — needed only for runtime testing. <a href="@UserGuideContent.Href("target-environment")">Target Environment</a></span></li>
+        <li><span class="ug-step-title">Review Connected Systems</span><span class="ug-step-text">Fix blockers in Needs attention before testing against external systems. <a href="@UserGuideContent.Href("connected-systems")">Connected Systems</a></span></li>
+        <li><span class="ug-step-title">Prepare Test Data</span><span class="ug-step-text">Approve identities, values and fixtures that tests reference. <a href="@UserGuideContent.Href("test-data")">Test Data</a></span></li>
+        <li><span class="ug-step-title">Follow Recommended Workflow</span><span class="ug-step-text">It names the next action for your actual evidence. <a href="/getting-started">Recommended Workflow</a></span></li>
+        <li><span class="ug-step-title">Run the relevant reviews and tests</span><span class="ug-step-text">Only those that apply to your project; Not applicable is never a failure.</span></li>
+    </ol>
+</section>
+
+<section id="concepts" class="ug-section ug-topic" data-topic="concepts" aria-labelledby="concepts-title">
+    <h2 id="concepts-title" class="ug-section-title" tabindex="-1">Core concepts</h2>
+    <div class="ug-card-grid">
+        <article class="ug-card"><h3>Applicability, coverage and quality</h3><p><strong>Applicable</strong> means a review fits the project; <strong>NotApplicable</strong> (N/A) means it does not. <strong>Unsupported</strong> means the tool cannot assess a relevant technology — a tool limitation, not a project quality problem. <strong>NotTested</strong>, <strong>Unavailable</strong>, <strong>NotAssessed</strong> and <strong>No evidence</strong> describe missing evidence and never mean failure. Quality scores use assessed checks; coverage is reported separately. If nothing was assessed, no score is inferred.</p></article>
+        <article class="ug-card"><h3>Evidence maturity</h3><p>Documented → source-confirmed → configured → observed → runtime-verified → executed → passed. A later stage is never implied by an earlier one: a designed test is not an executed test, and execution is not a pass. Source evidence does not prove runtime behavior; a pipeline definition shows intended steps, not a successful run. No automated violation is not full compliance.</p></article>
+        <article class="ug-card"><h3>Snapshots and provenance</h3><p>A Source Analysis snapshot is an immutable record with a fingerprint, timestamp and provenance. New analysis creates another snapshot; it never rewrites history. Current, historical, stale, needs refresh and not comparable are different states. A snapshot is not a deployment.</p></article>
+        <article class="ug-card"><h3>Analyzers, providers, engines, extensions</h3><p>An analyzer interprets source; a provider connects to or observes a system; an engine executes a test; an extension supplies project-specific behavior. Available does not mean used, and supported does not mean applicable. M01 – Gradert tilgang (Kode 6/7) is the review of graded access provided by the M2LB child-security-classification extension; its classification evidence is shared with other extensions such as Skolenærvær Testing.</p></article>
+    </div>
+</section>
+
+<section id="getting-started" class="ug-section ug-topic" data-topic="getting-started" aria-labelledby="getting-started-title">
+    <h2 id="getting-started-title" class="ug-section-title" tabindex="-1">Import a project</h2>
+    <p class="ug-lead"><a href="/project-import">Import Project</a> takes one ZIP, validates it once and shows what it found before anything is imported. Import succeeds on its own — configuring a Project afterwards is offered, never forced.</p>
+
+    <h3 id="project-inputs" class="ug-subtitle">Three kinds of input</h3>
+    <ul class="ug-list">
+        <li><strong>Project documents</strong> — Specification, Constitution, Plan, Tasks, Data Model, Research. Read by the Explorers, Document Quality Review and Requirements Traceability.</li>
+        <li><strong>Source</strong> — becomes a Source Analysis snapshot; no second upload. You can also analyze source once directly in <a href="/source-analysis">Source Analysis</a> for a source-only archive. Feeds Technology Coverage, Dependency Review, Pipeline Review and the source-based reviews.</li>
+        <li><strong>Target Environment</strong> — the deployed system; needed only for runtime reviews (frontend, API, integration, performance, Critical E2E).</li>
+    </ul>
+    <p>A document-only project never waits for source or a target, and a source-only project never waits for documents. <a href="/demo-projects">Demo Projects</a> are optional built-in examples that read through the same workspace as an import.</p>
+
+    <h3 id="project-import" class="ug-subtitle">What happens on import</h3>
+    <ol class="ug-steps ug-steps-compact">
+        <li><span class="ug-step-title">Preview</span><span class="ug-step-text">Documents by artifact role, detected source and technologies. Nothing is imported yet.</span></li>
+        <li><span class="ug-step-title">Import</span><span class="ug-step-text">Documents become artifact revisions; source becomes a snapshot. Both share the import identity and archive fingerprint.</span></li>
+        <li><span class="ug-step-title">Next</span><span class="ug-step-text">BirkNext may show <em>Project context available</em> (Configure Project / Configure later), <em>Required evidence candidate found</em> (Review &amp; bind) or <em>New compatible project evidence available</em> (Review project evidence).</span></li>
+    </ol>
+    <GuideCallout Kind="CalloutKind.Important"><p>A documents-only archive (<em>No source detected</em>) and a source-only archive (<em>No supported project artifacts detected</em>) are complete, neutral outcomes. <em>Imported with notes</em> means something is partial — never a failure. Imported is not reviewed, approved or passed.</p></GuideCallout>
+
+    <ReviewDisclosure Text="Advanced details: archive limits, re-import and staging" CollapseText="Hide advanced details" TestId="ug-import-advanced">
+        <p>Archives are up to 50 MB with the Source Analysis safety limits: no traversal, absolute or UNC paths, no symbolic links, bounded entry count and expanded size. The previewed archive is staged on the backend for 30 minutes and survives a backend restart; after that the preview expires. Only a genuine source failure offers a retry from the staged archive. A rejected archive activates nothing.</p>
+        <p>Importing the same archive again is recognized by its SHA-256 fingerprint: documents are not duplicated and a current snapshot is reused. A different archive creates a new import and a new snapshot; earlier imports and snapshots stay as history. The client file name is metadata only; no local path is stored.</p>
+    </ReviewDisclosure>
+
+    <h3 id="multiple-documents" class="ug-subtitle">Several documents for one role, and modules</h3>
+    <p>BirkNext keeps <strong>every</strong> detected candidate and never shows Spec-Kit templates as candidates. Detected is not selected: a candidate is used when it is the only one in its scope, or when you choose it. File names, folder numbers and classification confidence never decide.</p>
+    <p>A monorepo with several Spec-Kit projects is shown as <em>modules</em>; each keeps its own selection, and choosing for one never changes another. Choose the <em>module to review</em> in any Explorer or under <em>Artifact candidates</em> on Import Project.</p>
+
+    <h3 id="sample-project-discovery" class="ug-subtitle">How documents are found</h3>
+    <p>Discovery scans recursively (skipping <code>bin</code>, <code>obj</code>, <code>node_modules</code>, <code>.git</code>) and classifies Markdown by role from front matter, canonical file names and document structure. Canonical names such as <code>spec.md</code> are hints, not requirements. Every role is optional: a missing role shows <em>Not found</em>. Ambiguous documents appear under <em>Needs review</em>; unsupported ones under <em>Other documents</em>.</p>
+
+    <h3 id="current-workspace" class="ug-subtitle">One current workspace</h3>
+    <p>Dashboard, Recommended Workflow, the Explorers and the sidebar read the same current workspace. <em>Not saved</em>, <em>Auto-saved</em> and <em>Saved</em> describe saving only. Pages count artifact <em>roles</em>; availability, selection, analysis and review are separate states. A score with nothing assessed shows “—”, not 0%.</p>
+
+    <h3 id="workflows" class="ug-subtitle">Typical paths</h3>
+    <ul class="ug-list">
+        <li><strong>Document-only:</strong> import documents → Explorers → Requirements Traceability → applicable Document Quality Review packs.</li>
+        <li><strong>Source-only:</strong> import the ZIP or analyze source once → Technology Coverage → Dependency and Pipeline reviews.</li>
+        <li><strong>Runtime:</strong> configure a Target Environment → Endpoint/Browser Discovery → API or Frontend Quality Review → Critical E2E.</li>
+        <li><strong>Integrations:</strong> Connected Systems and Integration Catalog → Integration Quality Review → domain test packs such as Skolenærvær Testing.</li>
+        <li><strong>Performance:</strong> engine readiness → scenario, workload, thresholds → readiness → run → results → baseline.</li>
+    </ul>
+</section>
+
+<section id="recommended-workflow" class="ug-section ug-topic" data-topic="recommended-workflow" aria-labelledby="recommended-workflow-title">
+    <h2 id="recommended-workflow-title" class="ug-section-title" tabindex="-1">Recommended Workflow</h2>
+    <p class="ug-lead"><a href="/getting-started">Recommended Workflow</a> names one next action from your Project context, the evidence that actually exists, recorded review decisions and readiness. It is guidance, not a mandatory sequence or a release decision.</p>
+    <div class="ug-two-col">
+        <div>
+            <h3 class="ug-subtitle">Typical next actions</h3>
+            <ul class="ug-list">
+                <li><strong>Configure project context</strong> — evidence is imported but the environment has no Project yet.</li>
+                <li><strong>Bind project documentation</strong> — documents exist in an imported package but are not bound.</li>
+                <li><strong>Import project documents</strong> — the Project requires documentation that no package holds.</li>
+                <li><strong>Choose a module / Needs selection</strong> — several candidates and none selected.</li>
+                <li><strong>Analyze the source again</strong> — source evidence needs refresh.</li>
+                <li>The next review step — explorers, traceability, integration or testing reviews.</li>
+            </ul>
+        </div>
+        <div>
+            <h3 class="ug-subtitle">What it never does</h3>
+            <ul class="ug-list">
+                <li>Ask you to <em>Load project artifacts</em> when imported evidence already exists — that step appears only when nothing is imported.</li>
+                <li>Recommend an Unavailable feature.</li>
+                <li>Treat input completeness as a quality score.</li>
+            </ul>
+        </div>
+    </div>
+    <h3 id="review-decisions" class="ug-subtitle">Review decisions</h3>
+    <p>Each review step says where it stands: <em>Ready to review</em>, <em>Reviewed</em>, <em>Reviewed with gaps</em> (completed, not a failure), <em>Approved</em> (only where a policy asks), <em>Review stale</em> (the artifact changed), <em>Blocked</em> or <em>Not applicable</em>. A decision names the exact file and content fingerprint it applies to; opening an Explorer records nothing. When the document changes, the earlier decision stays in history but no longer counts. <em>Review decisions</em> counts required steps with a recorded decision; optional steps are shown but not counted.</p>
+</section>

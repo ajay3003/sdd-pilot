@@ -1,0 +1,111 @@
+@* User Guide — Project & evidence: the logical Project model, Source Analysis, Explorers, generated documentation and traceability. *@
+@using BirkNext.Web.Services
+@using static BirkNext.Web.Components.Guide.GuideCallout
+
+<section id="project-model" class="ug-section ug-topic" data-topic="project-model" aria-labelledby="project-model-title">
+    <h2 id="project-model-title" class="ug-section-title" tabindex="-1">Project model and binding</h2>
+    <p class="ug-lead"><strong>A Project is the logical system under test</strong> — not the latest ZIP. It is configured per Target Environment on the <a href="@UserGuideContent.TargetEnvironmentTab("project")">Project tab</a> and binds evidence from one or more imported packages. Packages remain independent evidence providers with their own history.</p>
+    <div class="ug-compare">
+        <div class="ug-compare-col ug-compare-yes"><p class="ug-compare-label">Project is</p><ul><li>One logical system, such as an application and its contracts</li><li>A set of evidence roles, each bound to packages</li><li>References only — imports and snapshots keep their owners</li></ul></div>
+        <div class="ug-compare-col ug-compare-no"><p class="ug-compare-label">Project is not</p><ul><li>The newest import</li><li>One ZIP that must contain everything</li><li>A copy of the evidence</li></ul></div>
+    </div>
+
+    <h3 id="package-types" class="ug-subtitle">Valid package types</h3>
+    <p>Each of these is valid project evidence. Missing code never makes a package invalid.</p>
+    <div class="ug-chip-row" role="list">
+        <span class="ug-chip" role="listitem">Source + docs</span><span class="ug-chip" role="listitem">Source only</span><span class="ug-chip" role="listitem">Docs only</span>
+        <span class="ug-chip" role="listitem">Contracts/schema only</span><span class="ug-chip" role="listitem">Infrastructure only</span><span class="ug-chip" role="listitem">Supporting/shared source</span>
+    </div>
+    <p>A multi-package project is normal: for example application source in one package, authored documentation in another, and contracts or infrastructure in a third.</p>
+
+    <h3 id="project-tab" class="ug-subtitle">Evidence roles on the Project tab</h3>
+    <div class="ug-table-scroll" role="region" aria-label="Project evidence roles" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Role</th><th scope="col">Default</th><th scope="col">Used by</th></tr></thead>
+        <tbody>
+            <tr><th scope="row">Application source</th><td>Required · one package</td><td>Project definition (main application)</td></tr>
+            <tr><th scope="row">Project documentation</th><td>Required · several allowed</td><td>Explorers and document reviews</td></tr>
+            <tr><th scope="row">Contracts and schemas</th><td>Optional</td><td>Schema Studio and contract-source discovery</td></tr>
+            <tr><th scope="row">Infrastructure</th><td>Optional</td><td>Infrastructure and configuration reviews</td></tr>
+            <tr><th scope="row">Supporting/shared source</th><td>Optional</td><td>Integration discovery and source reviews</td></tr>
+            <tr><th scope="row">Generated documentation</th><td>Optional · one package</td><td>Generated Documentation Health and Documentation Drift</td></tr>
+        </tbody>
+    </table></div>
+    <ul class="ug-list">
+        <li><strong>Select the project:</strong> when exactly one application candidate exists, BirkNext suggests it — nothing is saved until you confirm.</li>
+        <li><strong>Change or add:</strong> the picker groups packages (Supporting, Documentation-only, Infrastructure, Unknown) and shows a preview of the impact before you confirm. Rows show where a binding came from (<em>Bound from Project setup</em> or <em>Bound manually</em>).</li>
+        <li><strong>Test Pack evidence:</strong> an activated Test Pack can add required roles; they appear with the pack that needs them.</li>
+        <li><strong>Remove safely:</strong> removing or changing a binding never deletes an imported package or a Source Analysis snapshot, and BirkNext never silently selects the latest import.</li>
+    </ul>
+
+    <h3 id="project-readiness" class="ug-subtitle">Bound is not Ready</h3>
+    <p>Readiness is role-specific. A bound package can lack the capability the role needs: application source may be <em>Ready</em> while Contracts/schema is <em>Partial</em>. The summary reads, for example, “3 / 3 bound · 2 ready”, and <em>Required evidence</em> is Ready only when every required role is Ready.</p>
+    <div class="ug-status-row">
+        <span class="status-chip status-chip-ready">Ready</span><span class="status-chip status-chip-partial">Partial</span><span class="status-chip status-chip-info">Suggested</span>
+        <span class="status-chip status-chip-warning">Needs decision</span><span class="status-chip status-chip-critical">Missing</span><span class="status-chip status-chip-critical">Conflict · review required</span>
+    </div>
+    <GuideCallout Kind="CalloutKind.Tip"><p>Optional evidence never blocks. <em>Conflict</em> means a single-package role has more than one source bound; choose one.</p></GuideCallout>
+</section>
+
+<section id="source-analysis" class="ug-section ug-topic" data-topic="source-analysis" aria-labelledby="source-analysis-title">
+    <h2 id="source-analysis-title" class="ug-section-title" tabindex="-1">Source Analysis</h2>
+    <p class="ug-lead"><a href="/source-analysis">Source Analysis</a> turns an archive into an immutable, fingerprinted snapshot that other features select by reference. It needs no Target Environment, and reviews never need a duplicate upload.</p>
+    <p>Areas:</p><ul class="ug-chip-row ug-chip-list">@foreach (var domain in DocumentationCatalog.DocumentedSourceAnalysisDomains) { <li class="ug-chip">@domain</li> }</ul>
+    <ul class="ug-list">
+        <li>Import Project creates the snapshot automatically (<em>Created by: Project Import</em>); <em>Upload source only</em> remains for source-only archives.</li>
+        <li>Re-analysis creates a new snapshot. Consumers keep the exact snapshot they used; a newer one may be offered, never silently switched.</li>
+        <li>Source Analysis describes declarations and analyzer findings — not deployment state, runtime behavior or successful pipeline runs.</li>
+    </ul>
+    <ReviewDisclosure Text="Advanced details: archive handling" CollapseText="Hide advanced details" TestId="ug-source-advanced">
+        <p>Safe ZIPs up to 50 MB compressed and 100 MB expanded, including nested folders, several services, document-only archives and unsupported technologies (reported as an analysis limitation). No traversal paths or symbolic links; archives are read in memory, never extracted to disk.</p>
+    </ReviewDisclosure>
+    <h3 id="technology-coverage" class="ug-subtitle">Technology Coverage</h3>
+    <p><a href="/technology-coverage">Technology Coverage</a> shows detected technologies and what BirkNext supports per dimension — configuration, source analysis, contracts, runtime observation, active tests, test plans. Unsupported is an analyzer or provider limitation; it does not reduce project quality.</p>
+</section>
+
+<section id="explorers" class="ug-section ug-topic" data-topic="explorers" aria-labelledby="explorers-title">
+    <h2 id="explorers-title" class="ug-section-title" tabindex="-1">Explorers and documents</h2>
+    <p class="ug-lead">The <a href="/specification-explorer">Specification Explorer</a>, <a href="/constitution-explorer">Constitution Explorer</a>, <a href="/plan-explorer">Plan Explorer</a>, <a href="/task-explorer">Task Explorer</a> and <a href="/data-model-explorer">Data Model Explorer</a> read the documents of the logical Project. Documentation may come from a different package than the application source.</p>
+    <ul class="ug-list">
+        <li><strong>Where documents come from:</strong> a Demo Project, else the documentation bound on the Project tab, else the current import; plus documents imported into the workspace with an Explorer’s <em>Import</em> action. Each artifact shows the package it came from.</li>
+        <li><strong>Which document opens:</strong> the one you selected, else the only Approved/Baseline artifact, else the only artifact. Otherwise the Explorer asks you to choose; it never opens the first file found and never merges documents.</li>
+        <li><strong>Three empty states:</strong> no project loaded (offers Import Project); several candidates (<em>needs selection</em>); no candidate (<em>not detected</em>, neutrally).</li>
+        <li><strong>Identifiers:</strong> project-defined, such as JIRA-123 or US-A1 — no single ID scheme is assumed.</li>
+    </ul>
+    <h3 id="specification-review" class="ug-subtitle">Specification Explorer counts entities</h3>
+    <p><em>Requirements</em>, <em>Tests</em> and <em>Clarifications analyzed</em> count unique items (one FR-004, however often mentioned). <em>Review candidates</em> are suggestions for human review, not findings or defects. Traceability links can be many-to-many, and clarification links never count as test coverage. A requirement or a designed test parsed from the document is not, by itself, evidence of coverage.</p>
+    <h3 id="task-explorer" class="ug-subtitle">Task Explorer keeps five facts apart</h3>
+    <ul class="ug-list">
+        <li><em>Marked done in Task artifact</em> counts checked boxes — not implementation or test completion.</li>
+        <li><em>Planning</em> counts parallelizable tasks — structure, not progress.</li>
+        <li><em>Traceability</em> counts tasks with and without links; the two always add up to the total.</li>
+        <li><em>Implementation evidence</em> and <em>Test evidence</em> come from Source Analysis and recorded tests; without them they read <em>Not assessed</em>, never zero.</li>
+        <li><em>Task topics</em> (testing, security …) come from wording — a task that mentions testing is not a linked test asset.</li>
+    </ul>
+    <p>Artifact governance covers revisions, fingerprints, authority, baselines and supersession; it is not a complete approval or sign-off system.</p>
+</section>
+
+<section id="generated-documentation" class="ug-section ug-topic" data-topic="generated-documentation" aria-labelledby="generated-documentation-title">
+    <h2 id="generated-documentation-title" class="ug-section-title" tabindex="-1">Generated documentation</h2>
+    <p class="ug-lead">Some projects keep documentation that a tool, build step or agent writes from the code (for example per-module <code>autodoc/</code> folders). BirkNext treats it as <strong>implementation-derived evidence</strong> — useful, but never automatically authoritative.</p>
+    <div class="ug-card-grid ug-card-grid-2">
+        <article class="ug-card"><h3><a href="/generated-documentation-explorer">Generated Documentation Explorer</a></h3><p>Browse the captured documents of the selected import by module and type — Data Model, architecture, data flow, messaging, overview. Read-only, with provenance.</p></article>
+        <article class="ug-card"><h3><a href="/generated-documentation-health">Generated Documentation Health</a></h3><p>Compares structured keys (routes, messaging resources, entities, configuration keys, contract operations) with source, contracts and authored artifacts of the same import, per module and source snapshot.</p></article>
+    </div>
+    <ul class="ug-list">
+        <li>Authored documentation ≠ generated documentation ≠ source evidence ≠ runtime evidence.</li>
+        <li>Every discrepancy is “Potential drift – requires review”. A generated document never supersedes the Specification and never verifies a completed task.</li>
+        <li>Freshness is Current, Potentially stale or Unknown, judged per module from declared dates and dated source evidence. No discrepancy found does not mean fully synchronized.</li>
+        <li>Without generated documentation these pages say so; it is optional evidence.</li>
+    </ul>
+</section>
+
+<section id="traceability" class="ug-section ug-topic" data-topic="traceability" aria-labelledby="traceability-title">
+    <h2 id="traceability-title" class="ug-section-title" tabindex="-1">Traceability</h2>
+    <p class="ug-lead"><a href="/artifact-traceability">Requirements Traceability</a> presents the shared graph: requirement → plan → task → implementation evidence → designed test → test execution. Links may be partial or stale, and the graph never turns source links into runtime verification.</p>
+    <div class="ug-card-grid">
+        <article class="ug-card" id="implementation-review"><h3><a href="/task-alignment">Task Alignment Review</a></h3><p>Checks every task against the Specification: <em>Direct spec link</em>, <em>Technical only</em>, <em>Needs review</em> or <em>Possible deviation</em> (only the last two are findings). It does not read source code, so it is not full implementation verification. Results are bound to both artifacts’ fingerprints (Current, Stale, Not run).</p></article>
+        <article class="ug-card"><h3><a href="/implementation-review">Implementation Evidence Review</a></h3><p>Source-backed implementation and test evidence per requirement, once source is analyzed and the Artifact Pack is bound to source.</p></article>
+        <article class="ug-card"><h3><a href="/implementation-traceability">Change Traceability</a></h3><p>Optional. Traces Azure DevOps work items through pull requests, commits and files. Without Azure DevOps it reads <em>Not configured</em>; change provenance never proves a requirement is implemented correctly.</p></article>
+    </div>
+    <p>Imported test results such as TRX are execution records. Source-discovered test definitions, planned tests, execution records, results and requirement links remain separate.</p>
+</section>

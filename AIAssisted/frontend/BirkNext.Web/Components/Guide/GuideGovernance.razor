@@ -1,0 +1,40 @@
+@* User Guide — Review & governance: Documentation Drift and readiness. *@
+@using BirkNext.Web.Services
+@using static BirkNext.Web.Components.Guide.GuideCallout
+
+<section id="documentation-drift" class="ug-section ug-topic" data-topic="documentation-drift" aria-labelledby="documentation-drift-title">
+    <h2 id="documentation-drift-title" class="ug-section-title" tabindex="-1">Documentation Drift</h2>
+    <p class="ug-lead"><a href="/documentation-drift">Documentation Drift</a> compares documentation artifacts of an imported project: what the team intended (authored) against what was generated from the code, and how documents changed between imports.</p>
+    <div class="ug-card-grid">
+        <article class="ug-card"><h3><a href="/documentation-drift?tab=overview">Overview</a></h3><p>Counts per status and <em>What to review next</em>, scoped to the selected import.</p></article>
+        <article class="ug-card"><h3><a href="/documentation-drift?tab=compare">Compare</a></h3><p>Authored intent ↔ generated documentation for one module and documentation area. Low compatibility offers <em>Compare anyway</em>; it never blocks.</p></article>
+        <article class="ug-card"><h3><a href="/documentation-drift?tab=changes">Changes</a></h3><p>Revisions of the same document lineage across imports of the <strong>same</strong> project. With one import there is nothing to compare yet — import another version.</p></article>
+        <article class="ug-card"><h3><a href="/documentation-drift?tab=drift">Drift</a></h3><p>An inventory of modules and areas with one status each, searchable and filterable, evidence collapsed, and a link to resolve a missing side.</p></article>
+    </div>
+
+    <h3 id="drift-statuses" class="ug-subtitle">Drift statuses</h3>
+    <div class="ug-table-scroll" role="region" aria-label="Documentation Drift statuses" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
+        <tbody>
+            <tr><th scope="row"><span class="status-chip status-chip-ready">Consistent</span></th><td>A saved comparison found no difference.</td></tr>
+            <tr><th scope="row"><span class="status-chip status-chip-warning">Difference</span></th><td>A saved comparison found items that differ.</td></tr>
+            <tr><th scope="row"><span class="status-chip status-chip-critical">Conflict</span></th><td>Authored documents disagree with each other, so no conclusion is drawn.</td></tr>
+            <tr><th scope="row"><span class="status-chip status-chip-warning">Review required</span></th><td>A comparison needs a person’s decision.</td></tr>
+            <tr><th scope="row"><span class="status-chip status-chip-info">Ready to compare</span></th><td>Both sides exist; nobody has compared them yet.</td></tr>
+            <tr><th scope="row"><span class="status-chip status-chip-neutral">Generated missing / Authored missing</span></th><td>Only one side exists. In comparison rows the same idea reads <em>Authored-only</em> or <em>Generated-only</em>.</td></tr>
+            <tr><th scope="row"><span class="status-chip status-chip-neutral">Not comparable</span></th><td>The two sides cannot be compared meaningfully.</td></tr>
+        </tbody>
+    </table></div>
+    <GuideCallout Kind="CalloutKind.Important"><p>Missing evidence is not a difference. A module with only authored or only generated documentation is shown neutrally, with the action that adds the missing side.</p></GuideCallout>
+</section>
+
+<section id="readiness" class="ug-section ug-topic" data-topic="readiness" aria-labelledby="readiness-title">
+    <h2 id="readiness-title" class="ug-section-title" tabindex="-1">Readiness and review decisions</h2>
+    <p class="ug-lead">Readiness answers one question per dimension — can this activity proceed? — with an owner and one next action for every gap. It is never a quality score.</p>
+    <ul class="ug-list">
+        <li><strong>Testability first:</strong> readiness names what blocks a test (missing evidence, configuration, Test Data, credentials) and who owns it — Test Data, Target Environment, Integration Catalog, Source Analysis.</li>
+        <li><strong>Blockers before review items:</strong> pages list blockers first; review items never stop preparation on their own.</li>
+        <li><strong>Per activity:</strong> manual readiness, automated execution readiness, setup apply readiness and test readiness are separate answers.</li>
+        <li><strong>Decisions are explicit:</strong> review decisions are recorded per artifact revision (see <a href="@UserGuideContent.Href("review-decisions")">Review decisions</a>); BirkNext never decides release readiness for you.</li>
+    </ul>
+</section>

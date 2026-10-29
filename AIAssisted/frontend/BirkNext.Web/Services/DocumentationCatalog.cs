@@ -116,12 +116,18 @@ public static class DocumentationCatalog
         return "/" + (cut >= 0 ? path[..cut] : path).TrimStart('/').TrimEnd('/');
     }
 
+    /// <summary>The User Guide page source plus its section components (Components/Guide), embedded as <c>BirkNext.UserGuide.*source</c>.</summary>
     public static IReadOnlyList<string>? ReadGuideSource(Assembly assembly)
     {
-        using var stream = assembly.GetManifestResourceStream("BirkNext.UserGuide.source");
-        if (stream is null) return null;
-        using var reader = new StreamReader(stream);
-        return [reader.ReadToEnd()];
+        var names = assembly.GetManifestResourceNames().Where(n => n.StartsWith("BirkNext.UserGuide.", StringComparison.Ordinal) && n.EndsWith("source", StringComparison.Ordinal))
+            .OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        if (!names.Contains("BirkNext.UserGuide.source")) return null;
+        return names.Select(name =>
+        {
+            using var stream = assembly.GetManifestResourceStream(name)!;
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }).ToArray();
     }
 
     public static IReadOnlyList<DocumentationFinding> Check(
@@ -207,7 +213,7 @@ public static class DocumentationCatalog
     {
         var definitions = new (string Id, string Name, string Route, string Anchor, string Category, string? Provider, string? Extension)[]
         {
-            ("getting-started","Recommended Workflow","/getting-started","getting-started","Getting Started",null,null),
+            ("getting-started","Recommended Workflow","/getting-started","recommended-workflow","Getting Started",null,null),
             ("user-guide","User Guide","/user-guide","overview","Getting Started",null,null),
             ("dashboard","Dashboard","/dashboard","feature-matrix","Getting Started",null,null),
             ("project-import","Import Project","/project-import","project-import","Project Inputs",null,null),
@@ -215,16 +221,16 @@ public static class DocumentationCatalog
             ("source-analysis","Source Analysis","/source-analysis","source-analysis","Source Review",null,null),
             ("schema-studio","Schema Studio","/schema-studio","schema-studio","Source Review",null,null),
             ("generated-documentation-explorer","Generated Documentation Explorer","/generated-documentation-explorer","generated-documentation","Source Review",null,null),
-            ("target-environments","Target Environments","/admin/system-settings?section=target-environments","project-inputs","Project Inputs",null,null),
-            ("specification-explorer","Specification Explorer","/specification-explorer","getting-started","Document Review",null,null),
-            ("constitution-explorer","Constitution Explorer","/constitution-explorer","getting-started","Document Review",null,null),
-            ("data-model-explorer","Data Model Explorer","/data-model-explorer","getting-started","Document Review",null,null),
-            ("plan-explorer","Plan Explorer","/plan-explorer","getting-started","Document Review",null,null),
-            ("task-explorer","Task Explorer","/task-explorer","getting-started","Document Review",null,null),
+            ("target-environments","Target Environments","/admin/system-settings?section=target-environments","target-environment","Project Inputs",null,null),
+            ("specification-explorer","Specification Explorer","/specification-explorer","explorers","Document Review",null,null),
+            ("constitution-explorer","Constitution Explorer","/constitution-explorer","explorers","Document Review",null,null),
+            ("data-model-explorer","Data Model Explorer","/data-model-explorer","explorers","Document Review",null,null),
+            ("plan-explorer","Plan Explorer","/plan-explorer","explorers","Document Review",null,null),
+            ("task-explorer","Task Explorer","/task-explorer","task-explorer","Document Review",null,null),
             ("artifact-traceability","Requirements Traceability","/artifact-traceability","traceability","Traceability",null,null),
             ("task-alignment","Task Alignment Review","/task-alignment","traceability","Document Review",null,null),
             ("implementation-traceability","Change Traceability","/implementation-traceability","traceability","Traceability",null,null),
-            ("documentation-drift","Documentation Drift","/documentation-drift","traceability","Document Review",null,null),
+            ("documentation-drift","Documentation Drift","/documentation-drift","documentation-drift","Document Review",null,null),
             ("impact-analysis","Impact Analysis","/impact-analysis","traceability","Analysis",null,null),
             ("traceability","Traceability & Coverage","/traceability","traceability","Traceability",null,null),
             ("traceability/suggestions","Traceability Suggestions","/traceability/suggestions","traceability","Traceability",null,null),
@@ -238,14 +244,14 @@ public static class DocumentationCatalog
             ("frontend-quality-review","Frontend Quality Review","/frontend-quality-review","quality-reviews","Quality & Testing",null,null),
             ("api-quality-review","API Quality Review","/api-quality-review","quality-reviews","Quality & Testing",null,null),
             ("integration-topology","Integration Topology","/integration-topology","integration-journeys","Quality & Testing",null,null),
-            ("integration-quality-review","Integration Quality Review","/integration-quality-review","quality-reviews","Quality & Testing",null,null),
-            ("performance-test-review","Performance Test Review","/performance-test-review","testing","Quality & Testing",null,null),
+            ("integration-quality-review","Integration Quality Review","/integration-quality-review","integrations","Quality & Testing",null,null),
+            ("performance-test-review","Performance Test Review","/performance-test-review","performance-test-review","Quality & Testing",null,null),
             ("critical-e2e-regression","Critical E2E Regression","/critical-e2e-regression","testing","Quality & Testing",null,null),
             ("test-coverage-review","Test Coverage & Overlap Review","/test-coverage-review","test-coverage-review","Quality & Testing",null,null),
             ("code-risk-review","Code Risk Review","/code-risk-review","code-risk-review","Quality & Testing",null,null),
-            ("test-data","Test Data","/test-data","testing","Quality & Testing",null,null),
+            ("test-data","Test Data","/test-data","test-data","Quality & Testing",null,null),
             ("security-classification-review","M01 – Gradert tilgang (Kode 6/7)","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
-            ("extensions/skolenaervaer","Skolenærvær Testing","/extensions/skolenaervaer","integration-journeys","Extensions",null,null),
+            ("extensions/skolenaervaer","Skolenærvær Testing","/extensions/skolenaervaer","skolenaervaer","Extensions",null,null),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
             ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)
         };

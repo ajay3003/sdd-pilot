@@ -1,0 +1,145 @@
+@* User Guide — Reference: status meanings, feature availability, troubleshooting, glossary, System Settings, feature matrix,
+   navigation badges and limitations. *@
+@using BirkNext.Web.Services
+@using static BirkNext.Web.Components.Guide.GuideCallout
+
+<section id="status-reference" class="ug-section ug-topic" data-topic="status-reference" aria-labelledby="status-reference-title">
+    <h2 id="status-reference-title" class="ug-section-title" tabindex="-1">Status meanings</h2>
+    <p class="ug-lead">One vocabulary across BirkNext. Each status describes one dimension only — the word, not the colour, carries the meaning.</p>
+    <div class="ug-table-scroll" role="region" aria-label="Status meanings" tabindex="0"><table class="ug-table ug-status-table">
+        <thead><tr><th scope="col">Status</th><th scope="col">Means</th><th scope="col">Not the same as</th></tr></thead>
+        <tbody>@foreach (var term in UserGuideContent.StatusTerms)
+        {
+            <tr data-testid="ug-status-term"><th scope="row"><span class="status-chip status-chip-@term.Tone">@term.Term</span></th><td>@term.Meaning</td><td>@term.NotTheSameAs</td></tr>
+        }</tbody>
+    </table></div>
+
+    <h3 id="configured-vs-detected" class="ug-subtitle">Configured, detected, bound, ready</h3>
+    <ol class="ug-ladder">
+        <li><strong>Detected</strong> — proposed or observed, not necessarily saved.</li>
+        <li><strong>Configured</strong> — saved authoritative configuration.</li>
+        <li><strong>Bound</strong> — a reference to known evidence or a source.</li>
+        <li><strong>Ready</strong> — requirements satisfied for that dimension.</li>
+    </ol>
+    <h3 id="observed-vs-verified" class="ug-subtitle">Observed is not verified</h3>
+    <div class="ug-compare">
+        <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-info">Observed</span></p><p>Runtime evidence exists — a sign-in, a request, a message.</p></div>
+        <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-ready">Verified</span></p><p>That evidence satisfied explicit verification criteria. Until then the status reads <em>Not verified</em>.</p></div>
+    </div>
+</section>
+
+<section id="feature-availability" class="ug-section ug-topic" data-topic="feature-availability" aria-labelledby="feature-availability-title">
+    <h2 id="feature-availability-title" class="ug-section-title" tabindex="-1">Feature availability</h2>
+    <p class="ug-lead">Availability describes BirkNext itself; configuration describes your environment. They are separate.</p>
+    <div class="ug-compare">
+        <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-neutral">Unavailable</span></p><p>The capability is not ready for normal use. The page shows an <em>Unavailable</em> badge and banner, the sidebar marks it, and Recommended Workflow never recommends it. Configuration alone does not enable it.</p></div>
+        <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-neutral">Not configured</span></p><p>The capability works, but this environment has not been set up for it. Configuring it is the fix.</p></div>
+    </div>
+    <p>Features are <em>Available</em> unless marked otherwise. A page can also show <em>Partial</em> for individual sub-capabilities.</p>
+
+    <h3 id="environment-analysis" class="ug-subtitle">Environment Analysis (Azure provider) <span class="status-chip status-chip-neutral">Unavailable</span></h3>
+    <GuideCallout Kind="CalloutKind.Unavailable"><p><a href="/azure-environment">Environment Analysis</a> is not currently available for normal use. Read-only sign-in, resource inventory and declared-vs-observed comparison exist in code but have never been verified against a live tenant, and they need an Entra app registration that does not exist. Configuring Entra alone will not make the analysis usable.</p></GuideCallout>
+    <ul class="ug-list">
+        <li>Azure sign-in, resource inventory snapshot and declared vs observed comparison: <em>Not verified</em>.</li>
+        <li>Runtime quality evidence and delivery path: <em>Partial</em> — they show other features’ recorded evidence, not correlated with Azure resources.</li>
+        <li>The current provider is Azure; its presence does not make BirkNext Azure-only, nor prove the project uses Azure.</li>
+    </ul>
+</section>
+
+<section id="troubleshooting" class="ug-section ug-topic" data-topic="troubleshooting" aria-labelledby="troubleshooting-title">
+    <h2 id="troubleshooting-title" class="ug-section-title" tabindex="-1">Troubleshooting</h2>
+    <div class="ug-trouble-list">@foreach (var entry in UserGuideContent.Troubleshooting)
+    {
+        <article class="ug-trouble" data-testid="ug-trouble">
+            <h3 class="ug-trouble-problem">@entry.Problem</h3>
+            <p><span class="ug-trouble-label">Usually</span> @entry.Cause</p>
+            <p><span class="ug-trouble-label">Do</span> @entry.Action</p>
+            <a class="ug-open-link" href="@entry.Href">@entry.OpenLabel <span aria-hidden="true">→</span></a>
+        </article>
+    }</div>
+    <h3 id="scenarios" class="ug-subtitle">Quick answers</h3>
+    <ul class="ug-list" id="faq">
+        <li><strong>“I see No evidence.”</strong> BirkNext lacks evidence to assess; it is not a failed check.</li>
+        <li><strong>“Pipeline Review says Needs refresh.”</strong> Re-analyze the changed source; stale does not mean not applicable.</li>
+        <li><strong>“My project uses Java/AWS.”</strong> Check Technology Coverage; analyzer gaps are Unsupported or Partial tool limitations, not a project failure.</li>
+        <li><strong>“I imported TRX.”</strong> It is execution evidence; confirm correlation to the test, requirement and source before relying on it.</li>
+        <li><strong>What does Unsupported mean?</strong> A tool or provider cannot assess that dimension; it is not a project quality finding.</li>
+        <li><strong>Why is a feature visible if unsupported?</strong> Visibility is navigation policy; support and applicability are evaluated separately.</li>
+        <li><strong>“I need to reset local data.”</strong> Read Maintenance’s exact confirmation scope before using Reset Local Data; it is irreversible.</li>
+    </ul>
+</section>
+
+<section id="glossary" class="ug-section ug-topic" data-topic="glossary" aria-labelledby="glossary-title">
+    <h2 id="glossary-title" class="ug-section-title" tabindex="-1">Glossary</h2>
+    <dl class="ug-glossary">@foreach (var entry in UserGuideContent.Glossary)
+    {
+        <div class="ug-glossary-entry"><dt>@entry.Term</dt><dd>@entry.Definition</dd></div>
+    }</dl>
+</section>
+
+<section id="system-settings" class="ug-section ug-topic" data-topic="system-settings" aria-labelledby="system-settings-title">
+    <h2 id="system-settings-title" class="ug-section-title" tabindex="-1">System Settings</h2>
+    <p class="ug-lead"><a href="/admin/system-settings">System Settings</a> holds operational controls and diagnostics. Configuration health is about configuration, not project quality; Feature Visibility controls menus, not capability or applicability.</p>
+    <div class="ug-table-scroll" role="region" aria-label="System Settings areas" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Area</th><th scope="col">Purpose</th><th scope="col">Safety meaning</th></tr></thead>
+        <tbody>@foreach (var row in DocumentationCatalog.DocumentedSettings) { <tr><th scope="row">@row.Name</th><td>@row.Purpose</td><td>@row.Safety</td></tr> }</tbody>
+    </table></div>
+    <ReviewDisclosure Text="Advanced details: diagnostics and reset" CollapseText="Hide advanced details" TestId="ug-settings-advanced">
+        <p>Project Compatibility runs generated archive scenarios against the same archive reader and discovery as Project Import, in memory, without importing anything. Performance Test Engines describes host capability; Performance Test Review describes a project’s tests. Reset Local Data clears workspaces, artifacts, snapshots, Target Environments (restored to defaults), integration catalogs, review/test results, performance history, Critical E2E flows and cached browser state; installation-level configuration is preserved.</p>
+    </ReviewDisclosure>
+</section>
+
+<section id="feature-matrix" class="ug-section ug-topic" data-topic="feature-matrix" aria-labelledby="feature-matrix-title">
+    <h2 id="feature-matrix-title" class="ug-section-title" tabindex="-1">Feature matrix</h2>
+    <p class="ug-lead">Every current feature with its purpose, inputs and boundary. Applicability is evaluated per project.</p>
+    <ReviewDisclosure Text="Show all features" CollapseText="Hide feature matrix" TestId="ug-feature-matrix">
+        <div class="ug-table-scroll" role="region" aria-label="Feature matrix, scroll horizontally for all columns" tabindex="0"><table class="ug-table">
+            <thead><tr><th scope="col">Feature</th><th scope="col">Area</th><th scope="col">Purpose</th><th scope="col">Evidence and inputs</th><th scope="col">Boundary</th><th scope="col">Applicability</th></tr></thead>
+            <tbody>@foreach (var feature in DocumentationCatalog.Features)
+            {
+                var detail = DocumentationCatalog.DetailFor(feature.FeatureId);
+                var availability = FeatureAvailabilityCatalog.Find(feature.FeatureId);
+                <tr><th scope="row"><a href="@feature.Route">@feature.DisplayName</a><br /><a href="@UserGuideContent.Href(feature.UserGuideAnchor)">Guide section</a></th><td>@feature.Category</td><td>@detail.Purpose</td><td>@detail.EvidenceAndInputs</td><td>@detail.Boundary</td>
+                    <td>@(availability is { IsUnavailable: true } ? "Unavailable" : feature.ExtensionScope is not null ? $"Extension: {feature.ExtensionScope}" : feature.ProviderScope is not null ? $"Provider: {feature.ProviderScope}" : !feature.Required ? "Optional; hidden unless enabled" : "Check project applicability and evidence")</td></tr>
+            }</tbody>
+        </table></div>
+    </ReviewDisclosure>
+    <h3 id="where" class="ug-subtitle">Where do I find this?</h3>
+    <div class="ug-table-scroll" role="region" aria-label="Navigation reference" tabindex="0"><table class="ug-table">
+        <thead><tr><th scope="col">Need</th><th scope="col">Open</th></tr></thead>
+        <tbody>
+            <tr><th scope="row">Logical project and evidence roles</th><td><a href="@UserGuideContent.TargetEnvironmentTab("project")">Target Environment → Project</a></td></tr>
+            <tr><th scope="row">Connected systems such as Altinn</th><td><a href="@UserGuideContent.TargetEnvironmentTab("external")">Target Environment → Connected Systems</a></td></tr>
+            <tr><th scope="row">Logical integrations</th><td><a href="@UserGuideContent.TargetEnvironmentTab("integrations")">Target Environment → Integration Catalog</a></td></tr>
+            <tr><th scope="row">Reusable setup packages</th><td><a href="@UserGuideContent.TargetEnvironmentTab("library")">Target Environment → Setup Library</a></td></tr>
+            <tr><th scope="row">API review safety settings</th><td><a href="@UserGuideContent.TargetEnvironmentTab("endpoint")">Target Environment → Endpoint Discovery</a></td></tr>
+            <tr><th scope="row">Source evidence and snapshots</th><td><a href="/source-analysis">Source Analysis</a></td></tr>
+            <tr><th scope="row">Test identities, values and fixtures</th><td><a href="/test-data">Test Data</a></td></tr>
+            <tr><th scope="row">XSD inspection and validation</th><td><a href="/schema-studio">Schema Studio</a></td></tr>
+            <tr><th scope="row">Performance engine capability and TLS trust</th><td><a href="/admin/system-settings?section=performance-test-engines">System Settings → Performance Test Engines</a></td></tr>
+            <tr><th scope="row">Reset local data</th><td><a href="/admin/system-settings?section=maintenance">System Settings → Maintenance</a></td></tr>
+        </tbody>
+    </table></div>
+</section>
+
+<section id="discovery" class="ug-section ug-topic" data-topic="discovery" aria-labelledby="discovery-title">
+    <h2 id="discovery-title" class="ug-section-title" tabindex="-1">Navigation badges</h2>
+    <p class="ug-lead">Sidebar badges describe availability, applicability or evidence state — never a quality grade.</p>
+    <ul class="ug-list">
+        <li><strong>Unavailable</strong> — the BirkNext capability is not ready for normal use; it outranks every other badge.</li>
+        <li><strong>Partial</strong> — only part is assessed. <strong>Setup</strong> — configuration is needed. <strong>Needs refresh</strong> — evidence is stale.</li>
+        <li><strong>No evidence</strong> — not enough evidence. <strong>N/A</strong> — not applicable. <strong>Unsupported</strong> — a tool limitation.</li>
+        <li><strong>Extension</strong> — project-specific behavior. A provider badge such as Azure names the provider, not a universal dependency.</li>
+    </ul>
+    <h3 id="backend-connectivity" class="ug-subtitle">Backend connectivity is per request</h3>
+    <p>When a page cannot load something it says which request failed, in that section only, with <em>Check again</em> and <em>Technical details</em> (never tokens or identities). An HTTP 400, 401, 403, 404 or 500 is a failure of that feature endpoint, not an outage; <em>Backend unreachable</em> is shown only when no HTTP response arrived. No Target Environment, Browser Companion not connected or no snapshot are configuration or evidence states, never backend errors.</p>
+    <h3 id="validation" class="ug-subtitle">Keeping this guide in sync</h3>
+    <p>Documentation Health compares navigation, routes, guide anchors, System Settings sections, Target Environment tabs and Source Analysis areas with this guide. It checks structure; it cannot prove prose is complete.</p>
+</section>
+
+<section id="about" class="ug-section ug-topic" data-topic="about" aria-labelledby="about-title">
+    <h2 id="about-title" class="ug-section-title" tabindex="-1">About and limitations</h2>
+    <p id="ecosystem">BirkNext works with project documents, source, configured target systems, optional providers, test engines and runtime evidence. It is evidence-driven: source never proves runtime behavior, browser automation cannot prove everything, active tests are safety-gated, performance testing is controlled, and unsupported technology is reported honestly.</p>
+    <p id="optional-capabilities">Feature Visibility can hide or show optional items. AI Change Review is optional and may be disabled by default; AI is not the core workflow. Extensions such as the M2LB child-security-classification extension apply only when present and enabled.</p>
+    <p id="feature-details">Each feature page carries its own short help; this guide holds the full workflow and reference. Absence of an automated violation is not full compliance, and suggested evidence is not confirmed evidence.</p>
+</section>
