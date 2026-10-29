@@ -306,14 +306,23 @@
 
         @* Authentication: what the application declares, where run authentication lives, and the integration's mechanism — never a credential. *@
         <article class="ip-review-card" data-testid="ip-edit-section-authentication" aria-labelledby="ip-auth-heading">
-            <div class="ip-review-head"><h5 id="ip-auth-heading">Authentication</h5>
-                <span class="ip-pill ip-pill-muted" data-testid="ip-edit-auth-state">@(AuthReference.Count > 0 ? "Authentication reference available" : "No declared reference")</span></div>
+            @* This integration's own authentication (how the producer authenticates to the consumer) is separate from how end users sign in to
+               the producer application: a reporter's browser login (ID-porten) never says anything about it. *@
+            <div class="ip-review-head"><h5 id="ip-auth-heading">Integration authentication</h5>
+                <span class="ip-pill ip-pill-muted" data-testid="ip-edit-auth-state">@InteractionAuthRules.Describe(IntegrationAuthRequirement)</span></div>
+            <dl class="ip-template-facts" data-testid="ip-edit-auth-requirement">
+                <div><dt>Requirement</dt><dd data-testid="ip-edit-auth-requirement-value" data-requirement="@IntegrationAuthRequirement.Requirement" data-conflict="@(IntegrationAuthRequirement.Conflict ? "true" : "false")">@(IntegrationAuthRequirement.Conflict
+                    ? $"Conflict — producer and consumer authentication disagree ({AuthOption(_model.ProducerAuthentication)} vs {AuthOption(_model.ConsumerAuthentication)}). Review authentication."
+                    : IntegrationAuthRequirement.Requirement == InteractionAuthRequirement.Unknown ? "Unknown — not configured or reviewed for this integration"
+                    : InteractionAuthRules.Label(IntegrationAuthRequirement.Requirement))</dd></div>
+                <div><dt>Evidence</dt><dd>Configuration only · runtime authentication not verified</dd></div>
+            </dl>
             @if (AuthReference.Count > 0)
             {
                 <section class="ip-reference" aria-labelledby="ip-auth-reference-heading" data-testid="ip-edit-auth-reference">
-                    <h6 id="ip-auth-reference-heading">Declared authentication</h6>
+                    <h6 id="ip-auth-reference-heading">Producer application authentication (not this integration's)</h6>
                     @ReferenceFacts(AuthReference, "ip-edit-auth-fact")
-                    <p class="ip-muted">Source: @TestPackReferenceLabel. This describes what the application declares. It does not prove runtime authentication or configure credentials.</p>
+                    <p class="ip-muted">Source: @TestPackReferenceLabel. This describes how users and clients sign in to the producer application (for example a reporter's browser login). It is not this integration's authentication, never fills it, and does not prove runtime authentication.</p>
                 </section>
             }
             <dl class="ip-template-facts" data-testid="ip-edit-auth-run">
@@ -323,8 +332,8 @@
             @if (IsHttpApi && _model.ProducerAuthentication == IntegrationAuthMechanism.NotConfigured && _model.ConsumerAuthentication == IntegrationAuthMechanism.NotConfigured)
             {
                 <dl class="ip-template-facts" data-testid="ip-edit-auth-mechanism-summary">
-                    <div><dt>Producer authentication</dt><dd>Not required for current configuration</dd></div>
-                    <div><dt>Consumer authentication</dt><dd>Not required for current configuration</dd></div>
+                    <div><dt>Producer authentication</dt><dd>Unknown — not configured</dd></div>
+                    <div><dt>Consumer authentication</dt><dd>Unknown — not configured</dd></div>
                 </dl>
             }
             <ReviewDisclosure Text="Integration authentication mechanism" CollapseText="Hide integration authentication mechanism" TestId="ip-edit-auth-mechanism" Class="disclosure-inline disclosure-small" Expanded="@(!IsHttpApi)">
@@ -570,6 +579,13 @@
     private TestPackSourceStatus? EvidenceStatus => CurrentTemplate?.EvidenceSource;
     private TemplateEvidenceState EvidenceState => IntegrationTemplatePresentation.Evidence(EvidenceStatus, Binding);
     private IReadOnlyList<TestPackReferenceFact> AuthReference => CurrentTemplate?.AuthenticationReference ?? [];
+
+    /// <summary>The integration's own requirement from its configured mechanisms only (producer and consumer disagreeing is a conflict).</summary>
+    private InteractionAuthResolution IntegrationAuthRequirement => InteractionAuthRules.Resolve(
+    [
+        InteractionAuthRules.FromMechanism(_model.ProducerAuthentication) is { } producer ? new InteractionAuthCandidate(producer, InteractionAuthSource.ExplicitConfiguration, "Producer authentication") : null,
+        InteractionAuthRules.FromMechanism(_model.ConsumerAuthentication) is { } consumer ? new InteractionAuthCandidate(consumer, InteractionAuthSource.ExplicitConfiguration, "Consumer authentication") : null,
+    ]);
     private IReadOnlyList<TestPackReferenceFact> ContractReference => CurrentTemplate?.ContractReference ?? [];
     private const string TestPackReferenceLabel = "Test Pack reference";
     private IntegrationTemplatePresentation.SchemaEvidenceState SchemaState => IntegrationTemplatePresentation.SchemaEvidence(CurrentTemplate, EvidenceState, Binding?.SnapshotId);

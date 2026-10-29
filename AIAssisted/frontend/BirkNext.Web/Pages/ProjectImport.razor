@@ -3,6 +3,7 @@
 @using BirkNext.ProjectImport
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.ProjectImport
+@using BirkNext.Web.Services.ProjectEvidence
 @using BirkNext.Web.Services.SampleProjects
 @using BirkNext.Web.Models
 @using BirkNext.Web.Components.ProjectImport
@@ -42,6 +43,7 @@
                 <h2 id="pi-current-heading" tabindex="-1" class="pi-current-heading"><span class="pi-current-eyebrow">Current project</span> <strong data-testid="pi-current-name">@current.ProjectName</strong></h2>
                 <p class="pi-current-success" data-testid="pi-current-success"><span aria-hidden="true">✓ </span><strong>Project imported successfully.</strong> @ImportProjectOverview.ImportedKind(current, currentSource). Import means BirkNext found and recorded the contents — nothing has been reviewed or tested yet.</p>
                 <p class="pi-current-summary" data-testid="pi-current-summary">@ImportProjectOverview.Summary(current, _workspace, currentSource)</p>
+                @PackageCapabilities(current)
                 <dl class="pi-current-status">
                     <div data-testid="pi-current-documents"><dt>Documents</dt><dd>@(current.ArtifactDocumentCount > 0 && _workspace?.Overview is { } docOverview ? ImportProjectOverview.DocumentTypes(docOverview) : DocumentsFact(current))</dd></div>
                     <div data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")" data-state="@analysis.State">
@@ -170,6 +172,7 @@
             <section class="pi-card pi-previous" aria-labelledby="pi-previous-heading" data-testid="pi-previous">
                 <h2 id="pi-previous-heading">Previously imported projects and sources</h2>
                 <p class="pi-muted" data-testid="pi-previous-help">Each keeps its own source analysis, which testing setups and Integration Quality Review use directly — whichever project is current. <strong>Set as current project</strong> only changes which project's documents BirkNext shows: it does not re-import, analyze, or change saved review evidence or integration bindings.</p>
+                <p class="pi-muted" data-testid="pi-current-guidance">Choose the primary application/system when possible. Documentation, infrastructure and supporting packages can still contribute evidence without becoming the current project: bind them in <a href="@ProjectEvidenceResolver.ProjectTabHref(null)">Target Environment → Project</a>.</p>
                 @if (_useMessage is { } useMessage) { <p class="pi-warning" role="status" data-testid="pi-use-message">@useMessage</p> }
                 <ul class="pi-previous-list" aria-label="Previously imported projects and sources">
                     @foreach (var row in previous)
@@ -181,6 +184,10 @@
                                 <strong class="pi-previous-name" data-testid="pi-previous-name">@row.DisplayName</strong>
                                 <span class="pi-muted" data-testid="pi-previous-contents">@ImportProjectOverview.Contents(row)</span>
                             </div>
+                            @if (row.ImportId is { } rowImport && Activation.Imports.FirstOrDefault(i => i.ImportId == rowImport) is { } rowRecord && row.Origin == PreviousImportOrigin.ProjectImport)
+                            {
+                                @PackageCapabilities(rowRecord)
+                            }
                             <dl class="pi-previous-facts">
                                 @if (rowRole is { } previousRole) { <div><dt>Source role</dt><dd data-testid="pi-previous-role">@previousRole.Status</dd></div> }
                                 @if (row.HasSource) { <div><dt>Source Analysis</dt><dd><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(rowAnalysis.Tone)" data-testid="pi-previous-analysis">@rowAnalysis.Status</span></dd></div> }
@@ -440,6 +447,7 @@
         }
 
         @TargetEnvironmentFact
+        @ProjectNext(done.ImportId)
 
         <div class="pi-result-actions">
             <section class="pi-action-group" aria-labelledby="pi-next-heading">
@@ -518,11 +526,39 @@
     private async Task LoadWorkspaceAsync()
     {
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is not { } projection) return;
-        try { _workspace = await projection.GetAsync(); }
+        try
+        {
+            // The current-project card describes the current import only. When a Target Environment Project makes the explorers read another
+            // project, its document overview is not this import's.
+            var snapshot = await projection.GetAsync();
+            _workspace = Activation.Current is { } current && snapshot.ProjectSlug != ProjectImportScope.For(current.ImportId) ? null : snapshot;
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException) { _workspace = null; }
     }
 
     private void OnWorkspaceChanged() => _ = InvokeAsync(async () => { await LoadWorkspaceAsync(); StateHasChanged(); });
+
+    /// <summary>
+    /// The package as project evidence: its classification (from content, never the archive name) and the capabilities it actually provides,
+    /// each judged on its own. What it does not contain is stated neutrally — a documentation-only or source-only package is not deficient.
+    /// </summary>
+    private RenderFragment PackageCapabilities(SddProjectImportRecord record) => __builder =>
+    {
+        if (ServiceProvider.GetService<IWorkspaceSessionService>() is not { } session) return;
+        var package = ProjectEvidencePackages.Of(record, session.SddLifecycle, _setup);
+        <div class="pi-capabilities" data-testid="pi-capabilities" data-classification="@package.Classification" data-status="@package.Status">
+            <span class="pi-badge pi-badge-neutral" data-testid="pi-classification">@package.Classification</span>
+            @foreach (var capability in package.Capabilities)
+            {
+                <span class="pi-badge pi-badge-@(capability.Status == PackageCapabilityStatus.Ready ? "available" : "partial")" data-testid="pi-capability"
+                      data-capability="@capability.Capability">@ProjectEvidencePackages.CapabilityLabel(capability.Capability) · @capability.Fact</span>
+            }
+            @foreach (var lacking in package.NotProvided)
+            {
+                <span class="pi-muted pi-not-provided" data-testid="pi-not-provided">@lacking</span>
+            }
+        </div>
+    };
 
     private async Task LoadEnvironmentAsync()
     {
@@ -698,6 +734,7 @@
             _saveWarning = !await AutoSave.SaveNowAsync();
             if (commit.Source.SnapshotId is not null) { await Applicability.RefreshAsync(); await LoadSetupAsync(); }
             _failure = null;
+            await LoadProjectEvidenceAsync();
             _phase = Phase.Result;
             _focusId = "pi-outcome-heading";
         }
@@ -879,6 +916,70 @@
                 return (ProjectInputPresentation.ExplorerRoute(role), BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(role) + " Explorer");
         return null;
     }
+
+    private ProjectEvidenceView? _projectView;
+    private bool _projectDeferred;
+
+    /// <summary>Target Environment → Project after a successful import (optional: no environment, no service — no suggestion). Import never waits on it.</summary>
+    private async Task LoadProjectEvidenceAsync()
+    {
+        _projectView = null; _projectDeferred = false;
+        if (ServiceProvider.GetService(typeof(IProjectEvidenceService)) is not IProjectEvidenceService evidence) return;
+        try { _projectView = await evidence.GetAsync(refresh: true); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { _projectView = null; }
+    }
+
+    /// <summary>
+    /// What the import means for the environment's logical project — never a forced setup step: A no project yet → configure (with a proposal
+    /// when exactly one application candidate exists); D the import can satisfy a required role → review &amp; bind; B it adds compatible
+    /// evidence → review; C nothing the project needs → no prompt. Nothing is bound here.
+    /// </summary>
+    private RenderFragment ProjectNext(string importId) => __builder =>
+    {
+        if (_projectDeferred || _projectView is not { EnvironmentId: { Length: > 0 } environmentId } view) return;
+        var package = view.Packages.FirstOrDefault(p => p.ImportId == importId);
+        if (!view.IsConfigured)
+        {
+            if (!view.Packages.Any(p => p.Capabilities.Count > 0)) return;
+            <section class="pi-card pi-project-next" aria-labelledby="pi-project-h" data-testid="pi-project-next" data-state="configure">
+                <h2 id="pi-project-h">Project context available</h2>
+                <p>BirkNext found evidence that can define the project this Target Environment tests. Project setup organizes evidence; the import is complete either way.</p>
+                @if (view.SuggestedProject is { } suggested)
+                {
+                    <p data-testid="pi-project-suggested">Suggested project <strong>@suggested.DisplayName</strong> — @suggested.ClassificationReason</p>
+                }
+                else if (view.ProjectCandidates.Count > 1)
+                {
+                    <p data-testid="pi-project-candidates">Project needs selection: @string.Join(", ", view.ProjectCandidates.Select(p => p.DisplayName)).</p>
+                }
+                <div class="pi-actions">
+                    <a class="btn-primary" href="@ProjectEvidenceResolver.ProjectTabHref(environmentId)" data-testid="pi-project-configure">Configure Project</a>
+                    <button type="button" class="btn-secondary" data-testid="pi-project-later" @onclick="() => _projectDeferred = true">Configure later</button>
+                </div>
+            </section>
+            return;
+        }
+        if (package is null) return;
+        var roles = view.Rows.Where(r => ProjectEvidencePackages.Satisfies(package, r.Role.Capability) && !r.Bound.Any(b => b.ImportId == importId)
+            && (!r.IsResolved || r.Role.Cardinality == ProjectEvidenceCardinality.Multiple)).ToList();
+        var required = roles.FirstOrDefault(r => r.Blocks);
+        if (required is not null)
+        {
+            <section class="pi-card pi-project-next" aria-labelledby="pi-project-h" data-testid="pi-project-next" data-state="required">
+                <h2 id="pi-project-h">Required evidence candidate found</h2>
+                <p><strong>@required.Role.Label</strong> of @view.ProjectName · @package.ArchiveFileName (@ProjectEvidencePackages.WhyMatches(package, required.Role.Capability)). Not bound until you confirm it.</p>
+                <div class="pi-actions"><a class="btn-primary" href="@ProjectEvidenceResolver.ProjectTabHref(environmentId, required.Role.RoleKey)" data-testid="pi-project-review">Review &amp; bind</a></div>
+            </section>
+        }
+        else if (roles.Count > 0)
+        {
+            <section class="pi-card pi-project-next" aria-labelledby="pi-project-h" data-testid="pi-project-next" data-state="compatible">
+                <h2 id="pi-project-h">New compatible project evidence available</h2>
+                <p>@package.ArchiveFileName can add @string.Join(", ", roles.Select(r => r.Role.Label.ToLowerInvariant())) to @view.ProjectName. The project stays usable; nothing is bound automatically.</p>
+                <div class="pi-actions"><a class="btn-secondary" href="@ProjectEvidenceResolver.ProjectTabHref(environmentId, roles[0].Role.RoleKey)" data-testid="pi-project-review">Review project evidence</a></div>
+            </section>
+        }
+    };
 
     private RenderFragment TargetEnvironmentFact => __builder =>
     {

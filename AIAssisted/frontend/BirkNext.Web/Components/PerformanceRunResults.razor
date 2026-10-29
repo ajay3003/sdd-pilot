@@ -1,0 +1,376 @@
+@using System.Globalization
+@using BirkNext.Applicability
+@using BirkNext.PerformanceTests
+@using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
+@using P = BirkNext.Web.Services.PerformanceTestPresentation
+@using D = BirkNext.Web.Services.PerformanceTestReviewDashboard
+
+@* Results: deep analysis of ONE run, read from that run's own immutable evidence (definition snapshot, threshold results, metrics, the
+   baseline comparison the backend computed for it). Compare stays the full baseline comparison and History the inventory; Results shows a
+   compact baseline snapshot (the run's stored comparison — never recomputed here) with a link into Compare. Response bodies are not retained
+   by load runs: that is stated, never shown as an empty or failed panel. *@
+<section class="prr" aria-labelledby="pt-results-h" data-testid="pt-results">
+    <h2 id="pt-results-h">Results</h2>
+    @if (Run is not { } r)
+    {
+        <div class="prr-empty" data-testid="pt-no-results">
+            <h3>No completed run selected</h3>
+            <p>Start a run, or choose one from History. Results then analyses that single run: outcome, latency, reliability, thresholds, operations, resources and a compact baseline snapshot.</p>
+            <p class="prr-actions">
+                <button type="button" class="btn-secondary" @onclick="() => OnGoRun.InvokeAsync()" data-testid="pt-results-go-run">Go to Run</button>
+                <button type="button" class="btn-secondary" @onclick="() => OnOpenHistory.InvokeAsync(null)" data-testid="pt-results-open-history">Open History</button>
+            </p>
+        </div>
+    }
+    else
+    {
+        var status = Status(r);
+        var m = r.Metrics;
+        var thresholds = r.ThresholdResults;
+        var snapshot = r.DefinitionSnapshot;
+        <div class="prr-head prr-tone-@status.Tone" data-testid="pt-result-summary" data-state="@r.State">
+            <div class="prr-status">
+                <p class="prr-status-main" data-testid="pt-result-status"><strong>@status.Primary</strong> <span class="prr-status-sub" data-testid="pt-result-status-detail">@status.Secondary</span></p>
+                <p class="prr-meta">Run @P.Short(r.RunId) · @P.Utc(r.StartedAt ?? r.CreatedAt) · definition v@(r.DefinitionVersion)@(r.VersionLabel is null ? "" : $" · version {r.VersionLabel}")
+                    <button type="button" class="btn-link" @onclick="() => OnExport.InvokeAsync(r)" data-testid="pt-export">Export HTML</button>
+                    <button type="button" class="btn-link" @onclick="() => OnOpenHistory.InvokeAsync(r)" data-testid="pt-results-view-history">View run in History</button></p>
+            </div>
+            <dl class="prr-facts" aria-label="Run summary">
+                <div><dt>Scenario</dt><dd data-testid="pt-result-scenario">@(string.IsNullOrWhiteSpace(snapshot.Scenario.Name) ? snapshot.Name : snapshot.Scenario.Name)</dd></div>
+                <div><dt>Target</dt><dd class="prr-break" data-testid="pt-result-target">@snapshot.EnvironmentName · @r.TargetOrigin</dd></div>
+                <div><dt>Started</dt><dd>@P.Utc(r.StartedAt)</dd></div>
+                <div><dt>Duration</dt><dd data-testid="pt-result-duration">@(m is { DurationSeconds: > 0 } ? P.Duration((int)Math.Round(m.DurationSeconds)) : "—")</dd></div>
+                <div><dt>Workload</dt><dd data-testid="pt-result-workload">@snapshot.Workload.Purpose · @P.Load(snapshot.Workload)</dd></div>
+                <div><dt>Requests</dt><dd data-testid="pt-result-requests">@(m is null ? "—" : m.RequestCount.ToString("N0", CultureInfo.InvariantCulture))</dd></div>
+                <div><dt>Failed requests</dt><dd data-testid="pt-result-failed">@(m is null ? "—" : $"{m.FailedRequests.ToString("N0", CultureInfo.InvariantCulture)} ({PerformanceTestRules.Format(m.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)})")</dd></div>
+                <div><dt>Throughput</dt><dd data-testid="pt-result-rps">@PerformanceTestRules.Format(m?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</dd></div>
+                <div><dt>p50 · p90 · p95 · p99</dt><dd data-testid="pt-result-percentiles">@string.Join(" · ", new[] { m?.Latency.P50Ms, m?.Latency.P90Ms, m?.Latency.P95Ms, m?.Latency.P99Ms }.Select(v => PerformanceTestRules.Format(v, PerformanceMetric.LatencyP95Ms)))</dd></div>
+                <div><dt>Error rate</dt><dd data-testid="pt-result-errors">@PerformanceTestRules.Format(m?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</dd></div>
+                <div><dt>Thresholds</dt><dd data-testid="pt-result-threshold-summary">@ThresholdSummary(thresholds)</dd></div>
+                <div><dt>Resource stability</dt><dd data-testid="pt-result-resources">@(r.Resources is null ? "Not assessed" : P.ResourceStatus(r))</dd></div>
+            </dl>
+            @* Kept for continuity with earlier views: execution and quality as separate facts, never one merged state. *@
+            <p class="visually-hidden"><span data-testid="pt-result-state">@P.Label(r.State)</span> · <span data-testid="pt-result-quality">@P.Label(r.Verdict)</span></p>
+        </div>
+        @if (r.StateReason is { } reason) { <p class="prr-reason" data-testid="pt-result-reason">@reason</p> }
+        @if (r.IsActive) { <p class="prr-note" role="status" data-testid="pt-result-in-progress">Run in progress — partial metrics may change and are not final.</p> }
+
+        <div class="prr-grid">
+            <section class="prr-card" aria-labelledby="prr-perf-h" data-testid="pt-result-performance">
+                <h3 id="prr-perf-h">Performance</h3>
+                @if (m is null) { <p class="prr-muted">No metrics were recorded for this run.</p> }
+                else
+                {
+                    <dl class="prr-mini" data-testid="pt-latency">
+                        @foreach (var (label, value) in new[] { ("P50", m.Latency.P50Ms), ("P90", m.Latency.P90Ms), ("P95", m.Latency.P95Ms), ("P99", m.Latency.P99Ms), ("Min", m.Latency.MinMs), ("Max", m.Latency.MaxMs) })
+                        { <div><dt>@label</dt><dd><span class="visually-hidden">@label latency: </span>@PerformanceTestRules.Format(value, PerformanceMetric.LatencyMeanMs)</dd></div> }
+                        <div><dt>Throughput</dt><dd>@PerformanceTestRules.Format(m.RequestsPerSecond, PerformanceMetric.ThroughputRps)</dd></div>
+                        <div><dt>Requests</dt><dd>@m.RequestCount.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
+                    </dl>
+                }
+            </section>
+            <section class="prr-card" aria-labelledby="prr-rel-h" data-testid="pt-result-reliability">
+                <h3 id="prr-rel-h">Reliability</h3>
+                @if (m is null) { <p class="prr-muted">No metrics were recorded for this run.</p> }
+                else
+                {
+                    <dl class="prr-mini">
+                        <div><dt>Successful</dt><dd data-testid="pt-result-successful">@m.SuccessfulRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
+                        <div><dt>Failed</dt><dd>@m.FailedRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
+                        <div><dt>Error rate</dt><dd>@PerformanceTestRules.Format(m.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</dd></div>
+                        @if (m.DroppedIterations is { } dropped) { <div><dt>Dropped iterations</dt><dd>@dropped.ToString("N0", CultureInfo.InvariantCulture)</dd></div> }
+                    </dl>
+                    @StatusCodes(m)
+                    @if (snapshot.TargetType == PerformanceTargetType.GraphQlHttp)
+                    {
+                        <p class="prr-note" data-testid="pt-result-graphql">GraphQL errors: not assessed — load runs do not retain response bodies, so GraphQL <code>errors</code> arrays are not inspected. The HTTP status above is transport-level only (HTTP 200 can still carry GraphQL errors).</p>
+                    }
+                }
+            </section>
+        </div>
+
+        <section class="prr-section" aria-labelledby="prr-thr-h" data-testid="pt-result-thresholds">
+            <h3 id="prr-thr-h">Thresholds <span class="prr-muted">(as configured for this run)</span></h3>
+            @if (thresholds.Count == 0) { <p class="prr-muted" data-testid="pt-no-thresholds">No thresholds: metrics are measured, not assessed. Quality: Not assessed (no score).</p> }
+            else
+            {
+                <div class="prr-scroll" tabindex="0" role="region" aria-label="Threshold results">
+                    <table data-testid="pt-threshold-results">
+                        <thead><tr><th scope="col">Metric</th><th scope="col">Rule</th><th scope="col">Type</th><th scope="col">Actual</th><th scope="col">Result</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in thresholds)
+                            {
+                                var failedAdvisory = t.Outcome == CheckOutcome.Fail && t.Severity == ThresholdSeverity.Advisory;
+                                <tr data-testid="pt-threshold-result" data-outcome="@t.Outcome" data-severity="@t.Severity">
+                                    <th scope="row">@PerformanceTestRules.Label(t.Metric)</th>
+                                    <td>@PerformanceTestRules.Symbol(t.Operator) @PerformanceTestRules.Format(t.Expected, t.Metric)</td>
+                                    <td>@(t.Severity == ThresholdSeverity.Required ? "Required" : "Advisory")</td>
+                                    <td>@PerformanceTestRules.Format(t.Measured, t.Metric)</td>
+                                    <td><span class="sd-pill sd-pill-@(failedAdvisory ? "partial" : P.Tone(t.Outcome))">@(failedAdvisory ? "Advisory failed (warning)" : P.Label(t.Outcome))</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        @BaselineSnapshot(r)
+        @Operations(r)
+
+        <section class="prr-section" aria-labelledby="prr-res-h" data-testid="pt-result-resource-section">
+            <h3 id="prr-res-h">Resource stability</h3>
+            @if (r.Resources is null) { <p class="prr-muted" data-testid="pt-result-resources-none">Not assessed — Resource Stability was not enabled for this run (not a pass).</p> }
+            <PerformanceResourceResults Assessment="r.Resources" Drift="r.ResourceDrift" />
+        </section>
+
+        <section class="prr-section" aria-labelledby="prr-resp-h" data-testid="pt-result-response-evidence">
+            <h3 id="prr-resp-h">API response evidence</h3>
+            <dl class="prr-mini">
+                <div><dt>Run response evidence</dt><dd data-testid="pt-result-response-state">Response body not retained — load runs discard response bodies by design; metrics and status metadata only.</dd></div>
+                <div><dt>Readiness probe evidence</dt><dd data-testid="pt-result-probe-state">@(r.Reachability is null ? "None recorded with this run" : "Recorded separately (container network check) — not load-run evidence")</dd></div>
+            </dl>
+        </section>
+
+        <section class="prr-section" aria-labelledby="prr-cfg-h" data-testid="pt-result-config">
+            <h3 id="prr-cfg-h">Configuration used by this run</h3>
+            <dl class="prr-mini">
+                <div><dt>Scenario</dt><dd>@snapshot.Scenario.Name · @snapshot.Scenario.Steps.Count(s => !s.Disabled) step(s)</dd></div>
+                <div><dt>Workload</dt><dd>@snapshot.Workload.Purpose · @P.Load(snapshot.Workload) · @P.Duration(snapshot.Workload.TotalSeconds)</dd></div>
+                <div><dt>Thresholds</dt><dd>@snapshot.Thresholds.Count configured</dd></div>
+                <div><dt>Engine</dt><dd>k6 @r.ProviderVersion · @(r.RuntimeId ?? "—") @r.RuntimeVersion</dd></div>
+            </dl>
+            @if (Current is { } cur && cur.Id == r.DefinitionId && cur.Version != r.DefinitionVersion)
+            {
+                <p class="prr-note" data-testid="pt-result-config-differs">The definition is now v@(cur.Version); this run used v@(r.DefinitionVersion). Results show the configuration as it ran — later edits never rewrite them.</p>
+            }
+            <p class="prr-actions"><button type="button" class="btn-link" @onclick="() => OnOpenScenario.InvokeAsync()" data-testid="pt-results-view-scenario">@(Current is { } c && c.Version != r.DefinitionVersion ? $"View current scenario definition (v{c.Version}, differs)" : "View scenario definition")</button></p>
+        </section>
+
+        <ReviewDisclosure Text="Advanced metrics" CollapseText="Hide advanced metrics" TestId="pt-result-advanced" Class="disclosure-inline">
+            <dl class="prr-mini" data-testid="pt-result-advanced-metrics">
+                <div><dt>Mean latency</dt><dd>@PerformanceTestRules.Format(m?.Latency.MeanMs, PerformanceMetric.LatencyMeanMs)</dd></div>
+                <div><dt>Measured duration</dt><dd>@(m?.DurationSeconds.ToString("0.#", CultureInfo.InvariantCulture) ?? "—") s</dd></div>
+                <div><dt>Metrics source</dt><dd>@r.MetricsSource@(r.MetricsPartial ? " (partial)" : "")</dd></div>
+                <div><dt>Definition fingerprint</dt><dd><code>@r.DefinitionFingerprint</code></dd></div>
+                <div><dt>Image</dt><dd>@(r.ContainerImage ?? "—")@(r.ImageDigest is null ? "" : $" ({r.ImageDigest})")</dd></div>
+                <div><dt>Observability</dt><dd>@r.Observability</dd></div>
+            </dl>
+            @if (r.Limitations.Count > 0) { <ul class="prr-list">@foreach (var l in r.Limitations) { <li>@l</li> }</ul> }
+            <p class="prr-muted" data-testid="pt-provenance-runtime">Runtime @(r.RuntimeId ?? "—") @r.RuntimeVersion · image @(r.ContainerImage ?? "—")@(r.ImageDigest is null ? "" : $" ({r.ImageDigest})")@(r.Reachability is { } rr ? $" · target reached as {rr.ExecutionOrigin}{(rr.Network is null ? "" : $" on {rr.Network}")}" : "")</p>
+        </ReviewDisclosure>
+        @if (!string.IsNullOrWhiteSpace(r.ProviderDiagnostics))
+        {
+            <ReviewDisclosure Text="Execution logs" CollapseText="Hide execution logs" TestId="pt-result-logs" Class="disclosure-inline">
+                <pre class="prr-log">@r.ProviderDiagnostics</pre>
+            </ReviewDisclosure>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public PerformanceTestRun? Run { get; set; }
+    /// <summary>The definition being edited (to say when a historical run used an older version — the run's own snapshot is always shown).</summary>
+    [Parameter] public PerformanceTestDefinition? Current { get; set; }
+    [Parameter] public PerformanceBaseline? ActiveBaseline { get; set; }
+    [Parameter] public EventCallback<PerformanceTestRun> OnOpenComparison { get; set; }
+    /// <summary>History, with the run focused (null = just open History).</summary>
+    [Parameter] public EventCallback<PerformanceTestRun?> OnOpenHistory { get; set; }
+    [Parameter] public EventCallback OnOpenScenario { get; set; }
+    [Parameter] public EventCallback OnGoRun { get; set; }
+    [Parameter] public EventCallback<PerformanceTestRun> OnExport { get; set; }
+
+    private static readonly PerformanceMetric[] KeyMetrics = [PerformanceMetric.LatencyP95Ms, PerformanceMetric.LatencyP99Ms, PerformanceMetric.ErrorRatePercent, PerformanceMetric.ThroughputRps];
+
+    /// <summary>One clear top-level status: execution first, then (only for a completed run) the threshold outcome. Never merged.</summary>
+    public static (string Primary, string Secondary, string Tone) Status(PerformanceTestRun r) => r.State switch
+    {
+        PerformanceRunState.Queued or PerformanceRunState.Preparing or PerformanceRunState.Running or PerformanceRunState.Cancelling => ("Run in progress", "Partial metrics may change", "info"),
+        PerformanceRunState.Cancelled => ("Cancelled", "Partial results — no pass/fail conclusion", "neutral"),
+        PerformanceRunState.ExecutionFailed or PerformanceRunState.TimedOut or PerformanceRunState.Blocked => ("Run failed", "Execution error — not a performance result", "error"),
+        _ => r.Verdict switch
+        {
+            PerformanceQualityVerdict.Fail => ("Run completed", "Required thresholds failed", "error"),
+            PerformanceQualityVerdict.Warning => ("Run completed", "Advisory thresholds failed", "warning"),
+            PerformanceQualityVerdict.Pass => ("Run completed", "Thresholds passed", "ok"),
+            _ => ("Run completed", r.ThresholdResults.Count == 0 ? "No thresholds configured" : "Thresholds not assessed", "neutral"),
+        },
+    };
+
+    private static string ThresholdSummary(IReadOnlyList<PerformanceThresholdResult> t)
+    {
+        if (t.Count == 0) return "None configured";
+        var passed = t.Count(x => x.Outcome == CheckOutcome.Pass);
+        var failedRequired = t.Count(x => x.Outcome == CheckOutcome.Fail && x.Severity == ThresholdSeverity.Required);
+        var failedAdvisory = t.Count(x => x.Outcome == CheckOutcome.Fail && x.Severity == ThresholdSeverity.Advisory);
+        var other = t.Count - passed - failedRequired - failedAdvisory;
+        return $"{passed} passed · {failedRequired} failed{(failedAdvisory > 0 ? $" · {failedAdvisory} advisory failed" : "")}{(other > 0 ? $" · {other} not assessed" : "")}";
+    }
+
+    /// <summary>Status distribution and transport failures; rare codes grouped. "Not captured" when an older run did not count them — never zeros.</summary>
+    private RenderFragment StatusCodes(PerformanceMetrics m) => __builder =>
+    {
+        <h4 class="prr-subtitle">HTTP responses</h4>
+        @if (m.StatusCodes is null && m.TransportErrors is null)
+        {
+            <p class="prr-muted" data-testid="pt-result-status-codes-none">Status distribution not captured by this run.</p>
+            return;
+        }
+        var total = Math.Max(1, (m.StatusCodes?.Values.Sum() ?? 0) + (m.TransportErrors?.Values.Sum() ?? 0));
+        var codes = (m.StatusCodes ?? []).OrderByDescending(c => c.Value).ThenBy(c => c.Key, StringComparer.Ordinal).ToList();
+        var shown = codes.Take(8).ToList();
+        var rest = codes.Skip(8).ToList();
+        <table class="prr-table" data-testid="pt-result-status-codes">
+            <thead><tr><th scope="col">Response</th><th scope="col">Requests</th><th scope="col">Share</th></tr></thead>
+            <tbody>
+                @foreach (var c in shown) { <tr data-testid="pt-result-status-code" data-code="@c.Key"><th scope="row">HTTP @c.Key</th><td>@c.Value.ToString("N0", CultureInfo.InvariantCulture)</td><td>@Share(c.Value, total)</td></tr> }
+                @if (rest.Count > 0) { <tr data-testid="pt-result-status-code" data-code="other"><th scope="row">Other (@rest.Count codes)</th><td>@rest.Sum(c => c.Value).ToString("N0", CultureInfo.InvariantCulture)</td><td>@Share(rest.Sum(c => c.Value), total)</td></tr> }
+                @foreach (var e in (m.TransportErrors ?? []).OrderByDescending(e => e.Value))
+                {
+                    <tr data-testid="pt-result-transport" data-kind="@e.Key"><th scope="row">@TransportLabel(e.Key)</th><td>@e.Value.ToString("N0", CultureInfo.InvariantCulture)</td><td>@Share(e.Value, total)</td></tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private static string Share(long n, long total) => (100.0 * n / total).ToString("0.#", CultureInfo.InvariantCulture) + " %";
+
+    private static string TransportLabel(string kind) => kind switch
+    {
+        "timeout" => "Timeout (no response)",
+        "connection" => "Connection / DNS failure",
+        "tls" => "TLS failure",
+        _ => "Other transport failure",
+    };
+
+    /// <summary>
+    /// Compact baseline snapshot: the run's own baseline comparison as computed by the backend comparison engine when the run finished — the same
+    /// result Compare shows for this run and baseline. Key metrics only; Compare stays the full comparison.
+    /// </summary>
+    private RenderFragment BaselineSnapshot(PerformanceTestRun r) => __builder =>
+    {
+        if (r.Drift is { } d)
+        {
+            var limited = !d.Compatible || d.State == PerformanceDriftState.NotComparable;
+            <section class="prr-section" aria-labelledby="prr-base-h" data-testid="pt-result-baseline" data-state="@d.State" data-compatible="@(limited ? "false" : "true")">
+                <h3 id="prr-base-h">Baseline snapshot</h3>
+                <p>Baseline v@(d.BaselineVersion) · run @P.Short(d.BaselineRunId) · current run @P.Short(r.RunId) · <span class="sd-pill sd-pill-@P.Tone(d.State)" data-testid="pt-result-baseline-state">@P.Label(d.State)</span></p>
+                @if (limited)
+                {
+                    <p class="prr-note" data-testid="pt-result-baseline-limited"><strong>Baseline comparison limited.</strong> @string.Join(" ", d.CompatibilityNotes)</p>
+                }
+                else
+                {
+                    <table class="prr-table" data-testid="pt-result-baseline-deltas">
+                        <thead><tr><th scope="col">Metric</th><th scope="col">This run</th><th scope="col">Baseline</th><th scope="col">Change</th><th scope="col">Assessment</th></tr></thead>
+                        <tbody>
+                            @foreach (var x in d.Deltas.Where(x => KeyMetrics.Contains(x.Metric)).OrderBy(x => Array.IndexOf(KeyMetrics, x.Metric)))
+                            {
+                                <tr data-testid="pt-result-baseline-delta" data-metric="@x.Metric"><th scope="row">@PerformanceTestRules.Label(x.Metric)</th><td>@PerformanceTestRules.Format(x.Current, x.Metric)</td>
+                                    <td>@PerformanceTestRules.Format(x.Reference, x.Metric)</td><td>@P.Delta(x)</td><td>@(x.PolicyState is { } s ? P.Label(s) : x.Direction.ToString())</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                @if (ActiveBaseline is { } active && active.BaselineId != d.BaselineId) { <p class="prr-muted" data-testid="pt-result-baseline-changed">The active baseline has changed since this run (now v@(active.Version)). This snapshot is the run's comparison at run time; Compare can compare with the current baseline.</p> }
+                <p class="prr-actions"><button type="button" class="btn-secondary" @onclick="() => OnOpenComparison.InvokeAsync(r)" data-testid="pt-results-open-compare">Open full comparison<span class="visually-hidden"> of run @P.Short(r.RunId) with baseline v@(d.BaselineVersion)</span></button></p>
+            </section>
+        }
+        else if (ActiveBaseline is null)
+        {
+            <section class="prr-section" data-testid="pt-result-nobaseline-section">
+                <p class="prr-muted" data-testid="pt-result-nobaseline">No baseline selected. Promote a completed run in History to enable baseline comparison.
+                    <button type="button" class="btn-link" @onclick="() => OnOpenHistory.InvokeAsync(r)" data-testid="pt-results-promote-history">Open History</button></p>
+            </section>
+        }
+        else
+        {
+            <section class="prr-section" data-testid="pt-result-nobaseline-section">
+                <p class="prr-muted" data-testid="pt-result-nobaseline">@(r.BaselineIdAtRun is null ? "No baseline was active when this run started." : "Not assessed — this run has no complete metrics.") Compare can compare it with baseline v@(ActiveBaseline.Version).
+                    <button type="button" class="btn-link" @onclick="() => OnOpenComparison.InvokeAsync(r)" data-testid="pt-results-open-compare">Open full comparison</button></p>
+            </section>
+        }
+    };
+
+    private string _opSearch = "", _opFilter = "all";
+
+    private static List<(PerformanceStepMetrics Metrics, HttpPerformanceStep? Step)> OperationRows(PerformanceTestRun r) =>
+        [.. (r.Metrics?.Steps ?? []).Select(s => (Metrics: s, Step: r.DefinitionSnapshot.Scenario.Steps.FirstOrDefault(x => x.Name == s.StepName)))
+            .OrderByDescending(x => x.Metrics.ErrorRatePercent ?? 0).ThenByDescending(x => x.Metrics.P95Ms ?? 0).ThenByDescending(x => x.Metrics.RequestCount)];
+
+    private List<(PerformanceStepMetrics Metrics, HttpPerformanceStep? Step)> VisibleOperations(List<(PerformanceStepMetrics Metrics, HttpPerformanceStep? Step)> rows)
+    {
+        var slowest = rows.OrderByDescending(x => x.Metrics.P95Ms ?? 0).Take(5).Select(x => x.Metrics.StepName).ToHashSet();
+        return [.. rows.Where(x => _opFilter switch
+        {
+            "failed" => (x.Metrics.ErrorRatePercent ?? 0) > 0,
+            "slowest" => slowest.Contains(x.Metrics.StepName),
+            "graphql" => x.Step?.GraphQlQuery is not null,
+            "rest" => x.Step?.GraphQlQuery is null,
+            _ => true,
+        }).Where(x => _opSearch.Length == 0 || $"{x.Metrics.StepName} {x.Step?.Method} {x.Step?.RelativePath} {x.Step?.GraphQlOperationName}".Contains(_opSearch, StringComparison.OrdinalIgnoreCase))];
+    }
+
+    /// <summary>Per-operation results from the run's own step metrics and definition snapshot: failures first, then slowest p95, then traffic.</summary>
+    private RenderFragment Operations(PerformanceTestRun r) => __builder =>
+    {
+        var steps = r.Metrics?.Steps ?? [];
+        <section class="prr-section" aria-labelledby="prr-ops-h" data-testid="pt-result-operations">
+            <h3 id="prr-ops-h">Operations</h3>
+            @if (steps.Count == 0)
+            {
+                <p class="prr-muted" data-testid="pt-result-operations-none">No per-operation metrics were recorded for this run.</p>
+            }
+            else
+            {
+                @OperationTable(r)
+            }
+        </section>
+    };
+
+    private RenderFragment OperationTable(PerformanceTestRun r) => __builder =>
+    {
+            var rows = OperationRows(r); var many = rows.Count > 6; var visible = VisibleOperations(rows);
+            @if (many)
+            {
+                <div class="prr-filters" role="group" aria-label="Filter operations" data-testid="pt-result-op-filters">
+                    <label>Search operation <input type="search" value="@_opSearch" @oninput="e => _opSearch = e.Value?.ToString() ?? string.Empty" data-testid="pt-result-op-search" /></label>
+                    @foreach (var (key, label) in new[] { ("all", "All"), ("failed", "Failed"), ("slowest", "Slowest"), ("rest", "REST"), ("graphql", "GraphQL") })
+                    {
+                        var k = key;
+                        <button type="button" class="prr-filter @(_opFilter == k ? "is-active" : "")" aria-pressed="@(_opFilter == k ? "true" : "false")" @onclick="() => _opFilter = k" data-testid="pt-result-op-filter" data-filter="@k">@label</button>
+                    }
+                </div>
+            }
+            <div class="prr-scroll" tabindex="0" role="region" aria-label="Operation results">
+                <table class="prr-table" data-testid="pt-result-op-table">
+                    <thead><tr><th scope="col">Operation</th><th scope="col">Requests</th><th scope="col">Failures</th><th scope="col">p95</th><th scope="col">p99</th><th scope="col">Throughput</th><th scope="col">Details</th></tr></thead>
+                    <tbody>
+                        @foreach (var (metrics, step) in visible)
+                        {
+                            <tr data-testid="pt-result-op" data-step="@metrics.StepName" data-failed="@((metrics.ErrorRatePercent ?? 0) > 0 ? "true" : "false")">
+                                <th scope="row"><span class="prr-op-name">@metrics.StepName</span>
+                                    <span class="prr-op-route prr-break">@(step is null ? "Step not in the run's definition snapshot" : step.GraphQlOperationName is { Length: > 0 } op ? $"GraphQL {op}" : $"{step.Method} {step.RelativePath}")</span></th>
+                                <td>@metrics.RequestCount.ToString("N0", CultureInfo.InvariantCulture)</td>
+                                <td>@PerformanceTestRules.Format(metrics.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>
+                                <td>@PerformanceTestRules.Format(metrics.P95Ms, PerformanceMetric.LatencyP95Ms)</td>
+                                <td>@PerformanceTestRules.Format(metrics.P99Ms, PerformanceMetric.LatencyP99Ms)</td>
+                                <td>@PerformanceTestRules.Format(metrics.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td>
+                                <td>
+                                    <details data-testid="pt-result-op-details"><summary>View details<span class="visually-hidden"> of @metrics.StepName</span></summary>
+                                        <dl class="prr-mini">
+                                            <div><dt>Provenance</dt><dd>@(step is null ? "—" : D.StepSource(step))</dd></div>
+                                            <div><dt>Expected responses</dt><dd>@(step is null ? "—" : string.Join(", ", step.ExpectedStatusCodes))</dd></div>
+                                            <div><dt>Response evidence</dt><dd>Not retained (load run)</dd></div>
+                                        </dl>
+                                    </details>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (visible.Count == 0) { <p class="prr-muted" data-testid="pt-result-op-none">No operation matches this filter.</p> }
+    };
+}

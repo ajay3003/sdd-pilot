@@ -1418,6 +1418,7 @@
             var index = await sourceApi.ListSchemaSnapshotIndexAsync();
             _sourceSnapshots = index?.Snapshots ?? [];
             _sourceSnapshotIndexTruncated = index?.IsTruncated ?? false;
+            ApplyProjectBinding();
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
         { _sourceError = "Source Analysis snapshots could not be loaded. Local XSD import remains available."; return; }
@@ -1522,7 +1523,28 @@
         { _sourceError = e.Message; }
     }
 
-    private static string SnapshotLabel(SourceSchemaSnapshotSummary snapshot)
+    private HashSet<Guid> _projectSnapshots = [];
+    private string? _projectName;
+
+    /// <summary>
+    /// Target Environment → Project: snapshots the project binds as contract/schema or application source are listed first and labelled; when
+    /// exactly one of them retains XSDs it is preselected in the selector (loading stays an explicit action). Never the newest by date.
+    /// </summary>
+    private void ApplyProjectBinding()
+    {
+        if ((ServiceProvider.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Project is not { } project) return;
+        _projectName = project.ProjectName;
+        _projectSnapshots = BirkNext.Web.Services.ProjectEvidence.ProjectBinding.SnapshotsFor(project, BirkNext.Web.Models.ProjectEvidenceCapability.ContractSchema)
+            .Concat(BirkNext.Web.Services.ProjectEvidence.ProjectBinding.SnapshotsFor(project, BirkNext.Web.Models.ProjectEvidenceCapability.ApplicationSource)).ToHashSet();
+        _sourceSnapshots = [.. _sourceSnapshots.OrderByDescending(s => _projectSnapshots.Contains(s.Id))];
+        if (_sourceSnapshotId.Length == 0 && _sourceSnapshots.Where(s => _projectSnapshots.Contains(s.Id) && s.HasSchemaArtifact).ToList() is { Count: 1 } bound)
+            _sourceSnapshotId = bound[0].Id.ToString();
+    }
+
+    private string SnapshotLabel(SourceSchemaSnapshotSummary snapshot) =>
+        BaseSnapshotLabel(snapshot) + (_projectSnapshots.Contains(snapshot.Id) ? $" · bound to project {_projectName}" : "");
+
+    private static string BaseSnapshotLabel(SourceSchemaSnapshotSummary snapshot)
     {
         var name = string.IsNullOrWhiteSpace(snapshot.ArchiveName) ? $"Source snapshot {snapshot.Id.ToString("N")[..8]}" : snapshot.ArchiveName;
         var fingerprint = string.IsNullOrWhiteSpace(snapshot.Fingerprint) ? "fingerprint unavailable" : snapshot.Fingerprint[..Math.Min(12, snapshot.Fingerprint.Length)];

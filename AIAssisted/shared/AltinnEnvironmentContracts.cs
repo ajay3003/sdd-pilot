@@ -156,6 +156,9 @@ public sealed record AltinnEnvironmentView
     public IReadOnlyList<AltinnSettingField> Fields { get; init; } = [];
     public IReadOnlyList<AltinnIdentitySummary> Identities { get; init; } = [];
     public IReadOnlyList<AltinnReadinessItem> Summary { get; init; } = [];
+    /// <summary>Authentication per interaction (reporter → app, app → integration consumer, BirkNext execution): requirement, configuration
+    /// and runtime evidence kept apart for each hop. One hop never inherits another hop's authentication.</summary>
+    public IReadOnlyList<InteractionAuthentication> Interactions { get; init; } = [];
     public AltinnReadinessItem ManualReadiness { get; init; } = new("manual", "Manual test readiness", AltinnReadinessState.NotAssessed, "");
     public AltinnReadinessItem AutomatedReadiness { get; init; } = new("automated", "Automated BirkNext execution", AltinnReadinessState.NotAssessed, "");
     public IReadOnlyList<string> AutomatedBlockers { get; init; } = [];

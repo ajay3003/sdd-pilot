@@ -436,10 +436,25 @@ public static class DocumentationDrift
                 present ? set!.Artifacts.Count : 0, present ? set!.Artifacts.Select(a => a.ModuleId).Distinct().Count() : 0);
         })];
 
-    /// <summary>The import Drift and Overview focus on: the workspace's current import, else the most recent one.</summary>
-    public static string? FocusImportId(SddLifecycleState state) =>
-        state.CurrentProjectImportId is { } id && state.ProjectImports.Any(i => i.ImportId == id) ? id
-        : state.ProjectImports.OrderBy(i => i.ImportedAt).LastOrDefault()?.ImportId;
+    /// <summary>The import Drift and Overview focus on: the Target Environment Project's main import, else the workspace's current import, else
+    /// the most recent one.</summary>
+    public static string? FocusImportId(SddLifecycleState state, EnvironmentProject? project = null) =>
+        ProjectEvidence.ProjectEvidenceResolver.MainImport(project, state)?.ImportId
+        ?? (state.CurrentProjectImportId is { } id && state.ProjectImports.Any(i => i.ImportId == id) ? id
+        : state.ProjectImports.OrderBy(i => i.ImportedAt).LastOrDefault()?.ImportId);
+
+    /// <summary>
+    /// The other imports of one logical project that Drift pairs with <paramref name="focusImportId"/>: when the focus is the Target Environment
+    /// Project's main import, the packages bound as its documentation and generated documentation (e.g. authored docs from a documentation-only
+    /// package against generated docs of the application package). Every document keeps its own import as provenance. Empty otherwise.
+    /// </summary>
+    public static IReadOnlyCollection<string> ProjectImports(SddLifecycleState state, EnvironmentProject? project, string? focusImportId)
+    {
+        if (focusImportId is null || ProjectEvidence.ProjectEvidenceResolver.MainImport(project, state)?.ImportId != focusImportId) return [];
+        return project!.Evidence.Where(r => r.RoleKey is ProjectEvidence.ProjectEvidenceRoles.Documentation or ProjectEvidence.ProjectEvidenceRoles.GeneratedDocumentation)
+            .SelectMany(r => r.Sources).Select(s => s.ImportId).OfType<string>().Where(id => id != focusImportId && state.ProjectImports.Any(i => i.ImportId == id))
+            .ToHashSet(StringComparer.Ordinal);
+    }
 
     // ── Pairing ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -450,10 +465,13 @@ public static class DocumentationDrift
     /// generated set describes exactly that scope). Nothing is compared automatically; status comes from saved comparisons of exactly these
     /// fingerprints.
     /// </summary>
-    public static IReadOnlyList<DriftCandidate> Candidates(IReadOnlyList<DriftDocument> catalog, IReadOnlyList<SddDocumentationDriftComparison> saved, string? importId)
+    public static IReadOnlyList<DriftCandidate> Candidates(IReadOnlyList<DriftDocument> catalog, IReadOnlyList<SddDocumentationDriftComparison> saved, string? importId,
+        IReadOnlyCollection<string>? projectImports = null)
     {
         if (importId is null) return [];
-        var current = catalog.Where(d => d.ProjectImportId == importId && d.Supported && d.ContentAvailable).ToList();
+        // One logical project may span packages (Target Environment → Project): authored and generated documents of its bound imports pair too.
+        var current = catalog.Where(d => (d.ProjectImportId == importId || (d.ProjectImportId is { } other && projectImports?.Contains(other) == true))
+            && d.Supported && d.ContentAvailable).ToList();
         var moduleRoots = current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null and not "(repository)").Select(d => d.Module! + "/").Distinct().ToList();
         var candidates = new List<DriftCandidate>();
         foreach (var generated in current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null))

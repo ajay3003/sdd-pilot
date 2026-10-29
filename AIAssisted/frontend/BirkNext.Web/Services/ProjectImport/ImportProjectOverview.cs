@@ -91,6 +91,11 @@ public static class ImportProjectOverview
             "Partial" => new(ImportAnalysisState.Partial, "Partial", ProjectImportTone.Partial, "Some areas could not be fully analyzed.", summary),
             _ when areas.Count == 0 => new(ImportAnalysisState.NoApplicationCode, "No production project found", ProjectImportTone.Partial,
                 "Code analysis found no supported production project. Source Analysis shows which other areas hold evidence.", null),
+            // Judged on what the package contains: an infrastructure/configuration-only package whose areas were all extracted is not Partial
+            // for lacking application code; Partial only when an area it does contain is incomplete.
+            _ when areas.Any(Usable) && areas.Where(a => a.Area != "Application code" && Usable(a)).All(a => a.Status == "Complete") =>
+                new(ImportAnalysisState.NoApplicationCode, "Available · no application code", ProjectImportTone.Available,
+                    "No supported production project was found, so code-level analysis did not run. The other source evidence was fully analyzed.", summary),
             _ when areas.Any(Usable) => new(ImportAnalysisState.NoApplicationCode, "Partial · no application code", ProjectImportTone.Partial,
                 "No supported production project was found, so code-level analysis did not run. The other source evidence is available.", summary),
             _ => new(ImportAnalysisState.Failed, "Failed", ProjectImportTone.Rejected,

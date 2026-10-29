@@ -122,7 +122,7 @@ public sealed class PerformanceScenarioCandidateSemanticsTests
         op.NotRunnableReason.Should().Be("The operation name was observed, but the GraphQL query document was not retained. BirkNext cannot construct an executable test safely.");
         op.TestDataState.Should().Be(ScenarioTestDataStates.Unknown);
         op.GraphQl!.DocumentState.Should().Be(ScenarioGraphQlDocumentStates.NotCaptured);
-        op.Reasons.Should().NotContain(r => r.Contains("no Test Data needed")).And.Contain(r => r.StartsWith("Test Data unknown"));
+        op.Reasons.Should().NotContain(r => r.Contains("no Test Data needed")).And.Contain(r => r.StartsWith("runtime inputs unknown"));
         PerformanceScenarioEngine.ProposedGraphQlStep(op).Should().BeNull("an operation is never reconstructed without its document");
     }
 

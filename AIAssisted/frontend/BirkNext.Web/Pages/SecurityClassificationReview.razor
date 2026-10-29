@@ -567,7 +567,11 @@
     /// </summary>
     private async Task UseDeterministicSourceAsync()
     {
-        if (_scope.PrimaryId is not null || _scope.EvidenceRepositories.Count != 1 || _scope.Current is not { } only) return;
+        if (_scope.PrimaryId is not null) return;
+        // An explicit Target Environment Project binding outranks discovery; otherwise exactly one repository with the evidence is deterministic.
+        BirkNext.Web.Services.ProjectEvidence.ProjectBinding.Apply(_scope, Services);
+        var only = _scope.ProjectBoundSnapshot ?? (_scope.EvidenceRepositories.Count == 1 ? _scope.Current : null);
+        if (only is null) return;
         _scope.PickPrimary(only.SnapshotId);
         _autoPrimary = true;
         await LoadScopeAsync();

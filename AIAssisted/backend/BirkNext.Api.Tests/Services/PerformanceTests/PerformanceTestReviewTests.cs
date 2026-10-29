@@ -156,7 +156,8 @@ public sealed class PerformanceTestReviewTests
         Issues(Definition(), Data() with { ApprovedSynthetic = false }).Should().Contain(i => i.State == PerformanceReadinessState.NeedsTestData && i.Message.Contains("not confirmed"));
         Issues(Definition(), Data() with { Rows = [["01019912345"]] }).Should().Contain(i => i.Message.Contains("national identity number"));
         Issues(Definition(), Data() with { Rows = [["\";alert(1);//"]] }).Should().Contain(i => i.Message.Contains("may contain"));
-        Issues(Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } })).Should().Contain(i => i.Message.StartsWith("Test Data missing for {paymentId}"), "the exact placeholder is named, not a generic \"incomplete\"");
+        Issues(Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } })).Should().Contain(i => i.Key == "runtime" && i.Message.Contains("paymentId: runtime value source not configured"),
+            "the exact parameter is named, and an unmapped dynamic parameter is not \"Test Data missing\" unless Test Data is the chosen source");
         Issues(Definition(), Data() with { Columns = ["otherId"] }).Should().Contain(i => i.Key == "placeholder");
     }
 
@@ -305,7 +306,8 @@ public sealed class PerformanceTestReviewTests
         a.Should().Contain("\\u0022;require(\\u0027child_process\\u0027);//");
         a.Should().NotContain("</script>").And.NotContain("\u2028");
         a.Split('\n').Where(l => l.Contains("import os from")).Should().OnlyContain(l => l.StartsWith("const STEPS = ", StringComparison.Ordinal), "hostile text stays inside its JSON string literal");
-        a.Split('\n').Count(l => l.StartsWith("import ", StringComparison.Ordinal)).Should().Be(3, "only BirkNext's own imports");
+        a.Split('\n').Where(l => l.StartsWith("import ", StringComparison.Ordinal)).Should().HaveCount(4)
+            .And.OnlyContain(l => l.EndsWith(" from 'k6';", StringComparison.Ordinal) || l.Contains(" from 'k6/", StringComparison.Ordinal), "only k6 built-in modules — never a remote or user-supplied import");
         a.Should().Contain("executor: 'ramping-vus'").And.Contain("{ duration: '30s', target: 5 }");
         K6ScriptGenerator.Scenario(new PerformanceWorkload { Mode = WorkloadMode.ArrivalRate, RequestsPerSecond = 2.5, StartRequestsPerSecond = 0.5, VirtualUsers = 10 })
             .Should().Contain("executor: 'ramping-arrival-rate'").And.Contain("timeUnit: '1m'").And.Contain("target: 150");

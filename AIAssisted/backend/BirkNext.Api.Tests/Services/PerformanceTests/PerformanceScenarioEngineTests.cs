@@ -194,7 +194,7 @@ public sealed class PerformanceScenarioEngineTests
         a.Operations.Take(2).Should().OnlyContain(o => o.Level == ScenarioRecommendationLevel.Recommended, "declared + observed + Test Data + auth rank first");
         get.Level.Should().Be(ScenarioRecommendationLevel.Recommended);
         PerformanceScenarioEngine.Because(get).Should().StartWith("Recommended because declared in OpenAPI · Persons API (M2LB.zip) · observed 44×")
-            .And.Contain("Test Data available for {personId}, {tenant}").And.Contain("authentication reference configured");
+            .And.Contain("dynamic parameters {personId}, {tenant} — runtime value configured on the step").And.Contain("Test Data suggestion available for {personId}, {tenant}").And.Contain("authentication reference configured");
         get.Observation!.Count.Should().Be(44);
         a.Operations.Single(o => o.OperationId == "createPerson").Should().Match<ScenarioOperation>(o => o.Level == ScenarioRecommendationLevel.NotRunnable && o.NotRunnableReason!.Contains("POST"));
         var unauthenticated = PerformanceScenarioEngine.Build([OpenApi()], null, null, Target, null, seen, assets, null, authenticated: false).Operations.Single(o => o.OperationId == "getPerson");
@@ -250,7 +250,9 @@ public sealed class PerformanceScenarioEngineTests
         step.Should().Match<HttpPerformanceStep>(s => s.Method == "GET" && s.RelativePath == "/api/person/{personId}" && s.ThinkTimeMs == 500 && s.Name == "getperson");
         step.ExpectedStatusCodes.Should().Equal(new[] { 200 }, "only the documented 2xx is suggested; 404 is not accepted automatically");
         step.QueryParameters.Should().Equal(new PerformanceNameValue("tenant", "{tenant}"));
-        step.DataMappings!.Select(m => (m.Variable, m.AssetAliases.Single())).Should().BeEquivalentTo([("personId", "person-id-baseline"), ("tenant", "tenant-dev")]);
+        step.DataMappings.Should().BeNull("a recommended Test Data match is a suggestion on the step, never mapped silently");
+        PerformanceScenarioEngine.ToStep(op, new Dictionary<string, string> { ["personId"] = "person-id-baseline" }).DataMappings!.Should().ContainSingle()
+            .Which.Should().Match<ScenarioDataMapping>(m => m.Variable == "personId" && m.AssetAliases.Single() == "person-id-baseline" && m.Source == RuntimeValueSource.TestData, "an explicit choice is kept");
         step.Source!.Should().Match<ScenarioStepSource>(s => s.Evidence == ScenarioEvidence.DeclaredAndObserved && s.ContractName == "Persons API" && s.OperationFingerprint!.StartsWith("GET /api/person/{personId}"));
         PerformanceScenarioEngine.SuggestName([op]).Should().Be("Person lookup baseline");
         step.RelativePath.Should().NotContain(Target, "the base URL is never duplicated into a step");
@@ -266,7 +268,9 @@ public sealed class PerformanceScenarioEngineTests
         var step = PerformanceScenarioEngine.ToStep(child, types: GraphQl().Types);
         step.GraphQlQuery.Should().Be("query PerfChild($childId: ID!) { child(childId: $childId) { __typename } }");
         step.GraphQlVariablesJson.Should().Be("""{"childId":"{childId}"}""", "variables are placeholders — no literal identifier is embedded");
-        step.DataMappings!.Single().Should().Match<ScenarioDataMapping>(m => m.Variable == "childId" && m.In == "variable" && m.AssetAliases.Single() == "child-kode7");
+        step.DataMappings.Should().BeNull("the variable is a dynamic parameter configured on the step");
+        PerformanceScenarioEngine.ToStep(child, new Dictionary<string, string> { ["childId"] = "child-kode7" }, GraphQl().Types).DataMappings!.Single()
+            .Should().Match<ScenarioDataMapping>(m => m.Variable == "childId" && m.In == "variable" && m.AssetAliases.Single() == "child-kode7");
         PerformanceScenarioEngine.ToStep(catalog.Operations.Single(o => o.OperationId == "version"), types: GraphQl().Types).GraphQlQuery.Should().Be("query PerfVersion { version }");
         catalog.Operations.Single(o => o.OperationId == "grantAccess").Should().Match<ScenarioOperation>(o => !o.Runnable && o.Level == ScenarioRecommendationLevel.NotRunnable);
         catalog.Operations.Single(o => o.OperationId == "children").NotRunnableReason.Should().Contain("Input-object");
@@ -324,7 +328,9 @@ public sealed class PerformanceScenarioEngineTests
         PerformanceCentralTestData.Issues(Mapped(new ScenarioDataMapping("body", ["pay-1"], TestDataDataType.JsonPayload, "body")), catalog, DateTimeOffset.UtcNow)
             .Should().ContainSingle(i => i.Contains("needs JSON payload"));
         var unmapped = PerformanceTestReviewTests.Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } });
-        PerformanceTestSafety.Check(unmapped, null, new PerformanceTestOptions()).Should().ContainSingle(i => i.Key == "testdata" && i.Message.StartsWith("Test Data missing for {paymentId}"));
+        PerformanceTestSafety.Check(unmapped, null, new PerformanceTestOptions()).Should().ContainSingle(i => i.Key == "runtime" && i.Message.Contains("paymentId: runtime value source not configured"));
+        var testDataChosen = PerformanceTestReviewTests.Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null, Steps = [.. d.Scenario.Steps.Select(s => s with { DataMappings = [new ScenarioDataMapping("paymentId", [], TestDataDataType.SimpleValues, "path")] })] } });
+        PerformanceTestSafety.Check(testDataChosen, null, new PerformanceTestOptions()).Should().ContainSingle(i => i.Key == "testdata" && i.Message.StartsWith("Test Data missing for {paymentId}"), "Test Data is named only when it is the chosen source");
     }
 
     [Fact]

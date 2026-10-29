@@ -60,7 +60,13 @@
         ?? ServiceProvider.GetService(typeof(WorkspaceArtifactRepository)) as WorkspaceArtifactRepository;
     private SddLifecycleState? Lifecycle => Repository?.SddLifecycle;
     private IReadOnlyList<SddDocumentationDriftComparison> Saved => Lifecycle?.DocumentationDriftComparisons ?? [];
-    private string? FocusImport => Lifecycle is { } state ? DocumentationDrift.FocusImportId(state) : null;
+    private string? FocusImport => Lifecycle is { } state ? DocumentationDrift.FocusImportId(state, EnvironmentProject) : null;
+
+    /// <summary>The active Target Environment's Project (null when not configured): its bound packages pair as one project.</summary>
+    private EnvironmentProject? EnvironmentProject => (ServiceProvider.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Project;
+
+    private IReadOnlyCollection<string> ProjectImportsOf(string? importId) =>
+        Lifecycle is { } state ? DocumentationDrift.ProjectImports(state, EnvironmentProject, importId) : [];
 
     protected override void OnInitialized()
     {
@@ -72,7 +78,7 @@
         // Without any same-lineage revision, Compare opens on the mode that can do something.
         if (!DocumentationDrift.Identities(_catalog).Any(i => i.Versions.Count > 1)) _mode = FocusImport is null ? DriftIntent.Manual : DriftIntent.ConsistencyDrift;
         // Combined authored intent ↔ generated is the recommended default wherever a module + concern candidate exists.
-        if (FocusImport is not null && DocumentationDriftComposite.CandidateGroups(_catalog, Saved, FocusImport).Any(g => g.State == DriftGroupState.ComparisonAvailable))
+        if (FocusImport is not null && DocumentationDriftComposite.CandidateGroups(_catalog, Saved, FocusImport, ProjectImportsOf(FocusImport)).Any(g => g.State == DriftGroupState.ComparisonAvailable))
             _mode = DriftIntent.CompositeConsistency;
         if (PreselectModule is { Length: > 0 } module && Enum.TryParse<DriftConcern>(PreselectConcern, out var concern))
         {
@@ -87,7 +93,11 @@
     // ── Compare ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     private RenderFragment Compare() => __builder =>
     {
-        <p class="dd-note" data-testid="dd-authority">Authored documents are intent and design evidence; generated documents are implementation-derived documentation. Raw source stays with Source Analysis and runtime evidence stays separate. A comparison shows how two documents differ — it never decides which one is right.</p>
+        <p class="dd-note" data-testid="dd-compare-lead">Authored intent is compared with implementation-derived documentation for the same module and area.</p>
+        <ReviewDisclosure Text="How comparison works" CollapseText="Hide how comparison works" TestId="dd-how-compare" Class="disclosure-inline disclosure-small">
+            <p class="dd-note" data-testid="dd-authority">Authored documents are intent and design evidence; generated documents are implementation-derived documentation. Raw source stays with Source Analysis and runtime evidence stays separate. A comparison shows how two documents differ — it never decides which one is right.</p>
+            <p class="dd-note" data-testid="dd-mode-help">@ModeHelp(_mode)</p>
+        </ReviewDisclosure>
 
         <div class="dd-type" data-testid="dd-comparison-type">
             <label class="dd-field">Comparison mode
@@ -98,7 +108,6 @@
                     }
                 </select>
             </label>
-            <p class="dd-note" data-testid="dd-mode-help">@ModeHelp(_mode)</p>
         </div>
 
         @if (_mode is DriftIntent.CompositeConsistency or DriftIntent.ContributionConsistency)
@@ -216,7 +225,7 @@
         @if (generated.Count == 0) { <p class="dd-note" data-testid="dd-consistency-no-generated">@DocumentationDrift.GeneratedNotPresent</p> @GeneratedMissing(_consistencyImport) }
         @if (_left is { Origin: DriftOrigin.Authored } a && _right is { Origin: DriftOrigin.Generated } g)
         {
-            var pair = DocumentationDrift.Candidates(_catalog, Saved, _consistencyImport).FirstOrDefault(c => c.Authored.Id == a.Id && c.Generated.Id == g.Id);
+            var pair = DocumentationDrift.Candidates(_catalog, Saved, _consistencyImport, ProjectImportsOf(_consistencyImport)).FirstOrDefault(c => c.Authored.Id == a.Id && c.Generated.Id == g.Id);
             <dl class="dd-facts" data-testid="dd-pairing">
                 <div><dt>Authored scope</dt><dd>@DocumentationDrift.ScopeOf(a)</dd></div>
                 <div><dt>Generated scope</dt><dd>@DocumentationDrift.ScopeOf(g)</dd></div>
@@ -353,7 +362,7 @@
         var identities = DocumentationDrift.Identities(_catalog);
         var authoredVersioned = identities.Count(i => i.Origin == DriftOrigin.Authored && i.Versions.Count > 1);
         var generatedVersioned = identities.Count(i => i.Origin == DriftOrigin.Generated && i.Versions.Count > 1);
-        var candidates = DocumentationDrift.Candidates(_catalog, Saved, FocusImport);
+        var candidates = DocumentationDrift.Candidates(_catalog, Saved, FocusImport, ProjectImportsOf(FocusImport));
         var focus = _imports.FirstOrDefault(i => i.ImportId == FocusImport);
         @Dashboard(summaries)
         <ReviewDisclosure Text="All imported projects and comparison availability" CollapseText="Hide all imported projects" TestId="dd-overview-all">
@@ -448,6 +457,25 @@
         var identities = DocumentationDrift.Identities(_catalog).Where(i => lineage.Key is not null ? i.LineageKey == lineage.Key : i.LineageKey?.StartsWith("workspace:") == true).ToList();
         var identity = identities.FirstOrDefault(i => i.LogicalKey == _changesIdentity);
         <p class="dd-note" data-testid="dd-changes-intro"><strong>Changes = same-lineage revisions.</strong> How one document changed across the imports of its own project. Imports of other projects are never earlier revisions.</p>
+        var summaryLineage = lineage.Key is not null ? lineage : lineages.FirstOrDefault(l => l.Imports.Any(i => i.ImportId == FocusImport));
+        @if (summaryLineage.Key is not null)
+        {
+            var revisable = summaryLineage.Imports.Count >= 2;
+            <div class="dd-stat-row" data-testid="dd-changes-summary">
+                <div class="dd-stat"><span class="dd-stat-label">Project</span><strong data-testid="dd-changes-sum-project">@summaryLineage.Name</strong></div>
+                <div class="dd-stat"><span class="dd-stat-label">Imports</span><strong data-testid="dd-changes-sum-imports">@summaryLineage.Imports.Count</strong></div>
+                <div class="dd-stat dd-tone-@(revisable ? "ready" : "neutral")"><span class="dd-stat-label">Revision comparison</span><strong data-testid="dd-changes-sum-state">@(revisable ? "Available" : "Unavailable")</strong>
+                    @if (!revisable) { <span class="dd-stat-hint" data-testid="dd-changes-sum-reason">Only one import exists</span> }</div>
+            </div>
+            @if (!revisable)
+            {
+                <div class="dd-empty-state" role="status" data-testid="dd-changes-empty">
+                    <h3>No document revisions available</h3>
+                    <p>@summaryLineage.Name currently has 1 import. Revision comparison requires at least 2 imports of the same project.</p>
+                    <p><a class="btn-secondary btn-small" href="project-import?import=source" data-testid="dd-changes-import">Import another version of @summaryLineage.Name</a></p>
+                </div>
+            }
+        }
         <div class="dd-side-fields">
             <label class="dd-field">Project
                 <select data-testid="dd-changes-project" value="@_changesLineage" @onchange="e => { _changesLineage = e.Value?.ToString() ?? string.Empty; _changesIdentity = string.Empty; }">
@@ -520,8 +548,8 @@
     // ── Drift ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
     private RenderFragment Drift() => __builder =>
     {
-        var groups = DocumentationDriftComposite.CandidateGroups(_catalog, Saved, FocusImport);
-        var candidates = DocumentationDrift.Candidates(_catalog, Saved, FocusImport).Where(c => !DocumentationDriftComposite.Structured(DocumentationDriftComposite.ConcernOf(c.Generated))).ToList();
+        var groups = DocumentationDriftComposite.CandidateGroups(_catalog, Saved, FocusImport, ProjectImportsOf(FocusImport));
+        var candidates = DocumentationDrift.Candidates(_catalog, Saved, FocusImport, ProjectImportsOf(FocusImport)).Where(c => !DocumentationDriftComposite.Structured(DocumentationDriftComposite.ConcernOf(c.Generated))).ToList();
         var equivalent = candidates.Where(c => c.Pairing == DriftPairing.Equivalent).ToList();
         var related = candidates.Where(c => c.Pairing == DriftPairing.RelatedScopeDiffers).ToList();
         var focus = _imports.FirstOrDefault(i => i.ImportId == FocusImport);
@@ -529,9 +557,46 @@
         <p class="dd-note" data-testid="dd-drift-intro"><strong>Drift = divergence inventory.</strong> Where authored (intent / design) and generated (implementation-derived) documentation intended to describe the same scope disagree. @DocumentationDrift.NeutralReview @DocumentationDrift.SourceBoundary</p>
         <section aria-labelledby="dd-groups-title" data-testid="dd-candidate-groups">
             <h3 id="dd-groups-title">Module consistency@(focus is null ? "" : $" · {focus.Label}")</h3>
-            <p class="dd-note">One candidate per module and documentation area: every authored document of that module and area forms one authored intent; the module's generated document is the implementation-derived side. Absence on either side is neutral.</p>
+            <p class="dd-note">One card per module and documentation area. Absence on either side is neutral — never a difference.</p>
             @if (groups.Count == 0) { <p class="dd-empty-line" data-testid="dd-no-groups">No module has authored or generated documentation of a structured documentation area in this import.</p> }
-            else { <ul class="dd-cards">@foreach (var g in groups) { @GroupCard(g) }</ul> }
+            else
+            {
+                var cards = DocumentationDriftCards.Cards(groups, Saved);
+                var visible = DocumentationDriftCards.Sort(DocumentationDriftCards.Filter(cards, _cardFilter, _cardSearch), _cardSort);
+                <div class="dd-stat-row" data-testid="dd-drift-summary">
+                    @foreach (var state in Enum.GetValues<DriftCardState>().Where(st => cards.Any(c => c.State == st)))
+                    {
+                        <div class="dd-stat dd-tone-@DocumentationDriftCards.Tone(state)" data-testid="dd-drift-count" data-state="@state"><strong>@cards.Count(c => c.State == state)</strong> <span class="dd-stat-label">@DocumentationDriftCards.Label(state)</span></div>
+                    }
+                </div>
+                <div class="dd-card-tools">
+                    <label class="dd-field dd-search">Search module or documentation area
+                        <input type="search" data-testid="dd-drift-search" value="@_cardSearch" @oninput="e => _cardSearch = e.Value?.ToString() ?? string.Empty" placeholder="e.g. Autorisasjon, Data Model" />
+                    </label>
+                    <label class="dd-field dd-sort">Sort
+                        <select data-testid="dd-drift-sort" @onchange="e => _cardSort = Enum.TryParse<DriftCardSort>(e.Value?.ToString(), out var sort) ? sort : DriftCardSort.Priority">
+                            <option value="Priority" selected="@(_cardSort == DriftCardSort.Priority)">Review priority</option>
+                            <option value="Module" selected="@(_cardSort == DriftCardSort.Module)">Module A–Z</option>
+                            <option value="Area" selected="@(_cardSort == DriftCardSort.Area)">Documentation area</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="dd-filters" role="group" aria-label="Filter modules by status" data-testid="dd-drift-filters">
+                    <button type="button" class="dd-filter @(_cardFilter is null ? "is-active" : "")" aria-pressed="@(_cardFilter is null ? "true" : "false")" data-testid="dd-drift-filter" data-state="All" @onclick="() => _cardFilter = null">All (@cards.Count)</button>
+                    @foreach (var state in Enum.GetValues<DriftCardState>())
+                    {
+                        var st = state;
+                        var count = cards.Count(c => c.State == st);
+                        <button type="button" class="dd-filter @(_cardFilter == st ? "is-active" : "")" aria-pressed="@(_cardFilter == st ? "true" : "false")" data-testid="dd-drift-filter" data-state="@st" disabled="@(count == 0)" @onclick="() => _cardFilter = st">@DocumentationDriftCards.Label(st) (@count)</button>
+                    }
+                </div>
+                <p class="dd-note" role="status" data-testid="dd-drift-visible">@visible.Count of @cards.Count module areas shown</p>
+                @if (visible.Count == 0)
+                {
+                    <p class="dd-empty-line" data-testid="dd-drift-none">No module area matches this search or filter. <button type="button" class="btn-link" data-testid="dd-drift-clear" @onclick="() => { _cardFilter = null; _cardSearch = string.Empty; }">Clear search and filters</button></p>
+                }
+                else { <ul class="dd-cards dd-card-grid">@foreach (var c in visible) { @GroupCard(c) }</ul> }
+            }
         </section>
         <section aria-labelledby="dd-candidates-title" data-testid="dd-candidates">
             <h3 id="dd-candidates-title">Other equivalent-scope pairs@(focus is null ? "" : $" · {focus.Label}")</h3>
@@ -583,20 +648,39 @@
         </section>
     };
 
-    private RenderFragment GroupCard(DriftCandidateGroup g) => __builder =>
+    /// <summary>Summary-first card: module, area, counts, ONE primary status, one action; raw paths and technical state under "Show evidence".</summary>
+    private RenderFragment GroupCard(DriftCard card) => __builder =>
     {
-        <li class="dd-card dd-group-card" data-testid="dd-candidate-group" data-state="@g.State" data-module="@g.Module" data-concern="@g.Concern">
-            <p><strong class="dd-wrap">@g.Module</strong> <span class="dd-note">@DocumentationDriftComposite.ConcernLabel(g.Concern) consistency</span></p>
-            <p class="dd-kicker">Authored intent</p>
-            <p class="dd-note" data-testid="dd-group-contributors">@(g.Contributors.Count == 0 ? "Not present" : $"{g.Contributors.Count} related authored document{(g.Contributors.Count == 1 ? "" : "s")}")</p>
-            @if (g.Contributors.Count > 0) { <ul class="dd-plain dd-contributors">@foreach (var c in g.Contributors) { <li class="dd-wrap"><code>@DocumentationDrift.StablePathOf(c)</code></li> }</ul> }
-            <p class="dd-kicker">Implementation-derived</p>
-            <p class="dd-note dd-wrap" data-testid="dd-group-generated">@(g.Generated is { } gen ? DocumentationDrift.StablePathOf(gen) : g.GeneratedCandidates.Count > 1 ? $"{g.GeneratedCandidates.Count} generated candidates — none chosen" : "Generated documentation: Not present")</p>
-            <p><span class="sd-pill @(g.State == DriftGroupState.MultipleGeneratedCandidates ? "sd-pill-attention" : "sd-pill-muted")" data-testid="dd-group-state">@g.StateLabel</span> <span class="sd-pill sd-pill-muted" data-testid="dd-group-status">@g.Status</span></p>
-            @if (g.State == DriftGroupState.ComparisonAvailable)
-            {
-                <button type="button" class="btn-secondary btn-small" data-testid="dd-group-open" @onclick="() => OpenGroup(g)">Open comparison<span class="visually-hidden"> @g.Title</span></button>
-            }
+        var g = card.Group;
+        var tone = DocumentationDriftCards.Tone(card.State);
+        <li class="dd-card dd-group-card dd-tone-@tone" data-testid="dd-candidate-group" data-state="@g.State" data-card-state="@card.State" data-module="@g.Module" data-concern="@g.Concern">
+            <h4 class="dd-card-title dd-wrap">@g.Module</h4>
+            <p class="dd-card-area">@card.Area</p>
+            <dl class="dd-card-counts">
+                <div><dt>Authored</dt><dd data-testid="dd-card-authored">@card.AuthoredText</dd></div>
+                <div><dt>Generated</dt><dd data-testid="dd-card-generated">@card.GeneratedText</dd></div>
+            </dl>
+            <p class="dd-card-status"><span class="dd-badge dd-badge-@tone" data-testid="dd-card-status">@DocumentationDriftCards.Label(card.State)</span> <span class="dd-note" data-testid="dd-card-secondary">@card.Secondary</span></p>
+            <div class="dd-card-actions">
+                @if (g.State == DriftGroupState.ComparisonAvailable)
+                {
+                    <button type="button" class="btn-primary btn-small" data-testid="dd-group-open" @onclick="() => OpenGroup(g)">@(card.State switch { DriftCardState.ReadyToCompare => "Open comparison", DriftCardState.Consistent => "View comparison", _ => "View differences" })<span class="visually-hidden"> @g.Module @card.Area</span></button>
+                }
+                else if (DocumentationDriftCards.ResolveAction(card) is { } action)
+                {
+                    <a class="btn-secondary btn-small" data-testid="dd-card-resolve" href="@action.Href">@action.Label<span class="visually-hidden"> for @g.Module @card.Area</span></a>
+                }
+            </div>
+            <details class="dd-evidence" data-testid="dd-card-evidence">
+                <summary>Show evidence<span class="visually-hidden"> for @g.Module @card.Area</span></summary>
+                <p class="dd-kicker">Authored intent</p>
+                <p class="dd-note" data-testid="dd-group-contributors">@(g.Contributors.Count == 0 ? "Not present" : $"{g.Contributors.Count} related authored document{(g.Contributors.Count == 1 ? "" : "s")}")</p>
+                @if (g.Contributors.Count > 0) { <ul class="dd-plain dd-contributors">@foreach (var c in g.Contributors) { <li class="dd-wrap"><code>@DocumentationDrift.StablePathOf(c)</code> <span class="dd-note">· @(c.ProjectRevision ?? "manual")</span></li> }</ul> }
+                <p class="dd-kicker">Implementation-derived</p>
+                <p class="dd-note dd-wrap" data-testid="dd-group-generated">@(g.Generated is { } gen ? DocumentationDrift.StablePathOf(gen) : g.GeneratedCandidates.Count > 1 ? $"{g.GeneratedCandidates.Count} generated candidates — none chosen" : "Generated documentation: Not present")</p>
+                @if (g.Generated?.SourceSnapshotId is { } snapshot) { <p class="dd-note">Source snapshot <code>@snapshot</code> · @g.Generated.ProjectRevision</p> }
+                <p class="dd-note">Technical state: <span data-testid="dd-group-state">@g.StateLabel</span> · <span data-testid="dd-group-status">@g.Status</span></p>
+            </details>
         </li>
     };
 
@@ -614,6 +698,10 @@
 
     // ── Shared result rendering ─────────────────────────────────────────────────────────────────────────────────────────
     private DriftStatus? _statusFilter;
+    private DriftCardState? _cardFilter;
+    private Task ShowDrift() => OnViewChange.InvokeAsync("drift");
+    private string _cardSearch = "";
+    private DriftCardSort _cardSort = DriftCardSort.Priority;
     private string _search = "";
 
     /// <summary>
@@ -708,7 +796,9 @@
         var groups = DocumentationDriftComposite.CandidateGroups(_catalog, Saved, summary.Import.ImportId);
         var available = groups.Where(g => g.State == DriftGroupState.ComparisonAvailable).ToList();
         var waiting = available.Where(g => g.Status == "Comparison candidate").ToList();
-        var withDifferences = Saved.Count(c => (c.Left.ProjectRevision is not null || c.Right.ProjectRevision is not null) && c.Items.Any(i => i.Kind is not (nameof(DriftItemKind.Unchanged) or nameof(ConsistencyCategory.Consistent))));
+        // Scoped to the selected import (a saved comparison of another project's documents is not this project's difference).
+        var withDifferences = Saved.Count(c => (c.Left.ProjectImportId == summary.Import.ImportId || c.Right.ProjectImportId == summary.Import.ImportId)
+            && c.Items.Any(i => i.Kind is not (nameof(DriftItemKind.Unchanged) or nameof(ConsistencyCategory.Consistent))));
         var versioned = DocumentationDrift.Identities(_catalog).Count(i => i.LineageKey == summary.Import.LineageKey && i.Versions.Count > 1);
         <section class="dd-dashboard" aria-labelledby="dd-dashboard-title" data-testid="dd-dashboard">
             <h3 id="dd-dashboard-title">Documentation review status</h3>
@@ -717,32 +807,52 @@
                     @foreach (var i in _imports) { <option value="@i.ImportId" selected="@(i.ImportId == summary.Import.ImportId)">@i.Label</option> }
                 </select>
             </label>
-            <dl class="dd-summary" data-testid="dd-dashboard-summary">
-                <div><dt>Authored documents</dt><dd data-testid="dd-dash-authored">@summary.AuthoredDocuments</dd></div>
-                <div><dt>Generated documentation</dt><dd data-testid="dd-dash-generated">@(summary.GeneratedState == "Present" ? $"{summary.GeneratedDocuments} docs · {summary.GeneratedModules} modules" : "Not present")</dd></div>
-                <div><dt>Module consistency</dt><dd data-testid="dd-dash-modules">@available.Count comparable · @(groups.Count - available.Count) unavailable</dd></div>
-                <div><dt>Waiting for review</dt><dd data-testid="dd-dash-waiting">@waiting.Count</dd></div>
-                <div><dt>Saved comparisons with differences</dt><dd data-testid="dd-dash-differences">@withDifferences</dd></div>
-                <div><dt>Documents with revisions</dt><dd data-testid="dd-dash-versioned">@versioned</dd></div>
-            </dl>
+            <div class="dd-stat-row dd-dashboard-cards" data-testid="dd-dashboard-summary">
+                <div class="dd-stat"><span class="dd-stat-label">Authored documents</span><strong data-testid="dd-dash-authored">@summary.AuthoredDocuments</strong></div>
+                <div class="dd-stat dd-tone-@(summary.GeneratedState == "Present" ? "ready" : "neutral")"><span class="dd-stat-label">Generated documentation</span><strong data-testid="dd-dash-generated">@(summary.GeneratedState == "Present" ? $"{summary.GeneratedDocuments} docs · {summary.GeneratedModules} modules" : "Not present")</strong>
+                    @if (summary.GeneratedState != "Present") { <span class="dd-stat-hint">Needs evidence</span> }</div>
+                <div class="dd-stat dd-tone-ready" title="Module areas with both authored intent and generated documentation"><span class="dd-stat-label">Comparable modules</span><strong data-testid="dd-dash-comparable">@available.Count</strong><span class="dd-stat-hint">Ready to review</span></div>
+                <div class="dd-stat dd-tone-neutral" title="Module areas where one side is missing or the area is not structurally comparable"><span class="dd-stat-label">Evidence missing / not comparable</span><strong data-testid="dd-dash-unavailable">@(groups.Count - available.Count)</strong></div>
+                <div class="dd-stat dd-tone-@(waiting.Count > 0 ? "attention" : "consistent")" title="Comparable module areas without a saved comparison of their current documents"><span class="dd-stat-label">Waiting for review</span><strong data-testid="dd-dash-waiting">@waiting.Count</strong>@if (waiting.Count > 0) { <span class="dd-stat-hint">Action required</span> }</div>
+                <div class="dd-stat dd-tone-@(withDifferences > 0 ? "attention" : "neutral")" title="Saved comparisons of this import's documents that found differences"><span class="dd-stat-label">Saved comparisons with differences</span><strong data-testid="dd-dash-differences">@withDifferences</strong></div>
+                <div class="dd-stat"><span class="dd-stat-label">Documents with revisions</span><strong data-testid="dd-dash-versioned">@versioned</strong></div>
+            </div>
+            <p class="visually-hidden" data-testid="dd-dash-modules">@available.Count comparable · @(groups.Count - available.Count) unavailable</p>
             @if (summary.GeneratedState != "Present") { @GeneratedMissing(summary.Import.ImportId) }
             <h4>What to review next</h4>
-            @if (waiting.Count == 0)
+            @{ var next = DocumentationDriftCards.Cards(groups, Saved).Where(c => c.State != DriftCardState.Consistent).ToList(); }
+            @if (next.Count == 0)
             {
-                <p class="dd-note" data-testid="dd-dash-next-none">@(available.Count == 0 ? "No module has both authored intent and generated documentation of one documentation area in this import." : "Every comparable module has a saved comparison.")</p>
+                <p class="dd-note" data-testid="dd-dash-next-none">@(groups.Count == 0 ? "No module has authored or generated documentation of one documentation area in this import." : "Every comparable module has a saved comparison.")</p>
             }
             else
             {
-                <ul class="dd-plain dd-next" data-testid="dd-dash-next">
-                    @foreach (var g in waiting.Take(8))
-                    {
-                        var group = g;
-                        <li data-testid="dd-dash-next-item"><span class="dd-wrap">@group.Title</span> <button type="button" class="btn-link" @onclick="() => OpenGroup(group)">Open comparison<span class="visually-hidden"> @group.Title</span></button></li>
-                    }
+                <ul class="dd-cards dd-card-grid dd-next" data-testid="dd-dash-next">
+                    @foreach (var c in next.Take(6)) { @NextCard(c) }
                 </ul>
-                @if (waiting.Count > 8) { <p class="dd-note">@(waiting.Count - 8) more in Drift.</p> }
+                @if (next.Count > 6) { <p class="dd-note">@(next.Count - 6) more in <button type="button" class="btn-link" data-testid="dd-dash-more" @onclick="ShowDrift">Drift</button>.</p> }
             }
         </section>
+    };
+
+    /// <summary>A "what to review next" card (priority-ordered; the same canonical state as the Drift cards).</summary>
+    private RenderFragment NextCard(DriftCard card) => __builder =>
+    {
+        var tone = DocumentationDriftCards.Tone(card.State);
+        <li class="dd-card dd-tone-@tone" data-testid="dd-dash-next-item" data-card-state="@card.State">
+            <h5 class="dd-card-title dd-wrap">@card.Module</h5>
+            <p class="dd-card-area">@card.Area</p>
+            <dl class="dd-card-counts"><div><dt>Authored</dt><dd>@card.AuthoredText</dd></div><div><dt>Generated</dt><dd>@card.GeneratedText</dd></div></dl>
+            <p class="dd-card-status"><span class="dd-badge dd-badge-@tone">@DocumentationDriftCards.Label(card.State)</span></p>
+            @if (card.Group.State == DriftGroupState.ComparisonAvailable)
+            {
+                <button type="button" class="btn-primary btn-small" data-testid="dd-dash-next-open" @onclick="() => OpenGroup(card.Group)">@(card.State == DriftCardState.ReadyToCompare ? "Open comparison" : "View differences")<span class="visually-hidden"> @card.Module @card.Area</span></button>
+            }
+            else if (DocumentationDriftCards.ResolveAction(card) is { } action)
+            {
+                <a class="btn-secondary btn-small" data-testid="dd-dash-next-resolve" href="@action.Href">@action.Label<span class="visually-hidden"> for @card.Module @card.Area</span></a>
+            }
+        </li>
     };
 
     private static string PairingText(DriftPairing pairing) => pairing == DriftPairing.Equivalent ? "Equivalent scope" : "Related documentation · scope differs";
@@ -854,7 +964,8 @@
 
     // ── Composite authored intent ↔ generated ─────────────────────────────────────────────────────────────────────────────
 
-    private IReadOnlyList<DriftCandidateGroup> Groups => DocumentationDriftComposite.CandidateGroups(_catalog, Saved, string.IsNullOrEmpty(_consistencyImport) ? FocusImport : _consistencyImport);
+    private IReadOnlyList<DriftCandidateGroup> Groups => DocumentationDriftComposite.CandidateGroups(_catalog, Saved, ConsistencyFocus, ProjectImportsOf(ConsistencyFocus));
+    private string? ConsistencyFocus => string.IsNullOrEmpty(_consistencyImport) ? FocusImport : _consistencyImport;
     private DriftCandidateGroup? SelectedGroup => Groups.FirstOrDefault(g => g.Key == _groupKey);
 
     private IReadOnlyList<(DriftDocument Document, string Text)> ContributorTexts(DriftCandidateGroup g, string? only = null) =>
@@ -930,7 +1041,7 @@
                     <option value="" selected="@(group is null)">Choose an area…</option>
                     @foreach (var g in groups.Where(g => string.Equals(g.Module, CurrentModule, StringComparison.OrdinalIgnoreCase)))
                     {
-                        <option value="@g.Key" selected="@(g.Key == _groupKey)">@DocumentationDriftComposite.ConcernLabel(g.Concern) — @(g.State == DriftGroupState.ComparisonAvailable ? "available" : "unavailable")</option>
+                        <option value="@g.Key" selected="@(g.Key == _groupKey)">@DocumentationDriftComposite.ConcernLabel(g.Concern) — @g.Contributors.Count authored · @(g.Generated is null ? (g.GeneratedCandidates.Count > 1 ? $"{g.GeneratedCandidates.Count} generated candidates" : "0 generated") : "1 generated") · @DocumentationDriftCards.Label(DocumentationDriftCards.From(g, Saved).State)</option>
                     }
                 </select>
             </label>

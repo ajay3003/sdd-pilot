@@ -41,6 +41,11 @@ public static class SourceSetupAreas
         ];
     }
 
+    /// <summary>Production projects the analyzer classified from their project file as a web/service host (Web SDK) or an Event Hub
+    /// application — the deterministic "application, not only a library" evidence used for package classification.</summary>
+    public static int ServiceProjects(IqrSourceSnapshot snapshot) => snapshot.Projects.Count(project => !project.IsTest
+        && (project.Classification.StartsWith("Application/service", StringComparison.Ordinal) || project.Classification.StartsWith("Event Hub SDK", StringComparison.Ordinal)));
+
     private static string Domain(SourceDomainResult? result) => result?.Status switch
     {
         null => "NotAnalyzed",

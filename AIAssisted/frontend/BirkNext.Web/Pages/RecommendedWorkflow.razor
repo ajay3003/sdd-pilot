@@ -59,7 +59,7 @@
                         </div>
                         <p class="rw-input-status" data-testid="rw-input-status"><span class="rw-input-status-icon" aria-hidden="true">@InputIcon(input)</span>@input.StatusLabel</p>
                         <p class="rw-input-detail">@input.Detail</p>
-                        @if (input.Kind == ProjectInputKind.Documents && _readiness.Workspace.WorkspaceLoaded)
+                        @if (input.Kind == ProjectInputKind.Documents && _readiness.Workspace.WorkspaceLoaded && _readiness.Workspace.AvailableRoleCount > 0)
                         {
                             <ul class="rw-input-facts" aria-label="Artifact roles">
                                 @foreach (var role in _readiness.Workspace.Roles)
@@ -68,6 +68,16 @@
                                         title="@RoleTitle(role)"><span class="rw-badge-icon" aria-hidden="true">@RoleIcon(role)</span>@role.Label<span class="visually-hidden">: @(role.Availability switch { ArtifactRoleAvailability.Available => "available", ArtifactRoleAvailability.Unknown => "unknown", _ => "missing" })</span></li>
                                 }
                             </ul>
+                            @if (_readiness.Workspace.DocumentSourceCount > 0)
+                            {
+                                @* One logical project, several packages: each role says which package provides it. *@
+                                <ul class="rw-input-facts rw-role-sources" aria-label="Artifact role sources" data-testid="rw-role-sources">
+                                    @foreach (var role in _readiness.Workspace.AvailableRoles.Where(r => r.SourceText is not null))
+                                    {
+                                        <li class="rw-input-fact" data-testid="rw-role-source" data-role="@role.Role">@role.Label · @role.SourceText</li>
+                                    }
+                                </ul>
+                            }
                         }
                         else if (input.Facts.Count > 0)
                         {
@@ -363,6 +373,9 @@
     private string ArtifactRolesValue => Workspace switch
     {
         { WorkspaceLoaded: true, AvailableRoleCount: > 0 } ws => ws.RoleSummary,
+        { WorkspaceLoaded: true, DocumentationUnresolved: true } => "Documentation source unresolved",
+        { WorkspaceLoaded: true, Evidence.UnboundDocumentPackages.Count: > 0 } => "Available in another import (not bound)",
+        { WorkspaceLoaded: true, Evidence: not null } => "No supported project documents found",
         { WorkspaceLoaded: true } => "None available",
         _ => "Not provided",
     };
@@ -411,7 +424,8 @@
         ArtifactRoleAvailability.Missing => $"{role.Label}: missing",
         _ => $"{role.Label}: {role.ArtifactCount} artifact{(role.ArtifactCount == 1 ? "" : "s")}"
              + (role.PackRequired ? ", select an artifact pack" : role.Selection == ArtifactRoleSelection.SelectionRequired ? ", needs selection" : "") + (role.ModuleSummary is { } modules ? $" ({modules})" : "")
-             + (role.PackApplicability is { } applicability ? $" — {applicability}" : ""),
+             + (role.PackApplicability is { } applicability ? $" — {applicability}" : "")
+             + (role.SourceText is { } source ? $" · {source}" : ""),
     };
 
     private string? ReleaseReadinessVariant =>

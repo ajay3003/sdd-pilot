@@ -9,14 +9,16 @@
 @inject IArtifactExplorerContext ArtifactContext
 @inject IWorkspaceSessionService Workspace
 @inject NavigationManager Navigation
+@inject IServiceProvider Services
 @implements IDisposable
 
 <PageTitle>Generated Documentation Health — QA Review Studio</PageTitle>
 
 @* Project analysis of an imported project's generated documentation: the target is an explicitly selected imported project and one of its
    Source Analysis snapshots — never BirkNext itself, never another project's snapshot, never "the newest" by date. Selecting here does not
-   change the workspace's current project. Precedence: deep link (import, snapshot) > the current project's own snapshot > the last selection
-   on this page > ask. The diagnostics are the existing panel; this page owns the target context. *@
+   change the workspace's current project. Precedence: deep link (import, snapshot) > the generated documentation bound in Target Environment →
+   Project > the project's own snapshot (the environment Project's main application, else the current import) > the last selection on this
+   page > ask. A documentation-only or infrastructure package never becomes the generated-documentation context by being imported last. The diagnostics are the existing panel; this page owns the target context. *@
 <div class="gdh-page" data-testid="gdh-page">
     <PageHeader Title="@Title" Description="@Intro" />
 
@@ -131,6 +133,9 @@
         var query = QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(Navigation.Uri).Query);
         var linked = query.TryGetValue("import", out var import) ? _imports.FirstOrDefault(i => i.ImportId == import.ToString()) : null;
         var current = _imports.FirstOrDefault(i => i.ImportId == CurrentImportId);
+        var project = (Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Project;
+        var boundImport = project?.Evidence.FirstOrDefault(r => r.RoleKey == BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceRoles.GeneratedDocumentation)?.Sources is { Count: 1 } generated
+            ? _imports.FirstOrDefault(i => i.ImportId == generated[0].ImportId) : null;
 
         if (linked is not null)
         {
@@ -140,11 +145,19 @@
             _basis = requested is not null ? "Link from Generated Documentation Explorer" : "Snapshot of the linked import";
             if (_snapshot is null) _basis = "";
         }
+        else if (boundImport is not null)
+        {
+            _lineage = boundImport.LineageKey;
+            _snapshot = boundImport.SourceSnapshotId;
+            _basis = $"Generated documentation bound to project {project!.ProjectName} (Target Environment → Project)";
+        }
         else if (current is not null)
         {
             _lineage = current.LineageKey;
             _snapshot = current.SourceSnapshotId;
-            _basis = "Snapshot of the current imported project";
+            _basis = project is not null && ProjectImportScope.For(current.ImportId) == ArtifactContext.CurrentScope
+                ? $"Main application of project {project.ProjectName} (Target Environment → Project)"
+                : "Snapshot of the current imported project";
         }
         else if (_stored is { } stored && _projects.Any(p => p.Lineage == stored.Lineage))
         {

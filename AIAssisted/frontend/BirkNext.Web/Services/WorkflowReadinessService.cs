@@ -165,6 +165,9 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     public const string OpenReviewKeyPrefix = "OpenReview:";
 
     public const string EstablishSourceBindingKey = "EstablishSourceBinding";
+    public const string BindProjectEvidenceKey = "BindProjectEvidence";
+    public const string ConfigureProjectKey = "ConfigureProject";
+    public const string ImportProjectDocumentsKey = "ImportProjectDocuments";
     public const string ImplementationEvidenceRoute = "implementation-review";
     public const string ChangeTraceabilityRoute = "implementation-traceability";
     public const string NoReleasePolicy = "Recommended Workflow guides reviews; it does not decide release readiness — no readiness policy is configured.";
@@ -176,6 +179,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private readonly IWorkspaceSessionService? _session;
     private readonly ImplementationTraceabilityApiService? _changeTraceability;
     private readonly FeatureVisibilityService? _features;
+    private readonly ProjectEvidence.IProjectEvidenceService? _evidence;
 
     public event Action? ReadinessChanged;
 
@@ -186,9 +190,11 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         ILogger<WorkflowReadinessService> logger,
         IWorkspaceSessionService? session = null,
         ImplementationTraceabilityApiService? changeTraceability = null,
-        FeatureVisibilityService? features = null)
+        FeatureVisibilityService? features = null,
+        ProjectEvidence.IProjectEvidenceService? evidence = null)
     {
         _features = features;
+        _evidence = evidence;
         _workspace = workspace;
         _applicability = applicability;
         _workflowApi = workflowApi;
@@ -209,6 +215,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         try { await _applicability.EnsureLoadedAsync(); }
         catch (Exception ex) { environmentKnown = false; _logger.LogWarning(ex, "Source and target state could not be read"); }
         var inputs = ProjectInputPresentation.Build(workspace, _applicability.Profile, _applicability.Coverage, environmentKnown && _applicability.LoadError is null);
+        // Target Environment → Project: the same bindings the explorers read; required evidence it lacks is a concrete next action.
+        ProjectEvidence.ProjectEvidenceView? evidence = null;
+        try { if (_evidence is not null) evidence = await _evidence.GetAsync(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Project evidence could not be read"); }
         var binding = SourceBindingOf(inputs);
         var change = await ChangeProvenanceAsync();
         var reviews = ApplicableReviews(change);
@@ -224,7 +234,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             // No documents and no workspace. With source or a target the project can still progress through their reviews;
             // with nothing at all, step 1 (load project artifacts) is the action, and source and target are alternatives.
             if (inputs.AnyProvided)
-                return Empty(workspace, NextAction(workspace, inputs, [], reviews, ArtifactLoadState.Required, [], binding),
+                return Empty(workspace, NextAction(workspace, inputs, [], reviews, ArtifactLoadState.Required, [], binding, evidence),
                     NoReleasePolicy) with
                 {
                     Inputs = inputs, ApplicableReviews = reviews, SourceBinding = binding, ChangeProvenance = change, EvidenceBranches = branches,
@@ -292,7 +302,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             TraceabilityState: traceabilityState,
             ImplementationReviewState: implementationState,
             QualityGateState: qualityGateState,
-            NextRecommendedAction: NextAction(workspace, inputs, steps, reviews, artifactLoad, missingRoles, binding),
+            NextRecommendedAction: NextAction(workspace, inputs, steps, reviews, artifactLoad, missingRoles, binding, evidence),
             OverallReadiness: new WorkflowReadinessBreakdown
             {
                 ArtifactReadiness = workspace.AvailableRoleCount * 100 / CurrentWorkspaceSnapshot.WorkflowRoles.Count,
@@ -346,6 +356,22 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         };
         step.Route = ProjectInputPresentation.ProjectImportRoute;
         step.ActionLabel = LoadArtifactsLabel;
+        // A project with imported evidence never "loads project artifacts": step 1 is its project documents, with their sources.
+        if (state != ArtifactLoadState.Required && workspace.Evidence is not null)
+        {
+            step.Title = "Project documents";
+            if (workspace.Evidence.FromEnvironment)
+                step.Description += $" Read from {workspace.Evidence.SourceCount} bound evidence source{(workspace.Evidence.SourceCount == 1 ? "" : "s")} of {workspace.Evidence.ProjectName}.";
+        }
+        if (state == ArtifactLoadState.Required && workspace.Evidence is not null)
+        {
+            // The project exists and has evidence: the step names the real document state (unresolved, elsewhere, none found) and its action.
+            var documents = ProjectInputPresentation.Documents(workspace);
+            step.Title = $"Project documents: {documents.StatusLabel}";
+            step.Description = documents.Detail;
+            step.Route = documents.Route;
+            step.ActionLabel = documents.ActionLabel;
+        }
         step.CanOpen = state == ArtifactLoadState.Required;
         step.IsCurrent = state == ArtifactLoadState.Required;
         step.IsFuture = false;
@@ -392,10 +418,24 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     /// </summary>
     private static WorkflowStepViewModel? NextAction(CurrentWorkspaceSnapshot workspace, ProjectInputs inputs,
         IReadOnlyList<WorkflowStepViewModel> steps, IReadOnlyList<WorkflowReviewOption> reviews,
-        ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles, SourceBindingState binding)
+        ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles, SourceBindingState binding,
+        ProjectEvidence.ProjectEvidenceView? evidence = null)
     {
         if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
-            return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
+        {
+            // Never "load project artifacts" when BirkNext already holds them: bind what is imported, import only what nobody has.
+            if (inputs.Documents is { Status: ProjectInputStatus.NeedsAttention } unresolvedDocs && workspace.Evidence is not null)
+                return Synthetic(BindProjectEvidenceKey, workspace.DocumentationUnresolved ? "Bind project documentation source" : "Bind the imported project documents",
+                    unresolvedDocs.Detail, unresolvedDocs.Route, "Bind project documentation");
+            if (workspace.Evidence is not null)
+            {
+                // No supported documents in any imported package. Required (Target Environment Project) -> import them; otherwise the source-based
+                // reviews below are the next step and documents stay an alternative.
+                if (evidence?.Documentation is { IsRequired: true })
+                    return Synthetic(ImportProjectDocumentsKey, "Import project documents", inputs.Documents.Detail, ProjectInputPresentation.ProjectImportSourceRoute, "Import project documents");
+            }
+            else return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
+        }
 
         // A monorepo without a chosen module: reviews read one module's documents, so the user picks where to start. Navigation, not an
         // ambiguity — "needs selection" is kept for several candidates in the same pack.
@@ -421,12 +461,22 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 ExplorerRoute(unresolved.Role), $"Open {unresolved.Label} Explorer");
         }
 
+        // Imported evidence but no logical project for the active Target Environment: configuring it is the next step (never forced at import).
+        if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } environmentId } && evidence.Packages.Any(p => p.Capabilities.Count > 0))
+            return Synthetic(ConfigureProjectKey, "Configure project context",
+                "Imported evidence exists, but BirkNext does not yet know which logical system this environment represents. A project unlocks document reviews, source-scoped reviews, integration discovery, contract selection and generated-documentation context."
+                + (evidence.SuggestedProject is { } suggested ? $" Suggested: {suggested.DisplayName} ({suggested.Classification})." : evidence.ProjectCandidates.Count > 1 ? $" {evidence.ProjectCandidates.Count} application candidates need a choice." : ""),
+                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Configure Project");
+
+        // Required project evidence (Target Environment → Project, activated Test Pack roles) that is not bound: bind or import exactly that role.
+        if (evidence is { IsConfigured: true } && MissingEvidenceAction(evidence) is { } missingEvidence) return missingEvidence;
+
         if (inputs.Source.Status == ProjectInputStatus.NeedsAttention)
             return Synthetic(RefreshSourceKey, "Analyze the source again", inputs.Source.Detail, ProjectInputPresentation.SourceAnalysisRoute, "Open Source Analysis");
 
         // Source is analyzed but the selected Artifact Pack has no source scope: the evidence owner is present but unusable for
         // source-backed review, which is more actionable than the next unreviewed document (documents stay independently available).
-        if (workspace.WorkspaceLoaded && steps.Count > 0 && binding == SourceBindingState.NotEstablished)
+        if (workspace.WorkspaceLoaded && workspace.AvailableRoleCount > 0 && steps.Count > 0 && binding == SourceBindingState.NotEstablished)
             return Synthetic(EstablishSourceBindingKey, $"Establish source binding for {workspace.PackLabel ?? workspace.ModuleLabel ?? "the selected scope"}",
                 "Source has already been analyzed, but the selected Artifact Pack is not yet mapped to source evidence. Establish the binding before source-backed implementation review; documentation reviews remain available.",
                 ImplementationEvidenceRoute, "Review source binding");
@@ -459,6 +509,37 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         if (inputs.Target.Status == ProjectInputStatus.Partial)
             return Synthetic(CompleteTargetKey, "Finish the Target Environment", inputs.Target.Detail, inputs.Target.Route, "Configure Target");
 
+        return null;
+    }
+
+    /// <summary>
+    /// The first required project evidence role that is not resolved, as a deep link to exactly that role in Target Environment → Project (or,
+    /// for an activated Test Pack source, that source's own action). Documentation is handled with the document input. Null when none blocks.
+    /// </summary>
+    private static WorkflowStepViewModel? MissingEvidenceAction(ProjectEvidence.ProjectEvidenceView evidence)
+    {
+        if (evidence.Rows.FirstOrDefault(r => r.Blocks && r.Role.RoleKey != ProjectEvidence.ProjectEvidenceRoles.Documentation) is { } row)
+        {
+            var verb = row.Candidates.Count > 0 ? "Bind" : "Bind/import";
+            var why = row.State switch
+            {
+                ProjectEvidence.EvidenceRoleState.Suggested => $"{row.Candidates[0].Package.ArchiveFileName} matches ({row.Candidates[0].Why}); confirm the binding.",
+                ProjectEvidence.EvidenceRoleState.NeedsDecision => $"{row.Candidates.Count} imported packages match; choose which one {evidence.ProjectName} uses.",
+                ProjectEvidence.EvidenceRoleState.Unavailable => "The bound package is not imported in this workspace.",
+                _ => "No imported package provides it yet: import it, then bind it.",
+            };
+            return Synthetic(BindProjectEvidenceKey, $"{verb} {row.Role.Label}",
+                $"{row.Role.Label} is required by {row.Role.RequiredBy} for {evidence.ProjectName} and is {row.StatusLabel.ToLowerInvariant()}. {why}",
+                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(evidence.EnvironmentId, row.Role.RoleKey), $"{verb} {row.Role.Label}");
+        }
+        if (evidence.TestPackRows.FirstOrDefault(r => r.Blocks) is { } pack)
+        {
+            var label = pack.Status.Role.Label;
+            var action = ProjectImport.SourceSetupPresentation.Action(pack.Status, ProjectInputPresentation.ProjectImportSourceRoute);
+            return Synthetic(BindProjectEvidenceKey, $"Bind/import {label} source",
+                $"{label} is required by the {pack.PackName} Test Pack activated for {evidence.ProjectName}: {ProjectImport.SourceSetupPresentation.StateLabel(pack.Status)}. {pack.Status.Detail}".Trim(),
+                action?.Href ?? ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(evidence.EnvironmentId), action?.Text ?? $"Bind/import {label} source");
+        }
         return null;
     }
 

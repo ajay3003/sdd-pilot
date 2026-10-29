@@ -154,7 +154,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
             (ca.Usable ? "Configured corporate CA bundle (read-only)" : "Container default CA store")
             + "; TLS verification is always on and cannot be disabled." + (options.Container.HttpsProxy is null && options.Container.HttpProxy is null ? " No proxy." : " Allow-listed proxy settings only."), false)
             { Category = Safety, Summary = "TLS verification" });
-        Item("scenario", "Scenario", By("scenario", "step-name", "method", "path", "header", "status", "think", "body", "graphql"),
+        Item("scenario", "Scenario", By("scenario", "step-name", "method", "path", "header", "status", "think", "body", "graphql", "runtime", "dependency", "output", "variable"),
             $"{d.Scenario.Steps.Count} request step(s), read-only methods{(d.TargetType == PerformanceTargetType.GraphQlHttp ? ", GraphQL query only" : "")}.", Definition, "scenario", PerformanceReadinessActions.EditScenario);
         Item("authentication", "Authentication", By("authentication"), "None — this definition is explicitly unauthenticated.", Definition, "authentication", null);
         var central = PerformanceTestSafety.UsesCentralTestData(d);
@@ -383,9 +383,10 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         if (definition.Archived) return new(null, ["The definition is archived; restore or copy it to run."], null);
         var data = await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct);
         var baseline = await store.ActiveBaselineAsync(environmentId, definition.Id, definition.ComparisonFingerprint, ct);
-        var readiness = await readinessService.EvaluateAsync(definition, PerformanceTestSafety.UsesCentralTestData(definition) ? null : data, baseline is not null, ct);
+        var readiness = await readinessService.EvaluateAsync(definition, PerformanceTestSafety.HasRuntimeMappings(definition) ? null : data, baseline is not null, ct);
         if (!readiness.Ready) return new(null, readiness.Blockers, null);
         // Central Test Data: resolved here, by the backend, for this run only (a transient profile); the definition and the run keep aliases only.
+        if (PerformanceTestSafety.HasRuntimeMappings(definition)) data = null;
         if (PerformanceTestSafety.UsesCentralTestData(definition))
         {
             if (scope.ServiceProvider.GetService<TestData.TestDataCatalog>() is not { } catalog || PerformanceCentralTestData.Resolve(definition, catalog) is not { } resolved)

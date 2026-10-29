@@ -76,15 +76,28 @@ public sealed class PerformanceScenarioSources(IReviewSourceEvidenceProvider sou
 /// </summary>
 public static class PerformanceCentralTestData
 {
+    /// <summary>Executed steps' Test Data mappings (other runtime value sources never touch Test Data).</summary>
     public static IEnumerable<(HttpPerformanceStep Step, ScenarioDataMapping Mapping)> Mappings(PerformanceTestDefinition d) =>
-        d.Scenario.Steps.Where(s => !s.Disabled).SelectMany(s => (s.DataMappings ?? []).Select(m => (s, m)));
+        d.Scenario.Steps.Where(s => !s.Disabled).SelectMany(s => (s.DataMappings ?? []).Where(m => m.Source == RuntimeValueSource.TestData).Select(m => (s, m)));
+
+    /// <summary>Test Data scenario variables referenced by an executed step.</summary>
+    public static IEnumerable<ScenarioVariable> Variables(PerformanceTestDefinition d)
+    {
+        var used = d.Scenario.Steps.Where(s => !s.Disabled).SelectMany(s => s.DataMappings ?? []).Where(m => m.Source == RuntimeValueSource.ScenarioVariable)
+            .Select(m => m.ScenarioVariable).ToHashSet(StringComparer.Ordinal);
+        return (d.Scenario.Variables ?? []).Where(v => v.Source == RuntimeValueSource.TestData && v.AssetAlias is not null && used.Contains(v.Name));
+    }
+
+    /// <summary>The data-profile column of a Test Data scenario variable (cannot collide with a placeholder name).</summary>
+    public static string VariableColumn(string name) => "var:" + name;
 
     /// <summary>Problems of the mapped aliases: unknown, not approved (or expired/disabled), wrong data type, or for another environment.</summary>
     public static List<string> Issues(PerformanceTestDefinition d, TestDataCatalog catalog, DateTimeOffset now)
     {
         var assets = catalog.Assets().ToDictionary(a => a.Alias, StringComparer.Ordinal);
         var issues = new List<string>();
-        foreach (var (step, mapping) in Mappings(d))
+        foreach (var (step, mapping) in Mappings(d).Concat(Variables(d).Select(v => (Step: new HttpPerformanceStep { Name = $"scenario variable {v.Name}" },
+            Mapping: new ScenarioDataMapping(v.Name, [v.AssetAlias!], TestDataDataType.SimpleValues, "variable")))))
         {
             if (mapping.AssetAliases.Count == 0) { issues.Add($"Test Data missing for {Label(mapping)} (step '{step.Name}')."); continue; }
             foreach (var alias in mapping.AssetAliases)
@@ -110,6 +123,7 @@ public static class PerformanceCentralTestData
     {
         var columns = Mappings(d).GroupBy(x => x.Mapping.Variable, StringComparer.Ordinal)
             .Select(g => (Variable: g.Key, Values: g.SelectMany(x => x.Mapping.AssetAliases).Distinct(StringComparer.Ordinal).Select(catalog.Reveal).OfType<string>().ToList()))
+            .Concat(Variables(d).Select(v => (Variable: VariableColumn(v.Name), Values: new[] { catalog.Reveal(v.AssetAlias!) }.OfType<string>().ToList())))
             .Where(c => c.Values.Count > 0).ToList();
         if (columns.Count == 0) return null;
         var rows = Enumerable.Range(0, columns.Max(c => c.Values.Count)).Select(i => columns.Select(c => c.Values[i % c.Values.Count]).ToList()).ToList();

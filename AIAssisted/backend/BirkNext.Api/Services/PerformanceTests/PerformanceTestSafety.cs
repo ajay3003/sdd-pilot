@@ -82,7 +82,8 @@ public static partial class PerformanceTestSafety
         if (EnvironmentBlock(d.EnvironmentType) is { } env) issues.Add(new(PerformanceReadinessState.UnsafeEnvironment, "environment", env));
         var (_, originError) = Origin(d.TargetOrigin, d.EnvironmentType, options);
         if (originError is not null) issues.Add(new(PerformanceReadinessState.UnsafeEnvironment, "target", originError));
-        if (d.AuthenticationReference is not null)
+        // Steps inherit the definition default, override it or use none: the block applies when any executed step is authenticated.
+        if (d.Scenario.Steps.Any(s => !s.Disabled && PerformanceScenarioRuntime.EffectiveAuthentication(d, s) is not null) || d.Scenario.Steps.Count == 0 && d.AuthenticationReference is not null)
             issues.Add(new(PerformanceReadinessState.NeedsAuthentication, "authentication",
                 "Authenticated performance tests need a non-interactive, approved test credential; BirkNext does not yet issue one for load tests (interactive or MFA logins are never simulated). Use an unauthenticated test endpoint or run this test outside BirkNext."));
 
@@ -90,28 +91,62 @@ public static partial class PerformanceTestSafety
         if (d.Scenario.Steps.Count > 20) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "A scenario may contain at most 20 steps."));
         foreach (var s in d.Scenario.Steps.Where(s => !s.Disabled)) issues.AddRange(StepIssues(d, s, data));
 
-        // Central Test Data (step mappings to approved asset aliases) owns the values; a legacy local profile applies only when nothing is mapped.
-        var central = UsesCentralTestData(d);
-        if (d.Scenario.TestDataProfileId is not null && !central)
+        // Runtime values (step mappings: Test Data aliases, previous-step outputs, scenario variables, fixed or generated values) own the values;
+        // a legacy local profile applies only when nothing is mapped.
+        if (d.Scenario.TestDataProfileId is not null && !HasRuntimeMappings(d))
         {
             if (data is null) issues.Add(new(PerformanceReadinessState.NeedsTestData, "testdata", "The selected test data profile does not exist."));
             else issues.AddRange(DataIssues(data, d));
         }
-        else if (d.Scenario.Steps.Where(s => !s.Disabled).Select(s => (Step: s, Missing: Placeholders(s).Except(Mapped(s), StringComparer.Ordinal).ToList()))
-                     .FirstOrDefault(x => x.Missing.Count > 0) is { Step: { } step, Missing: { } missing })
-            issues.Add(new(PerformanceReadinessState.NeedsTestData, "testdata",
-                $"Test Data missing for {string.Join(", ", missing.Select(m => "{" + m + "}"))} (step '{step.Name}'): map approved central Test Data to it."));
+        else issues.AddRange(RuntimeValueIssues(d));
 
         issues.AddRange(WorkloadIssues(d, options));
         issues.AddRange(ResourceIssues(d, options));
         return issues;
     }
 
-    /// <summary>True when any executed step maps a placeholder to central Test Data.</summary>
-    public static bool UsesCentralTestData(PerformanceTestDefinition d) => d.Scenario.Steps.Any(s => !s.Disabled && s.DataMappings is { Count: > 0 });
+    /// <summary>True when any executed step maps a placeholder to central Test Data (directly or through a Test Data scenario variable).</summary>
+    public static bool UsesCentralTestData(PerformanceTestDefinition d) => PerformanceCentralTestData.Mappings(d).Any() || PerformanceCentralTestData.Variables(d).Any();
 
-    /// <summary>Placeholders a step maps to central Test Data.</summary>
-    public static IEnumerable<string> Mapped(HttpPerformanceStep s) => s.DataMappings?.Where(m => m.AssetAliases.Count > 0).Select(m => m.Variable) ?? [];
+    /// <summary>True when any executed step configures a runtime value source (any kind) — the legacy local profile is then not used.</summary>
+    public static bool HasRuntimeMappings(PerformanceTestDefinition d) => d.Scenario.Steps.Any(s => !s.Disabled && s.DataMappings is { Count: > 0 });
+
+    /// <summary>Placeholders of a step that have a runtime value source configured (Test Data with an alias, or any other source).</summary>
+    public static IEnumerable<string> Mapped(HttpPerformanceStep s) =>
+        s.DataMappings?.Where(m => m.Source != RuntimeValueSource.TestData || m.AssetAliases.Count > 0).Select(m => m.Variable) ?? [];
+
+    /// <summary>
+    /// Precise runtime-value blockers per executed step and parameter: "runtime value source not configured" (not "Test Data missing" unless Test
+    /// Data is the chosen source), invalid execution order of a previous-step reference, a disabled or missing producer, unusable variables.
+    /// </summary>
+    private static IEnumerable<Issue> RuntimeValueIssues(PerformanceTestDefinition d)
+    {
+        for (var i = 0; i < d.Scenario.Steps.Count; i++)
+        {
+            var step = d.Scenario.Steps[i];
+            if (step.Disabled) continue;
+            foreach (var row in PerformanceScenarioRuntime.Rows(d.Scenario, i).Where(r => !r.Resolved))
+            {
+                var at = $"Step {i + 1} '{step.Name}' · {row.Parameter.Variable}";
+                yield return row.Mapping switch
+                {
+                    null => new(PerformanceReadinessState.NeedsConfiguration, "runtime", $"{at}: runtime value source not configured (Test Data, previous step output, scenario variable, fixed or generated value)."),
+                    { Source: RuntimeValueSource.TestData } => new(PerformanceReadinessState.NeedsTestData, "testdata", $"Test Data missing for {{{row.Parameter.Variable}}} (step '{step.Name}'): map approved central Test Data to it."),
+                    { Source: RuntimeValueSource.PreviousStep } => new(PerformanceReadinessState.InvalidScenario, "dependency", $"{at}: {row.Problem}."),
+                    _ => new(PerformanceReadinessState.NeedsConfiguration, "runtime", $"{at}: {row.Problem}."),
+                };
+            }
+            foreach (var m in (step.DataMappings ?? []).Where(m => m.Source == RuntimeValueSource.Fixed && m.FixedValue is { } v && (v.Length > 500 || v.Any(char.IsControl))))
+                yield return new(PerformanceReadinessState.InvalidScenario, "runtime", $"Step {i + 1} '{step.Name}' · {m.Variable}: fixed values are at most 500 characters without control characters.");
+            foreach (var o in step.Outputs ?? [])
+                if (!PerformanceScenarioRuntime.ValidName(o.Name) || !PerformanceScenarioRuntime.ValidOutputPath(o.Path))
+                    yield return new(PerformanceReadinessState.InvalidScenario, "output", $"Step {i + 1} '{step.Name}': output '{o.Name}' needs a name (letters, digits, '_') and a JSON path such as $.id.");
+            if (step.Authentication == StepAuthenticationMode.Override && step.AuthenticationReference is null)
+                yield return new(PerformanceReadinessState.NeedsAuthentication, "authentication", $"Step {i + 1} '{step.Name}': the authentication override names no configuration.");
+        }
+        foreach (var v in d.Scenario.Variables ?? [])
+            if (PerformanceScenarioRuntime.VariableProblem(v) is { } problem) yield return new(PerformanceReadinessState.NeedsConfiguration, "variable", problem + ".");
+    }
 
     public static IEnumerable<string> Placeholders(HttpPerformanceStep s) =>
         PlaceholderPattern().Matches(string.Join("\n", new[] { s.RelativePath, s.BodyTemplate, s.GraphQlVariablesJson }.Concat(s.QueryParameters.Select(q => q.Value)).Where(t => t is not null)))

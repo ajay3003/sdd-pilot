@@ -14,8 +14,13 @@
    workspace; Overview, Changes and Drift are views over the same comparison model. Requirement coverage belongs to Requirements
    Traceability, generated-document freshness to Generated Documentation Health, raw source to Source Analysis. *@
 <div class="drift-page">
-    <PageHeader Title="Documentation Drift"
-                Description="@DocumentationDrift.Description" />
+    <div class="drift-intro">
+        <PageHeader Title="Documentation Drift"
+                    Description="Find where authored intent and implementation-derived documentation differ, and review changes across project versions." />
+        <ReviewDisclosure Text="How Documentation Drift works" CollapseText="Hide how Documentation Drift works" TestId="dd-how-it-works" Class="disclosure-inline disclosure-small">
+            <p class="drift-legacy-note">@DocumentationDrift.Description Overview summarizes what can be reviewed; Compare runs one comparison; Changes compares revisions of one document across imports of the same project; Drift lists every module and documentation area with one status. Authored intent and generated documentation stay independent evidence; raw source stays with Source Analysis.</p>
+        </ReviewDisclosure>
+    </div>
 
     <div class="sd-tab-strip" role="tablist" aria-label="Documentation Drift views">
         @foreach (var (key, label) in Tabs)
@@ -41,7 +46,7 @@
         }
         else
         {
-            <p class="drift-legacy-note" data-testid="dd-spec-reviews-none">No saved specification reviews for this workspace.</p>
+            <p class="drift-legacy-note" data-testid="dd-spec-reviews-none">Requirement-level specification reviews (Compare Specs) are kept per Demo Project; this workspace has none. Document revisions are compared above.</p>
         }
     }
 </div>

@@ -47,6 +47,12 @@ public sealed record ArtifactRoleStatus(
 {
     public bool IsAvailable => Availability == ArtifactRoleAvailability.Available;
 
+    /// <summary>The packages (archive names) this role's artifacts come from; empty for a single-source project (no package provenance).</summary>
+    public IReadOnlyList<string> SourceImports { get; init; } = [];
+
+    /// <summary>"Available from M2LB-docs.zip" when the role's artifacts carry package provenance, else null.</summary>
+    public string? SourceText => SourceImports.Count == 0 ? null : $"Available from {string.Join(", ", SourceImports)}";
+
     /// <summary>
     /// "Plan applicable to pack 002-x: Ready · PackLocal · specs/002-x/plan.md" (or "Missing — No PackLocal, ModuleShared or ProjectShared Plan
     /// applies."); null without several packs or while no pack is viewed. Availability is per pack: another pack's plan never counts.
@@ -209,6 +215,18 @@ public sealed record CurrentWorkspaceSnapshot(
     /// only: availability, missing pack roles and genuine same-pack ambiguity — never a review result.
     /// </summary>
     public ProjectPackOverview? Overview { get; init; }
+
+    /// <summary>
+    /// Which project evidence the documents come from: the active Target Environment's Project bindings (several packages, one logical project)
+    /// or the current import (fallback), plus imported packages outside it that hold documents. Null for a Demo Project or the manual workspace.
+    /// </summary>
+    public ExplorerProjectEvidence? Evidence { get; init; }
+
+    /// <summary>The project documentation role of the Target Environment Project is not bound: a binding decision, never "not provided".</summary>
+    public bool DocumentationUnresolved => Evidence is { FromEnvironment: true, DocumentationUnresolved: true };
+
+    /// <summary>Distinct packages the available roles come from (one logical project may read several).</summary>
+    public int DocumentSourceCount => Roles.SelectMany(r => r.SourceImports).Distinct(StringComparer.Ordinal).Count();
 
     public string ProjectDisplay => ProjectName ?? ProjectSlug ?? "Not assigned";
     /// <summary>The current project came from a Project Import archive (scope <c>import:{id}</c>), not from the Sample Projects catalog.</summary>
@@ -383,7 +401,7 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
             saveStatus,
             persisted?.LastSavedAt ?? metadata?.LoadedAt,
             version,
-            unreadable?.Error) { Overview = overview };
+            unreadable?.Error) { Overview = overview, Evidence = states.Select(s => s.Evidence).FirstOrDefault(e => e is not null) };
     }
 
     private static ArtifactRoleStatus ToRoleStatus(ArtifactExplorerState state)
@@ -404,7 +422,10 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         // The fingerprint of the content the explorers show for the role: the same function the repository uses for revisions.
         var fingerprint = state.Selected is not null && !string.IsNullOrEmpty(state.Content) ? ArtifactFingerprint.Compute(state.Content) : null;
         return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint, state.Modules, state.Module,
-            state.Packs, state.Pack, state.PackRequired, state.Artifacts.Any(a => a.Feature is null), state.Resolution);
+            state.Packs, state.Pack, state.PackRequired, state.Artifacts.Any(a => a.Feature is null), state.Resolution)
+        {
+            SourceImports = state.Artifacts.Select(a => a.EvidenceSource).OfType<string>().Distinct(StringComparer.Ordinal).ToList(),
+        };
     }
 
     /// <summary>An imported project is persisted without a Sample Project identity (its import is in the lifecycle), so it matches a blank project name.</summary>

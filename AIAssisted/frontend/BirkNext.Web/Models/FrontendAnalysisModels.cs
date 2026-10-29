@@ -264,6 +264,13 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("reviewEngineSelection")] public ReviewEngineSelection ReviewEngineSelection { get; set; } = new();
 
     [JsonPropertyName("integrations")]   public List<IntegrationConfig>        Integrations   { get; set; } = [];
+
+    /// <summary>
+    /// The logical project this environment tests and its evidence bindings (Target Environment → Project). References only. Null = not
+    /// configured (consumers fall back to the current project); omitted when null so existing profile fingerprints stay valid.
+    /// </summary>
+    [JsonPropertyName("project"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EnvironmentProject? Project { get; set; }
 }
 
 public sealed class FrontendAuthenticationSettings

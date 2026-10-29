@@ -336,18 +336,19 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         var cut = OpenAdd(Open());
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
         cut.Find("[data-testid=ip-edit-template-reference]").TextContent.Should().Be("Reference available");
-        cut.Find("[data-testid=ip-edit-auth-state]").TextContent.Should().Be("Authentication reference available", "known metadata is never \"Configured\" or \"Verified\"");
+        cut.Find("[data-testid=ip-edit-auth-state]").TextContent.Should().Be("Unknown", "the producer application's sign-in reference is never this integration's authentication");
+        cut.Find("[data-testid=ip-edit-auth-requirement-value]").GetAttribute("data-requirement").Should().Be("Unknown", "Bearer JWT of the app reference does not populate integration auth");
         cut.Find("[data-testid=ip-edit-summary-reference]").TextContent.Should().Be("Authentication and submission contract references available");
 
         cut.FindAll("[data-testid=ip-edit-auth-fact]").Select(f => f.TextContent).Should().Equal(
             "Authentication schemeBearer JWT", "Security scheme namePortalToken", "Token providersprovider-a, provider-b");
-        cut.Find("[data-testid=ip-edit-auth-reference] h6").TextContent.Should().Be("Declared authentication");
-        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().Contain("Source: Test Pack reference").And.Contain("does not prove runtime authentication or configure credentials");
+        cut.Find("[data-testid=ip-edit-auth-reference] h6").TextContent.Should().Be("Producer application authentication (not this integration's)");
+        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().Contain("Source: Test Pack reference").And.Contain("not this integration's authentication, never fills it").And.Contain("does not prove runtime authentication");
         cut.Find("[data-testid=ip-edit-auth-run-state]").TextContent.Should().StartWith("Configured elsewhere");
         cut.Find("[data-testid=ip-edit-auth-run-link]").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
         cut.Find("[data-testid=ip-edit-section-authentication]").TextContent.Should().Contain("No secrets are stored in this integration record");
-        cut.Find("[data-testid=ip-edit-auth-mechanism-summary]").TextContent.Should().Contain("Producer authenticationNot required for current configuration")
-            .And.Contain("Consumer authenticationNot required for current configuration");
+        cut.Find("[data-testid=ip-edit-auth-mechanism-summary]").TextContent.Should().Contain("Producer authenticationUnknown — not configured")
+            .And.Contain("Consumer authenticationUnknown — not configured", "not configured is Unknown, never \"not required\"");
         cut.Find("[data-testid=ip-edit-section-authentication]").TextContent.Should().NotContain("Runtime verified").And.NotContain("Not configured", "an optional mechanism is never shown as missing setup");
         cut.FindAll("[data-testid=ip-edit-section-authentication] input[type=password]").Should().BeEmpty();
     }

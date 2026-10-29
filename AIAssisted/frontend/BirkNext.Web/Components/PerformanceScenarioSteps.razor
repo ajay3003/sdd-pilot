@@ -1,0 +1,774 @@
+@using System.Globalization
+@using BirkNext.PerformanceTests
+@using BirkNext.TestData
+@using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
+@using R = BirkNext.PerformanceTests.PerformanceScenarioRuntime
+@using D = BirkNext.Web.Services.PerformanceTestReviewDashboard
+@inject IJSRuntime JS
+
+@* Scenario design: the executable steps are the main working area. Each step owns its runtime values (Test Data, previous step output, scenario
+   variable, fixed or generated value), its response outputs, its authentication (inherit / none / override) and its request details. Order is
+   execution order: drag ⋮⋮ or Move up / Move down; a move that would run a step before the step whose output it uses is refused with options. *@
+<section class="pss" aria-labelledby="pss-summary-h" data-testid="pss">
+    @{ var readiness = R.ScenarioReadiness(Definition); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
+    <div class="pss-header" data-testid="pss-header">
+        <h3 id="pss-summary-h" class="visually-hidden">Scenario summary</h3>
+        <dl class="pss-facts">
+            <div><dt>Scenario</dt><dd data-testid="pss-name">@(string.IsNullOrWhiteSpace(Definition.Scenario.Name) ? "Unnamed scenario" : Definition.Scenario.Name)</dd></div>
+            <div><dt>Target</dt><dd class="pss-break" data-testid="pss-target">@Definition.EnvironmentName · @(Definition.TargetOrigin.Length == 0 ? "not configured" : Definition.TargetOrigin)</dd></div>
+            <div><dt>Protocol</dt><dd data-testid="pss-protocol">@(Definition.TargetType == PerformanceTargetType.GraphQlHttp ? "GraphQL" : Definition.TargetType == PerformanceTargetType.RestHttp ? "REST" : "HTTP")</dd></div>
+            <div><dt><label for="pss-default-auth">Default authentication</label></dt>
+                <dd><select id="pss-default-auth" value="@(Definition.AuthenticationReference ?? "")" @onchange="SetDefaultAuth" data-testid="pss-default-auth" aria-describedby="pss-auth-help">
+                        <option value="">None</option>
+                        @foreach (var (key, label) in AuthOptions) { <option value="@key">@label</option> }
+                    </select>
+                    <span class="pss-hint" id="pss-auth-help">Steps inherit it unless they override it. A reference only — no token is copied.</span></dd></div>
+            <div><dt>Steps</dt><dd data-testid="pss-steps-count">@Definition.Scenario.Steps.Count@(Definition.Scenario.Steps.Count(s => s.Disabled) is > 0 and var off ? $" · {off} disabled" : "")</dd></div>
+            <div><dt>Readiness</dt><dd><span class="pss-status pss-status-@Tone(readiness.Status)" data-testid="pss-readiness" data-status="@readiness.Status">@R.StatusLabel(readiness.Status)</span></dd></div>
+            @if (dependencies.Count > 0)
+            {
+                <div><dt>Dependencies</dt><dd data-testid="pss-dependencies">@dependencies.Count step-to-step reference@(dependencies.Count == 1 ? "" : "s")@if (invalid > 0) { <span class="pss-warn" data-testid="pss-dependencies-invalid"> · @invalid invalid</span> }</dd></div>
+            }
+        </dl>
+        @if (readiness.Reasons.Count > 0 && Definition.Scenario.Steps.Count > 0)
+        {
+            <ReviewDisclosure Text="@($"Needs attention ({readiness.Reasons.Count})")" CollapseText="Hide" TestId="pss-attention" Class="disclosure-inline disclosure-small">
+                <ul class="pss-reasons" data-testid="pss-attention-list">@foreach (var r in readiness.Reasons) { <li>@r</li> }</ul>
+            </ReviewDisclosure>
+        }
+    </div>
+
+    @Variables()
+
+    <h3 id="pss-steps-h" class="pss-steps-title">Scenario steps</h3>
+    <p class="pss-hint" id="pss-order-help">Steps run in this order. Drag <span aria-hidden="true">⋮⋮</span> to reorder, or use Move up / Move down.</p>
+    <p class="visually-hidden" role="status" aria-live="polite" data-testid="pt-step-message">@_announce</p>
+    @if (_announce.Length > 0) { <p class="pss-note" aria-hidden="true" data-testid="pss-announce-visible">@_announce</p> }
+    @if (_conflict is { } conflict) { @ConflictPanel(conflict) }
+    @if (_pending is { } pending) { @DependentsPanel(pending) }
+    @if (Definition.Scenario.Steps.Count == 0)
+    {
+        <p class="pss-empty" data-testid="pt-steps-empty">No steps yet — add an operation from the candidates above, or a manual step. A new definition never starts with a placeholder request.</p>
+    }
+    <ol class="pss-steps" aria-labelledby="pss-steps-h" aria-describedby="pss-order-help" data-testid="pss-steps">
+        @for (var i = 0; i < Definition.Scenario.Steps.Count; i++)
+        {
+            var index = i; var s = Definition.Scenario.Steps[i];
+            @StepCard(index, s)
+        }
+    </ol>
+    @if (Definition.Scenario.Steps.Count > 1)
+    {
+        <div class="pss-drop-end @(_dragged is not null && _dropBefore == "" ? "pss-drop-target" : "")" data-testid="pss-drop-end"
+             ondragover="event.preventDefault()" @ondragenter='() => _dropBefore = ""' @ondrop='() => DropBefore("")'>@(_dragged is not null ? "Drop here to move to the end" : "")</div>
+    }
+    <button type="button" class="btn-secondary pss-add" @onclick="AddManualStep" data-testid="pt-add-step"><span aria-hidden="true">+</span> Add manual step</button>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PerformanceTestDefinition Definition { get; set; } = new();
+    [Parameter] public EventCallback<PerformanceTestDefinition> OnChange { get; set; }
+    [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
+    [Parameter] public IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> Observations { get; set; } = [];
+
+    /// <summary>Approved authentication configurations a scenario may reference (references only; credentials stay with their owner).</summary>
+    public static readonly (string Key, string Label)[] AuthOptions = [("target-environment", "Target Environment authentication (approved configuration)")];
+
+    private const string Up = "up", Down = "down", Get = "GET", Post = "POST", JsonType = "application/json";
+
+    private void CancelPending(int index)
+    {
+        _pending = null;
+        _focus = Steps.Count > index ? $"pt-step-h-{index + 1}" : null;
+    }
+    private string _announce = "";
+    private string? _dragged, _dropBefore, _focus;
+    private readonly Dictionary<string, bool> _expanded = [];
+    private readonly HashSet<string> _editing = [];
+    private readonly Dictionary<string, string> _statusErrors = [];
+    private (int From, int To, IReadOnlyList<StepDependency> Conflicts)? _conflict;
+    private (int Index, string Action, IReadOnlyList<StepDependency> Dependents)? _pending;
+
+    private IReadOnlyList<HttpPerformanceStep> Steps => Definition.Scenario.Steps;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus is not { } target) return;
+        _focus = null;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", target); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
+
+    private static string Tone(StepStatus status) => status switch
+    {
+        StepStatus.Ready => "ready",
+        StepStatus.Blocked => "blocked",
+        StepStatus.Disabled => "disabled",
+        _ => "attention",
+    };
+
+    /// <summary>Long scenarios start collapsed (a person's choice per step wins); short ones start expanded.</summary>
+    private bool Expanded(HttpPerformanceStep s) => _expanded.TryGetValue(s.Id, out var open) ? open : Steps.Count <= 3;
+
+    private Task Change(PerformanceTestDefinition next) => OnChange.InvokeAsync(next);
+
+    private Task SetSteps(List<HttpPerformanceStep> steps) => Change(Definition with { Scenario = Definition.Scenario with { Steps = steps } });
+
+    private Task UpdateStep(int index, Func<HttpPerformanceStep, HttpPerformanceStep> change)
+    {
+        var steps = Steps.ToList();
+        steps[index] = change(steps[index]);
+        return SetSteps(steps);
+    }
+
+    /// <summary>An edit of the operation itself (method, path, body, query document): a declared step is then "Modified from declared operation".</summary>
+    private Task EditOperation(int index, Func<HttpPerformanceStep, HttpPerformanceStep> change) =>
+        UpdateStep(index, x => change(x) is var edited && x.Source is { Modified: false } source && source.Evidence != ScenarioEvidence.Manual ? edited with { Source = source with { Modified = true } } : edited);
+
+    private Task SetDefaultAuth(ChangeEventArgs e) =>
+        Change(Definition with { AuthenticationReference = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString() });
+
+    private async Task AddManualStep()
+    {
+        var step = R.ManualStep(Steps.Count + 1, Definition.TargetType == PerformanceTargetType.GraphQlHttp);
+        _expanded[step.Id] = true;
+        _editing.Add(step.Id);
+        _announce = $"Manual step added as step {Steps.Count + 1}. Enter its path; nothing has run.";
+        _focus = $"pt-step-h-{Steps.Count + 1}";
+        await SetSteps([.. Steps, step]);
+    }
+
+    // ── Reordering ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private async Task Move(int from, int to, string? control = null)
+    {
+        if (from < 0 || from >= Steps.Count || to < 0 || to >= Steps.Count || from == to) return;
+        _pending = null;
+        var conflicts = R.ReorderConflicts(Steps, from, to);
+        if (conflicts.Count > 0)
+        {
+            _conflict = (from, to, conflicts);
+            _announce = $"Dependency conflict: {Steps[from].Name} was not moved.";
+            _focus = "pss-conflict-h";
+            return;
+        }
+        _conflict = null;
+        var moved = R.Moved(Steps, from, to);
+        _announce = $"{Steps[from].Name} moved to position {to + 1} of {Steps.Count}.";
+        // Keyboard moves keep focus on the same control of the moved card (the opposite control at a boundary, where the pressed one disables).
+        if (control is not null) _focus = control == Up ? (to == 0 ? $"pt-step-down-{Steps[from].Id}" : $"pt-step-up-{Steps[from].Id}") : (to == Steps.Count - 1 ? $"pt-step-up-{Steps[from].Id}" : $"pt-step-down-{Steps[from].Id}");
+        await SetSteps(moved);
+    }
+
+    private void StartDrag(string id) => _dragged = id;
+    private void EndDrag() { _dragged = null; _dropBefore = null; }
+
+    private async Task DropBefore(string targetId)
+    {
+        if (_dragged is { } id && id != targetId)
+        {
+            var from = IndexOf(id);
+            var target = targetId == "" ? Steps.Count : IndexOf(targetId);
+            if (from >= 0 && target >= 0) await Move(from, target > from ? target - 1 : target);
+        }
+        EndDrag();
+    }
+
+    private int IndexOf(string id)
+    {
+        for (var i = 0; i < Steps.Count; i++) if (Steps[i].Id == id) return i;
+        return -1;
+    }
+
+    private async Task MoveWithDependencies((int From, int To, IReadOnlyList<StepDependency> Conflicts) c)
+    {
+        if (R.MoveWithDependencies(Steps, c.From, c.To) is not { } moved) return;
+        var name = Steps[c.From].Name;
+        _conflict = null;
+        _announce = $"{name} moved together with the step{(c.Conflicts.Select(x => x.ProducerId).Distinct().Count() == 1 ? "" : "s")} it depends on; now position {moved.FindIndex(s => s.Name == name) + 1} of {moved.Count}.";
+        await SetSteps(moved);
+    }
+
+    private void KeepOrder()
+    {
+        if (_conflict is { } c) _focus = $"pt-step-h-{c.From + 1}";
+        _conflict = null;
+        _announce = "Order kept.";
+    }
+
+    private void ChangeSourceOf(StepDependency d)
+    {
+        _conflict = null;
+        _expanded[d.ConsumerId] = true;
+        OpenValue(IndexOf(d.ConsumerId), d.Variable);
+    }
+
+    private RenderFragment ConflictPanel((int From, int To, IReadOnlyList<StepDependency> Conflicts) c) => __builder =>
+    {
+        var first = c.Conflicts[0];
+        var canMoveWith = R.MoveWithDependencies(Steps, c.From, c.To) is not null;
+        <section class="pss-panel pss-panel-conflict" role="alertdialog" aria-modal="false" aria-labelledby="pss-conflict-h" data-testid="pss-conflict">
+            <h4 id="pss-conflict-h" tabindex="-1">Dependency conflict</h4>
+            <ul class="pss-reasons">
+                @foreach (var d in c.Conflicts)
+                {
+                    @* The conflict is computed on the proposed order; it is described with the steps' current positions. *@
+                    <li data-testid="pss-conflict-item">@StepTitle(IndexOf(d.ConsumerId)) uses output <code>@d.Output</code> from @StepTitle(IndexOf(d.ProducerId)), which would execute later.</li>
+                }
+            </ul>
+            <p class="pss-actions">
+                <button type="button" class="btn-primary" @onclick="KeepOrder" data-testid="pss-conflict-keep">Keep current order</button>
+                @if (canMoveWith) { <button type="button" class="btn-secondary" @onclick="() => MoveWithDependencies(c)" data-testid="pss-conflict-move-with">Move dependency with this step</button> }
+                <button type="button" class="btn-secondary" @onclick="() => ChangeSourceOf(first)" data-testid="pss-conflict-change">Change runtime value source</button>
+            </p>
+        </section>
+    };
+
+    private string StepTitle(int index) => index >= 0 && index < Steps.Count ? $"Step {index + 1} · {Steps[index].Name}" : "a removed step";
+
+    // ── Duplicate / disable / delete ─────────────────────────────────────────────────────────────────────────────────────
+
+    private async Task Duplicate(int index)
+    {
+        var copy = R.Duplicate(Steps[index], Steps.Select(s => s.Name));
+        var steps = Steps.ToList();
+        steps.Insert(index + 1, copy);
+        _expanded[copy.Id] = true;
+        _announce = $"{Steps[index].Name} duplicated as {copy.Name} at position {index + 2} of {steps.Count}.";
+        _focus = $"pt-step-h-{index + 2}";
+        await SetSteps(steps);
+    }
+
+    private async Task ToggleDisabled(int index)
+    {
+        var s = Steps[index];
+        if (!s.Disabled && R.Dependents(Steps, s.Id) is { Count: > 0 } dependents) { _pending = (index, "disable", dependents); _focus = "pss-dependents-h"; return; }
+        _announce = $"{s.Name} {(s.Disabled ? "enabled" : "disabled")}.";
+        await UpdateStep(index, x => x with { Disabled = !x.Disabled });
+    }
+
+    private async Task Delete(int index)
+    {
+        var s = Steps[index];
+        if (R.Dependents(Steps, s.Id) is { Count: > 0 } dependents) { _pending = (index, "delete", dependents); _focus = "pss-dependents-h"; return; }
+        await DeleteNow(index, []);
+    }
+
+    private async Task DeleteNow(int index, IReadOnlyList<StepDependency> dependents)
+    {
+        var removed = Steps[index];
+        // Mappings that read the removed step's output become explicitly unconfigured (visible as "Runtime value source not configured").
+        var steps = Steps.Where((_, j) => j != index).Select(s => dependents.Any(d => d.ConsumerId == s.Id)
+            ? s with { DataMappings = (s.DataMappings ?? []).Where(m => !(m.Source == RuntimeValueSource.PreviousStep && m.FromStepId == removed.Id)).ToList() is { Count: > 0 } kept ? kept : null }
+            : s).ToList();
+        _pending = null;
+        _announce = $"{removed.Name} deleted{(dependents.Count > 0 ? $"; {dependents.Count} mapping{(dependents.Count == 1 ? "" : "s")} that used its output now need a runtime value source" : "")}.";
+        await SetSteps(steps);
+    }
+
+    private async Task DisableNow(int index)
+    {
+        _pending = null;
+        _announce = $"{Steps[index].Name} disabled; steps that use its output are blocked until their runtime value source changes.";
+        await UpdateStep(index, x => x with { Disabled = true });
+    }
+
+    private RenderFragment DependentsPanel((int Index, string Action, IReadOnlyList<StepDependency> Dependents) p) => __builder =>
+    {
+        <section class="pss-panel pss-panel-warn" role="alertdialog" aria-modal="false" aria-labelledby="pss-dependents-h" data-testid="pss-dependents">
+            <h4 id="pss-dependents-h" tabindex="-1">@StepTitle(p.Index) is used by @p.Dependents.Count mapping@(p.Dependents.Count == 1 ? "" : "s")</h4>
+            <ul class="pss-reasons">
+                @foreach (var d in p.Dependents) { <li data-testid="pss-dependent">@StepTitle(d.ConsumerIndex) · <code>@d.Variable</code> uses output <code>@d.Output</code></li> }
+            </ul>
+            <p class="pss-actions">
+                @if (p.Action == "delete")
+                {
+                    <button type="button" class="btn-secondary pss-danger" @onclick="() => DeleteNow(p.Index, p.Dependents)" data-testid="pss-dependents-confirm">Delete and clear those mappings</button>
+                }
+                else
+                {
+                    <button type="button" class="btn-secondary" @onclick="() => DisableNow(p.Index)" data-testid="pss-dependents-confirm">Disable anyway (dependent steps become blocked)</button>
+                }
+                <button type="button" class="btn-primary" @onclick="() => CancelPending(p.Index)" data-testid="pss-dependents-cancel">Cancel</button>
+            </p>
+        </section>
+    };
+
+    // ── Step card ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment StepCard(int index, HttpPerformanceStep s) => __builder =>
+    {
+        var status = R.Readiness(Definition, index);
+        var open = Expanded(s);
+        var rows = R.Rows(Definition.Scenario, index);
+        var bodyId = $"pt-step-body-{s.Id}";
+        @* Native dragover cancellation enables drop without dispatching every pointer movement through Blazor. *@
+        <li @key="s.Id" class="pt-step pss-step pss-tone-@Tone(status.Status) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
+            data-testid="pt-step" data-step-id="@s.Id" data-status="@status.Status" data-disabled="@(s.Disabled ? "true" : "false")" aria-labelledby="@($"pt-step-h-{index + 1}")"
+            ondragover="event.preventDefault()" @ondragenter="() => _dropBefore = s.Id" @ondrop="() => DropBefore(s.Id)" @ondrop:stopPropagation>
+            <div class="pss-step-head">
+                <span class="pss-handle" draggable="true" title="Drag to reorder" aria-hidden="true" data-testid="pt-step-drag"
+                      @ondragstart="() => StartDrag(s.Id)" @ondragend="EndDrag">⋮⋮</span>
+                <h4 class="pss-step-title" id="@($"pt-step-h-{index + 1}")" tabindex="-1" data-testid="pt-step-heading">@(index + 1) · @(string.IsNullOrWhiteSpace(s.Name) ? "Unnamed step" : s.Name)</h4>
+                <span class="pss-status pss-status-@Tone(status.Status)" data-testid="pt-step-status" data-status="@status.Status">@R.StatusLabel(status.Status)</span>
+                <button type="button" class="btn-link pss-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@bodyId" @onclick="() => _expanded[s.Id] = !open" data-testid="pt-step-toggle">
+                    @(open ? "Collapse" : "Expand")<span class="visually-hidden"> step @(index + 1)</span></button>
+            </div>
+            <p class="pss-endpoint" data-testid="pt-step-endpoint"><span class="pss-method">@s.Method</span> <code class="pss-break">@(s.RelativePath.Length == 0 ? "(path not entered)" : s.RelativePath)</code>@if (s.GraphQlOperationName is { Length: > 0 } op) { <span class="pss-hint"> · operation @op</span> }</p>
+            <p class="pss-source @(D.FromEvidence(s) ? "pss-source-evidence" : "")" data-testid="pt-step-source" data-evidence="@(s.Source?.Evidence.ToString() ?? "Manual")">
+                @if (D.FromEvidence(s)) { <span class="pss-origin" data-testid="pt-step-origin">Added from detected operation</span><span> · </span> }
+                @D.StepSource(s)
+            </p>
+            @if (!open)
+            {
+                @if (status.Reasons.Count > 0 && status.Status != StepStatus.Disabled) { <p class="pss-hint" data-testid="pt-step-collapsed-reason">@status.Reasons[0]@(status.Reasons.Count > 1 ? $" (+{status.Reasons.Count - 1} more)" : "")</p> }
+            }
+            else
+            {
+                <div id="@bodyId" class="pss-step-body">
+                    <dl class="pss-step-summary">
+                        <div><dt>Runtime values</dt><dd data-testid="pt-step-values-summary">@(rows.Count == 0 ? "No dynamic parameters" : string.Join(" · ", rows.Select(r => $"{r.Parameter.Variable} → {(r.Mapping is null ? "not configured" : $"{r.SourceLabel} · {r.ValueText}")}")))</dd></div>
+                        <div><dt>Authentication</dt><dd data-testid="pt-step-auth-summary">@R.AuthenticationLabel(Definition, s)</dd></div>
+                    </dl>
+                    @if (status.Reasons.Count > 0 && status.Status != StepStatus.Disabled)
+                    {
+                        <ul class="pss-reasons" data-testid="pt-step-reasons">@foreach (var r in status.Reasons) { <li>@r</li> }</ul>
+                    }
+                    <div class="pss-actions" role="group" aria-label="@($"Step {index + 1} actions")">
+                        <button type="button" class="btn-link" aria-expanded="@(_editing.Contains(s.Id) ? "true" : "false")" @onclick="() => ToggleEdit(s.Id)" data-testid="pt-step-edit">Edit<span class="visually-hidden"> step @(index + 1) request</span></button>
+                        <button type="button" class="btn-link" @onclick="() => Duplicate(index)" disabled="@(Steps.Count >= 20)" title="@(Steps.Count >= 20 ? "A scenario may contain at most 20 steps" : null)" data-testid="pt-step-duplicate">Duplicate<span class="visually-hidden"> step @(index + 1)</span></button>
+                        <button type="button" class="btn-link" @onclick="() => ToggleDisabled(index)" data-testid="pt-step-enabled" aria-pressed="@(s.Disabled ? "true" : "false")">@(s.Disabled ? "Enable" : "Disable")<span class="visually-hidden"> step @(index + 1)</span></button>
+                        <button type="button" class="btn-link" id="@($"pt-step-up-{s.Id}")" disabled="@(index == 0)" @onclick="() => Move(index, index - 1, Up)" aria-label="@($"Move step {index + 1} up")" data-testid="pt-step-up">Move up</button>
+                        <button type="button" class="btn-link" id="@($"pt-step-down-{s.Id}")" disabled="@(index == Steps.Count - 1)" @onclick="() => Move(index, index + 1, Down)" aria-label="@($"Move step {index + 1} down")" data-testid="pt-step-down">Move down</button>
+                        <button type="button" class="btn-link pss-danger" @onclick="() => Delete(index)" aria-label="@($"Delete step {index + 1}")" data-testid="pt-remove-step">Delete</button>
+                    </div>
+                    @RuntimeValues(index, s, rows)
+                    @Outputs(index, s)
+                    @StepAuthentication(index, s)
+                    @if (_editing.Contains(s.Id)) { @Request(index, s) }
+                </div>
+            }
+        </li>
+    };
+
+    private void ToggleEdit(string id) { if (!_editing.Remove(id)) _editing.Add(id); }
+
+    private RenderFragment Request(int index, HttpPerformanceStep s) => __builder =>
+    {
+        var graphQl = Definition.TargetType == PerformanceTargetType.GraphQlHttp;
+        <fieldset class="pss-request" data-testid="pt-step-request">
+            <legend>Request</legend>
+            <div class="pss-form">
+                <label>Name <input value="@s.Name" @onchange="e => UpdateStep(index, x => x with { Name = Str(e) })" data-testid="pt-step-name" /></label>
+                <label>Method
+                    <select value="@s.Method" @onchange="e => EditOperation(index, x => x with { Method = Str(e, Get) })" data-testid="pt-step-method">
+                        @foreach (var m in new[] { "GET", "HEAD", "OPTIONS", "POST" }) { <option value="@m">@m</option> }
+                    </select>
+                </label>
+                <label class="pss-wide">Relative path <input value="@s.RelativePath" placeholder="/api/…" @onchange="e => EditOperation(index, x => x with { RelativePath = Str(e) })" data-testid="pt-step-path" /></label>
+                <label>Expected responses <input value="@string.Join(", ", s.ExpectedStatusCodes)" @onchange="e => SetExpected(index, Str(e))" aria-describedby="@($"pt-step-expected-help-{s.Id}")" data-testid="pt-step-expected" />
+                    <span class="pss-hint" id="@($"pt-step-expected-help-{s.Id}")">One or more HTTP status codes, comma-separated (e.g. 200 or 200, 204).@(s.Source is { } src && src.Evidence != ScenarioEvidence.Manual ? " Documented responses are suggestions, not all accepted." : "")</span></label>
+                @if (_statusErrors.GetValueOrDefault(s.Id) is { } statusError) { <p class="pss-error" role="alert" data-testid="pt-step-expected-error">@statusError</p> }
+                <label>Delay before next step (ms) <input type="number" min="0" max="60000" value="@s.ThinkTimeMs" @onchange="e => UpdateStep(index, x => x with { ThinkTimeMs = Int(e.Value) })" data-testid="pt-step-delay" />
+                    <span class="pss-hint">User think time after this request — not a request timeout.</span></label>
+                @if (s.Method == "POST" && !graphQl)
+                {
+                    <label class="sd-check pss-wide"><input type="checkbox" checked="@s.PostIsSafeRead" @onchange="e => UpdateStep(index, x => x with { PostIsSafeRead = e.Value is true })" data-testid="pt-step-post-read" /> This POST only reads (search/query API)</label>
+                    <label class="pss-wide">Body (JSON; dynamic values as {placeholders}) <textarea rows="3" @onchange="e => EditOperation(index, x => x with { BodyTemplate = e.Value?.ToString(), ContentType = x.ContentType ?? JsonType })" data-testid="pt-step-body">@s.BodyTemplate</textarea></label>
+                }
+                @if (graphQl)
+                {
+                    <label class="pss-wide">GraphQL query <textarea rows="4" @onchange="e => EditOperation(index, x => x with { GraphQlQuery = e.Value?.ToString(), Method = Post })" data-testid="pt-step-graphql">@s.GraphQlQuery</textarea></label>
+                    <label class="pss-wide">Variables (JSON object; values are {placeholders}) <textarea rows="2" @onchange="e => UpdateStep(index, x => x with { GraphQlVariablesJson = e.Value?.ToString() })" data-testid="pt-step-graphql-variables">@s.GraphQlVariablesJson</textarea></label>
+                }
+            </div>
+        </fieldset>
+    };
+
+    private static string Str(ChangeEventArgs e, string fallback = "") => e.Value?.ToString() ?? fallback;
+    private static int? Int(object? v) => int.TryParse(v?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null;
+
+    private async Task SetExpected(int index, string text)
+    {
+        var id = Steps[index].Id;
+        var parts = text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var codes = parts.Select(Int).ToList();
+        if (parts.Length == 0 || codes.Any(c => c is null or < 100 or > 599)) { _statusErrors[id] = "Use HTTP status codes 100–599, comma-separated (e.g. 200 or 200, 204). The previous value is kept."; return; }
+        _statusErrors.Remove(id);
+        await UpdateStep(index, x => x with { ExpectedStatusCodes = [.. codes.Select(c => c!.Value).Distinct()] });
+    }
+
+    // ── Authentication ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment StepAuthentication(int index, HttpPerformanceStep s) => __builder =>
+    {
+        var id = $"pt-step-auth-{s.Id}";
+        <div class="pss-auth">
+            <label for="@id">Authentication</label>
+            <select id="@id" value="@AuthValue(s)" @onchange="e => SetStepAuth(index, Str(e))" data-testid="pt-step-auth">
+                <option value="inherit">Inherit scenario default (@(Definition.AuthenticationReference is null ? "None" : AuthName(Definition.AuthenticationReference)))</option>
+                <option value="none">None</option>
+                @foreach (var (key, label) in AuthOptions) { <option value="@("override:" + key)">Override · @label</option> }
+            </select>
+        </div>
+    };
+
+    private static string AuthName(string key) => AuthOptions.FirstOrDefault(o => o.Key == key).Label ?? key;
+
+    private static string AuthValue(HttpPerformanceStep s) => s.Authentication switch
+    {
+        StepAuthenticationMode.None => "none",
+        StepAuthenticationMode.Override => "override:" + s.AuthenticationReference,
+        _ => "inherit",
+    };
+
+    private Task SetStepAuth(int index, string value) => UpdateStep(index, x => value switch
+    {
+        "none" => x with { Authentication = StepAuthenticationMode.None, AuthenticationReference = null },
+        _ when value.StartsWith("override:", StringComparison.Ordinal) => x with { Authentication = StepAuthenticationMode.Override, AuthenticationReference = value["override:".Length..] },
+        _ => x with { Authentication = StepAuthenticationMode.Inherit, AuthenticationReference = null },
+    });
+
+    // ── Outputs ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private readonly Dictionary<string, (string Name, string Path)> _newOutput = [];
+
+    private RenderFragment Outputs(int index, HttpPerformanceStep s) => __builder =>
+    {
+        var draft = _newOutput.GetValueOrDefault(s.Id, ("", "$."));
+        var nameId = $"pt-output-name-{s.Id}"; var pathId = $"pt-output-path-{s.Id}";
+        var used = R.Dependents(Steps, s.Id);
+        <details class="pss-outputs" open="@((s.Outputs?.Count ?? 0) > 0)" data-testid="pt-step-outputs">
+            <summary>Response values for later steps (@(s.Outputs?.Count ?? 0))</summary>
+            @if (s.Outputs is { Count: > 0 } outputs)
+            {
+                <ul class="pss-output-list">
+                    @foreach (var o in outputs)
+                    {
+                        var users = used.Count(d => d.Output == o.Name);
+                        <li data-testid="pt-step-output" data-name="@o.Name"><code>@o.Name</code> ← <code>@o.Path</code>@(users > 0 ? $" · used by {users} mapping{(users == 1 ? "" : "s")}" : "")
+                            <button type="button" class="btn-link" disabled="@(users > 0)" title="@(users > 0 ? "Used by a later step: change that step's runtime value source first" : null)" @onclick="() => RemoveOutput(index, o.Name)" data-testid="pt-output-remove">Remove<span class="visually-hidden"> output @o.Name</span></button></li>
+                    }
+                </ul>
+            }
+            <div class="pss-inline">
+                <label for="@nameId">Name <input id="@nameId" value="@draft.Item1" @oninput="e => _newOutput[s.Id] = (Str(e), draft.Item2)" placeholder="id" data-testid="pt-output-name" /></label>
+                <label for="@pathId">JSON path <input id="@pathId" value="@draft.Item2" @oninput="e => _newOutput[s.Id] = (draft.Item1, Str(e))" placeholder="$.id" data-testid="pt-output-path" /></label>
+                <button type="button" class="btn-secondary btn-small" disabled="@(!R.ValidName(draft.Item1) || !R.ValidOutputPath(draft.Item2) || s.Outputs?.Any(o => o.Name == draft.Item1) == true)"
+                        @onclick="() => AddOutput(index, draft.Item1, draft.Item2)" data-testid="pt-output-add">Add output</button>
+            </div>
+            <p class="pss-hint">Read from this step's JSON response when a later step uses it (e.g. <code>$.id</code>, <code>$.data.items[0].id</code>).</p>
+        </details>
+    };
+
+    private async Task AddOutput(int index, string name, string path)
+    {
+        _newOutput.Remove(Steps[index].Id);
+        _announce = $"Output {name} added to step {index + 1}.";
+        await UpdateStep(index, x => x with { Outputs = [.. x.Outputs ?? [], new StepOutput(name, path)] });
+    }
+
+    private Task RemoveOutput(int index, string name) =>
+        UpdateStep(index, x => x with { Outputs = (x.Outputs ?? []).Where(o => o.Name != name).ToList() is { Count: > 0 } rest ? rest : null });
+
+    // ── Runtime values ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private string? _valueKey, _observedKey;
+    private RuntimeValueSource _source;
+    private string _fixed = "", _variable = "", _fromStep = "", _output = "", _path = "$.id";
+    private GeneratedValueKind? _generator;
+
+    private RenderFragment RuntimeValues(int index, HttpPerformanceStep s, IReadOnlyList<RuntimeValueRow> rows) => __builder =>
+    {
+        @if (rows.Count == 0) { return; }
+        <div class="pss-values" data-testid="pt-step-data">
+            <h5 class="pss-subtitle" id="@($"pt-values-h-{s.Id}")">Runtime values</h5>
+            <table class="pss-table" aria-labelledby="@($"pt-values-h-{s.Id}")" data-testid="pt-runtime-values">
+                <thead><tr><th scope="col">Parameter</th><th scope="col">Location</th><th scope="col">Source</th><th scope="col">Value / reference</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        var r = row;
+                        var key = $"{s.Id}|{r.Parameter.Variable}";
+                        var suggestion = r.Mapping is null ? R.Suggest(Definition.Scenario, index, r.Parameter, Assets, Definition.EnvironmentName) : null;
+                        <tr id="@($"pt-req-{s.Id}-{r.Parameter.Variable}")" tabindex="-1" data-testid="pt-step-mapping" data-variable="@r.Parameter.Variable" data-state="@(r.Resolved ? "mapped" : "missing")" data-source="@(r.Mapping?.Source.ToString() ?? "None")">
+                            <th scope="row"><code>@r.Parameter.Variable</code></th>
+                            <td data-testid="pt-req-location">@ObservedValueReview.Location(r.Parameter.In)</td>
+                            <td data-testid="pt-value-source">@r.SourceLabel</td>
+                            <td class="pss-break" data-testid="pt-value-text">@r.ValueText</td>
+                            <td data-testid="pt-step-mapping-state">@if (r.Resolved) { <span class="pss-ok">Mapped</span> } else { <span class="pss-warn"><span aria-hidden="true">! </span>@r.Problem</span> }</td>
+                            <td>
+                                <button type="button" class="btn-secondary btn-small" aria-expanded="@(_valueKey == key ? "true" : "false")" @onclick="() => OpenValue(index, r.Parameter.Variable)" data-testid="pt-step-map">
+                                    @(r.Mapping is null ? "Configure value" : "Change")<span class="visually-hidden"> for @r.Parameter.Variable</span></button>
+                                @if (r.Mapping is not null) { <button type="button" class="btn-link" @onclick="() => SetMapping(index, r.Parameter.Variable, null)" data-testid="pt-step-unmap">Remove<span class="visually-hidden"> value source for @r.Parameter.Variable</span></button> }
+                            </td>
+                        </tr>
+                        @if (suggestion is not null)
+                        {
+                            <tr class="pss-suggestion-row"><td colspan="6" data-testid="pt-value-suggestion" data-source="@suggestion.Source">Suggested value source: <strong>@R.SourceLabel(suggestion.Source)</strong> · @suggestion.Text
+                                <button type="button" class="btn-link" @onclick="() => UseSuggestion(index, r.Parameter, suggestion)" data-testid="pt-value-suggestion-use">@(suggestion.Source == RuntimeValueSource.TestData ? "Use asset" : "Use output")<span class="visually-hidden"> for @r.Parameter.Variable</span></button></td></tr>
+                        }
+                        @if (_valueKey == key)
+                        {
+                            <tr><td colspan="6">@ValueDialog(index, s, r)</td></tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    };
+
+    private void OpenValue(int index, string variable)
+    {
+        var s = Steps[index];
+        var key = $"{s.Id}|{variable}";
+        if (_valueKey == key) { _valueKey = null; return; }
+        var m = s.DataMappings?.FirstOrDefault(x => x.Variable == variable);
+        _valueKey = key; _observedKey = null;
+        _source = m?.Source ?? RuntimeValueSource.TestData;
+        _fixed = m?.FixedValue ?? ""; _variable = m?.ScenarioVariable ?? ""; _generator = m?.Generator;
+        _fromStep = m?.FromStepId ?? Steps.Take(index).LastOrDefault(x => !x.Disabled)?.Id ?? "";
+        _output = m?.Output ?? ""; _path = "$.id";
+        _focus = $"pt-value-h-{s.Id}-{variable}";
+    }
+
+    private void CloseValue(int index, string variable)
+    {
+        _valueKey = null; _observedKey = null;
+        if (index < Steps.Count) _focus = $"pt-req-{Steps[index].Id}-{variable}";
+    }
+
+    private async Task SetMapping(int index, string variable, ScenarioDataMapping? mapping)
+    {
+        var s = Steps[index];
+        var mappings = (s.DataMappings ?? []).Where(m => m.Variable != variable).ToList();
+        if (mapping is not null) mappings.Add(mapping);
+        _announce = mapping is null ? $"Step {index + 1}: value source for {variable} removed." : $"Step {index + 1}: {variable} → {R.SourceLabel(mapping.Source)} · {R.ValueText(Definition.Scenario, mapping)}.";
+        await UpdateStep(index, x => x with { DataMappings = mappings.Count == 0 ? null : mappings });
+        if (mapping is not null) CloseValue(index, variable);
+        else _focus = $"pt-req-{s.Id}-{variable}";
+    }
+
+    private static ScenarioDataMapping Mapping(RuntimeParameter p, RuntimeValueSource source) => new(p.Variable, [], p.DataType, p.In) { Source = source };
+
+    private Task UseSuggestion(int index, RuntimeParameter p, RuntimeValueSuggestion suggestion) => suggestion.Source == RuntimeValueSource.TestData
+        ? SetMapping(index, p.Variable, new ScenarioDataMapping(p.Variable, [suggestion.Alias!], p.DataType, p.In))
+        : SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.PreviousStep) with { FromStepId = suggestion.FromStepId, Output = suggestion.Output });
+
+    /// <summary>Previous step output: an existing output of the chosen earlier step, or a new extraction added to that step in the same change.</summary>
+    private async Task ApplyPreviousStep(int index, RuntimeParameter p)
+    {
+        var producer = IndexOf(_fromStep);
+        if (producer < 0 || producer >= index) return;
+        var steps = Steps.ToList();
+        var output = _output;
+        if (output.Length == 0)
+        {
+            output = R.ValidName(p.Variable) ? p.Variable : "value";
+            for (var n = 2; steps[producer].Outputs?.Any(o => o.Name == output) == true; n++) output = $"{p.Variable}{n}";
+            steps[producer] = steps[producer] with { Outputs = [.. steps[producer].Outputs ?? [], new StepOutput(output, _path)] };
+        }
+        var mapping = Mapping(p, RuntimeValueSource.PreviousStep) with { FromStepId = _fromStep, Output = output };
+        steps[index] = steps[index] with { DataMappings = [.. (steps[index].DataMappings ?? []).Where(m => m.Variable != p.Variable), mapping] };
+        _announce = $"Step {index + 1}: {p.Variable} → output {output} of step {producer + 1}.";
+        await SetSteps(steps);
+        CloseValue(index, p.Variable);
+    }
+
+    /// <summary>Observed values behind a step's path placeholder (evidence for an explicit review only; nothing is copied).</summary>
+    private ObservedValueEvidence? ObservedEvidence(HttpPerformanceStep step, RuntimeParameter p) =>
+        p.In != "path" || step.Source is not { Evidence: ScenarioEvidence.ObservedOnly or ScenarioEvidence.DeclaredAndObserved } source ? null
+        : PerformanceScenarioEngine.ObservedValues(new ScenarioOperation { Key = source.OperationKey ?? "", Origin = source.Origin, Method = step.Method, Path = step.RelativePath },
+            p.Variable, Observations, Definition.TargetOrigin);
+
+    private RenderFragment ValueDialog(int index, HttpPerformanceStep s, RuntimeValueRow row) => __builder =>
+    {
+        var p = row.Parameter;
+        var titleId = $"pt-value-h-{s.Id}-{p.Variable}";
+        var observed = ObservedEvidence(s, p);
+        var earlier = Steps.Take(index).Select((x, i) => (Step: x, Index: i)).Where(x => !x.Step.Disabled).ToList();
+        var producer = Steps.FirstOrDefault(x => x.Id == _fromStep);
+        var radio = $"pt-value-source-{s.Id}-{p.Variable}";
+        <section class="pss-dialog" role="dialog" aria-modal="false" aria-labelledby="@titleId" data-testid="pt-value-dialog">
+            <h5 id="@titleId" tabindex="-1">Configure value · <code>@p.Variable</code> <span class="pss-hint">@ObservedValueReview.Location(p.In) · @TestDataDataTypes.Label(p.DataType)</span></h5>
+            <fieldset class="pss-sources" data-testid="pt-value-sources">
+                <legend>Value source</legend>
+                @foreach (var src in R.SourcesFor(p))
+                {
+                    var option = src;
+                    <label class="sd-check"><input type="radio" name="@radio" checked="@(_observedKey is null && _source == option)" @onchange="() => { _source = option; _observedKey = null; }" data-testid="pt-value-source-option" data-source="@option" /> @R.SourceLabel(option)</label>
+                }
+                @if (observed is not null)
+                {
+                    <label class="sd-check"><input type="radio" name="@radio" checked="@(_observedKey is not null)" @onchange="() => _observedKey = _valueKey" data-testid="pt-value-source-option" data-source="ObservedSample" /> Observed sample (review for Test Data)</label>
+                }
+            </fieldset>
+            @if (_observedKey is not null && observed is not null)
+            {
+                <ObservedValueReview Evidence="observed" Method="@s.Method" EnvironmentName="@Definition.EnvironmentName" EnvironmentId="@Definition.EnvironmentId" DataType="p.DataType"
+                    OnUseAlias="alias => SetMapping(index, p.Variable, new ScenarioDataMapping(p.Variable, [alias], p.DataType, p.In) { FromObservedSample = true })"
+                    OnUseExisting="() => { _observedKey = null; _source = RuntimeValueSource.TestData; }" OnCancel="() => CloseValue(index, p.Variable)" />
+            }
+            else if (_source == RuntimeValueSource.TestData)
+            {
+                <TestDataMappingDialog Need="@(new TestDataMappingDialog.MappingNeed(p.Variable, p.In, p.DataType, null, Definition.EnvironmentName))" Assets="Assets"
+                    Current="@row.Mapping?.AssetAliases.FirstOrDefault()" TestDataHref="@D.TestDataHref(Definition, s, p.Variable, p.In, p.DataType)"
+                    OnUse="alias => SetMapping(index, p.Variable, new ScenarioDataMapping(p.Variable, [alias], p.DataType, p.In))" OnCancel="() => CloseValue(index, p.Variable)"
+                    OnReviewObserved="@(observed is null ? default(EventCallback) : EventCallback.Factory.Create(this, () => _observedKey = _valueKey))" />
+            }
+            else
+            {
+                <div class="pss-dialog-fields">
+                    @switch (_source)
+                    {
+                        case RuntimeValueSource.PreviousStep:
+                            @if (earlier.Count == 0)
+                            {
+                                <p class="pss-hint" data-testid="pt-value-no-earlier">No earlier enabled step — a value can only come from a step that runs before this one.</p>
+                            }
+                            else
+                            {
+                                <label>Source step
+                                    <select value="@_fromStep" @onchange="e => { _fromStep = Str(e); _output = string.Empty; }" data-testid="pt-value-step">
+                                        @foreach (var e in earlier) { <option value="@e.Step.Id">Step @(e.Index + 1) · @e.Step.Name</option> }
+                                    </select></label>
+                                <label>Output
+                                    <select value="@_output" @onchange="e => _output = Str(e)" data-testid="pt-value-output">
+                                        <option value="">New extraction…</option>
+                                        @foreach (var o in producer?.Outputs ?? []) { <option value="@o.Name">@o.Name (@o.Path)</option> }
+                                    </select></label>
+                                @if (_output.Length == 0)
+                                {
+                                    <label>Extract (JSON path) <input value="@_path" @oninput="e => _path = Str(e)" data-testid="pt-value-path" aria-describedby="@($"{titleId}-path")" />
+                                        <span class="pss-hint" id="@($"{titleId}-path")">Read from the source step's JSON response, e.g. $.id.</span></label>
+                                }
+                            }
+                            break;
+                        case RuntimeValueSource.ScenarioVariable:
+                            @if ((Definition.Scenario.Variables?.Count ?? 0) == 0)
+                            {
+                                <p class="pss-hint" data-testid="pt-value-no-variables">No scenario variables yet — define one under Scenario variables.</p>
+                            }
+                            else
+                            {
+                                <label>Variable
+                                    <select value="@_variable" @onchange="e => _variable = Str(e)" data-testid="pt-value-variable">
+                                        <option value="">Choose…</option>
+                                        @foreach (var v in Definition.Scenario.Variables!) { <option value="@v.Name">{{@v.Name}} · @R.SourceLabel(v.Source)</option> }
+                                    </select></label>
+                            }
+                            break;
+                        case RuntimeValueSource.Fixed:
+                            <label>Fixed value <input value="@_fixed" @oninput="e => _fixed = Str(e)" maxlength="500" data-testid="pt-value-fixed" aria-describedby="@($"{titleId}-fixed")" />
+                                <span class="pss-hint" id="@($"{titleId}-fixed")">Fixed values are scenario configuration — not reusable Test Data assets. Never enter credentials.</span></label>
+                            break;
+                        default:
+                            <label>Generator
+                                <select value="@(_generator?.ToString() ?? "")" @onchange="e => _generator = Enum.TryParse<GeneratedValueKind>(Str(e), out var g) ? g : null" data-testid="pt-value-generator">
+                                    <option value="">Choose…</option>
+                                    @foreach (var g in Enum.GetValues<GeneratedValueKind>()) { <option value="@g">@R.GeneratorLabel(g)</option> }
+                                </select></label>
+                            break;
+                    }
+                </div>
+                <p class="pss-actions">
+                    <button type="button" class="btn-primary" disabled="@(!CanApply(index, p))" @onclick="() => ApplyValue(index, p)" data-testid="pt-value-apply">Apply</button>
+                    <button type="button" class="btn-link" @onclick="() => CloseValue(index, p.Variable)" data-testid="pt-value-cancel">Cancel</button>
+                </p>
+            }
+        </section>
+    };
+
+    private bool CanApply(int index, RuntimeParameter p) => _source switch
+    {
+        RuntimeValueSource.PreviousStep => IndexOf(_fromStep) is var i && i >= 0 && i < index && (_output.Length > 0 || R.ValidOutputPath(_path)),
+        RuntimeValueSource.ScenarioVariable => Definition.Scenario.Variables?.Any(v => v.Name == _variable) == true,
+        RuntimeValueSource.Fixed => _fixed.Length is > 0 and <= 500,
+        RuntimeValueSource.Generated => _generator is not null && R.GeneratedAllowed(p),
+        _ => false,
+    };
+
+    private Task ApplyValue(int index, RuntimeParameter p) => _source switch
+    {
+        RuntimeValueSource.PreviousStep => ApplyPreviousStep(index, p),
+        RuntimeValueSource.ScenarioVariable => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.ScenarioVariable) with { ScenarioVariable = _variable }),
+        RuntimeValueSource.Fixed => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.Fixed) with { FixedValue = _fixed }),
+        _ => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.Generated) with { Generator = _generator }),
+    };
+
+    // ── Scenario variables ───────────────────────────────────────────────────────────────────────────────────────────────
+
+    private string _varName = "", _varValue = "", _varAlias = "";
+    private RuntimeValueSource _varSource = RuntimeValueSource.Fixed;
+    private GeneratedValueKind? _varGenerator;
+
+    private RenderFragment Variables() => __builder =>
+    {
+        var variables = Definition.Scenario.Variables ?? [];
+        var scalar = R.CompatibleAssets(new RuntimeParameter("value", "variable", TestDataDataType.SimpleValues), Assets, Definition.EnvironmentName);
+        <details class="pss-variables" open="@(variables.Count > 0)" data-testid="pss-variables">
+            <summary>Scenario variables (@variables.Count)</summary>
+            <p class="pss-hint">Defined once, referenced by any step as <code>{{name}}</code> through the Scenario variable value source.</p>
+            @if (variables.Count > 0)
+            {
+                <ul class="pss-output-list">
+                    @foreach (var v in variables)
+                    {
+                        var users = Steps.Count(st => st.DataMappings?.Any(m => m.Source == RuntimeValueSource.ScenarioVariable && m.ScenarioVariable == v.Name) == true);
+                        <li data-testid="pss-variable" data-name="@v.Name"><code>{{@v.Name}}</code> · @R.SourceLabel(v.Source) · @(v.Source switch { RuntimeValueSource.Fixed => v.Value, RuntimeValueSource.TestData => v.AssetAlias, _ => v.Generator is { } g ? R.GeneratorLabel(g) : "" })
+                            @(users > 0 ? $" · used by {users} step{(users == 1 ? "" : "s")}" : "")
+                            <button type="button" class="btn-link" disabled="@(users > 0)" title="@(users > 0 ? "Used by a step: change that step's value source first" : null)" @onclick="() => RemoveVariable(v.Name)" data-testid="pss-var-remove">Remove<span class="visually-hidden"> variable @v.Name</span></button></li>
+                    }
+                </ul>
+            }
+            <div class="pss-inline">
+                <label>Name <input value="@_varName" @oninput="e => _varName = Str(e)" placeholder="brukerId" data-testid="pss-var-name" /></label>
+                <label>Source
+                    <select value="@_varSource" @onchange="e => _varSource = Enum.Parse<RuntimeValueSource>(Str(e))" data-testid="pss-var-source">
+                        <option value="Fixed">Fixed value</option><option value="TestData">Test Data</option><option value="Generated">Generated value</option>
+                    </select></label>
+                @switch (_varSource)
+                {
+                    case RuntimeValueSource.TestData:
+                        <label>Asset
+                            <select value="@_varAlias" @onchange="e => _varAlias = Str(e)" data-testid="pss-var-alias">
+                                <option value="">@(scalar.Count == 0 ? "No compatible approved asset" : "Choose…")</option>
+                                @foreach (var a in scalar) { <option value="@a.Alias">@a.Alias</option> }
+                            </select></label>
+                        break;
+                    case RuntimeValueSource.Generated:
+                        <label>Generator
+                            <select value="@(_varGenerator?.ToString() ?? "")" @onchange="e => _varGenerator = Enum.TryParse<GeneratedValueKind>(Str(e), out var g) ? g : null" data-testid="pss-var-generator">
+                                <option value="">Choose…</option>
+                                @foreach (var g in Enum.GetValues<GeneratedValueKind>()) { <option value="@g">@R.GeneratorLabel(g)</option> }
+                            </select></label>
+                        break;
+                    default:
+                        <label>Value <input value="@_varValue" @oninput="e => _varValue = Str(e)" maxlength="500" data-testid="pss-var-value" /></label>
+                        break;
+                }
+                <button type="button" class="btn-secondary btn-small" disabled="@(NewVariable() is not { } nv || R.VariableProblem(nv) is not null || variables.Any(v => v.Name == nv.Name))" @onclick="AddVariable" data-testid="pss-var-add">Add variable</button>
+            </div>
+        </details>
+    };
+
+    private ScenarioVariable? NewVariable() => _varName.Length == 0 ? null : _varSource switch
+    {
+        RuntimeValueSource.TestData => new ScenarioVariable(_varName, _varSource) { AssetAlias = _varAlias.Length == 0 ? null : _varAlias },
+        RuntimeValueSource.Generated => new ScenarioVariable(_varName, _varSource) { Generator = _varGenerator },
+        _ => new ScenarioVariable(_varName, RuntimeValueSource.Fixed) { Value = _varValue.Length == 0 ? null : _varValue },
+    };
+
+    private async Task AddVariable()
+    {
+        if (NewVariable() is not { } v) return;
+        _varName = ""; _varValue = ""; _varAlias = ""; _varGenerator = null;
+        _announce = $"Scenario variable {v.Name} added.";
+        await Change(Definition with { Scenario = Definition.Scenario with { Variables = [.. Definition.Scenario.Variables ?? [], v] } });
+    }
+
+    private Task RemoveVariable(string name) => Change(Definition with
+    {
+        Scenario = Definition.Scenario with { Variables = (Definition.Scenario.Variables ?? []).Where(v => v.Name != name).ToList() is { Count: > 0 } rest ? rest : null },
+    });
+}

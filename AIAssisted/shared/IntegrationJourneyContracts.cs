@@ -518,6 +518,12 @@ public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName
     /// so a snapshot whose code analysis found no production project still shows the infrastructure, configuration or contract evidence it holds.
     /// Empty from older backends.</summary>
     public IReadOnlyList<SourceSetupArea> Areas { get; init; } = [];
+    /// <summary>Production projects whose SDK is a web/service host (deterministic project-file evidence). With none while
+    /// <see cref="SharedProjectCount"/> &gt; 0 the package is library/shared code, not an application host. 0 from older backends.</summary>
+    public int ServiceProjectCount { get; init; }
+    /// <summary>Production projects that are not a web/service host (libraries, workers, consoles).</summary>
+    public int SharedProjectCount { get; init; }
+    public int TestProjectCount { get; init; }
 }
 
 /// <summary>One Source Analysis area of a stored snapshot and its own outcome: Complete, Partial, NotDetected, Unsupported, Failed or NotAnalyzed
@@ -695,6 +701,18 @@ public sealed record IntegrationTemplateReferenceUse(string RoleKey)
 public sealed record IntegrationTemplateSchemaCandidate(Guid SnapshotId, string ArchiveFileName, string SchemaName, string File)
 {
     public string? Version { get; init; }
+    /// <summary>When the snapshot was analyzed (display only — never a reason to choose it).</summary>
+    public DateTimeOffset? AnalyzedAt { get; init; }
+    /// <summary>The snapshot is the canonical IQR evidence binding of a configured integration fulfilling this template's requirement.</summary>
+    public bool Bound { get; init; }
+    /// <summary>The configured integration whose binding/contract this is ("Altinn → Meldingsutveksleren (MU)").</summary>
+    public string? BoundIntegration { get; init; }
+    /// <summary>The snapshot is recognized (by content) as the template's evidence source role.</summary>
+    public bool Recognized { get; init; }
+    /// <summary>A configured integration's contract relationship is verified and its consumer contract names this schema.</summary>
+    public bool ContractConfirmed { get; init; }
+    /// <summary>The schema is named exactly as the contract (form data type ↔ schema). False only in <see cref="IntegrationTemplateView.OtherSchemaCandidates"/>.</summary>
+    public bool MatchesContract { get; init; } = true;
 }
 
 /// <summary>A template value and where it came from ("Template", "Template · Development").</summary>
@@ -723,6 +741,8 @@ public sealed record IntegrationTemplateView(string Key, string DisplayName, str
     public string? SchemaName { get; init; }
     /// <summary>Schemas named exactly <see cref="SchemaName"/> in the snapshots recognized as the evidence source (never chosen automatically).</summary>
     public IReadOnlyList<IntegrationTemplateSchemaCandidate> SchemaCandidates { get; init; } = [];
+    /// <summary>Other XML schemas in the same evidence snapshots that are not named as the contract — offered only under "Show all schemas".</summary>
+    public IReadOnlyList<IntegrationTemplateSchemaCandidate> OtherSchemaCandidates { get; init; } = [];
     /// <summary>Test Data roles of a message fixture for <see cref="SchemaName"/> (see <see cref="TestDataFixtureBinding"/>).</summary>
     public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
     /// <summary>Test Data capabilities a valid fixture for <see cref="SchemaName"/> satisfies (e.g. the pack's payload role), recorded when it is saved.</summary>

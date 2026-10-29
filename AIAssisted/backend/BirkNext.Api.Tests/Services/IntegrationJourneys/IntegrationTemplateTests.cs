@@ -188,11 +188,37 @@ public sealed class IntegrationTemplateTests
         harness.Sources.Snapshots.Add(WithSchemas(Repo("other.zip", 'b', "Other.Service"), name));
 
         var intake = Template(await ReadAsync(harness), "skolenaervaer-report-intake");
-        intake.SchemaCandidates.Should().ContainSingle().Which.Should().Be(
-            new IntegrationTemplateSchemaCandidate(intake.EvidenceSource!.Candidates.Single().SnapshotId, "mu.zip", name, $"TestData/xsd/{name}.xsd") { Version = "2.0.0" });
+        intake.SchemaCandidates.Should().ContainSingle().Which.Should().Match<IntegrationTemplateSchemaCandidate>(c =>
+            c.SnapshotId == intake.EvidenceSource!.Candidates.Single().SnapshotId && c.ArchiveFileName == "mu.zip" && c.SchemaName == name
+            && c.File == $"TestData/xsd/{name}.xsd" && c.Version == "2.0.0" && c.Recognized && c.MatchesContract && !c.Bound && c.AnalyzedAt != null);
+        intake.OtherSchemaCandidates.Select(c => c.SchemaName).Should().BeEquivalentTo(["bufdir.barnevern.tiltak.skolenaervaer.v2.0.0", name + "_old"],
+            "other schemas of the same snapshot are offered only under Show all, never as the contract");
+        intake.OtherSchemaCandidates.Should().OnlyContain(c => !c.MatchesContract);
 
         await using var empty = new IntegrationJourneyHarness();
         Template(await ReadAsync(empty), "skolenaervaer-report-intake").SchemaCandidates.Should().BeEmpty("no evidence source, nothing to look in");
+    }
+
+    [Fact]
+    public async Task SchemaCandidates_CarryTheIqrBindingOfTheFulfillingIntegration_AndAVerifiedContract_NeverTheNewest()
+    {
+        const string name = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn";
+        await using var harness = new IntegrationJourneyHarness();
+        var bound = WithSchemas(Repo("mu.zip", 'a', "Buf.Meldingsutveksler.Service"), name);
+        harness.Sources.Snapshots.Add(bound);
+        harness.Sources.Snapshots.Add(WithSchemas(Repo("mu-newer.zip", 'b', "Buf.Meldingsutveksler.Api"), name) with { AnalyzedAt = DateTimeOffset.UtcNow.AddDays(1) });
+        harness.Active.Catalog.Extra.Add(new IntegrationDefinition
+        {
+            Id = "dev:http:intake", EnvironmentId = ActiveEventTestHarness.Env, DisplayName = "Report intake", Kind = IntegrationKind.HttpApi, Enabled = true,
+            Producer = "Altinn", Consumer = new IntegrationConsumer { DisplayName = "MU" }, ContractRelationship = ContractRelationshipState.RelationshipVerified,
+            ConsumerContractReference = $"TestData/xsd/{name}.xsd",
+        });
+        harness.Bindings.Items.Add(IntegrationEvidenceBinding.For(ActiveEventTestHarness.Env, "dev:http:intake", bound, DateTimeOffset.UtcNow));
+
+        var candidates = Template(await ReadAsync(harness), "skolenaervaer-report-intake").SchemaCandidates;
+        candidates.Should().HaveCount(2);
+        candidates.Single(c => c.ArchiveFileName == "mu.zip").Should().Match<IntegrationTemplateSchemaCandidate>(c => c.Bound && c.BoundIntegration == "Report intake" && c.ContractConfirmed);
+        candidates.Single(c => c.ArchiveFileName == "mu-newer.zip").Bound.Should().BeFalse("a newer snapshot is never the bound one");
     }
 
     [Fact]

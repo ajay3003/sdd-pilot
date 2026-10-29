@@ -1460,6 +1460,12 @@
                 }
             }
 
+            @* ── Project ── the logical project and its evidence bindings (references to imports/snapshots; saved at once, outside the edit draft). *@
+            @if (_activeTab == "project")
+            {
+                <TargetEnvironmentProjectPane EnvironmentId="@profile.Id" Focus="@(InitialTab == "project" ? InitialFocus : null)" />
+            }
+
             @* ── Integration Catalog ──
                The configured integrations are persisted by the backend catalog (not in this browser profile), so the pane
                reads and saves them itself, identically in view and edit mode. Integrations that older versions stored in
@@ -1755,7 +1761,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// <summary>Visual grouping of the section tabs (presentation only; keys and routes are unchanged). Every tab is in exactly one group.</summary>
     public static readonly (string Group, string[] Keys)[] TabGroups =
     [
-        ("General", ["general", "target", "auth"]),
+        ("General", ["general", "project", "target", "auth"]),
         ("Discovery", ["endpoint", "browser"]),
         ("Quality settings", ["performance", "cwv", "features", "validation"]),
         ("Systems & integrations", ["external", "library", "integrations"]),
@@ -2255,6 +2261,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         {
             // Only what the person changed becomes a configured override; observed values are never copied into configuration.
             if (SelectedProfile is { } saved) EffectiveAuthentication.ApplyEdit(saved.Authentication, _editProfile.Authentication);
+            // The Project tab saves its bindings directly; a draft opened before such a change must not write an older project back.
+            if (SelectedProfile is { } stored) _editProfile.Project = stored.Project;
             FaSettings.UpdateProfile(_editProfile);
             await FaSettings.SaveAsync(JS);
             _selectedProfileId = _editProfile.Id;

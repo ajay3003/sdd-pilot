@@ -60,6 +60,11 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
             provenance.Add(new("Local validation", facts.ValidationStatus));
             if (facts.Contract is { Length: > 0 } contract) provenance.Add(new("Contract", contract));
             if (facts.TestDataBindings is { Length: > 0 } bound) provenance.Add(new("Test Data roles", bound));
+            // How each mapped element got its value (Test Data asset alias, fixed or generated) — references and rules, never a resolved identifier.
+            if (facts.ValueMappings is { Length: > 0 } mappings) provenance.Add(new("Value mappings", mappings[..Math.Min(1000, mappings.Length)]));
+            // Generated from mappings vs. edited by hand: a manual override is recorded, never presented as purely mapping-generated.
+            if (facts.ManualChanges is { } manual) provenance.Add(new("Manual XML changes", manual ? "Present (edited after generation)" : "None"));
+            if (facts.SourceSelection is { Length: > 0 } selection) provenance.Add(new("Source/XSD selection", selection[..Math.Min(400, selection.Length)]));
             if (facts.Mutation is { Length: > 0 } mutation) provenance.Add(new("Mutation", mutation));
             if (facts.TargetRule is { Length: > 0 } rule) provenance.Add(new("Schema rule targeted", rule));
             if (facts.Path is { Length: > 0 } path) provenance.Add(new("Path", path));
@@ -93,5 +98,5 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
     private sealed record Registration(string Alias, string? Label, string Intent, bool Approved, DateTimeOffset RegisteredAt, Facts? Facts);
     private sealed record Facts(string ExpectedResult, string ValidationStatus, string? Mutation, string? TargetRule, string? Path, string? ProfileId,
         string? ProfileVersion, string? GeneratorVersion, string? RootElement, string? EnvironmentId, string? Contract = null, string? TestDataBindings = null,
-        IReadOnlyList<string>? Capabilities = null);
+        IReadOnlyList<string>? Capabilities = null, string? ValueMappings = null, bool? ManualChanges = null, string? SourceSelection = null);
 }

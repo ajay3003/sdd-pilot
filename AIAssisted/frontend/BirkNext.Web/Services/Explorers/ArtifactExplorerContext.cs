@@ -1,6 +1,7 @@
 using System.Text;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
+using BirkNext.Web.Services.ProjectEvidence;
 using BirkNext.Web.Services.SampleProjects;
 
 namespace BirkNext.Web.Services.Explorers;
@@ -32,7 +33,10 @@ public sealed record ExplorerArtifact(
     DateTimeOffset? CapturedAt,
     string? DocumentIdentity = null,
     string Module = ArtifactModules.ProjectLevel,
-    string? Feature = null)
+    string? Feature = null,
+    string? EvidenceSource = null,
+    string? EvidenceImportId = null,
+    DateTimeOffset? EvidenceImportedAt = null)
 {
     /// <summary>Approved or Baseline. Explicit repository authority only; never inferred from being latest or first.</summary>
     public bool IsAuthoritative => Authority is "Approved" or "Baseline";
@@ -107,6 +111,27 @@ public enum ExplorerSelectionReason
     PackFile,
 }
 
+/// <summary>One imported package whose documents the explorers read (provenance; the import id is the canonical identity).</summary>
+public sealed record ExplorerEvidenceSource(string ImportId, string Name, string ArchiveFileName, DateTimeOffset ImportedAt, bool IsMainProject);
+
+/// <summary>
+/// Which project evidence the explorers read and on what basis. <see cref="FromEnvironment"/>: the active Target Environment's Project bindings
+/// (one logical project, several packages). Otherwise the current project/import (legacy fallback; no environment binding is claimed).
+/// <see cref="DocumentationUnresolved"/> = the project documentation role has no available binding: a source decision, not "no artifact".
+/// </summary>
+public sealed record ExplorerProjectEvidence(
+    bool FromEnvironment,
+    string? EnvironmentId,
+    string? EnvironmentName,
+    string ProjectName,
+    IReadOnlyList<ExplorerEvidenceSource> Sources,
+    bool DocumentationUnresolved,
+    IReadOnlyList<string> UnboundDocumentPackages)
+{
+    public int SourceCount => Sources.Count;
+    public string SourceNames => string.Join(", ", Sources.Select(s => s.ArchiveFileName));
+}
+
 public sealed record ArtifactExplorerState(
     WorkspaceArtifactType Role,
     ExplorerArtifactStatus Status,
@@ -123,9 +148,13 @@ public sealed record ArtifactExplorerState(
     string? Pack = null,
     bool PackRequired = false,
     bool AmbiguousInPack = false,
-    string? Resolution = null)
+    string? Resolution = null,
+    ExplorerProjectEvidence? Evidence = null)
 {
     public bool HasProject => ProjectSlug is not null;
+
+    /// <summary>The project documentation source is not selected (Target Environment → Project): show the binding action, not "no artifact".</summary>
+    public bool SourceUnresolved => Status == ExplorerArtifactStatus.Empty && Evidence is { DocumentationUnresolved: true };
 
     /// <summary>The module has several feature packs: explorers and reviews read one pack (plus shared artifacts), never siblings.</summary>
     public bool HasPacks => Packs is { Count: > 1 };
@@ -242,23 +271,92 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         ISampleProjectDocumentResolver resolver,
         ISampleProjectArtifactDiscovery discovery,
         IWorkspaceUpdateCoordinator? updates = null,
-        IWorkspaceStateManager? stateManager = null)
+        IWorkspaceStateManager? stateManager = null,
+        IFrontendAnalysisSettingsService? environments = null)
     {
         _workspace = workspace;
         _resolver = resolver;
         _discovery = discovery;
         _updates = updates;
         _stateManager = stateManager;
+        _environments = environments;
         _workspace.ReviewContextRebuildNeeded += OnRepositoryChanged;
         if (_workspace is WorkspaceArtifactRepository repository) repository.ProjectSelectionChanged += OnRepositoryChanged;
         // A saved workspace resumed or cleared replaces the lifecycle without an artifact event.
         if (_stateManager is not null) _stateManager.WorkspaceChanged += OnWorkspaceChanged;
+        // A Target Environment saved or switched can change the project and its bound evidence.
+        if (_environments is not null) _environments.Changed += OnEnvironmentsChanged;
     }
 
-    /// <summary>A selected Sample Project, else the current imported project, else the manual workspace (null). The two projects are mutually exclusive.</summary>
+    private readonly IFrontendAnalysisSettingsService? _environments;
+
+    /// <summary>The active Target Environment's Project, when its main import is recorded in this workspace; otherwise null (legacy fallback).</summary>
+    private (FrontendAnalysisProfile Profile, EnvironmentProject Project, SddProjectImportRecord Main)? EnvironmentProject()
+    {
+        if (_environments?.ActiveProfile is not { Project: { } project } profile) return null;
+        return ProjectEvidenceResolver.MainImport(project, _workspace.SddLifecycle) is { } main ? (profile, project, main) : null;
+    }
+
+    /// <summary>
+    /// A selected Sample Project; else the active Target Environment's Project (its main import); else the current imported project; else the
+    /// manual workspace (null). The environment's Project wins over the last imported/selected package, so a source-only current package never
+    /// empties the explorers; it never changes the user's current project.
+    /// </summary>
     public string? CurrentScope => _resolver.GetSelectedProject() is { Length: > 0 } slug && !string.IsNullOrWhiteSpace(slug)
         ? slug
+        : EnvironmentProject() is { } bound ? ProjectImportScope.For(bound.Main.ImportId)
         : ProjectImportScope.For(_workspace.SddLifecycle.CurrentProjectImportId);
+
+    /// <summary>One artifact-revision scope the explorers read, with its provenance. Only the primary scope's id format is unprefixed.</summary>
+    private sealed record EvidenceScope(string? Scope, ExplorerEvidenceSource? Source, bool Primary, bool ManualOnly);
+
+    /// <summary>
+    /// The scopes whose revisions make up <paramref name="scope"/>'s documents. With a Target Environment Project: the documentation role's bound
+    /// imports (aggregated, binding order), plus documents added by hand to the project scope. Otherwise just the scope itself.
+    /// </summary>
+    private IReadOnlyList<EvidenceScope> EvidenceScopes(string? scope)
+    {
+        if (!ProjectImportScope.IsImport(scope) || EnvironmentProject() is not { } bound || ProjectImportScope.For(bound.Main.ImportId) != scope)
+            return [new EvidenceScope(scope, null, true, false)];
+        var lifecycle = _workspace.SddLifecycle;
+        var documentation = ProjectEvidenceResolver.DocumentationImports(bound.Project, lifecycle);
+        var scopes = new List<EvidenceScope>
+        {
+            // The main project's own imported documents count only when bound as documentation; documents added in an explorer always do.
+            new(scope, Source(bound.Main, true), true, !documentation.Contains(bound.Main.ImportId, StringComparer.Ordinal)),
+        };
+        foreach (var importId in documentation.Where(id => id != bound.Main.ImportId))
+            if (lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is { } record)
+                scopes.Add(new(ProjectImportScope.For(importId), Source(record, false), false, false));
+        return scopes;
+    }
+
+    private static ExplorerEvidenceSource Source(SddProjectImportRecord record, bool main) =>
+        new(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName, record.ArchiveFileName, record.ImportedAt, main);
+
+    /// <summary>The project-evidence basis the explorers read, or null for a Sample Project or the manual workspace.</summary>
+    private ExplorerProjectEvidence? EvidenceOf(string? scope)
+    {
+        if (!ProjectImportScope.IsImport(scope)) return null;
+        var lifecycle = _workspace.SddLifecycle;
+        var scopes = EvidenceScopes(scope);
+        var read = scopes.Where(s => !s.ManualOnly).Select(s => ProjectImportScope.ImportIdOf(s.Scope)).ToHashSet(StringComparer.Ordinal);
+        // Imports outside the evidence set that hold authored documents: "available in another import" is never "not provided".
+        var unbound = lifecycle.ProjectImports.Where(i => !read.Contains(i.ImportId)
+                && lifecycle.Revisions.Any(r => r.WorkspaceScope == ProjectImportScope.For(i.ImportId) && ProjectEvidencePackages.DocumentRoleOrder.Any(role => r.Role == role.ToString())))
+            .Select(i => i.ArchiveFileName).Distinct(StringComparer.Ordinal).ToList();
+        if (EnvironmentProject() is { } bound && ProjectImportScope.For(bound.Main.ImportId) == scope)
+        {
+            var sources = scopes.Where(s => !s.ManualOnly && s.Source is not null).Select(s => s.Source!).ToList();
+            var role = bound.Project.Evidence.FirstOrDefault(r => r.RoleKey == ProjectEvidenceRoles.Documentation);
+            return new ExplorerProjectEvidence(true, bound.Profile.Id, bound.Profile.Name, bound.Project.ProjectName, sources,
+                DocumentationUnresolved: role is not null && sources.Count == 0, unbound);
+        }
+        var importId = ProjectImportScope.ImportIdOf(scope);
+        var record = lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId);
+        return new ExplorerProjectEvidence(false, _environments?.ActiveProfile?.Id, _environments?.ActiveProfile?.Name, record?.ProjectName ?? importId ?? "",
+            record is null ? [] : [Source(record, true)], false, unbound);
+    }
 
     public Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default) =>
         StateAsync(role, null, cancellationToken);
@@ -278,6 +376,12 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         ScopeModel? loaded = null)
     {
         var model = loaded ?? await LoadScopeAsync(cancellationToken);
+        var state = StateOf(role, viewPack, model, sharedOnly);
+        return model.Evidence is null ? state : state with { Evidence = model.Evidence };
+    }
+
+    private ArtifactExplorerState StateOf(WorkspaceArtifactType role, string? viewPack, ScopeModel model, bool sharedOnly)
+    {
         if (model.Failure is { } failure)
             return new ArtifactExplorerState(role, failure, model.Scope, model.ProjectName, [], Error: model.Error);
 
@@ -407,8 +511,9 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             // Keep the analysis pages that resolve Sample Project documents on the same document as the explorer.
             _discovery.ChooseDocument(scope, role, artifactId[SamplePrefix.Length..]);
         }
-        else if (WorkspaceArtifacts(role, scope).FirstOrDefault(i => i.Artifact.Id == artifactId) is { } imported)
+        else if (WorkspaceArtifacts(role, scope).FirstOrDefault(i => i.Artifact.Id == artifactId) is { } imported && imported.Revision.WorkspaceScope == scope)
         {
+            // Only the project's own scope is mirrored: another bound package's current selection is that package's, never changed from here.
             _workspace.SelectRevision(imported.Revision.RevisionId);
         }
     }
@@ -555,7 +660,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         IReadOnlyList<string> Modules,
         ExplorerArtifactStatus? Failure = null,
         string? Error = null,
-        IReadOnlyList<ScopeEntry>? Supporting = null)
+        IReadOnlyList<ScopeEntry>? Supporting = null,
+        ExplorerProjectEvidence? Evidence = null)
     {
         /// <summary>Artifacts in more than one module group: roles resolve per module.</summary>
         public bool HasModules => Modules.Count > 1;
@@ -579,7 +685,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         {
             // An imported project: its documents are revisions in its own scope (listed below); there is no catalog to discover.
             var importId = ProjectImportScope.ImportIdOf(scope);
-            projectName = _workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId)?.ProjectName ?? importId;
+            projectName = EnvironmentProject() is { } bound && bound.Main.ImportId == importId ? bound.Project.ProjectName
+                : _workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId)?.ProjectName ?? importId;
         }
         else if (scope is not null)
         {
@@ -627,12 +734,14 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         }
 
         foreach (var role in SampleArtifactClassifier.RoleOrder)
-            roles[role].AddRange(WorkspaceArtifacts(role, scope).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, i.Revision.IsCurrentSelection)));
-        supporting.AddRange(WorkspaceArtifacts(WorkspaceArtifactType.SupportingDocument, scope).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, false)));
+            roles[role].AddRange(Distinct(WorkspaceArtifacts(role, scope)).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, i.Revision.IsCurrentSelection)));
+        supporting.AddRange(Distinct(WorkspaceArtifacts(WorkspaceArtifactType.SupportingDocument, scope)).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, false)));
         // Module roots come from the artifacts' own paths (every role, every revision of the scope) — the same evidence before and after an
         // import and for Demo Projects. A stray specs/ folder among unclassified documents does not create a module.
+        var evidenceScopes = EvidenceScopes(scope);
         paths.AddRange(roles.Values.SelectMany(l => l).Select(e => e.Artifact.SourcePath ?? e.Artifact.FileName));
-        paths.AddRange(_workspace.SddLifecycle.Revisions.Where(r => r.WorkspaceScope == scope).Select(r => r.SourceReference ?? r.FileName));
+        paths.AddRange(_workspace.SddLifecycle.Revisions.Where(r => evidenceScopes.Any(s => s.Scope == r.WorkspaceScope && (!s.ManualOnly || r.Origin != ProjectImportOrigin)))
+            .Select(r => r.SourceReference ?? r.FileName));
 
         var roots = ArtifactModules.RootsOf(paths);
         foreach (var role in SampleArtifactClassifier.RoleOrder)
@@ -650,7 +759,21 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         // Named modules in path order; the project-level group (if any) last.
         var modules = roles.Values.SelectMany(l => l).Select(e => e.Artifact.Module).Distinct(StringComparer.Ordinal)
             .OrderBy(m => m.Length == 0 ? 1 : 0).ThenBy(m => m, StringComparer.Ordinal).ToList();
-        return new ScopeModel(scope, projectName, roles, chosen, modules, Supporting: supporting);
+        return new ScopeModel(scope, projectName, roles, chosen, modules, Supporting: supporting, Evidence: EvidenceOf(scope));
+    }
+
+    /// <summary>
+    /// The same document bound twice (two packages carrying an identical file at the same path) is one artifact: kept from the first source in
+    /// binding order. Different content at the same path stays two candidates — a decision, never "the newest".
+    /// </summary>
+    private static IEnumerable<(ExplorerArtifact Artifact, SddArtifactRevision Revision)> Distinct(IEnumerable<(ExplorerArtifact Artifact, SddArtifactRevision Revision)> items)
+    {
+        var seen = new HashSet<(string, string)>();
+        foreach (var item in items)
+        {
+            if (item.Artifact.DocumentIdentity is { Length: > 0 } identity && !seen.Add((item.Artifact.SourcePath ?? item.Artifact.FileName, identity))) continue;
+            yield return item;
+        }
     }
 
     public async Task<ArtifactPackInventory> GetPackInventoryAsync(string? pack = null, CancellationToken cancellationToken = default)
@@ -730,7 +853,23 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         _workspace.ReviewContextRebuildNeeded -= OnRepositoryChanged;
         if (_workspace is WorkspaceArtifactRepository repository) repository.ProjectSelectionChanged -= OnRepositoryChanged;
         if (_stateManager is not null) _stateManager.WorkspaceChanged -= OnWorkspaceChanged;
+        if (_environments is not null) _environments.Changed -= OnEnvironmentsChanged;
     }
+
+    /// <summary>Settings are saved for many reasons; only a change of the active project or its bindings changes what the explorers read.</summary>
+    private void OnEnvironmentsChanged()
+    {
+        var key = ProjectKey();
+        if (string.Equals(key, _lastProjectKey, StringComparison.Ordinal)) return;
+        _lastProjectKey = key;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private string? _lastProjectKey;
+
+    private string? ProjectKey() => _environments?.ActiveProfile is { Project: { } project } profile
+        ? profile.Id + "|" + System.Text.Json.JsonSerializer.Serialize(project)
+        : null;
 
     private void OnRepositoryChanged(object? sender, EventArgs e)
     {
@@ -781,9 +920,14 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     /// Imported artifacts of the role in this scope. Revisions with the same file name are one document's history: the
     /// document shows its current selection, otherwise its newest revision that is not superseded.
     /// </summary>
+    /// <remarks>
+    /// With a Target Environment Project this lists every bound documentation import of the project, each artifact with its package as
+    /// provenance. Artifacts of the primary scope keep their id (<c>workspace:{file}</c>); another package's are <c>workspace:@{importId}/{file}</c>.
+    /// </remarks>
     private List<(ExplorerArtifact Artifact, SddArtifactRevision Revision)> WorkspaceArtifacts(WorkspaceArtifactType role, string? scope) =>
-        _workspace.SddLifecycle.Revisions
-            .Where(r => r.Role == role.ToString() && r.WorkspaceScope == scope && !string.IsNullOrWhiteSpace(r.Content))
+        EvidenceScopes(scope).SelectMany(evidence => _workspace.SddLifecycle.Revisions
+            .Where(r => r.Role == role.ToString() && r.WorkspaceScope == evidence.Scope && !string.IsNullOrWhiteSpace(r.Content)
+                && (!evidence.ManualOnly || r.Origin != ProjectImportOrigin))
             .GroupBy(r => r.FileName, StringComparer.Ordinal)
             .OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g =>
@@ -792,14 +936,18 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                                ?? g.Where(r => CurrentnessOf(r) == ExplorerArtifactCurrentness.Current).MaxBy(r => r.Revision)
                                ?? g.MaxBy(r => r.Revision)!;
                 var (displayName, identity) = RevisionMeta(revision, g.Key);
+                var source = evidence.Source;
                 var artifact = new ExplorerArtifact(
-                    WorkspacePrefix + g.Key, role, displayName, g.Key, revision.SourceReference,
+                    evidence.Primary ? WorkspacePrefix + g.Key : $"{WorkspacePrefix}@{source!.ImportId}/{g.Key}", role, displayName, g.Key, revision.SourceReference,
                     ExplorerArtifactSource.Workspace, revision.Origin, revision.Revision, g.Count(),
                     string.IsNullOrWhiteSpace(revision.Authority) ? "Unknown" : revision.Authority, CurrentnessOf(revision), revision.CapturedAt,
-                    identity);
+                    identity, EvidenceSource: source?.ArchiveFileName, EvidenceImportId: source?.ImportId,
+                    EvidenceImportedAt: source?.ImportedAt);
                 return (artifact, revision);
-            })
+            }))
             .ToList();
+
+    private const string ProjectImportOrigin = BirkNext.Web.Services.ProjectImport.ProjectImportActivation.Origin;
 
     private (string DisplayName, string Identity) RevisionMeta(SddArtifactRevision revision, string fileName)
     {

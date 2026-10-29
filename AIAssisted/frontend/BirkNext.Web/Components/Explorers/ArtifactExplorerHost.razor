@@ -1,5 +1,6 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.Services.ProjectEvidence
 @implements IDisposable
 @inject IArtifactExplorerContext Explorer
 @inject IServiceProvider Services
@@ -49,6 +50,16 @@
                     <span class="visually-hidden">Documents from other feature packs are never mixed automatically.</span></span>
             </div>
         }
+        @if (_state.Evidence is { FromEnvironment: true } evidence && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
+        {
+            @* One logical project, several packages: which project and how many bound documentation sources the explorer reads. *@
+            <p class="axh-evidence-line" data-testid="artifact-explorer-evidence" data-sources="@evidence.SourceCount">
+                Project <strong>@evidence.ProjectName</strong> · Target Environment @evidence.EnvironmentName ·
+                @(evidence.SourceCount == 0 ? "documentation source unresolved"
+                    : _state.Artifacts.Count > 0 ? $"{_state.Artifacts.Count} {Label} artifact{(_state.Artifacts.Count == 1 ? "" : "s")} found across {evidence.SourceCount} project source{(evidence.SourceCount == 1 ? "" : "s")}"
+                    : $"{evidence.SourceCount} project documentation source{(evidence.SourceCount == 1 ? "" : "s")}")
+            </p>
+        }
         switch (_state.Status)
         {
             case ExplorerArtifactStatus.Error:
@@ -86,6 +97,45 @@
                         <a class="btn-primary" href="project-import" data-testid="artifact-explorer-import-project">Import Project</a>
                         <a class="btn-secondary axh-link-button" href="demo-projects" data-testid="artifact-explorer-sample-projects">Open a Demo Project</a>
                         <button type="button" class="axh-link axh-advanced" aria-expanded="@(_importOpen ? "true" : "false")"
+                                data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
+                            Import @Label.ToLowerInvariant() only
+                        </button>
+                    </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.Empty when _state.SourceUnresolved:
+                @* Target Environment → Project names the project, but its documentation source is not selected: a binding decision, not "no artifact". *@
+                <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="SourceUnresolved">
+                    <div class="axh-icon" aria-hidden="true">@Icon</div>
+                    <h2 class="axh-title">@Label source unresolved</h2>
+                    <p class="axh-text" data-testid="artifact-explorer-unresolved">
+                        The Project documentation role of <strong>@_state.Evidence!.ProjectName</strong> (Target Environment @_state.Evidence.EnvironmentName) has not been bound.
+                        @if (_state.Evidence.UnboundDocumentPackages.Count > 0)
+                        {
+                            <span> Imported packages with project documents: @string.Join(", ", _state.Evidence.UnboundDocumentPackages).</span>
+                        }
+                    </p>
+                    <div class="axh-actions">
+                        <a class="btn-primary" href="@ProjectEvidenceResolver.ProjectTabHref(_state.Evidence.EnvironmentId, ProjectEvidenceRoles.Documentation)"
+                           data-testid="artifact-explorer-open-project-setup">Open Project setup</a>
+                    </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.Empty when _state.Evidence is { FromEnvironment: true } boundEvidence && _state.PackSummary is null:
+                @* The documentation sources are bound and none holds this role: a missing artifact across the project's evidence, stated with the count. *@
+                <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="NotFoundInBoundEvidence">
+                    <div class="axh-icon" aria-hidden="true">@Icon</div>
+                    <h2 class="axh-title">No @Label artifacts found across @boundEvidence.SourceCount project evidence source@(boundEvidence.SourceCount == 1 ? "" : "s")</h2>
+                    <p class="axh-text" data-testid="artifact-explorer-not-found">
+                        No supported @Label artifact was found across the @boundEvidence.SourceCount source@(boundEvidence.SourceCount == 1 ? "" : "s") bound to
+                        <strong>@boundEvidence.ProjectName</strong> as project documentation (@boundEvidence.SourceNames). Every artifact role is optional.
+                    </p>
+                    <div class="axh-actions">
+                        <a class="btn-secondary axh-link-button" href="@ProjectEvidenceResolver.ProjectTabHref(boundEvidence.EnvironmentId, ProjectEvidenceRoles.Documentation)"
+                           data-testid="artifact-explorer-open-project-setup">Review project evidence</a>
+                        <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
                                 data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
                             Import @Label.ToLowerInvariant() only
                         </button>
@@ -262,6 +312,14 @@
                                 <div><dt>Path</dt><dd data-testid="artifact-explorer-path">@selected.SourcePath</dd></div>
                             }
                             <div><dt>Source</dt><dd data-testid="artifact-explorer-source">@SourceText(selected)</dd></div>
+                            @if (selected.EvidenceSource is { } evidenceSource)
+                            {
+                                <div><dt>Project source</dt><dd data-testid="artifact-explorer-evidence-source">@evidenceSource</dd></div>
+                                @if (selected.EvidenceImportedAt is { } importedAt)
+                                {
+                                    <div><dt>Imported</dt><dd>@importedAt.ToLocalTime().ToString("d MMM yyyy")</dd></div>
+                                }
+                            }
                             @if (selected.Revision is { } revision)
                             {
                                 <div><dt>Revision</dt><dd>@revision@(selected.RevisionCount > 1 ? $" of {selected.RevisionCount}" : "")</dd></div>
@@ -552,6 +610,8 @@
         var text = artifact.DisplayName == artifact.FileName ? artifact.FileName : $"{artifact.DisplayName} ({MetaLine(artifact)})";
         if (artifact.IsAuthoritative) text += $" · {artifact.Authority}";
         if (artifact.Currentness != ExplorerArtifactCurrentness.Current) text += $" · {artifact.Currentness}";
+        // Several bound packages: every candidate keeps its package as provenance, so the same role from two sources is a visible choice.
+        if (artifact.EvidenceSource is { } source) text += $" · {source}";
         return text;
     }
 

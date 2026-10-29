@@ -635,17 +635,22 @@ public static partial class PerformanceScenarioEngine
         var testData = op.Needs.Count > 0 ? ScenarioTestDataStates.Required
             : op.Origin == ScenarioOperationOrigin.Observed && op.GraphQlKind is not null && op.GraphQl?.DocumentState != ScenarioGraphQlDocumentStates.Captured ? ScenarioTestDataStates.Unknown
             : ScenarioTestDataStates.NotRequired;
-        if (testData == ScenarioTestDataStates.Unknown) reasons.Add("Test Data unknown — the query document (and its variables) was not captured");
-        else if (op.Needs.Count == 0) reasons.Add("Test Data not required");
-        else if (missing.Count == 0) { score += 2; reasons.Add($"Test Data available for {string.Join(", ", data.Select(d => Placeholder(d.Need)))}"); }
-        else reasons.Add(string.Join(" ", missing.Select(m => m.Detail)));
+        // A dynamic parameter needs a runtime value source configured on the step (Test Data is one option): it never makes a candidate
+        // "Review required" by itself. Unknown inputs (no captured query document) stay unknown, never "no Test Data needed".
+        if (testData == ScenarioTestDataStates.Unknown) reasons.Add("runtime inputs unknown — the query document (and its variables) was not captured");
+        else if (op.Needs.Count == 0) reasons.Add("no dynamic parameters");
+        else
+        {
+            reasons.Add($"dynamic parameter{(op.Needs.Count == 1 ? "" : "s")} {string.Join(", ", op.Needs.Select(Placeholder))} — runtime value configured on the step");
+            if (missing.Count < data.Count) { score += 2; reasons.Add($"Test Data suggestion available for {string.Join(", ", data.Where(d => d.State != ScenarioDataMatchState.Missing).Select(d => Placeholder(d.Need)))}"); }
+        }
         if (requiresAuth) { if (authenticated) { score += 1; reasons.Add("authentication reference configured"); } else reasons.Add($"requires authentication ({(op.Observation?.AuthObserved == true ? "bearer observed" : string.Join(", ", op.Security))}) — not configured"); }
         var traffic = Classify(op.Path);
         if (traffic == ScenarioTrafficKind.TechnicalBackground) reasons.Add("technical/background traffic (not a normal workload)");
         else if (traffic == ScenarioTrafficKind.DiagnosticSmoke) reasons.Add("diagnostic/smoke endpoint (not a business baseline)");
         var level = proposed ? ScenarioRecommendationLevel.ReviewRequired
             : !runnable ? ScenarioRecommendationLevel.NotRunnable
-            : op.Evidence == ScenarioEvidence.ObservedOnly || missing.Count > 0 || requiresAuth && !authenticated || traffic != ScenarioTrafficKind.Application ? ScenarioRecommendationLevel.ReviewRequired
+            : op.Evidence == ScenarioEvidence.ObservedOnly || requiresAuth && !authenticated || traffic != ScenarioTrafficKind.Application ? ScenarioRecommendationLevel.ReviewRequired
             : op.Evidence == ScenarioEvidence.DeclaredAndObserved ? ScenarioRecommendationLevel.Recommended
             : ScenarioRecommendationLevel.Candidate;
         return op with
@@ -692,13 +697,15 @@ public static partial class PerformanceScenarioEngine
 
     /// <summary>
     /// A configured step from a candidate: relative path with {placeholders}, documented 2xx response suggested (never every documented code),
-    /// default think time, a GraphQL query document with $variables (no literal values), and Test Data mapped by alias — the user may change it.
+    /// default think time and a GraphQL query document with $variables (no literal values). Dynamic parameters stay unconfigured unless the
+    /// person explicitly chose an approved Test Data alias (e.g. through "Review observed value for Test Data"); a recommended match is shown on
+    /// the step as a suggestion, never applied silently. The step owns every runtime value source.
     /// </summary>
     public static HttpPerformanceStep ToStep(ScenarioOperation op, IReadOnlyDictionary<string, string>? chosenAliases = null, IReadOnlyCollection<ContractTypeShape>? types = null)
     {
         var success = op.ResponseCodes.Select(c => int.TryParse(c, out var code) ? code : 0).Where(c => c is >= 200 and < 300).OrderBy(c => c).ToList();
-        var mappings = op.Data.Select(d => (Need: d.Need, Alias: chosenAliases?.GetValueOrDefault(d.Need.Variable) ?? d.Recommended))
-            .Where(x => x.Alias is not null).Select(x => new ScenarioDataMapping(x.Need.Variable, [x.Alias!], x.Need.DataType, x.Need.In)).ToList();
+        var mappings = op.Data.Select(d => (Need: d.Need, Alias: chosenAliases?.GetValueOrDefault(d.Need.Variable)))
+            .Where(x => x.Alias is not null).Select(x => new ScenarioDataMapping(x.Need.Variable, [x.Alias!], x.Need.DataType, x.Need.In) { FromObservedSample = true }).ToList();
         var name = Slug(op.OperationId ?? (op.Path is null ? op.Name.Split(' ').Last() : string.Join("-", op.Path.Split('/', StringSplitOptions.RemoveEmptyEntries).Where(s => !s.StartsWith('{')).TakeLast(2))));
         var source = new ScenarioStepSource
         {

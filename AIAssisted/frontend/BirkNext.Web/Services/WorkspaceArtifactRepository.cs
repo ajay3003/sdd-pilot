@@ -241,8 +241,20 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.GeneratedDocumentContents ??= [];
             SddLifecycle.DocumentationDriftComparisons ??= [];
             SddLifecycle.PackFocus ??= [];
+            SddLifecycle.XmlFixtureSetups ??= [];
             foreach (var evidence in SddLifecycle.ImplementationEvidence) evidence.TargetResolutions ??= [];
-            foreach (var (type, artifact) in GetAllArtifacts())
+            // An imported project's scope holds only its own import's documents: session copies saved with the workspace may belong to the import
+            // that was current before (the last imported package), so they are re-derived from this import's revisions, never captured into it.
+            if (ProjectImportScope.IsImport(SessionScope))
+            {
+                var scope = SessionScope;
+                foreach (var role in _artifacts.Keys.Where(t => !IsSessionOnly(t)).ToList()) _artifacts.Remove(role);
+                foreach (var current in SddLifecycle.Revisions.Where(x => x.WorkspaceScope == scope && x.IsCurrentSelection && !string.IsNullOrWhiteSpace(x.Content)))
+                    if (Enum.TryParse<WorkspaceArtifactType>(current.Role, out var role) && !IsSessionOnly(role))
+                        _artifacts[role] = new WorkspaceArtifact(current.Content, current.CapturedAt.UtcDateTime, current.FileName, current.SourceReference);
+                return;
+            }
+            foreach (var (type, artifact) in GetAllArtifacts().ToList())
                 if (type is not (WorkspaceArtifactType.SchemaStudio or WorkspaceArtifactType.SchemaStudioPackages or WorkspaceArtifactType.SchemaStudioTestRuns or WorkspaceArtifactType.SchemaStudioDrafts or WorkspaceArtifactType.SchemaStudioGeneratedXml))
                     CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
         }
@@ -253,6 +265,10 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     }
 
     public void ResetSddLifecycle() => SddLifecycle = new();
+
+    /// <summary>Schema Studio stores are session-only JSON (never document revisions of a project scope).</summary>
+    private static bool IsSessionOnly(WorkspaceArtifactType type) => type is WorkspaceArtifactType.SchemaStudio or WorkspaceArtifactType.SchemaStudioPackages
+        or WorkspaceArtifactType.SchemaStudioTestRuns or WorkspaceArtifactType.SchemaStudioDrafts or WorkspaceArtifactType.SchemaStudioGeneratedXml;
 
     public void SetArtifactAuthority(Guid revisionId, string authority)
     {

@@ -73,8 +73,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
             Baselines = [b];
             return Task.FromResult(new PerformanceBaselinePromotionResult(b, null, null));
         }
+        public List<(Guid Current, Guid? Reference, string? Baseline)> Compared { get; } = [];
         public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>
-            Task.FromResult<PerformanceRunComparison?>(new PerformanceRunComparison
+            Compare(current, reference, baselineId) ? null! : Task.FromResult<PerformanceRunComparison?>(new PerformanceRunComparison
             {
                 Kind = PerformanceComparisonKind.RunVsRun, AdHoc = true, CurrentRunId = current, ReferenceRunId = reference ?? Guid.Empty, Compatible = false,
                 CompatibilityNotes = ["Not comparable — workload changed."], Deltas = [PerformanceTestRules.Delta(PerformanceMetric.LatencyP95Ms, 340, 420)],
@@ -99,6 +100,40 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
             Latency = new PerformanceLatency { P50Ms = 180, P90Ms = 350, P95Ms = 610, P99Ms = 700, MeanMs = 210, MaxMs = 900 } } : null,
         ThresholdResults = thresholds ?? [], Quality = quality,
     };
+
+    private static bool Compare(Guid current, Guid? reference, string? baseline)
+    {
+        _lastFake?.Compared.Add((current, reference, baseline));
+        return false;
+    }
+
+    private static FakeApi? _lastFake;
+
+    [Fact]
+    public void Results_OpenFullComparison_OpensCompareWithTheRunAndItsBaselineSelected_AndBackReturns()
+    {
+        Register();
+        _lastFake = _api;
+        var run = Run(PerformanceRunState.Completed) with
+        {
+            BaselineIdAtRun = "base-1",
+            Drift = new PerformanceDriftAssessment { BaselineId = "base-1", BaselineVersion = 2, BaselineRunId = Guid.NewGuid(), Compatible = true, State = PerformanceDriftState.Stable,
+                Deltas = [PerformanceTestRules.Delta(PerformanceMetric.LatencyP95Ms, 600, 610)] },
+        };
+        _api.Runs = [run];
+        _api.Baselines = [new PerformanceBaseline { BaselineId = "base-1", RunId = Guid.NewGuid(), Version = 2, DefinitionId = "def-1", Status = PerformanceBaselineStatus.Active, ComparisonFingerprint = "cf", EffectiveFrom = DateTimeOffset.UtcNow }];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-result-baseline-delta][data-metric=LatencyP95Ms]"));
+        cut.Find("[data-testid=pt-results-open-compare]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-compare]").GetAttribute("aria-pressed").Should().Be("true"));
+        _api.Compared.Should().ContainSingle().Which.Should().Be((run.RunId, (Guid?)null, "base-1"), "the run and its baseline are preselected — no re-selection");
+        cut.Find("[data-testid=pt-compare-current]").GetAttribute("value").Should().Be(run.RunId.ToString());
+        cut.Find("[data-testid=pt-compare-reference]").GetAttribute("value").Should().Be("b:base-1");
+        cut.Find("[data-testid=pt-compare-back]").Click();
+        cut.Find("[data-testid=pt-tab-results]").GetAttribute("aria-pressed").Should().Be("true");
+    }
 
     private static PerformanceProviderStatus Provider(ProviderAvailability availability) => new()
     {
@@ -428,7 +463,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-result-quality]").TextContent.Should().Contain("Fail");
         cut.Find("[data-testid=pt-threshold-result]").TextContent.Should().Contain("610 ms").And.Contain("< 500 ms").And.Contain("Fail").And.Contain("Required");
         cut.Find("[data-testid=pt-latency]").TextContent.Should().Contain("P95 latency: 610 ms");
-        cut.Find("[data-testid=pt-result-nobaseline]").TextContent.Should().Contain("Not configured");
+        cut.Find("[data-testid=pt-result-nobaseline]").TextContent.Should().StartWith("No baseline selected").And.Contain("Promote a completed run in History");
     }
 
     [Fact]
@@ -495,6 +530,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "scenario");
         cut.Find("[data-testid=pt-steps-empty]").TextContent.Should().Contain("never starts with a placeholder request");
         cut.Find("[data-testid=pt-add-step]").Click();
+        // A manual step starts without a path (never an executable "GET /"): the tester enters it.
+        cut.Find("[data-testid=pt-step-path]").GetAttribute("value").Should().BeNullOrEmpty();
+        cut.Find("[data-testid=pt-step-path]").Change("/api/health-check");
         Tab(cut, "overview");
     }
 
@@ -1062,7 +1100,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-run-go-readiness]").Click();
         cut.Find("[data-testid=pt-tab-readiness]").GetAttribute("aria-pressed").Should().Be("true");
         Tab(cut, "results");
-        cut.Find("[data-testid=pt-no-results]").TextContent.Should().Contain("No performance run yet");
+        cut.Find("[data-testid=pt-no-results]").TextContent.Should().Contain("No completed run selected").And.Contain("choose one from History");
+        cut.FindAll("[data-testid=pt-latency]").Should().BeEmpty("no empty charts or counters without a run");
         Tab(cut, "compare");
         cut.Find("[data-testid=pt-compare-empty]").TextContent.Should().Contain("No comparable runs yet");
         Tab(cut, "history");
@@ -1116,6 +1155,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-legacy-profile]").TextContent.Should().Contain("Old local rows").And.Contain("not shared");
         cut.Find("[data-testid=pt-step-mapping][data-variable=personId]").GetAttribute("data-state").Should().Be("mapped");
         cut.Find("[data-testid=pt-testdata-asset]").TextContent.Should().StartWith("person-id-baseline · Simple values / parameters").And.Contain("used by getperson");
+        cut.FindAll("[data-testid=pt-step-edit]")[0].Click();
         cut.Find("[data-testid=pt-step-delay]").ParentElement!.TextContent.Should().Contain("Delay before next step").And.Contain("not a request timeout");
     }
 
@@ -1125,6 +1165,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Register(definitions: [Mapped()]);
         var cut = Page();
         Tab(cut, "scenario");
+        cut.FindAll("[data-testid=pt-step-edit]")[0].Click();
+        cut.FindAll("[data-testid=pt-step-edit]")[1].Click();
         cut.FindAll("[data-testid=pt-step-expected]")[0].Change("200, abc");
         cut.Find("[data-testid=pt-step-expected-error]").TextContent.Should().Contain("previous value is kept");
         cut.FindAll("[data-testid=pt-step-expected]")[0].Change("200, 204");
@@ -1134,21 +1176,24 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.FindAll("[data-testid=pt-step-source]")[0].TextContent.Trim().Should().StartWith("Added from detected operation · Modified from declared operation");
         cut.FindAll("[data-testid=pt-step-down]")[0].Click();
         cut.FindAll("[data-testid=pt-step-name]").Select(e => e.GetAttribute("value")).Should().Equal("health", "getperson");
-        cut.FindAll("[data-testid=pt-step-enabled]")[1].Change(false);
+        cut.FindAll("[data-testid=pt-step-enabled]")[1].Click();
         cut.FindAll("[data-testid=pt-step]")[1].GetAttribute("data-disabled").Should().Be("true");
         Status(cut, "pt-definition-state").Should().Be("Unsaved changes to v2");
     }
 
     [Fact]
-    public void ScenarioStep_UnmappedPlaceholder_SaysTestDataMissing_AndLinksToTestDataWithContext()
+    public void ScenarioStep_UnmappedPlaceholder_IsARuntimeValueNotConfigured_AndTestDataLinksWithContext()
     {
         Register(definitions: [Definition with { Scenario = new PerformanceScenario { Steps = [new HttpPerformanceStep { Name = "lookup", RelativePath = "/api/person/{personId}" }] } }]);
         var cut = Page();
         Tab(cut, "scenario");
         var mapping = cut.Find("[data-testid=pt-step-mapping][data-variable=personId]");
         mapping.GetAttribute("data-state").Should().Be("missing");
-        cut.Find("[data-testid=pt-step-mapping-missing]").TextContent.Should().Contain("Test Data missing for {personId}");
-        cut.Find("[data-testid=pt-step-open-test-data]").GetAttribute("href").Should()
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Runtime value source not configured").And.NotContain("Test Data missing", "a dynamic parameter is not a Test Data requirement");
+        cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Needs configuration");
+        cut.Find("[data-testid=pt-step-map]").Click();
+        cut.FindAll("[data-testid=pt-value-source-option]").Select(o => o.GetAttribute("data-source")).Should().Equal("TestData", "PreviousStep", "ScenarioVariable", "Fixed");
+        cut.Find("[data-testid=tdm-open-test-data]").GetAttribute("href").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&environment=PaymentHub%20QA&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&in=path&dataType=SimpleValues");
     }
 
@@ -1168,8 +1213,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "scenario");
         cut.Find("[data-testid=pt-data-selection-note]").TextContent.Should().Be("Selection strategy applies after Test Data is mapped.");
         var row = cut.Find("[data-testid=pt-step-mapping][data-variable=personId]");
-        row.TextContent.Should().Contain("Path parameter").And.Contain("Required");
-        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Not mapped");
+        row.TextContent.Should().Contain("Path parameter");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Runtime value source not configured");
+        cut.Find("[data-testid=pt-value-suggestion]").TextContent.Should().Contain("Suggested value source: Test Data").And.Contain("person-id-qa");
 
         cut.Find("[data-testid=pt-step-map]").Click();
         cut.Find("[data-testid=pt-step-map]").GetAttribute("aria-expanded").Should().Be("true");
@@ -1180,11 +1226,14 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=tdm-use]").Click();
 
         cut.Find("[data-testid=pt-step-mapping][data-variable=personId]").GetAttribute("data-state").Should().Be("mapped");
-        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Be("Mapped to person-id-qa");
-        cut.Find("[data-testid=pt-step-message]").TextContent.Should().Contain("personId mapped to person-id-qa").And.Contain("The value stays in Test Data");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Be("Mapped");
+        cut.Find("[data-testid=pt-value-source]").TextContent.Should().Be("Test Data");
+        cut.Find("[data-testid=pt-value-text]").TextContent.Should().Be("person-id-qa");
+        cut.Find("[data-testid=pt-step-message]").TextContent.Should().Be("Step 1: personId → Test Data · person-id-qa.");
         cut.FindAll("[data-testid=tdm]").Should().BeEmpty();
         cut.FindAll("[data-testid=pt-data-selection-note]").Should().BeEmpty();
-        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments[0]).Should().Contain("pt-req-0-personId", "focus returns to the requirement row");
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments[0]?.ToString())
+            .Should().Contain(id => id!.StartsWith("pt-req-") && id.EndsWith("-personId"), "focus returns to the requirement row");
     }
 
     [Fact]

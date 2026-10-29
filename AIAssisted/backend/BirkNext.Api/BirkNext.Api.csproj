@@ -73,6 +73,7 @@
     <Compile Include="../../shared/IntegrationContractDiscoveryContracts.cs" Link="Models/IntegrationContractDiscoveryContracts.cs" />
     <Compile Include="../../shared/MessageFlowReviewContracts.cs" Link="Models/MessageFlowReviewContracts.cs" />
     <Compile Include="../../shared/AltinnEnvironmentContracts.cs" Link="Models/AltinnEnvironmentContracts.cs" />
+    <Compile Include="../../shared/InteractionAuthContracts.cs" Link="Models/InteractionAuthContracts.cs" />
     <Compile Include="../../shared/ExternalIntegrationContracts.cs" Link="Models/ExternalIntegrationContracts.cs" />
     <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
@@ -127,6 +128,7 @@
     <Compile Include="../../shared/DeliveryTargetScope.cs" Link="Models/DeliveryTargetScope.cs" />
     <Compile Include="../../shared/PerformanceSetupContracts.cs" Link="Models/PerformanceSetupContracts.cs" />
     <Compile Include="../../shared/PerformanceScenarioEngine.cs" Link="Models/PerformanceScenarioEngine.cs" />
+    <Compile Include="../../shared/PerformanceScenarioRuntime.cs" Link="Models/PerformanceScenarioRuntime.cs" />
     <Compile Include="../../shared/DeliveryEvidenceContracts.cs" Link="Models/DeliveryEvidenceContracts.cs" />
     <Compile Include="../../shared/TestEvidenceQueries.cs" Link="Models/TestEvidenceQueries.cs" />
     <Compile Include="../../shared/QualityEvidenceContracts.cs" Link="Models/QualityEvidenceContracts.cs" />

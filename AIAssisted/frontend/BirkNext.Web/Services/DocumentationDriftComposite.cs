@@ -130,10 +130,11 @@ public static partial class DocumentationDriftComposite
     /// same import whose module is established (the folder before <c>specs/</c>) and whose role is the concern; project-level documents and other
     /// modules never enter. Absence on either side is neutral; two generated documents for one module + concern are "Review required".
     /// </summary>
-    public static IReadOnlyList<DriftCandidateGroup> CandidateGroups(IReadOnlyList<DriftDocument> catalog, IReadOnlyList<SddDocumentationDriftComparison> saved, string? importId)
+    public static IReadOnlyList<DriftCandidateGroup> CandidateGroups(IReadOnlyList<DriftDocument> catalog, IReadOnlyList<SddDocumentationDriftComparison> saved, string? importId,
+        IReadOnlyCollection<string>? projectImports = null)
     {
         if (importId is null) return [];
-        var current = catalog.Where(d => d.ProjectImportId == importId && d.Supported).ToList();
+        var current = catalog.Where(d => (d.ProjectImportId == importId || (d.ProjectImportId is { } other && projectImports?.Contains(other) == true)) && d.Supported).ToList();
         var generated = current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null and not "(repository)")
             .GroupBy(d => (Module: d.Module!.ToLowerInvariant(), Concern: ConcernOf(d)))
             .Where(g => Structured(g.Key.Concern)).ToDictionary(g => g.Key, g => g.ToList());
@@ -163,10 +164,17 @@ public static partial class DocumentationDriftComposite
     /// <summary>"Comparison candidate" until a saved composite comparison of exactly these contributor fingerprints and this generated fingerprint exists.</summary>
     public static string Status(IReadOnlyList<SddDocumentationDriftComparison> saved, IReadOnlyList<DriftDocument> contributors, DriftDocument generated)
     {
-        var set = contributors.Select(c => c.Fingerprint).OrderBy(f => f, StringComparer.Ordinal).ToList();
-        var match = saved.FirstOrDefault(s => s.ComparisonKind == StructuredDataModel && s.Right.Fingerprint == generated.Fingerprint
-            && s.Contributors.Select(c => c.Fingerprint).OrderBy(f => f, StringComparer.Ordinal).SequenceEqual(set));
+        var match = SavedFor(saved, contributors, generated);
         return match is null ? "Comparison candidate" : match.Items.Count(i => i.Kind != nameof(ConsistencyCategory.Consistent)) == 0 ? "Consistent" : "Saved · differences found";
+    }
+
+    /// <summary>The saved structured comparison of exactly these contributors (fingerprints) against this generated document, or null — the one
+    /// rule <see cref="Status"/> and the Drift cards share (no second review-status store).</summary>
+    public static SddDocumentationDriftComparison? SavedFor(IReadOnlyList<SddDocumentationDriftComparison> saved, IReadOnlyList<DriftDocument> contributors, DriftDocument generated)
+    {
+        var set = contributors.Select(c => c.Fingerprint).OrderBy(f => f, StringComparer.Ordinal).ToList();
+        return saved.FirstOrDefault(s => s.ComparisonKind == StructuredDataModel && s.Right.Fingerprint == generated.Fingerprint
+            && s.Contributors.Select(c => c.Fingerprint).OrderBy(f => f, StringComparer.Ordinal).SequenceEqual(set));
     }
 
     /// <summary>Spec-Kit feature order ("001-…" before "002-…") — used only to decide whether an explicitly stated change is the later statement.</summary>

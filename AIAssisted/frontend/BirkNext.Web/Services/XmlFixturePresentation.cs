@@ -33,11 +33,18 @@ public static class XmlFixturePresentation
         [.. context.SchemaCandidates.DistinctBy(c => (c.SnapshotId, c.File))];
 
     /// <summary>The single XSD when exactly one resolves; null when there is none or a choice is needed.</summary>
-    public static IntegrationTemplateSchemaCandidate? Preselected(IntegrationTemplateView context) => Xsds(context) is { Count: 1 } one ? one[0] : null;
+    public static IntegrationTemplateSchemaCandidate? Preselected(IntegrationTemplateView context) => XmlContractResolution.Resolve(context).Contract;
 
     /// <summary>Test Data assets that can fill a role (by capability).</summary>
     public static IReadOnlyList<TestDataAssetSummary> Candidates(IEnumerable<TestDataAssetSummary> assets, string capability) =>
         [.. assets.Where(a => a.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase) && a.Kind == TestDataKind.EntityReference)];
+
+    /// <summary>
+    /// A Test Data asset as a selector option: friendly name, canonical asset id (alias) and status/scope, so several reporters or children are
+    /// told apart ("Default child — child-default · Approved · Shared"). Never a value.
+    /// </summary>
+    public static string IdentityOption(TestDataAssetSummary asset) =>
+        $"{asset.Label ?? asset.Alias} — {asset.Alias} · {(asset.Approval == TestDataApproval.Approved ? "Approved" : "Not approved")} · {(string.IsNullOrWhiteSpace(asset.Environment) ? "Shared" : asset.Environment)}{(asset.IsDefault ? " · default" : "")}";
 
     /// <summary>An explicit choice wins; otherwise the single default; otherwise the only candidate; otherwise none (never the first or newest).</summary>
     public static TestDataAssetSummary? Chosen(IReadOnlyList<TestDataAssetSummary> candidates, string? explicitAlias) =>

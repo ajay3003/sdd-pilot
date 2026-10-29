@@ -102,7 +102,9 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         first.QuerySelector("[data-testid=psb-observed]")!.TextContent.Should().Contain(": yes");
         first.QuerySelector("[data-testid=psb-observation]")!.TextContent.Should().StartWith("44 calls · HTTP 200 · last seen 2026-10-23 08:54 UTC");
         first.QuerySelector("[data-testid=psb-auth]")!.TextContent.Should().StartWith("Bearer observed").And.Contain("no token is copied");
-        first.QuerySelector("[data-testid=psb-data-recommended]")!.TextContent.Should().Be("Recommended Test Data: person-id-baseline");
+        first.QuerySelector("[data-testid=psb-data-recommended]")!.TextContent.Should().Be("Test Data suggestion: person-id-baseline");
+        first.QuerySelector("[data-testid=psb-show-evidence]").Should().NotBeNull("evidence is behind Show evidence");
+        first.GetAttribute("data-state").Should().Be("ready");
         first.QuerySelector("[data-testid=psb-because]")!.TextContent.Should().StartWith("Recommended because declared in OpenAPI · Persons API (M2LB.zip)");
         cut.FindAll("[data-testid=psb-operation]").Should().NotContain(o => o.GetAttribute("data-key")!.Contains("hendelse"), "unrelated contracts are not recommended");
         var post = cut.FindAll("[data-testid=psb-operation]").Single(o => o.GetAttribute("data-key")!.Contains("POST"));
@@ -117,6 +119,36 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
     }
 
     [Fact]
+    public void ProjectBoundContractSource_IsConsumedDirectly_WithoutAUseBoundSourceStep_AndCanBeChanged()
+    {
+        var settings = new Mock<IFrontendAnalysisSettingsService>();
+        settings.Setup(s => s.ActiveProfile).Returns(new BirkNext.Web.Models.FrontendAnalysisProfile
+        {
+            Id = "dev", Name = "Development",
+            Project = new BirkNext.Web.Models.EnvironmentProject
+            {
+                ProjectName = "M2LB",
+                Evidence = [new BirkNext.Web.Models.EnvironmentProjectEvidenceBinding
+                {
+                    RoleKey = "application-source", Capability = BirkNext.Web.Models.ProjectEvidenceCapability.ApplicationSource,
+                    Sources = [new BirkNext.Web.Models.ProjectEvidenceSourceReference { ArchiveFileName = "M2LB.zip", SnapshotId = SnapshotId }],
+                }],
+            },
+        });
+        Services.AddSingleton(settings.Object);
+        var cut = Render(Persons());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=psb-contract-source]"));
+        cut.Find("[data-testid=psb-contract-source-name]").TextContent.Should().Be("M2LB.zip");
+        cut.Find("[data-testid=psb-contract-source-origin]").TextContent.Should().Be("Bound from Project setup");
+        cut.Find("[data-testid=psb-contract-source]").TextContent.Should().Contain("1 OpenAPI · 0 GraphQL");
+        cut.Markup.Should().NotContain("Use bound contract source").And.NotContain("psb-use-bound");
+        cut.FindAll("[data-testid=psb-snapshot]").Should().BeEmpty("no second selection is needed");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=psb-operation]").Should().NotBeEmpty());
+        cut.Find("[data-testid=psb-contract-source-change]").Click();
+        cut.Find("[data-testid=psb-snapshot]").TextContent.Should().Contain("bound to project M2LB");
+    }
+
+    [Fact]
     public void AddingAnOperation_CreatesAProposedStep_WithAliasMappingAndSuggestedName_NothingRuns()
     {
         var cut = Render(Persons());
@@ -128,7 +160,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         var step = _changed!.Scenario.Steps.Single();
         step.Should().Match<HttpPerformanceStep>(s => s.RelativePath == "/api/person/{personId}" && s.Method == "GET");
         step.ExpectedStatusCodes.Should().Equal(200);
-        step.DataMappings!.Single().AssetAliases.Should().Equal("person-id-baseline");
+        step.DataMappings.Should().BeNull("the step owns its runtime values: a Test Data match is offered there as a suggestion, never mapped silently");
         step.Source!.Evidence.Should().Be(ScenarioEvidence.DeclaredAndObserved);
         _changed.Scenario.Name.Should().Be("Person lookup baseline");
         _changed.Scenario.ContractSnapshotId.Should().Be(SnapshotId);
@@ -158,7 +190,8 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         selected.WaitForAssertion(() => selected.FindAll("[data-testid=psb-operation]").Should().NotBeEmpty());
         var get = selected.FindAll("[data-testid=psb-operation]").Single(o => o.GetAttribute("data-key")!.EndsWith("GET /api/person/{personId}"));
         get.GetAttribute("data-evidence").Should().Be("DeclaredOnly");
-        get.QuerySelector("[data-testid=psb-data-missing]")!.TextContent.Should().Contain("Missing");
+        get.QuerySelector("[data-testid=psb-data-none]")!.TextContent.Should().Be("No compatible approved Test Data yet (one possible value source)");
+        get.TextContent.Should().NotContain("Test Data missing", "a dynamic parameter is not a Test Data requirement");
         get.QuerySelector("[data-testid=psb-open-test-data]")!.GetAttribute("href").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&dataType=SimpleValues&in=path&contentType=string&environment=Development");
     }

@@ -40,6 +40,30 @@ public sealed class SddLifecycleState
     /// Requirements, links and evidence recorded now carry it; only items of this scope apply. Follows the pack focus; never authority.
     /// </summary>
     public string? ActiveRequirementScope { get; set; }
+    /// <summary>Test Data → XML fixtures: the explicit source snapshot/XSD choice and the value mappings per test context and environment.
+    /// References only (snapshot id, XSD path, Test Data alias, fixed/generated rule) — never a resolved Test Data value.</summary>
+    public List<SddXmlFixtureSetup> XmlFixtureSetups { get; set; } = [];
+}
+
+public sealed class SddXmlFixtureSetup
+{
+    public string ContextKey { get; set; } = "";
+    public string? EnvironmentId { get; set; }
+    /// <summary>Set only when a person chose the snapshot (or contract) explicitly; a preselection is never saved as explicit.</summary>
+    public Guid? SnapshotId { get; set; }
+    public string? File { get; set; }
+    public List<SddXmlValueMapping> Mappings { get; set; } = [];
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>One XML value mapping: the stable schema path and where the value comes from. A Test Data mapping holds the asset alias only.</summary>
+public sealed class SddXmlValueMapping
+{
+    public string Path { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string? AssetAlias { get; set; }
+    public string? FixedValue { get; set; }
+    public string? Generated { get; set; }
 }
 
 /// <summary>Which feature pack of a module is being viewed (a pack folder such as <c>002-testcontainers</c>). Viewing is not choosing an authority.</summary>

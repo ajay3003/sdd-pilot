@@ -71,8 +71,9 @@
     };
 
     private IReadOnlyList<ShellCard> Cards => _view is not { } view ? [] :
-        [.. view.Summary.Select(item => new ShellCard(item.Key, item.Label, AltinnEnvironmentPresentation.ReadinessLabel(item), AltinnEnvironmentPresentation.Tone(item.State),
-            AltinnEnvironmentPresentation.CardReason(item, view)))];
+        [.. view.Summary.Select(item => AltinnAccessPresentation.ReporterCard(item, view, _browserAuth)).Select(item => new ShellCard(item.Key, item.Label,
+            AltinnEnvironmentPresentation.ReadinessLabel(item), AltinnEnvironmentPresentation.Tone(item.State),
+            item.Key is "reporter-access" or "integration-auth" ? item.Reason : AltinnEnvironmentPresentation.CardReason(item, view)))];
 
     private IReadOnlyList<ShellFixGroup> FixGroups => _view is not { } view ? [] : [.. AltinnEnvironmentPresentation.ThingsToFix(view).Select(AltinnEnvironmentPresentation.ToShell)];
 
@@ -90,6 +91,10 @@
         new("application", "Application", AltinnEnvironmentPresentation.ApplicationLine(view))
         {
             Body = Table("Application"),
+        },
+        new("access", "Access & authentication", AltinnAccessPresentation.Line(view, _browserAuth))
+        {
+            ToggleLabel = "Review access", Body = AccessBody,
         },
         new("browser", "Browser authentication", $"{AltinnEnvironmentPresentation.BrowserLine(view)} · Browser login observation: {AltinnEnvironmentPresentation.BrowserObservationLine(view)}")
         {
@@ -129,11 +134,61 @@
         <ProviderFieldTable Prefix="ae" Group="@group" Evidence="evidence" Fields="@(_view!.Fields.Where(field => field.Group == group).ToList())" />
     };
 
+    /// <summary>Per-hop authentication: requirement, provider, configuration and runtime kept apart for each interaction.</summary>
+    private RenderFragment AccessBody => __builder =>
+    {
+        if (_view is not { } view) return;
+        <ul class="ae-hops" data-testid="ae-hops" aria-label="Access and authentication per interaction">
+            @foreach (var hop in view.Interactions)
+            {
+                <li class="ae-hop" data-testid="ae-hop" data-key="@hop.Key" data-requirement="@hop.Requirement.Requirement" data-conflict="@(hop.Requirement.Conflict ? "true" : "false")">
+                    <h6 class="ae-h5" id="@($"ae-hop-{hop.Key}")">@hop.Title · @hop.From → @hop.To</h6>
+                    <dl class="ae-hop-facts" aria-labelledby="@($"ae-hop-{hop.Key}")">
+                        <div><dt>Requirement</dt><dd data-testid="ae-hop-requirement">@AltinnAccessPresentation.RequirementText(hop)</dd></div>
+                        @if (hop.Provider is { } provider) { <div><dt>Provider</dt><dd data-testid="ae-hop-provider">@provider</dd></div> }
+                        <div><dt>Configuration</dt><dd data-testid="ae-hop-configuration">@hop.Configuration</dd></div>
+                        <div><dt>Runtime</dt><dd data-testid="ae-hop-runtime">@(hop.Key == AltinnHops.ReporterApp ? AltinnAccessPresentation.ReporterRuntime(hop, _browserAuth) : hop.Runtime)</dd></div>
+                        @if (hop.Key == AltinnHops.ReporterApp && _browserAuth.ObservedLevel != BrowserAuthEvidenceLevel.Unknown)
+                        {
+                            <div><dt>Login flow</dt><dd data-testid="ae-hop-login-flow">@(_browserAuth.Reached(BrowserAuthEvidenceLevel.LoginFlowObserved) ? "Observed" : "Not observed")</dd></div>
+                            <div><dt>Authenticated return</dt><dd data-testid="ae-hop-return">@(_browserAuth.Reached(BrowserAuthEvidenceLevel.AuthenticatedReturnObserved) ? "Observed" : "Not observed")</dd></div>
+                            <div><dt>Session</dt><dd data-testid="ae-hop-session">@(_browserAuth.ObservedLevel == BrowserAuthEvidenceLevel.LoggedOut ? "Lost / logged out" : _browserAuth.Reached(BrowserAuthEvidenceLevel.AuthenticatedSessionObserved) ? "Observed" : "Not observed")</dd></div>
+                            <div><dt>Source</dt><dd data-testid="ae-hop-source">@BrowserAuthEvidenceResult.Source</dd></div>
+                        }
+                        <div><dt>Needed for</dt><dd>@hop.RequiredFor</dd></div>
+                    </dl>
+                    <p class="ae-muted">@hop.Purpose</p>
+                    @switch (hop.ActionTarget)
+                    {
+                        case "browser-discovery":
+                            <a class="ae-link" data-testid="ae-hop-view-browser" href="@AltinnAccessPresentation.BrowserDiscoveryHref(EnvironmentId)">View browser evidence<span class="visually-hidden"> for reporter access</span></a>
+                            break;
+                        case "integration-catalog":
+                            <a class="ae-link" data-testid="ae-hop-review-integration" href="@AltinnAccessPresentation.IntegrationCatalogHref(EnvironmentId)">Review integration authentication<span class="visually-hidden"> for @hop.From to @hop.To</span></a>
+                            break;
+                        case "automated":
+                            <button type="button" class="ae-link" data-testid="ae-hop-configure-execution" @onclick="OpenExecutionCredentials">Configure execution credentials</button>
+                            break;
+                    }
+                </li>
+            }
+        </ul>
+    };
+
     private RenderFragment BrowserBody => __builder =>
     {
         @Table("Browser authentication")
+        @if (_browserAuth.Usable)
+        {
+            @* Browser Discovery already recorded this app's login: reuse it (discover once, record once), no second manual record. *@
+            <p class="ae-muted" data-testid="ae-browser-evidence-used">Browser Discovery shows this app's login (@BrowserAuthEvidence.Label(_browserAuth)); no manual recording is needed.
+                <a class="ae-link" data-testid="ae-browser-view-evidence" href="@AltinnAccessPresentation.BrowserDiscoveryHref(EnvironmentId)">View browser evidence</a></p>
+        }
+        else
+        {
         <button type="button" class="btn btn-secondary btn-sm" data-testid="ae-browser-record" aria-expanded="@Expanded(_browserForm)" aria-controls="ae-browser-form" @onclick="() => _browserForm = !_browserForm">@(_browserForm ? "Hide browser login observation" : "Record browser login observation")</button>
-        @if (_browserForm)
+        }
+        @if (_browserForm && !_browserAuth.Usable)
         {
             <div id="ae-browser-form" class="ae-form" data-testid="ae-browser-form">
                 <span class="ae-muted">Authorization request parameters only. A code, state, nonce, request_uri or token is refused.</span>
@@ -294,6 +349,24 @@
         _view = null; _error = null; _notice = null; _selected.Clear();
         if (Api is null) { _error = "Altinn setup is not available in this host."; return; }
         Show(await Api.GetAsync(EnvironmentId));
+        await LoadBrowserEvidenceAsync();
+    }
+
+    private BrowserAuthEvidenceResult _browserAuth = BrowserAuthEvidenceResult.None;
+
+    private void OpenExecutionCredentials() { _clientForm = true; _shell?.OpenSection("automated"); }
+
+    /// <summary>Browser Discovery owns the observations; the reporter hop only reads the exact app's login evidence from them.</summary>
+    private async Task LoadBrowserEvidenceAsync()
+    {
+        _browserAuth = BrowserAuthEvidenceResult.None;
+        if (_view is not { } view || Services.GetService(typeof(IEndpointDiscoveryService)) is not IEndpointDiscoveryService discovery) return;
+        try
+        {
+            if (Services.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is Microsoft.JSInterop.IJSRuntime js) await discovery.LoadAsync(js);
+            _browserAuth = AltinnAccessPresentation.Evidence(view, discovery.GetSnapshot(EnvironmentId), DateTimeOffset.UtcNow);
+        }
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException) { _browserAuth = BrowserAuthEvidenceResult.None; }
     }
 
     private void Show(ActiveEventApiResult<AltinnEnvironmentView> result, string? notice = null)

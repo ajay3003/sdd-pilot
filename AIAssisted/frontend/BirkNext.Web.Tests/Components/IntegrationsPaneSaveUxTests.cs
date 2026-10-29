@@ -204,7 +204,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
                 "optional links and an owner that is never inferred are not missing setup");
         }
         // Review decisions are cards with states and actions, not lettered form sections.
-        cut.FindAll("[data-testid=ip-edit-review] h5").Select(h => h.TextContent).Should().Equal("Consumer mapping", "Source evidence", "Authentication", "Contract");
+        cut.FindAll("[data-testid=ip-edit-review] h5").Select(h => h.TextContent).Should().Equal("Consumer mapping", "Source evidence", "Integration authentication", "Contract");
         cut.FindAll("legend").Select(l => l.TextContent.Trim()).Should().StartWith(["Integration configuration", "Connection"]);
         cut.Markup.Should().NotContain("A. Integration").And.NotContain("D. Authentication");
         cut.FindAll("[data-testid=ip-edit-advanced]").Should().BeEmpty("an HTTP/API integration has no advanced options, so Advanced is not rendered at all");

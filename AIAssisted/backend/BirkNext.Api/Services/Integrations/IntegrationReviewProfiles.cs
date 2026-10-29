@@ -90,9 +90,10 @@ public static class IntegrationReviewProfiles
                 [bound.Count > 0 ? "Error-response handling in the bound source" : null], [noSourceGap, "Error responses at runtime: not observed"]),
             Row(IntegrationReviewDomain.Security, IntegrationDomainReadiness.Limited,
                 "Authentication metadata and the configured mechanism are reviewed; runtime identity and authorization are never verified by this review.",
-                [Facts_(authReference, f => $"Authentication metadata: {Joined(f.AuthenticationReference)} (Test Pack reference)"),
+                // The Test Pack reference describes how users sign in to the producer application — context, never this integration's authentication.
+                [Facts_(authReference, f => $"Producer application sign-in metadata (not this integration's authentication): {Joined(f.AuthenticationReference)} (Test Pack reference)"),
                     configuredAuth.Count > 0 ? $"Configured mechanism: {string.Join(", ", configuredAuth)}" : null, https == withEndpoint.Count && https > 0 ? "HTTPS endpoint" : null],
-                [authReference.Count == 0 && configuredAuth.Count == 0 ? "Authentication mechanism or reference metadata" : null, "Runtime identity and authorization: not verified"]),
+                [configuredAuth.Count == 0 ? "Integration authentication mechanism (Unknown until configured or reviewed)" : null, "Runtime identity and authorization: not verified"]),
             Row(IntegrationReviewDomain.Observability, bound.Count > 0 || monitoring > 0 ? IntegrationDomainReadiness.Limited : IntegrationDomainReadiness.NotAssessable,
                 "HTTP receipt logging and correlation are reviewed from the consumer's source and configured links; no telemetry is read for HTTP/API.",
                 [bound.Count > 0 ? "Receipt logging and correlation in the bound source (source-visible only)" : null, monitoring > 0 ? $"Monitoring or health link for {Plural(monitoring, "integration")}" : null],

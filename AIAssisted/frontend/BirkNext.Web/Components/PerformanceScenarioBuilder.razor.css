@@ -71,3 +71,28 @@
 .ovr-facts dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
 .ovr-facts dd { margin: 0; overflow-wrap: anywhere; }
 .ovr-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+
+/* Compact candidate: one primary state (text + tone), short attention list, evidence behind "Show evidence". */
+h4.psb-op-name { margin: 0; flex: 1 1 16rem; font-weight: 700; }
+.psb-chip-ready { background: rgba(37, 99, 235, .1); color: #1e40af; border-color: rgba(37, 99, 235, .4); }
+.psb-chip-review { background: rgba(217, 119, 6, .12); color: #92400e; border-color: rgba(217, 119, 6, .4); }
+.psb-chip-notrunnable { background: rgba(148, 163, 184, .15); color: #475569; }
+.psb-chip-conflict { background: rgba(220, 38, 38, .1); color: #991b1b; border-color: rgba(220, 38, 38, .4); }
+.psb-state-ready { border-left-color: #2563eb; }
+.psb-state-review { border-left-color: #d97706; }
+.psb-state-notrunnable { border-left-color: #94a3b8; }
+.psb-state-conflict { border-left-color: #dc2626; }
+@media (prefers-color-scheme: dark) { .psb-chip-ready { color: #93c5fd; } .psb-chip-review { color: #fcd34d; } .psb-chip-notrunnable { color: #cbd5e1; } .psb-chip-conflict { color: #fca5a5; } }
+.psb-attention { font-size: .85rem; }
+.psb-attention-title { font-weight: 600; }
+.psb-attention ul { margin: .15rem 0 0; padding-left: 1.1rem; }
+.psb-warn-item { color: #92400e; }
+.psb-info-item { color: var(--clr-text-muted, #475569); }
+@media (prefers-color-scheme: dark) { .psb-warn-item { color: #fcd34d; } }
+.psb-filters-secondary { margin-top: 0; }
+.psb-filter-small { font-size: .78rem; padding: .1rem .55rem; }
+.psb-filter-label { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.psb-contract-source { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; }
+.psb-source-label { font-size: .85rem; color: var(--clr-text-muted, #475569); }
+.psb-source-name { overflow-wrap: anywhere; }
+.psb-fact-wide { grid-column: 1 / -1; }

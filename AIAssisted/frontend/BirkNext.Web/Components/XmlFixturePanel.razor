@@ -21,18 +21,30 @@
         var context = _context!;
         var xsds = XmlFixturePresentation.Xsds(context);
         var fixtures = XmlFixturePresentation.Fixtures(Assets, context.SchemaName!);
-        var (readiness, readinessText, current) = XmlFixturePresentation.Readiness(fixtures, _xsd?.SnapshotId ?? XmlFixturePresentation.Preselected(context)?.SnapshotId);
+        var selection = Selection(context);
+        var (readiness, readinessText, current) = XmlFixturePresentation.Readiness(fixtures, CurrentXsd(context)?.SnapshotId);
         <dl class="xf-summary" data-testid="xf-summary">
             <div><dt>Test context</dt><dd data-testid="xf-context">@context.PackName · @context.DisplayName</dd></div>
             @foreach (var binding in context.FixtureBindings)
             {
                 var chosen = Chosen(binding);
-                <div data-testid="xf-role" data-role="@binding.Role"><dt>@binding.Role</dt><dd>@(chosen is null ? "Missing — choose in Session test identities" : chosen.Label ?? chosen.Alias)@if (binding.ElementPath is null) { <span class="xf-muted"> · Used to submit the report; not part of the XML payload.</span> }</dd></div>
+                <div data-testid="xf-role" data-role="@binding.Role"><dt>@binding.Role</dt><dd>@(chosen is null ? "Missing — choose in Session test identities" : $"{chosen.Label ?? chosen.Alias} ({chosen.Alias})")@if (binding.ElementPath is null) { <span class="xf-muted" data-testid="xf-role-submission"> · Used for submission; not part of the XML payload.</span> }</dd></div>
             }
             <div><dt>Contract / XSD</dt><dd data-testid="xf-contract">@context.SchemaName</dd></div>
             <div><dt>XML fixture</dt><dd><span class="xf-badge xf-badge-@(readiness == TestDataXmlReadinessState.Ready ? "ready" : "attention")" data-testid="xf-readiness" data-state="@readiness">@readinessText</span></dd></div>
         </dl>
 
+        @if (current is not null && _open && ChangedContract(context, current) is { } contractChange)
+        {
+            <p class="xf-notice" role="status" data-testid="xf-contract-changed">@contractChange Existing approved fixture @current.Alias remains unchanged. Regenerate as a new draft to use the new contract.</p>
+        }
+        @if (current is not null && ChangedRoles(context, current) is { Count: > 0 } changed)
+        {
+            @* A mapped identity (inside the XML) changed: the approved fixture is never mutated; a new draft is generated instead. A role that is
+               not part of the payload (the submitting reporter) changes the submission context only. *@
+            <p class="xf-notice" role="status" data-testid="xf-regenerate-notice">@string.Join(" ", changed.Select(c => $"{current.Alias} was generated with {c.Role.ToLowerInvariant()} {c.Was}; {c.Now} is now selected."))
+                The saved fixture stays unchanged — regenerate the XML as a new draft to use the new selection.</p>
+        }
         @if (!_open)
         {
             @* The primary action follows the state: a ready fixture is opened, not created again; anything else is created (or revalidated). *@
@@ -40,7 +52,8 @@
                 @if (readiness == TestDataXmlReadinessState.Ready && current is not null)
                 {
                     <button type="button" class="btn btn-primary btn-sm" data-testid="xf-open-ready" aria-controls="@DetailId(current)" aria-expanded="@(_detailFor == current.Id ? "true" : "false")" @onclick="() => ToggleDetail(current)">@(_detailFor == current.Id ? "Hide fixture" : "Open fixture")</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">Create another</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">@(ChangedRoles(context, current).Count > 0 ? "Regenerate XML as new draft" : "Create another")</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-use-existing" aria-expanded="@(_useExisting ? "true" : "false")" aria-controls="xf-existing" @onclick="() => _useExisting = !_useExisting">Use existing XML fixture</button>
                 }
                 else if (readiness == TestDataXmlReadinessState.NotApproved && current is not null)
                 {
@@ -57,6 +70,18 @@
                     })</button>
                 }
             </div>
+            @if (_useExisting)
+            {
+                @* Payload level: an existing approved XML fixture is chosen as a whole message — never offered as a value for a single field. *@
+                <div id="xf-existing" class="xf-step" data-testid="xf-existing" role="group" aria-label="Use an existing XML fixture (payload level)">
+                    <label for="xf-existing-select">Existing XML fixtures for @context.SchemaName (payload level)</label>
+                    <select id="xf-existing-select" class="form-select" data-testid="xf-existing-select" @onchange="e => UseExisting(fixtures, e.Value?.ToString())">
+                        <option value="">Choose a fixture…</option>
+                        @foreach (var f in fixtures.Where(f => f.Approval == TestDataApproval.Approved)) { <option value="@f.Alias">@($"{f.Label ?? f.Alias} — {f.Alias} · Approved · {XmlFixturePresentation.SchemaValidation(f)}")</option> }
+                    </select>
+                    <span class="xf-muted">The chosen fixture is used as the complete report payload; its source, XSD and mappings are in its details.</span>
+                </div>
+            }
             @if (readiness == TestDataXmlReadinessState.Outdated) { <p class="xf-muted" data-testid="xf-outdated-help">The fixture was validated against another snapshot of the XSD. Revalidate creates it again from the current XSD; nothing ready is assumed.</p> }
         }
         else
@@ -77,48 +102,194 @@
                         var role = binding.Role;
                         var candidates = XmlFixturePresentation.Candidates(Assets, binding.Capability);
                         var chosen = Chosen(binding);
-                        <label>@role @(binding.ElementPath is null ? "(not in the XML)" : $"→ {binding.ElementPath}")
-                            <select class="form-select" data-testid="xf-identity" data-role="@role" @onchange="e => _explicit[role] = e.Value?.ToString()">
+                        var selectId = $"xf-identity-{role.ToLowerInvariant()}";
+                        <div class="xf-identity" data-testid="xf-identity-row" data-role="@role" data-in-xml="@(binding.ElementPath is null ? "false" : "true")">
+                            <label for="@selectId">@(binding.ElementPath is null ? $"{role} · submission identity" : $"{role} · mapped into the XML")</label>
+                            <select id="@selectId" class="form-select" data-testid="xf-identity" data-role="@role" aria-describedby="@($"{selectId}-help")" @onchange="e => ChooseIdentity(binding, e.Value?.ToString())">
                                 @if (chosen is null) { <option value="" selected>Choose…</option> }
-                                @foreach (var c in candidates) { <option value="@c.Alias" selected="@(chosen?.Alias == c.Alias)">@(c.Label ?? c.Alias)@(c.IsDefault ? " (default)" : "")</option> }
+                                @foreach (var c in candidates) { <option value="@c.Alias" selected="@(chosen?.Alias == c.Alias)">@XmlFixturePresentation.IdentityOption(c)</option> }
                             </select>
-                        </label>
+                            <span id="@($"{selectId}-help")" class="xf-muted" data-testid="xf-identity-help">@(binding.ElementPath is null
+                                ? "Used for the submission context (who signs in and submits). Not mapped into the XML payload; changing it does not regenerate the XML."
+                                : $"Mapped into {XmlValueMappings.Display(_parameters, binding.ElementPath)}; changing it needs a regenerated XML.")</span>
+                            @if (candidates.Count == 0) { <span class="xf-muted" data-testid="xf-identity-none">No approved @role.ToLowerInvariant() Test Data assets found.</span> }
+                        </div>
+                    }
+                </fieldset>
+                <fieldset class="xf-step" data-testid="xf-snapshot">
+                    <legend>Source snapshot</legend>
+                    @if (selection.Snapshot is { } snap)
+                    {
+                        <p data-testid="xf-snapshot-chosen"><strong>@snap.ArchiveFileName</strong> <span class="xf-muted">· snapshot @snap.ShortId@(snap.AnalyzedAt is { } at ? $" · analyzed {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "")</span></p>
+                        <p class="xf-muted"><span class="xf-badge" data-testid="xf-snapshot-state" data-state="@selection.SnapshotState">@XmlContractResolution.StateLabel(selection.SnapshotState)</span> <span data-testid="xf-snapshot-reason">@selection.SnapshotReason</span></p>
+                    }
+                    else if (selection.SnapshotState == XmlSelectionState.NeedsDecision)
+                    {
+                        <p data-testid="xf-snapshot-decision"><span class="xf-badge xf-badge-attention" data-testid="xf-snapshot-state" data-state="NeedsDecision">Needs decision</span> @selection.SnapshotReason. Nothing is chosen by date.</p>
+                    }
+                    else if (selection.Snapshots.Count == 0)
+                    {
+                        <p class="xf-muted" data-testid="xf-snapshot-none">No imported source snapshot declares an XSD for @context.SchemaName.</p>
+                    }
+                    @if (_snapshotNotice is { } snapshotNotice) { <p class="xf-notice" role="status" data-testid="xf-snapshot-notice">@snapshotNotice</p> }
+                    @if (selection.Snapshots.Count > 0)
+                    {
+                        @if (!_changeSnapshot && selection.Snapshot is not null)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-change-snapshot" aria-expanded="false" aria-controls="xf-snapshot-select" @onclick="() => _changeSnapshot = true">Change snapshot</button>
+                        }
+                        else
+                        {
+                            <label for="xf-snapshot-select">Choose source snapshot</label>
+                            <select id="xf-snapshot-select" class="form-select" data-testid="xf-snapshot-select" @onchange="e => SelectSnapshotAsync(context, e.Value?.ToString())">
+                                <option value="" selected="@(selection.Snapshot is null)">Choose a source snapshot…</option>
+                                @foreach (var option in selection.Snapshots) { <option value="@option.SnapshotId" selected="@(selection.Snapshot?.SnapshotId == option.SnapshotId)">@option.Label</option> }
+                            </select>
+                        }
                     }
                 </fieldset>
                 <fieldset class="xf-step" data-testid="xf-xsd">
                     <legend>Contract / XSD</legend>
-                    @if (xsds.Count == 0)
+                    @if (selection.Snapshots.Count == 0)
                     {
                         <p data-testid="xf-no-xsd">No matching XSD found for @context.SchemaName in the imported sources. <a href="schema-studio" data-testid="xf-open-studio">Open Schema Studio</a></p>
                     }
-                    else if (xsds.Count == 1)
+                    else if (_pendingReview && selection.Contract is { } review)
                     {
-                        <p data-testid="xf-xsd-chosen">@xsds[0].File <span class="xf-muted">· @xsds[0].ArchiveFileName · snapshot @xsds[0].SnapshotId.ToString()[..8]</span></p>
+                        <p class="xf-notice" data-testid="xf-xsd-review">Matching XSD found in the selected snapshot: <strong>@System.IO.Path.GetFileName(review.File)</strong>. Review before continuing.</p>
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="xf-xsd-confirm" @onclick="() => ConfirmXsdAsync(review)">Use this XSD</button>
                     }
-                    else
+                    else if (CurrentXsd(context) is { } xsd)
                     {
-                        <label>Choose XSD (several imported sources declare @context.SchemaName)
-                            <select class="form-select" data-testid="xf-xsd-select" @onchange="e => SelectXsd(e.Value?.ToString())">
-                                <option value="" selected="@(_xsd is null)">Choose…</option>
-                                @for (var i = 0; i < xsds.Count; i++) { <option value="@i" selected="@(_xsd == xsds[i])">@xsds[i].File · @xsds[i].ArchiveFileName</option> }
+                        <p data-testid="xf-xsd-chosen"><strong>@System.IO.Path.GetFileName(xsd.File)</strong> <span class="xf-muted">· @xsd.File · @xsd.ArchiveFileName · snapshot @xsd.SnapshotId.ToString()[..8]@(xsd.Version is { } v ? $" · version {v}" : "")</span></p>
+                        <p class="xf-muted"><span class="xf-badge" data-testid="xf-xsd-state" data-state="@selection.ContractState">@XmlContractResolution.StateLabel(selection.ContractState)</span> <span data-testid="xf-xsd-reason">@selection.ContractReason</span></p>
+                    }
+                    else if (selection.Snapshot is not null)
+                    {
+                        <p data-testid="xf-xsd-decision"><span class="xf-badge xf-badge-attention">@XmlContractResolution.StateLabel(selection.ContractState)</span> @selection.ContractReason</p>
+                    }
+                    @if (selection.Snapshot is not null)
+                    {
+                        var choices = _showAll ? selection.Contracts.Concat(selection.OtherContracts).ToList() : selection.Contracts.ToList();
+                        @if (_changeXsd || (CurrentXsd(context) is null && !_pendingReview))
+                        {
+                            <label for="xf-xsd-select">Choose XSD (from snapshot @selection.Snapshot.ShortId)</label>
+                            <select id="xf-xsd-select" class="form-select" data-testid="xf-xsd-select" @onchange="e => SelectXsdAsync(context, choices, e.Value?.ToString())">
+                                <option value="" selected="@(CurrentXsd(context) is null)">Choose…</option>
+                                @for (var i = 0; i < choices.Count; i++)
+                                {
+                                    var c = choices[i];
+                                    <option value="@i" selected="@(CurrentXsd(context) == c)">@XsdOption(context, c)</option>
+                                }
                             </select>
-                        </label>
+                            <label class="xf-check"><input type="checkbox" data-testid="xf-show-all" checked="@_showAll" @onchange="e => _showAll = e.Value is true" /> Show all schemas/contracts in this snapshot</label>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-change-xsd" aria-expanded="false" aria-controls="xf-xsd-select" @onclick="() => _changeXsd = true">Change XSD</button>
+                        }
                     }
+                    <a href="@SchemaStudioHref(CurrentXsd(context))" class="xf-link" data-testid="xf-studio-link">Open XSD in Schema Studio</a>
+                </fieldset>
+                <fieldset class="xf-step" data-testid="xf-mappings">
+                    <legend>XML value mappings</legend>
+                    <p class="xf-muted">Order: XSD structure and defaults → these mappings → generated values → XML generation → XSD validation. A mapping wins over a generated value. Test Data mappings store the asset reference, never its value.</p>
+                    @if (_parameters.Count == 0)
+                    {
+                        <p class="xf-muted" data-testid="xf-mappings-waiting">@(_package is null ? "The XSD's fields are listed once the XSD is loaded." : "The XSD declares no mappable fields.")</p>
+                        @if (_package is null && CurrentXsd(context) is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-load-fields" disabled="@_busy" @onclick="LoadFieldsAsync">Load XSD fields</button> }
+                    }
+                    @if (_parameters.Count > 0)
+                    {
+                        <label class="xf-filter">Search fields <input class="form-control" data-testid="xf-map-filter" type="search" placeholder="e.g. Identifikator" @bind="_fieldFilter" @bind:event="oninput" aria-describedby="xf-filter-help" /></label>
+                        <span id="xf-filter-help" class="visually-hidden">Filters the Parameter lists below by full path or data type.</span>
+                    }
+                    @for (var i = 0; i < _mappings.Count; i++)
+                    {
+                        var index = i;
+                        var row = _mappings[index];
+                        var parameter = _parameters.FirstOrDefault(p => p.Path == row.Path);
+                        var duplicate = _mappings.Count(m => m.Path == row.Path) > 1;
+                        var rowId = $"xf-map-{index}";
+                        <div class="xf-mapping" data-testid="xf-mapping" data-path="@row.Path" data-kind="@row.Kind" data-suggested="@(row.IsSuggested ? "true" : "false")" role="group" aria-labelledby="@($"{rowId}-label")">
+                            <span id="@($"{rowId}-label")" class="visually-hidden">Mapping @(index + 1): @(parameter?.Technical ?? row.Path)</span>
+                            <label>Parameter
+                                <select class="form-select" data-testid="xf-map-parameter" aria-describedby="@($"{rowId}-technical")" @onchange="e => SetParameter(index, e.Value?.ToString())">
+                                    @if (parameter is null) { <option value="" selected>Choose a field…</option> }
+                                    @foreach (var p in FilteredParameters(row.Path)) { <option value="@p.Path" selected="@(p.Path == row.Path)" title="@p.Technical">@p.Display@(p.Type is { } type ? $" ({type})" : "")</option> }
+                                </select>
+                            </label>
+                            <span id="@($"{rowId}-technical")" class="xf-mono xf-muted" data-testid="xf-map-technical">@(parameter?.Technical ?? "—")</span>
+                            <label>Value source
+                                <select class="form-select" data-testid="xf-map-source" @onchange="e => SetKind(index, e.Value?.ToString())">
+                                    @foreach (var kind in Enum.GetValues<XmlValueSourceKind>()) { <option value="@kind" selected="@(kind == row.Kind)">@SourceLabel(kind)</option> }
+                                </select>
+                            </label>
+                            @switch (row.Kind)
+                            {
+                                case XmlValueSourceKind.TestDataAsset:
+                                    var compatible = XmlValueMappings.CompatibleAssets(Assets, row.Path, context.FixtureBindings);
+                                    if (compatible.Count == 0)
+                                    {
+                                        <span class="xf-muted" data-testid="xf-map-no-assets">No compatible Test Data assets found.</span>
+                                    }
+                                    else
+                                    {
+                                        <label>Value
+                                            <select class="form-select" data-testid="xf-map-asset" @onchange="e => SetAsset(index, e.Value?.ToString())">
+                                                @if (row.AssetAlias is null) { <option value="" selected>Choose a Test Data asset…</option> }
+                                                @foreach (var asset in compatible) { <option value="@asset.Alias" selected="@(asset.Alias == row.AssetAlias)">@XmlFixturePresentation.IdentityOption(asset)</option> }
+                                            </select>
+                                        </label>
+                                    }
+                                    break;
+                                case XmlValueSourceKind.Fixed:
+                                    <label>Value <input class="form-control" data-testid="xf-map-fixed" value="@row.FixedValue" maxlength="200" @onchange="e => SetFixed(index, e.Value?.ToString())" /></label>
+                                    break;
+                                case XmlValueSourceKind.Generated:
+                                    <label>Value
+                                        <select class="form-select" data-testid="xf-map-generated" @onchange="e => SetGenerated(index, e.Value?.ToString())">
+                                            @foreach (var g in Enum.GetValues<XmlGeneratedValue>()) { <option value="@g" selected="@(g == (row.Generated ?? XmlGeneratedValue.Uuid))">@(g switch { XmlGeneratedValue.Uuid => "UUID", XmlGeneratedValue.Timestamp => "Timestamp (UTC)", _ => "Today's date" })</option> }
+                                        </select>
+                                    </label>
+                                    break;
+                                default:
+                                    <span class="xf-muted">The generated/default value is kept.</span>
+                                    break;
+                            }
+                            <span class="xf-badge @(MappingStatus(row) == "Mapped" ? "xf-badge-ready" : "xf-badge-attention")" data-testid="xf-map-status" data-status="@MappingStatus(row)">@MappingStatus(row)</span>
+                            @if (row.NeedsReview is { } why) { <span class="xf-error" data-testid="xf-map-review">@why</span> }
+                            @if (row.SuggestedFrom is { } suggested) { <span class="xf-badge xf-badge-attention" data-testid="xf-map-suggested">Suggested from @suggested</span> }
+                            @if (duplicate) { <span class="xf-error" data-testid="xf-map-duplicate">This field is mapped more than once.</span> }
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-map-remove" aria-label="@($"Remove mapping for {(parameter?.Technical ?? row.Path)}")" @onclick="() => RemoveMapping(index)">Remove</button>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-map-add" disabled="@(_parameters.Count == 0)" @onclick="AddMapping">+ Add mapping</button>
                 </fieldset>
                 <div class="xf-actions">
-                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-generate" disabled="@(_busy || CurrentXsd(context) is null)" @onclick="GenerateAsync">Generate XML</button>
-                    <a href="schema-studio" class="xf-link" data-testid="xf-studio-link">Open XSD in Schema Studio</a>
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-generate" disabled="@(_busy || CurrentXsd(context) is null || _mappings.Any(m => m.NeedsReview is not null))" @onclick="GenerateAsync">Generate XML</button>
+                    @if (_mappings.Any(m => m.NeedsReview is not null)) { <span class="xf-muted" data-testid="xf-generate-blocked">Review the mappings marked "Needs review" first.</span> }
                 </div>
 
                 @if (_xml is not null)
                 {
                     <fieldset class="xf-step" data-testid="xf-review">
                         <legend>Review and edit</legend>
-                        <p class="xf-muted" data-testid="xf-generated-from">Generated from @CurrentXsd(context)?.File · @XmlFixturePresentation.BindingsText(context, Aliases(context))</p>
-                        <label for="xf-xml">Generated XML fixture</label>
+                        <p class="xf-muted" data-testid="xf-generated-from">Generated from @CurrentXsd(context)?.File · @XmlFixturePresentation.BindingsText(context, Aliases(context))@(_mappings.Count > 0 ? $" · Mappings: {XmlValueMappings.ProvenanceText(_mappings)}" : "")</p>
+                        <dl class="xf-fixture-facts" data-testid="xf-generated-summary">
+                            <div><dt>Generated from</dt><dd data-testid="xf-sum-xsd">@CurrentXsd(context)?.File</dd></div>
+                            <div><dt>Source snapshot</dt><dd data-testid="xf-sum-snapshot">@CurrentXsd(context)?.ArchiveFileName · snapshot @CurrentXsd(context)?.SnapshotId.ToString()[..8]</dd></div>
+                            <div><dt>Mappings</dt><dd data-testid="xf-sum-mappings">@_appliedMappings applied</dd></div>
+                            @foreach (var binding in context.FixtureBindings)
+                            {
+                                <div><dt>@binding.Role</dt><dd data-testid="xf-sum-role" data-role="@binding.Role">@(Aliases(context).GetValueOrDefault(binding.Role) ?? "—")@(binding.ElementPath is null ? " · submission context, not in XML" : "")</dd></div>
+                            }
+                            @if (_manualEdit) { <div><dt>Manual changes</dt><dd data-testid="xf-manual-edit">Manual XML changes present</dd></div> }
+                        </dl>
+                        <label for="xf-xml">Advanced / manual override — the generated XML (edits are recorded as manual changes)</label>
                         <textarea id="xf-xml" class="form-control xf-xml" rows="14" spellcheck="false" data-testid="xf-xml" value="@_xml" @oninput="Edited"></textarea>
                         <p role="status" aria-live="polite" data-testid="xf-validation" data-state="@_validation">Validation: @_validation</p>
-                        @if (_validation == "Valid") { <p class="xf-muted" data-testid="xf-disclaimer">Valid against XSD. Business rules and runtime behavior are not verified.</p> }
+                        @if (_validation == "Valid") { <p class="xf-muted" data-testid="xf-disclaimer">Valid against XSD. Business rules not verified. Runtime behavior not verified.</p> }
                         @if (_issues.Count > 0) { <ul class="xf-issues" data-testid="xf-issues">@foreach (var issue in _issues.Take(10)) { <li>@issue</li> }</ul> }
                         <button type="button" class="btn btn-primary btn-sm" data-testid="xf-validate" disabled="@_busy" @onclick="Validate">Validate XML</button>
                     </fieldset>
@@ -174,7 +345,12 @@
                                     <div><dt>XSD path</dt><dd class="xf-mono" data-testid="xf-detail-schema">@schema.SchemaPath</dd></div>
                                     @if (schema.RootElement is { } root) { <div><dt>Root element</dt><dd data-testid="xf-detail-root">@root</dd></div> }
                                 }
-                                @if ((fixture.SchemaCheck?.SourceSnapshotId ?? fixture.Schema?.SourceSnapshotId) is { } snapshot) { <div><dt>Source snapshot</dt><dd class="xf-mono" data-testid="xf-detail-snapshot">@snapshot</dd></div> }
+                                @if ((fixture.SchemaCheck?.SourceSnapshotId ?? fixture.Schema?.SourceSnapshotId) is { } snapshot)
+                                {
+                                    <div><dt>Source snapshot</dt><dd class="xf-mono" data-testid="xf-detail-snapshot">@snapshot</dd></div>
+                                    <div><dt>Source package</dt><dd><a class="xf-link" data-testid="xf-detail-source-link" href="@($"source-analysis?snapshot={snapshot:D}")">Open in Source Analysis<span class="visually-hidden"> (snapshot @snapshot.ToString()[..8])</span></a></dd></div>
+                                }
+                                @if (fixture.Schema is { } studioSchema) { <div><dt>Schema Studio</dt><dd><a class="xf-link" data-testid="xf-detail-studio-link" href="@SchemaStudioHref(null)">Open XSD @System.IO.Path.GetFileName(studioSchema.SchemaPath) in Schema Studio</a></dd></div> }
                                 @if (fixture.SchemaCheck?.SchemaFingerprint is { } fingerprint) { <div><dt>Schema fingerprint</dt><dd class="xf-mono">@fingerprint[..Math.Min(16, fingerprint.Length)]…</dd></div> }
                                 @if (fixture.SchemaCheck is { } check) { <div><dt>Local validation</dt><dd data-testid="xf-detail-check">@check.Detail</dd></div> }
                                 @if (fixture.Fingerprint is { } hash) { <div><dt>Fixture hash</dt><dd class="xf-mono">@hash[..Math.Min(16, hash.Length)]…</dd></div> }
@@ -198,8 +374,16 @@
 
     private IReadOnlyList<IntegrationTemplateView> _contexts = [];
     private IntegrationTemplateView? _context;
-    private IntegrationTemplateSchemaCandidate? _xsd;
+    private Guid? _explicitSnapshot;
+    private string? _explicitFile, _snapshotNotice, _fieldFilter;
+    private bool _changeSnapshot, _changeXsd, _showAll, _pendingReview, _manualEdit, _useExisting;
+    private int _appliedMappings;
+    private IReadOnlyCollection<Guid> _projectBound = [];
     private readonly Dictionary<string, string?> _explicit = new(StringComparer.Ordinal);
+    private List<XmlValueMapping> _mappings = [];
+    private IReadOnlyList<XmlParameter> _parameters = [];
+    /// <summary>Rows a person changed: a role selection never rewrites them.</summary>
+    private readonly HashSet<string> _explicitPaths = new(StringComparer.Ordinal);
     private SchemaPackage? _package;
     private string? _xml, _error, _message, _name, _alias, _savedAlias, _environmentId;
     private string _validation = "Not run";
@@ -214,30 +398,231 @@
         try { _contexts = XmlFixturePresentation.Contexts((await journeys.IntegrationTemplatesAsync(_environmentId, null)).Value ?? []); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _contexts = []; }
         _context = _contexts.FirstOrDefault();
+        // Target Environment → Project bindings are reused, never asked for again.
+        if (Services.GetService(typeof(IFrontendAnalysisSettingsService)) is IFrontendAnalysisSettingsService settings && settings.ActiveProfile?.Project is { } project)
+            _projectBound = BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceResolver.BoundSnapshots(project).ToHashSet();
+        if (_context is not null) RestoreSetup(_context);
     }
 
     private TestDataAssetSummary? Chosen(TestDataFixtureBinding binding) =>
         XmlFixturePresentation.Chosen(XmlFixturePresentation.Candidates(Assets, binding.Capability), _explicit.GetValueOrDefault(binding.Role));
 
-    private Dictionary<string, string?> Aliases(IntegrationTemplateView context) => context.FixtureBindings.ToDictionary(b => b.Role, b => Chosen(b)?.Alias);
+    private Dictionary<string, string?> Aliases(IntegrationTemplateView context) => context.FixtureBindings.ToDictionary(b => b.Role,
+        b => (b.ElementPath is { } path ? _mappings.FirstOrDefault(m => m.Path == path && m.Kind == XmlValueSourceKind.TestDataAsset)?.AssetAlias : null) ?? Chosen(b)?.Alias);
 
-    private IntegrationTemplateSchemaCandidate? CurrentXsd(IntegrationTemplateView context) => _xsd ?? XmlFixturePresentation.Preselected(context);
+    /// <summary>The one canonical resolution (explicit saved choice → confirmed contract → Project binding → IQR binding → exact match → only
+    /// candidate → Needs decision). A preselection is never stored as explicit.</summary>
+    private XmlContractSelection Selection(IntegrationTemplateView context) =>
+        XmlContractResolution.Resolve(context, _explicitSnapshot is { } id ? new XmlExplicitSelection(id, _explicitFile) : null, _projectBound);
 
-    private void Open()
+    /// <summary>The XSD used for fields and generation: the resolved contract, never while a changed snapshot's XSD awaits review.</summary>
+    private IntegrationTemplateSchemaCandidate? CurrentXsd(IntegrationTemplateView context) => _pendingReview ? null : Selection(context).Contract;
+
+    private static string SchemaStudioHref(IntegrationTemplateSchemaCandidate? xsd) => xsd is null ? "schema-studio" : $"schema-studio?snapshot={xsd.SnapshotId:D}&contract={Uri.EscapeDataString(xsd.File)}";
+
+    private static string XsdOption(IntegrationTemplateView context, IntegrationTemplateSchemaCandidate c) =>
+        $"{System.IO.Path.GetFileName(c.File)} — {c.SchemaName}{(c.Version is { } v ? $" v{v}" : "")} · {c.ArchiveFileName} · snapshot {c.SnapshotId.ToString()[..8]} · "
+        + (c.ContractConfirmed ? $"confirmed consumer contract ({c.BoundIntegration ?? context.Flow})" : c.MatchesContract ? $"named as the contract {context.SchemaName}" : "not named as the contract (manual choice)")
+        + (c.Bound ? " · bound in IQR" : "");
+
+    private IEnumerable<XmlParameter> FilteredParameters(string current) => string.IsNullOrWhiteSpace(_fieldFilter) ? _parameters
+        : _parameters.Where(p => p.Path == current || p.Display.Contains(_fieldFilter, StringComparison.OrdinalIgnoreCase)
+            || p.Technical.Contains(_fieldFilter, StringComparison.OrdinalIgnoreCase) || (p.Type ?? "").Contains(_fieldFilter, StringComparison.OrdinalIgnoreCase));
+
+    private static string MappingStatus(XmlValueMapping row) =>
+        row.NeedsReview is not null ? "Needs review"
+        : row.Path.Length == 0 || row.Kind == XmlValueSourceKind.TestDataAsset && row.AssetAlias is null || row.Kind == XmlValueSourceKind.Fixed && string.IsNullOrEmpty(row.FixedValue) ? "Needs value"
+        : row.IsSuggested ? "Suggested" : "Mapped";
+
+    private async Task SelectSnapshotAsync(IntegrationTemplateView context, string? value)
+    {
+        if (!Guid.TryParse(value, out var id)) return;
+        var previous = CurrentXsd(context) ?? Selection(context).Contract;
+        _explicitSnapshot = id;
+        var sameFile = previous is not null && Selection(context).Contracts.Concat(Selection(context).OtherContracts).Any(c => c.File == previous.File);
+        _explicitFile = sameFile ? previous!.File : null;
+        _changeSnapshot = false; _changeXsd = false;
+        _package = null; _parameters = []; Reset();
+        // Never continue with the previous snapshot's XSD silently: a same-named XSD is reviewed, a missing one is chosen again.
+        _pendingReview = previous is not null && previous.SnapshotId != id && Selection(context).Contract is not null;
+        _snapshotNotice = previous is null || previous.SnapshotId == id ? null
+            : sameFile ? "Source snapshot changed. Matching XSD found in the selected snapshot — review before continuing."
+            : "Source snapshot changed. The current XSD is not available in the selected snapshot. Select another XSD.";
+        if (!sameFile && previous is not null && previous.SnapshotId != id) _changeXsd = true;
+        SaveSetup(context);
+        // A first choice (no previous XSD) is used at once: its fields are loaded and the mappings re-evaluated against them.
+        if (!_pendingReview && CurrentXsd(context) is not null) await ReloadFieldsAsync();
+    }
+
+    private async Task ConfirmXsdAsync(IntegrationTemplateSchemaCandidate xsd)
+    {
+        _explicitSnapshot = xsd.SnapshotId; _explicitFile = xsd.File; _pendingReview = false; _snapshotNotice = null;
+        SaveSetup(_context!);
+        await ReloadFieldsAsync();
+    }
+
+    private async Task SelectXsdAsync(IntegrationTemplateView context, IReadOnlyList<IntegrationTemplateSchemaCandidate> choices, string? index)
+    {
+        if (!int.TryParse(index, out var i) || i < 0 || i >= choices.Count) return;
+        _explicitSnapshot = choices[i].SnapshotId; _explicitFile = choices[i].File; _pendingReview = false; _changeXsd = false; _snapshotNotice = null;
+        Reset(); _package = null;
+        SaveSetup(context);
+        await ReloadFieldsAsync();
+    }
+
+    /// <summary>Loads the (new) XSD's fields and re-evaluates every mapping: kept only when the same stable path exists with the same data
+    /// type; otherwise "Needs review" (never remapped by leaf name).</summary>
+    private async Task ReloadFieldsAsync()
+    {
+        var before = _parameters.ToDictionary(p => p.Path, p => p.Type);
+        _package = null; _parameters = [];
+        await LoadFieldsAsync();
+        if (_package is null) return;
+        _mappings = [.. _mappings.Select(m => m.Path.Length == 0 ? m
+            : _parameters.FirstOrDefault(p => p.Path == m.Path) is not { } now ? m with { NeedsReview = $"{m.Path.Replace('.', '/')} does not exist in the selected XSD." }
+            : before.TryGetValue(m.Path, out var type) && before.Count > 0 && type != now.Type ? m with { NeedsReview = $"The data type changed ({type} → {now.Type})." }
+            : m with { NeedsReview = null })];
+    }
+
+    private void UseExisting(IReadOnlyList<TestDataAssetSummary> fixtures, string? alias)
+    {
+        if (fixtures.FirstOrDefault(f => f.Alias == alias) is not { } fixture) return;
+        _message = $"Payload-level choice: {fixture.Alias} is an approved XML fixture for this contract; consumers use it as the complete report payload. Its details show source, XSD and mappings.";
+        _detailFor = fixture.Id; _focusId = $"{DetailId(fixture)}-heading"; _useExisting = false;
+    }
+
+    /// <summary>The selected snapshot/XSD differs from what the saved fixture was generated from (the fixture is never changed).</summary>
+    private string? ChangedContract(IntegrationTemplateView context, TestDataAssetSummary fixture)
+    {
+        if (CurrentXsd(context) is not { } xsd || fixture.Schema is not { } schema) return null;
+        var snapshotChanged = (fixture.SchemaCheck?.SourceSnapshotId ?? schema.SourceSnapshotId) is { } was && was != xsd.SnapshotId;
+        var fileChanged = !string.Equals(System.IO.Path.GetFileName(schema.SchemaPath), System.IO.Path.GetFileName(xsd.File), StringComparison.OrdinalIgnoreCase);
+        return fileChanged ? "Contract changed." : snapshotChanged ? "Source snapshot changed." : null;
+    }
+
+    /// <summary>Saves the explicit snapshot/XSD choice and the mappings for this context (references only) in the workspace.</summary>
+    private void SaveSetup(IntegrationTemplateView context)
+    {
+        if (Services.GetService(typeof(IWorkspaceArtifactRepository)) is not IWorkspaceArtifactRepository repository) return;
+        var setups = repository.SddLifecycle.XmlFixtureSetups;
+        setups.RemoveAll(x => x.ContextKey == context.Key && x.EnvironmentId == _environmentId);
+        setups.Add(new SddXmlFixtureSetup
+        {
+            ContextKey = context.Key, EnvironmentId = _environmentId, SnapshotId = _explicitSnapshot, File = _explicitFile, UpdatedAt = DateTimeOffset.UtcNow,
+            Mappings = [.. _mappings.Where(m => !m.IsSuggested && m.Path.Length > 0).Select(m => new SddXmlValueMapping
+                { Path = m.Path, Kind = m.Kind.ToString(), AssetAlias = m.AssetAlias, FixedValue = m.FixedValue, Generated = m.Generated?.ToString() })],
+        });
+        (Services.GetService(typeof(IWorkspaceUpdateCoordinator)) as IWorkspaceUpdateCoordinator)?.NotifyMutation();
+        // A mutation notice alone does not persist (the auto-save service is page-scoped): save now so an explicit choice survives a reload.
+        if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave) _ = autoSave.SaveNowAsync();
+    }
+
+    /// <summary>Restores a saved explicit choice and saved mappings (explicit rows: a role suggestion never overwrites them).</summary>
+    private void RestoreSetup(IntegrationTemplateView context)
+    {
+        if (Services.GetService(typeof(IWorkspaceArtifactRepository)) is not IWorkspaceArtifactRepository repository) return;
+        if (repository.SddLifecycle.XmlFixtureSetups.LastOrDefault(x => x.ContextKey == context.Key && x.EnvironmentId == _environmentId) is not { } setup) return;
+        _explicitSnapshot = setup.SnapshotId; _explicitFile = setup.File;
+        foreach (var saved in setup.Mappings)
+        {
+            if (!Enum.TryParse<XmlValueSourceKind>(saved.Kind, out var kind)) continue;
+            _mappings.RemoveAll(m => m.Path == saved.Path);
+            _mappings.Add(new XmlValueMapping(saved.Path, kind, saved.AssetAlias, saved.FixedValue, Enum.TryParse<XmlGeneratedValue>(saved.Generated, out var g) ? g : null));
+            _explicitPaths.Add(saved.Path);
+        }
+    }
+
+    private async Task Open()
     {
         _open = true; _error = null; _message = null;
         _name ??= $"{_context!.PackName.Replace(" Testing", "")} valid report";
-        _alias ??= XmlFixturePresentation.SuggestedAlias(_name);
+        // A regenerated fixture is a new asset: the alias never replaces an existing (possibly approved) fixture.
+        _alias = XmlValueMappings.FreeAlias(_alias ?? XmlFixturePresentation.SuggestedAlias(_name), Assets);
+        if (_mappings.Count == 0)
+        {
+            _mappings = [.. XmlValueMappings.Suggested(_context, b => Chosen(b)?.Alias)];
+            RestoreSetup(_context);
+        }
+        if (_package is null && CurrentXsd(_context) is not null) await LoadFieldsAsync();
     }
 
-    private void SelectContext(string? key) { _context = _contexts.FirstOrDefault(c => c.Key == key) ?? _context; _xsd = null; Reset(); }
+    private static string SourceLabel(XmlValueSourceKind kind) => kind switch
+    {
+        XmlValueSourceKind.TestDataAsset => "Test Data asset",
+        XmlValueSourceKind.Fixed => "Fixed value",
+        XmlValueSourceKind.Generated => "Generated value",
+        _ => "Leave generated/default",
+    };
 
-    private void SelectXsd(string? index) { _xsd = int.TryParse(index, out var i) && _context is not null && i < XmlFixturePresentation.Xsds(_context).Count ? XmlFixturePresentation.Xsds(_context)[i] : null; Reset(); }
+    /// <summary>A role selection updates the role's suggested mapping only (an explicitly edited row is never overwritten).</summary>
+    private void ChooseIdentity(TestDataFixtureBinding binding, string? alias)
+    {
+        _explicit[binding.Role] = alias;
+        if (binding.ElementPath is not { } path || _explicitPaths.Contains(path)) return;
+        var index = _mappings.FindIndex(m => m.Path == path && m.IsSuggested);
+        if (index >= 0) _mappings[index] = _mappings[index] with { AssetAlias = Chosen(binding)?.Alias };
+    }
 
-    private void Reset() { _xml = null; _package = null; _validation = "Not run"; _issues = []; _error = null; }
+    private void Edit(int index, Func<XmlValueMapping, XmlValueMapping> change)
+    {
+        if (index < 0 || index >= _mappings.Count) return;
+        var edited = change(_mappings[index]) with { SuggestedFrom = null };
+        _mappings[index] = edited;
+        _explicitPaths.Add(edited.Path);
+        _xml = null; _validation = "Not run";
+        if (_context is { } context) SaveSetup(context);
+    }
+
+    private void SetParameter(int index, string? path) { if (!string.IsNullOrEmpty(path)) Edit(index, m => m with { Path = path, AssetAlias = null }); }
+    private void SetKind(int index, string? kind) { if (Enum.TryParse<XmlValueSourceKind>(kind, out var k)) Edit(index, m => m with { Kind = k, AssetAlias = k == XmlValueSourceKind.TestDataAsset ? m.AssetAlias : null, Generated = k == XmlValueSourceKind.Generated ? m.Generated ?? XmlGeneratedValue.Uuid : null }); }
+    private void SetAsset(int index, string? alias) => Edit(index, m => m with { AssetAlias = string.IsNullOrEmpty(alias) ? null : alias });
+    private void SetFixed(int index, string? value) => Edit(index, m => m with { FixedValue = value });
+    private void SetGenerated(int index, string? value) { if (Enum.TryParse<XmlGeneratedValue>(value, out var g)) Edit(index, m => m with { Generated = g }); }
+    private void AddMapping() { _mappings.Add(new XmlValueMapping("", XmlValueSourceKind.TestDataAsset)); _xml = null; _validation = "Not run"; }
+    private void RemoveMapping(int index) { if (index >= 0 && index < _mappings.Count) { _explicitPaths.Add(_mappings[index].Path); _mappings.RemoveAt(index); _xml = null; _validation = "Not run"; if (_context is { } context) SaveSetup(context); } }
+
+    /// <summary>Mapped roles whose selection differs from what the saved fixture recorded (roles outside the XML never count).</summary>
+    private IReadOnlyList<(string Role, string Was, string Now)> ChangedRoles(IntegrationTemplateView context, TestDataAssetSummary fixture) =>
+        [.. context.FixtureBindings.Where(b => b.ElementPath is not null)
+            .Select(b => (b.Role, Was: XmlValueMappings.RecordedAlias(fixture, b), Now: _mappings.FirstOrDefault(m => m.Path == b.ElementPath && m.Kind == XmlValueSourceKind.TestDataAsset)?.AssetAlias ?? Chosen(b)?.Alias))
+            .Where(c => c.Was is not null && c.Now is not null && c.Was != c.Now).Select(c => (c.Role, c.Was!, c.Now!))];
+
+    /// <summary>Loads the chosen XSD from its exact snapshot (fingerprints checked) so its fields can be mapped; nothing is generated yet.</summary>
+    private async Task LoadFieldsAsync()
+    {
+        if (_context is not { } context || CurrentXsd(context) is not { } xsd) return;
+        _busy = true;
+        try { _package = await LoadPackageAsync(xsd); _parameters = _package is null ? [] : XmlValueMappings.Parameters(_package); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException) { _error = $"The XSD could not be loaded: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task<SchemaPackage?> LoadPackageAsync(IntegrationTemplateSchemaCandidate xsd)
+    {
+        var source = await SourceSchemaApiService.Resolve(Services).SourceSchemasAsync(xsd.SnapshotId);
+        if (source is not { IsAvailable: true }) { _error = $"The schema snapshot {xsd.ArchiveFileName} is not available. Open Schema Studio to inspect it."; return null; }
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in source.Files)
+        {
+            var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(file.Text))).ToLowerInvariant();
+            if (!string.Equals(actual, file.Fingerprint, StringComparison.OrdinalIgnoreCase)) { _error = "A schema file does not match its recorded fingerprint; nothing was generated."; return null; }
+            files[file.Path] = file.Text;
+        }
+        var studio = new SchemaStudioService(); // private: Schema Studio's own session is untouched
+        var package = studio.Import(SchemaStudioService.ContractPackageFiles(files, xsd.File), Path.GetFileName(xsd.File),
+            new SchemaProvenance("Source Analysis", source.SourceArchiveName, source.SnapshotId, source.SnapshotFingerprint, source.AnalyzedAt, xsd.File, "",
+                source.IsComplete, source.OmittedFiles, source.ProjectImportId, source.SourceProjectName));
+        if (SchemaStudioPresentation.IsLibrary(package))
+        { _error = "This XSD is a reusable schema library and does not define a complete message. Choose the message schema in Schema Studio."; return null; }
+        return package;
+    }
+
+    private void SelectContext(string? key) { _context = _contexts.FirstOrDefault(c => c.Key == key) ?? _context; _explicitSnapshot = null; _explicitFile = null; _pendingReview = false; Reset(); _package = null; _parameters = []; _mappings = []; _explicitPaths.Clear(); }
+
+    private void Reset() { _xml = null; _validation = "Not run"; _issues = []; _error = null; }
 
     /// <summary>A changed XML is no longer the validated one.</summary>
-    private void Edited(ChangeEventArgs e) { _xml = e.Value?.ToString() ?? ""; _validation = "Needs validation"; _issues = []; }
+    private void Edited(ChangeEventArgs e) { _xml = e.Value?.ToString() ?? ""; _validation = "Needs validation"; _issues = []; _manualEdit = true; }
 
     private async Task GenerateAsync()
     {
@@ -245,35 +630,35 @@
         _busy = true; _error = null; _message = null; Reset();
         try
         {
-            var missing = context.FixtureBindings.Where(b => b.ElementPath is not null && Chosen(b) is null).Select(b => b.Role).ToList();
-            if (missing.Count > 0) { _error = $"Choose a {string.Join(" and a ", missing)} in Session test identities first; nothing was generated."; return; }
-            var source = await SourceSchemaApiService.Resolve(Services).SourceSchemasAsync(xsd.SnapshotId);
-            if (source is not { IsAvailable: true }) { _error = $"The schema snapshot {xsd.ArchiveFileName} is not available. Open Schema Studio to inspect it."; return; }
-            var files = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var file in source.Files)
-            {
-                var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(file.Text))).ToLowerInvariant();
-                if (!string.Equals(actual, file.Fingerprint, StringComparison.OrdinalIgnoreCase)) { _error = "A schema file does not match its recorded fingerprint; nothing was generated."; return; }
-                files[file.Path] = file.Text;
-            }
-            var studio = new SchemaStudioService(); // private: Schema Studio's own session is untouched
-            _package = studio.Import(SchemaStudioService.ContractPackageFiles(files, xsd.File), Path.GetFileName(xsd.File),
-                new SchemaProvenance("Source Analysis", source.SourceArchiveName, source.SnapshotId, source.SnapshotFingerprint, source.AnalyzedAt, xsd.File, "",
-                    source.IsComplete, source.OmittedFiles, source.ProjectImportId, source.SourceProjectName));
-            if (SchemaStudioPresentation.IsLibrary(_package))
-            { _error = "This XSD is a reusable schema library and does not define a complete message. Choose the message schema in Schema Studio."; _package = null; return; }
+            if (_mappings.FirstOrDefault(m => m.NeedsReview is not null) is { } review) { _error = $"Mapping needs review: {review.NeedsReview}; nothing was generated."; return; }
+            var mapped = _mappings.Where(m => m.Path.Length > 0 && m.Kind != XmlValueSourceKind.SchemaDefault).ToList();
+            _manualEdit = false; _appliedMappings = mapped.Count;
+            if (_mappings.Any(m => m.Path.Length == 0)) { _error = "Choose a field for every mapping (or remove the empty row); nothing was generated."; return; }
+            if (mapped.GroupBy(m => m.Path).FirstOrDefault(g => g.Count() > 1) is { } twice) { _error = $"{XmlValueMappings.Display(_parameters, twice.Key)} is mapped more than once; nothing was generated."; return; }
+            if (mapped.FirstOrDefault(m => m.Kind == XmlValueSourceKind.TestDataAsset && m.AssetAlias is null) is { } unset)
+            { _error = $"Choose a Test Data asset for {XmlValueMappings.Display(_parameters, unset.Path)}; nothing was generated."; return; }
+            _package ??= await LoadPackageAsync(xsd);
+            if (_package is null) return;
+            if (_parameters.Count == 0) _parameters = XmlValueMappings.Parameters(_package);
+            // 1. XSD structure and defaults.
             var generated = SchemaStudioService.GenerateMinimumValid(_package, xsd.File);
             if (generated.State == SchemaGenerationState.Blocked || string.IsNullOrEmpty(generated.Xml))
             { _error = $"The XML could not be generated: {string.Join(" ", generated.Reasons)}"; return; }
-            var bindings = context.FixtureBindings.Where(b => b.ElementPath is not null).Select(b => new TestDataXmlBinding(Chosen(b)!.Alias, b.ElementPath!)).ToList();
-            // A minimum instance omits optional elements; the bound roles' elements are added in their schema position (Schema Studio's logic).
-            var withRoles = SchemaStudioService.WithElements(_package, generated.Xml, bindings.Select(b => b.ElementPath));
-            var (bound, problems) = await TestDataApiService.Resolve(Services).BindXmlFixtureAsync(new TestDataXmlBindRequest(withRoles, bindings));
-            if (bound is null) { _error = $"Test Data values could not be filled in: {string.Join(" ", problems)}"; return; }
+            // 2. Every mapped element present (an optional element is built in its schema position).
+            var withMapped = SchemaStudioService.WithElements(_package, generated.Xml, mapped.Select(m => m.Path));
+            // 3. Fixed and generated values replace synthetic/default ones (an explicit mapping wins).
+            var (applied, problems) = XmlValueMappings.Apply(withMapped, mapped, DateTimeOffset.UtcNow);
+            if (problems.Count > 0) { _error = $"Some mapped fields are not in the generated XML: {string.Join(" ", problems)}"; return; }
+            // 4. Test Data assets are filled in by the backend by alias: their values never pass through this page.
+            var bindings = mapped.Where(m => m.Kind == XmlValueSourceKind.TestDataAsset).Select(m => new TestDataXmlBinding(m.AssetAlias!, m.Path)).ToList();
+            if (bindings.Count == 0) { _xml = applied; _validation = "Not run"; return; }
+            var (bound, bindProblems) = await TestDataApiService.Resolve(Services).BindXmlFixtureAsync(new TestDataXmlBindRequest(applied, bindings));
+            if (bound is null) { _error = $"Test Data values could not be filled in: {string.Join(" ", bindProblems)}"; return; }
             _xml = bound;
             _validation = "Not run";
         }
         catch (InvalidDataException ex) { _error = ex.Message; }
+        catch (System.Xml.XmlException ex) { _error = $"The generated XML could not be read: {ex.Message}"; }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _error = "The backend could not be reached; nothing was generated."; }
         finally { _busy = false; }
     }
@@ -306,8 +691,12 @@
             if (repository.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml) is { } existing) store.RestoreJson(existing.Text);
             var scope = repository is WorkspaceArtifactRepository concrete ? concrete.SessionScope : null;
             var root = XDocument.Parse(_xml).Root?.Name.LocalName;
-            var facts = new SchemaXmlRegistrationFacts("Valid", "Valid", GeneratorVersion: "Test Data XML fixture v1", RootElement: root, EnvironmentId: _environmentId,
-                Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)), Capabilities: context.FixtureCapabilities);
+            var facts = new SchemaXmlRegistrationFacts("Valid", "Valid", GeneratorVersion: "Test Data XML fixture v2", RootElement: root, EnvironmentId: _environmentId,
+                Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)), Capabilities: context.FixtureCapabilities,
+                ValueMappings: XmlValueMappings.ProvenanceText(_mappings), ManualChanges: _manualEdit,
+                SourceSelection: $"{Selection(context).SnapshotReason} · {Selection(context).ContractReason}");
+            // Never overwrite a saved fixture: a regenerated XML is saved as a new draft under a free alias.
+            _alias = XmlValueMappings.FreeAlias(_alias!.Trim(), Assets);
             var saved = store.Save(_package, xsd.File, "Test Data XML fixture", null, _xml, scope, null, facts);
             store.Register(saved.Id, scope, _alias!.Trim(), "positive", _name?.Trim(), facts);
             repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(scope), "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");

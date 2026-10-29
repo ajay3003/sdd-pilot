@@ -354,3 +354,10 @@
 .axh-details > summary:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }
 .axh-details[open] { display: grid; gap: 0.5rem; padding-top: 0.25rem; }
 .axh-details .axh-meta dd { overflow-wrap: anywhere; }
+
+.axh-evidence-line {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #4a5568);
+    overflow-wrap: anywhere;
+}

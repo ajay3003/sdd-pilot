@@ -33,10 +33,18 @@
                 <dt>XML fixture</dt>
                 <dd><span class="tdr-pill tdr-@(status.Xml == TestDataXmlReadinessState.Ready ? "ready" : "attention")">@status.XmlText</span>@if (status.Fixture is { } fixture) { <span class="tdr-label"> @(fixture.Label ?? fixture.Alias)</span> }</dd>
             </div>
+            @* Fixture validation: a fixture checked against the exact bound XSD. With no fixture yet, it is waiting — never "contract missing". *@
             <div data-testid="tdr-contract" data-state="@status.ContractValidation">
-                <dt>Contract validation</dt>
-                <dd><span class="tdr-pill tdr-@(status.ContractValidation == "Valid" ? "ready" : "attention")">@status.ContractValidation</span> <span class="tdr-muted">@_context.SchemaName</span></dd>
+                <dt>Fixture validation</dt>
+                <dd><span class="tdr-pill tdr-@(status.ContractValidation == "Valid" ? "ready" : "attention")" data-testid="tdr-contract-text">@(status.ContractValidation switch { "Valid" => "Valid against XSD", "Missing" => "Waiting for XML fixture", var other => other })</span> <span class="tdr-muted">@_context.SchemaName</span></dd>
             </div>
+            @if (status.Fixture?.Provenance.FirstOrDefault(p => p.Label == "Value mappings")?.Value is { } mapped && mapped.Split("; ").Count(m => !m.Contains("← Test Data ", StringComparison.Ordinal)) is var extra and > 0)
+            {
+                <div data-testid="tdr-additional" data-state="Ready">
+                    <dt>Additional mapped data</dt>
+                    <dd><span class="tdr-pill tdr-ready">Ready</span> <span class="tdr-muted">@extra fixed or generated value@(extra == 1 ? "" : "s") recorded in the fixture</span></dd>
+                </div>
+            }
             <div data-testid="tdr-overall" data-state="@status.Overall">
                 <dt>Test Data readiness</dt>
                 <dd><span class="tdr-pill tdr-@(status.Ready ? "ready" : "attention")">@status.Overall</span>@if (status.Reason is { } reason) { <span class="tdr-muted"> — @reason</span> }</dd>

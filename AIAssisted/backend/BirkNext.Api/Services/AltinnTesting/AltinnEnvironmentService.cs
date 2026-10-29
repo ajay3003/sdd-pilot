@@ -187,7 +187,9 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         // The payload is looked up by the form's contract identifier, applied or only suggested (a lookup, not configuration); the contract card's
         // "identifier known" still requires an applied value.
         var xml = await XmlFixtureAsync(formDataType?.Value, ct);
-        var view = Assess(environmentId, saved, fields, identities, config, contract, targetBlock, approved is not null, clientProblem, xml);
+        var integrationField = fields.FirstOrDefault(field => field.Key == "integration");
+        var selectedIntegration = integrationField?.Value is { } selectedId && Satisfied(integrationField) ? integrations.FirstOrDefault(item => item.Id == selectedId) : null;
+        var view = Assess(environmentId, saved, fields, identities, config, contract, targetBlock, approved is not null, clientProblem, xml, selectedIntegration);
         return view with { Detected = detect, Notes = notes, Contract = ContractItem(contract, formDataType is not null && Satisfied(formDataType)) };
     }
 
@@ -263,7 +265,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
 
     private AltinnEnvironmentView Assess(string environmentId, AltinnEnvironmentSettings saved, List<AltinnSettingField> fields, IReadOnlyList<AltinnIdentitySummary> identities,
         AltinnTestConfiguration config, AltinnAppContractView contract, string? targetBlock, bool appApproved, string? clientProblem,
-        (BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)? xml = null)
+        (BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)? xml = null, IntegrationDefinition? integration = null)
     {
         AltinnSettingField F(string key) => fields.First(field => field.Key == key);
         var environmentValue = F("environment");
@@ -290,12 +292,15 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var xmlReady = xml is null || xml.Value.State == BirkNext.TestData.TestDataXmlReadinessState.Ready;
         if (!xmlReady) { manualGaps.Add($"XML fixture: {XmlProblem(xml!.Value.State)}"); manualMissing.Add("XML fixture"); }
         var contractNote = contract.Complete ? "Contract evidence is complete." : "Contract evidence is still incomplete.";
+        // Manual preparation needs the reporter's browser sign-in requirement to be known (it is performed interactively), never BirkNext's
+        // unattended credentials and never the integration's own authentication; MU delivery is stated as not verified.
+        var manualAuthNote = "Reporter access: Browser/OIDC (ID-porten) — the reporter signs in during preparation. Runtime delivery through the integration has not been verified.";
         var manual = production
             ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Blocked, "The environment is Production; Altinn testing never runs there.")
             : manualGaps.Count == 0
                 ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Ready,
-                    $"Ready for manual submission preparation: app, reporter, child and integration are configured{(xml is null ? "" : ", the XML fixture is valid")} and the contract identifier is known. {contractNote}")
-                : new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Partial, string.Join(" · ", manualGaps) + $". {contractNote}");
+                    $"Ready for manual submission preparation: app, reporter, child and integration are configured{(xml is null ? "" : ", the XML fixture is valid")} and the contract identifier is known. {contractNote} {manualAuthNote}")
+                : new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Partial, string.Join(" · ", manualGaps) + $". {contractNote} {manualAuthNote}");
 
         // Automated execution additionally needs the unattended client, the secret, trust and approval; every reason stays explicit.
         var blockers = new List<string>(manualGaps);
@@ -330,9 +335,11 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
                 : payload.State == BirkNext.TestData.TestDataXmlReadinessState.Missing ? AltinnReadinessState.Blocked : AltinnReadinessState.Partial,
                 payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready ? $"What is submitted: XML fixture {payload.Alias} · valid against its XSD (schema-valid is not business-valid)"
                     : $"What is submitted: XML fixture {XmlProblem(payload.State)}{(payload.Alias is { } alias ? $" ({alias})" : "")} · owner: Test Data"));
+        var interactions = AltinnInteractionAuthentication.Build(production, saved.BrowserAuthentication, integration,
+            F("integration").DisplayValue, authState);
+        summary.AddRange(AltinnInteractionAuthentication.Summary(interactions, authState));
         summary.AddRange(new List<AltinnReadinessItem>
         {
-            new("authentication", "Authentication", authState, authState == AltinnReadinessState.Ready ? "Unattended client complete." : "Unattended client incomplete — only automated execution needs it."),
             new("runtime", "Runtime", observations.Count > 0 ? AltinnReadinessState.Partial : AltinnReadinessState.NotAssessed,
                 observations.Count > 0 ? $"Observed ({observations.Count} observation{(observations.Count == 1 ? "" : "s")}); not verified by BirkNext." : "Not verified."),
             new("automated", "Automated execution", automated.State, automated.Reason),
@@ -349,7 +356,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
 
         return new AltinnEnvironmentView
         {
-            EnvironmentId = environmentId, Saved = saved, Fields = fields, Identities = identities, Summary = summary,
+            EnvironmentId = environmentId, Saved = saved, Fields = fields, Identities = identities, Summary = summary, Interactions = interactions,
             ManualReadiness = manual, AutomatedReadiness = automated, AutomatedBlockers = blockers, Detection = detection,
             ManualMissing = production ? [] : manualMissing,
         };

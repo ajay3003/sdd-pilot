@@ -278,6 +278,9 @@ public sealed class IntegrationJourneyService(
             InfrastructureAutomation = TestPackSources.InfrastructureAutomation(snapshot),
             ConfigurationEnvironments = BirkNext.SourceDomains.SourceEnvironmentValueExtractor.Environments(snapshot),
             Areas = SourceSetupAreas.Of(snapshot),
+            ServiceProjectCount = SourceSetupAreas.ServiceProjects(snapshot),
+            SharedProjectCount = snapshot.Projects.Count(project => !project.IsTest) - SourceSetupAreas.ServiceProjects(snapshot),
+            TestProjectCount = snapshot.Projects.Count(project => project.IsTest),
         }).ToArray();
         return new SourceSetupView
         {

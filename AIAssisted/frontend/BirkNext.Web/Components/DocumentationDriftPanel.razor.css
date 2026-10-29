@@ -103,3 +103,42 @@
 .dd-availability { display: flex; flex-wrap: wrap; gap: .4rem 1.5rem; margin: .25rem 0; }
 .dd-availability dt { font-size: .8rem; color: var(--clr-text-muted, #475569); }
 .dd-availability dd { margin: 0; font-weight: 600; }
+
+/* Review workspace: summary stats, semantic card tones (tint + left accent; status text is never colour-only), responsive card grid. */
+.dd-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .6rem; }
+.dd-stat { display: grid; gap: .1rem; padding: .55rem .75rem; border: 1px solid var(--clr-border, #e2e8f0); border-left: 4px solid var(--clr-border, #cbd5e1); border-radius: var(--radius-md, 8px); background: var(--clr-surface, #fff); min-width: 0; }
+.dd-stat strong { font-size: 1.15rem; overflow-wrap: anywhere; }
+.dd-stat-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--clr-text-muted, #475569); }
+.dd-stat-hint { font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.dd-tone-consistent { border-left-color: #2f855a; background: #f0fff4; }
+.dd-tone-ready { border-left-color: #2b6cb0; background: #ebf8ff; }
+.dd-tone-attention { border-left-color: #b7791f; background: #fffbeb; }
+.dd-tone-conflict { border-left-color: #c53030; background: #fff5f5; }
+.dd-tone-neutral { border-left-color: #a0aec0; background: var(--clr-surface, #fff); }
+.dd-card-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: .75rem; }
+.dd-card-grid > .dd-card { border: 1px solid var(--clr-border, #e2e8f0); border-left-width: 4px; border-radius: var(--radius-md, 8px); padding: .65rem .8rem; display: grid; gap: .3rem; align-content: start; min-width: 0; }
+.dd-card-title { margin: 0; font-size: 1rem; }
+.dd-card-area { margin: 0; font-size: .82rem; color: var(--clr-text-muted, #475569); }
+.dd-card-counts { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin: 0; font-size: .85rem; }
+.dd-card-counts dt { display: inline; color: var(--clr-text-muted, #475569); }
+.dd-card-counts dt::after { content: ": "; }
+.dd-card-counts dd { display: inline; margin: 0; font-weight: 600; }
+.dd-card-status { margin: .15rem 0; display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; }
+.dd-badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .8rem; font-weight: 600; border: 1px solid currentColor; }
+.dd-badge-consistent { color: #22543d; background: #c6f6d5; }
+.dd-badge-ready { color: #1a365d; background: #bee3f8; }
+.dd-badge-attention { color: #744210; background: #fefcbf; }
+.dd-badge-conflict { color: #742a2a; background: #fed7d7; }
+.dd-badge-neutral { color: #2d3748; background: #edf2f7; }
+.dd-card-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+/* Grid cards size children to content (justify-items: start); cap them at the card width so counts wrap and long action labels break. */
+.dd-card-grid > .dd-card > * { max-width: 100%; }
+.dd-card-actions > .btn-small { white-space: normal; text-align: left; max-width: 100%; }
+.dd-evidence summary { cursor: pointer; font-size: .85rem; }
+.dd-card-tools { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; }
+.dd-search { flex: 1 1 18rem; }
+.dd-search input { width: 100%; }
+.dd-empty-state { padding: .85rem 1rem; border: 1px dashed var(--clr-border, #cbd5e1); border-radius: var(--radius-md, 8px); }
+.dd-empty-state h3 { margin: 0 0 .25rem; }
+.dd-empty-state p { margin: .2rem 0; }
+@media (max-width: 520px) { .dd-card-grid { grid-template-columns: minmax(0, 1fr); } }

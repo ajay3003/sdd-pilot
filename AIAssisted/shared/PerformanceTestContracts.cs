@@ -92,6 +92,12 @@ public sealed record HttpPerformanceStep
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ScenarioDataMapping>? DataMappings { get; init; }
     /// <summary>A disabled step stays in the definition but is not executed.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Disabled { get; init; }
+    /// <summary>Response values this step produces for later steps (name + JSON path into the response body). Read only when a later step maps them.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<StepOutput>? Outputs { get; init; }
+    /// <summary>Inherit the definition's default authentication (default), use none, or reference another approved configuration. Never a token.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public StepAuthenticationMode Authentication { get; init; }
+    /// <summary>The approved authentication configuration referenced when <see cref="Authentication"/> is Override.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AuthenticationReference { get; init; }
 }
 
 public sealed record PerformanceScenario
@@ -109,6 +115,8 @@ public sealed record PerformanceScenario
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? ContractIds { get; init; }
     /// <summary>How mapped Test Data values are chosen per iteration (workload usage — owned here, not by Test Data).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TestDataSelection? DataSelection { get; init; }
+    /// <summary>Scenario-level variables steps may reference (fixed, generated or an approved Test Data alias).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ScenarioVariable>? Variables { get; init; }
 }
 
 /// <summary>Provenance of a scenario step. Observed metadata is counts and timestamps only — never a token, cookie, header value or observed identifier.</summary>
@@ -130,7 +138,47 @@ public sealed record ScenarioStepSource
 }
 
 /// <summary>One placeholder of a step mapped to central Test Data assets (aliases). Several aliases = several values, chosen per <see cref="PerformanceScenario.DataSelection"/>.</summary>
-public sealed record ScenarioDataMapping(string Variable, List<string> AssetAliases, TestDataDataType DataType, string In);
+/// <remarks>
+/// The runtime value source of one dynamic parameter. Test Data (the original and default meaning) maps approved asset aliases; the other sources
+/// reference an earlier step's output, a scenario variable, an explicit fixed value (scenario configuration, not a Test Data asset) or a generated
+/// value. Unset properties are omitted so a legacy Test Data mapping keeps its exact JSON and fingerprints.
+/// </remarks>
+public sealed record ScenarioDataMapping(string Variable, List<string> AssetAliases, TestDataDataType DataType, string In)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public RuntimeValueSource Source { get; init; }
+    /// <summary>Previous step output: the producing step's id and output name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FromStepId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Output { get; init; }
+    /// <summary>Scenario variable name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ScenarioVariable { get; init; }
+    /// <summary>Explicit fixed value (scenario configuration).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FixedValue { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GeneratedValueKind? Generator { get; init; }
+    /// <summary>The Test Data alias was chosen through "Review observed value for Test Data" (provenance only; the observed value is never stored).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool FromObservedSample { get; init; }
+}
+
+/// <summary>Where a dynamic parameter gets its value at run time. An observed sample becomes usable only as approved Test Data after review.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RuntimeValueSource { TestData, PreviousStep, ScenarioVariable, Fixed, Generated }
+
+/// <summary>Safe synthetic values generated per request: never business identifiers where approved Test Data is expected.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GeneratedValueKind { Uuid, Timestamp, RandomNumber }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum StepAuthenticationMode { Inherit, None, Override }
+
+/// <summary>A value a step reads from its JSON response body for later steps ("$.id", "$.data.items[0].id").</summary>
+public sealed record StepOutput(string Name, string Path);
+
+/// <summary>A scenario-level variable: Fixed (value), Generated (generator) or Test Data (one approved alias). Steps reference it by name.</summary>
+public sealed record ScenarioVariable(string Name, RuntimeValueSource Source)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Value { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AssetAlias { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GeneratedValueKind? Generator { get; init; }
+}
 
 public sealed record PerformanceWorkload
 {
@@ -429,6 +477,11 @@ public sealed record PerformanceMetrics
     public List<PerformanceStepMetrics> Steps { get; init; } = [];
     /// <summary>Iterations the load generator could not start (not enough generator capacity for the configured rate). Null = not reported.</summary>
     public long? DroppedIterations { get; init; }
+    /// <summary>HTTP response status distribution ("200", "429", "4xx other", …), counted by the load script. Null = not captured (older runs) —
+    /// never shown as zero. Metadata only: response bodies are not retained by load runs.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, long>? StatusCodes { get; init; }
+    /// <summary>Requests without an HTTP response, grouped by transport failure (timeout, connection/DNS, TLS, other). Null = not captured.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, long>? TransportErrors { get; init; }
 
     public double? Value(PerformanceMetric metric) => metric switch
     {

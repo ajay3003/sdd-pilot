@@ -12,7 +12,8 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Scenario candidate UX: structured requirements (a normalised {id} needs Test Data), hidden observed values with an explicit review bridge
+/// Scenario candidate UX: a normalised {id} is a dynamic parameter (a runtime value configured on the step — not a Test Data requirement), hidden
+/// observed values with an explicit review bridge
 /// (backend match by alias, unapproved candidate registration), the green "Added to scenario" selection state with unresolved warnings kept,
 /// filters/ranked subset/technical toggle, REST vs GraphQL separation and the proposed GraphQL definition. Generic fixtures only.
 /// </summary>
@@ -69,17 +70,22 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
     {
         var cut = Builder([Rest($"/api/autorisasjon/v1/brukere/{ObservedId}/barn")]);
         cut.Find("[data-testid=psb-snapshot]").ParentElement!.TextContent.Should().Contain("Optional contract correlation source");
-        cut.Find("[data-testid=psb-correlation-help]").TextContent.Should().StartWith("Choose a Source Analysis snapshot to enrich observed traffic with declared contract evidence.");
+        cut.Find("[data-testid=psb-correlation-help]").TextContent.Should().StartWith("Correlates observed traffic with declared operations. Live Discovery works without one");
         var card = Card(cut, "GET /api/autorisasjon/v1/brukere/{id}/barn");
         card.QuerySelector("[data-testid=psb-evidence]")!.TextContent.Should().Be("Observed only");
         card.QuerySelector("[data-testid=psb-observation]")!.TextContent.Should().StartWith("13 calls · HTTP 200 · last seen");
         var need = card.QuerySelector("[data-testid=psb-need]")!;
         need.GetAttribute("data-variable").Should().Be("id");
         need.GetAttribute("data-state").Should().Be("Missing");
-        need.TextContent.Should().Contain("Path parameter").And.Contain("Missing").And.Contain("Observed value available · hidden");
+        need.TextContent.Should().Contain("Path parameter").And.Contain("No compatible approved Test Data yet").And.Contain("Observed value available · hidden");
+        card.QuerySelector("[data-testid=psb-normalization]")!.TextContent.Should().Contain("dynamic route segment detected").And.Contain("not a Test Data requirement");
+        card.QuerySelector("[data-testid=psb-state]")!.TextContent.Should().Be("Review required", "observed only — the contract is unknown");
+        card.QuerySelectorAll("[data-testid=psb-attention-item]").Select(i => i.TextContent).Should().Contain("Dynamic parameter: id")
+            .And.Contain(t => t.StartsWith("Observed only")).And.Contain("Authentication: Bearer observed · configuration missing");
+        card.QuerySelector("[data-testid=psb-attention-item][data-kind=dynamic]")!.ClassList.Should().Contain("psb-info-item", "a dynamic parameter alone is information, not a warning");
         card.QuerySelector("[data-testid=psb-testdata-state]")!.GetAttribute("data-state").Should().Be(ScenarioTestDataStates.Required);
         card.QuerySelector("[data-testid=psb-auth]")!.TextContent.Should().Contain("Bearer observed").And.Contain("Needs configuration").And.Contain("no token is copied");
-        cut.Markup.Should().NotContain(ObservedId).And.NotContain("no Test Data needed");
+        cut.Markup.Should().NotContain(ObservedId).And.NotContain("no Test Data needed").And.NotContain("Test Data missing");
     }
 
     [Fact]
@@ -99,9 +105,11 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         cut.Find("[data-testid=ovr-match]").TextContent.Should().Contain("Existing approved Test Data match found").And.Contain("bruker-id-dev");
         _testData.Verify(t => t.MatchObservedValueAsync(It.Is<ObservedValueMatchRequest>(r => r.Value == ObservedId && r.DataType == TestDataDataType.SimpleValues), It.IsAny<CancellationToken>()), Times.Once);
         cut.Find("[data-testid=ovr-use-match]").Click();
+        cut.Find("[data-testid=psb-data-chosen]").TextContent.Should().Be("Will map to bruker-id-dev when added");
+        cut.Find("[data-testid=psb-review-add]").Click();
         cut.Find("[data-testid=psb-add]").Click();
         var step = _changed!.Scenario.Steps.Single();
-        step.DataMappings!.Single().Should().Match<ScenarioDataMapping>(m => m.Variable == "id" && m.AssetAliases.Single() == "bruker-id-dev");
+        step.DataMappings!.Single().Should().Match<ScenarioDataMapping>(m => m.Variable == "id" && m.AssetAliases.Single() == "bruker-id-dev" && m.FromObservedSample);
         System.Text.Json.JsonSerializer.Serialize(step).Should().NotContain(ObservedId, "the scenario stores the alias; Test Data owns the value");
 
         cut.Find("[data-testid=psb-review-observed]").Click();
@@ -130,9 +138,12 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
     public void AddedCandidate_IsGreenSelected_WithWarningsKept_AndBecomesAddableAgainWhenRemoved()
     {
         var cut = Builder([Rest($"/api/brukere/{ObservedId}/barn")]);
+        cut.Find("[data-testid=psb-review-add]").Click();
+        cut.Find("[data-testid=psb-add-review]").TextContent.Should().Contain("Observed only").And.Contain("configured on the step");
         cut.Find("[data-testid=psb-add]").Click();
         _addedStep.Should().Be(1, "focus moves to the new step");
-        cut.Find("[data-testid=psb-message]").TextContent.Should().Be("Added GET /api/brukere/{id}/barn as step 1. Nothing has run.");
+        cut.Find("[data-testid=psb-message]").TextContent.Should().Be("Added GET /api/brukere/{id}/barn as step 1 — configure its runtime values on the step. Nothing has run.");
+        _changed!.Scenario.Steps.Single().DataMappings.Should().BeNull("discovery never configures runtime values");
         cut.Find("[data-testid=psb-message]").GetAttribute("role").Should().Be("status");
 
         var added = Builder([Rest($"/api/brukere/{ObservedId}/barn")], _changed);
@@ -140,14 +151,16 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         card.ClassList.Should().Contain("psb-is-added");
         card.GetAttribute("data-added").Should().Be("true");
         card.QuerySelector("[data-testid=psb-added-badge]")!.TextContent.Should().Contain("Added to scenario");
-        card.QuerySelector("[data-testid=psb-add]")!.TextContent.Should().Be("Already added");
+        card.GetAttribute("data-state").Should().Be("added");
+        card.QuerySelector("[data-testid=psb-state]")!.TextContent.Should().Be("Added to scenario");
+        card.QuerySelector("[data-testid=psb-add]")!.TextContent.Should().Be("Added to scenario");
         card.QuerySelector("[data-testid=psb-add]")!.HasAttribute("disabled").Should().BeTrue();
-        card.QuerySelector("[data-testid=psb-data-missing]").Should().NotBeNull("green means selected, not ready — Test Data stays Missing");
+        card.QuerySelectorAll("[data-testid=psb-attention-item].psb-warn-item").Should().NotBeEmpty("green means selected, not ready — unresolved warnings stay amber");
         card.QuerySelector("[data-testid=psb-level]")!.TextContent.Should().Be("Review required");
 
         var removed = Builder([Rest($"/api/brukere/{ObservedId}/barn")], Definition());
         removed.Find("[data-testid=psb-operation]").GetAttribute("data-added").Should().Be("false");
-        removed.Find("[data-testid=psb-add]").HasAttribute("disabled").Should().BeFalse();
+        removed.Find("[data-testid=psb-review-add]").HasAttribute("disabled").Should().BeFalse();
     }
 
     [Fact]
@@ -157,7 +170,11 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         var step = new HttpPerformanceStep { Name = "orders", RelativePath = "/api/orders", Source = new ScenarioStepSource { OperationKey = "observed:GET /api/orders", Origin = ScenarioOperationOrigin.Observed, Evidence = ScenarioEvidence.ObservedOnly } };
         var cut = Builder(observed, Definition(step));
         var filters = cut.FindAll("[data-testid=psb-filter]").Select(f => f.TextContent.Trim()).ToList();
-        filters.Should().Equal("All (3)", "Ready to add (0)", "Review required (2)", "Added (1)", "Declared + observed (0)", "Declared only (0)", "Observed only (3)", "REST (2)", "GraphQL (1)");
+        filters.Should().Equal("All (3)", "Ready (0)", "Needs review (1)", "Added (1)");
+        cut.FindAll("[data-testid=psb-evidence-filter]").Select(f => f.TextContent.Trim()).Should().Equal("Any (3)", "Declared + observed (0)", "Declared only (0)", "Observed only (3)", "REST (2)", "GraphQL (1)");
+        cut.FindAll("[data-testid=psb-evidence-filter]").Single(f => f.GetAttribute("data-filter") == "graphql").Click();
+        cut.FindAll("[data-testid=psb-operation]").Should().ContainSingle().Which.GetAttribute("data-state").Should().Be("notrunnable");
+        cut.FindAll("[data-testid=psb-evidence-filter]").Single(f => f.GetAttribute("data-filter") == "all").Click();
         cut.FindAll("[data-testid=psb-filter]").Single(f => f.GetAttribute("data-filter") == "added").Click();
         cut.FindAll("[data-testid=psb-operation]").Should().ContainSingle().Which.GetAttribute("data-added").Should().Be("true");
         cut.FindAll("[data-testid=psb-filter]").Single(f => f.GetAttribute("data-filter") == "added").GetAttribute("aria-pressed").Should().Be("true");
@@ -170,12 +187,13 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
             [Rest("/", category: ObservedTrafficCategory.OtherHttp), Rest("/appsettings.json", category: ObservedTrafficCategory.OtherHttp), Rest("/appsettings.Dev.json", category: ObservedTrafficCategory.OtherHttp), Rest("/health/ready")]).ToList();
         var cut = Builder(observed, source: PerformanceScenarioBuilder.RecommendedKey);
         cut.FindAll("[data-testid=psb-operation]").Should().HaveCount(PerformanceScenarioBuilder.TopCount, "no massive uncontrolled first render");
-        cut.Find("[data-testid=psb-count]").TextContent.Should().StartWith("Top recommended candidates · 10 of 31");
+        cut.Find("[data-testid=psb-count]").TextContent.Should().StartWith("Top 5 recommended of 31");
         cut.Markup.Should().NotContain("appsettings", "technical/background traffic is hidden by default");
         cut.Find("[data-testid=psb-show-technical]").ParentElement!.TextContent.Should().Contain("Show technical/background endpoints (3)");
-        cut.Find("[data-testid=psb-show-all]").TextContent.Should().Be("Show all 31 candidates");
+        cut.Find("[data-testid=psb-show-all]").TextContent.Should().Be("Show all 31");
         cut.Find("[data-testid=psb-show-all]").Click();
-        cut.FindAll("[data-testid=psb-operation]").Should().HaveCount(25, "then paged");
+        cut.FindAll("[data-testid=psb-operation]").Should().HaveCount(10, "then paged");
+        cut.Find("[data-testid=psb-more]").TextContent.Should().Be("Show 21 more of 21");
         cut.FindAll("[data-testid=psb-operation]").Last().GetAttribute("data-traffic").Should().Be("Application");
 
         cut.Find("[data-testid=psb-show-technical]").Change(true);
@@ -184,7 +202,8 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         cut.Find("[data-testid=psb-traffic]").TextContent.Should().Be("Technical / background");
         cut.Find("[data-testid=psb-search]").Input("health");
         cut.Find("[data-testid=psb-traffic]").TextContent.Should().Be("Diagnostic / smoke");
-        cut.Find("[data-testid=psb-add]").HasAttribute("disabled").Should().BeFalse("diagnostic endpoints stay explicitly addable");
+        cut.Find("[data-testid=psb-review-add]").HasAttribute("disabled").Should().BeFalse("diagnostic endpoints stay explicitly addable (after review)");
+        cut.Find("[data-testid=psb-attention-item][data-kind=traffic]").TextContent.Should().Be("Diagnostic / smoke · not a business-load baseline");
     }
 
     [Fact]

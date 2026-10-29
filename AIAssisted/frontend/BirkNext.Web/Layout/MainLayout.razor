@@ -47,6 +47,15 @@ else
 
             // Restore the last active workspace on app startup
             await RestoreCurrentWorkspaceAsync();
+
+            // Target Environment → Project decides which evidence explorers and the workflow read. Load the environments before the body
+            // renders, so a page opened directly (reload, deep link) never falls back to the last imported package for lack of settings.
+            if (LayoutServices.GetService(typeof(IFrontendAnalysisSettingsService)) is IFrontendAnalysisSettingsService environments && !environments.IsLoaded
+                && LayoutServices.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is Microsoft.JSInterop.IJSRuntime js)
+            {
+                try { await environments.LoadAsync(js); }
+                catch (Exception ex) { Logger.LogWarning(ex, "Target Environments could not be loaded on startup"); }
+            }
         }
         finally
         {

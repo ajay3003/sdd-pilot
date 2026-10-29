@@ -54,7 +54,8 @@ public static class IntegrationTemplates
         {
             Values = values, NeedsConfiguration = needs, Journeys = journeys, AlreadyConfigured = configured, EvidenceSource = evidence,
             ReferenceSource = reference, AuthenticationReference = Pick(template.Reference?.AuthenticationFacts), ContractReference = Pick(template.Reference?.ContractFacts),
-            SchemaName = schemaName, SchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName),
+            SchemaName = schemaName, SchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName, Matching(pack, requirement, context), matches: true),
+            OtherSchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName, Matching(pack, requirement, context), matches: false),
             FixtureBindings = template.FixtureBindings,
             FixtureCapabilities = template.FixtureCapabilities,
             Flow = requirement is null ? null : $"{requirement.Producer} → {requirement.Consumer}",
@@ -64,13 +65,35 @@ public static class IntegrationTemplates
     /// <summary>XML schemas named exactly <paramref name="name"/> (declared name or file stem, case-insensitive) in each snapshot recognized as the
     /// evidence source AND in every snapshot an IQR binding points at (a re-import gives the recognized source a new snapshot id; the bound one is
     /// still where the integration's evidence lives). Never a fuzzy match, never chosen automatically.</summary>
-    private static IReadOnlyList<IntegrationTemplateSchemaCandidate> Schemas(JourneyPackContext context, TestPackSourceStatus evidence, string name)
+    private static IReadOnlyList<IntegrationDefinition> Matching(IIntegrationJourneyPack pack, JourneyIntegrationRequirement? requirement, JourneyPackContext context) =>
+        requirement is null ? [] : [.. context.Catalog.Integrations.Where(integration => pack.Matches(requirement, integration))];
+
+    /// <remarks>Each candidate carries the evidence that could select it (IQR binding of a fulfilling integration, a verified contract
+    /// relationship naming the schema, recognition as the source role) and the analysis time for display — never a date-based choice.</remarks>
+    private static IReadOnlyList<IntegrationTemplateSchemaCandidate> Schemas(JourneyPackContext context, TestPackSourceStatus evidence, string name,
+        IReadOnlyList<IntegrationDefinition> integrations, bool matches)
     {
+        var ids = integrations.Select(integration => integration.Id).ToHashSet(StringComparer.Ordinal);
+        var bound = context.Bindings.Where(binding => ids.Contains(binding.IntegrationId)).ToList();
+        var recognized = evidence.Candidates.Select(candidate => candidate.SnapshotId).ToHashSet();
         var scanned = evidence.Candidates.Select(candidate => (candidate.SnapshotId, candidate.ArchiveFileName))
             .Concat(context.Bindings.Select(binding => (SnapshotId: binding.SnapshotId, ArchiveFileName: binding.ArchiveName)))
             .DistinctBy(item => item.SnapshotId);
-        return [.. scanned.SelectMany(item => (context.SourceSnapshots.FirstOrDefault(snapshot => snapshot.Id == item.SnapshotId)?.EvidenceDomains?.Contracts.Contracts ?? [])
-            .Where(contract => contract.Type == BirkNext.SourceDomains.SourceContractType.XmlSchema && BirkNext.ContractSchemaEvidence.ContractArtifactPaths.NamedExactly(contract, name))
-            .Select(contract => new IntegrationTemplateSchemaCandidate(item.SnapshotId, item.ArchiveFileName, contract.Name, contract.File) { Version = contract.Version }))];
+        return [.. scanned.SelectMany(item =>
+        {
+            var snapshot = context.SourceSnapshots.FirstOrDefault(s => s.Id == item.SnapshotId);
+            var binding = bound.FirstOrDefault(b => b.SnapshotId == item.SnapshotId);
+            var integration = binding is null ? null : integrations.FirstOrDefault(i => i.Id == binding.IntegrationId);
+            return (snapshot?.EvidenceDomains?.Contracts.Contracts ?? [])
+                .Where(contract => contract.Type == BirkNext.SourceDomains.SourceContractType.XmlSchema
+                    && BirkNext.ContractSchemaEvidence.ContractArtifactPaths.NamedExactly(contract, name) == matches)
+                .Select(contract => new IntegrationTemplateSchemaCandidate(item.SnapshotId, item.ArchiveFileName, contract.Name, contract.File)
+                {
+                    Version = contract.Version, AnalyzedAt = snapshot?.AnalyzedAt, Bound = binding is not null, BoundIntegration = integration?.DisplayName,
+                    Recognized = recognized.Contains(item.SnapshotId), MatchesContract = matches,
+                    ContractConfirmed = matches && integrations.Any(i => i.ContractRelationship == ContractRelationshipState.RelationshipVerified
+                        && (i.ConsumerContractReference is null || string.Equals(System.IO.Path.GetFileNameWithoutExtension(i.ConsumerContractReference.Replace('\\', '/').Split('/').Last()), name, StringComparison.OrdinalIgnoreCase))),
+                });
+        })];
     }
 }

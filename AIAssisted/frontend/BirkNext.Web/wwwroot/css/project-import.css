@@ -192,3 +192,6 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-previous-facts > div { display: flex; gap: .3rem; align-items: baseline; min-width: 0; }
 .pi-previous-facts dt { font-size: .74rem; color: var(--clr-text-muted); }
 .pi-previous-facts dd { margin: 0; overflow-wrap: anywhere; }
+
+.pi-capabilities { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0.35rem 0; }
+.pi-not-provided { font-size: 0.82rem; }

@@ -8,6 +8,15 @@
     max-width: 1200px;
 }
 
+/* Header + "How it works" disclosure share one slot so the page gap is not applied twice. */
+.drift-intro {
+    display: grid;
+    gap: .25rem;
+}
+
+.drift-intro ::deep .page-header { margin-bottom: 0; }
+.drift-intro ::deep .disclosure { margin-top: 0; }
+
 /* ─── Tab strip ──────────────────────────────────────────────────────────── */
 
 .sd-tab-strip {

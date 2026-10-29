@@ -6,15 +6,17 @@
 @using BirkNext.Web.Shared.Components.Common
 @using E = BirkNext.PerformanceTests.PerformanceScenarioEngine
 @inject IPerformanceTestApiService Api
+@inject IServiceProvider Services
 
-@* Smart Scenario Engine — "Create scenario from": the declared contract (an explicitly chosen Source Analysis snapshot), Live Discovery
-   observations (safe metadata already in this browser), central Test Data (approved assets, referenced by alias) and Manual. Every operation is
-   a proposal with its evidence and structured requirements; nothing is added, saved or executed until the person selects it. Candidates are
-   ranked deterministically (evidence tier), technical/background traffic is hidden by default (never deleted), and an added candidate shows a
-   green "Added to scenario" selection state — selection, not execution readiness: unresolved Test Data/authentication stay amber. *@
+@* Discovery — "Discover operations": the declared contract (a Source Analysis snapshot: the saved choice, else the one Target Environment →
+   Project binds, else the person's choice; never the newest), Live Discovery observations (safe metadata already in this browser), central Test Data
+   suggestions and Manual. A candidate answers only: what is it, why is it suggested, can it be added, what needs attention first — evidence is
+   behind "Show evidence". Runtime values (Test Data, previous step, variable, fixed, generated) are configured on the executable step, never
+   here. Ranking is deterministic (evidence tier); technical/background traffic is hidden by default (never deleted). An added candidate turns
+   green — selected, not execution-ready: attention items stay amber. *@
 <section class="psb" aria-labelledby="psb-h" data-testid="psb">
-    <h3 id="psb-h">Create scenario from</h3>
-    <div class="psb-sources" role="radiogroup" aria-label="Scenario source" data-testid="psb-sources">
+    <h3 id="psb-h">Discover operations</h3>
+    <div class="psb-sources" role="radiogroup" aria-label="Discovery mode" data-testid="psb-sources">
         @foreach (var (key, label) in Sources)
         {
             var id = $"psb-source-{key}";
@@ -25,30 +27,12 @@
 
     @if (Source == ManualKey)
     {
-        <p class="sd-muted" data-testid="psb-manual">Manual steps: use <strong>Add manual step</strong> below and enter the method, relative path, expected responses, Test Data mapping and delay. Use it for undocumented APIs, custom endpoints or special probes.</p>
+        <p class="sd-muted" data-testid="psb-manual">Manual steps use the same executable step model: use <strong>Add manual step</strong> below and enter the method, relative path, runtime values, authentication, expected response and delay. Use it for undocumented APIs, custom endpoints or special probes.</p>
     }
     else
     {
         <div class="psb-context">
-            @if (Source == ObservedKey)
-            {
-                <label class="sd-field">Optional contract correlation source
-                    <select value="@(_snapshotId?.ToString() ?? "")" @onchange="SelectSnapshotAsync" data-testid="psb-snapshot" aria-describedby="psb-correlation-help">
-                        <option value="">@(_snapshots.Count == 0 ? "No snapshot with OpenAPI/GraphQL contracts" : "None — observed traffic only")</option>
-                        @foreach (var s in _snapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
-                    </select>
-                </label>
-                <p class="psb-note" id="psb-correlation-help" data-testid="psb-correlation-help">Choose a Source Analysis snapshot to enrich observed traffic with declared contract evidence. Live Discovery works without one (Observed only).</p>
-            }
-            else
-            {
-                <label class="sd-field">Contract source (Source Analysis snapshot)
-                    <select value="@(_snapshotId?.ToString() ?? "")" @onchange="SelectSnapshotAsync" data-testid="psb-snapshot">
-                        <option value="">@(_snapshots.Count == 0 ? "No snapshot with OpenAPI/GraphQL contracts" : "Select a snapshot…")</option>
-                        @foreach (var s in _snapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
-                    </select>
-                </label>
-            }
+            @ContractSource()
             <dl class="psb-counts" data-testid="psb-counts">
                 <div><dt>Observed endpoints</dt><dd data-testid="psb-count-observed">@(_catalog?.ObservedEndpoints ?? 0) unique runtime endpoint@((_catalog?.ObservedEndpoints ?? 0) == 1 ? "" : "s") on this target</dd></div>
                 @if (_contracts is not null)
@@ -94,18 +78,27 @@
                 }
             }
             <label class="sd-field psb-search">Search operations
-                <input type="search" value="@_search" @oninput="OnSearch" placeholder="path, operation, tag, contract, GraphQL operation, suggested use" data-testid="psb-search" />
+                <input type="search" value="@_search" @oninput="OnSearch" placeholder="path, method, operation, tag, contract, GraphQL operation, suggested use" data-testid="psb-search" />
             </label>
         </div>
 
         var basis = SourceOperations().ToList();
         var technical = basis.Count(o => o.Traffic == ScenarioTrafficKind.TechnicalBackground);
         var shown = basis.Where(o => _showTechnical || o.Traffic != ScenarioTrafficKind.TechnicalBackground).ToList();
-        <div class="psb-filters" role="group" aria-label="Filter candidates" data-testid="psb-filters">
+        var evidenceShown = shown.Where(o => Matches(o, _evidence)).ToList();
+        <div class="psb-filters" role="group" aria-label="Workflow filter" data-testid="psb-filters">
             @foreach (var (key, label) in Filters)
             {
                 var k = key;
-                <button type="button" class="psb-filter @(_filter == k ? "is-active" : "")" aria-pressed="@(_filter == k ? "true" : "false")" @onclick="() => SetFilter(k)" data-testid="psb-filter" data-filter="@k">@label (@shown.Count(o => Matches(o, k)))</button>
+                <button type="button" class="psb-filter @(_filter == k ? "is-active" : "")" aria-pressed="@(_filter == k ? "true" : "false")" @onclick="() => SetFilter(k)" data-testid="psb-filter" data-filter="@k">@label (@evidenceShown.Count(o => Matches(o, k)))</button>
+            }
+        </div>
+        <div class="psb-filters psb-filters-secondary" role="group" aria-label="Evidence filter" data-testid="psb-evidence-filters">
+            <span class="psb-filter-label" aria-hidden="true">Evidence:</span>
+            @foreach (var (key, label) in EvidenceFilters)
+            {
+                var k = key;
+                <button type="button" class="psb-filter psb-filter-small @(_evidence == k ? "is-active" : "")" aria-pressed="@(_evidence == k ? "true" : "false")" @onclick="() => SetEvidence(k)" data-testid="psb-evidence-filter" data-filter="@k">@label (@shown.Count(o => Matches(o, _filter) && Matches(o, k)))</button>
             }
             @if (technical > 0)
             {
@@ -113,8 +106,8 @@
             }
         </div>
 
-        var visible = Searched(shown.Where(o => Matches(o, _filter))).ToList();
-        var top = Source == RecommendedKey && _filter == AllFilter && _search.Trim().Length == 0 && !_showAll;
+        var visible = Searched(evidenceShown.Where(o => Matches(o, _filter))).ToList();
+        var top = Source == RecommendedKey && _filter == AllFilter && _evidence == AllFilter && _search.Trim().Length == 0 && !_showAll;
         var take = top ? Math.Min(TopCount, visible.Count) : Math.Min(_limit, visible.Count);
         @if (_catalog is null || visible.Count == 0)
         {
@@ -122,17 +115,17 @@
         }
         else
         {
-            <p class="psb-count" data-testid="psb-count">@(top ? $"Top recommended candidates · {take} of {visible.Count}" : $"{visible.Count} candidate{(visible.Count == 1 ? "" : "s")}") · proposals only — nothing runs until you add it and start a run.</p>
+            <p class="psb-count" role="status" data-testid="psb-count">@(top ? $"Top {take} recommended of {visible.Count}" : $"Showing {take} of {visible.Count} candidate{(visible.Count == 1 ? "" : "s")}") · proposals only — nothing runs until you add it and start a run.</p>
             <ul class="psb-operations" data-testid="psb-operations">
                 @foreach (var op in visible.Take(take)) { @Card(op) }
             </ul>
             @if (top && visible.Count > take)
             {
-                <button type="button" class="ptc-link" @onclick="() => _showAll = true" data-testid="psb-show-all">Show all @visible.Count candidates</button>
+                <button type="button" class="ptc-link" @onclick="() => _showAll = true" data-testid="psb-show-all">Show all @visible.Count</button>
             }
             else if (!top && visible.Count > take)
             {
-                <button type="button" class="ptc-link" @onclick="() => _limit += PageSize" data-testid="psb-more">Show @Math.Min(PageSize, visible.Count - take) more of @(visible.Count - take)</button>
+                <button type="button" class="ptc-link" @onclick="() => _limit += MorePage" data-testid="psb-more">Show @Math.Min(MorePage, visible.Count - take) more of @(visible.Count - take)</button>
             }
         }
     }
@@ -154,26 +147,29 @@
     [Parameter] public EventCallback<HttpPerformanceStep?> OnNewGraphQlDefinition { get; set; }
 
     public const string RecommendedKey = "recommended", OpenApiKey = "openapi", GraphQlKey = "graphql", ObservedKey = "observed", ManualKey = "manual";
-    public const int TopCount = 10;
-    private const int PageSize = 25;
+    /// <summary>Recommended starts with a small useful set; other views show 10 and load 25 more at a time.</summary>
+    public const int TopCount = 5;
+    private const int PageSize = 10, MorePage = 25;
     private const string AllFilter = "all";
     private static readonly (string Key, string Label)[] Sources =
         [(RecommendedKey, "Recommended"), (OpenApiKey, "OpenAPI / Swagger"), (GraphQlKey, "GraphQL"), (ObservedKey, "Live Discovery"), (ManualKey, "Manual")];
-    private static readonly (string Key, string Label)[] Filters =
-        [(AllFilter, "All"), ("ready", "Ready to add"), ("review", "Review required"), ("added", "Added"), ("declared-observed", "Declared + observed"),
-         ("declared-only", "Declared only"), ("observed-only", "Observed only"), ("rest", "REST"), ("graphql", "GraphQL")];
+    private static readonly (string Key, string Label)[] Filters = [(AllFilter, "All"), ("ready", "Ready"), ("review", "Needs review"), ("added", "Added")];
+    private static readonly (string Key, string Label)[] EvidenceFilters =
+        [(AllFilter, "Any"), ("declared-observed", "Declared + observed"), ("declared-only", "Declared only"), ("observed-only", "Observed only"), ("rest", "REST"), ("graphql", "GraphQL")];
 
     private string? _source;
     private string Source => _source ?? Definition.Scenario.SourceKind ?? RecommendedKey;
     private List<ScenarioSourceSnapshot> _snapshots = [];
     private Guid? _snapshotId;
+    private string? _snapshotOrigin;
+    private bool _changingSource;
     private ScenarioContractCatalog? _contracts;
     private ScenarioCatalog? _catalog;
-    private string _search = "", _filter = AllFilter;
+    private string _search = "", _filter = AllFilter, _evidence = AllFilter;
     private int _limit = PageSize;
     private bool _showTechnical, _showAll;
     private string? _message;
-    private string? _reviewKey, _graphQlReviewKey;
+    private string? _reviewKey, _graphQlReviewKey, _addReviewKey;
     private readonly Dictionary<string, Dictionary<string, string>> _chosen = new(StringComparer.Ordinal);
 
     private int OnTargetCount => E.OnTarget(Observations, Definition.TargetOrigin).Count;
@@ -182,8 +178,19 @@
     {
         try { _snapshots = await Api.ScenarioSourcesAsync(EnvironmentId); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _snapshots = []; }
-        // Reopen the snapshot the steps were built from (an explicit earlier choice) — never the newest by default.
-        if (Definition.Scenario.ContractSnapshotId is { } saved && _snapshots.Any(s => s.Id == saved)) await LoadAsync(saved);
+        // Contract-source discovery reuses Target Environment → Project: snapshots bound as application or contract source come first and say why.
+        if ((Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Project is { } project)
+        {
+            _boundProject = project.ProjectName;
+            _bound = BirkNext.Web.Services.ProjectEvidence.ProjectBinding.SnapshotsFor(project, BirkNext.Web.Models.ProjectEvidenceCapability.ContractSchema)
+                .Concat(BirkNext.Web.Services.ProjectEvidence.ProjectBinding.SnapshotsFor(project, BirkNext.Web.Models.ProjectEvidenceCapability.ApplicationSource))
+                .Where(id => _snapshots.Any(s => s.Id == id)).ToHashSet();
+            _snapshots = [.. _snapshots.OrderByDescending(s => _bound.Contains(s.Id))];
+        }
+        // Precedence: the scenario's saved choice > the one source Target Environment → Project binds > a person's choice. Never the newest by
+        // date, never an unbound snapshot on its own; several bound sources need a decision.
+        if (Definition.Scenario.ContractSnapshotId is { } saved && _snapshots.Any(s => s.Id == saved)) await LoadAsync(saved, "Saved scenario selection");
+        else if (_bound.Count == 1) await LoadAsync(_bound.First(), "Bound from Project setup");
         Recompute();
     }
 
@@ -193,25 +200,65 @@
         _catalog = E.Build(_contracts?.Contracts ?? [], _contracts?.SnapshotId, _contracts?.Archive, Definition.TargetOrigin, EnvironmentName, Observations, Assets,
             Definition.Scenario.ContractIds, Definition.AuthenticationReference is not null);
 
-    private static string SnapshotLabel(ScenarioSourceSnapshot s) =>
-        $"{s.Archive} · {s.OpenApiContracts} OpenAPI · {s.GraphQlContracts} GraphQL · analyzed {s.AnalyzedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC";
+    private string SnapshotLabel(ScenarioSourceSnapshot s) =>
+        $"{s.Archive} · {s.OpenApiContracts} OpenAPI · {s.GraphQlContracts} GraphQL · analyzed {s.AnalyzedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC"
+        + (_bound.Contains(s.Id) ? $" · bound to project {_boundProject}" : "");
 
-    private async Task LoadAsync(Guid id)
+    private HashSet<Guid> _bound = [];
+    private string? _boundProject;
+
+    private async Task LoadAsync(Guid id, string origin)
     {
         _snapshotId = id;
+        _snapshotOrigin = origin;
         _contracts = await Api.ScenarioContractsAsync(EnvironmentId, id);
         _message = _contracts is null ? "The contracts of this snapshot could not be loaded." : null;
     }
 
     private async Task SelectSnapshotAsync(ChangeEventArgs e)
     {
-        _contracts = null; _snapshotId = null;
-        if (Guid.TryParse(e.Value?.ToString(), out var id)) await LoadAsync(id);
+        _contracts = null; _snapshotId = null; _snapshotOrigin = null; _changingSource = false;
+        if (Guid.TryParse(e.Value?.ToString(), out var id)) await LoadAsync(id, _bound.Contains(id) ? "Bound from Project setup" : "Selected here");
         Recompute();
     }
 
+    /// <summary>
+    /// Contract source: the resolved source is shown directly with why it applies and a Change action (no second "use bound source" step).
+    /// In Live Discovery it is an optional correlation source — observed candidates work without one.
+    /// </summary>
+    private RenderFragment ContractSource() => __builder =>
+    {
+        var observed = Source == ObservedKey;
+        var label = observed ? "Optional contract correlation source" : "Contract source";
+        var current = _snapshots.FirstOrDefault(s => s.Id == _snapshotId);
+        @if (current is not null && !_changingSource)
+        {
+            <div class="psb-contract-source" data-testid="psb-contract-source" data-origin="@_snapshotOrigin">
+                <span class="psb-source-label">@label</span>
+                <strong class="psb-source-name" data-testid="psb-contract-source-name">@current.Archive</strong>
+                <span class="psb-chip" data-testid="psb-contract-source-origin">@_snapshotOrigin</span>
+                <span class="sd-context">@current.OpenApiContracts OpenAPI · @current.GraphQlContracts GraphQL</span>
+                <button type="button" class="ptc-link" @onclick="() => _changingSource = true" data-testid="psb-contract-source-change">Change<span class="visually-hidden"> @label.ToLowerInvariant()</span></button>
+            </div>
+        }
+        else
+        {
+            <label class="sd-field">@label
+                <select value="@(_snapshotId?.ToString() ?? "")" @onchange="SelectSnapshotAsync" data-testid="psb-snapshot" aria-describedby="psb-source-help">
+                    <option value="">@(_snapshots.Count == 0 ? "No snapshot with OpenAPI/GraphQL contracts" : observed ? "None — observed traffic only" : "Select a snapshot…")</option>
+                    @foreach (var s in _snapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
+                </select>
+            </label>
+            @if (_bound.Count > 1) { <p class="psb-note" data-testid="psb-bound-several">@_bound.Count contract sources are bound to project @_boundProject — choose the one for this scenario.</p> }
+        }
+        <p class="psb-note" id="psb-source-help" data-testid="psb-correlation-help">@(observed
+            ? "Correlates observed traffic with declared operations. Live Discovery works without one (Observed only)."
+            : "Declared OpenAPI/GraphQL operations come from this Source Analysis snapshot.")</p>
+    };
+
     private void SelectSource(string key) { _source = key; _limit = PageSize; _showAll = false; }
     private void SetFilter(string key) { _filter = key; _limit = PageSize; }
+    private void SetEvidence(string key) { _evidence = key; _limit = PageSize; }
     private void OnSearch(ChangeEventArgs e) { _search = e.Value?.ToString() ?? ""; _limit = PageSize; }
 
     private IEnumerable<ScenarioOperation> SourceOperations() => _catalog is null ? [] : Source switch
@@ -226,8 +273,8 @@
 
     private bool Matches(ScenarioOperation op, string filter) => filter switch
     {
-        "ready" => CanAdd(op, out _) && op.Level is ScenarioRecommendationLevel.Recommended or ScenarioRecommendationLevel.Candidate,
-        "review" => op.Level == ScenarioRecommendationLevel.ReviewRequired,
+        "ready" => !IsAdded(op) && CanAdd(op, out _) && op.Level is ScenarioRecommendationLevel.Recommended or ScenarioRecommendationLevel.Candidate,
+        "review" => !IsAdded(op) && op.Level == ScenarioRecommendationLevel.ReviewRequired,
         "added" => IsAdded(op),
         "declared-observed" => op.Evidence == ScenarioEvidence.DeclaredAndObserved,
         "declared-only" => op.Evidence == ScenarioEvidence.DeclaredOnly,
@@ -237,9 +284,9 @@
         _ => true,
     };
 
-    /// <summary>Path, operation name/id, tags, evidence source (contract/file), GraphQL operation and suggested use.</summary>
+    /// <summary>Path, method, operation name/id, tags, evidence source (contract/file), GraphQL operation and suggested use.</summary>
     private IEnumerable<ScenarioOperation> Searched(IEnumerable<ScenarioOperation> ops) => _search.Trim() is { Length: > 0 } term
-        ? ops.Where(o => new[] { o.Name, o.Path, o.OperationId, o.ContractName, o.ContractFile, o.Use, o.GraphQl?.OperationName, E.EvidenceLabel(o.Evidence), o.Summary }
+        ? ops.Where(o => new[] { o.Name, o.Method, $"{o.Method} {o.Path}", o.Path, o.OperationId, o.ContractName, o.ContractFile, o.Use, o.GraphQl?.OperationName, E.EvidenceLabel(o.Evidence), o.Summary }
             .Concat(o.Tags).Any(v => v?.Contains(term, StringComparison.OrdinalIgnoreCase) == true))
         : ops;
 
@@ -279,8 +326,6 @@
         await OnChange.InvokeAsync(Definition with { Scenario = Definition.Scenario with { ContractIds = ids.Count == 0 ? null : ids } });
     }
 
-    private string Chosen(string key, string variable) => _chosen.GetValueOrDefault(key)?.GetValueOrDefault(variable) ?? "";
-
     private void Choose(string key, string variable, string? alias)
     {
         var map = _chosen.TryGetValue(key, out var m) ? m : _chosen[key] = new(StringComparer.Ordinal);
@@ -307,6 +352,7 @@
     private async Task AddAsync(ScenarioOperation op)
     {
         if (!CanAdd(op, out _)) return;
+        _addReviewKey = null;
         var types = _contracts?.Contracts.FirstOrDefault(c => c.Id == op.ContractId)?.Types;
         var step = E.ToStep(op, _chosen.GetValueOrDefault(op.Key), types);
         var steps = Definition.Scenario.Steps.Append(step).ToList();
@@ -320,12 +366,40 @@
                 Name = defaultName ? E.SuggestName([.. steps.Select(s => _catalog!.Operations.FirstOrDefault(o => o.Key == s.Source?.OperationKey)).OfType<ScenarioOperation>()]) : Definition.Scenario.Name,
             },
         };
-        _message = $"Added {op.Name} as step {steps.Count}. Nothing has run.";
+        _message = $"Added {op.Name} as step {steps.Count}{(op.Needs.Count > 0 ? " — configure its runtime values on the step" : "")}. Nothing has run.";
         await OnChange.InvokeAsync(next);
         await OnStepAdded.InvokeAsync(steps.Count);
     }
 
     private static string Location(string place) => ObservedValueReview.Location(place);
+
+    /// <summary>The contract variants of the candidate's contract disagree (Needs decision): a conflict a person resolves, never chosen silently.</summary>
+    private bool InConflict(ScenarioOperation op) => op.ContractId is { } id && _contracts is not null
+        && E.ContractGroups(_contracts.Contracts).Any(g => g.State == ScenarioContractGroup.NeedsDecision && g.All.Any(c => c.Id == id))
+        && Definition.Scenario.ContractIds is not { Count: > 0 };
+
+    /// <summary>What needs attention first, as short items. A dynamic parameter is listed as information only (configured on the step).</summary>
+    private IReadOnlyList<(string Kind, string Text, bool Warn)> Attention(ScenarioOperation op, string? why)
+    {
+        var items = new List<(string, string, bool)>();
+        if (op.Evidence == ScenarioEvidence.ObservedOnly) items.Add(("evidence", op.GraphQlKind is null ? "Observed only · undocumented API, contract unknown" : "Observed only · not declared in a schema", true));
+        if (op.RequiresAuthentication || op.GraphQl?.AuthObserved == true)
+            items.Add(("auth", $"Authentication: {(op.Observation?.AuthObserved == true || op.GraphQl?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security))} · {(Definition.AuthenticationReference is null ? "configuration missing" : "scenario default configured")}", Definition.AuthenticationReference is null));
+        if (op.TestDataState == ScenarioTestDataStates.Unknown) items.Add(("inputs", "GraphQL query document not captured · runtime inputs unknown", true));
+        if (InConflict(op)) items.Add(("conflict", "Contract variants disagree · choose the contract file above", true));
+        if (op.Traffic != ScenarioTrafficKind.Application) items.Add(("traffic", $"{E.TrafficLabel(op.Traffic)} · not a business-load baseline", true));
+        if (why is not null && !IsAdded(op) && !op.ProposedDefinition) items.Add(("blocked", why, true));
+        foreach (var n in op.Needs) items.Add(("dynamic", n.In == "body" ? "Request body · value source configured on the step" : $"Dynamic parameter: {n.Variable}", false));
+        return items;
+    }
+
+    /// <summary>One primary candidate state (text + tone): Added, Conflict, Not runnable in this definition, Review required or Ready to add.</summary>
+    private (string Key, string Label) State(ScenarioOperation op, bool canAdd) =>
+        IsAdded(op) ? ("added", "Added to scenario")
+        : InConflict(op) ? ("conflict", "Conflict")
+        : op.ProposedDefinition || op.Level == ScenarioRecommendationLevel.ReviewRequired && canAdd ? ("review", "Review required")
+        : !canAdd ? ("notrunnable", "Not runnable in this definition")
+        : ("ready", "Ready to add");
 
     private RenderFragment Card(ScenarioOperation op) => __builder =>
     {
@@ -333,50 +407,131 @@
         var observed = op.Observation is not null;
         var added = IsAdded(op);
         var whyId = $"psb-why-{op.Key.GetHashCode():x}";
+        var headingId = $"psb-op-{op.Key.GetHashCode():x}";
         var canAdd = CanAdd(op, out var why);
-        <li class="psb-operation psb-level-@op.Level.ToString().ToLowerInvariant() @(added ? "psb-is-added" : "")" data-testid="psb-operation" data-key="@op.Key" data-level="@op.Level"
-            data-evidence="@op.Evidence" data-added="@(added ? "true" : "false")" data-traffic="@op.Traffic">
+        var state = State(op, canAdd);
+        var attention = Attention(op, why);
+        <li class="psb-operation psb-state-@state.Key psb-level-@op.Level.ToString().ToLowerInvariant() @(added ? "psb-is-added" : "")" data-testid="psb-operation" data-key="@op.Key" data-level="@op.Level"
+            data-state="@state.Key" data-evidence="@op.Evidence" data-added="@(added ? "true" : "false")" data-traffic="@op.Traffic" aria-labelledby="@headingId">
             <div class="psb-op-head">
-                <strong class="psb-op-name ptc-break" data-testid="psb-op-name">@(op.GraphQlKind is not null ? op.Name : $"{op.Method} {op.Path}")</strong>
-                @if (added) { <span class="psb-chip psb-chip-added" data-testid="psb-added-badge"><span aria-hidden="true">✓</span> Added to scenario</span> }
-                <span class="psb-level psb-chip @(op.Level == ScenarioRecommendationLevel.ReviewRequired ? "psb-chip-warn" : op.Level == ScenarioRecommendationLevel.NotRunnable ? "psb-chip-muted" : "")" data-testid="psb-level">@E.LevelLabel(op.Level)</span>
-                @if (op.Traffic != ScenarioTrafficKind.Application) { <span class="psb-chip psb-chip-muted" data-testid="psb-traffic">@E.TrafficLabel(op.Traffic)</span> }
+                <h4 class="psb-op-name ptc-break" id="@headingId" data-testid="psb-op-name">@(op.GraphQlKind is not null ? op.Name : $"{op.Method} {op.Path}")</h4>
+                <span class="psb-chip psb-chip-@state.Key" data-testid="psb-state">@state.Label</span>
+                @if (added) { <span class="visually-hidden" data-testid="psb-added-badge">Added to scenario</span> }
+                <span class="visually-hidden" data-testid="psb-level">@E.LevelLabel(op.Level)</span>
             </div>
-            <p class="psb-evidence-line">
-                <span class="psb-badge psb-evidence" data-testid="psb-evidence">@E.EvidenceLabel(op.Evidence)</span>
-                <span class="visually-hidden" data-testid="psb-declared">Declared: @(declared ? "yes" : "no")</span>
-                <span class="visually-hidden" data-testid="psb-observed">Observed: @(observed ? "yes" : "no")</span>
-                @if (op.Observation is { } seen) { <span data-testid="psb-observation">@seen.Count call@(seen.Count == 1 ? "" : "s")@(seen.LastStatus > 0 ? $" · HTTP {seen.LastStatus}" : "") · last seen @seen.LastSeen.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</span> }
-                @if (op.ContractName is not null) { <span class="sd-context">@(op.Origin == ScenarioOperationOrigin.GraphQl ? "GraphQL" : "OpenAPI") · @op.ContractName</span> }
+            <p class="psb-evidence-line" data-testid="psb-evidence-summary">
+                <span>@E.EvidenceLabel(op.Evidence)</span>
+                @if (op.Observation is { } seen) { <span> · @seen.Count call@(seen.Count == 1 ? "" : "s")@(seen.LastStatus > 0 ? $" · HTTP {seen.LastStatus}" : "")</span> }
+                @if (op.ContractName is not null) { <span class="sd-context"> · @(op.Origin == ScenarioOperationOrigin.GraphQl ? "GraphQL" : "OpenAPI") · @op.ContractName</span> }
+                @if (op.Traffic != ScenarioTrafficKind.Application) { <span class="psb-chip psb-chip-muted" data-testid="psb-traffic">@E.TrafficLabel(op.Traffic)</span> }
             </p>
-            <dl class="psb-facts">
+            @if (attention.Count > 0)
+            {
+                <div class="psb-attention" data-testid="psb-attention">
+                    <span class="psb-attention-title">@(attention.Any(a => a.Warn) ? "Needs attention" : "Notes")</span>
+                    <ul>
+                        @foreach (var a in attention) { <li class="@(a.Warn ? "psb-warn-item" : "psb-info-item")" data-testid="psb-attention-item" data-kind="@a.Kind">@a.Text</li> }
+                    </ul>
+                </div>
+            }
+            <p class="psb-actions">
+                @if (added)
+                {
+                    <button type="button" class="btn-secondary" disabled aria-describedby="@whyId" data-testid="psb-add">Added to scenario</button>
+                    <span class="psb-why" id="@whyId" data-testid="psb-why">Already in the scenario — use Duplicate on the step for a second copy.</span>
+                }
+                else if (op.ProposedDefinition)
+                {
+                    <button type="button" class="btn-secondary" aria-expanded="@(_graphQlReviewKey == op.Key ? "true" : "false")" @onclick="() => _graphQlReviewKey = _graphQlReviewKey == op.Key ? null : op.Key" data-testid="psb-review-graphql">Review &amp; create GraphQL definition</button>
+                }
+                else if (canAdd && op.Level == ScenarioRecommendationLevel.ReviewRequired)
+                {
+                    <button type="button" class="btn-secondary" aria-expanded="@(_addReviewKey == op.Key ? "true" : "false")" @onclick="() => _addReviewKey = _addReviewKey == op.Key ? null : op.Key" data-testid="psb-review-add">Review &amp; add</button>
+                }
+                else
+                {
+                    <button type="button" class="@(canAdd && op.Level == ScenarioRecommendationLevel.Recommended ? "btn-primary" : "btn-secondary")" disabled="@(!canAdd)"
+                        aria-describedby="@whyId" @onclick="() => AddAsync(op)" data-testid="psb-add">@(op.GraphQlKind is not null ? "Add to GraphQL scenario" : "Add to scenario")</button>
+                    @if (!canAdd) { <span class="psb-why" id="@whyId" data-testid="psb-why">@why</span> }
+                    @if (GraphQlInRestScenario(op) && op.Runnable)
+                    {
+                        <button type="button" class="ptc-link" @onclick="() => OnNewGraphQlDefinition.InvokeAsync(null)" data-testid="psb-new-graphql">+ New GraphQL definition</button>
+                    }
+                }
+            </p>
+            @if (_addReviewKey == op.Key && !added) { @AddReview(op, attention) }
+            @Evidence(op, declared, observed)
+            @if (_graphQlReviewKey == op.Key && op.GraphQl is { } review) { @GraphQlReview(op, review) }
+        </li>
+    };
+
+    /// <summary>"Review &amp; add": the attention items in one place, then an explicit add as a proposed step (still reviewed before execution).</summary>
+    private RenderFragment AddReview(ScenarioOperation op, IReadOnlyList<(string Kind, string Text, bool Warn)> attention) => __builder =>
+    {
+        <section class="ovr" role="dialog" aria-modal="false" aria-label="@($"Review {op.Name} before adding")" data-testid="psb-add-review">
+            <p class="ovr-title"><strong>Review before adding</strong> · @E.Because(op)</p>
+            <ul class="psb-needs">@foreach (var a in attention.Where(a => a.Warn)) { <li>@a.Text</li> }</ul>
+            <p class="ptc-sub">The step is added as a proposal@(op.Evidence == ScenarioEvidence.ObservedOnly ? " (Observed only)" : ""): its runtime values, authentication and expected response are configured on the step. Nothing runs.</p>
+            <p class="ovr-actions">
+                <button type="button" class="btn-primary" @onclick="() => AddAsync(op)" data-testid="psb-add">Add as proposed step</button>
+                <button type="button" class="ptc-link" @onclick="() => _addReviewKey = null" data-testid="psb-add-review-cancel">Cancel</button>
+            </p>
+        </section>
+    };
+
+    /// <summary>Show evidence: every detail stays available — declared/observed, contract, observation, routes, normalisation, auth, GraphQL,
+    /// responses, Test Data compatibility suggestions (never "missing"), hidden observed values and the recommendation rationale.</summary>
+    private RenderFragment Evidence(ScenarioOperation op, bool declared, bool observed) => __builder =>
+    {
+        <ReviewDisclosure Text="Show evidence" CollapseText="Hide evidence" TestId="psb-show-evidence" Class="disclosure-inline disclosure-small">
+            <dl class="psb-facts" data-testid="psb-evidence-details">
+                <div><dt>Evidence</dt><dd><span class="psb-badge psb-evidence" data-testid="psb-evidence">@E.EvidenceLabel(op.Evidence)</span> <span class="sd-context">@E.EvidenceMeaning(op.Evidence)</span>
+                    <span class="visually-hidden" data-testid="psb-declared">Declared: @(declared ? "yes" : "no")</span>
+                    <span class="visually-hidden" data-testid="psb-observed">Observed: @(observed ? "yes" : "no")</span></dd></div>
+                @if (op.ContractName is not null) { <div><dt>Source contract</dt><dd>@(op.Origin == ScenarioOperationOrigin.GraphQl ? "GraphQL" : "OpenAPI") · @op.ContractName@(op.ContractFile is { } f ? $" ({f})" : "")@(op.SnapshotName is { } sn ? $" · {sn}" : "")</dd></div> }
+                @if (op.OperationId is { } opId) { <div><dt>Operation ID</dt><dd><code>@opId</code></dd></div> }
+                @if (op.Observation is { } seen)
+                {
+                    <div><dt>Observed</dt><dd data-testid="psb-observation">@seen.Count call@(seen.Count == 1 ? "" : "s")@(seen.LastStatus > 0 ? $" · HTTP {seen.LastStatus}" : "") · last seen @seen.LastSeen.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
+                }
+                @if (op.Path is { } path)
+                {
+                    <div><dt>@(declared ? "Declared route" : "Observed route (normalised)")</dt><dd><code class="ptc-break">@op.Method @path</code>
+                        @if (op.Needs.Any(n => n.Source == ScenarioNeedSources.Observed)) { <span class="sd-context" data-testid="psb-normalization"> · dynamic route segment detected (normalised to a placeholder) — a runtime value, not a Test Data requirement</span> }</dd></div>
+                }
                 <div><dt>Suggested use</dt><dd>@op.Use</dd></div>
-                <div><dt>Test Data</dt><dd data-testid="psb-testdata-state" data-state="@op.TestDataState">
-                    @if (op.Data.Count == 0) { <span class="@(op.TestDataState == ScenarioTestDataStates.Unknown ? "psb-warn" : "")">@op.TestDataState</span> }
+                @if (op.RequiresAuthentication || op.GraphQl?.AuthObserved == true)
+                {
+                    <div><dt>Authentication</dt><dd data-testid="psb-auth">@(op.Observation?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security)) · <span class="@(Definition.AuthenticationReference is null ? "psb-warn" : "")">@(Definition.AuthenticationReference is null ? "Needs configuration" : "Configured")</span> · references the approved authentication configuration (no token is copied)</dd></div>
+                }
+                @if (op.GraphQl is { } gq)
+                {
+                    <div><dt>GraphQL</dt><dd data-testid="psb-graphql">
+                        <span>Operation <code>@gq.OperationName</code> (@gq.Kind)</span> ·
+                        <span data-testid="psb-graphql-document">Query document: @gq.DocumentState</span> ·
+                        <span>Variables: @(gq.DocumentState == ScenarioGraphQlDocumentStates.Captured ? gq.Variables.Count == 0 ? "none" : string.Join(", ", gq.Variables.Select(v => $"${v.Name}: {v.Type}")) : "unknown")</span> ·
+                        <span>Declared schema match: @(gq.DeclaredSchemaMatch ? "yes" : "no")</span>
+                    </dd></div>
+                }
+                @if (op.ResponseCodes.Count > 0) { <div><dt>Documented responses</dt><dd>@string.Join(", ", op.ResponseCodes)</dd></div> }
+                <div><dt>Runtime inputs</dt><dd data-testid="psb-testdata-state" data-state="@op.TestDataState">
+                    @if (op.Data.Count == 0) { <span class="@(op.TestDataState == ScenarioTestDataStates.Unknown ? "psb-warn" : "")">@(op.TestDataState == ScenarioTestDataStates.NotRequired ? "No dynamic parameters" : op.TestDataState)</span> }
                     else
                     {
-                        <ul class="psb-needs" aria-label="Test Data needed" data-testid="psb-needs">
+                        <ul class="psb-needs" aria-label="Dynamic parameters" data-testid="psb-needs">
                             @foreach (var match in op.Data)
                             {
                                 var m = match;
                                 <li data-testid="psb-need" data-variable="@m.Need.Variable" data-state="@m.State">
-                                    <span class="psb-need-name"><code>@m.Need.Variable</code> · @Location(m.Need.In)@(m.Need.Required ? "" : " · optional")@(m.Need.Type is { } t ? $" · {t}" : "")</span>
-                                    @if (m.State == ScenarioDataMatchState.Recommended) { <span class="psb-data-ok" data-testid="psb-data-recommended">Recommended Test Data: @m.Recommended</span> }
-                                    else if (m.State == ScenarioDataMatchState.Possible)
-                                    {
-                                        var selectId = $"psb-choose-{op.Key.GetHashCode():x}-{m.Need.Variable}";
-                                        <label for="@selectId">Choose approved Test Data
-                                            <select id="@selectId" value="@Chosen(op.Key, m.Need.Variable)" @onchange="e => Choose(op.Key, m.Need.Variable, e.Value?.ToString())" data-testid="psb-data-choose">
-                                                <option value="">Not chosen</option>
-                                                @foreach (var alias in m.Aliases) { <option value="@alias">@alias</option> }
-                                            </select>
-                                        </label>
-                                    }
+                                    <span class="psb-need-name"><code>@m.Need.Variable</code> · @Location(m.Need.In)@(m.Need.Required ? "" : " · optional")@(m.Need.Type is { } t ? $" · {t}" : "") · @m.Need.Source</span>
+                                    @if (m.State == ScenarioDataMatchState.Recommended) { <span class="psb-data-ok" data-testid="psb-data-recommended">Test Data suggestion: @m.Recommended</span> }
+                                    else if (m.State == ScenarioDataMatchState.Possible) { <span data-testid="psb-data-possible">@m.Aliases.Count compatible approved asset@(m.Aliases.Count == 1 ? "" : "s")</span> }
                                     else
                                     {
-                                        <span class="psb-data-missing" data-testid="psb-data-missing"><span aria-hidden="true">!</span> Missing</span>
+                                        <span class="sd-context" data-testid="psb-data-none">No compatible approved Test Data yet (one possible value source)</span>
                                         <a class="sd-link" href="@E.TestDataHref(op, m.Need, EnvironmentName, Definition.Id.Length == 0 ? null : Definition.Id)" data-testid="psb-open-test-data">Open Test Data</a>
                                     }
+                                    @if (_chosen.GetValueOrDefault(op.Key)?.GetValueOrDefault(m.Need.Variable) is { } chosen) { <span class="psb-data-ok" data-testid="psb-data-chosen">Will map to @chosen when added</span> }
                                     @if (m.Need.ObservedValueAvailable)
                                     {
                                         <span class="psb-observed-value" data-testid="psb-observed-value">Observed value available · hidden</span>
@@ -397,54 +552,15 @@
                         </ul>
                     }
                 </dd></div>
-                @if (op.RequiresAuthentication || op.GraphQl?.AuthObserved == true)
-                {
-                    <div><dt>Authentication</dt><dd data-testid="psb-auth">@(op.Observation?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security)) · <span class="@(Definition.AuthenticationReference is null ? "psb-warn" : "")">@(Definition.AuthenticationReference is null ? "Needs configuration" : "Configured")</span> · references the approved authentication configuration (no token is copied)</dd></div>
-                }
-                @if (op.GraphQl is { } gq)
-                {
-                    <div><dt>GraphQL</dt><dd data-testid="psb-graphql">
-                        <span>Operation <code>@gq.OperationName</code> (@gq.Kind)</span> ·
-                        <span data-testid="psb-graphql-document">Query document: @gq.DocumentState</span> ·
-                        <span>Variables: @(gq.DocumentState == ScenarioGraphQlDocumentStates.Captured ? gq.Variables.Count == 0 ? "none" : string.Join(", ", gq.Variables.Select(v => $"${v.Name}: {v.Type}")) : "unknown")</span> ·
-                        <span>Declared schema match: @(gq.DeclaredSchemaMatch ? "yes" : "no")</span>
-                    </dd></div>
-                }
+                <div class="psb-fact-wide"><dt>Why this state</dt><dd><span class="psb-because" data-testid="psb-because">@E.Because(op)</span>@if (op.Summary is { } summary) { <span class="psb-summary"> · @summary</span> }</dd></div>
             </dl>
-            <ReviewDisclosure Text="@(op.Level == ScenarioRecommendationLevel.ReviewRequired ? "Why review?" : "Why this level?")" CollapseText="Hide explanation" TestId="psb-why-review" Class="disclosure-inline disclosure-small">
-                <p class="psb-because" data-testid="psb-because">@E.Because(op)</p>
-                @if (op.Summary is { } summary) { <p class="psb-summary">@summary</p> }
-                @if (op.ResponseCodes.Count > 0) { <p class="psb-summary">Documented responses: @string.Join(", ", op.ResponseCodes)</p> }
-            </ReviewDisclosure>
-            <p class="psb-actions">
-                @if (added)
-                {
-                    <button type="button" class="btn-secondary" disabled aria-describedby="@whyId" data-testid="psb-add">Already added</button>
-                    <span class="psb-why" id="@whyId" data-testid="psb-why">Already in the scenario.</span>
-                }
-                else if (op.ProposedDefinition)
-                {
-                    <button type="button" class="btn-secondary" aria-expanded="@(_graphQlReviewKey == op.Key ? "true" : "false")" @onclick="() => _graphQlReviewKey = _graphQlReviewKey == op.Key ? null : op.Key" data-testid="psb-review-graphql">Review &amp; create GraphQL definition</button>
-                }
-                else
-                {
-                    <button type="button" class="@(op.Level == ScenarioRecommendationLevel.Recommended ? "btn-primary" : "btn-secondary")" disabled="@(!canAdd)"
-                        aria-describedby="@whyId" @onclick="() => AddAsync(op)" data-testid="psb-add">Add to scenario</button>
-                    @if (!canAdd) { <span class="psb-why" id="@whyId" data-testid="psb-why">@why</span> }
-                    @if (GraphQlInRestScenario(op) && op.Runnable)
-                    {
-                        <button type="button" class="ptc-link" @onclick="() => OnNewGraphQlDefinition.InvokeAsync(null)" data-testid="psb-new-graphql">+ New GraphQL definition</button>
-                    }
-                }
-            </p>
-            @if (_graphQlReviewKey == op.Key && op.GraphQl is { } review) { @GraphQlReview(op, review) }
-        </li>
+        </ReviewDisclosure>
     };
 
     private static string ReviewKey(ScenarioOperation op, string variable) => $"{op.Key}|{variable}";
     private void ToggleReview(ScenarioOperation op, string variable) => _reviewKey = _reviewKey == ReviewKey(op, variable) ? null : ReviewKey(op, variable);
 
-    /// <summary>"Use this asset" from the observed-value review: the alias becomes the candidate's chosen Test Data (the value stays in Test Data).</summary>
+    /// <summary>"Use this asset" from the observed-value review: an explicit choice mapped when the operation is added (the value stays in Test Data).</summary>
     private void UseAlias(ScenarioOperation op, string variable, string alias)
     {
         Choose(op.Key, variable, alias);
@@ -461,9 +577,9 @@
                 <div><dt>Operation</dt><dd>@gq.OperationName (@gq.Kind)</dd></div>
                 <div><dt>Endpoint</dt><dd><code>POST /graphql</code></dd></div>
                 <div><dt>Query document</dt><dd>@gq.DocumentState</dd></div>
-                <div><dt>Declared schema match</dt><dd>@(gq.DeclaredSchemaMatch ? "Yes" : "No — proposed manual definition, review the document")</dd></div>
-                <div><dt>Variables</dt><dd data-testid="psb-graphql-variables">@(gq.Variables.Count == 0 ? "None (Test Data not required)" : string.Join(", ", gq.Variables.Select(v => $"${v.Name}: {v.Type}")))</dd></div>
-                <div><dt>Test Data</dt><dd>@(gq.Variables.Count == 0 ? "Not required" : $"Required for {string.Join(", ", gq.Variables.Select(v => "$" + v.Name))} — map approved Test Data in the new definition")</dd></div>
+                <div><dt>Declared schema match</dt><dd>@(gq.DeclaredSchemaMatch ? "Yes" : "No — observed only / undocumented: proposed definition, review the document")</dd></div>
+                <div><dt>Variables</dt><dd data-testid="psb-graphql-variables">@(gq.Variables.Count == 0 ? "None" : string.Join(", ", gq.Variables.Select(v => $"${v.Name}: {v.Type}")))</dd></div>
+                <div><dt>Runtime values</dt><dd>@(gq.Variables.Count == 0 ? "No variables to configure" : $"Configure a value source for {string.Join(", ", gq.Variables.Select(v => "$" + v.Name))} on the step (Test Data, previous step, variable, fixed or generated)")</dd></div>
                 <div><dt>Authentication</dt><dd>@(gq.AuthObserved ? "Bearer observed · configure the approved authentication reference (no token is copied)" : "None observed")</dd></div>
                 <div><dt>Observations</dt><dd>@gq.ObservedCount · provenance Live Discovery</dd></div>
             </dl>

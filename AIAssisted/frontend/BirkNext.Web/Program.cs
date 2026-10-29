@@ -244,7 +244,10 @@ builder.Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerC
         sp.GetRequiredService<ISampleProjectDocumentResolver>(),
         sp.GetRequiredService<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(),
         sp.GetRequiredService<IWorkspaceUpdateCoordinator>(),
-        sp.GetRequiredService<IWorkspaceStateManager>()));
+        sp.GetRequiredService<IWorkspaceStateManager>(),
+        sp.GetRequiredService<IFrontendAnalysisSettingsService>()));
+// Target Environment → Project: the project's evidence bindings (references to imports/snapshots), reused by explorers, workflow and reviews.
+builder.Services.AddScoped<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService, BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceService>();
 
 // Protected security execution (authorization scenarios, fuzzing runs) attaches the BirkNext user token when sign-in is configured.
 // Hooks only: wwwroot/appsettings.json "BirkNextAuthentication" stays empty until a deployment provides real values; no client secret.

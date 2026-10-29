@@ -30,7 +30,8 @@ public sealed record SchemaXmlTestDataRegistration(string Alias, string? Label, 
 /// </summary>
 public sealed record SchemaXmlRegistrationFacts(string ExpectedResult, string ValidationStatus, string? Mutation = null, string? TargetRule = null,
     string? Path = null, string? ProfileId = null, string? ProfileVersion = null, string? GeneratorVersion = null, string? RootElement = null,
-    string? EnvironmentId = null, string? Contract = null, string? TestDataBindings = null, IReadOnlyList<string>? Capabilities = null)
+    string? EnvironmentId = null, string? Contract = null, string? TestDataBindings = null, IReadOnlyList<string>? Capabilities = null,
+    string? ValueMappings = null, bool? ManualChanges = null, string? SourceSelection = null)
 {
     public const string Valid = "Valid";
     public const string Invalid = "Invalid";

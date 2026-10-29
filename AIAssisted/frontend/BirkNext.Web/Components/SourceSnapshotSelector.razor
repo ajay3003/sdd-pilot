@@ -4,11 +4,11 @@
     <div class="rse-suggest" data-testid="@($"{Prefix}-current-snapshot")">
         @if (Compact)
         {
-            <span>@CurrentText: <strong class="rse-wrap">@current.ArchiveName</strong> · @current.SourceStatus</span>
+            <span>@(IsBound(current) ? $"Bound to project {State.ProjectBoundLabel}" : CurrentText): <strong class="rse-wrap">@current.ArchiveName</strong> · @current.SourceStatus</span>
         }
         else
         {
-            <span>@CurrentText: <strong>@current.Repository</strong> · <span class="rse-wrap">@current.ArchiveName</span> · <code title="@current.Fingerprint">@ReviewSourceScopes.Short(current.Fingerprint)</code> · Source Analysis: @current.SourceStatus</span>
+            <span data-testid="@($"{Prefix}-current-basis")" data-bound="@(IsBound(current) ? "true" : "false")">@(IsBound(current) ? $"Bound to project {State.ProjectBoundLabel}" : CurrentText)</span><span>: <strong>@current.Repository</strong> · <span class="rse-wrap">@current.ArchiveName</span> · <code title="@current.Fingerprint">@ReviewSourceScopes.Short(current.Fingerprint)</code> · Source Analysis: @current.SourceStatus</span>
         }
         <span class="rse-actions">
             <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-use-current")" disabled="@Busy" @onclick="() => PickAsync(current.SnapshotId)">@UseCurrentText</button>
@@ -48,6 +48,13 @@
     [Parameter] public string CurrentText { get; set; } = "Current Source Analysis snapshot";
     [Parameter] public string UseCurrentText { get; set; } = "Use this snapshot";
 
+
+    [Inject] private IServiceProvider Services { get; set; } = default!;
+
+    /// <summary>Every consumer of this selector reads the same Target Environment → Project bindings (never a second discovery).</summary>
+    protected override void OnParametersSet() => BirkNext.Web.Services.ProjectEvidence.ProjectBinding.Apply(State, Services);
+
+    private bool IsBound(ReviewSourceSnapshot snapshot) => State.ProjectBound.Contains(snapshot.SnapshotId);
 
     private ElementReference _select;
     /// <summary>The snapshot select, for pages that move focus to it (e.g. a "next step" action).</summary>

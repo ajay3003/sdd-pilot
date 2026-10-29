@@ -20,9 +20,21 @@ public sealed class ReviewSourceScopeState
     public IReadOnlyList<ReviewSourceSnapshot> Snapshots => Options?.Snapshots ?? [];
     public ReviewSourceSnapshot? Primary => PrimaryId is { } id ? Snapshots.FirstOrDefault(s => s.SnapshotId == id) : null;
     /// <summary>Source Analysis' newest snapshot this review can use — offered as "Use this snapshot", never selected silently.</summary>
-    public ReviewSourceSnapshot? Current => RecommendByEvidenceOnly
+    public ReviewSourceSnapshot? Current => ProjectBoundSnapshot ?? (RecommendByEvidenceOnly
         ? EvidenceRepositories.Count == 1 ? Snapshots.Where(HoldsSubject).MaxBy(s => s.AnalyzedAt) : null
-        : Snapshots.Where(s => s.HasConsumerEvidence).MaxBy(s => s.AnalyzedAt) ?? Snapshots.MaxBy(s => s.AnalyzedAt);
+        : Snapshots.Where(s => s.HasConsumerEvidence).MaxBy(s => s.AnalyzedAt) ?? Snapshots.MaxBy(s => s.AnalyzedAt));
+
+    /// <summary>
+    /// Exact snapshots bound by the active Target Environment's Project (Target Environment → Project). An explicit project binding outranks
+    /// discovery: when exactly one bound snapshot is usable here it is the one offered (still never selected silently by this state).
+    /// </summary>
+    public IReadOnlyCollection<Guid> ProjectBound { get; set; } = [];
+    /// <summary>"M2LB (Target Environment Development)": names where <see cref="ProjectBound"/> comes from.</summary>
+    public string? ProjectBoundLabel { get; set; }
+
+    /// <summary>The one bound snapshot this review can use (holding its evidence when the review recommends by evidence), else null.</summary>
+    public ReviewSourceSnapshot? ProjectBoundSnapshot => ProjectBound.Count == 0 ? null
+        : Snapshots.Where(s => ProjectBound.Contains(s.SnapshotId) && (!RecommendByEvidenceOnly || HoldsSubject(s))).ToList() is { Count: 1 } bound ? bound[0] : null;
     /// <summary>
     /// Opt-in (a review whose evidence has a content-defined source role): only a snapshot whose own analysis holds this review's evidence is
     /// recommended, and only when exactly one repository has it — never the newest snapshot overall (e.g. an infrastructure-only current project).

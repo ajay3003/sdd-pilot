@@ -391,6 +391,89 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         _api.Saved[0].AppIdentifier.Should().BeNull("Apply selected never overwrites a configured value");
     }
 
+    // ---- Access & authentication per hop ----
+
+    private static AltinnEnvironmentView HopView() => View() with
+    {
+        Fields = [.. View().Fields, F("app-base-url", "Application", "App base URL", "https://buf.apps.tt02.altinn.no", AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment)],
+        Summary = [.. View().Summary, new("reporter-access", "Reporter access", AltinnReadinessState.Partial, "Browser/OIDC · ID-porten TEST / TestID · Runtime: Not observed"),
+            new("integration-auth", "Altinn → Meldingsutveksleren (MU) authentication", AltinnReadinessState.NotAssessed, "Unknown — not configured or reviewed for this integration")],
+        Interactions =
+        [
+            new() { Key = AltinnHops.ReporterApp, Title = "Reporter access", From = "Reporter", To = "Altinn app", Provider = "ID-porten TEST / TestID", Runtime = "Not observed",
+                Configuration = "Interactive browser sign-in", ActionTarget = "browser-discovery",
+                Requirement = InteractionAuthRules.Resolve([new(InteractionAuthRequirement.BrowserOidc, InteractionAuthSource.TestPackProposal, "Altinn app submission")]) },
+            new() { Key = AltinnHops.AppIntegration, Title = "Integration authentication", From = "Altinn", To = "Meldingsutveksleren (MU)", Runtime = "Not verified",
+                Configuration = "Not configured in Integration Catalog (Report intake)", ActionTarget = "integration-catalog" },
+            new() { Key = AltinnHops.Execution, Title = "BirkNext execution credentials", From = "BirkNext", To = "Altinn app", Configuration = "Not configured",
+                Runtime = "Not applicable until automated execution", ActionTarget = "automated",
+                Requirement = InteractionAuthRules.Resolve([new(InteractionAuthRequirement.BearerOAuthApi, InteractionAuthSource.SourceDeclaration, "BirkNext automated execution")]) },
+        ],
+    };
+
+    private static BirkNext.Web.Models.EndpointDiscoverySnapshot Discovery(string appOrigin, string appPath)
+    {
+        var t0 = DateTimeOffset.UtcNow.AddMinutes(-10);
+        return new()
+        {
+            Pages =
+            [
+                new() { PageOrigin = appOrigin, PagePath = appPath, FirstObservedAt = t0, LastObservedAt = t0.AddMinutes(3),
+                    Endpoints = [new() { Host = new Uri(appOrigin).Host, Path = appPath + "/api/v1/profile/user", Method = "GET", LastStatus = 200,
+                        FirstObservedAt = t0.AddMinutes(3), LastObservedAt = t0.AddMinutes(3), PageOrigin = appOrigin, PagePath = appPath }] },
+                new() { PageOrigin = "https://login.test.idporten.no", PagePath = "/authorize", FirstObservedAt = t0.AddMinutes(1), LastObservedAt = t0.AddMinutes(1) },
+            ],
+        };
+    }
+
+    private IRenderedComponent<AltinnEnvironmentPane> RenderWithDiscovery(BirkNext.Web.Models.EndpointDiscoverySnapshot snapshot)
+    {
+        _api.Next = HopView();
+        var discovery = new Moq.Mock<IEndpointDiscoveryService>();
+        discovery.Setup(d => d.LoadAsync(Moq.It.IsAny<Microsoft.JSInterop.IJSRuntime>())).Returns(Task.CompletedTask);
+        discovery.Setup(d => d.GetSnapshot(Env)).Returns(snapshot);
+        Services.AddSingleton(discovery.Object);
+        var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-summary]"));
+        return cut;
+    }
+
+    [Fact]
+    public void Access_is_shown_per_hop_and_this_apps_browser_discovery_login_is_reused_without_a_manual_record()
+    {
+        var cut = RenderWithDiscovery(Discovery("https://buf.apps.tt02.altinn.no", "/buf/skolenaervaer"));
+        cut.Find("[data-testid=ae-toggle-access]").Click();
+        var hops = cut.FindAll("[data-testid=ae-hop]");
+        hops.Select(h => h.GetAttribute("data-key")).Should().Equal(AltinnHops.ReporterApp, AltinnHops.AppIntegration, AltinnHops.Execution);
+        var reporter = hops[0];
+        reporter.QuerySelector("[data-testid=ae-hop-requirement]")!.TextContent.Should().StartWith("Browser/OIDC");
+        reporter.QuerySelector("[data-testid=ae-hop-provider]")!.TextContent.Should().Be("ID-porten TEST / TestID");
+        reporter.QuerySelector("[data-testid=ae-hop-login-flow]")!.TextContent.Should().Be("Observed");
+        reporter.QuerySelector("[data-testid=ae-hop-return]")!.TextContent.Should().Be("Observed");
+        reporter.QuerySelector("[data-testid=ae-hop-session]")!.TextContent.Should().Be("Observed");
+        reporter.QuerySelector("[data-testid=ae-hop-source]")!.TextContent.Should().Be("Browser Discovery");
+        reporter.QuerySelector("[data-testid=ae-hop-view-browser]")!.GetAttribute("href").Should().Contain("tab=browser");
+        hops[1].QuerySelector("[data-testid=ae-hop-requirement]")!.TextContent.Should().Be("Unknown — not configured or reviewed", "browser login never fills Altinn → MU");
+        hops[1].QuerySelector("[data-testid=ae-hop-runtime]")!.TextContent.Should().Be("Not verified");
+        hops[2].QuerySelector("[data-testid=ae-hop-configuration]")!.TextContent.Should().Be("Not configured", "browser login never fills execution credentials");
+        cut.Find("[data-testid=ae-card][data-key=reporter-access]").TextContent.Should().Contain("Ready").And.Contain("Authenticated session observed · Browser Discovery");
+
+        cut.Find("[data-testid=ae-toggle-browser]").Click();
+        cut.Find("[data-testid=ae-browser-evidence-used]").TextContent.Should().Contain("no manual recording is needed");
+        cut.FindAll("[data-testid=ae-browser-record]").Should().BeEmpty("no duplicate manual recording when Browser Discovery has the evidence");
+    }
+
+    [Fact]
+    public void Another_applications_login_does_not_satisfy_this_app_and_manual_recording_stays_available()
+    {
+        var cut = RenderWithDiscovery(Discovery("https://m2lbdev.bufetat.no", ""));
+        cut.Find("[data-testid=ae-toggle-access]").Click();
+        cut.FindAll("[data-testid=ae-hop]")[0].QuerySelector("[data-testid=ae-hop-runtime]")!.TextContent.Should().Contain("Not observed").And.Contain("another application");
+        cut.Find("[data-testid=ae-card][data-key=reporter-access]").TextContent.Should().NotContain("Ready");
+        cut.Find("[data-testid=ae-toggle-browser]").Click();
+        cut.Find("[data-testid=ae-browser-record]").TextContent.Should().Be("Record browser login observation");
+    }
+
     private sealed class FakeApi : IAltinnEnvironmentApiService
     {
         public AltinnEnvironmentView? Next { get; set; }

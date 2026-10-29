@@ -318,7 +318,7 @@ public sealed class DocumentationDriftPageTests : BunitContext
         Services.GetRequiredService<NavigationManager>().NavigateTo("/documentation-drift?tab=changes");
         var imported = Render<SpecDrift>();
         imported.FindAll("[data-testid=dd-spec-reviews]").Should().BeEmpty("an imported workspace never reads Sample Project review history");
-        imported.Find("[data-testid=dd-spec-reviews-none]").TextContent.Should().Be("No saved specification reviews for this workspace.");
+        imported.Find("[data-testid=dd-spec-reviews-none]").TextContent.Should().StartWith("Requirement-level specification reviews (Compare Specs) are kept per Demo Project");
         imported.Markup.Should().NotContain("stored for a Sample Project");
 
         _repository.CurrentProject = "sample-cart";

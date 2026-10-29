@@ -494,6 +494,21 @@ public sealed class TestPackSourceRoleTests
     }
 
     [Fact]
+    public void ServiceProjects_CountsOnlyWebOrEventHostProjects_SoALibraryOnlyPackageIsNotAnApplication()
+    {
+        // Project kinds come from the analyzer's own project-file classification (Web SDK / Event Hub), never from the archive name.
+        static SourceProject Project(string name, string classification, bool test = false) => new(name, $"src/{name}/{name}.csproj", test, classification, SourceConfidence.StrongSourceEvidence);
+        var application = new IqrSourceSnapshot
+        {
+            Projects = [Project("Orders.Api", "Application/service project"), Project("Orders.Domain", "Production/shared project"),
+                Project("Orders.Consumer", "Event Hub SDK project; consumer role requires source review"), Project("Orders.Tests", "Developer test project (layer classified per test)", test: true)],
+        };
+        SourceSetupAreas.ServiceProjects(application).Should().Be(2);
+        SourceSetupAreas.ServiceProjects(new IqrSourceSnapshot { Projects = [Project("Common", "Production/shared project"), Project("Common.Text", "Production/shared project")] })
+            .Should().Be(0, "a shared library has production code but no host project");
+    }
+
+    [Fact]
     public async Task SourceSetup_ForAFailedCodeAnalysis_KeepsAreasEnvironmentLabelsAndTheInfrastructureRole()
     {
         await using var harness = new IntegrationJourneyHarness();

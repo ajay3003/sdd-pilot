@@ -1,0 +1,74 @@
+.tep { display: grid; gap: 1rem; min-width: 0; }
+.tep-head { display: grid; gap: 0.25rem; }
+.tep-title { margin: 0; font-size: 1.15rem; }
+.tep-subtitle { margin: 0.5rem 0 0.25rem; font-size: 1rem; }
+.tep-group-title { margin: 0.75rem 0 0.25rem; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary, #4a5568); }
+.tep-lead, .tep-muted { margin: 0; color: var(--text-secondary, #4a5568); font-size: 0.9rem; }
+.tep-banner { margin: 0; padding: 0.5rem 0.75rem; border-radius: 6px; background: #eef4fb; border: 1px solid #c3d6ec; }
+.tep-banner-error { background: #fdecec; border-color: #f0b6b6; }
+.tep-facts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0; }
+.tep-facts dt { font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary, #4a5568); }
+.tep-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.tep-empty, .tep-dialog { border: 1px solid #d6dde6; border-radius: 8px; padding: 1rem; display: grid; gap: 0.5rem; }
+.tep-project-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.tep-impact { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; }
+.tep-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.5rem; }
+.tep-card { border: 1px solid #d6dde6; border-left-width: 4px; border-radius: 6px; padding: 0.5rem 0.75rem; display: grid; gap: 0.15rem; min-width: 0; }
+.tep-card-label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary, #4a5568); }
+.tep-card-value { font-size: 0.95rem; overflow-wrap: anywhere; }
+.tep-card-detail { font-size: 0.8rem; color: var(--text-secondary, #4a5568); overflow-wrap: anywhere; }
+.tep-tone-available { border-left-color: #2f855a; }
+.tep-tone-partial { border-left-color: #b7791f; }
+.tep-tone-rejected { border-left-color: #c53030; }
+.tep-tone-neutral { border-left-color: #a0aec0; }
+.tep-table-wrap { overflow-x: auto; }
+.tep-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.tep-table th, .tep-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.5rem; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; }
+.tep-table thead th { font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary, #4a5568); }
+.tep-row-open { background: #f7fafc; }
+.tep-required-by { display: block; font-weight: 400; font-size: 0.78rem; color: var(--text-secondary, #4a5568); }
+.tep-state { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px solid #cbd5e0; border-left-width: 4px; font-size: 0.8rem; white-space: nowrap; }
+.tep-picker { display: grid; gap: 0.5rem; }
+.tep-candidates { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.tep-candidate { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.5rem; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.5rem 0.75rem; }
+.tep-candidate-main { display: grid; gap: 0.25rem; min-width: 0; flex: 1 1 18rem; }
+.tep-classification { display: inline-block; font-size: 0.8rem; font-weight: 600; color: #2c5282; }
+.tep-why { margin: 0; font-size: 0.85rem; }
+.tep-candidate-facts { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0; font-size: 0.82rem; }
+.tep-candidate-facts dt { display: inline; font-weight: 600; }
+.tep-candidate-facts dt::after { content: ": "; }
+.tep-candidate-facts dd { display: inline; margin: 0; }
+.tep-badges { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.tep-badge { font-size: 0.78rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #e6f0fa; color: #1a365d; overflow-wrap: anywhere; }
+.tep-badge-neutral { background: #edf2f7; color: #2d3748; }
+.tep-add summary { cursor: pointer; font-weight: 600; }
+.tep-add-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
+.tep-add-form label { display: grid; gap: 0.15rem; font-size: 0.85rem; }
+.tep-suggestion { margin: 0; font-size: 0.9rem; }
+.tep-ownership { font-size: 0.8rem; }
+
+@media (max-width: 680px) {
+    .tep-table thead { display: none; }
+    .tep-table tr { display: grid; border-bottom: 1px solid #e2e8f0; padding: 0.25rem 0; }
+    .tep-table th, .tep-table td { border: 0; padding: 0.2rem 0.25rem; }
+}
+
+/* Bound vs ready, problems summary, multi-source rows, binding origin, change preview. Status is text + tone, never colour only. */
+.tep-problems { border: 1px solid #f6c56b; background: #fffbeb; border-radius: 6px; padding: 0.5rem 0.75rem; display: grid; gap: 0.35rem; }
+.tep-problems ul { margin: 0; padding-left: 1.2rem; font-size: 0.9rem; }
+.tep-problems .tep-subtitle { margin: 0; }
+.tep-suggested { display: grid; gap: 0.35rem; border-left: 4px solid #2c5282; padding-left: 0.75rem; }
+.tep-suggested p { margin: 0; }
+.tep-source-count { font-weight: 600; font-size: 0.82rem; }
+.tep-bound { display: grid; }
+.tep-origin { font-size: 0.75rem; color: var(--text-secondary, #4a5568); }
+.tep-more summary { cursor: pointer; font-size: 0.82rem; }
+.tep-badge-compact { font-size: 0.72rem; }
+.tep-bound-flag, .tep-partial-detail { display: block; font-size: 0.78rem; margin-top: 0.2rem; }
+.tep-partial-detail { color: #744210; }
+.tep-change-preview { border: 1px solid #f6c56b; background: #fffbeb; border-radius: 6px; padding: 0.6rem 0.75rem; display: grid; gap: 0.4rem; }
+.tep-change-preview h5 { margin: 0; }
+@media (prefers-color-scheme: dark) {
+    .tep-problems, .tep-change-preview { background: rgba(217, 119, 6, .12); }
+    .tep-partial-detail { color: #fcd34d; }
+}

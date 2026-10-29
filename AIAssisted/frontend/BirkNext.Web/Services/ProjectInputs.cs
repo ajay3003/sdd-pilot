@@ -49,6 +49,8 @@ public static class ProjectInputPresentation
     public const string SourceAnalysisRoute = "source-analysis";
     /// <summary>One project ZIP for both documents and source: the recommended way to provide your own project.</summary>
     public const string ProjectImportRoute = "project-import";
+    /// <summary>Import Project opened in import mode (another package), even while a project is current.</summary>
+    public const string ProjectImportSourceRoute = "project-import?import=source";
 
     public static ProjectInputs Build(CurrentWorkspaceSnapshot workspace, FrontendAnalysisProfile? environment, ProjectTechnologyCoverage? coverage,
         bool environmentKnown = true) =>
@@ -61,6 +63,26 @@ public static class ProjectInputPresentation
         if (workspace.State == CurrentWorkspaceState.Error)
             return new(ProjectInputKind.Documents, ProjectInputStatus.Unknown, title, requirement, "Unavailable",
                 "The workspace documents could not be read.", "Open Demo Projects", SampleProjectsRoute, []);
+        if (workspace.AvailableRoleCount == 0 && workspace.Evidence is { } evidence)
+        {
+            // Project evidence exists: documents are unresolved, elsewhere, or genuinely absent — never "not provided" for a configured project.
+            var href = ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(evidence.EnvironmentId, ProjectEvidence.ProjectEvidenceRoles.Documentation);
+            var elsewhere = evidence.UnboundDocumentPackages;
+            if (workspace.DocumentationUnresolved)
+                return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Source unresolved",
+                    $"The Project documentation source of {evidence.ProjectName} has not been selected in Target Environment {evidence.EnvironmentName}."
+                    + (elsewhere.Count > 0 ? $" Imported packages with project documents: {string.Join(", ", elsewhere)}." : ""),
+                    "Bind project documentation", href, []);
+            if (elsewhere.Count > 0)
+                return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Available in another import",
+                    $"{workspace.ProjectDisplay} has no project documents of its own; {string.Join(", ", elsewhere)} {(elsewhere.Count == 1 ? "holds" : "hold")} supported documents. Bind them as the project's documentation in Target Environment → Project.",
+                    "Bind project documentation", href, []);
+            return new(ProjectInputKind.Documents, ProjectInputStatus.Absent, title, requirement, "No supported project documents found",
+                evidence.FromEnvironment
+                    ? $"No supported project documents were found across the {evidence.SourceCount} documentation source{(evidence.SourceCount == 1 ? "" : "s")} bound to {evidence.ProjectName}. Source-based reviews remain available."
+                    : $"No supported project documents were found in {workspace.ProjectDisplay} or any other imported package. Source-based reviews remain available.",
+                "Import project documents", ProjectImportSourceRoute, []);
+        }
         if (workspace.AvailableRoleCount == 0)
         {
             var detail = workspace.IsImportedProject
@@ -85,6 +107,10 @@ public static class ProjectInputPresentation
             return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs selection",
                 $"{workspace.RoleSummary}{(workspace.ModuleLabel is { } m ? $" in module {m}" : "")}. Several {unresolved.Label} documents and none is selected.",
                 $"Choose {unresolved.Label}", ExplorerRoute(unresolved.Role), facts);
+        if (workspace.Evidence is { FromEnvironment: true } bound)
+            return new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
+                $"{workspace.AvailableRoleCount} role{(workspace.AvailableRoleCount == 1 ? "" : "s")} across {bound.SourceCount} evidence source{(bound.SourceCount == 1 ? "" : "s")} of {bound.ProjectName} ({bound.SourceNames}).",
+                "Open Project setup", ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(bound.EnvironmentId), facts);
         return workspace.IsImportedProject
             ? new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
                 $"{workspace.RoleSummary} in the imported project {workspace.ProjectDisplay}.", "Open Import Project", ProjectImportRoute, facts)

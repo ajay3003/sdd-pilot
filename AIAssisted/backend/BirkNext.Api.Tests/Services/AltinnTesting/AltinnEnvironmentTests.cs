@@ -86,7 +86,8 @@ public sealed class AltinnEnvironmentTests
         view.ManualReadiness.Reason.Should().Contain("XML fixture: missing");
         view.ManualMissing.Should().Contain("XML fixture");
         view.AutomatedBlockers.Should().Contain(b => b.Contains("XML fixture"), "automated submission needs the payload too");
-        view.Summary.Select(i => i.Key).Should().StartWith(["app", "identities", "testdata", "authentication"]);
+        view.Summary.Select(i => i.Key).Should().StartWith(["app", "identities", "testdata", "reporter-access", "integration-auth", "authentication"],
+            "authentication is per hop: reporter access, the integration's own authentication, then BirkNext execution credentials");
     }
 
     [Fact]

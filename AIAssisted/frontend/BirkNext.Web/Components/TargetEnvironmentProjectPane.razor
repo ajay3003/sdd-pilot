@@ -1,0 +1,540 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.ProjectEvidence
+@using BirkNext.Web.Services.ProjectImport
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+@* Target Environment → Project: which logical project this environment tests, and which ALREADY IMPORTED packages provide its evidence roles.
+   Bindings are references (import id, exact snapshot); nothing imported is copied here. Import Project owns packages, Source Analysis owns
+   snapshots. Unbound roles are only Suggested (one compatible package) or Needs decision (several): never the newest automatically. *@
+<section class="tep" data-testid="tep" aria-labelledby="tep-title">
+    <header class="tep-head">
+        <h3 id="tep-title" class="tep-title">Project</h3>
+        <p class="tep-lead">Define which project this environment tests and which imported evidence provides its source, documentation, contracts and supporting context.</p>
+    </header>
+
+    @if (_error is { } error) { <p class="tep-banner tep-banner-error" role="alert" data-testid="tep-error">@error</p> }
+    @if (_notice is { } notice) { <p class="tep-banner" role="status" data-testid="tep-notice">@notice</p> }
+
+    @if (Evidence is null)
+    {
+        <p class="tep-muted" role="status" data-testid="tep-unavailable">Project evidence is not available in this view.</p>
+    }
+    else if (_view is null)
+    {
+        <p class="tep-muted" role="status">Loading project evidence…</p>
+    }
+    else
+    {
+        <dl class="tep-facts" data-testid="tep-facts">
+            <div><dt>Target Environment</dt><dd data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</dd></div>
+            <div><dt>Project</dt><dd data-testid="tep-project">@(_view.IsConfigured ? _view.ProjectName : "Not configured")</dd></div>
+            @if (_view.IsConfigured)
+            {
+                <div><dt>Evidence bindings</dt><dd data-testid="tep-binding-summary">@_view.Summary</dd></div>
+            }
+        </dl>
+
+        @if (!_view.IsConfigured && !_choosing)
+        {
+            <div class="tep-empty" data-testid="tep-empty">
+                <h4 class="tep-subtitle">Project not configured</h4>
+                <p>Choose which application/system this Target Environment represents. Explorers, Recommended Workflow and source reviews then read this project's bound evidence instead of whichever package was imported last.</p>
+                @if (_view.Packages.Count == 0)
+                {
+                    <p class="tep-muted" data-testid="tep-no-imports">No project packages are imported in this workspace yet.</p>
+                    <a class="btn btn-primary btn-sm" href="@ProjectImportPresentation.ImportSourceHref">Import Project</a>
+                }
+                else if (_view.SuggestedProject is { } suggested)
+                {
+                    <div class="tep-suggested" data-testid="tep-suggested-project">
+                        <p><span class="tep-muted">Suggested project</span> <strong>@suggested.DisplayName</strong> <span class="tep-classification">@suggested.Classification</span></p>
+                        <p class="tep-why">Reason: @suggested.ClassificationReason@(suggested.Has(ProjectEvidenceCapability.Documentation) ? " Project documents available." : "") Not saved until you choose it.</p>
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="tep-use-suggested" @onclick="() => SelectProjectAsync(suggested)">Use @suggested.DisplayName</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-select-project" @onclick="() => _choosing = true">Choose another</button>
+                    </div>
+                }
+                else
+                {
+                    @if (_view.ProjectCandidates.Count > 1)
+                    {
+                        <p data-testid="tep-needs-selection"><strong>Project needs selection.</strong> Candidates: @string.Join(", ", _view.ProjectCandidates.Select(p => p.DisplayName)). The newest import is never chosen automatically.</p>
+                    }
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="tep-select-project" @onclick="() => _choosing = true">Select project</button>
+                }
+            </div>
+        }
+
+        @if (_choosing)
+        {
+            <section class="tep-dialog" data-testid="tep-project-dialog" aria-labelledby="tep-dialog-title">
+                <h4 id="tep-dialog-title" class="tep-subtitle">@(_view.IsConfigured ? "Change project" : "Select project")</h4>
+                @if (_view.IsConfigured)
+                {
+                    <p class="tep-muted" data-testid="tep-change-impact-note">Changing the project keeps every import, Source Analysis snapshot and document history. Bindings you made stay when their package still provides the role; the previous project's own evidence is unbound.</p>
+                }
+                @{ var candidates = _view.Packages.Where(p => p.IsApplicationCandidate).ToList(); var supporting = _view.Packages.Where(p => !p.IsApplicationCandidate).ToList(); }
+                <h5 class="tep-group-title">Recommended application/project candidates</h5>
+                @if (candidates.Count == 0)
+                {
+                    <p class="tep-muted" data-testid="tep-no-candidates">No imported package holds application source. Import the application, or choose a supporting package below.</p>
+                }
+                <ul class="tep-candidates" data-testid="tep-project-candidates">
+                    @foreach (var package in candidates) { @PackageItem(package, true) }
+                </ul>
+                @if (supporting.Count > 0)
+                {
+                    <p class="tep-muted">The groups below contribute evidence to a project without becoming the project.</p>
+                    <div data-testid="tep-supporting-candidates">
+                        @foreach (var (title, group) in SupportingGroups(supporting))
+                        {
+                            <h5 class="tep-group-title" data-testid="tep-candidate-group">@title</h5>
+                            <ul class="tep-candidates">@foreach (var package in group) { @PackageItem(package, false) }</ul>
+                        }
+                    </div>
+                }
+                @if (_pendingChange is { } pending)
+                {
+                    <section class="tep-change-preview" role="alertdialog" aria-modal="false" aria-labelledby="tep-change-h" data-testid="tep-change-preview">
+                        <h5 id="tep-change-h" tabindex="-1">Change project to @pending.DisplayName?</h5>
+                        <ul class="tep-impact" data-testid="tep-change-impact">@foreach (var line in _pendingImpact) { <li>@line</li> }</ul>
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="tep-change-confirm" @onclick="() => ApplyChangeAsync(pending)">Change project</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-change-cancel" @onclick="() => { _pendingChange = null; _pendingImpact = []; }">Keep current project</button>
+                    </section>
+                }
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-dialog-cancel" @onclick="() => { _choosing = false; _pendingChange = null; }">Cancel</button>
+            </section>
+        }
+
+        @if (_view.IsConfigured)
+        {
+            @if (!_view.MainAvailable)
+            {
+                <p class="tep-banner" role="status" data-testid="tep-main-unavailable">The main package of @_view.ProjectName is not imported in this workspace. Consumers fall back to the current project until it is imported again or the project is changed.</p>
+            }
+            <div class="tep-project-actions">
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-change-project" @onclick="() => _choosing = true">Change project</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove project binding</button>
+            </div>
+            @if (_impact.Count > 0)
+            {
+                <ul class="tep-impact" data-testid="tep-impact">@foreach (var line in _impact) { <li>@line</li> }</ul>
+            }
+
+            <div class="tep-cards" data-testid="tep-dimensions">
+                @foreach (var d in ProjectEvidenceResolver.Dimensions(_view))
+                {
+                    <div class="tep-card tep-tone-@d.Tone" data-testid="tep-dimension" data-key="@d.Key">
+                        <span class="tep-card-label">@d.Label</span>
+                        <strong class="tep-card-value">@d.Value</strong>
+                        <span class="tep-card-detail">@d.Detail</span>
+                    </div>
+                }
+            </div>
+
+            @if (_view.Problems.Count > 0)
+            {
+                <section class="tep-problems" role="status" aria-labelledby="tep-problems-h" data-testid="tep-problems">
+                    <h4 id="tep-problems-h" class="tep-subtitle">Needs attention</h4>
+                    <ul>@foreach (var problem in _view.Problems) { <li data-testid="tep-problem">@problem</li> }</ul>
+                    @if (FirstProblemRole() is { } first)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-review-issues" @onclick="() => ReviewIssue(first)">Review issues</button>
+                    }
+                </section>
+            }
+
+            <h4 class="tep-subtitle">Project evidence</h4>
+            <div class="tep-table-wrap">
+            <table class="tep-table" data-testid="tep-roles">
+                <thead><tr><th scope="col">Role / capability</th><th scope="col">Requirement</th><th scope="col">Selected source</th><th scope="col">Capabilities</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _view.Rows)
+                    {
+                        var open = _openRole == row.Role.RoleKey;
+                        <tr id="@($"tep-role-{row.Role.RoleKey}")" tabindex="-1" data-testid="tep-role" data-role="@row.Role.RoleKey" data-state="@row.State" class="@(open ? "tep-row-open" : "")">
+                            <th scope="row">
+                                @row.Role.Label
+                                <span class="tep-required-by" data-testid="tep-required-by">Required by: @row.Role.RequiredBy</span>
+                            </th>
+                            <td>
+                                <select class="form-select form-select-sm" aria-label="@($"Requirement of {row.Role.Label}")" data-testid="tep-requirement"
+                                        @onchange="e => SetRequirementAsync(row.Role.RoleKey, e.Value?.ToString())">
+                                    <option value="Required" selected="@row.IsRequired">Required</option>
+                                    <option value="Optional" selected="@(!row.IsRequired)">Optional</option>
+                                </select>
+                            </td>
+                            <td data-testid="tep-selected">
+                                @if (row.Bound.Count == 0 && row.UnavailableSources.Count == 0) { <span>—</span> }
+                                @if (row.Bound.Count > 1) { <div class="tep-source-count" data-testid="tep-source-count">@row.Bound.Count sources</div> }
+                                @foreach (var bound in row.Bound.Take(2)) { @BoundSource(row, bound) }
+                                @if (row.Bound.Count > 2)
+                                {
+                                    <details class="tep-more" data-testid="tep-more-sources">
+                                        <summary>+@(row.Bound.Count - 2) more<span class="visually-hidden"> sources for @row.Role.Label</span> · View all</summary>
+                                        @foreach (var bound in row.Bound.Skip(2)) { @BoundSource(row, bound) }
+                                    </details>
+                                }
+                                @foreach (var missing in row.UnavailableSources) { <div class="tep-muted">@missing.ArchiveFileName (not in this workspace)</div> }
+                            </td>
+                            <td>@if (row.Bound.Count == 0) { <span>—</span> }
+                                else
+                                {
+                                    <ul class="tep-badges" aria-label="@($"Capabilities of the sources bound to {row.Role.Label}")">
+                                        @foreach (var c in row.Bound.SelectMany(b => b.Capabilities).Select(c => c.Capability).Distinct()) { <li class="tep-badge tep-badge-compact" data-testid="tep-role-capability">@ShortCapability(c)</li> }
+                                    </ul>
+                                }</td>
+                            <td><span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
+                                @if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">Bound: yes · @(row.IsReady ? "satisfies the role" : "role not fully satisfied")</span> }
+                                @if (row.PartialDetail is { } partial) { <span class="tep-partial-detail" data-testid="tep-partial-detail">@partial</span> }
+                                @if (row.State == EvidenceRoleState.Conflict) { <span class="tep-partial-detail" data-testid="tep-conflict-detail">This role uses one source, but @row.Bound.Count are bound. Remove the one that is not authoritative.</span> }
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm @(row.IsResolved ? "btn-secondary" : "btn-primary")" data-testid="tep-role-action"
+                                        aria-expanded="@(open ? "true" : "false")" aria-controls="@($"tep-picker-{row.Role.RoleKey}")"
+                                        @onclick="() => Toggle(row.Role.RoleKey)">@(row.IsResolved ? row.Role.Cardinality == ProjectEvidenceCardinality.Multiple ? "Change / add" : "Change" : row.State == EvidenceRoleState.Suggested ? "Review suggestion" : "Select source")</button>
+                            </td>
+                        </tr>
+                        @if (open)
+                        {
+                            <tr class="tep-picker-row"><td colspan="6">@Picker(row)</td></tr>
+                        }
+                    }
+                </tbody>
+            </table>
+            </div>
+
+            <details class="tep-add" data-testid="tep-add-evidence">
+                <summary>Add supporting project evidence</summary>
+                <div class="tep-add-form">
+                    <label>Evidence type
+                        <select class="form-select form-select-sm" data-testid="tep-add-capability" @bind="_newCapability">
+                            @foreach (var capability in AddableCapabilities) { <option value="@capability">@ProjectEvidencePackages.CapabilityLabel(capability)</option> }
+                        </select>
+                    </label>
+                    <label>Role name <input class="form-control form-control-sm" data-testid="tep-add-label" @bind="_newLabel" placeholder="e.g. Integration partner source" /></label>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-add-submit" @onclick="AddRoleAsync">Add role</button>
+                </div>
+            </details>
+
+            @if (_view.TestPackRows.Count > 0 || _view.SuggestedTestPacks.Count > 0)
+            {
+                <h4 class="tep-subtitle">Test Pack roles</h4>
+                <p class="tep-muted">A Test Pack's logical sources stay bound through Integration Quality Review evidence bindings; they are listed here so required sources are visible with the project.</p>
+                @foreach (var suggestion in _view.SuggestedTestPacks)
+                {
+                    <p class="tep-suggestion" data-testid="tep-testpack-suggestion">Suggested: <strong>@suggestion.PackName</strong> — @suggestion.Reason
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-testpack-activate" @onclick="() => SetTestPackAsync(suggestion.PackId, true)">Show its roles</button></p>
+                }
+                @if (_view.TestPackRows.Count > 0)
+                {
+                    <table class="tep-table" data-testid="tep-testpack-roles">
+                        <thead><tr><th scope="col">Role</th><th scope="col">Requirement</th><th scope="col">Required by</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+                        <tbody>
+                            @foreach (var row in _view.TestPackRows)
+                            {
+                                var action = SourceSetupPresentation.Action(row.Status, ProjectImportPresentation.ImportSourceHref);
+                                <tr data-testid="tep-testpack-role" data-state="@row.Status.State">
+                                    <th scope="row">@row.Status.Role.Label</th>
+                                    <td>@SourceSetupPresentation.RequirementLabel(row.Status.Role.Requirement)</td>
+                                    <td>@row.PackName Test Pack</td>
+                                    @if (row.ProjectBound)
+                                    {
+                                        <td><span class="tep-state tep-tone-available" data-testid="tep-testpack-project-bound">Ready · Bound from project evidence</span></td>
+                                        <td></td>
+                                    }
+                                    else
+                                    {
+                                        <td><span class="tep-state tep-tone-@SourceSetupPresentation.StateTone(row.Status.State)">@SourceSetupPresentation.StateLabel(row.Status)</span></td>
+                                        <td>@if (action is { } a) { <a href="@a.Href">@a.Text</a> }</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @foreach (var packId in _view.TestPackRows.Select(r => (r.PackId, r.PackName)).Distinct())
+                    {
+                        <button type="button" class="btn btn-link btn-sm" data-testid="tep-testpack-deactivate" @onclick="() => SetTestPackAsync(packId.PackId, false)">Hide @packId.PackName roles</button>
+                    }
+                }
+            }
+        }
+
+        <p class="tep-muted tep-ownership" data-testid="tep-ownership">Import Project owns imported packages and Source Analysis owns snapshots; this tab stores references only. Removing a binding or this environment never deletes imported evidence.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    /// <summary>A role key to open and focus (deep link from Recommended Workflow or an Explorer).</summary>
+    [Parameter] public string? Focus { get; set; }
+
+    private ProjectEvidenceView? _view;
+    private bool _choosing;
+    private string? _openRole;
+    private string? _error, _notice;
+    private string? _appliedFocus;
+    private bool _focusPending;
+    private IReadOnlyList<string> _impact = [];
+    private ProjectEvidenceCapability _newCapability = ProjectEvidenceCapability.Documentation;
+    private string _newLabel = "";
+
+    private static readonly ProjectEvidenceCapability[] AddableCapabilities =
+    [
+        ProjectEvidenceCapability.Documentation, ProjectEvidenceCapability.Infrastructure, ProjectEvidenceCapability.ContractSchema,
+        ProjectEvidenceCapability.SupportingSource, ProjectEvidenceCapability.IntegrationSource, ProjectEvidenceCapability.ApplicationSource,
+    ];
+
+    /// <summary>Resolved optionally so hosts that render every Target Environment tab without project evidence still render.</summary>
+    private IProjectEvidenceService? Evidence => _evidence ??= Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
+    private IProjectEvidenceService? _evidence;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Evidence is null) return;
+        _view = await Evidence.GetAsync(EnvironmentId);
+        if (Focus is { Length: > 0 } focus && focus != _appliedFocus)
+        {
+            _appliedFocus = focus;
+            if (_view.Row(focus) is not null) { _openRole = focus; _focusPending = true; }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusTarget is { } target)
+        {
+            _focusTarget = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", target); } catch (JSException) { } catch (InvalidOperationException) { }
+        }
+        if (!_focusPending || _openRole is null) return;
+        _focusPending = false;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", $"tep-role-{_openRole}"); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
+
+    private async Task ReloadAsync() { if (Evidence is not null) _view = await Evidence.GetAsync(EnvironmentId); }
+
+    private void Toggle(string roleKey) => _openRole = _openRole == roleKey ? null : roleKey;
+
+    private async Task RunAsync(Func<Task<bool>> change, string notice)
+    {
+        _error = null;
+        _notice = null;
+        try
+        {
+            if (Evidence is null) return;
+            if (await change()) _notice = notice;
+            else _error = "Nothing changed: the package does not provide this role, or the environment was not found.";
+        }
+        catch (Exception ex) { _error = $"The project binding could not be saved: {ex.Message}"; }
+        await ReloadAsync();
+    }
+
+    private ProjectEvidencePackage? _pendingChange;
+    private IReadOnlyList<string> _pendingImpact = [];
+
+    /// <summary>Selecting a project when none is configured applies it; changing an existing project first shows the impact (explicit confirm).</summary>
+    private async Task SelectProjectAsync(ProjectEvidencePackage package)
+    {
+        _error = null;
+        if (Evidence is null) return;
+        if (_view is { IsConfigured: true, Project: { } current })
+        {
+            _pendingChange = package;
+            _pendingImpact = ProjectEvidenceResolver.PreviewChange(current, package, _view.Packages, DateTimeOffset.UtcNow);
+            _focusTarget = "tep-change-h";
+            return;
+        }
+        try
+        {
+            _impact = [];
+            await Evidence.SelectProjectAsync(EnvironmentId, package.ImportId);
+            _notice = $"Project set to {package.DisplayName}.";
+        }
+        catch (Exception ex) { _error = $"The project could not be saved: {ex.Message}"; }
+        _choosing = false;
+        await ReloadAsync();
+    }
+
+    private async Task ApplyChangeAsync(ProjectEvidencePackage package)
+    {
+        _error = null;
+        if (Evidence is null) return;
+        try
+        {
+            _impact = await Evidence.ChangeProjectAsync(EnvironmentId, package.ImportId);
+            _notice = $"Project changed to {package.DisplayName}. Imports and snapshots are unchanged.";
+        }
+        catch (Exception ex) { _error = $"The project could not be saved: {ex.Message}"; }
+        _choosing = false; _pendingChange = null; _pendingImpact = [];
+        await ReloadAsync();
+    }
+
+    private string? _focusTarget;
+
+    private string? FirstProblemRole() => _view?.Rows.FirstOrDefault(r => r.State == EvidenceRoleState.Conflict)?.Role.RoleKey
+        ?? _view?.Rows.FirstOrDefault(r => r.Blocks)?.Role.RoleKey
+        ?? _view?.Rows.FirstOrDefault(r => r.State == EvidenceRoleState.NeedsDecision)?.Role.RoleKey
+        ?? _view?.Rows.FirstOrDefault(r => r.IsRequired && r.State == EvidenceRoleState.Partial)?.Role.RoleKey;
+
+    private void ReviewIssue(string roleKey) { _openRole = roleKey; _focusPending = true; }
+
+    private static string ShortCapability(ProjectEvidenceCapability capability) => capability switch
+    {
+        ProjectEvidenceCapability.ApplicationSource => "App source",
+        ProjectEvidenceCapability.ContractSchema => "Contracts",
+        ProjectEvidenceCapability.SupportingSource => "Shared",
+        _ => ProjectEvidencePackages.CapabilityLabel(capability),
+    };
+
+    /// <summary>Non-application packages grouped by what they are: never presented as equal project candidates.</summary>
+    private static IEnumerable<(string Title, List<ProjectEvidencePackage> Packages)> SupportingGroups(IReadOnlyList<ProjectEvidencePackage> packages)
+    {
+        var groups = new (string Title, Func<ProjectEvidencePackage, bool> Match)[]
+        {
+            ("Supporting evidence sources", p => p.Has(ProjectEvidenceCapability.SupportingSource) || p.Classification == "Contract/schema source" || p.Classification == "Generated documentation"),
+            ("Documentation-only sources", p => p.Classification == "Documentation source"),
+            ("Infrastructure sources", p => p.Classification == "Infrastructure source"),
+        };
+        var placed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (title, match) in groups)
+        {
+            var members = packages.Where(p => !placed.Contains(p.ImportId) && match(p)).ToList();
+            placed.UnionWith(members.Select(p => p.ImportId));
+            if (members.Count > 0) yield return (title, members);
+        }
+        if (packages.Where(p => !placed.Contains(p.ImportId)).ToList() is { Count: > 0 } rest) yield return ("Unknown", rest);
+    }
+
+    private RenderFragment BoundSource(EvidenceRoleRow row, ProjectEvidencePackage bound) => __builder =>
+    {
+        var reference = row.Role.Sources.FirstOrDefault(s => s.ImportId == bound.ImportId) ?? row.Role.Sources.FirstOrDefault(s => s.ArchiveSha256 == bound.ArchiveSha256);
+        <div class="tep-bound" data-testid="tep-bound-source">@bound.ArchiveFileName
+            @if (reference is not null) { <span class="tep-origin" data-testid="tep-binding-origin">@EvidenceRoleRow.OriginLabel(reference)</span> }</div>
+    };
+
+    private Task BindAsync(EvidenceRoleRow row, ProjectEvidencePackage package) =>
+        RunAsync(() => Evidence!.BindAsync(EnvironmentId, row.Role.RoleKey, package.ImportId), $"{package.ArchiveFileName} bound to {row.Role.Label}.");
+
+    private Task UnbindAsync(EvidenceRoleRow row, ProjectEvidencePackage package) =>
+        RunAsync(() => Evidence!.UnbindAsync(EnvironmentId, row.Role.RoleKey, package.ImportId), $"{package.ArchiveFileName} removed from {row.Role.Label}. The import is unchanged.");
+
+    private Task SetRequirementAsync(string roleKey, string? value) =>
+        Enum.TryParse<ProjectEvidenceRequirement>(value, out var requirement)
+            ? RunAsync(() => Evidence!.SetRequirementAsync(EnvironmentId, roleKey, requirement), "Requirement saved.")
+            : Task.CompletedTask;
+
+    private Task SetTestPackAsync(string packId, bool active) =>
+        RunAsync(() => Evidence!.SetTestPackAsync(EnvironmentId, packId, active), active ? "Test Pack roles shown for this project." : "Test Pack roles hidden.");
+
+    private async Task AddRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newLabel)) { _error = "Name the evidence role first."; return; }
+        if (Evidence is null) return;
+        var key = await Evidence.AddRoleAsync(EnvironmentId, _newCapability, _newLabel);
+        _notice = key is null ? null : $"Role {_newLabel.Trim()} added (optional).";
+        _newLabel = "";
+        _openRole = key;
+        await ReloadAsync();
+    }
+
+    private Task RemoveRoleAsync(EvidenceRoleRow row) =>
+        RunAsync(() => Evidence!.RemoveRoleAsync(EnvironmentId, row.Role.RoleKey), "Role " + row.Role.Label + " removed.");
+
+    private async Task ClearAsync()
+    {
+        await RunAsync(() => Evidence!.ClearProjectAsync(EnvironmentId), "Project binding removed. Imports, snapshots and documents are unchanged.");
+        _impact = [];
+    }
+
+    private RenderFragment PackageItem(ProjectEvidencePackage package, bool candidate) => __builder =>
+    {
+        <li class="tep-candidate" data-testid="tep-package" data-import="@package.ImportId" data-classification="@package.Classification">
+            <div class="tep-candidate-main">
+                <strong>@package.DisplayName</strong> <span class="tep-muted">@package.ArchiveFileName · imported @package.ImportedAt.ToLocalTime().ToString("d MMM yyyy")</span>
+                <span class="tep-classification" data-testid="tep-package-classification">@package.Classification</span>
+                <p class="tep-why" data-testid="tep-package-reason">@package.ClassificationReason</p>
+                @CapabilityBadges(package)
+            </div>
+            <button type="button" class="btn btn-sm @(candidate ? "btn-primary" : "btn-secondary")" data-testid="tep-use-as-project"
+                    aria-label="@($"Use {package.DisplayName} as the project")" @onclick="() => SelectProjectAsync(package)">@(candidate ? "Use as project" : "Use anyway")</button>
+        </li>
+    };
+
+    private RenderFragment CapabilityBadges(ProjectEvidencePackage package) => __builder =>
+    {
+        <ul class="tep-badges" aria-label="Capabilities">
+            @foreach (var capability in package.Capabilities)
+            {
+                <li class="tep-badge" data-testid="tep-capability" data-capability="@capability.Capability" data-status="@capability.Status">@ProjectEvidencePackages.CapabilityLabel(capability.Capability) · @capability.Fact@(capability.Status == PackageCapabilityStatus.Ready ? "" : $" · {capability.Status}")</li>
+            }
+            @foreach (var lacking in package.NotProvided)
+            {
+                <li class="tep-badge tep-badge-neutral" data-testid="tep-not-provided">@lacking</li>
+            }
+        </ul>
+    };
+
+    /// <summary>The compatible-source picker: compatible packages only, each with what it provides and why it matches. Incompatible packages are
+    /// counted, never offered (an infrastructure-only package never satisfies an application or documentation role).</summary>
+    private RenderFragment Picker(EvidenceRoleRow row) => __builder =>
+    {
+        var incompatible = (_view?.Packages.Count ?? 0) - row.Candidates.Count;
+        <div class="tep-picker" id="@($"tep-picker-{row.Role.RoleKey}")" data-testid="tep-picker">
+            <p class="tep-muted">
+                @(row.State switch
+                {
+                    EvidenceRoleState.Suggested => "One imported package matches. It is not bound until you confirm it.",
+                    EvidenceRoleState.NeedsDecision => $"{row.Candidates.Count(c => !c.Bound)} imported packages match. Choose which one this project uses; the newest is never chosen automatically.",
+                    _ when row.Role.Cardinality == ProjectEvidenceCardinality.Multiple => "This role can aggregate several packages.",
+                    _ => "This role uses one package.",
+                })
+            </p>
+            @if (row.Candidates.Count == 0)
+            {
+                <p data-testid="tep-picker-empty">No imported package provides @ProjectEvidencePackages.CapabilityLabel(row.Role.Capability).ToLowerInvariant(). <a href="@ProjectImportPresentation.ImportSourceHref">Import a package</a>.</p>
+            }
+            <ul class="tep-candidates">
+                @foreach (var candidate in row.Candidates)
+                {
+                    var p = candidate.Package;
+                    <li class="tep-candidate" data-testid="tep-picker-candidate" data-import="@p.ImportId" data-bound="@(candidate.Bound ? "true" : "false")">
+                        <div class="tep-candidate-main">
+                            <strong>@p.ArchiveFileName</strong> <span class="tep-classification">@p.Classification</span>
+                            <dl class="tep-candidate-facts">
+                                <div><dt>Documents</dt><dd>@(p.DocumentCount == 0 ? "None" : $"{p.DocumentCount} · {p.DocumentRoleSummary}")</dd></div>
+                                <div><dt>Source Analysis</dt><dd>@(p.SnapshotId is null ? "No snapshot (not applicable)" : p.SourceAnalysisStatus ?? "Snapshot recorded")</dd></div>
+                                <div><dt>Contracts/schema</dt><dd>@(p.Has(ProjectEvidenceCapability.ContractSchema) ? "Available" : "None")</dd></div>
+                                @if (p.ConfigurationEnvironments.Count > 0) { <div><dt>Environment labels</dt><dd>@string.Join(", ", p.ConfigurationEnvironments)</dd></div> }
+                                <div><dt>Imported</dt><dd>@p.ImportedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")</dd></div>
+                            </dl>
+                            <p class="tep-why" data-testid="tep-picker-why">Matches @row.Role.Label: @candidate.Why</p>
+                        </div>
+                        @if (candidate.Bound)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-unbind" @onclick="() => UnbindAsync(row, p)">Remove</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="tep-bind" @onclick="() => BindAsync(row, p)">@(row.Role.Cardinality == ProjectEvidenceCardinality.Multiple && row.Bound.Count > 0 ? "Add" : "Bind")</button>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (incompatible > 0)
+            {
+                <p class="tep-muted" data-testid="tep-picker-incompatible">@incompatible other imported package@(incompatible == 1 ? " does" : "s do") not provide this capability and @(incompatible == 1 ? "is" : "are") not offered.</p>
+            }
+            @if (row.Role.Origin == ProjectEvidenceRoleOrigin.UserAdded)
+            {
+                <button type="button" class="btn btn-link btn-sm" data-testid="tep-remove-role" @onclick="() => RemoveRoleAsync(row)">Remove this role</button>
+            }
+        </div>
+    };
+
+    protected override void OnInitialized() { if (Evidence is { } evidence) evidence.Changed += OnChanged; }
+    private void OnChanged() => _ = InvokeAsync(async () => { await ReloadAsync(); StateHasChanged(); });
+    public void Dispose() { if (_evidence is { } evidence) evidence.Changed -= OnChanged; }
+}
