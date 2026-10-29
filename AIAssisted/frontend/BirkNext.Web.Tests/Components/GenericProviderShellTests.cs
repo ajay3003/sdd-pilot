@@ -110,7 +110,7 @@ public sealed class GenericProviderShellTests : BunitContext
         cut.FindAll("[data-testid=gp-card]").Select(card => card.GetAttribute("data-key")).Should().Equal("configuration", "authentication", "contract", "runtime", "execution");
         cut.Find("[data-testid=gp-card][data-key=configuration] [data-testid=gp-card-reason]").TextContent.Should().Be("1 not applied");
         cut.FindAll("[data-testid=gp-fix-item]").Select(item => item.TextContent.Trim()).Should().Equal("Base URL · Not applied · Detected from Integration Quality Review");
-        cut.Find("[data-testid=gp-fix-group][data-key=configuration] [data-testid=gp-fix-action]").TextContent.Should().Be("Apply detected settings");
+        cut.Find("[data-testid=gp-fix-group][data-key=configuration] [data-testid=gp-fix-action]").TextContent.Should().StartWith("Apply detected settings");
         cut.FindAll("[data-testid=gp-proposal]").Select(item => item.GetAttribute("data-key")).Should().Equal("baseUrl", "healthEndpoint");
         cut.Find("[data-testid=gp-proposals]").TextContent.Should().Contain("Source: Integration Quality Review");
         cut.FindAll("section[data-testid^=gp-section-]").Select(section => section.GetAttribute("data-testid")).Should()
@@ -156,7 +156,7 @@ public sealed class GenericProviderShellTests : BunitContext
 
         cut.FindAll("[data-testid=gp-card]").Select(card => card.GetAttribute("data-key")).Should().Equal("configuration", "authentication", "runtime", "execution");
         cut.FindAll("[data-testid=gp-fix-item]").Select(item => item.TextContent.Trim()).Should().Equal("Namespace · Missing", "Queue / topic · Conflict");
-        cut.Find("[data-testid=gp-fix-action]").TextContent.Should().Be("Edit configuration");
+        cut.Find("[data-testid=gp-fix-action]").TextContent.Should().StartWith("Edit configuration");
         // A conflicting detected value is shown (configured vs detected) but never selectable: Apply selected can never overwrite it.
         cut.FindAll("[data-testid=gp-proposal][data-key=entity]").Should().BeEmpty();
         cut.Find("[data-testid=gp-conflict][data-key=entity] [data-testid=gp-conflict-configured]").TextContent.Should().Be("topic-a");
@@ -254,6 +254,6 @@ public sealed class GenericProviderShellTests : BunitContext
         cut.FindAll("h1, h2, h3, h4, h5, h6").Where(h => h.TextContent.Trim() == "Person API").Select(h => h.TagName).Should().Equal("H4");
         cut.Find("[data-testid=gp]").GetAttribute("aria-label").Should().Be("Person API");
         cut.FindAll("[data-testid=gp] h4").Should().BeEmpty();
-        cut.FindAll("[data-testid=gp] h5").Select(h => h.TextContent.Trim()).Should().Contain(["Things to fix", "Configuration", "Advanced details"]);
+        cut.FindAll("[data-testid=gp] h5").Select(h => h.TextContent.Trim()).Should().Contain(["Needs attention", "Configuration", "Advanced details"]);
     }
 }

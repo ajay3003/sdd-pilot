@@ -100,6 +100,11 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             $"{IntegrationName}: Altinn → Meldingsutveksleren (MU). Referenced from Target Environment → Integration Catalog, never copied.");
         if (integration.Value is { } integrationId && integrations.Count > 0 && integrations.All(item => item.Id != integrationId))
             integration = integration with { State = AltinnSettingState.Missing, Detail = $"The integration {integrationId} is not configured in this environment (Target Environment → Integration Catalog)." };
+        // The one Integration Catalog integration that fulfils the requirement is an authoritative internal reference: consumed directly
+        // (Configured, source Integration Catalog) — never a Detect → select → Apply loop. A saved choice still wins; several matches still
+        // need a decision.
+        else if (saved.IntegrationId is null && bound is not null && integration.State == AltinnSettingState.Detected && integration.Value == bound.Id)
+            integration = integration with { State = AltinnSettingState.Configured, Proposal = null, SourceLabel = "Integration Catalog (internal reference)" };
         else if (integration.Value is null && matching.Count > 1)
             integration = integration with { Detail = $"{matching.Count} integrations in the Integration Catalog match the report intake requirement ({string.Join(", ", matching.Select(item => item.DisplayName))}). Nothing is chosen automatically: choose one here or review them in Target Environment → Integration Catalog." };
         fields.Add(IntegrationReferenceNames.Apply(integration, integrations));

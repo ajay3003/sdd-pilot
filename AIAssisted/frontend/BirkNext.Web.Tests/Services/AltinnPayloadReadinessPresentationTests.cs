@@ -23,11 +23,14 @@ public sealed class AltinnPayloadReadinessPresentationTests
 
         var groups = AltinnEnvironmentPresentation.ThingsToFix(view);
         var testData = groups.Single(g => g.Key == "testdata");
-        (testData.Owner, testData.Action, testData.Kind).Should().Be(("Test Data", "Open Test Data", AltinnEnvironmentPresentation.FixAction.TestData));
+        (testData.Owner, testData.Action, testData.Kind).Should().Be(("Test Data", "Manage", AltinnEnvironmentPresentation.FixAction.TestData));
         testData.Items.Single().Should().Be(new AltinnEnvironmentPresentation.FixItem("XML fixture", "missing"));
         AltinnEnvironmentPresentation.ToShell(testData).Href.Should().Be(AltinnEnvironmentPresentation.TestDataHref, "the owner is Test Data; no XML editing here");
         AltinnEnvironmentPresentation.CardReason(payload, view).Should().Be("XML fixture missing");
-        groups.Single(g => g.Key == "contract").Items.Single().Problem.Should().StartWith("Contract identifier known", "partial evidence is not Missing");
+        var contract = groups.Single(g => g.Key == "contract");
+        contract.Items.Should().Equal([new("Contract identifier", "Known"), new("Source/deployed contract evidence", "Incomplete")], "partial evidence is not Missing");
+        contract.Severity.Should().Be(ShellSeverity.Review, "incomplete contract evidence is a review item, not an execution blocker");
+        contract.Details.Should().Be("Contract identifier known · deployed/source contract evidence incomplete", "the full diagnostic is kept behind Show details");
     }
 
     [Fact]

@@ -15,7 +15,8 @@ public sealed record ShellFixItem(string Label, string Problem);
 /// <summary>
 /// One owner's unresolved items with the single action that resolves them: a link (<see cref="Href"/>), opening a provider section
 /// (<see cref="OpenSection"/>), applying the listed pending values (<see cref="ApplyKeys"/>), or a provider-specific action (<see cref="Action"/>
-/// handled by the provider through the shell's fix callback).
+/// handled by the provider through the shell's fix callback). <see cref="Severity"/> separates true blockers from review-only issues;
+/// <see cref="Impact"/> says what it blocks; <see cref="Details"/> (long diagnostics) stays collapsed.
 /// </summary>
 public sealed record ShellFixGroup(string Key, string Title, string Owner, string ActionLabel, IReadOnlyList<ShellFixItem> Items)
 {
@@ -23,6 +24,17 @@ public sealed record ShellFixGroup(string Key, string Title, string Owner, strin
     public string? OpenSection { get; init; }
     public IReadOnlyList<string> ApplyKeys { get; init; } = [];
     public string? Action { get; init; }
+    public string Severity { get; init; } = ShellSeverity.Blocked;
+    public string? Impact { get; init; }
+    public string? CountBadge { get; init; }
+    public string? Details { get; init; }
+}
+
+/// <summary>Issue severities: a blocker prevents a relevant action; a review item needs a decision but blocks nothing by itself.</summary>
+public static class ShellSeverity
+{
+    public const string Blocked = "Blocked", Review = "Review required";
+    public static string Tone(string severity) => severity == Blocked ? "bad" : "warn";
 }
 
 /// <summary>A detected or suggested value waiting for an explicit Apply: field, readable value, state and source.</summary>
@@ -117,11 +129,15 @@ public static class ProviderShellPresentation
             {
                 ApplyKeys = applyOnly ? [.. items.Select(field => field.Key)] : [],
                 OpenSection = applyOnly ? null : key,
+                // Values that only wait for Apply need a decision; missing required values block.
+                Severity = applyOnly ? ShellSeverity.Review : ShellSeverity.Blocked,
+                Impact = applyOnly ? "Detected values wait for your decision" : "Blocks use of this system",
             });
         }
         foreach (var dependency in view.Dependencies.Where(item => item.Dependency.Required && item.State != SetupDependencyState.Resolved))
             groups.Add(new ShellFixGroup($"dependency-{dependency.Dependency.Reference}", "Dependencies", dependency.Owner, $"Open {dependency.Owner}",
-                [new(ExternalIntegrationPresentation.DependencyLabel(dependency.Dependency), ExternalIntegrationPresentation.Label(dependency.State))]) { Href = dependency.OwnerHref });
+                [new(ExternalIntegrationPresentation.DependencyLabel(dependency.Dependency), ExternalIntegrationPresentation.Label(dependency.State))])
+                { Href = dependency.OwnerHref, Impact = "A required dependency is unresolved" });
         return groups;
     }
 
@@ -145,4 +161,19 @@ public static class ProviderShellPresentation
     }
 
     public static SetupReadinessItem? Dimension(ExternalIntegrationView view, string key) => Dimensions(view).FirstOrDefault(item => item.Key == key);
+
+    /// <summary>Concise help for the shared status vocabulary (tooltip next to the always-visible word).</summary>
+    public static string? StatusHelp(string status) => status switch
+    {
+        "Ready" => "Required configuration for this dimension is complete.",
+        "Blocked" => "A known blocker prevents a relevant action.",
+        "Partial" => "Some required evidence or configuration is incomplete.",
+        "Needs review" or "Review required" => "A user decision or confirmation is required.",
+        "Observed" => "Runtime evidence exists, but it is not necessarily verified.",
+        "Not verified" => "No sufficient runtime verification exists yet.",
+        "Not configured" => "The capability exists, but nothing is configured.",
+        "Unknown" => "The state cannot currently be determined.",
+        "Optional" => "Missing does not block readiness.",
+        _ => null,
+    };
 }

@@ -200,7 +200,9 @@ public sealed class AltinnEnvironmentTests
         var bed = new Bed();
         bed.Integrations.Add(new IntegrationDefinition { Id = "skolenaervaer-report-intake", EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });
         var integration = Field(await bed.View(), "integration");
-        integration.Should().Match<AltinnSettingField>(f => f.Value == "skolenaervaer-report-intake" && f.State == AltinnSettingState.Detected && f.Source == AltinnSettingSource.IntegrationBinding);
+        integration.Should().Match<AltinnSettingField>(f => f.Value == "skolenaervaer-report-intake" && f.State == AltinnSettingState.Configured && f.Source == AltinnSettingSource.IntegrationBinding
+            && f.Proposal == null, "the one catalog integration is an authoritative internal reference: consumed directly, no Detect → Apply");
+        integration.SourceLabel.Should().Be("Integration Catalog (internal reference)");
         integration.Detail.Should().Contain("Meldingsutveksleren (MU)");
     }
 
@@ -520,7 +522,7 @@ public sealed class AltinnEnvironmentTests
 
         integration.Value.Should().Be(id);
         integration.DisplayValue.Should().Be(AltinnEnvironmentService.IntegrationName);
-        integration.Proposal!.DisplayValue.Should().Be(AltinnEnvironmentService.IntegrationName);
+        integration.Proposal.Should().BeNull("nothing to apply for an authoritative internal reference");
     }
 
     [Fact]
@@ -616,12 +618,12 @@ public sealed class AltinnEnvironmentTests
     // ── Integration: one deterministic Integration Catalog match is proposed; several are never chosen between ──────────
 
     [Fact]
-    public async Task One_matching_catalog_integration_is_proposed_two_stay_unresolved_and_none_is_missing()
+    public async Task One_matching_catalog_integration_is_consumed_two_stay_unresolved_and_none_is_missing()
     {
         var one = new Bed();
         one.Integrations.Add(new IntegrationDefinition { Id = "dev:http:skolenaervaer-report-intake", EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });
         Field(await one.View(detect: true), "integration").Should().Match<AltinnSettingField>(f =>
-            f.State == AltinnSettingState.Detected && f.Proposal != null && f.Proposal.Value == "dev:http:skolenaervaer-report-intake");
+            f.State == AltinnSettingState.Configured && f.Proposal == null && f.Value == "dev:http:skolenaervaer-report-intake");
 
         var two = new Bed();
         two.Integrations.Add(new IntegrationDefinition { Id = "dev:http:skolenaervaer-report-intake", EnvironmentId = Env, DisplayName = AltinnEnvironmentService.IntegrationName });

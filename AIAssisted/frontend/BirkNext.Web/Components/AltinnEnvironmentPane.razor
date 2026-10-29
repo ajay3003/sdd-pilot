@@ -1,6 +1,7 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 
 @* Target Environment → Connected Systems → Altinn: the one place the Altinn environment is configured, rendered in the shared compact
    provider shell (summary → things to fix → detected settings → sections → advanced details). Altinn supplies its own cards, the manual vs
@@ -25,22 +26,24 @@
         @if (_view is { } view)
         {
             <div class="ae-readiness" data-testid="ae-readiness">
+                @* Two independent surfaces: manual preparation can be Ready while automated execution is Blocked — an intended state, not a broken page. *@
                 <div class="ae-readiness-card" data-testid="ae-readiness-manual">
                     <span class="ae-readiness-label">@view.ManualReadiness.Label</span>
-                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(view.ManualReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(view.ManualReadiness)</span>
-                    <span class="ae-muted">@AltinnEnvironmentPresentation.ManualLine(view)</span>
+                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(view.ManualReadiness.State)"><span class="visually-hidden">@view.ManualReadiness.Label status: </span>@AltinnEnvironmentPresentation.ReadinessLabel(view.ManualReadiness)</span>
+                    <span class="ae-muted" data-testid="ae-readiness-manual-line">@(view.ManualReadiness.State == AltinnReadinessState.Ready ? "Ready for manual submission preparation." : AltinnEnvironmentPresentation.ManualLine(view))</span>
+                    @if (view.ManualReadiness.State == AltinnReadinessState.Ready && view.ManualReadiness.Reason.Length > 0)
+                    {
+                        <details class="ae-readiness-details" data-testid="ae-readiness-manual-details"><summary>Show details</summary><p class="ae-muted">@view.ManualReadiness.Reason</p></details>
+                    }
                 </div>
                 <div class="ae-readiness-card" data-testid="ae-readiness-automated">
                     <span class="ae-readiness-label">@view.AutomatedReadiness.Label</span>
-                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(view.AutomatedReadiness.State)">@AltinnEnvironmentPresentation.ReadinessLabel(view.AutomatedReadiness)</span>
+                    <span class="ae-pill ae-pill-@AltinnEnvironmentPresentation.Tone(view.AutomatedReadiness.State)"><span class="visually-hidden">@view.AutomatedReadiness.Label status: </span>@AltinnEnvironmentPresentation.ReadinessLabel(view.AutomatedReadiness)</span>
                     <span class="ae-muted">@AltinnEnvironmentPresentation.AutomatedLine(view)</span>
-                    @if (view.AutomatedBlockers.Count > 0)
+                    @if (view.AutomatedBlockers.Count > 0 && FixGroups.Count > 0)
                     {
-                        <button type="button" class="ae-link" data-testid="ae-blockers-toggle" aria-expanded="@Expanded(_blockers)" aria-controls="ae-blockers" @onclick="() => _blockers = !_blockers">@(_blockers ? "Hide blockers" : "View blockers")</button>
-                        @if (_blockers)
-                        {
-                            <ul id="ae-blockers" class="ae-list" data-testid="ae-blockers">@foreach (var blocker in view.AutomatedBlockers) { <li>@blocker</li> }</ul>
-                        }
+                        @* The blockers are the Needs attention cards (owner + action), not a raw list; the full list stays in Advanced details. *@
+                        <button type="button" class="ae-link" data-testid="ae-blockers-toggle" @onclick="ViewBlockersAsync">View blockers</button>
                     }
                 </div>
             </div>
@@ -67,8 +70,22 @@
 
     private RenderFragment ContractBody => __builder =>
     {
+        @if (_view is { } view && view.Contract.Reason.Length > 0)
+        {
+            <details class="ae-contract-details" data-testid="ae-contract-details"><summary>Show details</summary><p class="ae-muted">@view.Contract.Reason</p></details>
+        }
         <AltinnTestSetupPanel EnvironmentId="@EnvironmentId" />
     };
+
+    /// <summary>"5 settings missing" (the list is in the section body) or "Complete".</summary>
+    private static string AutomatedSummary(AltinnEnvironmentView view) =>
+        AltinnEnvironmentPresentation.AutomatedSettingsLine(view) is var line && line.Contains(':') ? line[..line.IndexOf(':')] : line;
+
+    /// <summary>"View blockers": move to the Needs attention cards (their headings are focusable), not a raw expanded list.</summary>
+    private async Task ViewBlockersAsync()
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", "ae-fix-title"); } catch (Microsoft.JSInterop.JSException) { } catch (InvalidOperationException) { }
+    }
 
     private IReadOnlyList<ShellCard> Cards => _view is not { } view ? [] :
         [.. view.Summary.Select(item => AltinnAccessPresentation.ReporterCard(item, view, _browserAuth)).Select(item => new ShellCard(item.Key, item.Label,
@@ -90,18 +107,18 @@
     [
         new("application", "Application", AltinnEnvironmentPresentation.ApplicationLine(view))
         {
-            Body = Table("Application"),
+            Status = AltinnEnvironmentPresentation.ApplicationStatus(view).Label, Tone = AltinnEnvironmentPresentation.ApplicationStatus(view).Tone, Body = Table("Application"),
         },
         new("access", "Access & authentication", AltinnAccessPresentation.Line(view, _browserAuth))
         {
-            ToggleLabel = "Review access", Body = AccessBody,
+            Status = AltinnEnvironmentPresentation.AccessStatus(view).Label, Tone = AltinnEnvironmentPresentation.AccessStatus(view).Tone, ToggleLabel = "Review access", Body = AccessBody,
         },
-        new("browser", "Browser authentication", $"{AltinnEnvironmentPresentation.BrowserLine(view)} · Browser login observation: {AltinnEnvironmentPresentation.BrowserObservationLine(view)}")
+        new("browser", "Browser authentication", AltinnEnvironmentPresentation.BrowserStatus(view, _browserAuth).Summary)
         {
-            ToggleLabel = "Review evidence", Body = BrowserBody,
-            Always = BrowserNote,
+            Status = AltinnEnvironmentPresentation.BrowserStatus(view, _browserAuth).Status, Tone = AltinnEnvironmentPresentation.BrowserStatus(view, _browserAuth).Tone,
+            ToggleLabel = "View evidence", Body = BrowserBody, Always = BrowserNote,
         },
-        new("automated", "Automated execution", AltinnEnvironmentPresentation.AutomatedSettingsLine(view))
+        new("automated", "Automated execution", AutomatedSummary(view))
         {
             Status = AuthenticationLabel, Tone = AltinnEnvironmentPresentation.Tone(AuthenticationState), ToggleLabel = "Configure", Body = AutomatedBody, Always = SecretRow,
         },
@@ -116,12 +133,12 @@
             Tone = AltinnEnvironmentPresentation.Tone(view.Summary.FirstOrDefault(item => item.Key == "identities")?.State ?? AltinnReadinessState.NotAssessed),
             LinkLabel = "Manage test identities", LinkHref = AltinnEnvironmentPresentation.TestDataHref, LinkTestId = "ae-manage-identities",
         },
-        new("contract", "Report contract", $"Source: {view.Contract.Reason}")
+        new("contract", "Report contract", AltinnEnvironmentPresentation.ContractLine(view))
         {
             Status = ContractLabel, Tone = AltinnEnvironmentPresentation.Tone(view.Contract.State), ToggleLabel = "Review contract",
             Body = ContractBody,
         },
-        new("runtime", "Runtime", $"Manual observations: {view.Saved.RuntimeObservations.Count}")
+        new("runtime", "Runtime", $"Manual observations: {view.Saved.RuntimeObservations.Count} · Verification: {(view.Summary.FirstOrDefault(item => item.Key == "runtime")?.State == AltinnReadinessState.Ready ? "Verified" : "Not verified")}")
         {
             Status = view.Summary.FirstOrDefault(item => item.Key == "runtime") is { } runtime ? AltinnEnvironmentPresentation.ReadinessLabel(runtime) : null,
             Tone = AltinnEnvironmentPresentation.Tone(view.Summary.FirstOrDefault(item => item.Key == "runtime")?.State ?? AltinnReadinessState.NotAssessed),
@@ -295,10 +312,10 @@
     private string SecretLabel => _view?.Fields.FirstOrDefault(field => field.Key == "client-secret") is { } secret ? AltinnEnvironmentPresentation.StateLabel(secret.State) : "Missing";
     private string ContractLabel => _view?.Contract.State switch
     {
-        AltinnReadinessState.Ready => "Resolved",
+        AltinnReadinessState.Ready => "Ready",
         AltinnReadinessState.Partial => "Partial",
-        AltinnReadinessState.Blocked => "Missing",
-        _ => "Not assessed",
+        AltinnReadinessState.Blocked => "Blocked",
+        _ => "Not verified",
     };
 
     private void CancelSecret() { _secret = null; _secretOpen = false; }
@@ -393,7 +410,8 @@
     private Task DetectAsync() => Run(async () =>
     {
         var result = await Api.DetectAsync(EnvironmentId);
-        Show(result, result.Value is null ? null : "Detection finished. Nothing was saved: review and apply selected values.");
+        var proposed = result.Value is { } detected && AltinnEnvironmentPresentation.Proposals(detected).Count > 0;
+        Show(result, result.Value is null ? null : proposed ? "Detection finished. Nothing was saved: review and apply selected values." : "Detection finished. No new values found.");
         if (result.Value is { } view) foreach (var field in AltinnEnvironmentPresentation.Proposals(view).Where(field => field.State != AltinnSettingState.Conflict)) _selected.Add(field.Key);
     });
 

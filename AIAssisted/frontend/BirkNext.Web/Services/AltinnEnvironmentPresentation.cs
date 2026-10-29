@@ -61,7 +61,12 @@ public static class AltinnEnvironmentPresentation
         _ => "muted",
     };
 
-    public static string ReadinessLabel(AltinnReadinessItem item) => item.Key == "runtime" && item.State == AltinnReadinessState.Partial ? "Observed" : item.State switch
+    /// <summary>Runtime evidence reads Observed (never verified by observation alone); an integration-auth requirement nobody has determined
+    /// reads Unknown — it is a requirement state, not missing runtime verification.</summary>
+    public static string ReadinessLabel(AltinnReadinessItem item) =>
+        item.Key == "runtime" && item.State == AltinnReadinessState.Partial ? "Observed"
+        : item.Key == "integration-auth" && item.State == AltinnReadinessState.NotAssessed ? "Unknown"
+        : item.State switch
     {
         AltinnReadinessState.Ready => "Ready",
         AltinnReadinessState.Partial => "Partial",
@@ -135,6 +140,11 @@ public static class AltinnEnvironmentPresentation
     public sealed record FixGroup(string Key, string Title, string Owner, string Action, FixAction Kind, IReadOnlyList<FixItem> Items)
     {
         public IReadOnlyList<string> ApplyKeys { get; init; } = [];
+        /// <summary>Blocked (prevents manual or automated testing) or Review required (incomplete evidence that blocks nothing by itself).</summary>
+        public string Severity { get; init; } = ShellSeverity.Blocked;
+        public string? Impact { get; init; }
+        public string? CountBadge { get; init; }
+        public string? Details { get; init; }
     }
 
     /// <summary>The shared shell's form of a fix group (the action is reported back by key).</summary>
@@ -143,6 +153,7 @@ public static class AltinnEnvironmentPresentation
         Href = group.Kind == FixAction.TestData ? TestDataHref : null,
         Action = group.Kind.ToString(),
         ApplyKeys = group.ApplyKeys,
+        Severity = group.Severity, Impact = group.Impact, CountBadge = group.CountBadge, Details = group.Details,
     };
 
     /// <summary>The value a tester reads: a reference's display name (e.g. an integration's name) before its raw id.</summary>
@@ -179,30 +190,43 @@ public static class AltinnEnvironmentPresentation
         {
             var suggested = applicationFields.Where(Suggested).Select(field => field.Key).ToList();
             var detect = !view.Detected && application.Any(item => item.Problem == "Missing");
-            groups.Add(suggested.Count > 0
-                ? new("application", "Application", "Target Environment · Altinn", "Apply suggested settings", FixAction.ApplySuggested, application) { ApplyKeys = suggested }
-                : new("application", "Application", "Target Environment · Altinn", detect ? "Detect settings" : "Review application", detect ? FixAction.Detect : FixAction.Application, application));
+            var onlySuggested = applicationFields.All(Suggested);
+            groups.Add((suggested.Count > 0
+                ? new FixGroup("application", "Application", "Target Environment · Altinn", "Apply suggested settings", FixAction.ApplySuggested, application) { ApplyKeys = suggested }
+                : new FixGroup("application", "Application", "Target Environment · Altinn", detect ? "Detect settings" : "Review application", detect ? FixAction.Detect : FixAction.Application, application))
+                with { Severity = onlySuggested ? ShellSeverity.Review : ShellSeverity.Blocked, Impact = onlySuggested ? "Suggested values wait for your decision" : "Blocks manual test readiness" });
         }
         var automated = view.Fields.Where(field => field.Group == "Automated execution" && AutomatedOpen(field)).Select(field => new FixItem(ShortLabel(field), Problem(field))).ToList();
-        if (automated.Count > 0) groups.Add(new("automated", "Automated authentication", "Target Environment · Altinn (unattended client)", "Configure automated execution", FixAction.Automated, automated));
+        if (automated.Count > 0) groups.Add(new("automated", "Automated authentication", "Target Environment · Altinn unattended client", "Configure", FixAction.Automated, automated)
+            { Impact = "Blocks automated execution", CountBadge = $"{automated.Count} missing" });
         var safety = view.Fields.Where(field => field.Group == "Execution safety" && Unresolved(field)).Select(field => new FixItem(field.Label, Problem(field))).ToList();
-        if (safety.Count > 0) groups.Add(new("safety", "Execution safety", "Backend execution policy", "Review execution safety", FixAction.Safety, safety));
+        if (safety.Count > 0) groups.Add(new("safety", "Execution safety", "Backend execution policy", "Review safety", FixAction.Safety, safety) { Impact = "Blocks automated execution" });
         var identities = IdentityGaps(view).Select(gap => new FixItem(gap.Role, gap.Problem)).ToList();
-        if (identities.Count > 0) groups.Add(new("identities", "Test identities", "Test Data", "Manage test identities", FixAction.TestData, identities));
+        if (identities.Count > 0) groups.Add(new("identities", "Test identities", "Test Data", "Manage", FixAction.TestData, identities) { Impact = "Blocks manual and automated testing" });
         // The payload (what is submitted) is Test Data too, but a different gap than the identities (who is involved): one group, owner Test Data.
         if (view.Summary.FirstOrDefault(item => item.Key == "testdata") is { State: not AltinnReadinessState.Ready } payload)
-            groups.Add(new("testdata", "Test data", "Test Data", "Open Test Data", FixAction.TestData, [new("XML fixture", PayloadProblem(payload))]));
-        if (view.Contract.State is AltinnReadinessState.Partial or AltinnReadinessState.Blocked)
+            groups.Add(new("testdata", "Test data", "Test Data", "Manage", FixAction.TestData, [new("XML fixture", PayloadProblem(payload))]) { Impact = "Blocks manual and automated testing" });
+        // Incomplete contract evidence is a review item while manual preparation can proceed; only a missing contract blocks.
+        if (view.Contract.State == AltinnReadinessState.Partial)
             groups.Add(new("contract", "Report contract", "IQR / Altinn contract evidence", "Review contract", FixAction.Contract,
-                [new("Report contract", view.Contract.State == AltinnReadinessState.Partial ? view.Contract.Reason : "Missing")]));
+                [new("Contract identifier", "Known"), new("Source/deployed contract evidence", "Incomplete")])
+                { Severity = ShellSeverity.Review, Impact = view.ManualReadiness.State == AltinnReadinessState.Ready ? "Does not block manual preparation" : "Review before relying on the contract", Details = view.Contract.Reason });
+        else if (view.Contract.State == AltinnReadinessState.Blocked)
+            groups.Add(new("contract", "Report contract", "IQR / Altinn contract evidence", "Review contract", FixAction.Contract, [new("Report contract", "Missing")])
+                { Impact = "Blocks manual test readiness", Details = view.Contract.Reason });
         return groups;
     }
 
     public static int FixCount(IReadOnlyList<FixGroup> groups) => groups.Sum(group => group.Items.Count);
 
-    /// <summary>"7 things need attention" (null when nothing does).</summary>
-    public static string? FixLine(IReadOnlyList<FixGroup> groups) =>
-        FixCount(groups) is var count && count == 0 ? null : $"{count} thing{(count == 1 ? " needs" : "s need")} attention";
+    /// <summary>"2 blockers · 1 review item" (null when nothing needs attention): issues are counted per card, never per setting.</summary>
+    public static string? FixLine(IReadOnlyList<FixGroup> groups)
+    {
+        if (groups.Count == 0) return null;
+        var blockers = groups.Count(group => group.Severity == ShellSeverity.Blocked);
+        var reviews = groups.Count - blockers;
+        return string.Join(" · ", new[] { blockers > 0 ? $"{blockers} blocker{(blockers == 1 ? "" : "s")}" : null, reviews > 0 ? $"{reviews} review item{(reviews == 1 ? "" : "s")}" : null }.OfType<string>());
+    }
 
     private static List<(string Role, string Problem)> IdentityGaps(AltinnEnvironmentView view)
     {
@@ -255,10 +279,38 @@ public static class AltinnEnvironmentPresentation
         string? V(string key) => view.Fields.FirstOrDefault(field => field.Key == key)?.Value;
         var environment = V("environment") is { } env && env.StartsWith("Test", StringComparison.Ordinal) ? "TT02" : V("environment");
         var (missing, pending) = ApplicationGaps(view);
-        var state = missing + pending == 0 ? "Complete"
+        // The badge says Ready; the line names the app (and only what is open).
+        var state = missing + pending == 0 ? null
             : string.Join(" · ", new[] { missing > 0 ? $"{missing} setting{(missing == 1 ? "" : "s")} missing" : null, pending > 0 ? $"{pending} not applied" : null }.OfType<string>());
         return string.Join(" · ", new[] { environment, V("app"), state }.Where(part => !string.IsNullOrEmpty(part)));
     }
+
+    /// <summary>Application row status: Blocked (required setting missing or in conflict), Needs review (only suggested values to apply), Ready.</summary>
+    public static (string Label, string Tone) ApplicationStatus(AltinnEnvironmentView view) => ApplicationGaps(view) switch
+    {
+        ( > 0, _) => ("Blocked", "bad"),
+        (_, > 0) => ("Needs review", "warn"),
+        _ => ("Ready", "ok"),
+    };
+
+    /// <summary>
+    /// Access &amp; authentication aggregates the three hops without hiding any: Ready only when reporter access, integration auth and BirkNext's
+    /// execution credentials are all ready; otherwise Needs review (an unresolved hop is never masked by a ready one).
+    /// </summary>
+    public static (string Label, string Tone) AccessStatus(AltinnEnvironmentView view)
+    {
+        var hops = view.Summary.Where(item => item.Key is "reporter-access" or "integration-auth" or "authentication").ToList();
+        return hops.Count > 0 && hops.All(item => item.State == AltinnReadinessState.Ready) ? ("Ready", "ok") : ("Needs review", "warn");
+    }
+
+    /// <summary>"Contract identifier known · Contract evidence incomplete" — the long diagnostic stays in the section body.</summary>
+    public static string ContractLine(AltinnEnvironmentView view) => view.Contract.State switch
+    {
+        AltinnReadinessState.Ready => "Contract identifier known · Contract evidence resolved",
+        AltinnReadinessState.Partial => "Contract identifier known · Contract evidence incomplete",
+        AltinnReadinessState.Blocked => "Contract identifier missing",
+        _ => "Not assessed",
+    };
 
     /// <summary>Required application settings that are missing/in conflict, and those only suggested (not applied).</summary>
     private static (int Missing, int Pending) ApplicationGaps(AltinnEnvironmentView view)
@@ -278,6 +330,20 @@ public static class AltinnEnvironmentPresentation
 
     public static string BrowserObservationLine(AltinnEnvironmentView view) =>
         view.Fields.Any(field => field.Group == "Browser authentication" && field.State == AltinnSettingState.Observed) ? "Recorded" : "Not recorded";
+
+    /// <summary>
+    /// Browser authentication row: the primary state is runtime evidence (Observed from the app's own Browser Discovery evidence, else a
+    /// manual observation), independent of public metadata completeness. Provenance is named, never merged.
+    /// </summary>
+    public static (string Status, string Tone, string Summary) BrowserStatus(AltinnEnvironmentView view, BrowserAuthEvidenceResult discovery)
+    {
+        var manual = view.Fields.FirstOrDefault(field => field.Group == "Browser authentication" && field.State == AltinnSettingState.Observed);
+        var metadata = view.Fields.Any(field => field.Key.StartsWith("idporten-", StringComparison.Ordinal))
+            ? BrowserLine(view).Replace("ID-porten TEST · ", "", StringComparison.Ordinal) : "Public metadata not read";
+        if (discovery.Usable) return ("Observed", "info", $"ID-porten TEST · Login observed · Source: Browser Discovery · {metadata}");
+        if (manual is not null) return ("Observed", "info", $"ID-porten TEST · Login observation recorded · Source: Manual observation ({manual.SourceLabel}) · {metadata}");
+        return ("Not verified", "muted", $"ID-porten TEST · No login observation · {metadata}");
+    }
 
     /// <summary>Automated execution summary: "5 settings missing: Client ID, Redirect URI, Scopes, Enabled, Client secret" or "Complete".</summary>
     public static string AutomatedSettingsLine(AltinnEnvironmentView view)

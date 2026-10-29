@@ -66,10 +66,11 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
 
         cut.Find("[data-testid=ae]").GetAttribute("aria-label").Should().Be("Altinn · TT02", "the region is labelled; the card shows the visible name");
         cut.FindAll("h1, h2, h3, h4").Should().BeEmpty("the shell never repeats the system name as a heading");
-        cut.FindAll("h5").Select(h => h.TextContent.Trim()).Should().Contain(["Things to fix", "Application", "Advanced details"]);
+        cut.FindAll("h5").Select(h => h.TextContent.Trim()).Should().Contain(["Needs attention", "Application", "Advanced details"]);
         cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Ready");
         cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Blocked").And.Contain("redirect URI");
-        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("3 things need attention");
+        var fixCount = cut.Find("[data-testid=ae-fix-count]");
+        (int.Parse(fixCount.GetAttribute("data-blockers")!) + int.Parse(fixCount.GetAttribute("data-reviews")!)).Should().Be(cut.FindAll("[data-testid=ae-fix-group]").Count, "issues are counted per card, never per setting");
         foreach (var toggle in new[] { "ae-toggle-application", "ae-toggle-browser", "ae-toggle-automated" }) cut.Find($"[data-testid={toggle}]").Click();
         State(cut, "environment").Should().Be("Suggested", "a test-pack default is a suggestion, never 'configured'");
         State(cut, "form-data-type").Should().Be("Detected from source", "source evidence is not deployed runtime");
@@ -211,6 +212,27 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         Contract = new("contract", "Report contract", AltinnReadinessState.Partial, "Public TT02 metadata · missing: form schema"),
     };
 
+    [Fact]
+    public void Every_main_row_has_one_primary_badge_and_access_never_hides_an_unresolved_hop()
+    {
+        var cut = RenderSkolenaervaer();
+        foreach (var key in new[] { "application", "access", "browser", "automated", "safety", "identities", "contract", "runtime" })
+        {
+            var badges = cut.FindAll($"[data-testid=ae-section-{key}] [data-testid=ae-section-status]");
+            badges.Should().ContainSingle($"the {key} row has exactly one primary badge");
+            badges[0].QuerySelector(".visually-hidden")!.TextContent.Should().EndWith("status: ", "the state is announced with its row");
+        }
+        cut.FindAll("[data-testid=ae-advanced] [data-testid=ae-section-status]").Should().BeEmpty("Advanced details is not a readiness dimension");
+        Status(cut, "access").Should().Be("Needs review", "BirkNext execution credentials are blocked, so access is not Ready");
+        Status(cut, "browser").Should().BeOneOf("Observed", "Not verified");
+        cut.Find("[data-testid=ae-section-application]").TextContent.Should().NotContain("Complete", "the badge carries the state; the line names the app");
+        cut.Find("[data-testid=ae-section-contract]").TextContent.Should().Contain("Contract identifier").And.NotContain("No application metadata", "long diagnostics stay collapsed");
+        cut.Find("[data-testid=ae-section-runtime]").TextContent.Should().Contain("Verification:");
+    }
+
+    private static string Status(IRenderedComponent<AltinnEnvironmentPane> cut, string key) =>
+        cut.Find($"[data-testid=ae-section-{key}] [data-testid=ae-section-status]").TextContent.Replace(cut.Find($"[data-testid=ae-section-{key}] [data-testid=ae-section-status] .visually-hidden").TextContent, "").Trim();
+
     private IRenderedComponent<AltinnEnvironmentPane> RenderSkolenaervaer()
     {
         _api.Next = Skolenaervaer();
@@ -231,9 +253,12 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("12 requirements unresolved").And.NotContain("Blocker 1");
         cut.FindAll("[data-testid=ae-blockers]").Should().BeEmpty();
 
-        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("11 things need attention");
+        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("4 blockers1 review item");
+        cut.Find("[data-testid=ae-fix-group][data-key=contract]").GetAttribute("data-severity").Should().Be("Review required", "incomplete contract evidence is not an execution blocker");
+        cut.Find("[data-testid=ae-fix-group][data-key=automated]").GetAttribute("data-severity").Should().Be("Blocked");
+        cut.Find("[data-testid=ae-fix-group][data-key=contract] [data-testid=ae-fix-details]").HasAttribute("open").Should().BeFalse("long contract diagnostics stay collapsed");
         cut.FindAll("[data-testid=ae-fix-group]").Select(group => group.GetAttribute("data-key")).Should().Equal("application", "automated", "safety", "identities", "contract");
-        cut.Find("[data-testid=ae-fix-group][data-key=identities]").TextContent.Should().Contain("Owner: Test Data").And.Contain("Manage test identities");
+        cut.Find("[data-testid=ae-fix-group][data-key=identities]").TextContent.Should().Contain("Owner: Test Data").And.Contain("Manage");
         cut.Find("[data-testid=ae-fix-group][data-key=identities] [data-testid=ae-fix-action]").GetAttribute("href").Should().Be("/test-data");
 
         cut.Find("[data-testid=ae-proposals] [data-key=integration] [data-testid=ae-proposal-value]").TextContent.Should().Be("Skolenærvær – Altinn report intake");
@@ -254,7 +279,8 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         var cut = RenderSkolenaervaer();
 
         cut.Find("[data-testid=ae-blockers-toggle]").Click();
-        cut.FindAll("[data-testid=ae-blockers] li").Should().HaveCount(12);
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments[0]).Should().Contain("ae-fix-title", "View blockers moves to the Needs attention cards");
+        cut.Find("#ae-fix-title").GetAttribute("tabindex").Should().Be("-1");
         cut.Find("[data-testid=ae-toggle-browser]").Click();
         cut.Find("[data-testid=ae-toggle-browser]").GetAttribute("aria-expanded").Should().Be("true");
         cut.Markup.Should().Contain("https://test.idporten.no/token");
