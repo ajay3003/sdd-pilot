@@ -748,12 +748,12 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             roles[role] = roles[role].Select(e =>
             {
                 var path = e.Artifact.SourcePath ?? e.Artifact.FileName;
-                return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path) } };
+                return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path, roots) } };
             }).ToList();
         supporting = supporting.Select(e =>
         {
             var path = e.Artifact.SourcePath ?? e.Artifact.FileName;
-            return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path) } };
+            return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path, roots) } };
         }).ToList();
 
         // Named modules in path order; the project-level group (if any) last.

@@ -25,6 +25,7 @@
     else
     {
         var packOverview = ProjectPackOverview.Build(_overview);
+        var moduleRoots = ArtifactModules.RootsOf(_overview.Roles.SelectMany(r => r.Candidates).Select(c => c.SourcePath ?? c.FileName));
         // A chosen module is reviewed on its own documents: its rows count that module (plus project-wide shared documents), never the
         // workspace totals, which the project summary already shows.
         var focus = _overview.HasModules ? _overview.Focus : null;
@@ -88,6 +89,7 @@
                                         <li class="pac-candidate @(selected ? "is-selected" : "")" data-testid="pac-candidate">
                                             <span class="pac-path">@(candidate.SourcePath ?? candidate.FileName)</span>
                                             <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · feature pack {f}" : inPacks ? " · shared by the module's feature packs" : "")</span>
+                                            <span class="pac-meta pac-reason" data-testid="pac-module-reason">Module: @ArtifactModules.Explain(candidate.SourcePath ?? candidate.FileName, moduleRoots)</span>
                                             @if (packFile)
                                             {
                                                 <span class="pac-badge pac-badge-clear" data-testid="pac-selected">Primary @label for this feature</span>

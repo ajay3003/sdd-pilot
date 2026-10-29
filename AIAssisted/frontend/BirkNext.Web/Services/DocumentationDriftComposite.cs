@@ -138,8 +138,9 @@ public static partial class DocumentationDriftComposite
         var generated = current.Where(d => d.Origin == DriftOrigin.Generated && d.Module is not null and not "(repository)")
             .GroupBy(d => (Module: d.Module!.ToLowerInvariant(), Concern: ConcernOf(d)))
             .Where(g => Structured(g.Key.Concern)).ToDictionary(g => g.Key, g => g.ToList());
+        var roots = DocumentationDrift.RootsOf(current);
         var authored = current.Where(d => d.Origin == DriftOrigin.Authored && d.ContentAvailable && Structured(ConcernOf(d)))
-            .Select(d => (Doc: d, Module: DocumentationDrift.ModuleOf(d)))
+            .Select(d => (Doc: d, Module: DocumentationDrift.ModuleOf(d, roots)))
             .Where(x => x.Module != Explorers.ArtifactModules.ProjectLevelLabel)
             .GroupBy(x => (Module: x.Module.ToLowerInvariant(), Concern: ConcernOf(x.Doc)))
             .ToDictionary(g => g.Key, g => g.Select(x => x.Doc).OrderBy(PackOrder).ThenBy(d => d.Path, StringComparer.OrdinalIgnoreCase).ToList());
@@ -149,7 +150,7 @@ public static partial class DocumentationDriftComposite
         {
             var gens = generated.GetValueOrDefault(key) ?? [];
             var contributors = authored.GetValueOrDefault(key) ?? [];
-            var module = gens.FirstOrDefault()?.Module ?? DocumentationDrift.ModuleOf(contributors[0]);
+            var module = gens.FirstOrDefault()?.Module ?? DocumentationDrift.ModuleOf(contributors[0], roots);
             var state = gens.Count > 1 ? DriftGroupState.MultipleGeneratedCandidates
                 : gens.Count == 0 ? DriftGroupState.GeneratedNotPresent
                 : contributors.Count == 0 ? DriftGroupState.AuthoredNotPresent

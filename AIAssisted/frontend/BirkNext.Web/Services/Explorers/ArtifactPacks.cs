@@ -57,7 +57,7 @@ public static partial class ArtifactPacks
     /// The pack key of a document path among <paramref name="roots"/>: module plus feature folder (empty for a shared document). Two documents
     /// of one role conflict only when they share this key — documents in sibling packs never compete.
     /// </summary>
-    public static string PathKey(string? path, IReadOnlySet<string> roots) => Key(ArtifactModules.ModuleOf(path, roots), ArtifactModules.FeatureOf(path) ?? "");
+    public static string PathKey(string? path, IReadOnlySet<string> roots) => Key(ArtifactModules.ModuleOf(path, roots), ArtifactModules.FeatureOf(path, roots) ?? "");
 
     /// <summary>
     /// Whether two of <paramref name="paths"/> (one role's documents) compete in the same pack (or both shared in the same module). A pack whose

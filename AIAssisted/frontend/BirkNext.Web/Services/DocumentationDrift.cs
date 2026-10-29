@@ -226,14 +226,21 @@ public static class DocumentationDrift
     /// <summary>The Spec-Kit feature (artifact pack) of an authored document, or "Shared / project-level" outside packs.</summary>
     public static string PackOf(DriftDocument d) => Explorers.ArtifactModules.FeatureOf(d.Path) ?? "Shared / project-level";
 
-    /// <summary>Module of a document: generated documents carry theirs; authored ones use the folder before <c>specs/</c> or "Project-level".</summary>
-    public static string ModuleOf(DriftDocument d)
+    /// <summary>
+    /// Module of a document: generated documents carry theirs; authored ones use the canonical module resolver (<see cref="Explorers.ArtifactModules"/>)
+    /// over <paramref name="roots"/> — the strong module roots of the documents compared together — else this document's own strong root. A
+    /// documentation tree's <c>specs/</c> folder never becomes a module; such a document belongs to its module or to "Project-level".
+    /// </summary>
+    public static string ModuleOf(DriftDocument d, IReadOnlySet<string>? roots = null)
     {
         if (d.Module is { } module) return module;
-        var stable = StablePathOf(d).Split('/');
-        var specs = Array.FindIndex(stable, f => f.Equals("specs", StringComparison.OrdinalIgnoreCase) || f.Equals(".specify", StringComparison.OrdinalIgnoreCase));
-        return specs > 0 ? string.Join('/', stable[..specs]) : Explorers.ArtifactModules.ProjectLevelLabel;
+        var path = StablePathOf(d);
+        return Explorers.ArtifactModules.Label(Explorers.ArtifactModules.ModuleOf(path, roots ?? Explorers.ArtifactModules.RootsOf([path])));
     }
+
+    /// <summary>The strong module roots across authored documents (the same evidence the Explorers use).</summary>
+    public static IReadOnlySet<string> RootsOf(IEnumerable<DriftDocument> documents) =>
+        Explorers.ArtifactModules.RootsOf(documents.Where(d => d.Origin == DriftOrigin.Authored).Select(StablePathOf));
 
     /// <summary>"Artifact Pack 001-person-module", "Module Person", "Repository" or "Project-level": the scope a document describes.</summary>
     public static string ScopeOf(DriftDocument d) =>

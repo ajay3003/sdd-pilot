@@ -162,6 +162,7 @@
     <Compile Include="../../frontend/BirkNext.Web/Services/SampleProjects/SampleArtifactClassifier.cs" Link="DocumentClassification/SampleArtifactClassifier.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Services/SampleProjects/ArtifactDocumentDiscovery.cs" Link="DocumentClassification/ArtifactDocumentDiscovery.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Services/SampleProjects/DiscoveredDocument.cs" Link="DocumentClassification/DiscoveredDocument.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/Explorers/ArtifactModules.cs" Link="DocumentClassification/ArtifactModules.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Services/WorkspaceArtifactType.cs" Link="DocumentClassification/WorkspaceArtifactType.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Services/ArtifactFingerprint.cs" Link="DocumentClassification/ArtifactFingerprint.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Services/MarkdownTokenizer.cs" Link="DocumentClassification/MarkdownTokenizer.cs" />

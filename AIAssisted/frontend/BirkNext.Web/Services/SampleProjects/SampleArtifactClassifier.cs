@@ -323,6 +323,13 @@ public static class SampleArtifactClassifier
             .Select((x, i) => new ArtifactRoleCandidate(x.Role, i == 0 ? top : x.Content >= 4 ? ArtifactConfidence.Strong : ArtifactConfidence.Possible, x.Total, x.Reasons))
             .ToList();
 
+        // A design/plan note in a nested documentation tree's specs/, plans/ or tasks/ folder is retained as supporting analysis of its module
+        // (or the project) even when its own structure is weak: supporting evidence is kept, never silently dropped — and never a review artifact.
+        if ((candidates.Count == 0 || candidates[0].Total < 3) && canonical is null && Explorers.ArtifactModules.IsNestedSupportingDocument(relativePath))
+            return new(ArtifactDiscoveryStatus.Detected, WorkspaceArtifactType.Research, ArtifactConfidence.Strong,
+                ["Supporting design document: lies in a documentation tree's own specs/plans/tasks folder, outside any Spec-Kit feature folder"],
+                [new(WorkspaceArtifactType.Research, ArtifactConfidence.Strong, 0, ["Nested documentation tree — supporting, not a review artifact"])]);
+
         if (candidates.Count == 0 || candidates[0].Total < 3)
             return new(ArtifactDiscoveryStatus.Unclassified, null, ArtifactConfidence.Unknown,
                 candidates.Count == 0
@@ -332,6 +339,15 @@ public static class SampleArtifactClassifier
 
         var best = candidates[0];
         var runnerUp = candidates.Count > 1 ? candidates[1] : default;
+
+        // A document lying loose in a nested documentation tree's specs/ folder (no Spec-Kit feature folder, no canonical name — dated design
+        // notes under <module>/docs/…/specs/) is supporting design documentation, not a canonical review artifact: it is kept as supporting
+        // analysis, never as the Specification/Plan/Tasks/Data Model a module is reviewed on. A project's own specs/ folder keeps content-based
+        // roles. Front matter (handled above) still decides when it declares a role.
+        if (canonical is null && best.Role != WorkspaceArtifactType.Research && Explorers.ArtifactModules.IsNestedSupportingDocument(relativePath))
+            return new(ArtifactDiscoveryStatus.Detected, WorkspaceArtifactType.Research, ArtifactConfidence.Strong,
+                [$"Supporting design document: lies loose in a specs/ folder, outside any Spec-Kit feature folder (content resembles {Label(best.Role)})"],
+                [new(WorkspaceArtifactType.Research, ArtifactConfidence.Strong, best.Total, [$"Loose in specs/ — supporting, not a canonical {Label(best.Role)}"]), .. ToCandidates(ArtifactConfidence.Possible)]);
 
         // Canonical filename contradicted by strong content of another role.
         if (canonical is { } named && best.Role != named && best.Content >= 4 && content[named].Score < 2)
