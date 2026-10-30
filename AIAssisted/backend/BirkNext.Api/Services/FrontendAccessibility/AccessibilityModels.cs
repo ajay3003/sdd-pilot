@@ -1,6 +1,7 @@
 namespace BirkNext.Api.Services.FrontendAccessibility;
 
-public enum AccessibilityExecutionMode { AnonymousOwnedBrowser, AuthenticatedSessionPage }
+/// <summary>Serialized as numbers. 2 is taken by the frontend-only BrowserCompanionLivePage, so UnattendedLoginPage is 3 on both sides.</summary>
+public enum AccessibilityExecutionMode { AnonymousOwnedBrowser, AuthenticatedSessionPage, UnattendedLoginPage = 3 }
 public enum AccessibilityExecutionStatus { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
 public enum AccessibilityOutcomeReason { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin }
 public enum AccessibilityFindingKind { Violation, NeedsManualReview }

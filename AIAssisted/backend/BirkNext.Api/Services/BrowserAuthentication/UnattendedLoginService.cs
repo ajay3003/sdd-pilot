@@ -171,6 +171,19 @@ public sealed class UnattendedLoginService(UnattendedLoginStore store, Unattende
         return new(run.Outcome, run.Message, run.Result);
     }
 
+    /// <summary>
+    /// Identity isolation: the automation identity signs in only to the application it is configured for. A target whose host differs from
+    /// the configured login/application URL's host is refused (null when it applies, otherwise the reason). Never widened to "any host".
+    /// </summary>
+    public string? NotApplicableReason(string? targetUrl)
+    {
+        var settings = store.Load();
+        if (settings?.LoginUrl is not { } login || !Uri.TryCreate(login, UriKind.Absolute, out var configured)) return "Unattended login has no application URL configured.";
+        if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var target)) return "The target URL is not an absolute URL.";
+        return string.Equals(configured.Host, target.Host, StringComparison.OrdinalIgnoreCase) ? null
+            : $"Unattended login is configured for {configured.Host}, not {target.Host}. The automation identity is never used for another application.";
+    }
+
     public AutomatedBrowserExecutionReadiness AutomatedReadiness()
     {
         var view = View();

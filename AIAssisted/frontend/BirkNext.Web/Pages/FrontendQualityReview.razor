@@ -63,6 +63,9 @@
                                     Notice="@FrontendQualityReviewScopes.ExplicitScopeNotice(_context.ActiveProfile.FrontendReviewScope, CurrentRecommendation)"
                                     SelectedChanged="ApplyReviewScope" TestingContext="@ScopeTestingContext" Configuration="@(_context.AuthenticationConfiguration ?? "Not assessed")"
                                     Provider="@FrontendQualityReviewScopes.ConfiguredProviderLabel(_context.AuthenticationType)" Verification="@ScopeVerification" />
+                                @* Shared runtime authentication for the authenticated browser engines (Browser Runtime, Accessibility). None = Public only scope. *@
+                                <RuntimeAuthenticationSelector OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.FrontendRuntime"
+                                    Profile="@_context.ActiveProfileOrNull" ResolutionChanged="OnAuthenticationResolved" />
                             }
                         </ScopeControl>
                     </FrontendQualityTargetSummary>
@@ -1062,6 +1065,16 @@
         return true;
     }
 
+    private BirkNext.RuntimeAuthentication.RuntimeAuthenticationResolution? _authentication;
+
+    /// <summary>Selecting None is the Public only scope; the other modes leave the scope as chosen.</summary>
+    private async Task OnAuthenticationResolved(BirkNext.RuntimeAuthentication.RuntimeAuthenticationResolution? resolution)
+    {
+        _authentication = resolution;
+        if (resolution is { Requested: BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.None } && _context is not null)
+            await ApplyReviewScope(FrontendReviewAccessScope.PublicOnly);
+    }
+
     private async Task ApplyReviewScope(FrontendReviewAccessScope scope)
     {
         if (_context is null || ServiceProvider.GetService(typeof(IFrontendAnalysisSettingsService)) is not IFrontendAnalysisSettingsService settings)
@@ -1495,6 +1508,8 @@
         StateHasChanged();
 
         var snapshot = CaptureExecutionSnapshot();
+        // The resolved authentication mode is fixed for this run; Unattended never falls back to the attended session.
+        _context.RuntimeAuthentication = _authentication?.Effective ?? BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Auto;
         var orchestration = await Orchestrator.RunAsync(_context.TargetUrl, _context, snapshot);
         _secError = orchestration.SecurityError;
         _perfError = orchestration.PerformanceError;

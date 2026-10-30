@@ -275,6 +275,9 @@ public sealed record ApiReviewRunRequest
 {
     public ApiReviewEnvironmentSnapshot Environment { get; init; } = new();
     public AuthenticatedReviewIdentity Identity { get; init; } = new(AuthenticatedTestingMethod.ManagedEdgeCdp, null, null);
+    /// <summary>The authentication mode selected for this run (shared runtime authentication). Auto keeps the environment's method; None runs
+    /// public checks only; Unattended is unsupported for API checks. Recorded with the run; never switched during it.</summary>
+    public BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode AuthenticationMode { get; init; }
     public List<ApiReviewTarget> Targets { get; init; } = [];
     public ApiReviewPolicy Policy { get; init; } = new();
     public List<ApiReviewBaseline> Baselines { get; init; } = [];

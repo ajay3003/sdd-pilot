@@ -1,0 +1,156 @@
+@using BirkNext.RuntimeAuthentication
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Shared runtime authentication: Auto / Attended / Unattended / None for one operation in the selected Target Environment. States come from
+   the existing services (Local HTTPS proxy, attended sign-in, unattended login), read-only: choosing a mode never starts a browser, a login
+   or the proxy. A mode the operation does not support is shown, disabled, with the reason. The run uses exactly the resolved mode and
+   never switches to another mode or identity after a failure. ReadOnly shows the capability without a choice (observation tools,
+   service-authenticated modules). *@
+<fieldset class="rta" data-testid="rta" data-operation="@OperationKey" aria-describedby="@($"rta-summary-{_id}")">
+    <legend class="rta-legend">Authentication <span class="rta-muted">· @(Operation?.Operation ?? OperationKey)</span></legend>
+    @if (Operation is null)
+    {
+        <p class="rta-muted" data-testid="rta-unknown">Unknown operation.</p>
+    }
+    else if (Profile is null)
+    {
+        <p class="rta-muted" data-testid="rta-no-environment">Select a Target Environment to see which authentication applies.</p>
+    }
+    else
+    {
+        <div class="rta-options" role="@(ReadOnly ? "list" : "radiogroup")" aria-label="Authentication mode">
+            @foreach (var option in Options)
+            {
+                var supported = option.Support == RuntimeAuthenticationSupport.Supported;
+                var selected = _mode == option.Mode;
+                @if (ReadOnly)
+                {
+                    <div class="rta-option rta-readonly @(supported ? "" : "rta-off")" role="listitem" data-testid="rta-option" data-mode="@option.Mode" data-support="@option.Support">
+                        <span class="rta-name">@RuntimeAuthenticationPolicy.ModeLabel(option.Mode)</span>
+                        <span class="rta-badge rta-@Tone(option.State)" data-testid="rta-option-state">@SupportLabel(option)</span>
+                        <span class="rta-muted rta-detail">@option.Detail</span>
+                    </div>
+                }
+                else
+                {
+                    <label class="rta-option @(supported ? "" : "rta-off") @(selected ? "rta-selected" : "")" data-testid="rta-option" data-mode="@option.Mode" data-support="@option.Support">
+                        <input type="radio" name="@($"rta-{_id}")" value="@option.Mode" checked="@selected" disabled="@(!supported)"
+                               data-testid="@($"rta-mode-{option.Mode.ToString().ToLowerInvariant()}")" @onchange="() => SelectAsync(option.Mode)" />
+                        <span class="rta-name">@RuntimeAuthenticationPolicy.ModeLabel(option.Mode)</span>
+                        <span class="rta-badge rta-@Tone(option.State)" data-testid="rta-option-state">@SupportLabel(option)</span>
+                        <span class="rta-muted rta-detail">@option.Detail</span>
+                    </label>
+                }
+            }
+        </div>
+        <div class="rta-summary" id="@($"rta-summary-{_id}")" data-testid="rta-summary" aria-live="polite">
+            @if (_loading)
+            {
+                <span class="rta-muted">Checking authentication…</span>
+            }
+            else if (_resolution is { } r)
+            {
+                @if (!ReadOnly)
+                {
+                    <p class="rta-line" data-testid="rta-effective" data-effective="@r.Effective" data-state="@r.State">
+                        <strong>Uses: @RuntimeAuthenticationPolicy.ModeLabel(r.Effective)</strong>
+                        <span class="rta-badge rta-@Tone(r.State)">@RuntimeAuthenticationPolicy.StateLabel(r.State)</span>
+                        @if (r.Identity is { } who) { <span class="rta-muted" data-testid="rta-identity"> · as @who</span> }
+                    </p>
+                    @if (r.AutoReason is { } auto) { <p class="rta-muted" data-testid="rta-auto-reason">Auto: @auto</p> }
+                    <p class="rta-muted" data-testid="rta-reason">@r.Reason</p>
+                    @if (!r.CanStart && r.Effective != RuntimeAuthenticationMode.None)
+                    {
+                        <p class="rta-warn" data-testid="rta-blocked">@RuntimeAuthenticationPolicy.ModeLabel(r.Effective) authentication is not usable yet. Runs that need it report it as not assessed.</p>
+                    }
+                }
+                <p class="rta-muted" data-testid="rta-no-fallback">Never switches to another mode or identity if sign-in fails.</p>
+            }
+            else if (_unavailable)
+            {
+                <span class="rta-muted" data-testid="rta-offline">Authentication state is unavailable (backend not reachable). Runs use the environment's configured method.</span>
+            }
+            @if (Operation.ServiceDescription is { } service)
+            {
+                <p class="rta-line" data-testid="rta-service"><strong>Service authentication:</strong> @service</p>
+            }
+        </div>
+    }
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public string OperationKey { get; set; } = "";
+    [Parameter] public BirkNext.Web.Models.FrontendAnalysisProfile? Profile { get; set; }
+    /// <summary>Show the capability and states only (no choice).</summary>
+    [Parameter] public bool ReadOnly { get; set; }
+    /// <summary>Raised with the current resolution (null when the backend could not be reached).</summary>
+    [Parameter] public EventCallback<RuntimeAuthenticationResolution?> ResolutionChanged { get; set; }
+
+    private static int _counter;
+    private readonly int _id = Interlocked.Increment(ref _counter);
+    private RuntimeAuthenticationMode _mode;
+    private RuntimeAuthenticationResolution? _resolution;
+    private bool _loading, _unavailable;
+    private string? _resolvedFor;
+
+    private RuntimeAuthenticationOperation? Operation => RuntimeAuthenticationCatalog.Find(OperationKey);
+
+    /// <summary>Resolved options when known; otherwise the catalog's support with unknown state.</summary>
+    private IReadOnlyList<RuntimeAuthenticationModeOption> Options => _resolution?.Options
+        ?? RuntimeAuthenticationPolicy.Options(Operation!, new RuntimeAuthenticationFacts { AttendedReason = "State not known yet.", UnattendedReason = "State not known yet." });
+
+    private RuntimeAuthenticationChoices? Choices => Services.GetService(typeof(RuntimeAuthenticationChoices)) as RuntimeAuthenticationChoices;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Re-resolve only when the environment or operation changes: an environment switch starts from that environment's own choice.
+        var key = $"{Profile?.Id}|{Profile?.TargetUrl}|{OperationKey}";
+        if (key == _resolvedFor) return;
+        _resolvedFor = key;
+        _mode = Profile is null ? RuntimeAuthenticationMode.Auto : Choices?.Get(Profile.Id, OperationKey) ?? RuntimeAuthenticationMode.Auto;
+        if (ReadOnly) _mode = RuntimeAuthenticationMode.Auto;
+        await ResolveAsync();
+    }
+
+    private async Task SelectAsync(RuntimeAuthenticationMode mode)
+    {
+        if (Profile is null || ReadOnly) return;
+        _mode = mode;
+        Choices?.Set(Profile.Id, OperationKey, mode);
+        await ResolveAsync();
+    }
+
+    private async Task ResolveAsync()
+    {
+        _resolution = null; _unavailable = false;
+        if (Profile is null || Operation is null) { await ResolutionChanged.InvokeAsync(null); return; }
+        if (Services.GetService(typeof(IRuntimeAuthenticationApiService)) is not IRuntimeAuthenticationApiService api) { _unavailable = true; await ResolutionChanged.InvokeAsync(null); return; }
+        var settings = Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService;
+        var profile = Profile;
+        _loading = true;
+        var result = await api.ResolveAsync([RuntimeAuthenticationRequests.For(profile, OperationKey, _mode, settings?.GetDetectionSnapshot(profile.Id))]);
+        _loading = false;
+        if (!ReferenceEquals(profile, Profile)) return; // the environment changed while resolving; that resolution is used instead
+        _resolution = result?.FirstOrDefault(r => r.OperationKey == OperationKey && r.EnvironmentId == profile.Id);
+        _unavailable = _resolution is null;
+        await ResolutionChanged.InvokeAsync(_resolution);
+    }
+
+    private static string SupportLabel(RuntimeAuthenticationModeOption option) => option.Support switch
+    {
+        RuntimeAuthenticationSupport.Unsupported => "Unsupported",
+        RuntimeAuthenticationSupport.NotApplicable => "Not applicable",
+        _ when option.Mode == RuntimeAuthenticationMode.Auto => "Recommended",
+        _ => RuntimeAuthenticationPolicy.StateLabel(option.State),
+    };
+
+    private static string Tone(RuntimeAuthenticationState state) => state switch
+    {
+        RuntimeAuthenticationState.Authenticated or RuntimeAuthenticationState.NotRequired => "ok",
+        RuntimeAuthenticationState.Configured => "info",
+        RuntimeAuthenticationState.Expired or RuntimeAuthenticationState.NotConfigured => "warn",
+        RuntimeAuthenticationState.Failed => "bad",
+        _ => "muted",
+    };
+}

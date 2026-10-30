@@ -1,0 +1,26 @@
+@using BirkNext.RuntimeAuthentication
+
+@* Read-only "Authentication" disclosure for operations that have no mode choice: which of Attended / Unattended / None / service
+   authentication applies to this operation and its current state, from the shared runtime authentication capability. Collapsed by default;
+   nothing is resolved until it is opened. *@
+<ReviewDisclosure Text="Authentication" CollapseText="Hide authentication" Hint="@Hint" TestId="@($"rta-capability-{OperationKey}")" Class="disclosure-inline disclosure-small"
+                  @bind-Expanded="_expanded">
+    <RuntimeAuthenticationSelector OperationKey="@OperationKey" Profile="@Profile" ReadOnly="true" />
+</ReviewDisclosure>
+
+@code {
+    [Parameter, EditorRequired] public string OperationKey { get; set; } = "";
+    [Parameter] public BirkNext.Web.Models.FrontendAnalysisProfile? Profile { get; set; }
+
+    private bool _expanded;
+
+    private string Hint => RuntimeAuthenticationCatalog.Find(OperationKey) is { } op
+        ? string.Join(" · ", new[]
+          {
+              op.Attended == RuntimeAuthenticationSupport.Supported ? "Attended" : null,
+              op.Unattended == RuntimeAuthenticationSupport.Supported ? "Unattended" : null,
+              op.ServiceAuthentication ? "Service authentication" : null,
+              op.Anonymous ? "No sign-in" : null,
+          }.Where(x => x is not null))
+        : "";
+}

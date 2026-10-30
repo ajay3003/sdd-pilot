@@ -152,6 +152,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             return (ApiReviewAccessMode.Blocked, "Authenticated review requires HTTPS; the target is not served over TLS.", "Serve the API over HTTPS.");
         if (!target.AuthRequired)
             return (ApiReviewAccessMode.PublicHttp, "Public HTTP: no authentication observed or configured for this API.", null);
+        // The selected mode is honoured as chosen: None and Unattended never run authenticated checks, and nothing falls back to another mode.
+        if (request.AuthenticationMode == BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.None)
+            return (ApiReviewAccessMode.Unavailable, "Authentication mode None was selected: authenticated execution was not requested.", "Select Attended (or Auto) to run authenticated checks.");
+        if (request.AuthenticationMode == BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Unattended)
+            return (ApiReviewAccessMode.Unavailable, "Unattended login is not supported for authenticated API checks: it produces a browser session, not API credentials.", "Select Attended (Local HTTPS proxy) to run authenticated checks.");
         return request.Environment.AuthenticatedTestingMethod switch
         {
             AuthenticatedTestingMethod.LocalHttpsProxy when capabilities.AuthenticatedApi =>

@@ -17,6 +17,11 @@
 
     @* An action that failed (run, save, history) is reported here; it never replaces the page. *@
     <BackendRequestNotice Error="_actionError" TestId="e2e-action-error" />
+    @if (_profile is not null)
+    {
+        <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.CriticalE2EBrowser" Profile="_profile" />
+        <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.CriticalE2EApi" Profile="_profile" />
+    }
     @if (_overview is not { } overview)
     {
         @* Without the overview there is nothing to show, so its failure is the page's — classified, never assumed unreachable. *@
@@ -593,6 +598,7 @@
     private string? _running;
     private CancellationTokenSource? _run;
     private string _profileId = "";
+    private FrontendAnalysisProfile? _profile;
     private string _environmentId = "";
     private string _environmentName = "";
     private string? _environmentType;
@@ -681,6 +687,7 @@
         }
         var profile = context.ActiveProfileOrNull;
         _profileId = profile?.Id ?? "";
+        _profile = profile;
         _environmentId = profile?.Id ?? "";
         _environmentName = profile?.Name ?? "";
         _environmentType = profile?.EnvironmentType.ToString() ?? "";

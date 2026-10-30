@@ -10,6 +10,7 @@
     WCAG areas group observed evidence by principle and are never a conformance result.
 *@
 <section class="bd" data-testid="browser-discovery" aria-label="Browser discovery">
+    <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.BrowserDiscovery" Profile="Profile" />
 
     @* One notice for the companion situation, or none. A connected companion with no page open is not a warning. *@
     @if (BrowserCompanionSituations.Alert(Situation, Rows.Count, Status.OriginPermissionRequired ? Status.ApprovedOrigins : null) is { } alert)

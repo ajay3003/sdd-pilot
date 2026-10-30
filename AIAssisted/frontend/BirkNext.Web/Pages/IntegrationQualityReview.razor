@@ -29,6 +29,7 @@
         }
     </PageHeader>
     <ProjectContextStrip />
+    @if (_profile is not null) { <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.IntegrationRuntime" Profile="_profile" /> }
 
     @if (_error is { } error)
     {

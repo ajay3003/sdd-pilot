@@ -3,6 +3,9 @@ namespace BirkNext.Web.Models;
 public sealed class FrontendAnalysisContext
 {
     public FrontendReviewAccessScope? ReviewScope { get; set; }
+    /// <summary>The authentication mode selected for this run (shared runtime authentication). Unattended runs Browser Runtime and
+    /// Accessibility with the automation identity; it never falls back to the attended session. Auto/Attended/None keep the existing behaviour.</summary>
+    public BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode RuntimeAuthentication { get; set; }
     public string? AuthenticationConfiguration { get; set; }
 
     /// <summary>Detached execution context; never changes Target Environment authentication settings.</summary>

@@ -278,6 +278,7 @@ builder.Services.AddSingleton(sp => new BirkNext.Api.Services.BrowserAuthenticat
     sp.GetRequiredService<ILogger<BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginRunner>>(),
     entraHosts: BirkNext.Api.Services.BrowserAuthentication.EntraIdLoginFlow.DevelopmentHosts(builder.Environment, builder.Configuration)));
 builder.Services.AddScoped<BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginService>();
+builder.Services.AddScoped<BirkNext.Api.Services.RuntimeAuthentication.RuntimeAuthenticationResolver>();
 
 // Interactive authenticated review is local-workstation-only and disabled by default.
 builder.Services.Configure<AuthenticatedReviewOptions>(

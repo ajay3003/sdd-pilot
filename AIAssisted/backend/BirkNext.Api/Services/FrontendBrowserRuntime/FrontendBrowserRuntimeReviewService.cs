@@ -48,6 +48,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
     {
         if (!_enabled) return Rejected(request, BrowserRuntimeOutcomeReason.DisabledInSystemSettings, "Browser Runtime engine is disabled.");
         if (_unattended is null) return Rejected(request, BrowserRuntimeOutcomeReason.AuthenticationRequired, "Unattended browser login is not available.");
+        if (_unattended.NotApplicableReason(request.TargetUrl) is { } notApplicable) return Rejected(request, BrowserRuntimeOutcomeReason.TargetPolicyRejected, notApplicable);
         var run = await _unattended.RunAuthenticatedAsync((page, ct) => ObserveAsync(page, page.Context.Browser?.Version, request, navigate: true, "UnattendedLogin", ct), cancellationToken);
         if (run.Outcome == UnattendedLoginOutcome.Succeeded && run.Result is { } result) return result;
         var reason = run.Outcome is UnattendedLoginOutcome.BrowserUnavailable ? BrowserRuntimeOutcomeReason.EngineUnavailable

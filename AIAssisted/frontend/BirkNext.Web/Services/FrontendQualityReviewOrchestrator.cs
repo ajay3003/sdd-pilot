@@ -310,8 +310,13 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         var authoritativeSnapshot = snapshot is not null && snapshot.AuthMode == ReviewAuthenticationModeDto.Authenticated;
         snapshot ??= CaptureDefaultSnapshot(context);
 
+        // Unattended (explicitly selected): Browser Runtime and Accessibility sign in fresh with the automation identity on the backend.
+        // No attended session is acquired for them and nothing falls back to it; the other engines keep their own access.
+        var unattended = context.RuntimeAuthentication == BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Unattended;
+        if (unattended) decisions = UnattendedBrowserEngines(decisions);
+
         AuthenticatedBrowserExecutionReference? authenticatedReference = null;
-        if (access.RequiresAuthentication && access.AuthenticatedBrowserDomAvailable)
+        if (!unattended && access.RequiresAuthentication && access.AuthenticatedBrowserDomAvailable)
         {
             if (!authoritativeSnapshot)
                 decisions = BlockAuthenticatedBrowserEngines(decisions, FrontendQualityEngineOutcomeReason.AuthenticationRequired,
@@ -370,7 +375,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             {
                 // The frontend HOST itself is gated (401/403 or sign-in redirect): public-HTTP engines cannot fetch the
                 // document. Engines that hold an authenticated browser session may still proceed.
-                if (authenticatedReference is null)
+                if (authenticatedReference is null && !unattended)
                 {
                     var blocked = result with { PreflightBlocked = true, PreflightBlockReason = preflightResult.Message };
                     return blocked with { QualityReport = BuildPreflightReport(targetUrl, context, blocked) };
@@ -477,7 +482,9 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             {
                 try
                 {
-                    var runtimeReport = authenticatedReference is null
+                    var runtimeReport = unattended
+                        ? await _runtime.ReviewAsync(new BrowserRuntimeApiExecutionRequest(targetUrl, BrowserRuntimeExecutionModeDto.UnattendedLoginPage), cancellationToken)
+                        : authenticatedReference is null
                         ? await _runtime.ReviewAsync(targetUrl, 30000, 5000, cancellationToken)
                         : await _runtime.ReviewAsync(new BrowserRuntimeApiExecutionRequest(
                             targetUrl,
@@ -551,7 +558,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             {
                 try
                 {
-                    var accessibilityReport = authenticatedReference is null
+                    var accessibilityReport = unattended
+                        ? await _accessibility.ReviewAsync(new AccessibilityApiExecutionRequest(targetUrl, AccessibilityExecutionModeDto.UnattendedLoginPage,
+                            EnvironmentType: context.ActiveProfile.EnvironmentType.ToString()), cancellationToken)
+                        : authenticatedReference is null
                         ? await _accessibility.ReviewAsync(
                             targetUrl,
                             context.ActiveProfile.EnvironmentType.ToString(),
@@ -791,6 +801,16 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             },
         };
     }
+
+    /// <summary>The engines the unattended login serves (Browser Runtime, Accessibility) become Ready on that access; everything else is unchanged.</summary>
+    internal static IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision> UnattendedBrowserEngines(
+        IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision> decisions) =>
+        decisions.ToDictionary(pair => pair.Key, pair => pair.Key is FrontendQualityEngineId.BrowserRuntime or FrontendQualityEngineId.Accessibility
+            ? new FrontendQualityEngineAccessDecision(pair.Key, FrontendQualityEngineAccessKind.AuthenticatedBrowserSession, UnattendedAccessLabel,
+                FrontendQualityEngineAccessState.Ready, FrontendQualityEngineOutcomeReason.None, "A fresh login with the automation identity on the backend; never the attended session.")
+            : pair.Value);
+
+    public const string UnattendedAccessLabel = "Unattended login (automation identity)";
 
     private static IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision> BlockAuthenticatedBrowserEngines(
         IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision> decisions,

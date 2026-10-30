@@ -206,7 +206,8 @@ public sealed record LighthouseResultDto(
     [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
     [property: JsonPropertyName("engineError")] string? EngineError = null);
 
-public enum AccessibilityExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage, BrowserCompanionLivePage }
+/// <summary>Serialized as numbers: BrowserCompanionLivePage (2) is frontend-only; UnattendedLoginPage is 3 to match the backend.</summary>
+public enum AccessibilityExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage, BrowserCompanionLivePage, UnattendedLoginPage }
 public enum AccessibilityExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
 public enum AccessibilityOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin }
 public enum AccessibilityFindingKindDto { Violation, NeedsManualReview }

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using BirkNext.Api.Services.AuthenticatedReview;
+using BirkNext.Api.Services.BrowserAuthentication;
+using BirkNext.BrowserAuthentication;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using Deque.AxeCore.Commons;
 using Microsoft.Playwright;
@@ -21,6 +23,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
     private readonly IAuthenticatedBrowserSessionManager? _authenticatedSessions;
     private readonly IAccessibilityAnalysisObserver _analysisObserver;
     private readonly Func<bool> _isEnabled;
+    private readonly UnattendedLoginService? _unattended;
 
     public FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
@@ -42,6 +45,22 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
                 FrontendQualityEngineId.Accessibility,
                 configuration.GetValue<bool>($"{FrontendAccessibilityOptions.SectionName}:Enabled"))) { }
 
+    /// <summary>The application's constructor (the one DI selects): with the attended session manager and the unattended login, so
+    /// AuthenticatedSessionPage and UnattendedLoginPage runs reach their session instead of failing as "identifiers required".</summary>
+    public FrontendAccessibilityReviewService(
+        ILogger<FrontendAccessibilityReviewService> logger,
+        BrowserTargetValidator targetValidator,
+        AccessibilityNormalizer normalizer,
+        IOptions<FrontendAccessibilityOptions> options,
+        IConfiguration configuration,
+        IAuthenticatedBrowserSessionManager authenticatedSessions,
+        UnattendedLoginService unattended)
+        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), new AccessibilityEvidenceSanitizer(), authenticatedSessions,
+            () => FrontendQualityEngineEnablement.Resolve(
+                configuration,
+                FrontendQualityEngineId.Accessibility,
+                configuration.GetValue<bool>($"{FrontendAccessibilityOptions.SectionName}:Enabled")), null, unattended) { }
+
     internal FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
         BrowserTargetValidator targetValidator,
@@ -50,8 +69,9 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         AccessibilityEvidenceSanitizer sanitizer,
         IAuthenticatedBrowserSessionManager? authenticatedSessions = null,
         bool enabled = true,
-        IAccessibilityAnalysisObserver? analysisObserver = null)
-        : this(logger, targetValidator, normalizer, axeScriptProvider, sanitizer, authenticatedSessions, () => enabled, analysisObserver) { }
+        IAccessibilityAnalysisObserver? analysisObserver = null,
+        UnattendedLoginService? unattended = null)
+        : this(logger, targetValidator, normalizer, axeScriptProvider, sanitizer, authenticatedSessions, () => enabled, analysisObserver, unattended) { }
 
     private FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
@@ -61,7 +81,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         AccessibilityEvidenceSanitizer sanitizer,
         IAuthenticatedBrowserSessionManager? authenticatedSessions,
         Func<bool> isEnabled,
-        IAccessibilityAnalysisObserver? analysisObserver = null)
+        IAccessibilityAnalysisObserver? analysisObserver = null,
+        UnattendedLoginService? unattended = null)
     {
         _logger = logger;
         _targetValidator = targetValidator;
@@ -71,6 +92,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         _authenticatedSessions = authenticatedSessions;
         _analysisObserver = analysisObserver ?? NoOpAccessibilityAnalysisObserver.Instance;
         _isEnabled = isEnabled;
+        _unattended = unattended;
     }
 
     public async Task<AccessibilityReviewResult> ReviewAsync(
@@ -104,9 +126,43 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
             return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
                 "Accessibility review engine is disabled.", AccessibilityExecutionMode.AnonymousOwnedBrowser);
 
-        return request.ExecutionMode == AccessibilityExecutionMode.AuthenticatedSessionPage
-            ? await ReviewAuthenticatedAsync(request, startedAt, cancellationToken)
-            : await ReviewAnonymousAsync(request, startedAt, options, cancellationToken);
+        return request.ExecutionMode switch
+        {
+            AccessibilityExecutionMode.AuthenticatedSessionPage => await ReviewAuthenticatedAsync(request, startedAt, cancellationToken),
+            AccessibilityExecutionMode.UnattendedLoginPage => await ReviewUnattendedAsync(request, startedAt, options, cancellationToken),
+            _ => await ReviewAnonymousAsync(request, startedAt, options, cancellationToken),
+        };
+    }
+
+    /// <summary>
+    /// Unattended mode: a fresh isolated login with the automation identity (only for the application it is configured for), then the same
+    /// axe analysis on the target page in that context. A login failure is reported as such, never a fallback to the attended session or
+    /// to an anonymous scan reported as authenticated.
+    /// </summary>
+    private async Task<AccessibilityReviewResult> ReviewUnattendedAsync(AccessibilityExecutionRequest request, DateTime startedAt, AccessibilityReviewOptions options, CancellationToken cancellationToken)
+    {
+        const AccessibilityExecutionMode mode = AccessibilityExecutionMode.UnattendedLoginPage;
+        if (_unattended is null)
+            return Failure(AccessibilityExecutionStatus.AuthenticationRequired, request.TargetUrl, startedAt, "Unattended browser login is not available.", mode, AccessibilityOutcomeReason.AuthenticationRequired);
+        if (_unattended.NotApplicableReason(request.TargetUrl) is { } notApplicable)
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt, notApplicable, mode, AccessibilityOutcomeReason.UnexpectedOrigin);
+        var validation = _targetValidator.ValidateTarget(request.TargetUrl, options.EnvironmentType);
+        if (!validation.IsValid)
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt, validation.BlockReason ?? "Target blocked by safety policy.", mode);
+
+        var run = await _unattended.RunAuthenticatedAsync(async (page, ct) =>
+        {
+            await page.GotoAsync(request.TargetUrl, new PageGotoOptions { WaitUntil = WaitUntilState.Load, Timeout = options.NavigationTimeoutMs });
+            if (!Uri.TryCreate(page.Url, UriKind.Absolute, out var final) || !Uri.TryCreate(request.TargetUrl, UriKind.Absolute, out var target)
+                || !string.Equals(final.Host, target.Host, StringComparison.OrdinalIgnoreCase))
+                return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                    "After the unattended login the target page redirected to another origin; nothing was analysed.", mode, AccessibilityOutcomeReason.UnexpectedOrigin);
+            return await AnalyzePageAsync(page, page.Context.Browser?.Version, request, options, true, ct);
+        }, cancellationToken);
+        if (run.Outcome == UnattendedLoginOutcome.Succeeded && run.Result is { } result)
+            return result with { ExecutionMode = mode };
+        return Failure(AccessibilityExecutionStatus.AuthenticationRequired, request.TargetUrl, startedAt,
+            $"Unattended login: {BrowserAuthenticationText.Outcome(run.Outcome)}. {run.Message}", mode, AccessibilityOutcomeReason.AuthenticationRequired);
     }
 
     private async Task<AccessibilityReviewResult> ReviewAnonymousAsync(

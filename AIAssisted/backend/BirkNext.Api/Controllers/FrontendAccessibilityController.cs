@@ -33,7 +33,8 @@ public sealed class FrontendAccessibilityController(IFrontendAccessibilityReview
                     "Public"))
             : new AccessibilityExecutionRequest(
                 request.TargetUrl,
-                AccessibilityExecutionMode.AnonymousOwnedBrowser,
+                // Unattended is honoured only when explicitly requested; anything else stays anonymous.
+                request.ExecutionMode == AccessibilityExecutionMode.UnattendedLoginPage ? AccessibilityExecutionMode.UnattendedLoginPage : AccessibilityExecutionMode.AnonymousOwnedBrowser,
                 null, null, null,
                 new AccessibilityReviewOptions(
                     request.NavigationTimeoutMs ?? 30000,

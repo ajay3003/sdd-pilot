@@ -69,6 +69,7 @@
     }
     else
     {
+        <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.PerformanceK6" Profile="_profile" />
         var groups = D.Groups(_isNew, _dirty, _readiness);
         var (readyCount, requiredCount) = D.RequiredCounts(groups);
         var envSafety = D.EnvironmentSafety(_draft.EnvironmentType, _readiness);
