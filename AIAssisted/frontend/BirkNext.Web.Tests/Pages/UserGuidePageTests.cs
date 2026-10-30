@@ -168,6 +168,7 @@ public sealed class UserGuidePageTests : BunitContext
         text.Should().Contain("A readiness check never runs a load test");
         text.Should().Contain("Results analyzes a single run").And.Contain("Full baseline comparison");
         text.Should().Contain("Response body not retained");
+        text.Should().ContainAll("Request → Response", "Send validation request", "XML/XPath extraction is not supported by the k6 load engine", "never shared between users");
     }
 
     [Fact]

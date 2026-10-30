@@ -128,7 +128,16 @@
         <section class="prr-section" aria-labelledby="prr-resp-h" data-testid="pt-result-response-evidence">
             <h3 id="prr-resp-h">API response evidence</h3>
             <dl class="prr-mini">
-                <div><dt>Run response evidence</dt><dd data-testid="pt-result-response-state">Response body not retained — load runs discard response bodies by design; metrics and status metadata only.</dd></div>
+                <div><dt>Run response evidence</dt><dd data-testid="pt-result-response-state">Response body not retained — load runs discard response bodies by design; metrics and status metadata only. Capture disabled for load runs; use <em>Send validation request</em> on the Scenario for a bounded, redacted sample.</dd></div>
+                @if (r.Metrics is { } runMetrics && (runMetrics.Unresolved is > 0 || runMetrics.ExtractionMissing is > 0 || runMetrics.GraphQlErrors is > 0))
+                {
+                    <div><dt>Correlation &amp; GraphQL</dt><dd data-testid="pt-result-correlation">@string.Join(" · ", new[]
+                    {
+                        runMetrics.Unresolved is > 0 and var u ? $"{u.ToString("N0", CultureInfo.InvariantCulture)} step execution(s) not sent — a runtime value did not resolve" : null,
+                        runMetrics.ExtractionMissing is > 0 and var x ? $"{x.ToString("N0", CultureInfo.InvariantCulture)} response(s) without an expected output" : null,
+                        runMetrics.GraphQlErrors is > 0 and var g ? $"{g.ToString("N0", CultureInfo.InvariantCulture)} GraphQL response(s) with errors (HTTP status counted separately)" : null,
+                    }.OfType<string>())</dd></div>
+                }
                 <div><dt>Readiness probe evidence</dt><dd data-testid="pt-result-probe-state">@(r.Reachability is null ? "None recorded with this run" : "Recorded separately (container network check) — not load-run evidence")</dd></div>
             </dl>
         </section>
@@ -363,6 +372,9 @@
                                             <div><dt>Provenance</dt><dd>@(step is null ? "—" : D.StepSource(step))</dd></div>
                                             <div><dt>Expected responses</dt><dd>@(step is null ? "—" : string.Join(", ", step.ExpectedStatusCodes))</dd></div>
                                             <div><dt>Response evidence</dt><dd>Not retained (load run)</dd></div>
+                                            @if (metrics.Unresolved is > 0) { <div><dt>Not sent</dt><dd data-testid="pt-result-op-unresolved">@metrics.Unresolved.Value.ToString("N0", CultureInfo.InvariantCulture) — a runtime value did not resolve (e.g. an earlier output was missing)</dd></div> }
+                                            @if (metrics.ExtractionMissing is > 0) { <div><dt>Extraction failed</dt><dd data-testid="pt-result-op-extraction">@metrics.ExtractionMissing.Value.ToString("N0", CultureInfo.InvariantCulture) response(s) without the expected output</dd></div> }
+                                            @if (metrics.GraphQlErrors is > 0) { <div><dt>GraphQL errors</dt><dd data-testid="pt-result-op-graphql">@metrics.GraphQlErrors.Value.ToString("N0", CultureInfo.InvariantCulture) response(s) with GraphQL errors</dd></div> }
                                         </dl>
                                     </details>
                                 </td>

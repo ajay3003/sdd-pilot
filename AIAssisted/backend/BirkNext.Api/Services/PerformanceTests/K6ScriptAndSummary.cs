@@ -27,9 +27,10 @@ public static class K6ScriptGenerator
             ["headers"] = new JsonObject(Headers(d, s).Select(h => KeyValuePair.Create(h.Key, (JsonNode?)h.Value))),
             ["body"] = Body(d, s), ["expected"] = new JsonArray(s.ExpectedStatusCodes.Distinct().Order().Select(c => (JsonNode)c).ToArray()),
             ["thinkMs"] = s.ThinkTimeMs ?? 0,
-            ["bind"] = Bindings(d, s),
-            ["outputs"] = new JsonArray((s.Outputs ?? []).Where(o => PerformanceScenarioRuntime.ValidName(o.Name) && PerformanceScenarioRuntime.ValidOutputPath(o.Path))
-                .Select(o => (JsonNode)new JsonArray(o.Name, PerformanceScenarioRuntime.Selector(o.Path))).ToArray()),
+            ["bind"] = Bindings(d, s), ["bodyMode"] = PerformanceRequestResponse.BodyEncoding(s, d.TargetType == PerformanceTargetType.GraphQlHttp),
+            // [name, selector] reads the JSON body (k6 Response.json selector); [name, header, "header"] reads a response header.
+            ["outputs"] = new JsonArray((s.Outputs ?? []).Where(o => PerformanceRequestResponse.OutputProblem(o) is null)
+                .Select(o => (JsonNode)(o.From == StepOutputSource.Header ? new JsonArray(o.Name, o.Path, "header") : new JsonArray(o.Name, PerformanceScenarioRuntime.Selector(o.Path)))).ToArray()),
         }).ToList();
         var columns = data?.Columns ?? [];
         var rows = data?.Rows.Select(r => columns.Select((c, i) => (c, v: i < r.Count ? r[i] : "")).ToDictionary(x => x.c, x => x.v)).ToList() ?? [];
@@ -41,8 +42,10 @@ public static class K6ScriptGenerator
         sb.Append("const ROWS = ").Append(JsonSerializer.Serialize(rows, Json)).Append(";\n");
         sb.Append("const SELECTION = ").Append(Lit((data?.Selection ?? TestDataSelection.RoundRobin).ToString())).Append(";\n");
         sb.Append("const SUMMARY_PATH = ").Append(Lit(summaryPath)).Append(";\n");
+        sb.Append("const GRAPHQL = ").Append(d.TargetType == PerformanceTargetType.GraphQlHttp ? "true" : "false").Append(";\n");
         sb.Append("const thresholds = {};\nfor (const s of STEPS) {\n");
-        sb.Append("  thresholds[`http_req_duration{name:${s.name}}`] = ['max>=0'];\n  thresholds[`http_req_failed{name:${s.name}}`] = ['rate>=0'];\n  thresholds[`http_reqs{name:${s.name}}`] = ['count>=0'];\n}\n");
+        sb.Append("  thresholds[`http_req_duration{name:${s.name}}`] = ['max>=0'];\n  thresholds[`http_req_failed{name:${s.name}}`] = ['rate>=0'];\n  thresholds[`http_reqs{name:${s.name}}`] = ['count>=0'];\n");
+        sb.Append("  for (const m of ['birknext_unresolved_value', 'birknext_extraction_missing', 'birknext_graphql_errors']) thresholds[`${m}{name:${s.name}}`] = ['count>=0'];\n}\n");
         sb.Append("export const options = {\n  scenarios: { workload: ").Append(Scenario(d.Workload)).Append(" },\n");
         sb.Append("  thresholds,\n  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],\n  discardResponseBodies: true,\n};\n");
         sb.Append("""
@@ -72,13 +75,31 @@ public static class K6ScriptGenerator
               if (b.k === 'gen') return generated(b.g);
               return undefined;
             }
-            function fill(text, s, r, ctx, encode) {
+            // Each value is encoded for where it goes: path segment, header, JSON string, XML text, form field; a whole-payload body is inserted as is.
+            function enc(v, mode) {
+              const t = String(v);
+              if (mode === 'path' || mode === 'form') return encodeURIComponent(t);
+              if (mode === 'json') return JSON.stringify(t).slice(1, -1);
+              if (mode === 'xml') return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+              if (mode === 'header') return t.replace(/[\r\n]/g, '');
+              return t;
+            }
+            function fill(text, s, r, ctx, mode, miss) {
               if (text === null) return null;
               return text.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, k) => {
                 const v = value(s, k, r, ctx);
-                return v === undefined || v === null ? m : (encode ? encodeURIComponent(String(v)) : String(v));
+                if (v === undefined || v === null) { miss.push(k); return m; }
+                return enc(v, mode);
               });
             }
+            function header(res, name) {
+              const want = name.toLowerCase();
+              for (const k of Object.keys(res.headers)) if (k.toLowerCase() === want) return res.headers[k];
+              return undefined;
+            }
+            const UNRESOLVED = new Counter('birknext_unresolved_value');
+            const EXTRACTION_MISSING = new Counter('birknext_extraction_missing');
+            const GRAPHQL_ERRORS = new Counter('birknext_graphql_errors');
             const STATUS = {};
             for (const code of [200, 201, 202, 204, 301, 302, 304, 400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504]) STATUS[code] = new Counter(`birknext_status_${code}`);
             const STATUS_OTHER = { 1: new Counter('birknext_status_1xx_other'), 2: new Counter('birknext_status_2xx_other'), 3: new Counter('birknext_status_3xx_other'),
@@ -93,21 +114,38 @@ public static class K6ScriptGenerator
               else if (c >= 1100 && c < 1300) TRANSPORT.connection.add(1);
               else TRANSPORT.other.add(1);
             }
+            // ctx holds the outputs of THIS iteration of THIS virtual user only: a value extracted by one VU is never seen by another, and nothing
+            // carries over between iterations (no shared mutable state).
             export default function () {
               const r = row();
               const ctx = {};
               for (const s of STEPS) {
-                const q = s.query.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(fill(v, s, r, ctx, false))}`).join('&');
-                const url = ORIGIN + fill(s.path, s, r, ctx, true) + (q.length > 0 ? `?${q}` : '');
+                const miss = [];
+                const q = s.query.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(fill(v, s, r, ctx, 'text', miss))}`).join('&');
+                const url = ORIGIN + fill(s.path, s, r, ctx, 'path', miss) + (q.length > 0 ? `?${q}` : '');
                 const headers = {};
-                for (const h of Object.keys(s.headers)) headers[h] = fill(s.headers[h], s, r, ctx, false);
+                for (const h of Object.keys(s.headers)) headers[h] = fill(s.headers[h], s, r, ctx, 'header', miss);
+                const body = fill(s.body, s, r, ctx, s.bodyMode, miss);
+                // A value that did not resolve (e.g. the producing step's response lacked the output) is a counted failure: the request is not sent
+                // with a literal {placeholder} and no stale or sample value is substituted.
+                if (miss.length > 0) { UNRESOLVED.add(1, { name: s.name }); continue; }
                 const params = { headers, tags: { name: s.name }, responseCallback: http.expectedStatuses(...s.expected) };
-                if (s.outputs.length > 0) params.responseType = 'text';
-                const res = http.request(s.method, url, fill(s.body, s, r, ctx, false), params);
+                if (GRAPHQL || s.outputs.some((o) => o[2] !== 'header')) params.responseType = 'text';
+                const res = http.request(s.method, url, body, params);
                 count(res);
-                for (const [name, selector] of s.outputs) {
+                if (GRAPHQL) {
+                  // HTTP 200 with GraphQL errors is a GraphQL failure, counted apart from the HTTP status.
+                  let errors;
+                  try { errors = res.json('errors'); } catch (e) { errors = undefined; }
+                  if (Array.isArray(errors) && errors.length > 0) GRAPHQL_ERRORS.add(1, { name: s.name });
+                }
+                for (const [name, selector, from] of s.outputs) {
                   let v;
-                  try { v = res.json(selector); } catch (e) { v = undefined; }
+                  if (from === 'header') v = header(res, selector);
+                  else { try { v = res.json(selector); } catch (e) { v = undefined; } }
+                  // An array or object is not one value: never silently the first element.
+                  if (v !== undefined && v !== null && typeof v === 'object') v = undefined;
+                  if (v === undefined || v === null) EXTRACTION_MISSING.add(1, { name: s.name });
                   ctx[`${s.id}.${name}`] = v;
                 }
                 if (s.thinkMs > 0) sleep(s.thinkMs / 1000);
@@ -231,7 +269,11 @@ public static class K6SummaryParser
             var f = Values(metrics, $"http_req_failed{{name:{name}}}");
             var r = Values(metrics, $"http_reqs{{name:{name}}}");
             return d is null || r is null ? null : new PerformanceStepMetrics(name, Long(r, "count") ?? 0, Double(f, "rate") is { } rate ? Math.Round(rate * 100, 3) : null,
-                Double(d, "p(95)"), Double(d, "p(99)"), Double(r, "rate"));
+                Double(d, "p(95)"), Double(d, "p(99)"), Double(r, "rate"))
+            {
+                Unresolved = Positive(metrics, $"birknext_unresolved_value{{name:{name}}}"), ExtractionMissing = Positive(metrics, $"birknext_extraction_missing{{name:{name}}}"),
+                GraphQlErrors = Positive(metrics, $"birknext_graphql_errors{{name:{name}}}"),
+            };
         }).Where(s => s is not null).Cast<PerformanceStepMetrics>().ToList();
         var stateMs = root["state"]?["testRunDurationMs"]?.GetValue<double>();
         return (new PerformanceMetrics
@@ -249,8 +291,13 @@ public static class K6SummaryParser
             DroppedIterations = Long(Values(metrics, "dropped_iterations"), "count"),
             StatusCodes = Counted(metrics, "birknext_status_", name => name.EndsWith("_other", StringComparison.Ordinal) ? $"{name[..3]} other" : name),
             TransportErrors = Counted(metrics, "birknext_error_", name => name),
+            Unresolved = Positive(metrics, "birknext_unresolved_value"), ExtractionMissing = Positive(metrics, "birknext_extraction_missing"),
+            GraphQlErrors = Positive(metrics, "birknext_graphql_errors"),
         }, null);
     }
+
+    /// <summary>A counter's count when it received samples (null otherwise, so older runs and clean runs serialize unchanged).</summary>
+    private static long? Positive(JsonObject metrics, string key) => Long(Values(metrics, key), "count") is > 0 and var n ? n : null;
 
     /// <summary>
     /// Counter metrics with a prefix (k6 reports only counters that received samples). Null when the script did not count at all — an older

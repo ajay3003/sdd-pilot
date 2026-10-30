@@ -855,7 +855,8 @@
             Observations="_observations" Assets="_testDataAssets" OnChange="Changed" OnStepAdded="FocusStep" OnNewGraphQlDefinition="NewGraphQlDefinition" />
 
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
-        <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations" />
+        <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations"
+            OnTrial="@(_profile is null ? null : d => Api.TrialAsync(_profile.Id, new PerformanceTrialRequest { Definition = d }))" />
 
         <section class="ptc-panel" aria-labelledby="pt-testdata-h" data-testid="pt-testdata">
             <h3 id="pt-testdata-h">Test Data</h3>

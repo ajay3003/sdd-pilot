@@ -514,6 +514,10 @@ builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Performance
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceScenarioSources>();
+// Validation requests: no redirects followed (a Location header stays extractable), standard TLS validation, decompression for previews.
+builder.Services.AddHttpClient(BirkNext.Api.Services.PerformanceTests.PerformanceTrialService.ClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
+builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceTrialService>();
 // Resource Stability: provider-based observation of approved components (Podman container stats; .NET runtime counters of BirkNext's own process).
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.PodmanResourceObservationProvider>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.DotNetRuntimeSelfObservationProvider>();

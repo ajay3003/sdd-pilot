@@ -13,7 +13,7 @@ namespace BirkNext.Api.Controllers;
 [Route("api/performance-tests")]
 public sealed class PerformanceTestsController(PerformanceTestStore store, PerformanceTestReadinessService readiness, PerformanceTestExecutionService execution,
     PerformanceTestProviderRegistry providers, PerformanceTestOptions options, TimeProvider? clock = null, Services.PerformanceTests.Resources.ResourceObservationRegistry? resources = null,
-    PerformanceLocalExecutionStore? localExecution = null) : ControllerBase
+    PerformanceLocalExecutionStore? localExecution = null, PerformanceTrialService? trial = null) : ControllerBase
 {
     // ── Local execution setup: Container TLS trust (machine-local; metadata only; TLS verification is never disabled) ─────────
 
@@ -134,6 +134,20 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
     }
 
     // ── Smart Scenario Engine sources (stored contract evidence; the engine itself runs with the browser's discovery evidence) ──────
+
+    /// <summary>
+    /// Send validation request: each enabled step once, in order (no load), returning bounded, redacted request/response samples and what each
+    /// output extracts. The same environment, target and method safety as a run; authenticated steps are not sent. Nothing is stored.
+    /// </summary>
+    [HttpPost("trial")]
+    public async Task<ActionResult<PerformanceTrialResult>> Trial([FromQuery] string environmentId, [FromBody] PerformanceTrialRequest request, CancellationToken ct)
+    {
+        if (trial is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        if (request?.Definition is null) return BadRequest("A definition is required.");
+        if (!string.Equals(request.Definition.EnvironmentId, environmentId, StringComparison.Ordinal)) return BadRequest("The definition belongs to another environment.");
+        return Ok(await trial.RunAsync(request, ct));
+    }
 
     /// <summary>Source Analysis snapshots that hold OpenAPI/GraphQL contracts, newest first, for an explicit choice (none is selected for the user).</summary>
     [HttpGet("scenario-sources")]

@@ -4,6 +4,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Shared.Components.Common
 @using R = BirkNext.PerformanceTests.PerformanceScenarioRuntime
+@using RR = BirkNext.PerformanceTests.PerformanceRequestResponse
 @using D = BirkNext.Web.Services.PerformanceTestReviewDashboard
 @inject IJSRuntime JS
 
@@ -45,6 +46,17 @@
 
     @Variables()
 
+    @if (OnTrial is not null && Definition.Scenario.Steps.Count > 0)
+    {
+        <div class="pss-trial" data-testid="pss-trial">
+            <button type="button" class="btn-secondary" disabled="@_trialBusy" aria-describedby="pss-trial-help" @onclick="SendTrialAsync" data-testid="pss-trial-send">@(_trialBusy ? "Sending…" : "Send validation request")</button>
+            <span class="pss-hint" id="pss-trial-help">Sends each enabled step once, in order (no load), and shows the request and response under each step. Bounded and redacted; nothing is stored. Authenticated steps are not sent.</span>
+            @if (_trialError is { } trialError) { <p class="pss-warn" role="alert" data-testid="pss-trial-error">@trialError</p> }
+            @if (_trial?.Message is { } trialMessage) { <p class="pss-warn" role="alert" data-testid="pss-trial-message">Not sent: @trialMessage</p> }
+            @if (_trial is { Message: null } done) { <p class="pss-hint" data-testid="pss-trial-summary">Validation request @done.At.ToUniversalTime().ToString("HH:mm:ss") UTC · @done.Steps.Count(x => x.State == TrialStepState.Sent) sent · @done.Steps.Count(x => x.State != TrialStepState.Sent) not sent. Shown for this session only.</p> }
+        </div>
+    }
+
     <h3 id="pss-steps-h" class="pss-steps-title">Scenario steps</h3>
     <p class="pss-hint" id="pss-order-help">Steps run in this order. Drag <span aria-hidden="true">⋮⋮</span> to reorder, or use Move up / Move down.</p>
     <p class="visually-hidden" role="status" aria-live="polite" data-testid="pt-step-message">@_announce</p>
@@ -74,6 +86,8 @@
     [Parameter, EditorRequired] public PerformanceTestDefinition Definition { get; set; } = new();
     [Parameter] public EventCallback<PerformanceTestDefinition> OnChange { get; set; }
     [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
+    /// <summary>Send validation request (one request per enabled step, nothing stored). Hidden when the host offers none.</summary>
+    [Parameter] public Func<PerformanceTestDefinition, Task<BirkNext.Web.Services.PerformanceApiResult<PerformanceTrialResult>>>? OnTrial { get; set; }
     /// <summary>The catalog's aliases when it was loaded (null before): a mapped alias that no longer exists shows "Test Data reference missing".</summary>
     private IReadOnlySet<string>? KnownAliases => Assets.Count == 0 ? null : Assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
     [Parameter] public IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> Observations { get; set; } = [];
@@ -348,10 +362,22 @@
                         <button type="button" class="btn-link" id="@($"pt-step-down-{s.Id}")" disabled="@(index == Steps.Count - 1)" @onclick="() => Move(index, index + 1, Down)" aria-label="@($"Move step {index + 1} down")" data-testid="pt-step-down">Move down</button>
                         <button type="button" class="btn-link pss-danger" @onclick="() => Delete(index)" aria-label="@($"Delete step {index + 1}")" data-testid="pt-remove-step">Delete</button>
                     </div>
-                    @RuntimeValues(index, s, rows)
-                    @Outputs(index, s)
-                    @StepAuthentication(index, s)
-                    @if (_editing.Contains(s.Id)) { @Request(index, s) }
+                    <div class="pss-rr" data-testid="pt-step-rr">
+                        <section class="pss-card" aria-labelledby="@($"pt-request-h-{s.Id}")" data-testid="pt-request-card">
+                            <h5 class="pss-card-title" id="@($"pt-request-h-{s.Id}")">Request</h5>
+                            @RequestView(index, s, rows, status)
+                            @RuntimeValues(index, s, rows)
+                            @StepAuthentication(index, s)
+                            @if (_editing.Contains(s.Id)) { @Request(index, s) }
+                        </section>
+                        <span class="pss-rr-arrow" aria-hidden="true">→</span>
+                        <section class="pss-card" aria-labelledby="@($"pt-response-h-{s.Id}")" data-testid="pt-response-card">
+                            <h5 class="pss-card-title" id="@($"pt-response-h-{s.Id}")">Response</h5>
+                            <p class="pss-hint" data-testid="pt-response-expected">Expected status @string.Join(", ", s.ExpectedStatusCodes)</p>
+                            @TrialView(s)
+                            @Outputs(index, s)
+                        </section>
+                    </div>
                 </div>
             }
         </li>
@@ -380,16 +406,68 @@
                 @if (s.Method == "POST" && !graphQl)
                 {
                     <label class="sd-check pss-wide"><input type="checkbox" checked="@s.PostIsSafeRead" @onchange="e => UpdateStep(index, x => x with { PostIsSafeRead = e.Value is true })" data-testid="pt-step-post-read" /> This POST only reads (search/query API)</label>
-                    <label class="pss-wide">Body (JSON; dynamic values as {placeholders}) <textarea rows="3" @onchange="e => EditOperation(index, x => x with { BodyTemplate = e.Value?.ToString(), ContentType = x.ContentType ?? JsonType })" data-testid="pt-step-body">@s.BodyTemplate</textarea></label>
+                    <label>Content type
+                        <select value="@(s.ContentType ?? JsonType)" @onchange="e => EditOperation(index, x => x with { ContentType = Str(e, JsonType) })" data-testid="pt-step-content-type">
+                            @foreach (var ct in RR.BodyContentTypes) { <option value="@ct">@ct</option> }
+                            @if (s.ContentType is { } own && !RR.BodyContentTypes.Contains(own)) { <option value="@own">@own</option> }
+                        </select></label>
+                    <label class="pss-wide">Body (@RR.Label(RR.Of(s.ContentType ?? JsonType)); dynamic values as {placeholders}) <textarea rows="5" class="pss-mono" @onchange="e => EditOperation(index, x => x with { BodyTemplate = e.Value?.ToString(), ContentType = x.ContentType ?? JsonType })" aria-describedby="@($"pt-step-body-help-{s.Id}")" data-testid="pt-step-body">@s.BodyTemplate</textarea>
+                        <span class="pss-hint" id="@($"pt-step-body-help-{s.Id}")">Values are encoded for the body format: escaped inside JSON strings, XML-escaped in XML, URL-encoded in a form. A body that is exactly one {placeholder} takes a whole payload.</span></label>
+                    @if (RR.BodyProblem(s, false) is { } bodyProblem) { <p class="pss-error" role="alert" data-testid="pt-step-body-error">@bodyProblem</p> }
                 }
                 @if (graphQl)
                 {
                     <label class="pss-wide">GraphQL query <textarea rows="4" @onchange="e => EditOperation(index, x => x with { GraphQlQuery = e.Value?.ToString(), Method = Post })" data-testid="pt-step-graphql">@s.GraphQlQuery</textarea></label>
                     <label class="pss-wide">Variables (JSON object; values are {placeholders}) <textarea rows="2" @onchange="e => UpdateStep(index, x => x with { GraphQlVariablesJson = e.Value?.ToString() })" data-testid="pt-step-graphql-variables">@s.GraphQlVariablesJson</textarea></label>
                 }
+                @NameValues(index, s, "query", "Query parameters", s.QueryParameters)
+                @NameValues(index, s, "header", "Request headers", s.Headers)
             </div>
         </fieldset>
     };
+
+    private readonly Dictionary<string, (string Name, string Value)> _newPair = [];
+
+    /// <summary>Query parameters or request headers: name/value rows (values may be {placeholders}). Credentials stay with authentication.</summary>
+    private RenderFragment NameValues(int index, HttpPerformanceStep s, string kind, string title, List<PerformanceNameValue> items) => __builder =>
+    {
+        var key = $"{s.Id}|{kind}";
+        var draft = _newPair.GetValueOrDefault(key, ("", ""));
+        var header = kind == "header";
+        var problem = draft.Item1.Length == 0 ? null
+            : header && RR.IsSensitiveHeader(draft.Item1) ? $"{draft.Item1} can carry a credential — authentication adds it; it is never a request header here."
+            : header && !RR.ValidHeaderName(draft.Item1) ? "Use a valid header name (letters, digits, '-')."
+            : items.Any(x => x.Name.Equals(draft.Item1, StringComparison.OrdinalIgnoreCase)) ? $"{draft.Item1} already exists." : null;
+        <fieldset class="pss-wide pss-pairs" data-testid="@($"pt-step-{kind}s")">
+            <legend>@title</legend>
+            @if (items.Count > 0)
+            {
+                <ul class="pss-output-list">
+                    @foreach (var item in items)
+                    {
+                        var name = item.Name;
+                        <li data-testid="@($"pt-step-{kind}")" data-name="@name"><code>@name</code> = <code class="pss-break">@item.Value</code>
+                            <button type="button" class="btn-link" @onclick="() => RemovePair(index, kind, name)" data-testid="@($"pt-step-{kind}-remove")">Remove<span class="visually-hidden"> @title.ToLowerInvariant() @name</span></button></li>
+                    }
+                </ul>
+            }
+            <div class="pss-inline">
+                <label>Name <input value="@draft.Item1" @oninput="e => _newPair[key] = (Str(e), draft.Item2)" data-testid="@($"pt-step-{kind}-name")" /></label>
+                <label>Value <input value="@draft.Item2" @oninput="e => _newPair[key] = (draft.Item1, Str(e))" placeholder="{value} or a literal" data-testid="@($"pt-step-{kind}-value")" /></label>
+                <button type="button" class="btn-secondary btn-small" disabled="@(draft.Item1.Length == 0 || problem is not null)" @onclick="() => AddPair(index, kind, draft.Item1, draft.Item2)" data-testid="@($"pt-step-{kind}-add")">Add</button>
+            </div>
+            @if (problem is not null) { <p class="pss-warn" role="status" data-testid="@($"pt-step-{kind}-error")">@problem</p> }
+        </fieldset>
+    };
+
+    private Task AddPair(int index, string kind, string name, string value)
+    {
+        _newPair.Remove($"{Steps[index].Id}|{kind}");
+        return EditOperation(index, x => kind == "header" ? x with { Headers = [.. x.Headers, new(name, value)] } : x with { QueryParameters = [.. x.QueryParameters, new(name, value)] });
+    }
+
+    private Task RemovePair(int index, string kind, string name) =>
+        EditOperation(index, x => kind == "header" ? x with { Headers = [.. x.Headers.Where(h => h.Name != name)] } : x with { QueryParameters = [.. x.QueryParameters.Where(q => q.Name != name)] });
 
     private static string Str(ChangeEventArgs e, string fallback = "") => e.Value?.ToString() ?? fallback;
     private static int? Int(object? v) => int.TryParse(v?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null;
@@ -409,9 +487,10 @@
     private RenderFragment StepAuthentication(int index, HttpPerformanceStep s) => __builder =>
     {
         var id = $"pt-step-auth-{s.Id}";
-        <div class="pss-auth">
+        <div class="pss-auth" data-testid="pt-request-auth">
             <label for="@id">Authentication</label>
-            <select id="@id" value="@AuthValue(s)" @onchange="e => SetStepAuth(index, Str(e))" data-testid="pt-step-auth">
+            <span class="pss-hint" id="@($"{id}-help")">Added by the authentication configuration — never a request header or runtime value.</span>
+            <select id="@id" aria-describedby="@($"{id}-help")" value="@AuthValue(s)" @onchange="e => SetStepAuth(index, Str(e))" data-testid="pt-step-auth">
                 <option value="inherit">Inherit scenario default (@(Definition.AuthenticationReference is null ? "None" : AuthName(Definition.AuthenticationReference)))</option>
                 <option value="none">None</option>
                 @foreach (var (key, label) in AuthOptions) { <option value="@("override:" + key)">Override · @label</option> }
@@ -437,42 +516,219 @@
 
     // ── Outputs ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private readonly Dictionary<string, (string Name, string Path)> _newOutput = [];
+    private readonly Dictionary<string, (string Name, string Path, StepOutputSource From)> _newOutput = [];
 
     private RenderFragment Outputs(int index, HttpPerformanceStep s) => __builder =>
     {
-        var draft = _newOutput.GetValueOrDefault(s.Id, ("", "$."));
-        var nameId = $"pt-output-name-{s.Id}"; var pathId = $"pt-output-path-{s.Id}";
+        var draft = _newOutput.GetValueOrDefault(s.Id, ("", "$.", StepOutputSource.Body));
+        var nameId = $"pt-output-name-{s.Id}"; var pathId = $"pt-output-path-{s.Id}"; var fromId = $"pt-output-from-{s.Id}"; var errorId = $"pt-output-error-{s.Id}";
         var used = R.Dependents(Steps, s.Id);
+        var candidate = new StepOutput(draft.Item1, draft.Item2) { From = draft.Item3 };
+        var problem = draft.Item1.Length == 0 ? null : RR.OutputProblem(candidate) ?? (s.Outputs?.Any(o => o.Name == draft.Item1) == true ? $"output '{draft.Item1}' already exists" : null);
         <details class="pss-outputs" open="@((s.Outputs?.Count ?? 0) > 0)" data-testid="pt-step-outputs">
-            <summary>Response values for later steps (@(s.Outputs?.Count ?? 0))</summary>
+            <summary>Extracted values for later steps (@(s.Outputs?.Count ?? 0))</summary>
             @if (s.Outputs is { Count: > 0 } outputs)
             {
-                <ul class="pss-output-list">
-                    @foreach (var o in outputs)
-                    {
-                        var users = used.Count(d => d.Output == o.Name);
-                        <li data-testid="pt-step-output" data-name="@o.Name"><code>@o.Name</code> ← <code>@o.Path</code>@(users > 0 ? $" · used by {users} mapping{(users == 1 ? "" : "s")}" : "")
-                            <button type="button" class="btn-link" disabled="@(users > 0)" title="@(users > 0 ? "Used by a later step: change that step's runtime value source first" : null)" @onclick="() => RemoveOutput(index, o.Name)" data-testid="pt-output-remove">Remove<span class="visually-hidden"> output @o.Name</span></button></li>
-                    }
-                </ul>
+                <table class="pss-table" data-testid="pt-output-table">
+                    <caption class="visually-hidden">Extracted values of step @(index + 1)</caption>
+                    <thead><tr><th scope="col">Name</th><th scope="col">From</th><th scope="col">Expression</th><th scope="col">Used by</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var o in outputs)
+                        {
+                            var users = used.Count(d => d.Output == o.Name);
+                            <tr data-testid="pt-step-output" data-name="@o.Name" data-from="@o.From">
+                                <th scope="row"><code>@o.Name</code></th>
+                                <td>@(o.From == StepOutputSource.Header ? "Response header" : "JSON body")</td>
+                                <td><code class="pss-break">@o.Path</code>@if (RR.OutputProblem(o) is { } invalid) { <span class="pss-warn"> · @invalid</span> }</td>
+                                <td>@(users > 0 ? $"{users} mapping{(users == 1 ? "" : "s")}" : "—")</td>
+                                <td><button type="button" class="btn-link" disabled="@(users > 0)" title="@(users > 0 ? "Used by a later step: change that step's runtime value source first" : null)" @onclick="() => RemoveOutput(index, o.Name)" data-testid="pt-output-remove">Remove<span class="visually-hidden"> output @o.Name</span></button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             }
             <div class="pss-inline">
-                <label for="@nameId">Name <input id="@nameId" value="@draft.Item1" @oninput="e => _newOutput[s.Id] = (Str(e), draft.Item2)" placeholder="id" data-testid="pt-output-name" /></label>
-                <label for="@pathId">JSON path <input id="@pathId" value="@draft.Item2" @oninput="e => _newOutput[s.Id] = (draft.Item1, Str(e))" placeholder="$.id" data-testid="pt-output-path" /></label>
-                <button type="button" class="btn-secondary btn-small" disabled="@(!R.ValidName(draft.Item1) || !R.ValidOutputPath(draft.Item2) || s.Outputs?.Any(o => o.Name == draft.Item1) == true)"
-                        @onclick="() => AddOutput(index, draft.Item1, draft.Item2)" data-testid="pt-output-add">Add output</button>
+                <label for="@nameId">Name <input id="@nameId" value="@draft.Item1" @oninput="e => _newOutput[s.Id] = (Str(e), draft.Item2, draft.Item3)" placeholder="personId" aria-describedby="@errorId" data-testid="pt-output-name" /></label>
+                <label for="@fromId">From
+                    <select id="@fromId" value="@draft.Item3" @onchange="e => SetOutputFrom(s.Id, draft.Item1, Str(e))" data-testid="pt-output-from">
+                        <option value="@StepOutputSource.Body">JSON body</option>
+                        <option value="@StepOutputSource.Header">Response header</option>
+                    </select></label>
+                <label for="@pathId">@(draft.Item3 == StepOutputSource.Header ? "Header name" : "JSON path") <input id="@pathId" value="@draft.Item2" @oninput="e => _newOutput[s.Id] = (draft.Item1, Str(e), draft.Item3)" placeholder="@(draft.Item3 == StepOutputSource.Header ? "Location" : "$.id")" aria-describedby="@errorId" data-testid="pt-output-path" /></label>
+                <button type="button" class="btn-secondary btn-small" disabled="@(draft.Item1.Length == 0 || problem is not null)"
+                        @onclick="() => AddOutput(index, candidate)" data-testid="pt-output-add">Add output</button>
             </div>
-            <p class="pss-hint">Read from this step's JSON response when a later step uses it (e.g. <code>$.id</code>, <code>$.data.items[0].id</code>).</p>
+            <p class="pss-warn" id="@errorId" role="status" data-testid="pt-output-error">@problem</p>
+            <p class="pss-hint">Read from this step's response when a later step uses it — a JSON path (<code>$.id</code>, <code>$.data.items[0].id</code>) or a header (<code>Location</code>). One value only: a list or object is never reduced to its first element. Extracted values are runtime values, not Test Data, and a sample value is never saved.</p>
+            <ul class="pss-capabilities" aria-label="Extraction support of the load engine" data-testid="pt-output-capabilities">
+                @foreach (var (capability, supported, detail) in RR.ExtractionCapabilities)
+                {
+                    <li data-supported="@(supported ? "true" : "false")"><span aria-hidden="true">@(supported ? "✓" : "✕") </span>@capability · @(supported ? "Supported" : "Unavailable") <span class="pss-hint">(@detail)</span></li>
+                }
+            </ul>
         </details>
     };
 
-    private async Task AddOutput(int index, string name, string path)
+    private void SetOutputFrom(string stepId, string name, string value)
+    {
+        var from = Enum.TryParse<StepOutputSource>(value, out var f) ? f : StepOutputSource.Body;
+        _newOutput[stepId] = (name, from == StepOutputSource.Header ? "Location" : "$.", from);
+    }
+
+    private async Task AddOutput(int index, StepOutput output)
     {
         _newOutput.Remove(Steps[index].Id);
-        _announce = $"Output {name} added to step {index + 1}.";
-        await UpdateStep(index, x => x with { Outputs = [.. x.Outputs ?? [], new StepOutput(name, path)] });
+        _announce = $"Output {output.Name} added to step {index + 1}.";
+        await UpdateStep(index, x => x with { Outputs = [.. x.Outputs ?? [], output] });
     }
+
+    // ── Request view (structured, redacted preview — nothing is sent) ───────────────────────────────────────────────────
+
+    private RenderFragment RequestView(int index, HttpPerformanceStep s, IReadOnlyList<RuntimeValueRow> rows, StepReadiness status) => __builder =>
+    {
+        var pv = RR.Preview(Definition, index);
+        <p class="pss-badges" data-testid="pt-request-summary">
+            <span class="pss-badge">@pv.Method</span><span class="pss-badge" data-testid="pt-request-format">@RR.Label(pv.Format)</span>
+            <span>@rows.Count runtime value@(rows.Count == 1 ? "" : "s")</span><span>· @R.StatusLabel(status.Status)</span>
+        </p>
+        <dl class="pss-request-facts">
+            <div><dt>Endpoint</dt><dd><code class="pss-break" data-testid="pt-request-url">@pv.Method @pv.Url</code></dd></div>
+            @if (pv.Query.Count > 0)
+            {
+                <div><dt>Query</dt><dd data-testid="pt-request-query">@string.Join(" · ", pv.Query.Select(q => $"{q.Name}={q.Value}"))</dd></div>
+            }
+            <div><dt>Headers</dt><dd data-testid="pt-request-headers">@(pv.Headers.Count == 0 ? "None" : string.Join(" · ", pv.Headers.Select(h => $"{h.Name}: {h.Value}")))</dd></div>
+            @if (pv.Masked.Count > 0)
+            {
+                <div><dt>Filled at run time</dt><dd data-testid="pt-request-masked">@string.Join(", ", pv.Masked.Select(m => "{" + m + "}"))</dd></div>
+            }
+        </dl>
+        @if (pv.GraphQlQuery is { } gql)
+        {
+            <p class="pss-subtitle">GraphQL query</p>
+            <pre class="pss-pre" tabindex="0" aria-label="GraphQL query of step @(index + 1)" data-testid="pt-request-graphql">@gql</pre>
+            @if (pv.GraphQlVariables is { Length: > 0 } vars) { <p class="pss-subtitle">Variables</p><pre class="pss-pre" tabindex="0" aria-label="GraphQL variables of step @(index + 1)" data-testid="pt-request-variables">@Pretty(vars, PayloadFormat.Json)</pre> }
+        }
+        else if (pv.Body is { } body)
+        {
+            <p class="pss-subtitle">Body · @RR.Label(pv.Format)@(pv.ContentType is { } ct ? $" ({ct})" : "")</p>
+            <pre class="pss-pre" tabindex="0" aria-label="Request body of step @(index + 1)" data-testid="pt-request-body">@Pretty(body, pv.Format)</pre>
+            @if (pv.BodyTruncated) { <p class="pss-hint" role="status">Truncated · showing @RR.Size(RR.RequestPreviewBytes) of @RR.Size(pv.BodyBytes ?? 0).</p> }
+        }
+    };
+
+    /// <summary>Indented JSON for display when it parses (placeholders kept); any other text as is. Display only — never sent.</summary>
+    private static string Pretty(string text, PayloadFormat format)
+    {
+        if (format is not (PayloadFormat.Json or PayloadFormat.GraphQl)) return text;
+        try { return System.Text.Json.Nodes.JsonNode.Parse(text)?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) ?? text; }
+        catch (System.Text.Json.JsonException) { return text; }
+    }
+
+    // ── Validation request (one request per step; shown for this session only) ─────────────────────────────────────────
+
+    private PerformanceTrialResult? _trial;
+    private string? _trialError;
+    private bool _trialBusy;
+
+    private async Task SendTrialAsync()
+    {
+        if (OnTrial is null) return;
+        _trialBusy = true; _trialError = null;
+        var result = await OnTrial(Definition);
+        _trialBusy = false;
+        _trial = result.Value;
+        _trialError = result.Error;
+        _announce = result.Value is { Message: null } t ? $"Validation request: {t.Steps.Count(x => x.State == TrialStepState.Sent)} step(s) sent, {t.Steps.Count(x => x.State != TrialStepState.Sent)} not sent."
+            : $"Validation request not sent: {result.Error ?? result.Value?.Message}";
+    }
+
+    private static string TrialStateLabel(TrialStepState state) => state switch
+    {
+        TrialStepState.Skipped => "Not sent",
+        TrialStepState.Blocked => "Blocked",
+        TrialStepState.Failed => "No response",
+        _ => "Sent",
+    };
+
+    private static string OutputStateLabel(OutputSampleState state) => state switch
+    {
+        OutputSampleState.Ready => "Ready",
+        OutputSampleState.NeedsReview => "Needs review",
+        OutputSampleState.Unsupported => "Unsupported",
+        _ => "Missing",
+    };
+
+    private RenderFragment TrialView(HttpPerformanceStep s) => __builder =>
+    {
+        if (_trial?.Steps.FirstOrDefault(x => x.StepId == s.Id) is not { } t)
+        {
+            <p class="pss-hint" data-testid="pt-response-none">No response sample — load runs keep metrics and status only. Use <em>Send validation request</em> to see one.</p>
+            return;
+        }
+        <div class="pss-sample" data-testid="pt-trial" data-state="@t.State">
+            @if (t.State != TrialStepState.Sent || t.Response is not { } r)
+            {
+                <p class="pss-warn" data-testid="pt-trial-reason"><strong>@TrialStateLabel(t.State)</strong> · @t.Reason</p>
+            }
+            else
+            {
+                <p class="pss-badges" data-testid="pt-response-summary">
+                    <span class="pss-badge @(t.ExpectedStatus == false ? "pss-badge-warn" : "")" data-testid="pt-response-status">@r.Status @r.Reason</span>
+                    <span class="pss-badge" data-testid="pt-response-format">@RR.Label(r.Format)</span>
+                    <span>@r.DurationMs.ToString("0", System.Globalization.CultureInfo.InvariantCulture) ms</span>
+                    @if (r.SizeBytes is { } size) { <span>@(r.SizeIsLowerBound ? "> " : "")@RR.Size(size)</span> }
+                    <span data-testid="pt-response-capture-state">· @RR.CaptureLabel(r.Capture)</span>
+                </p>
+                @if (t.ExpectedStatus == false) { <p class="pss-warn" data-testid="pt-response-unexpected"><span aria-hidden="true">! </span>Not an expected status (expected @string.Join(", ", s.ExpectedStatusCodes)).</p> }
+                @if (r.GraphQlErrors is { } errors)
+                {
+                    <p class="@(errors > 0 ? "pss-warn" : "pss-ok")" data-testid="pt-response-graphql">HTTP @r.Status · GraphQL: @(errors == 0 ? "no errors" : $"{errors} error{(errors == 1 ? "" : "s")}")@(r.GraphQlData == true ? " · data returned" : r.GraphQlData == false ? " · no data" : "")</p>
+                    @if (r.GraphQlErrorMessages.Count > 0) { <ul class="pss-reasons" data-testid="pt-response-graphql-errors">@foreach (var m in r.GraphQlErrorMessages) { <li>@m</li> }</ul> }
+                }
+                @if (r.ParseError is { } parseError) { <p class="pss-warn" role="status" data-testid="pt-response-parse-error"><span aria-hidden="true">! </span>@parseError — shown as text.</p> }
+                @if (r.CaptureNote is { } note) { <p class="pss-hint" role="status" data-testid="pt-response-capture">@note</p> }
+                @if (r.Preview is { } preview)
+                {
+                    <pre class="pss-pre" tabindex="0" aria-label="@($"Response preview of {s.Name} ({RR.Label(r.Format)})")" data-testid="pt-response-preview">@preview</pre>
+                }
+                @if (r.Headers.Count > 0)
+                {
+                    <details data-testid="pt-response-headers"><summary>Response headers (@r.Headers.Count)</summary>
+                        <dl class="pss-request-facts">@foreach (var h in r.Headers) { <div><dt>@h.Name</dt><dd class="pss-break">@h.Value</dd></div> }</dl>
+                    </details>
+                }
+            }
+            @if (t.Request is { } sent)
+            {
+                <details data-testid="pt-trial-request"><summary>Request as sent (redacted)</summary>
+                    <p><code class="pss-break" data-testid="pt-trial-request-url">@sent.Method @sent.Url</code></p>
+                    @if (sent.Headers.Count > 0) { <p class="pss-hint">@string.Join(" · ", sent.Headers.Select(h => $"{h.Name}: {h.Value}"))</p> }
+                    @if (sent.Body is { } sentBody) { <pre class="pss-pre" tabindex="0" aria-label="Request body as sent">@sentBody</pre> }
+                    @if (sent.GraphQlVariables is { Length: > 0 } sentVars) { <pre class="pss-pre" tabindex="0" aria-label="GraphQL variables as sent">@sentVars</pre> }
+                    @if (sent.Masked.Count > 0) { <p class="pss-hint">Test Data values hidden: @string.Join(", ", sent.Masked.Select(m => "{" + m + "}"))</p> }
+                </details>
+            }
+            @if (t.Outputs.Count > 0)
+            {
+                <table class="pss-table" data-testid="pt-trial-outputs">
+                    <caption>Extracted from this response</caption>
+                    <thead><tr><th scope="col">Name</th><th scope="col">Expression</th><th scope="col">Sample value</th><th scope="col">Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var o in t.Outputs)
+                        {
+                            <tr data-testid="pt-trial-output" data-name="@o.Name" data-state="@o.State">
+                                <th scope="row"><code>@o.Name</code></th><td><code class="pss-break">@o.Expression</code></td>
+                                <td class="pss-break">@(o.Value ?? "—")</td>
+                                <td>@if (o.State == OutputSampleState.Ready) { <span class="pss-ok">Ready</span> } else { <span class="pss-warn"><span aria-hidden="true">! </span>@OutputStateLabel(o.State) · @o.Problem</span> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="pss-hint">Sample values are for review only — later steps read the value from each response at run time.</p>
+            }
+        </div>
+    };
 
     private Task RemoveOutput(int index, string name) =>
         UpdateStep(index, x => x with { Outputs = (x.Outputs ?? []).Where(o => o.Name != name).ToList() is { Count: > 0 } rest ? rest : null });

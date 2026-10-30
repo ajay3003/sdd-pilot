@@ -51,6 +51,9 @@ public interface IPerformanceTestApiService
     Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default);
     /// <summary>Source Analysis snapshots holding API contracts (for an explicit choice; none is selected automatically).</summary>
     Task<List<ScenarioSourceSnapshot>> ScenarioSourcesAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<List<ScenarioSourceSnapshot>>([]);
+    /// <summary>Send validation request: each enabled step once (no load); bounded, redacted request/response samples. Nothing is stored.</summary>
+    Task<PerformanceApiResult<PerformanceTrialResult>> TrialAsync(string environmentId, PerformanceTrialRequest request, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<PerformanceTrialResult>.Fail("Validation requests are not available."));
     /// <summary>The stored API contracts of exactly one snapshot.</summary>
     Task<ScenarioContractCatalog?> ScenarioContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<ScenarioContractCatalog?>(null);
     /// <summary>Validates and previews a Performance setup profile against the current Target Environment (never mutates).</summary>
@@ -194,6 +197,17 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
 
     public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>
         Get<PerformanceRunComparison>($"{Base}/compare?{Env(environmentId)}&current={current}{(reference is { } r ? "&reference=" + r : "")}{(baselineId is null ? "" : "&baselineId=" + Uri.EscapeDataString(baselineId))}", ct);
+
+    public async Task<PerformanceApiResult<PerformanceTrialResult>> TrialAsync(string environmentId, PerformanceTrialRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/trial?{Env(environmentId)}", request, Json, ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceTrialResult>.Ok((await response.Content.ReadFromJsonAsync<PerformanceTrialResult>(Json, ct))!)
+                : PerformanceApiResult<PerformanceTrialResult>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTrialResult>.Fail(BackendRequestClassifier.FromException("Validation request", ex).UserMessage); }
+    }
 
     public async Task<List<ScenarioSourceSnapshot>> ScenarioSourcesAsync(string environmentId, CancellationToken ct = default) =>
         await Get<List<ScenarioSourceSnapshot>>($"{Base}/scenario-sources?{Env(environmentId)}", ct) ?? [];

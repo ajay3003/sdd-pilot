@@ -359,7 +359,8 @@ public static partial class PerformanceScenarioRuntime
         var rows = Rows(d.Scenario, index, knownAliases);
         blocked.AddRange(rows.Where(r => r.Problem?.Contains("invalid execution order", StringComparison.Ordinal) == true).Select(r => $"{Step(index)} · {r.Parameter.Variable}: {r.Problem}"));
         foreach (var o in s.Outputs ?? [])
-            if (!ValidName(o.Name) || !ValidOutputPath(o.Path)) blocked.Add($"{Step(index)}: output '{o.Name}' needs a name and a JSON path such as $.id");
+            if (PerformanceRequestResponse.OutputProblem(o) is { } outputProblem) blocked.Add($"{Step(index)}: {outputProblem}");
+        if (PerformanceRequestResponse.BodyProblem(s, d.TargetType == PerformanceTargetType.GraphQlHttp) is { } bodyProblem) blocked.Add($"{Step(index)}: {bodyProblem}");
         if (blocked.Count > 0) return new(StepStatus.Blocked, blocked);
         var open = rows.Where(r => !r.Resolved).Select(r => $"{Step(index)} · {r.Parameter.Variable}: {r.Problem}").ToList();
         if (s.Authentication == StepAuthenticationMode.Override && s.AuthenticationReference is null) open.Add($"{Step(index)}: authentication override has no configuration");

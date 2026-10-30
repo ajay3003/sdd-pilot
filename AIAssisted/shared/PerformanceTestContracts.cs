@@ -199,8 +199,14 @@ public enum GeneratedValueKind { Uuid, Timestamp, RandomNumber }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum StepAuthenticationMode { Inherit, None, Override }
 
-/// <summary>A value a step reads from its JSON response body for later steps ("$.id", "$.data.items[0].id").</summary>
-public sealed record StepOutput(string Name, string Path);
+/// <summary>
+/// A named value a step reads from its response for later steps: a JSON body path ("$.id", "$.data.items[0].id") or, with <see cref="From"/> Header,
+/// a response header name (Location, X-Request-Id). Later steps reference the producing step id + this name — never a sample value.
+/// </summary>
+public sealed record StepOutput(string Name, string Path)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public StepOutputSource From { get; init; }
+}
 
 /// <summary>A scenario-level variable: Fixed (value), Generated (generator) or Test Data (one approved alias). Steps reference it by name.</summary>
 public sealed record ScenarioVariable(string Name, RuntimeValueSource Source)
@@ -492,7 +498,15 @@ public sealed record PerformanceLatency
     public double? MaxMs { get; init; }
 }
 
-public sealed record PerformanceStepMetrics(string StepName, long RequestCount, double? ErrorRatePercent, double? P95Ms, double? P99Ms, double? RequestsPerSecond);
+public sealed record PerformanceStepMetrics(string StepName, long RequestCount, double? ErrorRatePercent, double? P95Ms, double? P99Ms, double? RequestsPerSecond)
+{
+    /// <summary>Iterations where the step was not sent because a runtime value did not resolve (e.g. a missing previous-step output).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? Unresolved { get; init; }
+    /// <summary>Responses an output could not be extracted from (missing, or not one value).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? ExtractionMissing { get; init; }
+    /// <summary>GraphQL responses carrying errors, counted apart from the HTTP status.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? GraphQlErrors { get; init; }
+}
 
 /// <summary>Normalized, provider-independent metrics. Latency in milliseconds, throughput in requests/second, error rate in percent (0–100).</summary>
 public sealed record PerformanceMetrics
@@ -512,6 +526,10 @@ public sealed record PerformanceMetrics
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, long>? StatusCodes { get; init; }
     /// <summary>Requests without an HTTP response, grouped by transport failure (timeout, connection/DNS, TLS, other). Null = not captured.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, long>? TransportErrors { get; init; }
+    /// <summary>Step executions skipped because a runtime value did not resolve, outputs not extracted, GraphQL responses with errors (null = none / older run).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? Unresolved { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? ExtractionMissing { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? GraphQlErrors { get; init; }
 
     public double? Value(PerformanceMetric metric) => metric switch
     {

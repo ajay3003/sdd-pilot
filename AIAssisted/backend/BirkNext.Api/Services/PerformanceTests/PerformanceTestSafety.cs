@@ -139,8 +139,10 @@ public static partial class PerformanceTestSafety
             foreach (var m in (step.DataMappings ?? []).Where(m => m.Source is RuntimeValueSource.Fixed or RuntimeValueSource.AutoFilled && m.FixedValue is { } v && (v.Length > 500 || v.Any(char.IsControl))))
                 yield return new(PerformanceReadinessState.InvalidScenario, "runtime", $"Step {i + 1} '{step.Name}' · {m.Variable}: fixed and auto-filled values are at most 500 characters without control characters.");
             foreach (var o in step.Outputs ?? [])
-                if (!PerformanceScenarioRuntime.ValidName(o.Name) || !PerformanceScenarioRuntime.ValidOutputPath(o.Path))
-                    yield return new(PerformanceReadinessState.InvalidScenario, "output", $"Step {i + 1} '{step.Name}': output '{o.Name}' needs a name (letters, digits, '_') and a JSON path such as $.id.");
+                if (PerformanceRequestResponse.OutputProblem(o) is { } outputProblem)
+                    yield return new(PerformanceReadinessState.InvalidScenario, "output", $"Step {i + 1} '{step.Name}': {outputProblem}.");
+            if (PerformanceRequestResponse.BodyProblem(step, d.TargetType == PerformanceTargetType.GraphQlHttp) is { } bodyProblem)
+                yield return new(PerformanceReadinessState.InvalidScenario, "body", $"Step {i + 1} '{step.Name}': {bodyProblem}.");
             if (step.Authentication == StepAuthenticationMode.Override && step.AuthenticationReference is null)
                 yield return new(PerformanceReadinessState.NeedsAuthentication, "authentication", $"Step {i + 1} '{step.Name}': the authentication override names no configuration.");
         }

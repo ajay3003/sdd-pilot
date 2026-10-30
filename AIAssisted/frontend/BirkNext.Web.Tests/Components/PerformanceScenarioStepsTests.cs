@@ -108,7 +108,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         Row(cut, "id").QuerySelector("[data-testid=pt-value-text]")!.TextContent.Should().Be("Step 1 · create · id");
         cut.Find("[data-testid=pss-dependencies]").TextContent.Should().Be("1 step-to-step reference");
         cut.FindAll("[data-testid=pt-step-status]").Select(s => s.TextContent).Should().Equal("Ready", "Ready");
-        cut.Find("[data-testid=pt-step-output]").TextContent.Should().Contain("used by 1 mapping");
+        cut.Find("[data-testid=pt-step-output]").TextContent.Should().Contain("1 mapping");
 
         var first = Render(Step("children", "/api/brukere/{id}/barn"), Step("create", "/api/users"));
         Row(first, "id").QuerySelector("[data-testid=pt-step-map]")!.Click();
