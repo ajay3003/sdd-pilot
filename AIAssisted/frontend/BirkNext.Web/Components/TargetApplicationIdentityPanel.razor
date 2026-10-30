@@ -1,0 +1,132 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services.ProjectEvidence
+@implements IDisposable
+@inject IServiceProvider Services
+
+@* Target Application → Application: WHAT this environment represents (for example M2LB). Owns the logical application/system identity;
+   Project evidence binds imported packages to it afterwards. Candidates come from the detected application packages (never infrastructure,
+   contract, shared-library or generated-docs packages) and names already used by Target Environments; an application can be added by name.
+   Setting it never activates the environment, and a change archives the previous application's evidence instead of deleting it. *@
+@if (Evidence is not null)
+{
+    <section class="tai" aria-labelledby="tai-title" data-testid="tai">
+        <h4 id="tai-title" class="tai-title">Application</h4>
+        @if (_identity is { } current && !_picking)
+        {
+            <p class="tai-current" data-testid="tai-current"><strong data-testid="tai-name">@current.Name</strong>
+                <span class="tai-muted">· @(current.Manual ? "Added manually" : current.ImportId is not null ? "Detected application package" : "Named application")@(current.Legacy ? " · from earlier Project setup" : "")</span>
+                <button type="button" class="btn btn-link btn-sm" data-testid="tai-change" @onclick="StartPicking">Change<span class="visually-hidden"> application</span></button></p>
+            <p class="tai-muted">Project evidence for @current.Name is bound on the <a href="@ProjectEvidenceResolver.ProjectTabHref(EnvironmentId)" data-testid="tai-project-link">Project tab</a>.</p>
+        }
+        else
+        {
+            @if (_identity is null) { <p class="tai-muted" data-testid="tai-empty">Not configured. Choose the application/system this environment represents.</p> }
+            <div class="tai-picker" data-testid="tai-picker">
+                <label for="tai-search" class="tai-label">Application</label>
+                <input id="tai-search" type="search" class="form-control" placeholder="Search applications" autocomplete="off" data-testid="tai-search"
+                       aria-controls="tai-options" @bind="_query" @bind:event="oninput" />
+                <div id="tai-options" role="listbox" aria-label="Applications" class="tai-options" data-testid="tai-options">
+                    @foreach (var group in ProjectSetupPlanner.Search(_options, _query).GroupBy(o => o.Group))
+                    {
+                        <div role="group" aria-label="@group.Key">
+                            <p class="tai-group" aria-hidden="true">@group.Key</p>
+                            @foreach (var option in group)
+                            {
+                                <button type="button" role="option" aria-selected="@(TargetApplications.SameApplication(_identity, option.Name) ? "true" : "false")" class="tai-option"
+                                        data-testid="tai-option" data-name="@option.Name" @onclick="() => Choose(TargetApplications.FromOption(option, DateTimeOffset.UtcNow))">
+                                    <strong>@option.Name</strong><span class="tai-muted"> · @option.Reason</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                    @if (ProjectSetupPlanner.Search(_options, _query).Count == 0) { <p class="tai-muted" role="status">No detected application matches “@_query”.</p> }
+                </div>
+                @if (_adding)
+                {
+                    <div class="tai-manual" data-testid="tai-manual">
+                        <label>Application name <input class="form-control" maxlength="120" data-testid="tai-manual-name" @bind="_manualName" @bind:event="oninput" /></label>
+                        <label>Description (optional) <input class="form-control" maxlength="300" data-testid="tai-manual-description" @bind="_manualDescription" /></label>
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="tai-manual-save" disabled="@string.IsNullOrWhiteSpace(_manualName)"
+                                @onclick="() => Choose(TargetApplications.Manual(_manualName!, _manualDescription, DateTimeOffset.UtcNow))">Use this application</button>
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _adding = false">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-link btn-sm" data-testid="tai-add-manual" @onclick="() => _adding = true">+ Add application manually</button>
+                }
+                @if (_identity is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-keep" @onclick="() => _picking = false">Keep @_identity.Name</button> }
+            </div>
+        }
+        @if (_pending is { } pending)
+        {
+            <section class="tai-confirm" role="alertdialog" aria-labelledby="tai-confirm-h" aria-describedby="tai-confirm-text" data-testid="tai-confirm">
+                <h5 id="tai-confirm-h">Change the Target Application to @pending.Name?</h5>
+                <p id="tai-confirm-text">The Project evidence bound for @_identity?.Name is archived for this environment (not deleted) and evidence suggestions are recalculated for @pending.Name. Imported packages and Source Analysis snapshots are not changed.</p>
+                <button type="button" class="btn btn-primary btn-sm" data-testid="tai-confirm-yes" @ref="_confirmButton" @onclick="() => SaveAsync(pending)">Change application</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-confirm-no" @onclick="() => _pending = null">Cancel</button>
+            </section>
+        }
+        <p role="status" class="tai-muted" data-testid="tai-status">@_status</p>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+
+    private IProjectEvidenceService? Evidence => Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
+    private TargetApplicationIdentity? _identity;
+    private bool _hasEvidence, _picking, _adding, _focusConfirm;
+    private string? _query, _manualName, _manualDescription, _status, _loadedFor;
+    private IReadOnlyList<ProjectOption> _options = [];
+    private TargetApplicationIdentity? _pending;
+    private ElementReference _confirmButton;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EnvironmentId || Evidence is not { } evidence) return;
+        _loadedFor = EnvironmentId;
+        evidence.Changed -= OnChanged;
+        evidence.Changed += OnChanged;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusConfirm) { _focusConfirm = false; await _confirmButton.FocusAsync(); }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Evidence is not { } evidence || string.IsNullOrEmpty(EnvironmentId)) return;
+        var view = await evidence.GetAsync(EnvironmentId);
+        _identity = evidence.TargetApplicationOf(EnvironmentId);
+        _hasEvidence = view.IsConfigured;
+        _options = TargetApplications.Options(view.Packages, evidence.KnownProjectNames());
+        _picking = _identity is null;
+    }
+
+    private void StartPicking() { _picking = true; _status = null; }
+
+    private async Task Choose(TargetApplicationIdentity next)
+    {
+        // A different application with evidence bound: confirm first (that evidence is archived, never reused silently).
+        if (_identity is not null && _hasEvidence && !TargetApplications.SameApplication(_identity, next.Name)) { _pending = next; _focusConfirm = true; return; }
+        await SaveAsync(next);
+    }
+
+    private async Task SaveAsync(TargetApplicationIdentity next)
+    {
+        _pending = null;
+        if (Evidence is not { } evidence) return;
+        var saved = await evidence.SetTargetApplicationAsync(EnvironmentId, next);
+        _status = saved ? $"Target Application set to {next.Name}. Bind its evidence on the Project tab." : $"Target Application is already {next.Name}.";
+        _adding = false; _manualName = _manualDescription = null;
+        await LoadAsync();
+        _picking = false;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() { if (Evidence is { } evidence) evidence.Changed -= OnChanged; }
+}

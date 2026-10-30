@@ -69,42 +69,69 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
             });
     }
 
-    private IRenderedComponent<TargetEnvironmentProjectPane> RenderPane(string? focus = null) =>
-        Render<TargetEnvironmentProjectPane>(p => p.Add(x => x.EnvironmentId, "dev").Add(x => x.Focus, focus));
+    private FrontendAnalysisProfile DevProfile => _settings.Settings.Profiles.Single(p => p.Id == "dev");
 
-    /// <summary>Project setup through the checklist: choose the project, keep the defaults (optionally check more), Save.</summary>
-    private void Configure(IRenderedComponent<TargetEnvironmentProjectPane> cut, string project = "M2LB", Action? adjust = null)
+    /// <summary>The Target Application (as the Target Application tab sets it): the M2LB application package by default.</summary>
+    private void Application(string name = "M2LB", string? importId = "a") =>
+        TargetApplications.Set(DevProfile, new TargetApplicationIdentity { Name = name, ImportId = importId, Manual = importId is null, SetAt = DateTimeOffset.UtcNow }, DateTimeOffset.UtcNow);
+
+    /// <summary>The Project pane; by default the environment's Target Application is M2LB (set first unless <paramref name="withApplication"/> is false).</summary>
+    private IRenderedComponent<TargetEnvironmentProjectPane> RenderPane(string? focus = null, bool withApplication = true)
     {
-        cut.Find($"[data-testid=psp-option][data-name='{project}']").Click();
+        if (withApplication && TargetApplications.Of(DevProfile) is null) Application();
+        return Render<TargetEnvironmentProjectPane>(p => p.Add(x => x.EnvironmentId, "dev").Add(x => x.Focus, focus));
+    }
+
+    /// <summary>Project evidence through the checklist: keep the defaults (optionally check more), Save.</summary>
+    private void Configure(IRenderedComponent<TargetEnvironmentProjectPane> cut, Action? adjust = null)
+    {
         adjust?.Invoke();
         cut.Find("[data-testid=psp-save]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be(project));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-roles]").Should().NotBeEmpty());
     }
 
     private static AngleSharp.Dom.IElement Item(IRenderedComponent<TargetEnvironmentProjectPane> cut, string role, string import) =>
         cut.Find($"[data-testid=psp-role][data-role={role}] [data-testid=psp-item][data-import={import}]");
 
     [Fact]
-    public void NotConfigured_OffersLogicalProjectsOnly_NeverAnInfrastructurePackage()
+    public void NoTargetApplication_ProjectShowsThePrerequisite_NoProjectSearch_NoManualProject()
     {
-        var cut = RenderPane();
+        var cut = RenderPane(withApplication: false);
 
-        cut.Find("[data-testid=psp]").TextContent.Should().Contain("Project not configured").And.Contain("Choose the logical application/system");
-        cut.FindAll("[data-testid=tep-roles]").Should().BeEmpty("evidence lists are not shown before a project is chosen");
-        cut.Find("#psp-search").GetAttribute("role").Should().Be("combobox");
-        cut.FindAll("[data-testid=psp-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB", "M2LB-docs"],
-            "the application first, then the documentation project; Terraform-iac is evidence, never a project");
-        cut.Find("[data-testid=psp-search]").Input("docs");
-        cut.FindAll("[data-testid=psp-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB-docs"]);
-        cut.Find("[data-testid=psp-search]").Input("terraform");
-        cut.FindAll("[data-testid=psp-option]").Should().BeEmpty("package file names are not project names");
+        cut.Find("[data-testid=psp]").TextContent.Should().Contain("Target Application required").And.Contain("after choosing the application/system this environment represents");
+        cut.Find("[data-testid=psp-configure-target-application]").GetAttribute("href").Should().Contain("tab=target").And.Contain("profile=dev");
+        cut.FindAll("[data-testid=psp-search]").Should().BeEmpty("Project never chooses the application");
+        cut.FindAll("[data-testid=psp-create-manual]").Should().BeEmpty();
+        cut.FindAll("[data-testid=psp-checklist]").Should().BeEmpty("no package checklist before the application is known");
+        cut.FindAll("[data-testid=tep-roles]").Should().BeEmpty();
+        cut.Find("[data-testid=tep-target-application]").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("Not configured");
     }
 
     [Fact]
-    public void ChoosingTheProject_ShowsTheChecklist_StrongPreselected_PossibleNot_AndSaveBindsReferencesOnly()
+    public void TargetApplication_OffersApplicationsOnly_NeverAnInfrastructurePackage()
+    {
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+
+        panel.WaitForAssertion(() => panel.FindAll("[data-testid=tai-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB", "M2LB-docs"],
+            "the application first, then the documentation project; Terraform-iac is evidence, never an application"));
+        panel.Find("[data-testid=tai-search]").Input("terraform");
+        panel.FindAll("[data-testid=tai-option]").Should().BeEmpty("package file names are not application names");
+        panel.Find("[data-testid=tai-search]").Input("");
+        panel.Find("[data-testid=tai-option][data-name=M2LB]").Click();
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-name]").TextContent.Should().Be("M2LB"));
+        DevProfile.TargetApplication!.ImportId.Should().Be("a");
+        DevProfile.Project.Should().BeNull("choosing the application binds no evidence by itself");
+        _settings.Settings.ActiveProfileId.Should().Be("dev", "unchanged — setting the application never changes activation");
+    }
+
+    [Fact]
+    public void TargetApplicationSet_ShowsTheChecklist_StrongPreselected_PossibleNot_AndSaveBindsReferencesOnly()
     {
         var cut = RenderPane();
-        cut.Find("[data-testid=psp-option][data-name=M2LB]").Click();
+        cut.Find("#psp-title").TextContent.Should().Be("Project evidence for M2LB");
+        cut.Find("[data-testid=psp-suggestions-lead]").TextContent.Should().Contain("Strong matches are selected by default");
 
         var app = Item(cut, ProjectEvidenceRoles.ApplicationSource, "a");
         app.GetAttribute("data-strength").Should().Be("Strong");
@@ -121,7 +148,8 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.Find("[data-testid=psp-summary]").TextContent.Should().Contain("Infrastructure: 1 selected").And.Contain("Project documentation: 1 selected");
         cut.Find("[data-testid=psp-save]").Click();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().StartWith("Ready"));
+        cut.Find("[data-testid=tep-target-application]").TextContent.Should().Be("M2LB");
         var rows = cut.FindAll("[data-testid=tep-role]");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.ApplicationSource).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Ready");
@@ -179,17 +207,21 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     }
 
     [Fact]
-    public void A_project_can_be_created_by_name_before_any_evidence_exists()
+    public void A_manual_application_is_added_on_Target_Application_then_its_evidence_is_bound_on_Project()
     {
-        var cut = RenderPane();
-        cut.Find("[data-testid=psp-create-manual]").Click();
-        cut.Find("[data-testid=psp-manual-name]").Input("Skolenærvær");
-        cut.Find("[data-testid=psp-manual-description]").Change("School attendance reporting");
-        cut.Find("[data-testid=psp-manual-create]").Click();
-        cut.Find("[data-testid=psp-chosen]").TextContent.Should().Contain("Skolenærvær").And.Contain("Manual");
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-add-manual]"));
+        panel.Find("[data-testid=tai-add-manual]").Click();
+        panel.Find("[data-testid=tai-manual-name]").Input("Skolenærvær");
+        panel.Find("[data-testid=tai-manual-description]").Change("School attendance reporting");
+        panel.Find("[data-testid=tai-manual-save]").Click();
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-current]").TextContent.Should().Contain("Skolenærvær").And.Contain("Added manually"));
+
+        var cut = RenderPane(withApplication: false);
+        cut.Find("#psp-title").TextContent.Should().Be("Project evidence for Skolenærvær");
         cut.Find("[data-testid=psp-save]").Click();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("Skolenærvær"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-roles]").Should().NotBeEmpty());
         var project = _settings.Settings.Profiles.Single(p => p.Id == "dev").Project!;
         project.Manual.Should().BeTrue();
         project.ProjectImportId.Should().BeNull("a manual project is not a package");
@@ -198,19 +230,29 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     }
 
     [Fact]
-    public void Changing_the_project_asks_first_and_never_deletes_evidence()
+    public void Changing_the_Target_Application_asks_first_archives_its_evidence_and_never_deletes_anything()
     {
-        var cut = RenderPane();
-        Configure(cut);
-        cut.Find("[data-testid=tep-change-project]").Click();
-        cut.Find("[data-testid=psp-option][data-name=M2LB-docs]").Click();
-        cut.Find("[data-testid=psp-save]").Click();
+        Configure(RenderPane());
+        var m2lbEvidence = DevProfile.Project!;
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-change]"));
+        panel.Find("[data-testid=tai-change]").Click();
+        panel.Find("[data-testid=tai-option][data-name=M2LB-docs]").Click();
 
-        cut.Find("[data-testid=psp-switch-confirm]").TextContent.Should().Contain("from M2LB to M2LB-docs").And.Contain("Imports, Source Analysis snapshots and documents stay");
-        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB", "nothing is applied before confirmation");
-        cut.Find("[data-testid=psp-switch-confirm-button]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().Be("M2LB-docs"));
-        _repository.SddLifecycle.ProjectImports.Should().HaveCount(3);
+        panel.Find("[data-testid=tai-confirm]").TextContent.Should().Contain("archived").And.Contain("not deleted").And.Contain("recalculated for M2LB-docs");
+        DevProfile.TargetApplication!.Name.Should().Be("M2LB", "nothing is applied before confirmation");
+        panel.Find("[data-testid=tai-confirm-yes]").Click();
+
+        panel.WaitForAssertion(() => DevProfile.TargetApplication!.Name.Should().Be("M2LB-docs"));
+        DevProfile.Project.Should().BeNull("M2LB evidence is not reused for another application");
+        DevProfile.ArchivedProjects.Should().ContainSingle().Which.Should().BeSameAs(m2lbEvidence);
+        _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "no import is deleted");
+        RenderPane().Find("#psp-title").TextContent.Should().Be("Project evidence for M2LB-docs");
+
+        // Choosing M2LB again restores its earlier evidence decisions.
+        TargetApplications.Set(DevProfile, new TargetApplicationIdentity { Name = "M2LB", ImportId = "a" }, DateTimeOffset.UtcNow).Should().BeTrue();
+        DevProfile.Project.Should().BeSameAs(m2lbEvidence);
+        DevProfile.ArchivedProjects.Should().BeNull();
     }
 
     [Fact]

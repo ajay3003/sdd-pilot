@@ -36,6 +36,13 @@ public interface IProjectEvidenceService
     /// </summary>
     Task<bool> SaveProjectAsync(string environmentId, ProjectSetupDraft draft) => Task.FromResult(false);
 
+    /// <summary>Sets the environment's Target Application (the logical application/system). A different application archives the previous
+    /// application's Project evidence (recoverable, never deleted). Never activates the environment.</summary>
+    Task<bool> SetTargetApplicationAsync(string environmentId, TargetApplicationIdentity identity) => Task.FromResult(false);
+
+    /// <summary>The environment profile's Target Application identity (legacy profiles: read from their Project).</summary>
+    TargetApplicationIdentity? TargetApplicationOf(string? environmentId) => null;
+
     event Action? Changed;
 }
 
@@ -109,6 +116,8 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
     {
         if (profile.Project is not null || Package(environmentId, importId) is not { } main) return false;
         profile.Project = ProjectEvidenceResolver.CreateProject(main, _time.GetUtcNow());
+        profile.TargetApplication ??= TargetApplications.Of(profile) is { } identity ? new TargetApplicationIdentity
+            { Name = identity.Name, ImportId = identity.ImportId, ArchiveSha256 = identity.ArchiveSha256, SetAt = _time.GetUtcNow() } : null;
         return true;
     });
 
@@ -165,8 +174,13 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
         return project.TestPacks.RemoveAll(p => p == packId) > 0;
     });
 
+    public Task<bool> SetTargetApplicationAsync(string environmentId, TargetApplicationIdentity identity) =>
+        MutateAsync(environmentId, profile => TargetApplications.Set(profile, identity, _time.GetUtcNow()));
+
+    public TargetApplicationIdentity? TargetApplicationOf(string? environmentId) => TargetApplications.Of(Profile(environmentId));
+
     public IReadOnlyList<string> KnownProjectNames() =>
-        [.. _settings.Settings.Profiles.Select(p => p.Project?.ProjectName).OfType<string>().Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
+        [.. _settings.Settings.Profiles.Select(p => TargetApplications.Of(p)?.Name).OfType<string>().Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     public Task<bool> SaveProjectAsync(string environmentId, ProjectSetupDraft draft) => MutateAsync(environmentId, profile =>
     {
@@ -175,6 +189,11 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
         var packages = ProjectEvidencePackages.All(_workspace.SddLifecycle, _setup.GetValueOrDefault(environmentId));
         var main = draft.MainImportId is { } id ? packages.FirstOrDefault(p => p.ImportId == id) : null;
         var now = _time.GetUtcNow();
+        // Project evidence is for the Target Application: the identity is set (or kept) first; a legacy profile's identity is materialized.
+        if (TargetApplications.Of(profile) is not { } identity || !TargetApplications.SameApplication(identity, name))
+            TargetApplications.Set(profile, new TargetApplicationIdentity { Name = name, ImportId = main?.ImportId, ArchiveSha256 = main?.ArchiveSha256, Manual = main is null, SetAt = now }, now);
+        else if (profile.TargetApplication is null)
+            profile.TargetApplication = new TargetApplicationIdentity { Name = identity.Name, ImportId = identity.ImportId, ArchiveSha256 = identity.ArchiveSha256, Manual = identity.Manual, Description = identity.Description, SetAt = now };
         if (profile.Project is not { } project || !string.Equals(project.ProjectName, name, StringComparison.OrdinalIgnoreCase))
         {
             // A new (or different) logical project for this environment. Its main package's own evidence is decided by the checklist below.
@@ -203,7 +222,12 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
 
     public Task<bool> ClearProjectAsync(string environmentId) => MutateAsync(environmentId, profile =>
     {
-        if (profile.Project is null) return false;
+        // Removes the evidence bindings from the environment; they are archived (recoverable), and imports/snapshots are never touched.
+        if (profile.Project is not { } project) return false;
+        if (profile.TargetApplication is null && TargetApplications.Of(profile) is { } identity)
+            profile.TargetApplication = new TargetApplicationIdentity { Name = identity.Name, ImportId = identity.ImportId, ArchiveSha256 = identity.ArchiveSha256, Manual = identity.Manual, SetAt = _time.GetUtcNow() };
+        project.ArchivedAt = _time.GetUtcNow();
+        (profile.ArchivedProjects ??= []).Add(project);
         profile.Project = null;
         return true;
     });

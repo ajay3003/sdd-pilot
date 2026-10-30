@@ -380,6 +380,23 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         }
     }
 
+    /// <summary>
+    /// An environment with imported evidence but no Project evidence: the Target Application (WHAT the environment represents) comes first,
+    /// then its Project evidence. Project never asks for the application again.
+    /// </summary>
+    private WorkflowStepViewModel ConfigureProjectEvidence(string environmentId, ProjectEvidence.ProjectEvidenceView evidence)
+    {
+        var profile = _settings?.Settings.Profiles.FirstOrDefault(p => p.Id == environmentId) ?? (_applicability.Profile?.Id == environmentId ? _applicability.Profile : null);
+        if (ProjectEvidence.TargetApplications.Of(profile) is not { } application)
+            return Synthetic(ConfigureProjectKey, "Configure Target Application",
+                "Choose the application/system this environment represents; its Project evidence (the imported packages that describe it) is bound next."
+                + (evidence.SuggestedProject is { } suggested ? $" Detected: {suggested.DisplayName}." : evidence.ProjectCandidates.Count > 1 ? $" {evidence.ProjectCandidates.Count} application candidates need a choice." : ""),
+                ProjectEvidence.TargetApplications.TabHref(environmentId), "Configure Target Application");
+        return Synthetic(ConfigureProjectKey, "Configure Project evidence",
+            $"Bind the imported evidence of {application.Name}: application source, documentation, contracts, infrastructure and supporting packages. Project evidence decides which documents and source the reviews read for this environment.",
+            ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Configure Project evidence");
+    }
+
     private static WorkflowStepViewModel ChoosePath(string title, string description) =>
         Synthetic(WorkflowPaths.ChoosePathKey, title, description, "getting-started", "Choose a review path");
 
@@ -469,7 +486,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     /// applicable review in sidebar order; an incomplete target. Never a review step while its artifacts are missing, and
     /// never a source or target prerequisite for work that does not need it.
     /// </summary>
-    private static WorkflowStepViewModel? NextAction(CurrentWorkspaceSnapshot workspace, ProjectInputs inputs,
+    private WorkflowStepViewModel? NextAction(CurrentWorkspaceSnapshot workspace, ProjectInputs inputs,
         IReadOnlyList<WorkflowStepViewModel> steps, IReadOnlyList<WorkflowReviewOption> reviews,
         ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles, SourceBindingState binding,
         ProjectEvidence.ProjectEvidenceView? evidence = null)
@@ -478,10 +495,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         // source the reviews read (binding documents before that would bind them to no project).
         if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } projectEnvironment } && workspace.Evidence is not null && evidence.Packages.Any(p => p.Capabilities.Count > 0)
             && artifactLoad == ArtifactLoadState.Required)
-            return Synthetic(ConfigureProjectKey, "Configure Project",
-                "Select the logical system this environment represents and confirm the evidence packages that belong to it. A project unlocks document reviews, source-scoped reviews, integration discovery, contract selection and generated-documentation context."
-                + (evidence.SuggestedProject is { } first ? $" Suggested: {first.DisplayName}." : ""),
-                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(projectEnvironment), "Configure Project");
+            return ConfigureProjectEvidence(projectEnvironment, evidence);
 
         if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
         {
@@ -501,10 +515,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
         // Imported evidence but no logical project for the active Target Environment: configuring it is the next step (never forced at import).
         if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } environmentId } && evidence.Packages.Any(p => p.Capabilities.Count > 0))
-            return Synthetic(ConfigureProjectKey, "Configure Project",
-                "Select the logical system this environment represents and confirm the evidence packages that belong to it. A project unlocks document reviews, source-scoped reviews, integration discovery, contract selection and generated-documentation context."
-                + (evidence.SuggestedProject is { } suggested ? $" Suggested: {suggested.DisplayName}." : evidence.ProjectCandidates.Count > 1 ? $" {evidence.ProjectCandidates.Count} application candidates need a choice." : ""),
-                ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Configure Project");
+            return ConfigureProjectEvidence(environmentId, evidence);
 
         // Required project evidence (Target Environment → Project, activated Test Pack roles) that is not bound: bind or import exactly that role.
         if (evidence is { IsConfigured: true } && MissingEvidenceAction(evidence) is { } missingEvidence) return missingEvidence;

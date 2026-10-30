@@ -115,11 +115,12 @@ public sealed class UserGuidePageTests : BunitContext
     }
 
     [Fact]
-    public void Project_is_documented_as_a_logical_multi_package_system()
+    public void Project_is_documented_as_evidence_for_the_Target_Application()
     {
         var text = Normalize(Render<UserGuide>().Find("#project-model").TextContent);
 
-        text.Should().Contain("A Project is the logical system under test — not the latest ZIP");
+        text.Should().Contain("Target Application is the system under test; Project is its evidence.");
+        text.Should().Contain("Target Application required").And.Contain("archives the previous application's evidence (never deletes it)");
         text.Should().ContainAll("Source only", "Docs only", "Contracts/schema only", "Infrastructure only", "Supporting/shared source", "multi-package project");
         text.Should().Contain("Missing code never makes a package invalid");
         text.Should().Contain("Bound is not Ready").And.Contain("Optional evidence never blocks");

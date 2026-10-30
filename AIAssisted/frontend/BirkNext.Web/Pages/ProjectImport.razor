@@ -984,21 +984,35 @@
         if (!view.IsConfigured)
         {
             if (!view.Packages.Any(p => p.Capabilities.Count > 0)) return;
+            var application = (ServiceProvider.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService)?.TargetApplicationOf(environmentId);
             <section class="pi-card pi-project-next" aria-labelledby="pi-project-h" data-testid="pi-project-next" data-state="configure">
-                <h2 id="pi-project-h">Project context available</h2>
-                <p>BirkNext found evidence that can define the project this Target Environment tests. Project setup organizes evidence; the import is complete either way.</p>
-                @if (view.SuggestedProject is { } suggested)
+                @if (application is { } app)
                 {
-                    <p data-testid="pi-project-suggested">Suggested project <strong>@suggested.DisplayName</strong> — @suggested.ClassificationReason</p>
+                    @* WHAT the environment represents is known: this import is evidence that may belong to it — never bound automatically. *@
+                    <h2 id="pi-project-h">Available for Target Application @app.Name</h2>
+                    <p>This import may be evidence for @app.Name. Review Project evidence to bind it; the import is complete either way and nothing is bound automatically.</p>
+                    <div class="pi-actions">
+                        <a class="btn-primary" href="@ProjectEvidenceResolver.ProjectTabHref(environmentId)" data-testid="pi-project-configure">Review Project evidence</a>
+                        <button type="button" class="btn-secondary" data-testid="pi-project-later" @onclick="() => _projectDeferred = true">Later</button>
+                    </div>
                 }
-                else if (view.ProjectCandidates.Count > 1)
+                else
                 {
-                    <p data-testid="pi-project-candidates">Project needs selection: @string.Join(", ", view.ProjectCandidates.Select(p => p.DisplayName)).</p>
+                    <h2 id="pi-project-h">Target Application not chosen yet</h2>
+                    <p>BirkNext found evidence for an application. Choose the Target Application this environment represents first; its Project evidence is bound next. The import is complete either way.</p>
+                    @if (view.SuggestedProject is { } suggested)
+                    {
+                        <p data-testid="pi-project-suggested">Detected application <strong>@suggested.DisplayName</strong> — @suggested.ClassificationReason</p>
+                    }
+                    else if (view.ProjectCandidates.Count > 1)
+                    {
+                        <p data-testid="pi-project-candidates">Applications detected: @string.Join(", ", view.ProjectCandidates.Select(p => p.DisplayName)).</p>
+                    }
+                    <div class="pi-actions">
+                        <a class="btn-primary" href="@TargetApplications.TabHref(environmentId)" data-testid="pi-project-configure">Configure Target Application</a>
+                        <button type="button" class="btn-secondary" data-testid="pi-project-later" @onclick="() => _projectDeferred = true">Configure later</button>
+                    </div>
                 }
-                <div class="pi-actions">
-                    <a class="btn-primary" href="@ProjectEvidenceResolver.ProjectTabHref(environmentId)" data-testid="pi-project-configure">Configure Project</a>
-                    <button type="button" class="btn-secondary" data-testid="pi-project-later" @onclick="() => _projectDeferred = true">Configure later</button>
-                </div>
             </section>
             return;
         }

@@ -54,6 +54,25 @@ public sealed class EnvironmentProject
     [JsonPropertyName("manual")] public bool Manual { get; set; }
     /// <summary>Suggested evidence the user deselected (role + import): later detection never reselects it silently.</summary>
     [JsonPropertyName("declined")] public List<ProjectEvidenceDecline> Declined { get; set; } = [];
+    /// <summary>When this Project evidence was set aside because the Target Application changed (archived, never deleted).</summary>
+    [JsonPropertyName("archivedAt"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ArchivedAt { get; set; }
+}
+
+/// <summary>
+/// WHAT a Target Environment represents: the logical application/system (for example M2LB). Owned by Target Application; Project evidence
+/// binds imported packages to it. <see cref="ImportId"/> is the detected application package when the identity came from one (manual
+/// applications have none). References only — no package is created or copied.
+/// </summary>
+public sealed class TargetApplicationIdentity
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("importId")] public string? ImportId { get; set; }
+    [JsonPropertyName("archiveSha256")] public string? ArchiveSha256 { get; set; }
+    [JsonPropertyName("manual")] public bool Manual { get; set; }
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("setAt")] public DateTimeOffset SetAt { get; set; }
+    /// <summary>Read from a Project saved before Target Application owned the identity (not persisted as such).</summary>
+    [JsonIgnore] public bool Legacy { get; set; }
 }
 
 /// <summary>An explicit "not this package for this role" decision from the Project evidence checklist.</summary>

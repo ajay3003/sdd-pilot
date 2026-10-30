@@ -189,14 +189,16 @@ public static class WorkflowPaths
         var name = environment.Name is { Length: > 0 } n ? n : "the environment";
         steps.Add(new(EnvironmentStep, "Target Environment", true, $"{name}{(active is null ? " (configured, not active)" : " (active)")}", "Open Target Environments", TabHref(environment.Id, "general")));
 
-        var target = ProjectInputPresentation.Target(environment);
-        var targetMet = target.Status == ProjectInputStatus.Ready;
-        steps.Add(new(TargetApplicationStep, "Target Application", targetMet,
-            targetMet ? environment.TargetUrl ?? "" : $"What application does {name} represent? Set its URL and run the target check.",
+        var identity = ProjectEvidence.TargetApplications.Of(environment);
+        var urlReady = ProjectInputPresentation.Target(environment).Status == ProjectInputStatus.Ready;
+        steps.Add(new(TargetApplicationStep, "Target Application", identity is not null && urlReady,
+            identity is null ? $"What application/system does {name} represent? Choose it, then set its URL."
+            : urlReady ? $"{identity.Name} · {environment.TargetUrl}" : $"{identity.Name} · set its URL and run the target check.",
             "Configure Target Application", TabHref(environment.Id, "target")));
 
         if (environment.Project is null)
-            steps.Add(new(ProjectStep, "Project evidence", false, $"Bind the evidence (source, documents, contracts, infrastructure) of the application {name} represents.",
+            steps.Add(new(ProjectStep, identity is null ? "Project evidence" : $"Project evidence for {identity.Name}", false,
+                $"Bind the imported evidence (source, documents, contracts, infrastructure) of {identity?.Name ?? $"the application {name} represents"}.",
                 "Configure Project evidence", ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environment.Id)));
         else if (evidenceOf(environment.Id) is { RequiredReadyAll: false } partial)
             steps.Add(new(ProjectStep, $"Project evidence for {partial.ProjectName}", false,

@@ -16,7 +16,7 @@
             }
             else if (_view?.EnvironmentId is { Length: > 0 } env)
             {
-                <a href="@ProjectEvidenceResolver.ProjectTabHref(env)" data-testid="project-context-project">Not configured · Configure Project</a>
+                <a href="@ProjectEvidenceResolver.ProjectTabHref(env)" data-testid="project-context-project">Not configured · Configure Project evidence</a>
             }
             else { <span data-testid="project-context-project">Not configured</span> }
         </span>
@@ -81,8 +81,7 @@
             _view = Evidence?.Peek(EnvironmentId);
             var profile = EnvironmentId is { Length: > 0 } id ? Settings?.Settings.Profiles.FirstOrDefault(p => p.Id == id) : Settings?.ActiveProfile;
             _environmentName = profile?.Name is { Length: > 0 } n ? n : null;
-            _targetApplication = profile is { } p && ProjectInputPresentation.Target(p).Status == ProjectInputStatus.Ready
-                && Uri.TryCreate(p.TargetUrl, UriKind.Absolute, out var url) ? url.Host : null;
+            _targetApplication = TargetApplications.Of(profile)?.Name;
         }
         catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException) { _view = null; }
     }

@@ -1,0 +1,14 @@
+.tai { border: 1px solid var(--clr-border); border-radius: 10px; padding: .85rem 1rem; margin-bottom: 1rem; background: var(--clr-surface-white); display: flex; flex-direction: column; gap: .5rem; }
+.tai-title { margin: 0; font-size: 1rem; color: var(--clr-text-heading); }
+.tai-current, .tai p { margin: 0; }
+.tai-muted { color: var(--clr-text-muted); font-size: .9rem; }
+.tai-label { font-weight: 600; font-size: .9rem; }
+.tai-picker { display: flex; flex-direction: column; gap: .4rem; }
+.tai-options { display: flex; flex-direction: column; gap: .25rem; max-height: 16rem; overflow-y: auto; border: 1px solid var(--clr-border-subtle); border-radius: 6px; padding: .35rem; }
+.tai-group { margin: .25rem 0 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); }
+.tai-option { text-align: left; border: 1px solid transparent; border-radius: 6px; background: none; padding: .3rem .5rem; }
+.tai-option:hover, .tai-option:focus-visible { border-color: var(--clr-primary); outline: none; }
+.tai-option[aria-selected=true] { background: var(--clr-surface-selected); }
+.tai-manual { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; }
+.tai-confirm { border: 1px solid var(--clr-warning-border); background: var(--clr-warning-bg-light); border-radius: 8px; padding: .6rem .8rem; }
+.tai-confirm h5 { margin: 0 0 .25rem; font-size: .95rem; }

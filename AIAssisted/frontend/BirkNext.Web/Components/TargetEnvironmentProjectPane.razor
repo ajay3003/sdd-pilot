@@ -11,8 +11,8 @@
    snapshots. Unbound roles are only Suggested (one compatible package) or Needs decision (several): never the newest automatically. *@
 <section class="tep" data-testid="tep" aria-labelledby="tep-title">
     <header class="tep-head">
-        <h3 id="tep-title" class="tep-title">Project</h3>
-        <p class="tep-lead">Define which project this environment tests and which imported evidence provides its source, documentation, contracts and supporting context. <a class="ug-learn-more" href="/user-guide#project-model" data-testid="tep-learn-more">Learn more</a></p>
+        <h3 id="tep-title" class="tep-title">Project evidence</h3>
+        <p class="tep-lead">Bind imported source, documentation, contracts, infrastructure and supporting evidence to the selected Target Application. <a class="ug-learn-more" href="/user-guide#project-model" data-testid="tep-learn-more">Learn more</a></p>
     </header>
 
     @if (_error is { } error) { <p class="tep-banner tep-banner-error" role="alert" data-testid="tep-error">@error</p> }
@@ -30,22 +30,19 @@
     {
         <dl class="tep-facts" data-testid="tep-facts">
             <div><dt>Target Environment</dt><dd data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</dd></div>
-            <div><dt>Project</dt><dd data-testid="tep-project">@(_view.IsConfigured ? _view.ProjectName : "Not configured")</dd></div>
+            <div><dt>Target Application</dt><dd data-testid="tep-target-application">@if (_identity is { } app) { @app.Name } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Not configured</a> }</dd></div>
+            <div><dt>Project evidence</dt><dd data-testid="tep-project">@EvidenceStatus</dd></div>
             @if (_view.IsConfigured)
             {
                 <div><dt>Evidence bindings</dt><dd data-testid="tep-binding-summary">@_view.Summary</dd></div>
             }
         </dl>
 
-        @if (!_view.IsConfigured && _view.Packages.Count == 0)
-        {
-            <p class="tep-muted" data-testid="tep-no-imports">No project packages are imported in this workspace yet. You can still name the project now and add its evidence later. <a href="@ProjectImportPresentation.ImportSourceHref">Import Project</a></p>
-        }
         @if (!_view.IsConfigured || _setup)
         {
-            @* Project setup: the logical project, then its evidence checklist. Saves into the same bindings the advanced table below shows. *@
-            <ProjectSetupPanel @key="@($"{EnvironmentId}|{_view.ProjectName}|{_setupPick}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
-                               Packages="_view.Packages" Current="_view.Project" KnownProjects="Evidence!.KnownProjectNames()" Evidence="Evidence!" StartPicking="_setupPick"
+            @* Project evidence for the Target Application: its evidence checklist. Saves into the same bindings the advanced table below shows. *@
+            <ProjectSetupPanel @key="@($"{EnvironmentId}|{_identity?.Name}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
+                               Packages="_view.Packages" Current="_view.Project" TargetApplication="_identity" Evidence="Evidence!"
                                OnSaved="SetupSavedAsync" OnCancel="@(_view.IsConfigured ? EventCallback.Factory.Create(this, () => _setup = false) : default)" />
         }
 
@@ -53,12 +50,12 @@
         {
             @if (!_view.MainAvailable)
             {
-                <p class="tep-banner" role="status" data-testid="tep-main-unavailable">The main package of @_view.ProjectName is not imported in this workspace. Consumers fall back to the current project until it is imported again or the project is changed.</p>
+                <p class="tep-banner" role="status" data-testid="tep-main-unavailable">The application package of @_view.ProjectName is not imported in this workspace. Consumers fall back to the current project until it is imported again or the Target Application is changed.</p>
             }
             <div class="tep-project-actions">
-                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-edit-evidence" @onclick="() => OpenSetup(pick: false)">Edit project evidence</button>
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-change-project" @onclick="() => OpenSetup(pick: true)">Change project</button>
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove project binding</button>
+                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-edit-evidence" @onclick="() => OpenSetup(pick: false)">Edit Project evidence</button>
+                <a class="btn btn-secondary btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="tep-change-application">Change Target Application</a>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove evidence bindings</button>
             </div>
             @if (_impact.Count > 0)
             {
@@ -205,7 +202,7 @@
             }
         }
 
-        <p class="tep-muted tep-ownership" data-testid="tep-ownership">Import Project owns imported packages and Source Analysis owns snapshots; this tab stores references only. Removing a binding or this environment never deletes imported evidence.</p>
+        <p class="tep-muted tep-ownership" data-testid="tep-ownership">This page binds imported evidence to the selected Target Application. Imported packages and Source Analysis snapshots remain independently owned and are never deleted by changing these bindings.</p>
     }
 </section>
 
@@ -215,6 +212,13 @@
     [Parameter] public string? Focus { get; set; }
 
     private ProjectEvidenceView? _view;
+    private TargetApplicationIdentity? _identity;
+
+    /// <summary>Project evidence status: Not configured / Ready / Partial / Needs decision — never "Project not configured" when only evidence is missing.</summary>
+    private string EvidenceStatus => _view is not { IsConfigured: true } v ? "Not configured"
+        : v.RequiredReadyAll ? $"Ready · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
+        : v.NeedsDecision > 0 ? $"Needs decision · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
+        : $"Partial · {v.RequiredReady} / {v.RequiredTotal} required roles ready{(v.BlockingLabels.Count > 0 ? $" · missing {string.Join(", ", v.BlockingLabels)}" : "")}";
     private bool _setup, _setupPick;
     private int _setupVersion;
     private string? _openRole;
@@ -239,6 +243,7 @@
     {
         if (Evidence is null) return;
         _view = await Evidence.GetAsync(EnvironmentId);
+        _identity = Evidence.TargetApplicationOf(EnvironmentId);
         if (Focus is { Length: > 0 } focus && focus != _appliedFocus)
         {
             _appliedFocus = focus;
@@ -258,7 +263,12 @@
         try { await JS.InvokeVoidAsync("birknextFocusElement", $"tep-role-{_openRole}"); } catch (JSException) { } catch (InvalidOperationException) { }
     }
 
-    private async Task ReloadAsync() { if (Evidence is not null) _view = await Evidence.GetAsync(EnvironmentId); }
+    private async Task ReloadAsync()
+    {
+        if (Evidence is null) return;
+        _view = await Evidence.GetAsync(EnvironmentId);
+        _identity = Evidence.TargetApplicationOf(EnvironmentId);
+    }
 
     private void Toggle(string roleKey) => _openRole = _openRole == roleKey ? null : roleKey;
 

@@ -275,6 +275,8 @@
             @* ── Target Application ── *@
             @if (_activeTab == "target")
             {
+                @* WHAT this environment represents: the logical application/system identity, owned here (Project binds evidence to it). *@
+                @if (_selectedProfileId is { Length: > 0 } targetProfileId) { <TargetApplicationIdentityPanel EnvironmentId="@targetProfileId" /> }
                 @* Detected target identity and runtime facts only. Authentication is configured, verified and
                    used for testing on the Authentication tab; nothing here edits authentication. *@
 
@@ -2262,7 +2264,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             // Only what the person changed becomes a configured override; observed values are never copied into configuration.
             if (SelectedProfile is { } saved) EffectiveAuthentication.ApplyEdit(saved.Authentication, _editProfile.Authentication);
             // The Project tab saves its bindings directly; a draft opened before such a change must not write an older project back.
-            if (SelectedProfile is { } stored) _editProfile.Project = stored.Project;
+            if (SelectedProfile is { } stored)
+            {
+                _editProfile.Project = stored.Project;
+                // Target Application identity and archived evidence are also saved directly (Target Application / Project tabs).
+                _editProfile.TargetApplication = stored.TargetApplication;
+                _editProfile.ArchivedProjects = stored.ArchivedProjects;
+            }
             FaSettings.UpdateProfile(_editProfile);
             await FaSettings.SaveAsync(JS);
             _selectedProfileId = _editProfile.Id;

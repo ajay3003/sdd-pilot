@@ -271,6 +271,15 @@ public sealed class FrontendAnalysisProfile
     /// </summary>
     [JsonPropertyName("project"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public EnvironmentProject? Project { get; set; }
+
+    /// <summary>The logical application/system this environment represents (Target Application). Omitted when null so existing profile
+    /// fingerprints stay valid; profiles saved earlier read it from <see cref="Project"/> (see TargetApplications.Of).</summary>
+    [JsonPropertyName("targetApplication"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TargetApplicationIdentity? TargetApplication { get; set; }
+
+    /// <summary>Project evidence of earlier Target Applications of this environment, kept so those decisions remain recoverable.</summary>
+    [JsonPropertyName("archivedProjects"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<EnvironmentProject>? ArchivedProjects { get; set; }
 }
 
 public sealed class FrontendAuthenticationSettings

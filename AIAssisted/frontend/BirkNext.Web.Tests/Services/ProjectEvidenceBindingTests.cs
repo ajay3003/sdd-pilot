@@ -507,10 +507,11 @@ public sealed class ProjectEvidenceBindingTests
 
         var readiness = await ReadinessAsync(workspace, view);
 
+        // No Target Application yet: the application comes first (Project never asks for it), with the detected candidate named.
         readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.ConfigureProjectKey);
-        readiness.NextRecommendedAction.Title.Should().Be("Configure Project");
-        readiness.NextRecommendedAction.Description.Should().Contain("Select the logical system").And.Contain("confirm the evidence packages").And.Contain("Suggested: M2LB");
-        readiness.NextRecommendedAction.Route.Should().Contain("tab=project").And.Contain("profile=dev");
+        readiness.NextRecommendedAction.Title.Should().Be("Configure Target Application");
+        readiness.NextRecommendedAction.Description.Should().Contain("Choose the application/system").And.Contain("Detected: M2LB");
+        readiness.NextRecommendedAction.Route.Should().Contain("tab=target").And.Contain("profile=dev");
     }
 
     [Fact]

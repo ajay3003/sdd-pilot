@@ -2,70 +2,34 @@
 @using BirkNext.Web.Services.ProjectEvidence
 @inject IJSRuntime JS
 
-@* Target Environment → Project setup: choose the logical project (a searchable list of systems — never an infrastructure or support package),
-   then confirm its evidence per role. Strong suggestions are preselected and explained; possible matches are not. Saving applies the choices to
-   the one canonical binding model the advanced evidence table below also shows. Nothing is imported, copied or deleted here. *@
+@* Target Environment → Project evidence: binds imported evidence to the selected Target Application (which owns the application/system
+   identity — this panel never chooses it). Strong suggestions are preselected and explained; possible matches are not. Saving applies the
+   choices to the one canonical binding model the advanced evidence table below also shows. Nothing is imported, copied or deleted here. *@
 <section class="psp" aria-labelledby="psp-title" data-testid="psp">
-    <h4 id="psp-title" class="psp-title" tabindex="-1">@(Current is null ? "Project not configured" : "Project setup")</h4>
-    @if (Current is null) { <p class="psp-muted">Choose the logical application/system this environment represents. Its evidence packages are suggested next.</p> }
-
-    @* 1 · Project *@
-    @if (_name is null || _picking)
+    @if (TargetApplication is null)
     {
-        <div class="psp-picker" data-testid="psp-picker">
-            <label for="psp-search" class="psp-label">Project</label>
-            <input id="psp-search" type="search" class="form-control psp-search" role="combobox" aria-expanded="true" aria-controls="psp-options" aria-autocomplete="list"
-                   placeholder="Search projects" autocomplete="off" data-testid="psp-search" @bind="_query" @bind:event="oninput" />
-            <div id="psp-options" role="listbox" aria-label="Projects" class="psp-options" data-testid="psp-options">
-                @foreach (var group in ProjectSetupPlanner.Search(Options, _query).GroupBy(o => o.Group))
-                {
-                    <div role="group" aria-label="@group.Key" class="psp-option-group">
-                        <p class="psp-group-title" aria-hidden="true">@group.Key</p>
-                        @foreach (var option in group)
-                        {
-                            <button type="button" role="option" aria-selected="@(string.Equals(option.Name, _name, StringComparison.OrdinalIgnoreCase) ? "true" : "false")"
-                                    class="psp-option" data-testid="psp-option" data-name="@option.Name" @onclick="() => Choose(option)">
-                                <strong>@option.Name</strong><span class="psp-muted"> · @option.Reason</span>
-                            </button>
-                        }
-                    </div>
-                }
-                @if (ProjectSetupPlanner.Search(Options, _query).Count == 0) { <p class="psp-muted" role="status">No project matches “@_query”.</p> }
-            </div>
-            @if (_creating)
-            {
-                <div class="psp-manual" data-testid="psp-manual">
-                    <label>Project name <input class="form-control" maxlength="120" data-testid="psp-manual-name" @bind="_manualName" @bind:event="oninput" /></label>
-                    <label>Description (optional) <input class="form-control" maxlength="300" data-testid="psp-manual-description" @bind="_description" /></label>
-                    <button type="button" class="btn btn-primary btn-sm" data-testid="psp-manual-create" disabled="@string.IsNullOrWhiteSpace(_manualName)" @onclick="CreateManual">Use this name</button>
-                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _creating = false">Cancel</button>
-                </div>
-            }
-            else
-            {
-                <button type="button" class="btn btn-link btn-sm" data-testid="psp-create-manual" @onclick="() => _creating = true">+ Create project manually</button>
-            }
-            @if (Current is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="psp-cancel-pick" @onclick="() => _picking = false">Keep @Current.ProjectName</button> }
+        <h4 id="psp-title" class="psp-title" tabindex="-1">Target Application required</h4>
+        <div class="psp-prerequisite" role="note" data-testid="psp-target-application-required">
+            <p>Project evidence can be configured after choosing the application/system this environment represents.</p>
+            <a class="btn btn-primary btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="psp-configure-target-application">Configure Target Application<span class="visually-hidden"> for @EnvironmentName</span></a>
         </div>
     }
     else
     {
-        <p class="psp-chosen" data-testid="psp-chosen"><span class="psp-label">Project</span> <strong>@_name</strong>@if (_main is null) { <span class="psp-badge">Manual</span> }
-            <button type="button" class="btn btn-link btn-sm" data-testid="psp-change" @onclick="() => _picking = true">Change<span class="visually-hidden"> project</span></button></p>
+        <h4 id="psp-title" class="psp-title" tabindex="-1">Project evidence for @_name</h4>
+        @if (_groups.All(g => g.Items.Count == 0) && Current is null)
+        {
+            <p class="psp-muted" data-testid="psp-no-evidence">No compatible imported evidence is currently available for @_name. <a href="@BirkNext.Web.Services.ProjectImport.ProjectImportPresentation.ImportSourceHref" data-testid="psp-import-evidence">Import evidence</a> or add the evidence you expect below.</p>
+        }
+        else if (Current is null)
+        {
+            <p class="psp-muted" data-testid="psp-suggestions-lead">We found evidence that appears to belong to @_name. Strong matches are selected by default. Deselect anything that does not belong to this application.</p>
+        }
     }
 
     @* 2 · Evidence checklist *@
-    @if (_name is not null && !_picking)
+    @if (TargetApplication is not null && _name is not null)
     {
-        @if (_confirmSwitch)
-        {
-            <section class="psp-confirm" role="alertdialog" aria-modal="false" aria-labelledby="psp-switch-h" data-testid="psp-switch-confirm">
-                <h5 id="psp-switch-h">Switch @EnvironmentName from @Current?.ProjectName to @_name?</h5>
-                <p>Current @Current?.ProjectName evidence bindings will no longer be active for this Target Environment. Imports, Source Analysis snapshots and documents stay as they are.</p>
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="psp-switch-cancel" @onclick="() => _confirmSwitch = false">Cancel</button>
-                <button type="button" class="btn btn-primary btn-sm" data-testid="psp-switch-confirm-button" @onclick="() => SaveAsync(confirmed: true)">Change project</button>
-            </section>
-        }
         <div class="psp-roles" data-testid="psp-checklist">
             @foreach (var group in _groups)
             {
@@ -100,7 +64,7 @@
 
         <details class="psp-expected" data-testid="psp-expected">
             <summary>+ Add expected evidence</summary>
-            <p class="psp-muted">Name evidence the project needs that is not imported yet (for example “SkoleAdapter source”). It stays Missing until a matching package is imported and bound — no package is created.</p>
+            <p class="psp-muted">Name evidence @_name needs that is not imported yet (for example “SkoleAdapter source”). It stays Missing until a matching package is imported and bound — no package is created.</p>
             <label>Expected evidence <input class="form-control form-control-sm" maxlength="80" data-testid="psp-expected-label" @bind="_expectedLabel" @bind:event="oninput" /></label>
             <label>Type
                 <select class="form-select form-select-sm" data-testid="psp-expected-capability" @bind="_expectedCapability">
@@ -112,7 +76,7 @@
         </details>
 
         <section class="psp-summary" aria-labelledby="psp-summary-h" data-testid="psp-summary">
-            <h5 id="psp-summary-h">Project evidence · @_name</h5>
+            <h5 id="psp-summary-h">Project evidence summary · @_name</h5>
             <ul>
                 @foreach (var group in _groups) { <li>@group.Role.Label: @Selected(group).Count selected</li> }
                 <li data-testid="psp-required-summary">Required roles: @RequiredSatisfied / @RequiredTotal with a selected source</li>
@@ -120,7 +84,7 @@
             </ul>
         </section>
         <div class="psp-actions">
-            <button type="button" class="btn btn-primary" data-testid="psp-save" disabled="@_busy" @onclick="() => SaveAsync(confirmed: false)">Save Project</button>
+            <button type="button" class="btn btn-primary" data-testid="psp-save" disabled="@_busy" @onclick="SaveAsync">Save Project evidence</button>
             @if (OnCancel.HasDelegate) { <button type="button" class="btn btn-secondary" data-testid="psp-cancel" @onclick="OnCancel">Cancel</button> }
             <span role="status" class="psp-muted" data-testid="psp-status">@_status</span>
         </div>
@@ -132,12 +96,11 @@
     [Parameter] public string? EnvironmentName { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<ProjectEvidencePackage> Packages { get; set; } = [];
     [Parameter] public EnvironmentProject? Current { get; set; }
-    [Parameter] public IReadOnlyList<string> KnownProjects { get; set; } = [];
+    /// <summary>The environment's Target Application: the application this evidence is for. Null shows the prerequisite instead.</summary>
+    [Parameter] public TargetApplicationIdentity? TargetApplication { get; set; }
     [Parameter, EditorRequired] public IProjectEvidenceService Evidence { get; set; } = default!;
     [Parameter] public EventCallback<string> OnSaved { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
-    /// <summary>Open the project picker at once (Change project).</summary>
-    [Parameter] public bool StartPicking { get; set; }
 
     private static readonly ProjectEvidenceCapability[] ExpectedCapabilities =
     [
@@ -145,9 +108,9 @@
         ProjectEvidenceCapability.Documentation, ProjectEvidenceCapability.ContractSchema, ProjectEvidenceCapability.Infrastructure,
     ];
 
-    private string? _name, _description, _query, _manualName, _expectedLabel, _status;
+    private string? _name, _description, _expectedLabel, _status;
     private ProjectEvidencePackage? _main;
-    private bool _picking, _creating, _busy, _confirmSwitch, _initialized;
+    private bool _busy, _initialized;
     private ProjectEvidenceCapability _expectedCapability = ProjectEvidenceCapability.SupportingSource;
     private IReadOnlyList<ChecklistGroup> _groups = [];
     /// <summary>The checkbox state per role and package (initialised from the suggestions' defaults).</summary>
@@ -155,36 +118,14 @@
     private readonly Dictionary<string, List<string>> _added = [];
     private readonly List<(string Label, ProjectEvidenceCapability Capability)> _expected = [];
 
-    private IReadOnlyList<ProjectOption> Options => ProjectSetupPlanner.Options(Packages, [.. KnownProjects, .. Current is { } c ? [c.ProjectName] : Array.Empty<string>()]);
-
     protected override void OnParametersSet()
     {
         if (_initialized) return;
         _initialized = true;
-        _picking = StartPicking;
-        if (Current is { } project)
-        {
-            _name = project.ProjectName;
-            _description = project.Description;
-            _main = ProjectEvidenceResolver.Find(Packages, project.ProjectImportId, project.ArchiveSha256);
-            Rebuild();
-        }
-    }
-
-    private void Choose(ProjectOption option)
-    {
-        _name = option.Name;
-        _main = option.Package;
-        _picking = false;
-        Rebuild();
-    }
-
-    private void CreateManual()
-    {
-        if (string.IsNullOrWhiteSpace(_manualName)) return;
-        _name = _manualName.Trim();
-        _main = null;
-        _creating = false; _picking = false;
+        if (TargetApplication is not { } application) return;
+        _name = application.Name;
+        _description = Current?.Description ?? application.Description;
+        _main = ProjectEvidenceResolver.Find(Packages, application.ImportId ?? Current?.ProjectImportId, application.ArchiveSha256 ?? Current?.ArchiveSha256);
         Rebuild();
     }
 
@@ -249,17 +190,16 @@
         (_added.GetValueOrDefault(group.Role.RoleKey) ?? []).Select(id => Packages.FirstOrDefault(p => p.ImportId == id)).OfType<ProjectEvidencePackage>()
             .Select(p => new ChecklistItem(group.Role.RoleKey, p, EvidenceMatchStrength.Possible, true, "Added by you", false, false));
 
-    private async Task SaveAsync(bool confirmed)
+    private async Task SaveAsync()
     {
         if (_name is null) return;
-        if (!confirmed && Current is { } current && !string.Equals(current.ProjectName, _name, StringComparison.OrdinalIgnoreCase)) { _confirmSwitch = true; return; }
-        _busy = true; _confirmSwitch = false;
+        _busy = true;
         try
         {
             var decisions = _groups.Select(g => new ProjectSetupPlanner.RoleDecision(g.Role.RoleKey, Selected(g),
                 [.. g.Items.Where(i => (i.Strength == EvidenceMatchStrength.Strong || i.Bound) && !IsChecked(g.Role.RoleKey, i.Package.ImportId)).Select(i => i.Package.ImportId)])).ToList();
             var saved = await Evidence.SaveProjectAsync(EnvironmentId, new ProjectSetupDraft(_name, _description, _main?.ImportId, decisions, [.. _expected]));
-            _status = saved ? $"Project {_name} saved." : "The project could not be saved.";
+            _status = saved ? $"Project evidence for {_name} saved." : "The Project evidence could not be saved.";
             if (saved) await OnSaved.InvokeAsync(_name);
         }
         finally { _busy = false; }

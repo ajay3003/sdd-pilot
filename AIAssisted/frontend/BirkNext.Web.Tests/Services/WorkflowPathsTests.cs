@@ -14,8 +14,9 @@ namespace BirkNext.Web.Tests.Services;
 /// </summary>
 public sealed class WorkflowPathsTests
 {
-    private static FrontendAnalysisProfile Env(string id = "dev", string name = "Development", string? url = "https://m2lb.dev.example.test/", EnvironmentProject? project = null) =>
-        new() { Id = id, Name = name, TargetUrl = url, Project = project };
+    private static FrontendAnalysisProfile Env(string id = "dev", string name = "Development", string? url = "https://m2lb.dev.example.test/", EnvironmentProject? project = null,
+        string? application = "M2LB") =>
+        new() { Id = id, Name = name, TargetUrl = url, Project = project, TargetApplication = application is null ? null : new TargetApplicationIdentity { Name = application } };
 
     private static EnvironmentProject M2lb() => new() { ProjectName = "M2LB", ProjectImportId = "import-a" };
 
@@ -55,11 +56,21 @@ public sealed class WorkflowPathsTests
     }
 
     [Fact]
+    public void Runtime_NoApplicationIdentity_ConfigureTargetApplication_NotProject()
+    {
+        var setup = WorkflowPaths.RuntimeSetup([Env(application: null)], "dev", NoEvidence);
+
+        setup.First(s => !s.Met).Key.Should().Be(WorkflowPaths.TargetApplicationStep, "WHAT the environment represents comes before its evidence");
+        setup.Single(s => s.Key == WorkflowPaths.ProjectStep).Label.Should().Be("Project evidence");
+    }
+
+    [Fact]
     public void Runtime_TargetApplicationWithoutProject_ConfigureProjectEvidence()
     {
         var setup = WorkflowPaths.RuntimeSetup([Env()], "dev", NoEvidence);
 
         setup.First(s => !s.Met).ActionLabel.Should().Be("Configure Project evidence");
+        setup.First(s => !s.Met).Label.Should().Be("Project evidence for M2LB");
         setup.First(s => !s.Met).Route.Should().Contain("tab=project").And.Contain("profile=dev");
     }
 
