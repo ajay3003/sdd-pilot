@@ -15,7 +15,7 @@ public sealed class WorkflowReadinessServiceTests
     private static readonly WorkspaceArtifactType[] AllRoles = [.. CurrentWorkspaceSnapshot.WorkflowRoles];
 
     [Fact]
-    public async Task NoWorkspace_RecommendsLoadingArtifacts_WithoutBackendWorkflowState()
+    public async Task NoWorkspace_OffersTheTwoWaysToStart_WithoutBackendWorkflowState()
     {
         var fixture = new Fixture(CurrentWorkspaceSnapshot.None());
 
@@ -24,10 +24,11 @@ public sealed class WorkflowReadinessServiceTests
         readiness.WorkspaceLoaded.Should().BeFalse();
         readiness.WorkspaceName.Should().Be("No workspace loaded");
         readiness.Workspace.AvailableRoleCount.Should().Be(0);
-        readiness.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        readiness.NextRecommendedAction.Key.Should().Be(WorkflowReadinessService.LoadWorkspaceKey);
+        readiness.NextRecommendedAction!.Title.Should().Be("Start with one of these");
+        readiness.NextRecommendedAction.Key.Should().Be(WorkflowPaths.ChoosePathKey, "import evidence or configure a Target Environment; neither is forced");
+        readiness.Paths.Select(p => p.Kind).Should().Equal(WorkflowPathKind.ImportEvidence, WorkflowPathKind.Runtime);
         readiness.IsOnboarding.Should().BeTrue();
-        readiness.Steps.Should().ContainSingle().Which.Should().BeSameAs(readiness.NextRecommendedAction, "step 1 is the current step");
+        readiness.Steps.Should().ContainSingle().Which.Key.Should().Be(WorkflowReadinessService.LoadWorkspaceKey);
         readiness.ArtifactLoad.Should().Be(ArtifactLoadState.Required);
         readiness.CanRelease.Should().BeFalse();
         readiness.ReleaseReadinessPercent.Should().BeNull("nothing is assessed without a workspace: no 0%");

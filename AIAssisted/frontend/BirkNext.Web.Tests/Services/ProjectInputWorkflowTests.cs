@@ -94,16 +94,18 @@ public sealed class ProjectInputWorkflowTests
     // ── Scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task EmptyStart_RecommendsLoadingArtifacts_AndOffersImportSourceAndTargetAsAlternatives()
+    public async Task EmptyStart_OffersImportEvidenceOrRuntimeSetup_NeitherForced()
     {
         var r = await ReadinessAsync();
 
         r.IsOnboarding.Should().BeTrue();
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Absent);
-        r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        r.NextRecommendedAction.Route.Should().Be("project-import");
-        r.NextRecommendedAction.ActionLabel.Should().Be("Load artifacts");
-        r.NextRecommendedAction.Description.Should().StartWith("No project artifacts are available yet.");
+        r.EvidenceProfile.Should().Be(WorkflowEvidenceProfile.NoEvidence);
+        r.RecommendsChoosingPath.Should().BeTrue();
+        r.NextRecommendedAction!.Title.Should().Be("Start with one of these");
+        r.Paths.Select(p => (p.Kind, p.PrimaryLabel, p.PrimaryRoute)).Should().Equal(
+            (WorkflowPathKind.ImportEvidence, "Import evidence", "project-import"),
+            (WorkflowPathKind.Runtime, "Choose Target Environment", NavigationCatalog.TargetEnvironmentsRoute));
         r.AlternativeActions.Select(a => a.Route).Should().Equal("specification-explorer", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute);
         r.Inputs.Documents.Requirement.Should().Be("Recommended start");
         r.Inputs.Source.Requirement.Should().StartWith("Optional");
@@ -157,7 +159,13 @@ public sealed class ProjectInputWorkflowTests
         r.Inputs.Source.Facts.Should().Contain("M2LB_2_.zip");
         r.Inputs.Documents.Status.Should().Be(ProjectInputStatus.Absent);
         r.Inputs.Target.Status.Should().Be(ProjectInputStatus.Partial, "an environment without an application URL holds the source");
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "dependency-review");
+        // No documents to review: the user chooses a path. Source is ready now; documents need an import; runtime needs setup.
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowPaths.ChoosePathKey);
+        r.PathOf(WorkflowPathKind.Source)!.State.Should().Be(WorkflowPathState.Ready);
+        r.PathOf(WorkflowPathKind.Source)!.Links.Select(l => l.Route).Should().Contain(["dependency-review", "pipeline-review"]);
+        r.PathOf(WorkflowPathKind.Documents)!.State.Should().Be(WorkflowPathState.Unavailable);
+        r.PathOf(WorkflowPathKind.Documents)!.PrimaryLabel.Should().Be("Import project documents");
+        r.PathOf(WorkflowPathKind.Runtime)!.State.Should().Be(WorkflowPathState.NeedsSetup);
         r.ApplicableReviews.Select(x => (x.ReviewId, x.Lane)).Should().Contain([("dependency-review", "Source Review"), ("pipeline-review", "Source Review")]);
         r.AlternativeActions.Should().BeEmpty();
         VerifyNoDocumentSteps();
@@ -368,7 +376,8 @@ public sealed class ProjectInputWorkflowTests
 
         r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Source Review", "Quality & Testing"]);
         r.ApplicableReviews.Should().NotContain(x => x.ReviewId == "quality-review", "no documents: no requirements to review");
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "dependency-review");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowPaths.ChoosePathKey, "source and runtime are both open paths; neither is forced");
+        r.PathOf(WorkflowPathKind.Source)!.State.Should().Be(WorkflowPathState.Ready);
     }
 
     [Fact]
@@ -529,7 +538,8 @@ public sealed class ProjectInputWorkflowTests
         var r = await service.GetReadinessAsync();
         r.Inputs.Source.Status.Should().Be(ProjectInputStatus.Ready);
         r.Inputs.Target.Status.Should().Be(ProjectInputStatus.Partial, "the source lives in an environment without an application URL");
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "dependency-review");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowPaths.ChoosePathKey);
+        r.PathOf(WorkflowPathKind.Source)!.State.Should().Be(WorkflowPathState.Ready);
     }
 
     [Fact]
@@ -605,7 +615,7 @@ public sealed class ProjectInputWorkflowTests
 
         var r = await service.GetReadinessAsync();
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Absent);
-        r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
+        r.NextRecommendedAction!.Title.Should().Be("Start with one of these");
     }
 
     [Fact]

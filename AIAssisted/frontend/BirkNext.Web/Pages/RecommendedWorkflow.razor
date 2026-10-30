@@ -12,6 +12,7 @@
 @inject IRecommendedWorkflowApiService WorkflowApi
 @inject ILogger<RecommendedWorkflow> Logger
 @inject IJSRuntime JSRuntime
+@inject IServiceProvider ServiceProvider
 
 <PageTitle>Recommended Workflow - QA Review Studio</PageTitle>
 
@@ -19,7 +20,8 @@
 
     <PageHeader Title="Recommended Workflow"
                 Description="A workspace-aware guide that recommends the next useful review based on the inputs, evidence and review decisions currently available." />
-    <ProjectContextStrip RequiresEnvironment="false" />
+    <ProjectContextStrip RequiresEnvironment="@(_path == WorkflowPathKind.Runtime)" ShowTargetApplication="true" ReviewPath="@WorkflowPaths.PathLabel(_path)"
+                         AbsentEnvironmentText="@(_path == WorkflowPathKind.Runtime ? "Required for this path · not configured" : "Not configured · optional until a runtime review")" />
 
     @if (_readiness is null)
     {
@@ -56,10 +58,12 @@
                              data-testid="rw-input" data-kind="@input.Kind" data-status="@input.Status" aria-labelledby="rw-input-@input.Kind-title">
                         <div class="rw-input-head">
                             <h3 class="rw-input-title" id="rw-input-@input.Kind-title">@input.Title</h3>
-                            <span class="rw-input-requirement">@input.Requirement</span>
+                            @{ var (applicability, applicabilityLabel) = WorkflowPaths.InputApplicability(input, _path); }
+                            <span class="rw-input-requirement rw-appl-@applicability.ToString().ToLowerInvariant()" data-testid="rw-input-applicability" data-applicability="@applicability">@applicabilityLabel</span>
                         </div>
                         <p class="rw-input-status" data-testid="rw-input-status"><span class="rw-input-status-icon" aria-hidden="true">@InputIcon(input)</span>@input.StatusLabel</p>
                         <p class="rw-input-detail">@input.Detail</p>
+                        @if (input.Status != ProjectInputStatus.Ready) { <p class="rw-input-purpose" data-testid="rw-input-purpose">@WorkflowPaths.InputPurpose(input.Kind)</p> }
                         @if (input.Kind == ProjectInputKind.Documents && _readiness.Workspace.WorkspaceLoaded && _readiness.Workspace.AvailableRoleCount > 0)
                         {
                             <ul class="rw-input-facts" aria-label="Artifact roles">
@@ -99,7 +103,15 @@
 
         <div class="rw-layout">
             <main class="rw-main" aria-label="Recommended workflow">
-        @if (_readiness.Recommendation is { } recommendation)
+        @if (ChosenPath is { } chosen)
+        {
+            @ChosenPathPanel(chosen)
+        }
+        else if (_readiness.RecommendsChoosingPath)
+        {
+            @PathChooser()
+        }
+        else if (_readiness.Recommendation is { } recommendation)
         {
             <div class="rw-next-action" data-testid="rw-next-action" data-reason="@recommendation.ReasonCode">
                 <div class="rw-next-action-header">
@@ -137,26 +149,41 @@
             <p class="rw-no-next-action" data-testid="rw-no-next-action">No open recommendation. Open any available review below, or the Dashboard for an overview.</p>
         }
 
-        @if (_readiness.Steps.Any(IsLoadWorkspaceStep))
+        @if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided) { @AvailableNow() @NeedsSetup() }
+
+        @if (_readiness.Steps.Any(IsLoadWorkspaceStep) && !DocumentsUnavailable)
         {
-            @* Project context: the only universal prerequisite. *@
+            @* Project documents step once documents exist; without documents the compact Documentation reviews block below says so once. *@
             <div class="rw-phases" data-testid="rw-section-context">@foreach (var step in _readiness.Steps.Where(IsLoadWorkspaceStep)) { @StepCard(step, null) }</div>
         }
 
         @{ var documentSteps = _readiness.Steps.Where(s => s.StepType == "Explorer").ToList(); }
-        @if (documentSteps.Count > 0)
+        @if (DocumentsUnavailable && (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided))
         {
+            @DocumentationUnavailable(_readiness.Steps.Where(s => s.StepType is "Explorer" or "Analysis").ToList())
+        }
+        else if (documentSteps.Count > 0)
+        {
+            var applicable = documentSteps.Where(s => s.Status != WorkflowStepStatus.NotApplicable).ToList();
+            var notApplicable = documentSteps.Where(s => s.Status == WorkflowStepStatus.NotApplicable).ToList();
             <section class="rw-reviews" aria-labelledby="rw-docs-heading" data-testid="rw-section-documentation">
                 <h2 id="rw-docs-heading" class="rw-section-heading">Documentation reviews</h2>
-                <p class="rw-reviews-lead" data-testid="rw-core-lead">Review authored intent, requirements, plans, tasks and data models. Only artifacts present in the current Artifact Pack are available. Suggested document review order — open any available Explorer independently; a review is recorded only when you record a decision.</p>
+                <p class="rw-reviews-lead" data-testid="rw-core-lead">Review authored intent, requirements, plans, tasks and data models. Only reviews whose documents are present in the current Artifact Pack are listed; open any of them independently. A review is recorded only when you record a decision.</p>
                 <div class="rw-phases">
-                    @for (var i = 0; i < documentSteps.Count; i++) { @StepCard(documentSteps[i], i + 1) }
+                    @for (var i = 0; i < applicable.Count; i++) { @StepCard(applicable[i], i + 1) }
                 </div>
+                @if (notApplicable.Count > 0)
+                {
+                    <details class="rw-na-group" data-testid="rw-docs-not-applicable">
+                        <summary>Not available in this Artifact Pack (@notApplicable.Count)</summary>
+                        <ul class="rw-cap-list">@foreach (var step in notApplicable) { <li class="rw-cap is-notapplicable" data-testid="rw-step-not-applicable" data-step="@step.Key"><span class="rw-cap-name">@step.Title</span> <span class="rw-cap-status">Not applicable</span> <span class="rw-cap-reason">@step.DisabledReason</span></li> }</ul>
+                    </details>
+                }
                 @CapabilityList(_readiness.Capabilities.Where(c => c.Section == ReviewSection.Documentation && !c.IsCore).ToList())
             </section>
         }
 
-        @{ var traceSteps = _readiness.Steps.Where(s => s.StepType == "Analysis").ToList(); }
+        @{ var traceSteps = DocumentsUnavailable ? new List<WorkflowStepViewModel>() : _readiness.Steps.Where(s => s.StepType == "Analysis").ToList(); }
         @if (traceSteps.Count > 0)
         {
             <section class="rw-reviews" aria-labelledby="rw-trace-heading" data-testid="rw-section-traceability">
@@ -185,7 +212,8 @@
                     <h2 id="rw-sec-@branch" class="rw-section-heading">@ReviewNavigator.SectionLabel(branch)</h2>
                     <p class="rw-reviews-lead">@SectionLead(branch)</p>
                     @if (branch == ReviewSection.Source) { @SourceBindingCard() }
-                    @CapabilityList(items)
+                    @CapabilityList(items.Where(c => c.Applicability != ReviewApplicabilityState.NotApplicable).ToList())
+                    @NotApplicableGroup(items.Where(c => c.Applicability == ReviewApplicabilityState.NotApplicable).ToList())
                 </section>
             }
         }
@@ -198,11 +226,11 @@
 
             </main>
 
-            <aside class="rw-sidebar" aria-label="Workspace review dashboard">
+            <aside class="rw-sidebar" aria-label="Context summary">
                 <div class="rw-sidebar-inner">
                     <div class="rw-workspace-actions">
                         <div class="rw-workspace-header">
-                            <h2 class="rw-workspace-actions-header">Current workspace</h2>
+                            <h2 class="rw-workspace-actions-header">Context summary</h2>
                             <details class="rw-workspace-menu" @ref="_workspaceMenuRef">
                                 <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
                                 <div class="rw-workspace-menu-list">
@@ -216,6 +244,9 @@
                             </details>
                         </div>
 
+                        @ContextSummary()
+                        <details class="rw-more-details" data-testid="rw-more-details">
+                        <summary>More workspace details</summary>
                         <dl class="rw-workspace-details">
                             <div class="rw-detail-item">
                                 <dt class="rw-detail-label">Workspace</dt>
@@ -242,6 +273,14 @@
                                 <dd class="rw-detail-value" data-testid="rw-saved"><span class="@SaveStatusClass" data-testid="rw-save-status">@_readiness.Workspace.SaveStatusLabel</span>@(_readiness.Workspace.LastSavedAt is null ? "" : $" · {_readiness.LastSavedText}")</dd>
                             </div>
                         </dl>
+                        <dl class="rw-workspace-details" data-testid="rw-sidebar-inputs" aria-label="Inputs">
+                            @foreach (var input in _readiness.Inputs.All)
+                            {
+                                <div class="rw-detail-item"><dt class="rw-detail-label">@input.Title</dt><dd class="rw-detail-value">@input.StatusLabel</dd></div>
+                            }
+                            <div class="rw-detail-item"><dt class="rw-detail-label">Source binding</dt><dd class="rw-detail-value" data-testid="rw-sidebar-binding">@(_readiness.SourceBinding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", _ => "No source snapshot" })</dd></div>
+                        </dl>
+                        </details>
 
                         @if (_readiness.Workspace.State == CurrentWorkspaceState.NoWorkspace)
                         {
@@ -251,20 +290,12 @@
                         }
                     </div>
 
-                    <dl class="rw-workspace-details" data-testid="rw-sidebar-inputs" aria-label="Inputs">
-                        @foreach (var input in _readiness.Inputs.All)
-                        {
-                            <div class="rw-detail-item"><dt class="rw-detail-label">@input.Title</dt><dd class="rw-detail-value">@input.StatusLabel</dd></div>
-                        }
-                        <div class="rw-detail-item"><dt class="rw-detail-label">Source binding</dt><dd class="rw-detail-value" data-testid="rw-sidebar-binding">@(_readiness.SourceBinding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", _ => "No source snapshot" })</dd></div>
-                    </dl>
-
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
                         <div class="rw-metric" data-testid="rw-manual-review-card">
                             <MetricCard Value="@ManualApprovalValue" Label="Core manual reviews recorded" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
                         </div>
                     </div>
-                    <p class="rw-gates-lead" data-testid="rw-manual-review-note">Review decisions support governance and readiness; analyses may still run independently.</p>
+                    <p class="rw-gates-lead" data-testid="rw-manual-review-note">Review decisions support governance and readiness; analyses and reviews can run without any recorded decision.</p>
                     <p class="rw-gates-lead" data-testid="rw-release-note">Release readiness: not assessed here — @WorkflowReadinessService.NoReleasePolicy</p>
 
                     @if (_readiness.ReviewGates.Count > 0)
@@ -303,6 +334,15 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "path")] public string? PathQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "execution")] public string? ExecutionQuery { get; set; }
+
+    private WorkflowPathKind? _path;
+    private bool _automated;
+    private BirkNext.BrowserAuthentication.AutomatedBrowserExecutionReadiness? _unattended;
+    private bool _focusRecommendation;
+    private ElementReference _recommendationHeading;
+
     private WorkflowReadiness? _readiness;
     private bool _isSaving;
     private bool _showWorkspaceManager;
@@ -339,6 +379,36 @@
     {
         _readiness = await WorkflowReadiness.GetReadinessAsync();
     }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var path = WorkflowPaths.ParsePath(PathQuery);
+        var automated = string.Equals(ExecutionQuery, "automated", StringComparison.OrdinalIgnoreCase);
+        _focusRecommendation = _readiness is not null && path != _path;
+        _path = path;
+        _automated = automated;
+        // Browser login readiness is read only when the user is about to run automated browser work on the runtime path. Reading it never
+        // starts a login; static reviews and manual (attended) runs never ask for it.
+        _unattended = _path == WorkflowPathKind.Runtime && _automated && ServiceProvider.GetService(typeof(IBrowserAuthenticationApiService)) is IBrowserAuthenticationApiService auth
+            ? await auth.AutomatedExecutionAsync() : null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusRecommendation)
+        {
+            _focusRecommendation = false;
+            try { await _recommendationHeading.FocusAsync(); } catch (InvalidOperationException) { }
+        }
+    }
+
+    /// <summary>The path named in the address, adjusted for automated execution. Null when no path is chosen.</summary>
+    private WorkflowPath? ChosenPath => _path is { } kind && _readiness?.PathOf(kind) is { } path ? WorkflowPaths.ForExecution(path, _automated, _unattended) : null;
+
+    /// <summary>No supported project documents: document reviews collapse into one compact block.</summary>
+    private bool DocumentsUnavailable => _readiness?.ArtifactLoad == ArtifactLoadState.Required;
+
+    private static string PathHref(WorkflowPathKind kind) => $"getting-started?path={kind.ToString().ToLowerInvariant()}";
 
     /// <summary>The denominator: required review steps that apply (not N/A, not optional), from the step list itself.</summary>
     private IReadOnlyList<WorkflowStepViewModel> RequiredGates => _readiness?.RequiredReviewGates ?? [];
@@ -520,6 +590,175 @@
                 <div class="rw-phase-footer">@RenderAction(step)</div>
             </div>
         </div>
+    };
+
+    /// <summary>Several paths are open: one card per path, each with one primary action (its next step) and plain links to what it offers.</summary>
+    private RenderFragment PathChooser() => __builder =>
+    {
+        var next = _readiness!.NextRecommendedAction!;
+        <section class="rw-paths" aria-labelledby="rw-paths-heading" data-testid="rw-paths">
+            <div class="rw-next-action-label">Recommended next step</div>
+            <h2 id="rw-paths-heading" class="rw-paths-title" tabindex="-1" @ref="_recommendationHeading" data-testid="rw-next-action-title">@next.Title</h2>
+            <p class="rw-paths-lead" data-testid="rw-next-action-why">@next.Description</p>
+            <div class="rw-path-grid">
+                @foreach (var path in _readiness.Paths)
+                {
+                    @PathCard(path)
+                }
+            </div>
+        </section>
+    };
+
+    private RenderFragment PathCard(WorkflowPath path) => __builder =>
+    {
+        <article class="rw-path is-@path.State.ToString().ToLowerInvariant()" data-testid="rw-path" data-path="@path.Id" data-state="@path.State" aria-labelledby="rw-path-@path.Id-title">
+            <h3 id="rw-path-@path.Id-title" class="rw-path-title">@path.Title</h3>
+            <p class="rw-path-state" data-testid="rw-path-state"><span class="rw-path-state-mark" aria-hidden="true">@(path.State switch { WorkflowPathState.Ready => "✓", WorkflowPathState.NeedsSetup => "→", _ => "○" })</span>@path.StateLabel</p>
+            <p class="rw-path-summary">@path.Summary</p>
+            @if (path.Links.Count > 0)
+            {
+                <p class="rw-path-links" data-testid="rw-path-links"><span class="rw-path-links-label">Available:</span>
+                    @for (var i = 0; i < path.Links.Count; i++) { var link = path.Links[i]; <a href="@link.Route">@link.Label</a>@(i < path.Links.Count - 1 ? ", " : "") }
+                </p>
+            }
+            <a class="rw-path-primary" href="@path.PrimaryRoute" data-testid="rw-path-primary">@path.PrimaryLabel</a>
+            @if (path.Kind is not WorkflowPathKind.ImportEvidence)
+            {
+                <a class="rw-path-plan" href="@PathHref(path.Kind)" data-testid="rw-path-plan">Plan this path<span class="visually-hidden">: @path.Title</span></a>
+            }
+        </article>
+    };
+
+    /// <summary>The chosen path: its next step as the recommendation, why, and (runtime) the setup checklist in order.</summary>
+    private RenderFragment ChosenPathPanel(WorkflowPath path) => __builder =>
+    {
+        var step = WorkflowPaths.NextStepOf(path);
+        var explained = ReviewNavigator.Explain(step, Workspace?.PackLabel ?? Workspace?.ModuleLabel ?? "the selected scope");
+        <section class="rw-next-action rw-chosen-path" data-testid="rw-next-action" data-reason="@explained.ReasonCode" data-path="@path.Id" aria-labelledby="rw-chosen-heading">
+            <div class="rw-next-action-label">Recommended next step · @path.Title</div>
+            <h2 id="rw-chosen-heading" class="rw-next-action-title" tabindex="-1" @ref="_recommendationHeading" data-testid="rw-next-action-title">@step.Title</h2>
+            <div class="rw-next-action-label">Why this is recommended</div>
+            <p class="rw-next-action-desc" data-testid="rw-next-action-why">@(path.State == WorkflowPathState.Ready ? path.Reason : step.Description)</p>
+            @if (path.Unlocks is { } unlocks)
+            {
+                <div class="rw-next-action-label">What this unlocks</div>
+                <p class="rw-next-action-desc" data-testid="rw-next-action-unlocks">@unlocks</p>
+            }
+            @if (path.Setup.Count > 0)
+            {
+                <ol class="rw-setup" aria-label="Runtime setup" data-testid="rw-runtime-setup">
+                    @foreach (var s in path.Setup)
+                    {
+                        <li class="@(s.Met ? "is-met" : "is-open")" data-testid="rw-setup-step" data-step="@s.Key" data-met="@s.Met.ToString().ToLowerInvariant()">
+                            <span class="rw-setup-mark">@(s.Met ? "Done" : "To do")</span> <strong>@s.Label</strong> <span class="rw-setup-detail">— @s.Detail</span>
+                        </li>
+                    }
+                </ol>
+            }
+            <div class="rw-next-action-buttons">
+                <a href="@path.PrimaryRoute" class="rw-next-action-btn" data-testid="rw-next-action-primary">@path.PrimaryLabel -></a>
+                <a href="getting-started" class="rw-next-action-alt" data-testid="rw-all-paths">Show all review paths</a>
+            </div>
+        </section>
+    };
+
+    /// <summary>Reviews that can run now with the evidence available — immediate value first.</summary>
+    private RenderFragment AvailableNow() => __builder =>
+    {
+        var ready = _readiness!.Capabilities.Where(c => c.IsActionable).ToList();
+        <section class="rw-now" aria-labelledby="rw-now-heading" data-testid="rw-available-now">
+            <h2 id="rw-now-heading" class="rw-section-heading">Available now</h2>
+            @if (ready.Count == 0) { <p class="rw-reviews-lead">No review can run yet with the current evidence.</p> }
+            else
+            {
+                <ul class="rw-now-list">
+                    @foreach (var c in ready)
+                    {
+                        <li data-testid="rw-available" data-review="@c.Id"><a href="@c.Route">@c.DisplayName</a> <span class="rw-cap-status">@c.StatusLabel</span></li>
+                    }
+                </ul>
+            }
+        </section>
+    };
+
+    /// <summary>What needs setup, grouped by what it blocks; optional setup is neutral and listed separately.</summary>
+    private RenderFragment NeedsSetup() => __builder =>
+    {
+        var runtime = _readiness!.PathOf(WorkflowPathKind.Runtime);
+        var runtimeBlocked = _readiness.Capabilities.Where(c => c.Section == ReviewSection.Runtime && c.Readiness == ReviewReadiness.NeedsSetup).ToList();
+        var other = _readiness.Capabilities.Where(c => c.Section is not (ReviewSection.Runtime or ReviewSection.Documentation or ReviewSection.Traceability)
+            && c.Applicability == ReviewApplicabilityState.Applicable && c.Readiness == ReviewReadiness.NeedsSetup).ToList();
+        var targetOptional = _readiness.Inputs.Target.Status != ProjectInputStatus.Ready && _path != WorkflowPathKind.Runtime;
+        if (!DocumentsUnavailable && runtimeBlocked.Count == 0 && other.Count == 0 && !targetOptional) return;
+        <section class="rw-setup-needed" aria-labelledby="rw-setup-heading" data-testid="rw-needs-setup">
+            <h2 id="rw-setup-heading" class="rw-section-heading">Needs setup</h2>
+            <ul class="rw-now-list">
+                @if (DocumentsUnavailable)
+                {
+                    <li data-testid="rw-setup-item" data-item="documents"><strong>Document reviews</strong> <span class="rw-cap-status">Need project documents</span> <a href="@ProjectInputPresentation.ProjectImportSourceRoute">Import project documents</a></li>
+                }
+                @if (runtimeBlocked.Count > 0 && runtime is not null)
+                {
+                    <li data-testid="rw-setup-item" data-item="runtime"><strong>Runtime reviews</strong> <span class="rw-cap-status">@(runtime.Setup.FirstOrDefault(s => !s.Met) is { Key: WorkflowPaths.EnvironmentStep } ? "Need a Target Environment" : "Need runtime setup")</span>
+                        <span class="rw-cap-reason">@string.Join(", ", runtimeBlocked.Select(c => c.DisplayName))</span> <a href="@PathHref(WorkflowPathKind.Runtime)">Plan runtime setup</a></li>
+                }
+                @foreach (var c in other)
+                {
+                    <li data-testid="rw-setup-item" data-item="@c.Id"><strong>@c.DisplayName</strong> <span class="rw-cap-status">Needs @string.Join(", ", c.MissingPrerequisites)</span></li>
+                }
+            </ul>
+            @if (targetOptional)
+            {
+                <p class="rw-optional" data-testid="rw-optional-target"><strong>Target Environment</strong> · Optional until a runtime review. <a href="@PathHref(WorkflowPathKind.Runtime)">Plan runtime setup</a></p>
+            }
+        </section>
+    };
+
+    /// <summary>No supported project documents: one compact state with the import action; the review types stay discoverable behind a disclosure.</summary>
+    private RenderFragment DocumentationUnavailable(IReadOnlyList<WorkflowStepViewModel> steps) => __builder =>
+    {
+        <section class="rw-reviews rw-docs-unavailable" aria-labelledby="rw-docs-heading" data-testid="rw-section-documentation" data-state="unavailable">
+            <h2 id="rw-docs-heading" class="rw-section-heading">Documentation reviews</h2>
+            <p class="rw-path-state"><span class="rw-path-state-mark" aria-hidden="true">○</span><span data-testid="rw-docs-state">Unavailable</span> — No supported project documents are currently available.</p>
+            <a class="rw-input-action" href="@ProjectInputPresentation.ProjectImportSourceRoute" data-testid="rw-docs-import">Import project documents →</a>
+            @if (steps.Count > 0)
+            {
+                <details class="rw-na-group" data-testid="rw-docs-unavailable-types">
+                    <summary>Show unavailable review types (@steps.Count)</summary>
+                    <ul class="rw-cap-list">@foreach (var step in steps) { <li class="rw-cap is-notapplicable" data-step="@step.Key"><span class="rw-cap-name">@step.Title</span> <span class="rw-cap-status">Unavailable</span></li> }</ul>
+                </details>
+            }
+        </section>
+    };
+
+    private RenderFragment NotApplicableGroup(IReadOnlyList<ReviewCapability> items) => __builder =>
+    {
+        if (items.Count == 0) return;
+        <details class="rw-na-group" data-testid="rw-not-applicable-group">
+            <summary>Not applicable here (@items.Count)</summary>
+            @CapabilityList(items)
+        </details>
+    };
+
+    /// <summary>Decision context in one place: evidence profile, the three inputs, environment → application → project, and what can run now.</summary>
+    private RenderFragment ContextSummary() => __builder =>
+    {
+        var r = _readiness!;
+        var setup = r.RuntimeSetup;
+        string Step(string key, string fallback) => setup.FirstOrDefault(s => s.Key == key) is { } s ? (s.Met ? s.Detail : "Not configured") : fallback;
+        var environment = setup.FirstOrDefault(s => s.Key == WorkflowPaths.EnvironmentStep) is { Met: true } env ? env.Detail : "Not configured";
+        var project = setup.FirstOrDefault(s => s.Key == WorkflowPaths.ProjectStep) is { } ps ? (ps.Met ? ps.Label.Replace("Project evidence for ", "") + " · ready" : ps.Label.StartsWith("Project evidence for ") ? ps.Detail : "Not configured") : "Not configured";
+        var primary = r.Capabilities.Where(c => c.IsActionable).Take(3).Select(c => c.DisplayName).ToList();
+        <dl class="rw-workspace-details rw-context-summary" data-testid="rw-context-summary">
+            <div class="rw-detail-item"><dt class="rw-detail-label">Workspace / import</dt><dd class="rw-detail-value" title="@r.ProjectName">@(string.IsNullOrWhiteSpace(r.ProjectName) ? r.WorkspaceName : r.ProjectName)</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Evidence profile</dt><dd class="rw-detail-value" data-testid="rw-evidence-profile">@WorkflowPaths.Label(r.EvidenceProfile)</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Source</dt><dd class="rw-detail-value" data-testid="rw-summary-source">@r.Inputs.Source.StatusLabel</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Project documents</dt><dd class="rw-detail-value" data-testid="rw-summary-documents">@(DocumentsUnavailable ? "Unavailable" : r.Inputs.Documents.StatusLabel)</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Target Environment</dt><dd class="rw-detail-value" data-testid="rw-summary-environment">@environment</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Target Application</dt><dd class="rw-detail-value" data-testid="rw-summary-application">@Step(WorkflowPaths.TargetApplicationStep, "Not configured")</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Project evidence</dt><dd class="rw-detail-value" data-testid="rw-summary-project">@project</dd></div>
+            <div class="rw-detail-item"><dt class="rw-detail-label">Available reviews</dt><dd class="rw-detail-value" data-testid="rw-summary-available">@(primary.Count == 0 ? "None yet" : string.Join(", ", primary))</dd></div>
+        </dl>
     };
 
     /// <summary>Capabilities as a compact list: name, status (Available / Needs setup / Reviewed …) and requiredness, each as text.</summary>

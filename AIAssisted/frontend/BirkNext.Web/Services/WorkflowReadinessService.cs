@@ -94,6 +94,20 @@ public sealed record WorkflowReadiness(
     /// <summary>Every required review decision is recorded (and at least one applies).</summary>
     public bool RequiredDecisionsComplete => RequiredReviewGates.Count > 0 && DecidedReviewCount == RequiredReviewGates.Count;
 
+    /// <summary>What kind of evidence the workspace holds (documents, source, infrastructure/source, runtime configuration only, none).</summary>
+    public WorkflowEvidenceProfile EvidenceProfile { get; init; } = WorkflowEvidenceProfile.NoEvidence;
+
+    /// <summary>The review paths (source, documents, runtime) with their state and one primary action each.</summary>
+    public IReadOnlyList<WorkflowPath> Paths { get; init; } = [];
+
+    /// <summary>Runtime setup in order (environment → Target Application → Project evidence → active). Only the runtime path reads it.</summary>
+    public IReadOnlyList<RuntimeSetupStep> RuntimeSetup { get; init; } = [];
+
+    /// <summary>The recommendation asks the user to choose a review path: several are open and none is a prerequisite of the others.</summary>
+    public bool RecommendsChoosingPath => NextRecommendedAction?.Key == WorkflowPaths.ChoosePathKey;
+
+    public WorkflowPath? PathOf(WorkflowPathKind kind) => Paths.FirstOrDefault(p => p.Kind == kind);
+
     /// <summary>Other useful starts shown beside the recommendation when no input is provided yet (add source, configure a target).</summary>
     public IReadOnlyList<WorkflowStepViewModel> AlternativeActions { get; init; } = [];
 
@@ -182,6 +196,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private readonly ImplementationTraceabilityApiService? _changeTraceability;
     private readonly FeatureVisibilityService? _features;
     private readonly ProjectEvidence.IProjectEvidenceService? _evidence;
+    private readonly IFrontendAnalysisSettingsService? _settings;
 
     public event Action? ReadinessChanged;
 
@@ -193,10 +208,12 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         IWorkspaceSessionService? session = null,
         ImplementationTraceabilityApiService? changeTraceability = null,
         FeatureVisibilityService? features = null,
-        ProjectEvidence.IProjectEvidenceService? evidence = null)
+        ProjectEvidence.IProjectEvidenceService? evidence = null,
+        IFrontendAnalysisSettingsService? settings = null)
     {
         _features = features;
         _evidence = evidence;
+        _settings = settings;
         _workspace = workspace;
         _applicability = applicability;
         _workflowApi = workflowApi;
@@ -227,6 +244,15 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         var branches = EvidenceBranches(inputs, binding, change);
         IReadOnlyList<ReviewCapability> CapabilitiesFor(IReadOnlyList<WorkflowStepViewModel> s) =>
             ReviewNavigator.Build(s, inputs, binding, change, id => _applicability.For(id), _features, GeneratedDocumentationPresent(), ComparableDocuments());
+        var profile = WorkflowPaths.Classify(workspace, inputs, _applicability.Coverage);
+        var runtimeSetup = RuntimeSetupOf();
+        WorkflowReadiness WithPaths(WorkflowReadiness r) => r with
+        {
+            EvidenceProfile = profile,
+            RuntimeSetup = runtimeSetup,
+            Paths = WorkflowPaths.Build(profile, workspace, inputs, r.Capabilities, runtimeSetup,
+                r.Steps.FirstOrDefault(step => IsReleaseReviewStep(step) && step.Status != WorkflowStepStatus.NotApplicable && !ArtifactReviewPresentation.Of(step).IsDecided)),
+        };
 
         if (workspace.State == CurrentWorkspaceState.Error)
             return Empty(workspace, null, "The workspace could not be read, so release readiness cannot be evaluated.") with { Inputs = inputs };
@@ -236,14 +262,16 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             // No documents and no workspace. With source or a target the project can still progress through their reviews;
             // with nothing at all, step 1 (load project artifacts) is the action, and source and target are alternatives.
             if (inputs.AnyProvided)
-                return Empty(workspace, NextAction(workspace, inputs, [], reviews, ArtifactLoadState.Required, [], binding, evidence),
+                return WithPaths(Empty(workspace, NextAction(workspace, inputs, [], reviews, ArtifactLoadState.Required, [], binding, evidence),
                     NoReleasePolicy) with
                 {
                     Inputs = inputs, ApplicableReviews = reviews, SourceBinding = binding, ChangeProvenance = change, EvidenceBranches = branches,
                     Capabilities = CapabilitiesFor([]),
-                };
+                });
+            // Nothing at all: two ways to start — import evidence (documents/source) or configure a Target Environment (runtime). Neither
+            // is forced: document- and source-only users never go through runtime setup.
             var load = LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), ArtifactLoadState.Required, [], workspace);
-            return Empty(workspace, load, NoReleasePolicy) with
+            return WithPaths(Empty(workspace, ChoosePath("Start with one of these", "Import evidence for document and source review, or configure a Target Environment for runtime, integration and testing."), NoReleasePolicy) with
             {
                 Inputs = inputs,
                 ApplicableReviews = reviews,
@@ -251,7 +279,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 Capabilities = CapabilitiesFor([]),
                 Steps = [load],
                 AlternativeActions = [ImportDocuments([]), AddSource(inputs.Source), ConfigureTarget(inputs.Target)],
-            };
+            });
         }
 
         // Each available role's selected revision goes with the request: decisions are current only for exactly these revisions.
@@ -298,7 +326,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         // No readiness policy is configured: the workflow never claims release readiness.
         const bool canRelease = false;
 
-        return new WorkflowReadiness(
+        return WithPaths(new WorkflowReadiness(
             Workspace: workspace,
             SpecificationExplorerState: specificationState,
             TraceabilityState: traceabilityState,
@@ -329,8 +357,31 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             RequiredRoles = requiredRoles,
             MissingRoles = missingRoles,
             AlternativeActions = artifactLoad == ArtifactLoadState.Done ? [] : [ImportDocuments(missingRoles)],
-        };
+        });
     }
+
+    /// <summary>Runtime setup over every Target Environment (not only the active one), with each environment's Project evidence peeked locally.</summary>
+    private IReadOnlyList<RuntimeSetupStep> RuntimeSetupOf()
+    {
+        try
+        {
+            var profiles = _settings?.Settings.Profiles ?? (_applicability.Profile is { } active ? [active] : []);
+            var activeId = _settings is not null ? _settings.ActiveProfile?.Id : _applicability.Profile?.Id;
+            return WorkflowPaths.RuntimeSetup(profiles, activeId, id =>
+            {
+                try { return _evidence?.Peek(id); }
+                catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException) { return null; }
+            });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException)
+        {
+            _logger.LogDebug(ex, "Target Environments could not be read for runtime setup");
+            return WorkflowPaths.RuntimeSetup([], null, _ => null);
+        }
+    }
+
+    private static WorkflowStepViewModel ChoosePath(string title, string description) =>
+        Synthetic(WorkflowPaths.ChoosePathKey, title, description, "getting-started", "Choose a review path");
 
     /// <summary>Union of the roles the non-optional review steps require (backend WorkflowDefinitions), in workflow role order.</summary>
     private static IReadOnlyList<WorkspaceArtifactType> RequiredRolesOf(IEnumerable<WorkflowStepViewModel> steps)
@@ -448,10 +499,6 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             else return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
         }
 
-        // Imported evidence but no Target Environment to hold its Project: choose (or create) one first — no runtime settings needed.
-        if (evidence is null or { EnvironmentId: null or "" } && inputs.Target.Status == ProjectInputStatus.Absent && workspace.Evidence is not null)
-            return Synthetic(ChooseTargetEnvironmentKey, "Choose Target Environment", ChooseTargetEnvironmentDetail, NavigationCatalog.TargetEnvironmentsRoute, "Open Target Environments");
-
         // Imported evidence but no logical project for the active Target Environment: configuring it is the next step (never forced at import).
         if (evidence is { IsConfigured: false, EnvironmentId: { Length: > 0 } environmentId } && evidence.Packages.Any(p => p.Capabilities.Count > 0))
             return Synthetic(ConfigureProjectKey, "Configure Project",
@@ -489,6 +536,15 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
         if (inputs.Source.Status == ProjectInputStatus.NeedsAttention)
             return Synthetic(RefreshSourceKey, "Analyze the source again", inputs.Source.Detail, ProjectInputPresentation.SourceAnalysisRoute, "Open Source Analysis");
+
+        // No project documents to review, but source or imported evidence exists: several paths are open (source review now, documents
+        // after an import, runtime after environment setup). None is a prerequisite of the others, so the user chooses — a Target
+        // Environment is never the default next step (it is required only on the runtime path).
+        if (artifactLoad == ArtifactLoadState.Required && (inputs.Source.IsProvided || workspace.Evidence is not null))
+            return ChoosePath("Choose what you want to review",
+                inputs.Source.Status == ProjectInputStatus.Ready
+                    ? "Source evidence is analyzed and can be reviewed now. Document reviews need supported project documents; runtime reviews need a Target Environment."
+                    : "Document reviews need supported project documents; source reviews need an analyzed source; runtime reviews need a Target Environment.");
 
         // Source is analyzed but the selected Artifact Pack has no source scope: the evidence owner is present but unusable for
         // source-backed review, which is more actionable than the next unreviewed document (documents stay independently available).

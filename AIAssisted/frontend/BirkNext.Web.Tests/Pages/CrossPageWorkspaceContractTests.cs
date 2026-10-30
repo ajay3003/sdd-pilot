@@ -168,7 +168,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         workflow.WaitForAssertion(() => Workflow(workflow).HasWorkspace.Should().BeFalse());
         dashboard.WaitForAssertion(() => Dashboard(dashboard).HasWorkspace.Should().BeFalse());
         ShouldAgree(Dashboard(dashboard), Workflow(workflow));
-        workflow.Find("[data-testid=rw-next-action] .rw-next-action-title").TextContent.Should().Be("Load project artifacts");
+        workflow.Find("[data-testid=rw-next-action-title]").TextContent.Should().Be("Start with one of these", "an empty workspace offers import or runtime setup");
         workflow.Markup.Should().NotContain("Person Module");
         dashboard.Markup.Should().NotContain("Person Module");
     }

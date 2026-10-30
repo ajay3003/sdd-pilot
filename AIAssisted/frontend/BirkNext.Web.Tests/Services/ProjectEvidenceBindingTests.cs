@@ -443,6 +443,32 @@ public sealed class ProjectEvidenceBindingTests
     }
 
     [Fact]
+    public async Task Workflow_ImportedDocumentsWithoutEnvironment_NeverRecommendsChoosingATargetEnvironment()
+    {
+        // Document-only user: a docs package imported, no Target Environment. Document reviews proceed; the environment is not the next step.
+        var workspace = WorkspaceSnapshots.Loaded("M2LB", "import:b", "M2LB-docs", WorkspaceArtifactType.Specification, WorkspaceArtifactType.Tasks) with { Evidence = Evidence(false, false) };
+
+        var readiness = await ReadinessAsync(workspace);
+
+        readiness.NextRecommendedAction?.Key.Should().NotBe(WorkflowReadinessService.ChooseTargetEnvironmentKey);
+        readiness.NextRecommendedAction?.Key.Should().NotStartWith(WorkflowPaths.RuntimeSetupKeyPrefix);
+        readiness.EvidenceProfile.Should().Be(WorkflowEvidenceProfile.DocumentsOnly);
+        readiness.PathOf(WorkflowPathKind.Documents)!.State.Should().Be(WorkflowPathState.Ready);
+    }
+
+    [Fact]
+    public async Task Workflow_ImportedSourceOnlyPackageWithoutEnvironment_OffersPaths_NotAMandatoryEnvironment()
+    {
+        // The screenshot state: an imported package, no supported documents, no Target Environment.
+        var readiness = await ReadinessAsync(ImportedWithout(Evidence(false, false)));
+
+        readiness.NextRecommendedAction!.Key.Should().Be(WorkflowPaths.ChoosePathKey);
+        readiness.NextRecommendedAction.Title.Should().Be("Choose what you want to review");
+        readiness.PathOf(WorkflowPathKind.Documents)!.PrimaryLabel.Should().Be("Import project documents");
+        readiness.PathOf(WorkflowPathKind.Runtime)!.PrimaryLabel.Should().Be("Choose Target Environment", "the environment is required on the runtime path only");
+    }
+
+    [Fact]
     public async Task Workflow_DocumentsInAnotherImport_RecommendsBinding_NotLoadProjectArtifacts()
     {
         var readiness = await ReadinessAsync(ImportedWithout(Evidence(true, true, "M2LB-docs.zip")));

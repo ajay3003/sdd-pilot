@@ -1476,3 +1476,42 @@
 .rw-binding-facts dd { margin: 0; font-weight: 600; }
 .rw-other-actions { margin: .25rem 0 0; padding-left: 1.1rem; }
 .rw-step-note { font-size: .82rem; color: var(--clr-text-muted, #475569); }
+
+/* ── Review paths, Available now, Needs setup, Context summary (truthful, low-noise workflow) ─────────────────────── */
+.rw-paths { display: flex; flex-direction: column; gap: .5rem; padding: 1rem 1.15rem; border: 1px solid var(--clr-border); border-radius: 12px; background: var(--clr-surface-white); margin-bottom: 1rem; }
+.rw-paths-title { font-size: 1.2rem; margin: 0; color: var(--clr-text-heading); }
+.rw-paths-title:focus, .rw-chosen-path h2:focus { outline: none; }
+.rw-paths-lead { margin: 0; color: var(--clr-text-muted); }
+.rw-path-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; margin-top: .25rem; }
+.rw-path { border: 1px solid var(--clr-border); border-radius: 10px; padding: .85rem 1rem; display: flex; flex-direction: column; gap: .4rem; background: var(--clr-surface); }
+.rw-path.is-ready { border-color: var(--clr-success-border); background: var(--clr-success-bg-light); }
+.rw-path-title { margin: 0; font-size: .95rem; letter-spacing: .03em; text-transform: uppercase; color: var(--clr-text-heading); }
+.rw-path-state { margin: 0; font-weight: 600; display: flex; gap: .35rem; align-items: baseline; }
+.rw-path-summary { margin: 0; font-size: .92rem; }
+.rw-path-links { margin: 0; font-size: .88rem; }
+.rw-path-links-label { color: var(--clr-text-muted); margin-right: .25rem; }
+.rw-path-primary { align-self: flex-start; margin-top: auto; padding: .4rem .8rem; border-radius: 6px; background: var(--clr-primary); color: #fff; text-decoration: none; font-weight: 600; font-size: .9rem; }
+.rw-path-primary:hover { background: var(--clr-primary-hover); color: #fff; }
+.rw-path-primary:focus-visible, .rw-path-plan:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: 2px; }
+.rw-path-plan { font-size: .85rem; }
+.rw-setup { margin: .25rem 0 .5rem; padding-left: 1.2rem; display: flex; flex-direction: column; gap: .2rem; font-size: .92rem; }
+.rw-setup-mark { display: inline-block; min-width: 3.2rem; font-weight: 700; }
+.rw-setup .is-met .rw-setup-mark { color: var(--clr-success); }
+.rw-setup .is-open .rw-setup-mark { color: #7a4b00; }
+.rw-setup-detail { color: var(--clr-text-muted); }
+.rw-now, .rw-setup-needed { margin-bottom: 1rem; }
+.rw-now-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.rw-now-list li { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline; padding: .35rem .6rem; border: 1px solid var(--clr-border-subtle); border-radius: 6px; background: var(--clr-surface-white); }
+.rw-optional { margin: .5rem 0 0; color: var(--clr-text-muted); font-size: .92rem; }
+.rw-na-group { margin-top: .5rem; }
+.rw-na-group summary { cursor: pointer; color: var(--clr-text-muted); font-size: .9rem; }
+.rw-docs-unavailable .rw-path-state { font-weight: 400; }
+.rw-input-purpose { margin: 0; font-size: .85rem; color: var(--clr-text-muted); }
+.rw-appl-requirednow { color: #7a4b00; font-weight: 700; }
+.rw-appl-optional, .rw-appl-notapplicable, .rw-appl-unavailable { color: var(--clr-text-muted); }
+.rw-appl-recommended { color: var(--clr-success); }
+.rw-more-details { margin-top: .5rem; }
+.rw-more-details summary { cursor: pointer; font-size: .88rem; color: var(--clr-text-muted); }
+@media (max-width: 1180px) {
+    .rw-layout { grid-template-columns: minmax(0, 1fr); }
+}

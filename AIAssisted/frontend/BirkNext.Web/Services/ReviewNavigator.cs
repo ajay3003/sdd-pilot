@@ -147,6 +147,13 @@ public static class ReviewNavigator
             if (item.ReviewId is not { } id || capabilities.Any(c => c.Route == item.Route) || features is not null && !item.Visible(features)) continue;
             var a = applicability(id);
             var runtime = NeedsTarget(id);
+            if (FeatureAvailabilityCatalog.IsUnavailable(item.FeatureId))
+            {
+                capabilities.Add(new(id, item.Label, section.Id == "source-review" ? ReviewSection.Source : runtime ? ReviewSection.Runtime : ReviewSection.QualityTesting,
+                    ReviewApplicabilityState.NotApplicable, ReviewReadiness.NotApplicable, ReviewRequiredness.Optional, ReviewDecisionState.NoDecisionTracked,
+                    item.Route, [], "Unavailable in this installation."));
+                continue;
+            }
             var mapped = section.Id switch
             {
                 "document-review" => ReviewSection.Documentation,
@@ -206,6 +213,12 @@ public static class ReviewNavigator
                 ("SOURCE_EVIDENCE_STALE", "The analyzed source snapshot is outdated for this project.", "Current source-backed reviews."),
             WorkflowReadinessService.EstablishSourceBindingKey =>
                 ("SOURCE_BINDING_MISSING", $"Source Analysis has completed, but {packLabel} has no source scope yet.", "Implementation Evidence Review and source-backed requirement assessment."),
+            WorkflowPaths.ChoosePathKey =>
+                ("REVIEW_PATH_CHOICE", "Several review paths are open with the evidence available, and none is a prerequisite of the others.", "Only the work on the path you choose."),
+            var key when key.StartsWith(WorkflowPaths.RuntimeSetupKeyPrefix, StringComparison.Ordinal) =>
+                ("RUNTIME_SETUP_STEP", step.Description, WorkflowPaths.RuntimeUnlocks),
+            var key when key.StartsWith("Path:", StringComparison.Ordinal) =>
+                ("REVIEW_PATH_NEXT", step.Description, "The reviews on this path."),
             WorkflowReadinessService.CompleteTargetKey =>
                 ("TARGET_REQUIRED_FOR_RUNTIME_REVIEW", step.Description, "Runtime reviews that execute or observe the deployed system."),
             var key when key.StartsWith(WorkflowReadinessService.OpenReviewKeyPrefix, StringComparison.Ordinal) =>

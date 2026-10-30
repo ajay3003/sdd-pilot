@@ -82,12 +82,10 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         var r = await ReadinessAsync(CurrentWorkspaceSnapshot.None());
 
         r.ArtifactLoad.Should().Be(ArtifactLoadState.Required);
-        r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        r.NextRecommendedAction.Description.Should().StartWith("No project artifacts are available yet.");
-        r.Steps.Should().ContainSingle().Which.Should().BeSameAs(r.NextRecommendedAction);
-        r.NextRecommendedAction.IsCurrent.Should().BeTrue();
-        r.NextRecommendedAction.CanOpen.Should().BeTrue();
-        r.NextRecommendedAction.ActionLabel.Should().Be("Load artifacts");
+        r.NextRecommendedAction!.Title.Should().Be("Start with one of these");
+        r.PathOf(WorkflowPathKind.ImportEvidence)!.PrimaryRoute.Should().Be("project-import");
+        r.Steps.Should().ContainSingle().Which.Title.Should().Be("Load project artifacts");
+        r.Steps[0].IsCurrent.Should().BeTrue();
         r.AlternativeActions.Select(a => a.ActionLabel).Should().Contain("Import documents instead");
     }
 
@@ -197,30 +195,19 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
     }
 
     [Fact]
-    public async Task Page_ScreenshotState_StepOneIsTheOnlyPrimaryAction_AndNotApplicableStepsHaveNoApprovalControls()
+    public async Task Page_ScreenshotState_LoadIsTheOnlyPrimaryAction_AndUnavailableDocumentReviewsAreCollapsed()
     {
         var cut = RenderPage(await ReadinessAsync(PersonModule()));
 
-        var stepOne = cut.Find("[data-testid=rw-step][data-step=LoadSampleProject]");
-        stepOne.GetAttribute("data-state").Should().Be("Action required");
-        stepOne.GetAttribute("aria-current").Should().Be("step");
-        stepOne.QuerySelector("[data-testid=rw-step-state]")!.TextContent.Should().Be("Action required").And.NotBe("Reviewed");
-        var load = stepOne.QuerySelector("[data-testid=rw-load-artifacts]")!;
-        load.TagName.Should().Be("A");
-        load.GetAttribute("href").Should().Be("project-import", "one project ZIP is the recommended way to load documents (and source)");
-        load.TextContent.Trim().Should().Be("Load artifacts");
-        stepOne.QuerySelector("[data-testid=rw-alternative-action]")!.TextContent.Should().Be("Import documents instead");
-
-        cut.FindAll("[data-testid=rw-step][aria-current=step]").Should().ContainSingle();
+        // Without documents, the document reviews collapse into one compact block (no grid of disabled cards); the types stay discoverable.
+        cut.FindAll("[data-testid=rw-step]").Should().BeEmpty("no large disabled review cards without documents");
+        var docs = cut.Find("[data-testid=rw-section-documentation]");
+        docs.GetAttribute("data-state").Should().Be("unavailable");
+        docs.QuerySelector("[data-testid=rw-docs-state]")!.TextContent.Should().Be("Unavailable");
+        docs.QuerySelector("[data-testid=rw-docs-import]")!.TextContent.Should().Contain("Import project documents");
+        docs.QuerySelector("[data-testid=rw-docs-unavailable-types] summary")!.TextContent.Should().StartWith("Show unavailable review types");
+        docs.QuerySelectorAll("button").Should().BeEmpty("no Mark Reviewed, Approve or Needs Changes for unavailable reviews");
         cut.FindAll("a.rw-cta:not(.rw-cta-secondary), a.rw-next-action-btn").Should().ContainSingle("only one primary call to action");
-
-        var notApplicable = cut.FindAll("[data-testid=rw-step][data-state='N/A']");
-        notApplicable.Should().NotBeEmpty();
-        foreach (var step in notApplicable)
-        {
-            step.QuerySelectorAll("button, details").Should().BeEmpty("a not-applicable step offers no Mark Reviewed, Approve or Needs Changes");
-            step.QuerySelector("[data-testid=rw-step-status]")!.TextContent.Should().StartWith("–Not applicable · Requires ");
-        }
         cut.Markup.Should().NotContain("Load required artifacts first").And.NotContain("Required project artifacts");
 
         var card = cut.Find("[data-testid=rw-next-action]");

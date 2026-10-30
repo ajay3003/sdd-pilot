@@ -20,6 +20,13 @@
             }
             else { <span data-testid="project-context-project">Not configured</span> }
         </span>
+        @if (ShowTargetApplication)
+        {
+            <span class="pcs-item">
+                <span class="pcs-label">Target application</span>
+                <span data-testid="project-context-target-application">@(_targetApplication ?? "Not configured")</span>
+            </span>
+        }
         <span class="pcs-item">
             <span class="pcs-label">Environment</span>
             @if (_environmentName is { } name)
@@ -28,9 +35,16 @@
             }
             else
             {
-                <span data-testid="project-context-environment">@(RequiresEnvironment ? "None active" : "Not required for this review")</span>
+                <span data-testid="project-context-environment">@(AbsentEnvironmentText ?? (RequiresEnvironment ? "None active" : "Not required for this review"))</span>
             }
         </span>
+        @if (ReviewPath is { } path)
+        {
+            <span class="pcs-item">
+                <span class="pcs-label">Review path</span>
+                <span data-testid="project-context-review-path">@path</span>
+            </span>
+        }
     </nav>
 }
 
@@ -39,9 +53,16 @@
     [Parameter] public bool RequiresEnvironment { get; set; } = true;
     /// <summary>The selected Target Environment (Target Environment panes); default: the active one.</summary>
     [Parameter] public string? EnvironmentId { get; set; }
+    /// <summary>Overrides the text shown when no environment is active (Recommended Workflow: optional until a runtime review).</summary>
+    [Parameter] public string? AbsentEnvironmentText { get; set; }
+    /// <summary>The review path the page is on (Recommended Workflow); not shown when null.</summary>
+    [Parameter] public string? ReviewPath { get; set; }
+    /// <summary>Shows the environment's Target Application (its URL host).</summary>
+    [Parameter] public bool ShowTargetApplication { get; set; }
 
     private ProjectEvidenceView? _view;
     private string? _environmentName;
+    private string? _targetApplication;
     private IProjectEvidenceService? Evidence => Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
     private IFrontendAnalysisSettingsService? Settings => Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService;
     private bool Visible => Evidence is not null;
@@ -60,6 +81,8 @@
             _view = Evidence?.Peek(EnvironmentId);
             var profile = EnvironmentId is { Length: > 0 } id ? Settings?.Settings.Profiles.FirstOrDefault(p => p.Id == id) : Settings?.ActiveProfile;
             _environmentName = profile?.Name is { Length: > 0 } n ? n : null;
+            _targetApplication = profile is { } p && ProjectInputPresentation.Target(p).Status == ProjectInputStatus.Ready
+                && Uri.TryCreate(p.TargetUrl, UriKind.Absolute, out var url) ? url.Host : null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException) { _view = null; }
     }

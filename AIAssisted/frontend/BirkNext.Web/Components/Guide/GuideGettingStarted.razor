@@ -87,12 +87,15 @@
 
 <section id="recommended-workflow" class="ug-section ug-topic" data-topic="recommended-workflow" aria-labelledby="recommended-workflow-title">
     <h2 id="recommended-workflow-title" class="ug-section-title" tabindex="-1">Recommended Workflow</h2>
-    <p class="ug-lead"><a href="/getting-started">Recommended Workflow</a> names one next action from your Project context, the evidence that actually exists, recorded review decisions and readiness. It is guidance, not a mandatory sequence or a release decision.</p>
+    <p class="ug-lead"><a href="/getting-started">Recommended Workflow</a> recommends the most useful next step with the evidence and configuration available now. It is guidance, not a mandatory sequence or a release decision.</p>
+    <p>When several things are possible it offers <strong>review paths</strong> instead of one forced step: <strong>Source review</strong> (ready as soon as source is analyzed — infrastructure-only packages included), <strong>Document review</strong> (needs supported project documents) and <strong>Runtime / integration review</strong>. A missing input blocks only the work that needs it: missing documents block document reviews, a missing Target Environment blocks runtime reviews, and browser authentication matters only for runtime runs that need it (unattended login only for automated execution).</p>
+    <p>On the runtime path the setup order is: <strong>Target Environment</strong> (where you test) → <strong>Target Application</strong> (what is deployed there) → <strong>Project evidence</strong> (which imported packages describe it) → set the environment active → run. Configuring an application or Project never activates an environment; Recommended Workflow asks you to set it active only when you are about to run runtime work.</p>
     <div class="ug-two-col">
         <div>
             <h3 class="ug-subtitle">Typical next actions</h3>
             <ul class="ug-list">
-                <li><strong>Configure project context</strong> — evidence is imported but the environment has no Project yet.</li>
+                <li><strong>Choose what you want to review</strong> — no project documents to review yet, so source, document and runtime paths are offered side by side.</li>
+                <li><strong>Configure project context</strong> — an active environment has imported evidence but no Project yet.</li>
                 <li><strong>Bind project documentation</strong> — documents exist in an imported package but are not bound.</li>
                 <li><strong>Import project documents</strong> — the Project requires documentation that no package holds.</li>
                 <li><strong>Choose a module / Needs selection</strong> — several candidates and none selected.</li>
