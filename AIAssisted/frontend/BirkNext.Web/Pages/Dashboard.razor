@@ -11,6 +11,7 @@
 @inject IReportExportService ExportService
 @inject IWorkflowReadinessService WorkflowReadiness
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 @implements IDisposable
 
 <PageTitle>Dashboard</PageTitle>
@@ -34,12 +35,7 @@
     </div>
 }
 
-    <PageHeader Title="SDD Governance Dashboard" Description="A cross-review governance overview: evidence availability, analysis state, manual reviews and actual results — reported separately.">
-        @if (_hasAnyScore)
-        {
-            <span class="db-pill is-@(_overallScore >= 80 ? "good" : "attention")" data-testid="db-quality-among-assessed">@_overallScoreLabel</span>
-            <span class="db-assessment-coverage" data-testid="db-assessment-coverage" title="Quality is averaged over assessed areas only. Areas without evidence are coverage gaps, not low quality.">@_assessmentCoverageLabel</span>
-        }
+    <PageHeader Title="SDD Quality &amp; Readiness" Description="The selected project's SDD evidence, specification quality, traceability, analysis readiness and findings. Available is not analyzed; analyzed is not verified.">
         @if (_hasAnySnapshot)
         {
             <button type="button" class="btn-secondary db-export-btn" @onclick="ExportHtml">Export HTML</button>
@@ -106,36 +102,23 @@
         }
     </section>
 
-    @* ══ 2 · Recommended next step ══════════════════════════════════════════════ *@
-    @if (_nextStep is { } next)
+    @* ══ 2 · Quality summary: re-presented shared results, no score. Only when the project's documents could be read. ══ *@
+    @if (_workspace is { WorkspaceLoaded: true, State: CurrentWorkspaceState.Loaded } && !(_workspace.ProjectLoaded && !_workspace.ProjectInCatalog))
     {
-        <section class="db-next-step" aria-labelledby="db-next-heading" data-testid="db-next-step" data-key="@next.Key">
-            <h2 id="db-next-heading" class="db-next-eyebrow">Recommended next step</h2>
-            <p class="db-next-title" data-testid="db-next-title">@next.Title</p>
-            <p class="db-next-reason" data-testid="db-next-reason"><span class="db-next-k">Why:</span> @next.Reason</p>
-            <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
-            <div class="db-next-actions">
-                <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
-                <a href="getting-started" class="db-btn-link">See the full recommended workflow</a>
-            </div>
-            @if (next.Then.Count > 0)
-            {
-                <div class="db-next-then" data-testid="db-next-then">
-                    <span class="db-next-k">Then:</span>
-                    <ol>
-                        @foreach (var step in next.Then)
-                        {
-                            <li>@step</li>
-                        }
-                    </ol>
-                </div>
-            }
-        </section>
-    }
-    else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
-    {
-        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step">
-            <p class="db-workspace-message" role="status">Working out the recommended next step…</p>
+        <section class="db-kpis" aria-labelledby="db-kpis-heading" data-testid="db-quality-summary">
+            <h2 id="db-kpis-heading" class="db-visually-hidden">Quality summary</h2>
+            <ul class="db-kpi-list">
+                @foreach (var kpi in _kpis)
+                {
+                    <li class="db-kpi is-@DashboardPresentation.Tone(kpi.Status)" data-testid="db-kpi" data-key="@kpi.Key" data-status="@kpi.Status">
+                        <a href="@kpi.Href" class="db-kpi-link">
+                            <span class="db-kpi-label">@kpi.Label</span>
+                            <span class="db-kpi-value" data-testid="db-kpi-value">@kpi.Value</span>
+                            <span class="db-kpi-detail">@kpi.Detail</span>
+                        </a>
+                    </li>
+                }
+            </ul>
         </section>
     }
 
@@ -193,11 +176,22 @@
                 }
                 else
                 {
+                    var groups = _attention.Select(a => DashboardQualitySummary.Group(a.Key)).Distinct().ToList();
+                    var shown = _attention.Where(a => _attentionGroup.Length == 0 || DashboardQualitySummary.Group(a.Key) == _attentionGroup)
+                        .OrderBy(a => a.Informational).ToList();
+                    @if (groups.Count > 1)
+                    {
+                        <label class="db-filter"><span>Area</span>
+                            <select data-testid="db-attention-group" @bind="_attentionGroup">
+                                <option value="">All areas (@_attention.Count)</option>
+                                @foreach (var g in groups) { <option value="@g">@g (@_attention.Count(a => DashboardQualitySummary.Group(a.Key) == g))</option> }
+                            </select></label>
+                    }
                     <ul class="db-attention-list">
-                        @foreach (var item in _attention)
+                        @foreach (var item in shown.Take(_attentionAll ? int.MaxValue : AttentionLimit))
                         {
-                            <li class="db-attention-item @(item.Informational ? "is-info" : "is-attention")" data-testid="db-attention-item" data-key="@item.Key">
-                                <span class="db-attention-kind">@(item.Informational ? "Note" : "Attention")</span>
+                            <li class="db-attention-item @(item.Informational ? "is-info" : "is-attention")" data-testid="db-attention-item" data-key="@item.Key" data-group="@DashboardQualitySummary.Group(item.Key)">
+                                <span class="db-attention-kind">@(item.Informational ? "Note" : "Attention") · @DashboardQualitySummary.Group(item.Key)</span>
                                 <div class="db-attention-body">
                                     <span class="db-attention-text">@item.Text</span>
                                     @if (item.Detail is { Length: > 0 } detail) { <span class="db-attention-detail">@detail</span> }
@@ -215,6 +209,10 @@
                             </li>
                         }
                     </ul>
+                    @if (shown.Count > AttentionLimit)
+                    {
+                        <button type="button" class="db-btn-link" data-testid="db-attention-all" @onclick="() => _attentionAll = !_attentionAll">@(_attentionAll ? "Show fewer" : $"Show all {shown.Count}")</button>
+                    }
                 }
             </section>
         </div>
@@ -254,6 +252,68 @@
         </section>
     }
 
+    @* ══ Recent activity: operations of this project from the shared operation manager (operation done ≠ review passed) ══ *@
+    @if (_workspace is { WorkspaceLoaded: true })
+    {
+        <section class="db-section" aria-labelledby="db-activity-heading" data-testid="db-recent-activity">
+            <h2 id="db-activity-heading" class="db-h2">Recent activity</h2>
+            @if (_activity.Count == 0)
+            {
+                <p class="db-muted" data-testid="db-activity-none">No tracked operation has run for this project in this browser session. Operation completion is not a review result.</p>
+            }
+            else
+            {
+                <ul class="db-activity-list">
+                    @foreach (var a in _activity)
+                    {
+                        <li class="db-activity @(a.Failed ? "is-failed" : "")" data-testid="db-activity">
+                            <span class="db-activity-title">@a.Title</span>
+                            <span class="db-pill is-@(a.Failed ? "attention" : a.Status == "Completed" ? "good" : "neutral")">@a.Status</span>
+                            <span class="db-muted">@a.When@(a.Revision is { } rev ? $" · {rev}" : "")@(a.ResultLabel is { } r ? $" · {r}" : "")</span>
+                            @if (a.Href.Length > 0) { <a href="@a.Href" class="db-attention-action">Open</a> }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    }
+
+    @* ══ 2 · Recommended next step ══════════════════════════════════════════════ *@
+    @if (_nextStep is { } next)
+    {
+        <section class="db-next-step" aria-labelledby="db-next-heading" data-testid="db-next-step" data-key="@next.Key">
+            <h2 id="db-next-heading" class="db-next-eyebrow">Next recommended action</h2>
+            <p class="db-next-title" data-testid="db-next-title">@next.Title</p>
+            <p class="db-next-reason" data-testid="db-next-reason"><span class="db-next-k">Why:</span> @next.Reason</p>
+            <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
+            <div class="db-next-actions">
+                <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
+                <a href="getting-started" class="db-btn-link" data-testid="db-open-workflow">Open Recommended Workflow</a>
+            </div>
+            @if (next.Then.Count > 0)
+            {
+                <div class="db-next-then" data-testid="db-next-then">
+                    <span class="db-next-k">Then:</span>
+                    <ol>
+                        @foreach (var step in next.Then)
+                        {
+                            <li>@step</li>
+                        }
+                    </ol>
+                </div>
+            }
+        </section>
+    }
+    else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
+    {
+        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step">
+            <p class="db-workspace-message" role="status">Working out the recommended next step…</p>
+        </section>
+    }
+
+    @* ══ Detailed analysis: the full assessment, artifacts, release evidence, risks and tools — collapsed so the summary stays short ══ *@
+    <details class="db-more" data-testid="db-detailed-analysis">
+        <summary class="db-more-summary">Detailed analysis — assessment status, project artifacts, test and release evidence, risks and all tools</summary>
     @* ══ 6 · Project Health ═══════════════════════════════════════════════════════ *@
     <section class="db-section" aria-labelledby="db-health-heading" data-testid="db-health">
         <h2 id="db-health-heading" class="db-h2">Assessment status</h2>
@@ -815,6 +875,7 @@
     </section>
         </details>
     </section>
+    </details>
 
 @code {
     // ── Workspace status ──────────────────────────────────────────────────────
@@ -855,6 +916,14 @@
     // ── Tester-facing projection: every value from shared state, none invented here ─────────────────────────────
 
     private (DashboardStatus Status, string Text) _environment => DashboardPresentation.TestEnvironment(_workflowReadiness);
+    private const int AttentionLimit = 5;
+    private string _attentionGroup = "";
+    private bool _attentionAll;
+    private IReadOnlyList<DashboardKpi> _kpis => DashboardQualitySummary.Cards(_readiness, _attention, _reviews);
+    private IReadOnlyList<DashboardActivity> _activity =>
+        Services.GetService(typeof(BirkNext.Web.Services.Operations.BackgroundOperationService)) is BirkNext.Web.Services.Operations.BackgroundOperationService ops
+            ? DashboardQualitySummary.Activity(ops.Operations, _workspace?.ProjectName)
+            : [];
     private DashboardNextStep? _nextStep => _workspace is null ? null : DashboardPresentation.NextStep(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardFoundFact> _found => _workspace is null ? [] : DashboardPresentation.Found(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? [] : DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews);

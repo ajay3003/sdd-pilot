@@ -921,3 +921,25 @@
 /* Five document cards and up to seven health areas: fill the row, wrap without a horizontal scroll. */
 .db-artifact-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr)); }
 .db-health-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
+
+/* SDD Quality & Readiness: compact summary, grouped attention, recent activity, collapsed detail */
+.db-kpis { margin: .75rem 0 1rem; }
+.db-kpi-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .6rem; }
+.db-kpi { border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 10px; background: var(--clr-surface-white, #fff); min-width: 0; }
+.db-kpi-link { display: grid; gap: .15rem; padding: .6rem .75rem; color: inherit; text-decoration: none; height: 100%; }
+.db-kpi-link:hover { background: var(--clr-surface, #f8fafc); }
+.db-kpi-link:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; border-radius: 10px; }
+.db-kpi-label { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); }
+.db-kpi-value { font-size: 1.1rem; font-weight: 700; overflow-wrap: anywhere; }
+.db-kpi-detail { font-size: .8rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.db-kpi.is-attention { border-left: 4px solid var(--clr-warning, #b45309); }
+.db-kpi.is-failed { border-left: 4px solid var(--clr-danger, #b91c1c); }
+.db-kpi.is-good, .db-kpi.is-available { border-left: 4px solid var(--clr-success, #15803d); }
+.db-filter { display: inline-flex; gap: .4rem; align-items: center; font-size: .85rem; margin: 0 0 .4rem; }
+.db-activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.db-activity { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: .5rem; align-items: center; font-size: .88rem; }
+.db-activity-title { font-weight: 600; overflow-wrap: anywhere; }
+.db-more { margin-top: 1rem; border-top: 1px solid var(--clr-border-subtle, #e5e7eb); padding-top: .5rem; }
+.db-more-summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }
+.db-more-summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+@media (max-width: 640px) { .db-activity { grid-template-columns: 1fr; } }

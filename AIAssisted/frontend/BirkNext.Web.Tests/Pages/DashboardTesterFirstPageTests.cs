@@ -57,16 +57,24 @@ public class DashboardTesterFirstPageTests : BunitContext
         cut.FindAll("[data-testid=db-attention-item][data-key=dqr-not-run]").Should().BeEmpty("not run is not a problem");
         cut.FindAll("[data-testid=db-next-review][data-key=dqr-not-run]").Should().ContainSingle();
 
-        // The recommended step comes before the found/attention panels and the health areas.
+        // Summary first, then found/attention, readiness and activity; the next recommended action closes the overview, before the
+        // collapsed detailed analysis (SDD Quality & Readiness layout).
         var markup = cut.Markup;
-        markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-found", StringComparison.Ordinal));
+        markup.IndexOf("db-quality-summary", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-found", StringComparison.Ordinal));
+        markup.IndexOf("db-review-readiness", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-next-step", StringComparison.Ordinal));
+        markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-detailed-analysis", StringComparison.Ordinal));
+        cut.FindAll("[data-testid=db-kpi]").Select(k => k.GetAttribute("data-key")).Should().Equal("evidence", "specification", "traceability", "readiness", "qa", "attention");
+        cut.Find("[data-testid=db-kpi][data-key=specification] [data-testid=db-kpi-value]").TextContent.Should().Be("Not assessed", "nothing was reviewed after the import");
+        cut.Find("[data-testid=db-kpi][data-key=qa] [data-testid=db-kpi-value]").TextContent.Should().Be("Not verified");
+        markup.Should().NotContain("Quality status for assessed areas", "no composite score in the header");
+        cut.Find("[data-testid=db-detailed-analysis]").HasAttribute("open").Should().BeFalse("the detailed analysis is collapsed by default");
         markup.IndexOf("db-attention", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-health", StringComparison.Ordinal));
 
         cut.Find("[data-testid=db-readiness-row][data-key=runtime]").TextContent.Should().Contain("Not assessed");
         cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("No review findings are available yet");
         cut.Markup.Should().NotContain("No risks detected");
         cut.FindAll("[data-testid=db-health-status]").Should().OnlyContain(s => s.TextContent.Trim().Length > 2, "never a bare dash");
-        cut.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Recommended next step", "Evidence inventory", "Needs attention", "Review availability", "Assessment status", "Project Artifacts"]);
+        cut.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Quality summary", "Recent activity", "Next recommended action", "Evidence inventory", "Needs attention", "Review availability", "Assessment status", "Project Artifacts"]);
     }
 
     [Fact]
