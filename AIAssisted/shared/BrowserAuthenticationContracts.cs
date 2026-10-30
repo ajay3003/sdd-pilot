@@ -16,6 +16,27 @@ namespace BirkNext.BrowserAuthentication;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum BrowserAuthenticationMode { AttendedBrowser, UnattendedBrowser }
 
+/// <summary>
+/// How the unattended login signs in. <see cref="Generic"/> fills a login form on the configured page. <see cref="MicrosoftEntraId"/> opens the
+/// application, follows its redirect to Microsoft Entra ID (login.microsoftonline.com), handles the username, account-picker, password and
+/// stay-signed-in screens, returns to the application and verifies the signed-in identity and a protected resource.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum UnattendedLoginProvider { Generic, MicrosoftEntraId }
+
+/// <summary>Result of one verification step of a validation. Steps after the first failure are <see cref="NotReached"/>.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum UnattendedLoginStepStatus { Passed, Failed, RequiresInteraction, NotReached, NotApplicable }
+
+/// <summary>One verification step (application connectivity, Entra ID redirect, login form, credential submission, authentication completion,
+/// test-user identity, protected resource). The detail never contains a credential, token or cookie.</summary>
+public sealed record UnattendedLoginStep(string Key, string Label, UnattendedLoginStepStatus Status, string Detail);
+
+/// <summary>What the card shows: Configured (saved, not validated), Connected (validated end to end with the current configuration), Failed,
+/// Requires interaction (MFA/conditional access), Disabled, Not configured.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum UnattendedConnectionStatus { NotConfigured, Configured, Connected, Failed, RequiresInteraction, Disabled }
+
 /// <summary>State of the unattended browser login capability (System Settings → Authentication card).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UnattendedLoginState { NotConfigured, Disabled, NotVerified, Ready, ValidationFailed }
@@ -39,11 +60,24 @@ public enum UnattendedLoginOutcome
     Timeout,
     TargetUnavailable,
     BrowserUnavailable,
+    /// <summary>The application did not redirect to Microsoft Entra ID in a fresh browser context: nothing was authenticated.</summary>
+    EntraRedirectNotDetected,
+    /// <summary>The login reached a screen BirkNext does not automate (passkey/security key, certificate, federation to another provider…).</summary>
+    UnsupportedAuthenticationFlow,
+    /// <summary>A different account than the configured test identity is signed in or offered.</summary>
+    IdentityMismatch,
+    /// <summary>The application was reached, but the configured test identity could not be confirmed in it.</summary>
+    IdentityNotVerified,
+    /// <summary>The protected application resource was not accessible after sign-in.</summary>
+    ProtectedResourceDenied,
 }
 
 public sealed record UnattendedLoginRequirement(string Key, string Label, bool Met, string Detail);
 
-public sealed record UnattendedLoginValidation(UnattendedLoginOutcome Outcome, string Message, DateTimeOffset ValidatedAt, bool Current, long DurationMs);
+public sealed record UnattendedLoginValidation(UnattendedLoginOutcome Outcome, string Message, DateTimeOffset ValidatedAt, bool Current, long DurationMs)
+{
+    public List<UnattendedLoginStep> Steps { get; init; } = [];
+}
 
 public sealed record UnattendedLoginAuditEntry(DateTimeOffset At, string Event);
 
@@ -69,6 +103,14 @@ public sealed record UnattendedLoginView
     public string? UsernameSelector { get; init; }
     public string? PasswordSelector { get; init; }
     public string? SubmitSelector { get; init; }
+    public UnattendedLoginProvider Provider { get; init; }
+    /// <summary>Microsoft Entra ID only: the selected test identity (a test account name, shown so Edit keeps the selection). Null for Generic,
+    /// whose login name stays masked.</summary>
+    public string? TestIdentity { get; init; }
+    /// <summary>Microsoft Entra ID only: the application resource that must be accessible after sign-in (defaults to the application URL).</summary>
+    public string? ProtectedResourceUrl { get; init; }
+    public UnattendedConnectionStatus ConnectionStatus { get; init; }
+    public string ConnectionStatusLabel { get; init; } = "";
     public UnattendedLoginValidation? LastValidation { get; init; }
     public List<UnattendedLoginRequirement> Requirements { get; init; } = [];
     public List<UnattendedLoginAuditEntry> Audit { get; init; } = [];
@@ -92,11 +134,16 @@ public sealed record SaveUnattendedLoginRequest
     public string? PasswordSelector { get; init; }
     public string? SubmitSelector { get; init; }
     public bool Enabled { get; init; } = true;
+    public UnattendedLoginProvider Provider { get; init; }
+    public string? ProtectedResourceUrl { get; init; }
 }
 
 public sealed record SetUnattendedLoginEnabledRequest(bool Enabled);
 
-public sealed record UnattendedLoginValidationResult(UnattendedLoginOutcome Outcome, string Message, string? Recommendation, long DurationMs, UnattendedLoginView View);
+public sealed record UnattendedLoginValidationResult(UnattendedLoginOutcome Outcome, string Message, string? Recommendation, long DurationMs, UnattendedLoginView View)
+{
+    public List<UnattendedLoginStep> Steps { get; init; } = [];
+}
 
 /// <summary>
 /// Whether automated (unattended) browser execution can authenticate. Browser authentication only: backend/integration authentication,
@@ -111,6 +158,41 @@ public static class BrowserAuthenticationText
     public const string UnattendedTitle = "Unattended login";
     public const string AttendedPurpose = "Used when a person must complete login or MFA.";
     public const string UnattendedPurpose = "Used for automated browser tests with a dedicated test identity that does not require MFA.";
+
+    /// <summary>The known Microsoft Entra ID test identities offered in the username combo box (a test account, not a secret).</summary>
+    public static readonly IReadOnlyList<string> EntraTestIdentities = ["testbruker01@bufdir.no"];
+    public const string EntraDefaultApplicationUrl = "https://m2lbdev.bufetat.no";
+
+    public static string Provider(UnattendedLoginProvider provider) => provider switch
+    {
+        UnattendedLoginProvider.MicrosoftEntraId => "Microsoft Entra ID",
+        _ => "Login form",
+    };
+
+    public static string Connection(UnattendedConnectionStatus status) => status switch
+    {
+        UnattendedConnectionStatus.NotConfigured => "Not configured",
+        UnattendedConnectionStatus.Configured => "Configured",
+        UnattendedConnectionStatus.Connected => "Connected",
+        UnattendedConnectionStatus.Failed => "Failed",
+        UnattendedConnectionStatus.RequiresInteraction => "Requires interaction",
+        UnattendedConnectionStatus.Disabled => "Disabled",
+        _ => status.ToString(),
+    };
+
+    public static string Step(UnattendedLoginStepStatus status) => status switch
+    {
+        UnattendedLoginStepStatus.Passed => "Passed",
+        UnattendedLoginStepStatus.Failed => "Failed",
+        UnattendedLoginStepStatus.RequiresInteraction => "Requires interaction",
+        UnattendedLoginStepStatus.NotReached => "Not reached",
+        UnattendedLoginStepStatus.NotApplicable => "Not applicable",
+        _ => status.ToString(),
+    };
+
+    /// <summary>MFA and conditional access need a person; every other failed outcome is a failure.</summary>
+    public static bool RequiresInteraction(UnattendedLoginOutcome outcome) =>
+        outcome is UnattendedLoginOutcome.InteractiveChallengeDetected or UnattendedLoginOutcome.ConditionalAccessChallenge;
 
     public static string State(UnattendedLoginState state) => state switch
     {
@@ -139,6 +221,11 @@ public static class BrowserAuthenticationText
         UnattendedLoginOutcome.Timeout => "Login timed out",
         UnattendedLoginOutcome.TargetUnavailable => "Login target unavailable",
         UnattendedLoginOutcome.BrowserUnavailable => "Browser engine unavailable",
+        UnattendedLoginOutcome.EntraRedirectNotDetected => "Entra ID redirect not detected",
+        UnattendedLoginOutcome.UnsupportedAuthenticationFlow => "Unsupported authentication flow",
+        UnattendedLoginOutcome.IdentityMismatch => "Different account signed in",
+        UnattendedLoginOutcome.IdentityNotVerified => "Test identity not verified",
+        UnattendedLoginOutcome.ProtectedResourceDenied => "Protected resource not accessible",
         _ => outcome.ToString(),
     };
 
@@ -157,6 +244,11 @@ public static class BrowserAuthenticationText
         UnattendedLoginOutcome.IdentityMissing => "Enter the automation identity name.",
         UnattendedLoginOutcome.LoginTargetMissing => "Enter the login URL.",
         UnattendedLoginOutcome.SuccessDetectionMissing => "Enter the URL text expected after login or an authenticated page marker.",
+        UnattendedLoginOutcome.EntraRedirectNotDetected => "Check the application URL: opened in a fresh browser it must redirect to Microsoft Entra ID sign-in. An existing session is never accepted as proof.",
+        UnattendedLoginOutcome.UnsupportedAuthenticationFlow => "This sign-in needs a method BirkNext does not automate (passkey, security key, certificate or another identity provider). Use attended login.",
+        UnattendedLoginOutcome.IdentityMismatch => "Another account than the configured test identity was offered or signed in. Check the test identity.",
+        UnattendedLoginOutcome.IdentityNotVerified => "Sign-in finished, but the application did not show the configured test identity. Set an authenticated page marker that shows the signed-in user.",
+        UnattendedLoginOutcome.ProtectedResourceDenied => "Check the protected resource URL and that the test identity has access to it.",
         _ => null,
     };
 }

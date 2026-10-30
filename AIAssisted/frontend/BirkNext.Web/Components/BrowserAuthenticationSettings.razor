@@ -34,7 +34,7 @@
             <article class="ba-card" data-testid="ba-unattended" aria-labelledby="ba-unattended-title" aria-busy="@(_loaded ? "false" : "true")">
                 <div class="ba-card-head">
                     <h4 id="ba-unattended-title" class="ba-card-title">@BrowserAuthenticationText.UnattendedTitle</h4>
-                    @if (_view is { } v) { <span class="ba-badge @Tone(v.State)" data-testid="ba-unattended-status">@v.StateLabel</span> }
+                    @if (_view is { } v) { <span class="ba-badge @(v.Configured && v.ConnectionStatusLabel.Length > 0 ? Tone(v) : Tone(v.State))" data-testid="ba-unattended-status">@(v.Configured && v.ConnectionStatusLabel.Length > 0 ? v.ConnectionStatusLabel : v.StateLabel)</span> }
                 </div>
                 <p>@BrowserAuthenticationText.UnattendedPurpose</p>
                 @if (!_loaded) { <p role="status">Loading…</p> }
@@ -46,13 +46,39 @@
                 }
                 else if (_view is { } view)
                 {
-                    <dl class="ba-facts">
-                        <div><dt>Automation identity</dt><dd data-testid="ba-identity">@view.IdentityAlias</dd></div>
-                        <div><dt>Credentials</dt><dd data-testid="ba-credential">@(view.CredentialConfigured ? $"Configured securely{(view.LoginNameHint is { } hint ? $" ({hint})" : "")}" : "Missing")</dd></div>
-                        <div><dt>Login target</dt><dd>@(view.LoginUrl ?? "Not configured")</dd></div>
-                        <div><dt>Success detection</dt><dd>@SuccessText(view)</dd></div>
-                        <div><dt>Login validation</dt><dd data-testid="ba-validation">@ValidationText(view)</dd></div>
-                    </dl>
+                    @if (view.Provider == UnattendedLoginProvider.MicrosoftEntraId)
+                    {
+                        <dl class="ba-facts">
+                            <div><dt>Application URL</dt><dd data-testid="ba-app-url">@(view.LoginUrl ?? "Not configured")</dd></div>
+                            <div><dt>Authentication provider</dt><dd data-testid="ba-provider">@BrowserAuthenticationText.Provider(view.Provider)</dd></div>
+                            <div><dt>Test identity</dt><dd data-testid="ba-identity">@(view.TestIdentity ?? view.IdentityAlias)</dd></div>
+                            <div><dt>Password</dt><dd data-testid="ba-credential">@(view.CredentialConfigured ? "Securely configured" : "Missing")</dd></div>
+                            <div><dt>Success verification</dt><dd>Authenticated application session@(view.ProtectedResourceUrl is { } r ? $" · protected resource {r}" : "")@(view.SuccessSelector is { } m ? $" · marker {m}" : "")</dd></div>
+                            <div><dt>Login validation</dt><dd data-testid="ba-validation">@ValidationText(view)</dd></div>
+                        </dl>
+                    }
+                    else
+                    {
+                        <dl class="ba-facts">
+                            <div><dt>Automation identity</dt><dd data-testid="ba-identity">@view.IdentityAlias</dd></div>
+                            <div><dt>Credentials</dt><dd data-testid="ba-credential">@(view.CredentialConfigured ? $"Configured securely{(view.LoginNameHint is { } hint ? $" ({hint})" : "")}" : "Missing")</dd></div>
+                            <div><dt>Login target</dt><dd>@(view.LoginUrl ?? "Not configured")</dd></div>
+                            <div><dt>Success detection</dt><dd>@SuccessText(view)</dd></div>
+                            <div><dt>Login validation</dt><dd data-testid="ba-validation">@ValidationText(view)</dd></div>
+                        </dl>
+                    }
+                    @if ((_result?.Steps is { Count: > 0 } ? _result.Steps : view.LastValidation is { Current: true, Steps.Count: > 0 } last ? last.Steps : null) is { } steps)
+                    {
+                        <ol class="ba-steps" aria-label="Validation steps" data-testid="ba-steps">
+                            @foreach (var s in steps)
+                            {
+                                <li data-testid="ba-step" data-step="@s.Key" data-status="@s.Status" class="ba-step-@s.Status.ToString().ToLowerInvariant()">
+                                    <span class="ba-step-label">@s.Label</span> <span class="ba-step-status">@BrowserAuthenticationText.Step(s.Status)</span>
+                                    @if (s.Status is not (UnattendedLoginStepStatus.NotReached or UnattendedLoginStepStatus.NotApplicable)) { <span class="ba-muted">— @s.Detail</span> }
+                                </li>
+                            }
+                        </ol>
+                    }
                     <ul class="ba-requirements" aria-label="Unattended login requirements">
                         @foreach (var r in view.Requirements)
                         {
@@ -71,7 +97,7 @@
                     @if (_result is { } result)
                     {
                         <div class="ba-result @(result.Outcome == UnattendedLoginOutcome.Succeeded ? "ok" : "fail")" data-testid="ba-result-box">
-                            <strong>@(result.Outcome == UnattendedLoginOutcome.Succeeded ? "Unattended login validated" : "Validation failed")</strong> — @BrowserAuthenticationText.Outcome(result.Outcome).
+                            <strong>@(result.Outcome == UnattendedLoginOutcome.Succeeded ? "Unattended login validated" : BrowserAuthenticationText.RequiresInteraction(result.Outcome) ? "Requires interaction" : "Validation failed")</strong> — @BrowserAuthenticationText.Outcome(result.Outcome).
                             <span>@result.Message</span>
                             @if (result.Recommendation is { } recommendation) { <p class="ba-muted">@recommendation</p> }
                         </div>
@@ -105,6 +131,12 @@
             <form class="ba-dialog" role="dialog" aria-modal="true" aria-labelledby="ba-editor-title" data-testid="ba-editor" @onsubmit="Save" @onsubmit:preventDefault @onkeydown="OnDialogKey">
                 <h3 id="ba-editor-title" class="ba-h3" tabindex="-1" @ref="_editorTitle">@(_view is { Configured: true } ? "Edit unattended login" : "Configure unattended login")</h3>
                 <p class="ba-muted">Use a dedicated automation test identity that does not require MFA. Unattended login never answers an MFA or interactive challenge; it stops instead.</p>
+                <label class="ba-field"><span>Authentication provider</span>
+                    <select data-testid="ba-form-provider" value="@_provider" @onchange="e => _provider = Enum.TryParse<UnattendedLoginProvider>(e.Value?.ToString(), out var p) ? p : UnattendedLoginProvider.MicrosoftEntraId">
+                        <option value="@UnattendedLoginProvider.MicrosoftEntraId">@BrowserAuthenticationText.Provider(UnattendedLoginProvider.MicrosoftEntraId)</option>
+                        <option value="@UnattendedLoginProvider.Generic">@BrowserAuthenticationText.Provider(UnattendedLoginProvider.Generic)</option>
+                    </select>
+                </label>
                 @if (_formErrors.Count > 0)
                 {
                     <div class="ba-error" role="alert" data-testid="ba-form-errors" tabindex="-1" @ref="_errorSummary">
@@ -112,6 +144,7 @@
                         <ul>@foreach (var e in _formErrors) { <li>@e</li> }</ul>
                     </div>
                 }
+                @if (_provider == UnattendedLoginProvider.MicrosoftEntraId) { @EntraFields() } else {
                 <label class="ba-field"><span>Automation identity</span>
                     <input data-testid="ba-form-identity" @bind="_identity" maxlength="120" placeholder="e.g. skolenaervaer-unattended-reporter" aria-describedby="ba-identity-help" />
                     <small id="ba-identity-help" class="ba-muted">A name for the test identity, shown instead of the login name.</small>
@@ -142,6 +175,7 @@
                     <label class="ba-field"><span>Password field selector</span><input data-testid="ba-form-password-selector" @bind="_passwordSelector" /></label>
                     <label class="ba-field"><span>Submit button selector</span><input data-testid="ba-form-submit-selector" @bind="_submitSelector" /></label>
                 </details>
+                }
                 <label class="ba-check"><input type="checkbox" data-testid="ba-form-enabled" @bind="_enabled" /> Enabled — automated browser execution may use it</label>
                 <div class="ba-actions">
                     <button type="submit" class="btn-primary" data-testid="ba-form-save" disabled="@_busy">Save</button>
@@ -149,6 +183,39 @@
                 </div>
             </form>
         </div>
+    };
+
+    /// <summary>Microsoft Entra ID: application URL, test identity (combo box), password (write-only; "Securely configured" / Replace password).</summary>
+    private RenderFragment EntraFields() => __builder =>
+    {
+        <label class="ba-field"><span>Application URL</span>
+            <input type="url" data-testid="ba-form-url" @bind="_loginUrl" maxlength="2000" placeholder="@BrowserAuthenticationText.EntraDefaultApplicationUrl" aria-describedby="ba-app-help" />
+            <small id="ba-app-help" class="ba-muted">Opened in a fresh browser; it must redirect to Microsoft Entra ID sign-in (login.microsoftonline.com).</small>
+        </label>
+        <label class="ba-field"><span>Test identity</span>
+            <input type="email" role="combobox" list="ba-test-identities" data-testid="ba-form-login" @bind="_loginName" autocomplete="off" spellcheck="false" aria-describedby="ba-test-identity-help" />
+            <datalist id="ba-test-identities">@foreach (var identity in BrowserAuthenticationText.EntraTestIdentities) { <option value="@identity"></option> }</datalist>
+            <small id="ba-test-identity-help" class="ba-muted">A dedicated test account without MFA. Changing it needs that account's password.</small>
+        </label>
+        <div class="ba-field">
+            <span>Password</span>
+            @if (_view?.CredentialConfigured == true && _view.Provider == UnattendedLoginProvider.MicrosoftEntraId && !_replacePassword)
+            {
+                <span class="ba-inline"><span data-testid="ba-form-password-state">Securely configured</span>
+                    <button type="button" class="btn-link" data-testid="ba-form-replace-password" @onclick="() => _replacePassword = true">Replace password</button></span>
+            }
+            else
+            {
+                <input type="password" data-testid="ba-form-password" @bind="_password" autocomplete="new-password" aria-label="Password" />
+                <small class="ba-muted">Stored encrypted on this backend. It is never shown again or returned by the API.</small>
+            }
+        </div>
+        <fieldset class="ba-fieldset">
+            <legend>Success verification</legend>
+            <p class="ba-muted">Authenticated application session: back on the application, the test identity is confirmed and a protected resource opens. A URL alone never counts.</p>
+            <label class="ba-field"><span>Protected resource (optional)</span><input data-testid="ba-form-protected" @bind="_protectedResource" placeholder="e.g. /admin — default: the application URL" /></label>
+            <label class="ba-field"><span>Authenticated page marker (optional CSS selector)</span><input data-testid="ba-form-success-marker" @bind="_successSelector" placeholder="e.g. #user-menu" /></label>
+        </fieldset>
     };
 
     private RenderFragment RemoveDialog() => __builder =>
@@ -175,8 +242,9 @@
     private AutomatedBrowserExecutionReadiness? _automated;
     private UnattendedLoginValidationResult? _result;
     private List<string> _formErrors = [];
-    private string? _identity, _loginName, _password, _loginUrl, _successUrl, _successSelector, _usernameSelector, _passwordSelector, _submitSelector;
-    private bool _enabled = true;
+    private string? _identity, _loginName, _password, _loginUrl, _successUrl, _successSelector, _usernameSelector, _passwordSelector, _submitSelector, _protectedResource;
+    private bool _enabled = true, _replacePassword;
+    private UnattendedLoginProvider _provider = UnattendedLoginProvider.MicrosoftEntraId;
     private ElementReference _editorTitle, _errorSummary, _removeButton;
 
     protected override async Task OnInitializedAsync()
@@ -195,6 +263,14 @@
         else if (_focusEditor) { _focusEditor = false; await _editorTitle.FocusAsync(); }
         if (_focusRemove) { _focusRemove = false; await _removeButton.FocusAsync(); }
     }
+
+    private static string Tone(UnattendedLoginView view) => view.ConnectionStatus switch
+    {
+        UnattendedConnectionStatus.Connected => "ba-tone-good",
+        UnattendedConnectionStatus.Failed => "ba-tone-bad",
+        UnattendedConnectionStatus.RequiresInteraction or UnattendedConnectionStatus.Configured => "ba-tone-warn",
+        _ => "ba-tone-neutral",
+    };
 
     private static string Tone(UnattendedLoginState state) => state switch
     {
@@ -227,7 +303,13 @@
         _passwordSelector = _view?.PasswordSelector;
         _submitSelector = _view?.SubmitSelector;
         _enabled = _view is not { Configured: true } || _view.Enabled;
-        _loginName = _password = null;
+        _provider = _view is { Configured: true } v ? v.Provider : UnattendedLoginProvider.MicrosoftEntraId;
+        _protectedResource = _view?.ProtectedResourceUrl;
+        _password = null;
+        _replacePassword = false;
+        // Entra ID: Edit keeps the selected test identity; a new configuration starts with the known test identity and application URL.
+        _loginName = _provider == UnattendedLoginProvider.MicrosoftEntraId ? _view?.TestIdentity ?? BrowserAuthenticationText.EntraTestIdentities[0] : null;
+        if (_provider == UnattendedLoginProvider.MicrosoftEntraId && _view is not { Configured: true }) _loginUrl ??= BrowserAuthenticationText.EntraDefaultApplicationUrl;
         _formErrors = [];
         _editing = true;
         _focusEditor = true;
@@ -236,6 +318,7 @@
     private void CloseEditor()
     {
         _loginName = _password = null;
+        _replacePassword = false;
         _editing = false;
     }
 
@@ -246,8 +329,10 @@
         {
             var (view, error) = await Api.SaveAsync(new SaveUnattendedLoginRequest
             {
-                IdentityAlias = _identity, LoginName = _loginName, Password = _password, LoginUrl = _loginUrl, SuccessUrlContains = _successUrl,
+                IdentityAlias = _provider == UnattendedLoginProvider.MicrosoftEntraId ? null : _identity, LoginName = _loginName, Password = _password, LoginUrl = _loginUrl,
+                SuccessUrlContains = _provider == UnattendedLoginProvider.MicrosoftEntraId ? null : _successUrl,
                 SuccessSelector = _successSelector, UsernameSelector = _usernameSelector, PasswordSelector = _passwordSelector, SubmitSelector = _submitSelector, Enabled = _enabled,
+                Provider = _provider, ProtectedResourceUrl = _provider == UnattendedLoginProvider.MicrosoftEntraId ? _protectedResource : null,
             });
             if (view is null)
             {

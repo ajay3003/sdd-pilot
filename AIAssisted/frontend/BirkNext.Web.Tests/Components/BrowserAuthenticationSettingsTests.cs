@@ -80,6 +80,7 @@ public sealed class BrowserAuthenticationSettingsTests : BunitContext
     private IRenderedComponent<BrowserAuthenticationSettings> Configure(IRenderedComponent<BrowserAuthenticationSettings> page, string identity = "fake-automation-identity", string? password = Secret)
     {
         page.Find("[data-testid=ba-configure], [data-testid=ba-edit]").Click();
+        page.Find("[data-testid=ba-form-provider]").Change(nameof(UnattendedLoginProvider.Generic));
         page.Find("[data-testid=ba-form-identity]").Change(identity);
         if (password is not null)
         {
@@ -154,7 +155,7 @@ public sealed class BrowserAuthenticationSettingsTests : BunitContext
 
         page.Find("[data-testid=ba-validate]").Click();
 
-        page.WaitForAssertion(() => page.Find("[data-testid=ba-result-box]").TextContent.Should().Contain("Validation failed").And.Contain("MFA or interactive challenge detected").And.Contain("Use attended login"));
+        page.WaitForAssertion(() => page.Find("[data-testid=ba-result-box]").TextContent.Should().Contain("Requires interaction").And.Contain("MFA or interactive challenge detected").And.Contain("Use attended login"));
         page.Find("[data-testid=ba-unattended-status]").TextContent.Should().Be("Validation failed");
     }
 
@@ -183,6 +184,7 @@ public sealed class BrowserAuthenticationSettingsTests : BunitContext
     {
         var page = Render<BrowserAuthenticationSettings>();
         page.Find("[data-testid=ba-configure]").Click();
+        page.Find("[data-testid=ba-form-provider]").Change(nameof(UnattendedLoginProvider.Generic));
 
         var dialog = page.Find("[data-testid=ba-editor]");
         dialog.GetAttribute("role").Should().Be("dialog");

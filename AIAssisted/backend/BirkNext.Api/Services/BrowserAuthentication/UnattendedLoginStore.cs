@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BirkNext.BrowserAuthentication;
 using Microsoft.AspNetCore.DataProtection;
 using Path = System.IO.Path;
 
@@ -17,6 +18,11 @@ public sealed record UnattendedLoginSettings
     public string? UsernameSelector { get; init; }
     public string? PasswordSelector { get; init; }
     public string? SubmitSelector { get; init; }
+    public UnattendedLoginProvider Provider { get; init; }
+    /// <summary>Microsoft Entra ID only: the selected test identity (a test account name, not a secret) so Edit keeps it. Generic logins keep
+    /// the login name only inside the encrypted credential.</summary>
+    public string? TestIdentity { get; init; }
+    public string? ProtectedResourceUrl { get; init; }
     /// <summary>Increases whenever the login name or password changes, so a previous validation no longer counts.</summary>
     public int CredentialVersion { get; init; }
     public DateTimeOffset? CredentialUpdatedAt { get; init; }
@@ -27,7 +33,10 @@ public sealed record UnattendedLoginSettings
     public List<StoredAuditEntry> Audit { get; init; } = [];
 }
 
-public sealed record StoredValidation(string Outcome, string Message, DateTimeOffset ValidatedAt, string Fingerprint, long DurationMs);
+public sealed record StoredValidation(string Outcome, string Message, DateTimeOffset ValidatedAt, string Fingerprint, long DurationMs)
+{
+    public List<UnattendedLoginStep> Steps { get; init; } = [];
+}
 
 public sealed record StoredAuditEntry(DateTimeOffset At, string Event);
 

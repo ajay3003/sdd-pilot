@@ -5,9 +5,14 @@ using Microsoft.Playwright;
 
 namespace BirkNext.Api.Services.BrowserAuthentication;
 
-public sealed record UnattendedLoginAttempt(UnattendedLoginOutcome Outcome, string Message, long DurationMs);
+public sealed record UnattendedLoginAttempt(UnattendedLoginOutcome Outcome, string Message, long DurationMs)
+{
+    /// <summary>Per-step results (Microsoft Entra ID flow); empty for the generic login form.</summary>
+    public List<UnattendedLoginStep> Steps { get; init; } = [];
+}
 
-public sealed record UnattendedLoginTimeouts(int LoginTimeoutMs = 30_000, int NavigationTimeoutMs = 15_000, int FieldWaitMs = 5_000);
+/// <param name="RedirectWaitMs">Microsoft Entra ID: how long the application may take (script start, sign-in button) to redirect to Entra ID.</param>
+public sealed record UnattendedLoginTimeouts(int LoginTimeoutMs = 60_000, int NavigationTimeoutMs = 15_000, int FieldWaitMs = 5_000, int RedirectWaitMs = 20_000);
 
 /// <summary>Starts the isolated automation browser. Replaceable in tests; the default launches bundled Chromium headless.</summary>
 public interface IUnattendedLoginBrowserLauncher
@@ -41,18 +46,22 @@ public sealed class PlaywrightUnattendedLoginBrowserLauncher : IUnattendedLoginB
 /// test account is not locked. An MFA, one-time-code, authenticator or conditional-access challenge stops the login — it is never automated.
 /// The whole login is bounded by <see cref="UnattendedLoginTimeouts.LoginTimeoutMs"/>. Logs carry outcome, duration and target origin only.</para>
 /// </summary>
-public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launcher, ILogger<UnattendedLoginRunner> logger, UnattendedLoginTimeouts? timeouts = null)
+/// <para>Microsoft Entra ID: with that provider, or whenever the generic flow lands on an Entra ID host, <see cref="EntraIdLoginFlow"/> signs in
+/// and reports each step. <paramref name="entraHosts"/> is the set of Entra ID sign-in hosts (tests: a loopback fake).</para>
+public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launcher, ILogger<UnattendedLoginRunner> logger, UnattendedLoginTimeouts? timeouts = null,
+    IReadOnlySet<string>? entraHosts = null)
 {
     private readonly UnattendedLoginTimeouts _timeouts = timeouts ?? new();
+    private readonly EntraIdLoginFlow _entra = new(entraHosts ?? EntraIdLoginFlow.DefaultEntraHosts, timeouts ?? new());
 
     private const string DefaultUsernameSelector = "input[autocomplete='username'], input[type='email'], input[name='loginfmt'], input[name*='user' i], input[id*='user' i], input[name*='login' i], input[name*='email' i], input[type='text']";
     private const string DefaultPasswordSelector = "input[type='password']";
     private const string DefaultSubmitSelector = "button[type='submit'], input[type='submit'], button:has-text('Sign in'), button:has-text('Log in'), button:has-text('Logg inn'), button:has-text('Next'), button:has-text('Neste')";
-    private const string ChallengeSelector = "input[autocomplete='one-time-code'], input[name*='otp' i], input[id*='otp' i], input[name*='totp' i], #idTxtBx_SAOTCC_OTC, #idDiv_SAOTCAS_Title, #idDiv_SAOTCC_Title, [data-mfa-challenge]";
+    internal const string ChallengeSelector = "input[autocomplete='one-time-code'], input[name*='otp' i], input[id*='otp' i], input[name*='totp' i], #idTxtBx_SAOTCC_OTC, #idDiv_SAOTCAS_Title, #idDiv_SAOTCC_Title, [data-mfa-challenge]";
 
     private static readonly Regex ChallengeText = new(@"verification code|one-time (pass)?code|one-time password|authenticator|approve (the |this |your )?sign[- ]?in|two-step verification|two-factor|2-step|multi-factor|\bmfa\b|enter (the )?code|security code|engangskode|tofaktor|bekreft (at det er deg|innlogging)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex ConditionalAccessText = new(@"conditional access|you can't get there from here|you cannot access this right now|device (is not|must be) (managed|compliant|registered)|blocked by (your|an?) (organization|admin|policy)|sign-?in (was )?blocked|access (has been |is )?blocked",
+    internal static readonly Regex ConditionalAccessText = new(@"conditional access|you can't get there from here|you cannot access this right now|device (is not|must be) (managed|compliant|registered)|blocked by (your|an?) (organization|admin|policy)|sign-?in (was )?blocked|access (has been |is )?blocked",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex RejectionText = new(@"incorrect|invalid (user|login|password|credentials)|wrong (user|password)|not recognized|does not exist|login failed|sign-?in failed|authentication failed|feil (brukernavn|passord)|ugyldig",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -99,6 +108,7 @@ public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launch
     private async Task<UnattendedLoginAttempt> LoginAsync(IPage page, UnattendedLoginSettings settings, UnattendedLoginCredential credential, Stopwatch clock, CancellationToken ct)
     {
         var origin = SafeOrigin(settings.LoginUrl);
+        if (settings.Provider == UnattendedLoginProvider.MicrosoftEntraId) return await EntraAsync(page, settings, credential, clock, alreadyNavigated: false, ct);
         if (await NavigateAsync(page, settings.LoginUrl!, ct) is { } navigationFailure) return Done(navigationFailure.Outcome, navigationFailure.Message, clock, origin);
 
         var usernameSelector = Selector(settings.UsernameSelector, DefaultUsernameSelector);
@@ -111,6 +121,8 @@ public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launch
         while (DateTime.UtcNow < fieldsDeadline)
         {
             ct.ThrowIfCancellationRequested();
+            // Redirected to Microsoft Entra ID (the login form there has its own screens): continue with the Entra ID flow.
+            if (_entra.IsEntraHost(page.Url)) return await EntraAsync(page, settings, credential, clock, alreadyNavigated: true, ct);
             if (await ChallengeAsync(page) is { } early) return Done(early, ChallengeMessage(early), clock, origin);
             passwordVisible = await VisibleAsync(page, passwordSelector);
             usernameVisible = await VisibleAsync(page, usernameSelector);
@@ -157,6 +169,12 @@ public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launch
         }
     }
 
+    private async Task<UnattendedLoginAttempt> EntraAsync(IPage page, UnattendedLoginSettings settings, UnattendedLoginCredential credential, Stopwatch clock, bool alreadyNavigated, CancellationToken ct)
+    {
+        var (outcome, message, steps) = await _entra.LoginAsync(page, settings, credential, NavigateAsync, alreadyNavigated, ct);
+        return Done(outcome, message, clock, SafeOrigin(settings.LoginUrl)) with { Steps = steps };
+    }
+
     private async Task<UnattendedLoginAttempt?> NavigateAsync(IPage page, string url, CancellationToken ct)
     {
         for (var attempt = 0; attempt < 2; attempt++)
@@ -184,7 +202,7 @@ public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launch
         else await page.Locator(fieldSelector).First.PressAsync("Enter", new LocatorPressOptions { Timeout = 5_000, NoWaitAfter = true });
     }
 
-    private static async Task<UnattendedLoginOutcome?> ChallengeAsync(IPage page)
+    internal static async Task<UnattendedLoginOutcome?> ChallengeAsync(IPage page)
     {
         if (await VisibleAsync(page, ChallengeSelector)) return UnattendedLoginOutcome.InteractiveChallengeDetected;
         var text = await BodyTextAsync(page);
@@ -204,13 +222,13 @@ public sealed class UnattendedLoginRunner(IUnattendedLoginBrowserLauncher launch
         return urlOk && markerOk;
     }
 
-    private static async Task<bool> VisibleAsync(IPage page, string selector)
+    internal static async Task<bool> VisibleAsync(IPage page, string selector)
     {
         try { return await page.Locator(selector).First.IsVisibleAsync(); }
         catch (PlaywrightException) { return false; }
     }
 
-    private static async Task<string> BodyTextAsync(IPage page)
+    internal static async Task<string> BodyTextAsync(IPage page)
     {
         try
         {

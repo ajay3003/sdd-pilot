@@ -46,3 +46,12 @@
 .ba-advanced[open] { display: flex; flex-direction: column; gap: .5rem; }
 .ba-check { display: flex; gap: .4rem; align-items: center; font-size: .9rem; }
 @media (max-width: 40rem) { .ba-facts > div { grid-template-columns: 1fr; } }
+.ba-steps { list-style: none; padding: 0; margin: .25rem 0 .5rem; display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; }
+.ba-steps li { overflow-wrap: anywhere; }
+.ba-step-label { font-weight: 600; }
+.ba-step-status { display: inline-block; border: 1px solid currentColor; border-radius: 999px; padding: 0 .45rem; font-size: .8rem; margin-left: .25rem; }
+.ba-step-passed .ba-step-status { color: var(--clr-success); }
+.ba-step-failed .ba-step-status { color: var(--clr-danger); }
+.ba-step-requiresinteraction .ba-step-status { color: #7a4b00; }
+.ba-step-notreached .ba-step-status, .ba-step-notapplicable .ba-step-status { color: var(--clr-text-muted); }
+.ba-inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; }
