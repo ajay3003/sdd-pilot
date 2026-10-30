@@ -49,7 +49,7 @@ public sealed class PerformanceScenarioCandidateSemanticsTests
         op.Path.Should().Be("/users/{id}/children");
         var need = op.Needs.Should().ContainSingle().Subject;
         need.Should().Match<ScenarioDataNeed>(n => n.Variable == "id" && n.In == "path" && n.Required && n.Source == ScenarioNeedSources.Observed && n.ObservedValueAvailable);
-        op.TestDataState.Should().Be(ScenarioTestDataStates.Required);
+        op.TestDataState.Should().Be(ScenarioTestDataStates.Optional);
         op.Data.Single().State.Should().Be(ScenarioDataMatchState.Missing);
         op.Reasons.Should().NotContain(r => r.Contains("no Test Data needed") || r.Contains("not required"));
         JsonSerializer.Serialize(op).Should().NotContain("123456", "the observed value is evidence, never part of a candidate");
@@ -66,7 +66,7 @@ public sealed class PerformanceScenarioCandidateSemanticsTests
         op.Evidence.Should().Be(ScenarioEvidence.DeclaredAndObserved);
         op.Path.Should().Be("/users/{userId}/children");
         op.Needs.Single().Should().Match<ScenarioDataNeed>(n => n.Variable == "userId" && n.Source == ScenarioNeedSources.Declared && n.ObservedValueAvailable);
-        op.TestDataState.Should().Be(ScenarioTestDataStates.Required);
+        op.TestDataState.Should().Be(ScenarioTestDataStates.Optional);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed class PerformanceScenarioCandidateSemanticsTests
         op.Level.Should().Be(ScenarioRecommendationLevel.ReviewRequired);
         op.Runnable.Should().BeFalse("it is created as its own definition after review, never added directly");
         op.Needs.Select(n => (n.Variable, n.In, n.Required, n.Source)).Should().Equal(("id", "variable", true, ScenarioNeedSources.CapturedQuery), ("limit", "variable", false, ScenarioNeedSources.CapturedQuery));
-        op.TestDataState.Should().Be(ScenarioTestDataStates.Required);
+        op.TestDataState.Should().Be(ScenarioTestDataStates.Optional);
         var step = PerformanceScenarioEngine.ProposedGraphQlStep(op)!;
         step.GraphQlQuery.Should().StartWith("query HentBarn($id: ID!");
         step.GraphQlVariablesJson.Should().Be("""{"id":"{id}","limit":"{limit}"}""");

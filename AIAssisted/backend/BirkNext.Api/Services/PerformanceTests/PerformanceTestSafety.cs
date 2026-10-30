@@ -116,7 +116,7 @@ public static partial class PerformanceTestSafety
         s.DataMappings?.Where(m => m.Source != RuntimeValueSource.TestData || m.AssetAliases.Count > 0).Select(m => m.Variable) ?? [];
 
     /// <summary>
-    /// Precise runtime-value blockers per executed step and parameter: "runtime value source not configured" (not "Test Data missing" unless Test
+    /// Precise runtime-value blockers per executed step and parameter: "runtime value missing" (not "Test Data missing" unless Test
     /// Data is the chosen source), invalid execution order of a previous-step reference, a disabled or missing producer, unusable variables.
     /// </summary>
     private static IEnumerable<Issue> RuntimeValueIssues(PerformanceTestDefinition d)
@@ -130,14 +130,14 @@ public static partial class PerformanceTestSafety
                 var at = $"Step {i + 1} '{step.Name}' · {row.Parameter.Variable}";
                 yield return row.Mapping switch
                 {
-                    null => new(PerformanceReadinessState.NeedsConfiguration, "runtime", $"{at}: runtime value source not configured (Test Data, previous step output, scenario variable, fixed or generated value)."),
+                    null => new(PerformanceReadinessState.NeedsConfiguration, "runtime", $"{at}: runtime value missing — choose a value source (auto-filled or fixed value, previous step output, scenario variable, generated value or optional Test Data)."),
                     { Source: RuntimeValueSource.TestData } => new(PerformanceReadinessState.NeedsTestData, "testdata", $"Test Data missing for {{{row.Parameter.Variable}}} (step '{step.Name}'): map approved central Test Data to it."),
                     { Source: RuntimeValueSource.PreviousStep } => new(PerformanceReadinessState.InvalidScenario, "dependency", $"{at}: {row.Problem}."),
                     _ => new(PerformanceReadinessState.NeedsConfiguration, "runtime", $"{at}: {row.Problem}."),
                 };
             }
-            foreach (var m in (step.DataMappings ?? []).Where(m => m.Source == RuntimeValueSource.Fixed && m.FixedValue is { } v && (v.Length > 500 || v.Any(char.IsControl))))
-                yield return new(PerformanceReadinessState.InvalidScenario, "runtime", $"Step {i + 1} '{step.Name}' · {m.Variable}: fixed values are at most 500 characters without control characters.");
+            foreach (var m in (step.DataMappings ?? []).Where(m => m.Source is RuntimeValueSource.Fixed or RuntimeValueSource.AutoFilled && m.FixedValue is { } v && (v.Length > 500 || v.Any(char.IsControl))))
+                yield return new(PerformanceReadinessState.InvalidScenario, "runtime", $"Step {i + 1} '{step.Name}' · {m.Variable}: fixed and auto-filled values are at most 500 characters without control characters.");
             foreach (var o in step.Outputs ?? [])
                 if (!PerformanceScenarioRuntime.ValidName(o.Name) || !PerformanceScenarioRuntime.ValidOutputPath(o.Path))
                     yield return new(PerformanceReadinessState.InvalidScenario, "output", $"Step {i + 1} '{step.Name}': output '{o.Name}' needs a name (letters, digits, '_') and a JSON path such as $.id.");
@@ -192,7 +192,7 @@ public static partial class PerformanceTestSafety
         if (d.TargetType == PerformanceTargetType.GraphQlHttp && GraphQlIssue(s) is { } gql)
             yield return new(PerformanceReadinessState.InvalidScenario, "graphql", $"{label}: {gql}");
         if (data is not null && Placeholders(s).Except(data.Columns, StringComparer.Ordinal).Except(Mapped(s), StringComparer.Ordinal).ToList() is { Count: > 0 } missing)
-            yield return new(PerformanceReadinessState.NeedsTestData, "placeholder", $"{label}: Test Data missing for {string.Join(", ", missing.Select(m => "{" + m + "}"))}.");
+            yield return new(PerformanceReadinessState.NeedsConfiguration, "placeholder", $"{label}: runtime value missing for {string.Join(", ", missing.Select(m => "{" + m + "}"))} — not in the selected data profile and no value source configured.");
     }
 
     /// <summary>Query-only GraphQL, decided by parsing the document (Hot Chocolate parser) — never by a text heuristic.</summary>

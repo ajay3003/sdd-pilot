@@ -1189,10 +1189,13 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "scenario");
         var mapping = cut.Find("[data-testid=pt-step-mapping][data-variable=personId]");
         mapping.GetAttribute("data-state").Should().Be("missing");
-        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Runtime value source not configured").And.NotContain("Test Data missing", "a dynamic parameter is not a Test Data requirement");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Runtime value missing — choose a value source").And.NotContain("Test Data missing", "a dynamic parameter is not a Test Data requirement");
         cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Needs configuration");
         cut.Find("[data-testid=pt-step-map]").Click();
-        cut.FindAll("[data-testid=pt-value-source-option]").Select(o => o.GetAttribute("data-source")).Should().Equal("TestData", "PreviousStep", "ScenarioVariable", "Fixed");
+        cut.FindAll("[data-testid=pt-value-source-option]").Select(o => o.GetAttribute("data-source")).Should().Equal(["Fixed", "PreviousStep", "ScenarioVariable", "TestData"],
+            "a scenario value first; Test Data is optional and offered after it");
+        cut.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "TestData").Change(true);
+        cut.Find("[data-testid=pt-value-testdata-why]").TextContent.Should().Contain("Test Data is optional");
         cut.Find("[data-testid=tdm-open-test-data]").GetAttribute("href").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&environment=PaymentHub%20QA&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&in=path&dataType=SimpleValues");
     }
@@ -1214,10 +1217,10 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-data-selection-note]").TextContent.Should().Be("Selection strategy applies after Test Data is mapped.");
         var row = cut.Find("[data-testid=pt-step-mapping][data-variable=personId]");
         row.TextContent.Should().Contain("Path parameter");
-        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Runtime value source not configured");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Contain("Runtime value missing — choose a value source");
         cut.Find("[data-testid=pt-value-suggestion]").TextContent.Should().Contain("Suggested value source: Test Data").And.Contain("person-id-qa");
 
-        cut.Find("[data-testid=pt-step-map]").Click();
+        cut.Find("[data-testid=pt-step-choose-testdata]").Click();
         cut.Find("[data-testid=pt-step-map]").GetAttribute("aria-expanded").Should().Be("true");
         cut.Find("[data-testid=tdm]").GetAttribute("role").Should().Be("dialog");
         cut.FindAll("[data-testid=tdm-option]").Select(o => o.GetAttribute("value")).Should().Equal(["person-id-qa"], "only approved assets of the compatible data type");
@@ -1226,7 +1229,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=tdm-use]").Click();
 
         cut.Find("[data-testid=pt-step-mapping][data-variable=personId]").GetAttribute("data-state").Should().Be("mapped");
-        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Be("Mapped");
+        cut.Find("[data-testid=pt-step-mapping-state]").TextContent.Should().Be("Ready");
         cut.Find("[data-testid=pt-value-source]").TextContent.Should().Be("Test Data");
         cut.Find("[data-testid=pt-value-text]").TextContent.Should().Be("person-id-qa");
         cut.Find("[data-testid=pt-step-message]").TextContent.Should().Be("Step 1: personId → Test Data · person-id-qa.");
@@ -1242,7 +1245,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Register(definitions: [Definition with { Scenario = new PerformanceScenario { Steps = [new HttpPerformanceStep { Name = "lookup", RelativePath = "/api/person/{personId}" }] } }]);
         var cut = Page();
         Tab(cut, "scenario");
-        cut.Find("[data-testid=pt-step-map]").Click();
+        cut.Find("[data-testid=pt-step-choose-testdata]").Click();
         cut.Find("[data-testid=tdm-none]").TextContent.Should().Be("No compatible approved Test Data found.");
         cut.Find("[data-testid=tdm-open-test-data]").GetAttribute("href").Should().StartWith("/test-data?consumer=performance-test-review");
         cut.Find("[data-testid=tdm-cancel]").Click();

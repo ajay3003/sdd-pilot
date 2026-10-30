@@ -26,7 +26,7 @@
             }
         </dd></div>
     </dl>
-    <p class="ptc-sub">An observed value is evidence, not Test Data: it is never copied into the scenario and never approved automatically.</p>
+    <p class="ptc-sub">An observed value is evidence, not Test Data: it goes into the scenario only when you choose "Use in scenario", and it is never approved automatically.</p>
 
     @if (_match is { Matched: true } match)
     {
@@ -47,6 +47,11 @@
         {
             <button type="button" class="btn-secondary" disabled="@_busy" @onclick="CheckAsync" data-testid="ovr-check">@(_busy ? "Checking…" : "Check for approved Test Data")</button>
         }
+        @if (OnUseValue.HasDelegate && _show && Evidence.Values.Count > 0)
+        {
+            <button type="button" class="btn-secondary" @onclick="() => OnUseValue.InvokeAsync(Evidence.Values[0])" aria-describedby="@($"{_titleId}-use")" data-testid="ovr-use-in-scenario">Use in scenario</button>
+            <span class="ptc-sub" id="@($"{_titleId}-use")">Stored with this scenario as an auto-filled value (Live Discovery) — not Test Data.</span>
+        }
         @if (OnUseExisting.HasDelegate) { <button type="button" class="btn-secondary" @onclick="OnUseExisting" data-testid="ovr-use-existing">Use existing approved Test Data</button> }
         <button type="button" class="btn-secondary" disabled="@(_busy || _registered)" @onclick="RegisterAsync" data-testid="ovr-register">@(_registered ? "Registered · Needs review" : "Register as Test Data candidate")</button>
         <button type="button" class="ptc-link" @onclick="OnCancel" data-testid="ovr-cancel">Cancel</button>
@@ -60,6 +65,8 @@
     [Parameter] public string? EnvironmentId { get; set; }
     [Parameter] public TestDataDataType DataType { get; set; } = TestDataDataType.SimpleValues;
     [Parameter] public EventCallback<string> OnUseAlias { get; set; }
+    /// <summary>Uses the shown observed value directly as a scenario value (auto-filled, provenance Live Discovery) — an explicit choice, never Test Data.</summary>
+    [Parameter] public EventCallback<string> OnUseValue { get; set; }
     /// <summary>Opens the compatible approved Test Data choice (the scenario's mapping dialog).</summary>
     [Parameter] public EventCallback OnUseExisting { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }

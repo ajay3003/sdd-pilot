@@ -148,7 +148,7 @@ public static class K6ScriptGenerator
             {
                 RuntimeValueSource.TestData => new JsonObject { ["k"] = "row", ["c"] = m.Variable },
                 RuntimeValueSource.PreviousStep when m.FromStepId is not null && m.Output is not null => new JsonObject { ["k"] = "step", ["s"] = m.FromStepId, ["o"] = m.Output },
-                RuntimeValueSource.Fixed when m.FixedValue is not null => new JsonObject { ["k"] = "fixed", ["v"] = m.FixedValue },
+                RuntimeValueSource.Fixed or RuntimeValueSource.AutoFilled when m.FixedValue is not null => new JsonObject { ["k"] = "fixed", ["v"] = m.FixedValue },
                 RuntimeValueSource.Generated when m.Generator is { } g => new JsonObject { ["k"] = "gen", ["g"] = g.ToString() },
                 RuntimeValueSource.ScenarioVariable => d.Scenario.Variables?.FirstOrDefault(v => v.Name == m.ScenarioVariable) switch
                 {

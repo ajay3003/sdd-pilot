@@ -77,13 +77,13 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         var need = card.QuerySelector("[data-testid=psb-need]")!;
         need.GetAttribute("data-variable").Should().Be("id");
         need.GetAttribute("data-state").Should().Be("Missing");
-        need.TextContent.Should().Contain("Path parameter").And.Contain("No compatible approved Test Data yet").And.Contain("Observed value available · hidden");
+        need.TextContent.Should().Contain("Path parameter").And.Contain("No compatible approved Test Data (optional").And.Contain("Observed value available · hidden");
         card.QuerySelector("[data-testid=psb-normalization]")!.TextContent.Should().Contain("dynamic route segment detected").And.Contain("not a Test Data requirement");
         card.QuerySelector("[data-testid=psb-state]")!.TextContent.Should().Be("Review required", "observed only — the contract is unknown");
         card.QuerySelectorAll("[data-testid=psb-attention-item]").Select(i => i.TextContent).Should().Contain("Dynamic parameter: id")
             .And.Contain(t => t.StartsWith("Observed only")).And.Contain("Authentication: Bearer observed · configuration missing");
         card.QuerySelector("[data-testid=psb-attention-item][data-kind=dynamic]")!.ClassList.Should().Contain("psb-info-item", "a dynamic parameter alone is information, not a warning");
-        card.QuerySelector("[data-testid=psb-testdata-state]")!.GetAttribute("data-state").Should().Be(ScenarioTestDataStates.Required);
+        card.QuerySelector("[data-testid=psb-testdata-state]")!.GetAttribute("data-state").Should().Be(ScenarioTestDataStates.Optional);
         card.QuerySelector("[data-testid=psb-auth]")!.TextContent.Should().Contain("Bearer observed").And.Contain("Needs configuration").And.Contain("no token is copied");
         cut.Markup.Should().NotContain(ObservedId).And.NotContain("no Test Data needed").And.NotContain("Test Data missing");
     }

@@ -518,17 +518,22 @@
                     @if (op.Data.Count == 0) { <span class="@(op.TestDataState == ScenarioTestDataStates.Unknown ? "psb-warn" : "")">@(op.TestDataState == ScenarioTestDataStates.NotRequired ? "No dynamic parameters" : op.TestDataState)</span> }
                     else
                     {
+                        <span data-testid="psb-needs-summary">@op.Data.Count dynamic parameter@(op.Data.Count == 1 ? "" : "s")@(op.Data.Count(d => E.SuggestedValue(op, d.Need) is not null) is > 0 and var n ? $" · suggested value available for {n}" : "") · Test Data optional</span>
                         <ul class="psb-needs" aria-label="Dynamic parameters" data-testid="psb-needs">
                             @foreach (var match in op.Data)
                             {
                                 var m = match;
                                 <li data-testid="psb-need" data-variable="@m.Need.Variable" data-state="@m.State">
                                     <span class="psb-need-name"><code>@m.Need.Variable</code> · @Location(m.Need.In)@(m.Need.Required ? "" : " · optional")@(m.Need.Type is { } t ? $" · {t}" : "") · @m.Need.Source</span>
+                                    @if (E.SuggestedValue(op, m.Need) is { } suggested)
+                                    {
+                                        <span class="psb-data-ok" data-testid="psb-suggested-value" data-origin="@suggested.Origin">Suggested value <code>@suggested.Value</code> · @suggested.Origin@(suggested.NeedsReview ? " · needs review (Live Discovery also observed values)" : "")</span>
+                                    }
                                     @if (m.State == ScenarioDataMatchState.Recommended) { <span class="psb-data-ok" data-testid="psb-data-recommended">Test Data suggestion: @m.Recommended</span> }
                                     else if (m.State == ScenarioDataMatchState.Possible) { <span data-testid="psb-data-possible">@m.Aliases.Count compatible approved asset@(m.Aliases.Count == 1 ? "" : "s")</span> }
                                     else
                                     {
-                                        <span class="sd-context" data-testid="psb-data-none">No compatible approved Test Data yet (one possible value source)</span>
+                                        <span class="sd-context" data-testid="psb-data-none">No compatible approved Test Data (optional — one possible value source)</span>
                                         <a class="sd-link" href="@E.TestDataHref(op, m.Need, EnvironmentName, Definition.Id.Length == 0 ? null : Definition.Id)" data-testid="psb-open-test-data">Open Test Data</a>
                                     }
                                     @if (_chosen.GetValueOrDefault(op.Key)?.GetValueOrDefault(m.Need.Variable) is { } chosen) { <span class="psb-data-ok" data-testid="psb-data-chosen">Will map to @chosen when added</span> }

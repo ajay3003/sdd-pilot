@@ -7,11 +7,11 @@
 @using D = BirkNext.Web.Services.PerformanceTestReviewDashboard
 @inject IJSRuntime JS
 
-@* Scenario design: the executable steps are the main working area. Each step owns its runtime values (Test Data, previous step output, scenario
-   variable, fixed or generated value), its response outputs, its authentication (inherit / none / override) and its request details. Order is
+@* Scenario design: the executable steps are the main working area. Each step owns its runtime values (auto-filled or fixed value, previous step
+   output, scenario variable, generated value or optional Test Data), its response outputs, its authentication (inherit / none / override) and its request details. Order is
    execution order: drag ⋮⋮ or Move up / Move down; a move that would run a step before the step whose output it uses is refused with options. *@
 <section class="pss" aria-labelledby="pss-summary-h" data-testid="pss">
-    @{ var readiness = R.ScenarioReadiness(Definition, KnownAliases); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
+    @{ var readiness = R.ScenarioReadiness(Definition, KnownAliases); var values = R.ValuesSummary(Definition.Scenario, KnownAliases); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
     <div class="pss-header" data-testid="pss-header">
         <h3 id="pss-summary-h" class="visually-hidden">Scenario summary</h3>
         <dl class="pss-facts">
@@ -26,6 +26,10 @@
                     <span class="pss-hint" id="pss-auth-help">Steps inherit it unless they override it. A reference only — no token is copied.</span></dd></div>
             <div><dt>Steps</dt><dd data-testid="pss-steps-count">@Definition.Scenario.Steps.Count@(Definition.Scenario.Steps.Count(s => s.Disabled) is > 0 and var off ? $" · {off} disabled" : "")</dd></div>
             <div><dt>Readiness</dt><dd><span class="pss-status pss-status-@Tone(readiness.Status)" data-testid="pss-readiness" data-status="@readiness.Status">@R.StatusLabel(readiness.Status)</span></dd></div>
+            @if (values.Total > 0)
+            {
+                <div><dt>Runtime values</dt><dd data-testid="pss-values-summary">@values.Resolved/@values.Total resolved · Test Data @values.TestDataAssets asset@(values.TestDataAssets == 1 ? "" : "s") used</dd></div>
+            }
             @if (dependencies.Count > 0)
             {
                 <div><dt>Dependencies</dt><dd data-testid="pss-dependencies">@dependencies.Count step-to-step reference@(dependencies.Count == 1 ? "" : "s")@if (invalid > 0) { <span class="pss-warn" data-testid="pss-dependencies-invalid"> · @invalid invalid</span> }</dd></div>
@@ -477,6 +481,8 @@
 
     private string? _valueKey, _observedKey;
     private RuntimeValueSource _source;
+    /// <summary>The mapping the value dialog opened with (its declared type/enum and auto-filled value).</summary>
+    private ScenarioDataMapping? _current;
     private string _fixed = "", _variable = "", _fromStep = "", _output = "", _path = "$.id";
     private GeneratedValueKind? _generator;
 
@@ -492,16 +498,26 @@
                     {
                         var r = row;
                         var key = $"{s.Id}|{r.Parameter.Variable}";
-                        var suggestion = r.Mapping is null ? R.Suggest(Definition.Scenario, index, r.Parameter, Assets, Definition.EnvironmentName) : null;
+                        var suggestion = r.Mapping is null ? R.Suggest(Definition.Scenario, index, r.Parameter, Assets, Definition.EnvironmentName)
+                            : r.Mapping.Source == RuntimeValueSource.AutoFilled && R.Suggest(Definition.Scenario, index, r.Parameter, [], null) is { Source: RuntimeValueSource.PreviousStep } previous ? previous : null;
+                        var scenarioValue = r.Mapping?.Source is RuntimeValueSource.AutoFilled or RuntimeValueSource.Fixed;
                         <tr id="@($"pt-req-{s.Id}-{r.Parameter.Variable}")" tabindex="-1" data-testid="pt-step-mapping" data-variable="@r.Parameter.Variable" data-state="@(r.Resolved ? "mapped" : "missing")" data-source="@(r.Mapping?.Source.ToString() ?? "None")">
                             <th scope="row"><code>@r.Parameter.Variable</code></th>
                             <td data-testid="pt-req-location">@ObservedValueReview.Location(r.Parameter.In)</td>
                             <td data-testid="pt-value-source">@r.SourceLabel</td>
                             <td class="pss-break" data-testid="pt-value-text">@r.ValueText</td>
-                            <td data-testid="pt-step-mapping-state">@if (r.Resolved) { <span class="pss-ok">Mapped</span> } else { <span class="pss-warn"><span aria-hidden="true">! </span>@r.Problem</span> }</td>
+                            <td data-testid="pt-step-mapping-state">@if (r.Resolved) { <span class="pss-ok">Ready</span> } else { <span class="pss-warn"><span aria-hidden="true">! </span>@r.Problem</span> }</td>
                             <td>
                                 <button type="button" class="btn-secondary btn-small" aria-expanded="@(_valueKey == key ? "true" : "false")" @onclick="() => OpenValue(index, r.Parameter.Variable)" data-testid="pt-step-map">
-                                    @(r.Mapping is null ? "Configure value" : "Change")<span class="visually-hidden"> for @r.Parameter.Variable</span></button>
+                                    @(r.Mapping is null ? "Enter value" : "Change")<span class="visually-hidden"> for @r.Parameter.Variable</span></button>
+                                @if (r.Mapping is { Source: RuntimeValueSource.AutoFilled, NeedsReview: true } review)
+                                {
+                                    <button type="button" class="btn-link" @onclick="() => SetMapping(index, r.Parameter.Variable, review with { NeedsReview = false })" data-testid="pt-step-confirm">Use suggested value<span class="visually-hidden"> for @r.Parameter.Variable</span></button>
+                                }
+                                @if (r.Mapping is null || scenarioValue)
+                                {
+                                    <button type="button" class="btn-link" @onclick="() => OpenValue(index, r.Parameter.Variable, RuntimeValueSource.TestData)" data-testid="@(scenarioValue ? "pt-step-promote" : "pt-step-choose-testdata")">@(scenarioValue ? "Use as Test Data" : "Choose Test Data")<span class="visually-hidden"> for @r.Parameter.Variable</span></button>
+                                }
                                 @if (r.Mapping is not null) { <button type="button" class="btn-link" @onclick="() => SetMapping(index, r.Parameter.Variable, null)" data-testid="pt-step-unmap">Remove<span class="visually-hidden"> value source for @r.Parameter.Variable</span></button> }
                             </td>
                         </tr>
@@ -520,14 +536,19 @@
         </div>
     };
 
-    private void OpenValue(int index, string variable)
+    /// <summary>Opens the value dialog. Without a mapping it starts at a scenario value (Fixed) — Test Data is optional, chosen explicitly.</summary>
+    private void OpenValue(int index, string variable, RuntimeValueSource? start = null)
     {
         var s = Steps[index];
         var key = $"{s.Id}|{variable}";
-        if (_valueKey == key) { _valueKey = null; return; }
+        if (_valueKey == key && start is null) { _valueKey = null; return; }
         var m = s.DataMappings?.FirstOrDefault(x => x.Variable == variable);
         _valueKey = key; _observedKey = null;
-        _source = m?.Source ?? RuntimeValueSource.TestData;
+        _source = start ?? m?.Source ?? RuntimeValueSource.Fixed;
+        // The declared shape travels with the dialog even when no value is configured yet (Fixed is validated against it).
+        var shape = s.Source?.Parameters?.FirstOrDefault(x => x.Name == variable);
+        _current = m is null ? shape is null ? null : new ScenarioDataMapping(variable, [], TestDataDataType.SimpleValues, "") { Source = RuntimeValueSource.Fixed, DeclaredType = shape.Type, AllowedValues = shape.Enum }
+            : m with { DeclaredType = m.DeclaredType ?? shape?.Type, AllowedValues = m.AllowedValues ?? shape?.Enum };
         _fixed = m?.FixedValue ?? ""; _variable = m?.ScenarioVariable ?? ""; _generator = m?.Generator;
         _fromStep = m?.FromStepId ?? Steps.Take(index).LastOrDefault(x => !x.Disabled)?.Id ?? "";
         _output = m?.Output ?? ""; _path = "$.id";
@@ -551,7 +572,9 @@
         else _focus = $"pt-req-{s.Id}-{variable}";
     }
 
-    private static ScenarioDataMapping Mapping(RuntimeParameter p, RuntimeValueSource source) => new(p.Variable, [], p.DataType, p.In) { Source = source };
+    /// <summary>A new mapping; the declared type/enum of the current mapping travels with it so a fixed value is validated the same way.</summary>
+    private ScenarioDataMapping Mapping(RuntimeParameter p, RuntimeValueSource source) =>
+        new(p.Variable, [], p.DataType, p.In) { Source = source, DeclaredType = _current?.DeclaredType, AllowedValues = _current?.AllowedValues };
 
     private Task UseSuggestion(int index, RuntimeParameter p, RuntimeValueSuggestion suggestion) => suggestion.Source == RuntimeValueSource.TestData
         ? SetMapping(index, p.Variable, new ScenarioDataMapping(p.Variable, [suggestion.Alias!], p.DataType, p.In))
@@ -595,24 +618,27 @@
             <h5 id="@titleId" tabindex="-1">Configure value · <code>@p.Variable</code> <span class="pss-hint">@ObservedValueReview.Location(p.In) · @TestDataDataTypes.Label(p.DataType)</span></h5>
             <fieldset class="pss-sources" data-testid="pt-value-sources">
                 <legend>Value source</legend>
-                @foreach (var src in R.SourcesFor(p))
+                @foreach (var src in R.SourcesFor(p, _current is { Source: RuntimeValueSource.AutoFilled, FixedValue.Length: > 0 }))
                 {
                     var option = src;
-                    <label class="sd-check"><input type="radio" name="@radio" checked="@(_observedKey is null && _source == option)" @onchange="() => { _source = option; _observedKey = null; }" data-testid="pt-value-source-option" data-source="@option" /> @R.SourceLabel(option)</label>
+                    <label class="sd-check"><input type="radio" name="@radio" checked="@(_observedKey is null && _source == option)" @onchange="() => { _source = option; _observedKey = null; }" data-testid="pt-value-source-option" data-source="@option" />
+                        @(option == RuntimeValueSource.AutoFilled ? R.SourceLabel(_current!) : option == RuntimeValueSource.TestData ? "Test Data (optional)" : R.SourceLabel(option))</label>
                 }
                 @if (observed is not null)
                 {
-                    <label class="sd-check"><input type="radio" name="@radio" checked="@(_observedKey is not null)" @onchange="() => _observedKey = _valueKey" data-testid="pt-value-source-option" data-source="ObservedSample" /> Observed sample (review for Test Data)</label>
+                    <label class="sd-check"><input type="radio" name="@radio" checked="@(_observedKey is not null)" @onchange="() => _observedKey = _valueKey" data-testid="pt-value-source-option" data-source="ObservedSample" /> Observed sample (Live Discovery)</label>
                 }
             </fieldset>
             @if (_observedKey is not null && observed is not null)
             {
                 <ObservedValueReview Evidence="observed" Method="@s.Method" EnvironmentName="@Definition.EnvironmentName" EnvironmentId="@Definition.EnvironmentId" DataType="p.DataType"
                     OnUseAlias="alias => SetMapping(index, p.Variable, new ScenarioDataMapping(p.Variable, [alias], p.DataType, p.In) { FromObservedSample = true })"
+                    OnUseValue="value => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.AutoFilled) with { FixedValue = value, ValueOrigin = RuntimeValueOrigins.LiveDiscovery, ValueObservedAt = observed?.LastSeen })"
                     OnUseExisting="() => { _observedKey = null; _source = RuntimeValueSource.TestData; }" OnCancel="() => CloseValue(index, p.Variable)" />
             }
             else if (_source == RuntimeValueSource.TestData)
             {
+                <p class="pss-hint" data-testid="pt-value-testdata-why">Test Data is optional. Use Test Data when this value should be centrally managed or reused across scenarios@(row.Mapping?.Source is RuntimeValueSource.AutoFilled or RuntimeValueSource.Fixed ? $" — the current value ({R.ValueText(Definition.Scenario, row.Mapping)}) stays until you choose an asset; it is never promoted automatically" : "").</p>
                 <TestDataMappingDialog Need="@(new TestDataMappingDialog.MappingNeed(p.Variable, p.In, p.DataType, null, Definition.EnvironmentName))" Assets="Assets"
                     Current="@row.Mapping?.AssetAliases.FirstOrDefault()" TestDataHref="@D.TestDataHref(Definition, s, p.Variable, p.In, p.DataType)"
                     OnUse="alias => SetMapping(index, p.Variable, new ScenarioDataMapping(p.Variable, [alias], p.DataType, p.In))" OnCancel="() => CloseValue(index, p.Variable)"
@@ -660,9 +686,26 @@
                                     </select></label>
                             }
                             break;
+                        case RuntimeValueSource.AutoFilled:
+                            <p data-testid="pt-value-auto">Value <code>@_current!.FixedValue</code> · from @(_current.ValueOrigin ?? "evidence")@(_current.ValueObservedAt is { } at ? $" (observed {at.ToUniversalTime():yyyy-MM-dd HH:mm} UTC)" : "")</p>
+                            <p class="pss-hint">Used directly as a scenario value — not Test Data.@(_current.NeedsReview ? " Live Discovery also observed values for this parameter: confirm this value or choose another source." : "")</p>
+                            break;
                         case RuntimeValueSource.Fixed:
-                            <label>Fixed value <input value="@_fixed" @oninput="e => _fixed = Str(e)" maxlength="500" data-testid="pt-value-fixed" aria-describedby="@($"{titleId}-fixed")" />
-                                <span class="pss-hint" id="@($"{titleId}-fixed")">Fixed values are scenario configuration — not reusable Test Data assets. Never enter credentials.</span></label>
+                            var typeProblem = _fixed.Length == 0 ? null : R.TypeProblem(_fixed, _current?.DeclaredType, _current?.AllowedValues);
+                            @if (_current?.AllowedValues is { Count: > 0 } allowed)
+                            {
+                                <label>Fixed value
+                                    <select value="@_fixed" @onchange="e => _fixed = Str(e)" data-testid="pt-value-fixed-enum" aria-describedby="@($"{titleId}-fixed")">
+                                        <option value="">Choose…</option>
+                                        @foreach (var a in allowed) { <option value="@a">@a</option> }
+                                    </select></label>
+                            }
+                            else
+                            {
+                                <label>Fixed value <input value="@_fixed" @oninput="e => _fixed = Str(e)" maxlength="500" data-testid="pt-value-fixed" aria-invalid="@(typeProblem is null ? "false" : "true")" aria-describedby="@($"{titleId}-fixed {titleId}-fixed-error")" /></label>
+                            }
+                            <span class="pss-hint" id="@($"{titleId}-fixed")">@(_current?.DeclaredType is { } declared ? $"Declared type: {declared}. " : "")Fixed values are scenario configuration — not reusable Test Data assets. Never enter credentials.</span>
+                            @if (typeProblem is not null) { <span class="pss-warn" role="alert" id="@($"{titleId}-fixed-error")" data-testid="pt-value-fixed-error">@typeProblem</span> }
                             break;
                         default:
                             <label>Generator
@@ -685,7 +728,8 @@
     {
         RuntimeValueSource.PreviousStep => IndexOf(_fromStep) is var i && i >= 0 && i < index && (_output.Length > 0 || R.ValidOutputPath(_path)),
         RuntimeValueSource.ScenarioVariable => Definition.Scenario.Variables?.Any(v => v.Name == _variable) == true,
-        RuntimeValueSource.Fixed => _fixed.Length is > 0 and <= 500,
+        RuntimeValueSource.Fixed => _fixed.Length is > 0 and <= 500 && R.TypeProblem(_fixed, _current?.DeclaredType, _current?.AllowedValues) is null,
+        RuntimeValueSource.AutoFilled => _current is { Source: RuntimeValueSource.AutoFilled, FixedValue.Length: > 0 } c && R.TypeProblem(c.FixedValue!, c.DeclaredType, c.AllowedValues) is null,
         RuntimeValueSource.Generated => _generator is not null && R.GeneratedAllowed(p),
         _ => false,
     };
@@ -695,6 +739,7 @@
         RuntimeValueSource.PreviousStep => ApplyPreviousStep(index, p),
         RuntimeValueSource.ScenarioVariable => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.ScenarioVariable) with { ScenarioVariable = _variable }),
         RuntimeValueSource.Fixed => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.Fixed) with { FixedValue = _fixed }),
+        RuntimeValueSource.AutoFilled => SetMapping(index, p.Variable, _current! with { NeedsReview = false }),
         _ => SetMapping(index, p.Variable, Mapping(p, RuntimeValueSource.Generated) with { Generator = _generator }),
     };
 

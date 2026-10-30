@@ -46,13 +46,15 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
     {
         var cut = Render(Step("children", "/api/brukere/{brukerId}/barn") with { QueryParameters = [new("correlationId", "{correlationId}")] });
         cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Needs configuration");
-        Row(cut, "brukerId").QuerySelector("[data-testid=pt-step-mapping-state]")!.TextContent.Should().Contain("Runtime value source not configured").And.NotContain("Test Data missing");
+        Row(cut, "brukerId").QuerySelector("[data-testid=pt-step-mapping-state]")!.TextContent.Should().Contain("Runtime value missing — choose a value source").And.NotContain("Test Data missing");
         cut.Find("[data-testid=pss-readiness]").TextContent.Should().Be("Needs configuration");
         cut.Find("[data-testid=pt-value-suggestion]").TextContent.Should().Contain("Existing Test Data match: user-01");
 
         Row(cut, "brukerId").QuerySelector("[data-testid=pt-step-map]")!.Click();
-        cut.FindAll("[data-testid=pt-value-source-option]").Select(o => o.GetAttribute("data-source")).Should().Equal(["TestData", "PreviousStep", "ScenarioVariable", "Fixed"],
-            "a business identifier is never generated");
+        cut.FindAll("[data-testid=pt-value-source-option]").Select(o => o.GetAttribute("data-source")).Should().Equal(["Fixed", "PreviousStep", "ScenarioVariable", "TestData"],
+            "a business identifier is never generated; Test Data is optional");
+        cut.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "Fixed").HasAttribute("checked").Should().BeTrue("the dialog starts at a scenario value, not Test Data");
+        cut.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "TestData").Change(true);
         cut.FindAll("[data-testid=tdm-option]").Select(o => o.GetAttribute("value")).Should().Equal("user-01");
         cut.Find("[data-testid=tdm-option]").Change("user-01");
         cut.Find("[data-testid=tdm-use]").Click();
@@ -75,7 +77,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         var cut = Render(Step("children", "/api/brukere/{brukerId}/barn"));
         Row(cut, "brukerId").QuerySelector("[data-testid=pt-step-map]")!.Click();
         cut.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "Fixed").Change(true);
-        cut.Find("[data-testid=pt-value-fixed]").ParentElement!.TextContent.Should().Contain("not reusable Test Data assets");
+        cut.Find("[data-testid=pt-value-dialog]").TextContent.Should().Contain("not reusable Test Data assets");
         cut.Find("[data-testid=pt-value-fixed]").Input("b-1");
         cut.Find("[data-testid=pt-value-apply]").Click();
         _d.Scenario.Steps[0].DataMappings!.Single().FixedValue.Should().Be("b-1");
@@ -193,7 +195,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         deleted.Find("[data-testid=pss-dependents-confirm]").TextContent.Should().Be("Delete and clear those mappings");
         deleted.Find("[data-testid=pss-dependents-confirm]").Click();
         Order(deleted).Should().Equal("children");
-        Row(deleted, "id").QuerySelector("[data-testid=pt-step-mapping-state]")!.TextContent.Should().Contain("Runtime value source not configured");
+        Row(deleted, "id").QuerySelector("[data-testid=pt-step-mapping-state]")!.TextContent.Should().Contain("Runtime value missing — choose a value source");
         deleted.Find("[data-testid=pt-step-message]").TextContent.Should().Contain("1 mapping that used its output now need a runtime value source");
     }
 
@@ -233,7 +235,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.Find("[data-testid=pss-readiness]").TextContent.Should().Be("Blocked", "a step without a path cannot run");
         cut.FindAll("[data-testid=pt-step-toggle]").Should().OnlyContain(b => b.GetAttribute("aria-expanded") == "false", "long scenarios start collapsed");
         cut.FindAll("[data-testid=pt-step-status]").Select(s => s.TextContent).Should().Equal("Ready", "Needs configuration", "Ready", "Blocked");
-        cut.FindAll("[data-testid=pt-step-collapsed-reason]").Select(r => r.TextContent).Should().Equal("Step 2 · id: Runtime value source not configured", "Step 4: enter the request path");
+        cut.FindAll("[data-testid=pt-step-collapsed-reason]").Select(r => r.TextContent).Should().Equal("Step 2 · id: Runtime value missing — choose a value source", "Step 4: enter the request path");
         cut.FindAll("[data-testid=pt-step-endpoint]")[1].TextContent.Should().Contain("/api/b/{id}", "the full path stays readable");
         cut.FindAll("[data-testid=pt-step-toggle]")[1].Click();
         cut.FindAll("[data-testid=pt-step-toggle]")[1].GetAttribute("aria-expanded").Should().Be("true");
@@ -248,5 +250,65 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.Find("[data-testid=pt-value-suggestion-use]").Click();
         _d.Scenario.Steps[0].DataMappings!.Single().AssetAliases.Should().Equal("user-01");
         cut.FindAll("[data-testid=pt-value-suggestion]").Should().BeEmpty();
+    }
+
+    private static ScenarioDataMapping Auto(string variable, string value, string? type = null, bool review = false) => new(variable, [], TestDataDataType.SimpleValues, "path")
+    {
+        Source = RuntimeValueSource.AutoFilled, FixedValue = value, ValueOrigin = RuntimeValueOrigins.OpenApiExample, DeclaredType = type, NeedsReview = review,
+    };
+
+    [Fact]
+    public void An_auto_filled_value_is_Ready_without_Test_Data_and_can_be_explicitly_used_as_Test_Data()
+    {
+        var cut = Render(Step("tilgang", "/tilgang/{id}") with { DataMappings = [Auto("id", "12345", "integer")] });
+        cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Ready");
+        Row(cut, "id").QuerySelector("[data-testid=pt-value-source]")!.TextContent.Should().Be("Auto-filled · OpenAPI example");
+        Row(cut, "id").QuerySelector("[data-testid=pt-value-text]")!.TextContent.Should().Be("12345");
+        Row(cut, "id").QuerySelector("[data-testid=pt-step-mapping-state]")!.TextContent.Should().Be("Ready");
+        cut.Find("[data-testid=pss-values-summary]").TextContent.Should().Be("1/1 resolved · Test Data 0 assets used");
+
+        Row(cut, "id").QuerySelector("[data-testid=pt-step-promote]")!.Click();
+        cut.Find("[data-testid=pt-value-testdata-why]").TextContent.Should().Contain("centrally managed or reused across scenarios").And.Contain("never promoted automatically");
+        _d.Scenario.Steps[0].DataMappings!.Single().Source.Should().Be(RuntimeValueSource.AutoFilled, "opening the Test Data choice changes nothing");
+        cut.Find("[data-testid=tdm-option]").Change("user-01");
+        cut.Find("[data-testid=tdm-use]").Click();
+        _d.Scenario.Steps[0].DataMappings!.Single().Should().Match<ScenarioDataMapping>(m => m.Source == RuntimeValueSource.TestData && m.AssetAliases.Single() == "user-01");
+        cut.Find("[data-testid=pss-values-summary]").TextContent.Should().Be("1/1 resolved · Test Data 1 asset used");
+    }
+
+    [Fact]
+    public void A_conflicting_suggested_value_needs_review_until_a_person_uses_it()
+    {
+        var cut = Render(Step("tilgang", "/tilgang/{id}") with { DataMappings = [Auto("id", "12345", "integer", review: true)] });
+        cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Needs configuration");
+        Row(cut, "id").QuerySelector("[data-testid=pt-step-mapping-state]")!.TextContent.Should().Contain("Needs review");
+        Row(cut, "id").QuerySelector("[data-testid=pt-step-confirm]")!.Click();
+        _d.Scenario.Steps[0].DataMappings!.Single().Should().Match<ScenarioDataMapping>(m => !m.NeedsReview && m.FixedValue == "12345" && m.Source == RuntimeValueSource.AutoFilled);
+        cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Ready");
+    }
+
+    [Fact]
+    public void A_fixed_value_is_validated_against_the_declared_type_and_enums_use_a_list()
+    {
+        var cut = Render(Step("tilgang", "/tilgang/{id}") with { DataMappings = [Auto("id", "12345", "integer")] });
+        Row(cut, "id").QuerySelector("[data-testid=pt-step-map]")!.Click();
+        cut.FindAll("[data-testid=pt-value-source-option]").Select(o => o.GetAttribute("data-source")).First().Should().Be("AutoFilled");
+        cut.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "Fixed").Change(true);
+        cut.Find("[data-testid=pt-value-fixed]").Input("abc");
+        cut.Find("[data-testid=pt-value-fixed-error]").TextContent.Should().Be("'abc' is not a valid integer");
+        cut.Find("[data-testid=pt-value-fixed-error]").GetAttribute("role").Should().Be("alert");
+        cut.Find("[data-testid=pt-value-apply]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=pt-value-fixed]").Input("777");
+        cut.Find("[data-testid=pt-value-apply]").Click();
+        _d.Scenario.Steps[0].DataMappings!.Single().Should().Match<ScenarioDataMapping>(m => m.Source == RuntimeValueSource.Fixed && m.FixedValue == "777" && m.DeclaredType == "integer");
+
+        var withEnum = Render(Step("list", "/tilgang") with
+        {
+            QueryParameters = [new("status", "{status}")],
+            DataMappings = [Auto("status", "AKTIV") with { In = "query", AllowedValues = ["AKTIV", "INAKTIV"], ValueOrigin = RuntimeValueOrigins.ContractDefault }],
+        });
+        Row(withEnum, "status").QuerySelector("[data-testid=pt-step-map]")!.Click();
+        withEnum.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "Fixed").Change(true);
+        withEnum.FindAll("[data-testid=pt-value-fixed-enum] option").Select(o => o.TextContent).Should().Equal("Choose…", "AKTIV", "INAKTIV");
     }
 }

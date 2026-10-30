@@ -116,13 +116,13 @@ public sealed class PerformanceScenarioEngineTests
         get.Should().Match<ContractOperation>(o => o.Detailed && o.Kind == "GET" && o.Path == "/api/person/{personId}" && o.Summary == "Get a person" && o.Tags.Single() == "Person");
         get.ParameterDetails.Select(p => (p.Name, p.In, p.Required, p.Type)).Should().BeEquivalentTo([("personId", "path", true, (string?)"string:uuid"), ("tenant", "query", true, (string?)"string")],
             "path-level and $ref parameters are resolved");
-        get.ParameterDetails.Single(p => p.Name == "personId").HasExample.Should().BeTrue("only THAT an example exists is recorded, never its value");
+        get.ParameterDetails.Single(p => p.Name == "personId").HasExample.Should().BeTrue();
         get.ResponseCodes.Should().Equal("200", "404");
         get.Security.Should().Equal("Bearer (bearer)");
         var create = ops.Single(o => o.OperationId == "createPerson");
         create.Should().Match<ContractOperation>(o => o.RequestContentTypes.Single() == "application/json" && o.RequestSchema == "CreatePersonRequest" && o.RequestBodyRequired);
         ops.Single(o => o.OperationId == "searchPersons").Security.Should().BeEmpty("an operation-level empty security overrides the root requirement");
-        JsonSerializer.Serialize(ops).Should().NotContain("\"x\"", "example values are never stored");
+        get.ParameterDetails.Single(p => p.Name == "personId").Example.Should().Be("x", "a short scalar example the redaction leaves unchanged can pre-fill a runtime value");
         ContractAnalyzer.ReadOpenApiOperations("openapi.yaml", PersonsYaml).Single().ParameterDetails.Single().Should().Be(new ContractParameter("personId", "path", true, "string"));
     }
 
@@ -233,7 +233,7 @@ public sealed class PerformanceScenarioEngineTests
         PerformanceScenarioEngine.Match(need, [Asset("a-person"), Asset("b-person")], null).Should().Match<ScenarioDataMatch>(m => m.State == ScenarioDataMatchState.Possible && m.Recommended == null);
         var none = PerformanceScenarioEngine.Match(need, [Asset("person-x", approval: TestDataApproval.Unapproved), Asset("person-qa", environment: "QA"), Asset("person-json", TestDataKind.Structured, "application/json")], "Development");
         none.State.Should().Be(ScenarioDataMatchState.Missing);
-        none.Detail.Should().Be("Test Data missing for {personId} (Simple values / parameters).");
+        none.Detail.Should().Be("No approved Simple values / parameters Test Data for {personId} — optional; another runtime value source can supply it.");
         var op = PerformanceScenarioEngine.Build([OpenApi()], null, null, Target, "Development", [], [], ["persons"], true).Operations.Single(o => o.OperationId == "getPerson");
         PerformanceScenarioEngine.TestDataHref(op, op.Needs[0], "Development", "def-1").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&dataType=SimpleValues&in=path&contentType=string%3Auuid&environment=Development");
@@ -328,7 +328,7 @@ public sealed class PerformanceScenarioEngineTests
         PerformanceCentralTestData.Issues(Mapped(new ScenarioDataMapping("body", ["pay-1"], TestDataDataType.JsonPayload, "body")), catalog, DateTimeOffset.UtcNow)
             .Should().ContainSingle(i => i.Contains("needs JSON payload"));
         var unmapped = PerformanceTestReviewTests.Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } });
-        PerformanceTestSafety.Check(unmapped, null, new PerformanceTestOptions()).Should().ContainSingle(i => i.Key == "runtime" && i.Message.Contains("paymentId: runtime value source not configured"));
+        PerformanceTestSafety.Check(unmapped, null, new PerformanceTestOptions()).Should().ContainSingle(i => i.Key == "runtime" && i.Message.Contains("paymentId: runtime value missing — choose a value source"));
         var testDataChosen = PerformanceTestReviewTests.Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null, Steps = [.. d.Scenario.Steps.Select(s => s with { DataMappings = [new ScenarioDataMapping("paymentId", [], TestDataDataType.SimpleValues, "path")] })] } });
         PerformanceTestSafety.Check(testDataChosen, null, new PerformanceTestOptions()).Should().ContainSingle(i => i.Key == "testdata" && i.Message.StartsWith("Test Data missing for {paymentId}"), "Test Data is named only when it is the chosen source");
     }

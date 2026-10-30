@@ -470,10 +470,14 @@ public sealed record ContractTypeShape(string Name, string Kind, List<ContractFi
 }
 
 /// <summary>A declared operation parameter: where it goes (path, query, header, cookie, GraphQL argument), whether it is required and its
-/// declared type. Never an example or default VALUE — only whether one is declared.</summary>
+/// declared type. A declared example/default/enum value is kept only when it is a short scalar the analyzer's redaction leaves unchanged and the
+/// parameter is not credential-like — it can then pre-fill a scenario's runtime value (never Test Data by itself).</summary>
 public sealed record ContractParameter(string Name, string In, bool Required, string? Type)
 {
     public bool HasExample { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Example { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Default { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? Enum { get; init; }
 }
 
 /// <summary>"GET /orders/{id}", "query orders", "rpc GetOrder", "publish orders.created". The detail properties are recorded by newer analyzers;

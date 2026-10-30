@@ -161,8 +161,8 @@ public sealed class UserGuidePageTests : BunitContext
 
         text.Should().ContainAll("Scenario · Workload · Thresholds · Resources", "Readiness · Run", "Results · Compare · History");
         text.Should().ContainAll("Recommended", "OpenAPI / Swagger", "GraphQL", "Live Discovery", "Manual");
-        text.Should().Contain("{brukerId}").And.Contain("not automatically Test Data");
-        text.Should().ContainAll("Previous-step output", "Scenario variable", "Fixed value", "Generated value", "Observed sample");
+        text.Should().Contain("{id}").And.Contain("Test Data is optional").And.Contain("Use as Test Data").And.Contain("never promoted automatically");
+        text.Should().ContainAll("Auto-filled value", "Previous-step output", "Scenario variable", "Fixed value", "Generated value", "Observed sample");
         text.Should().ContainAll("Move up", "Move down", "cannot run before it");
         text.Should().Contain("an operation name alone is not executable");
         text.Should().Contain("A readiness check never runs a load test");

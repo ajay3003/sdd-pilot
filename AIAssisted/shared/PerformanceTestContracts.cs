@@ -135,6 +135,14 @@ public sealed record ScenarioStepSource
     public bool Modified { get; init; }
     public int ObservedCount { get; init; }
     public DateTimeOffset? ObservedLastSeen { get; init; }
+    /// <summary>Declared type/enum of the operation's dynamic parameters, so any value chosen later (fixed, auto-filled) is validated the same way.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ScenarioParameterShape>? Parameters { get; init; }
+}
+
+/// <summary>A dynamic parameter's declared shape: name, declared type ("integer", "string:uuid", "Int!") and allowed values.</summary>
+public sealed record ScenarioParameterShape(string Name, string? Type)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? Enum { get; init; }
 }
 
 /// <summary>One placeholder of a step mapped to central Test Data assets (aliases). Several aliases = several values, chosen per <see cref="PerformanceScenario.DataSelection"/>.</summary>
@@ -156,11 +164,33 @@ public sealed record ScenarioDataMapping(string Variable, List<string> AssetAlia
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GeneratedValueKind? Generator { get; init; }
     /// <summary>The Test Data alias was chosen through "Review observed value for Test Data" (provenance only; the observed value is never stored).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool FromObservedSample { get; init; }
+    /// <summary>Auto-filled value: where it came from ("OpenAPI example", "Contract default", "Live Discovery") — provenance kept with the value.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ValueOrigin { get; init; }
+    /// <summary>When an observed value was observed (Live Discovery origin only).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ValueObservedAt { get; init; }
+    /// <summary>The declared parameter type ("integer", "string:uuid", "Int!") used to validate a fixed or auto-filled value.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? DeclaredType { get; init; }
+    /// <summary>Declared enum values: a fixed or auto-filled value must be one of them.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? AllowedValues { get; init; }
+    /// <summary>The auto-filled value conflicts with other evidence (e.g. an OpenAPI example while Live Discovery observed values) — a person confirms it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool NeedsReview { get; init; }
 }
 
-/// <summary>Where a dynamic parameter gets its value at run time. An observed sample becomes usable only as approved Test Data after review.</summary>
+/// <summary>
+/// Where a dynamic parameter gets its value at run time. Test Data is optional — one source among them. <see cref="AutoFilled"/> is a value taken
+/// from evidence (an OpenAPI example/default, or an observed value a person chose to use) and stored with the scenario as configuration, with its
+/// provenance; it never becomes Test Data unless a person explicitly promotes it. New members are appended (stored definitions keep their meaning).
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum RuntimeValueSource { TestData, PreviousStep, ScenarioVariable, Fixed, Generated }
+public enum RuntimeValueSource { TestData, PreviousStep, ScenarioVariable, Fixed, Generated, AutoFilled }
+
+/// <summary>Provenance labels of an auto-filled value.</summary>
+public static class RuntimeValueOrigins
+{
+    public const string OpenApiExample = "OpenAPI example";
+    public const string ContractDefault = "Contract default";
+    public const string LiveDiscovery = "Live Discovery";
+}
 
 /// <summary>Safe synthetic values generated per request: never business identifiers where approved Test Data is expected.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

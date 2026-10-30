@@ -156,7 +156,7 @@ public sealed class PerformanceTestReviewTests
         Issues(Definition(), Data() with { ApprovedSynthetic = false }).Should().Contain(i => i.State == PerformanceReadinessState.NeedsTestData && i.Message.Contains("not confirmed"));
         Issues(Definition(), Data() with { Rows = [["01019912345"]] }).Should().Contain(i => i.Message.Contains("national identity number"));
         Issues(Definition(), Data() with { Rows = [["\";alert(1);//"]] }).Should().Contain(i => i.Message.Contains("may contain"));
-        Issues(Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } })).Should().Contain(i => i.Key == "runtime" && i.Message.Contains("paymentId: runtime value source not configured"),
+        Issues(Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } })).Should().Contain(i => i.Key == "runtime" && i.Message.Contains("paymentId: runtime value missing — choose a value source"),
             "the exact parameter is named, and an unmapped dynamic parameter is not \"Test Data missing\" unless Test Data is the chosen source");
         Issues(Definition(), Data() with { Columns = ["otherId"] }).Should().Contain(i => i.Key == "placeholder");
     }

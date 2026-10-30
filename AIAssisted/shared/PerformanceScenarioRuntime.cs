@@ -6,8 +6,9 @@ namespace BirkNext.PerformanceTests;
 
 // ── Scenario runtime values and step dependencies ────────────────────────────────────────────────────────────────────────
 // Discovery says which operations exist; the executable step owns how each dynamic parameter gets its value. A {placeholder} is a dynamic
-// parameter — it needs a runtime value source, which may be Test Data, an earlier step's output, a scenario variable, a fixed value or a
-// generated value. Test Data is one source among them, never implied by the placeholder itself. Pure and deterministic; nothing runs here.
+// parameter — it needs a runtime value source, which may be an auto-filled value (contract default/example or a chosen observed value), a fixed
+// value, an earlier step's output, a scenario variable, Test Data or a generated value. Test Data is optional — one source among them, never implied
+// by the placeholder itself. Pure and deterministic; nothing runs here.
 
 /// <summary>One primary state per executable step.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -77,7 +78,46 @@ public static partial class PerformanceScenarioRuntime
         RuntimeValueSource.PreviousStep => "Previous step output",
         RuntimeValueSource.ScenarioVariable => "Scenario variable",
         RuntimeValueSource.Fixed => "Fixed value",
+        RuntimeValueSource.AutoFilled => "Auto-filled value",
         _ => "Generated value",
+    };
+
+    /// <summary>"Auto-filled · OpenAPI example"; other sources their plain label.</summary>
+    public static string SourceLabel(ScenarioDataMapping m) =>
+        m.Source == RuntimeValueSource.AutoFilled && m.ValueOrigin is { } origin ? $"Auto-filled · {origin}" : SourceLabel(m.Source);
+
+    /// <summary>
+    /// Why a scenario value does not fit the declared type: integer, number, boolean, uuid, date and date-time (OpenAPI "type:format" or GraphQL
+    /// Int/Float/Boolean/ID), and declared enum values. Unknown or string types accept any value. Null when valid.
+    /// </summary>
+    public static string? TypeProblem(string value, string? declaredType, IReadOnlyList<string>? allowed = null)
+    {
+        if (allowed is { Count: > 0 } && !allowed.Contains(value, StringComparer.Ordinal)) return $"'{Short(value)}' is not an allowed value ({string.Join(", ", allowed.Take(8))}{(allowed.Count > 8 ? ", …" : "")})";
+        var type = (declaredType ?? "").Trim('!', '[', ']').ToLowerInvariant();
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var ok = type switch
+        {
+            var t when t.StartsWith("integer", StringComparison.Ordinal) || t == "int" || t == "long" => long.TryParse(value, System.Globalization.NumberStyles.AllowLeadingSign, inv, out _),
+            var t when t.StartsWith("number", StringComparison.Ordinal) || t is "float" or "decimal" => decimal.TryParse(value, System.Globalization.NumberStyles.Float, inv, out _),
+            var t when t.StartsWith("boolean", StringComparison.Ordinal) => value is "true" or "false",
+            "string:uuid" or "uuid" => Guid.TryParse(value, out _),
+            "string:date" or "date" => DateOnly.TryParseExact(value, "yyyy-MM-dd", inv, System.Globalization.DateTimeStyles.None, out _),
+            "string:date-time" or "datetime" => DateTimeOffset.TryParse(value, inv, System.Globalization.DateTimeStyles.None, out _),
+            _ => true,
+        };
+        return ok ? null : $"'{Short(value)}' is not a valid {TypeLabel(type)}";
+    }
+
+    private static string Short(string v) => v.Length > 40 ? v[..40] + "…" : v;
+
+    private static string TypeLabel(string type) => type switch
+    {
+        var t when t.StartsWith("integer", StringComparison.Ordinal) || t is "int" or "long" => "integer",
+        var t when t.StartsWith("number", StringComparison.Ordinal) || t is "float" or "decimal" => "number",
+        var t when t.StartsWith("boolean", StringComparison.Ordinal) => "boolean (true/false)",
+        "string:uuid" or "uuid" => "UUID",
+        "string:date" or "date" => "date (YYYY-MM-DD)",
+        _ => "date-time (ISO 8601)",
     };
 
     public static string GeneratorLabel(GeneratedValueKind kind) => kind switch
@@ -98,10 +138,14 @@ public static partial class PerformanceScenarioRuntime
         _ => false,
     };
 
-    /// <summary>The sources offered for a parameter. A payload body takes Test Data (payload asset), a fixed body or a previous-step value.</summary>
-    public static IReadOnlyList<RuntimeValueSource> SourcesFor(RuntimeParameter p) =>
+    /// <summary>
+    /// The sources offered for a parameter, scenario values first and Test Data (optional) after them. An auto-filled value is offered only when one
+    /// exists (<paramref name="autoFilled"/>): it is evidence-derived, never typed in.
+    /// </summary>
+    public static IReadOnlyList<RuntimeValueSource> SourcesFor(RuntimeParameter p, bool autoFilled = false) =>
     [
-        RuntimeValueSource.TestData, RuntimeValueSource.PreviousStep, RuntimeValueSource.ScenarioVariable, RuntimeValueSource.Fixed,
+        .. autoFilled ? new[] { RuntimeValueSource.AutoFilled } : [],
+        RuntimeValueSource.Fixed, RuntimeValueSource.PreviousStep, RuntimeValueSource.ScenarioVariable, RuntimeValueSource.TestData,
         .. GeneratedAllowed(p) ? new[] { RuntimeValueSource.Generated } : [],
     ];
 
@@ -223,7 +267,7 @@ public static partial class PerformanceScenarioRuntime
     /// missing reference — never silently treated as mapped, never replaced by another asset.</remarks>
     public static string? Problem(PerformanceScenario scenario, int stepIndex, RuntimeParameter p, ScenarioDataMapping? m, IReadOnlySet<string>? knownAliases = null)
     {
-        if (m is null) return "Runtime value source not configured";
+        if (m is null) return "Runtime value missing — choose a value source";
         switch (m.Source)
         {
             case RuntimeValueSource.TestData:
@@ -242,7 +286,12 @@ public static partial class PerformanceScenarioRuntime
                 if (variable is null) return $"Scenario variable '{m.ScenarioVariable}' is not defined";
                 return VariableProblem(variable);
             case RuntimeValueSource.Fixed:
-                return string.IsNullOrEmpty(m.FixedValue) ? "Fixed value is empty" : null;
+                var shape = scenario.Steps[stepIndex].Source?.Parameters?.FirstOrDefault(x => x.Name == p.Variable);
+                return string.IsNullOrEmpty(m.FixedValue) ? "Fixed value is empty" : TypeProblem(m.FixedValue, m.DeclaredType ?? shape?.Type, m.AllowedValues ?? shape?.Enum);
+            case RuntimeValueSource.AutoFilled:
+                if (string.IsNullOrEmpty(m.FixedValue)) return "Runtime value missing — choose a value source";
+                if (m.NeedsReview) return $"Needs review: the {m.ValueOrigin ?? "suggested"} value and values observed by Live Discovery may differ — confirm it or choose another source";
+                return TypeProblem(m.FixedValue, m.DeclaredType, m.AllowedValues);
             default:
                 if (!GeneratedAllowed(p)) return "A generated value is not valid for this parameter — use Test Data or another source";
                 return m.Generator is null ? "Generator not chosen" : null;
@@ -266,7 +315,7 @@ public static partial class PerformanceScenarioRuntime
         return [.. Parameters(step).Select(p =>
         {
             var m = step.DataMappings?.FirstOrDefault(x => x.Variable == p.Variable);
-            return new RuntimeValueRow(p, m, m is null ? "Not configured" : SourceLabel(m.Source), m is null ? "—" : ValueText(scenario, m), Problem(scenario, stepIndex, p, m, knownAliases));
+            return new RuntimeValueRow(p, m, m is null ? "Not configured" : SourceLabel(m), m is null ? "—" : ValueText(scenario, m), Problem(scenario, stepIndex, p, m, knownAliases));
         })];
     }
 
@@ -277,8 +326,20 @@ public static partial class PerformanceScenarioRuntime
         RuntimeValueSource.PreviousStep => IndexOf(scenario.Steps, m.FromStepId) is var i and >= 0 ? $"{Step(i)} · {scenario.Steps[i].Name} · {m.Output}" : $"(missing step) · {m.Output}",
         RuntimeValueSource.ScenarioVariable => $"{{{{{m.ScenarioVariable}}}}}",
         RuntimeValueSource.Fixed => m.FixedValue ?? "",
+        RuntimeValueSource.AutoFilled => m.FixedValue ?? "—",
         _ => m.Generator is { } g ? GeneratorLabel(g) : "—",
     };
+
+    /// <summary>Scenario summary: runtime values resolved of all executed parameters, and distinct Test Data assets used (Test Data is optional).</summary>
+    public static (int Resolved, int Total, int TestDataAssets) ValuesSummary(PerformanceScenario scenario, IReadOnlySet<string>? knownAliases = null)
+    {
+        var rows = Enumerable.Range(0, scenario.Steps.Count).Where(i => !scenario.Steps[i].Disabled).SelectMany(i => Rows(scenario, i, knownAliases)).ToList();
+        var assets = rows.Where(r => r.Mapping?.Source == RuntimeValueSource.TestData).SelectMany(r => r.Mapping!.AssetAliases)
+            .Concat((scenario.Variables ?? []).Where(v => v.Source == RuntimeValueSource.TestData && v.AssetAlias is not null
+                && rows.Any(r => r.Mapping?.Source == RuntimeValueSource.ScenarioVariable && r.Mapping.ScenarioVariable == v.Name)).Select(v => v.AssetAlias!))
+            .Distinct(StringComparer.Ordinal).Count();
+        return (rows.Count(r => r.Resolved), rows.Count, assets);
+    }
 
     /// <summary>
     /// One primary status per step: Disabled; Blocked (performance safety: write method, REST POST not marked read-only, missing/invalid path,

@@ -40,6 +40,9 @@ public enum ScenarioDataMatchState { Recommended, Possible, Missing }
 public sealed record ScenarioDataNeed(string Variable, string In, TestDataDataType DataType, bool Required, string? Schema, string? Type,
     string Source = ScenarioNeedSources.Declared, bool ObservedValueAvailable = false);
 
+/// <summary>A contract-declared value that can pre-fill a runtime value (auto-filled; never Test Data by itself).</summary>
+public sealed record ScenarioSuggestedValue(string Value, string Origin, string? DeclaredType, List<string>? AllowedValues, bool NeedsReview);
+
 /// <summary>Where a requirement comes from.</summary>
 public static class ScenarioNeedSources
 {
@@ -50,10 +53,15 @@ public static class ScenarioNeedSources
     public const string CapturedQuery = "Captured GraphQL query document";
 }
 
-/// <summary>Whether running the operation needs Test Data. "Not required" only when the evidence proves no runtime value is needed.</summary>
+/// <summary>
+/// Whether running the operation needs runtime values. "Not required" only when the evidence proves no runtime value is needed. Dynamic parameters
+/// make Test Data <see cref="Optional"/>: they need a runtime value source, which may be Test Data, never Test Data by definition.
+/// </summary>
 public static class ScenarioTestDataStates
 {
     public const string NotRequired = "Not required";
+    public const string Optional = "Optional";
+    /// <summary>Legacy label of stored catalogs; current analysis reports <see cref="Optional"/>.</summary>
     public const string Required = "Required";
     /// <summary>The evidence does not show the operation's inputs (e.g. only a GraphQL operation name was observed).</summary>
     public const string Unknown = "Unknown";
@@ -582,7 +590,7 @@ public static partial class PerformanceScenarioEngine
         var usable = assets.Where(a => a.Approval == TestDataApproval.Approved && TestDataDataTypes.Of(a) == need.DataType
             && (a.Environment is null || environment is null || string.Equals(a.Environment, environment, StringComparison.OrdinalIgnoreCase))).ToList();
         if (usable.Count == 0)
-            return new(need, ScenarioDataMatchState.Missing, [], null, $"Test Data missing for {Placeholder(need)} ({TestDataDataTypes.Label(need.DataType)}).");
+            return new(need, ScenarioDataMatchState.Missing, [], null, $"No approved {TestDataDataTypes.Label(need.DataType)} Test Data for {Placeholder(need)} — optional; another runtime value source can supply it.");
         var want = Tokens(need.Variable);
         if (need.Schema is { } schema) want.UnionWith(Tokens(schema));
         var named = usable.Where(a => want.Count > 0 && (Tokens(a.Alias).Overlaps(want) || Tokens(a.Label).Overlaps(want) || a.Capabilities.Any(c => Tokens(c).Overlaps(want))
@@ -632,7 +640,7 @@ public static partial class PerformanceScenarioEngine
         if (op.Evidence == ScenarioEvidence.ObservedOnly) reasons.Add("observed only — potential undocumented API");
         var missing = data.Where(d => d.State == ScenarioDataMatchState.Missing).ToList();
         // "Not required" only when the evidence proves it: a declared operation without inputs, or a captured query declaring no variables.
-        var testData = op.Needs.Count > 0 ? ScenarioTestDataStates.Required
+        var testData = op.Needs.Count > 0 ? ScenarioTestDataStates.Optional
             : op.Origin == ScenarioOperationOrigin.Observed && op.GraphQlKind is not null && op.GraphQl?.DocumentState != ScenarioGraphQlDocumentStates.Captured ? ScenarioTestDataStates.Unknown
             : ScenarioTestDataStates.NotRequired;
         // A dynamic parameter needs a runtime value source configured on the step (Test Data is one option): it never makes a candidate
@@ -642,6 +650,8 @@ public static partial class PerformanceScenarioEngine
         else
         {
             reasons.Add($"dynamic parameter{(op.Needs.Count == 1 ? "" : "s")} {string.Join(", ", op.Needs.Select(Placeholder))} — runtime value configured on the step");
+            if (op.Needs.Where(n => SuggestedValue(op, n) is not null).Select(Placeholder).ToList() is { Count: > 0 } suggested)
+                reasons.Add($"suggested value available for {string.Join(", ", suggested)}");
             if (missing.Count < data.Count) { score += 2; reasons.Add($"Test Data suggestion available for {string.Join(", ", data.Where(d => d.State != ScenarioDataMatchState.Missing).Select(d => Placeholder(d.Need)))}"); }
         }
         if (requiresAuth) { if (authenticated) { score += 1; reasons.Add("authentication reference configured"); } else reasons.Add($"requires authentication ({(op.Observation?.AuthObserved == true ? "bearer observed" : string.Join(", ", op.Security))}) — not configured"); }
@@ -704,13 +714,22 @@ public static partial class PerformanceScenarioEngine
     public static HttpPerformanceStep ToStep(ScenarioOperation op, IReadOnlyDictionary<string, string>? chosenAliases = null, IReadOnlyCollection<ContractTypeShape>? types = null)
     {
         var success = op.ResponseCodes.Select(c => int.TryParse(c, out var code) ? code : 0).Where(c => c is >= 200 and < 300).OrderBy(c => c).ToList();
-        var mappings = op.Data.Select(d => (Need: d.Need, Alias: chosenAliases?.GetValueOrDefault(d.Need.Variable)))
-            .Where(x => x.Alias is not null).Select(x => new ScenarioDataMapping(x.Need.Variable, [x.Alias!], x.Need.DataType, x.Need.In) { FromObservedSample = true }).ToList();
+        // Precedence: an explicitly chosen Test Data alias, else a deterministic contract default/example (auto-filled, with provenance), else unresolved.
+        var mappings = op.Needs.Select(n => chosenAliases?.GetValueOrDefault(n.Variable) is { } alias
+                ? new ScenarioDataMapping(n.Variable, [alias], n.DataType, n.In) { FromObservedSample = true }
+                : SuggestedValue(op, n) is { } v
+                    ? new ScenarioDataMapping(n.Variable, [], n.DataType, n.In)
+                    {
+                        Source = RuntimeValueSource.AutoFilled, FixedValue = v.Value, ValueOrigin = v.Origin, DeclaredType = v.DeclaredType, AllowedValues = v.AllowedValues, NeedsReview = v.NeedsReview,
+                    }
+                    : null).OfType<ScenarioDataMapping>().ToList();
         var name = Slug(op.OperationId ?? (op.Path is null ? op.Name.Split(' ').Last() : string.Join("-", op.Path.Split('/', StringSplitOptions.RemoveEmptyEntries).Where(s => !s.StartsWith('{')).TakeLast(2))));
         var source = new ScenarioStepSource
         {
             OperationKey = op.Key, Origin = op.Origin, Evidence = op.Evidence, ContractId = op.ContractId, ContractName = op.ContractName, ContractFile = op.ContractFile,
             SnapshotId = op.SnapshotId, OperationFingerprint = op.Signature, ObservedCount = op.Observation?.Count ?? 0, ObservedLastSeen = op.Observation?.LastSeen,
+            Parameters = op.Needs.Where(n => n.DataType == TestDataDataType.SimpleValues).Select(n => op.Parameters.FirstOrDefault(p => p.Name == n.Variable && p.In == (n.In == "variable" ? "argument" : n.In)))
+                .OfType<ContractParameter>().Where(p => p.Type is not null || p.Enum is not null).Select(p => new ScenarioParameterShape(p.Name, p.Type) { Enum = p.Enum }).ToList() is { Count: > 0 } shapes ? shapes : null,
         };
         if (op.GraphQlKind is not null)
         {
@@ -757,6 +776,22 @@ public static partial class PerformanceScenarioEngine
                 ObservedCount = op.Observation?.Count ?? 0, ObservedLastSeen = op.Observation?.LastSeen,
             },
         };
+    }
+
+    /// <summary>
+    /// A deterministic value the contract declares for a scalar parameter: its default ("Contract default"), else its example ("OpenAPI example"),
+    /// only when it is valid for the declared type/enum. An example for a parameter Live Discovery also observed values for is suggested with
+    /// <see cref="ScenarioSuggestedValue.NeedsReview"/> — the sources may disagree and nothing is chosen silently. Null when nothing is declared.
+    /// </summary>
+    public static ScenarioSuggestedValue? SuggestedValue(ScenarioOperation op, ScenarioDataNeed need)
+    {
+        if (need.DataType != TestDataDataType.SimpleValues) return null;
+        var place = need.In == "variable" ? "argument" : need.In;
+        if (op.Parameters.FirstOrDefault(p => p.Name == need.Variable && p.In == place) is not { } parameter) return null;
+        bool Valid(string? v) => v is not null && PerformanceScenarioRuntime.TypeProblem(v, parameter.Type, parameter.Enum) is null;
+        if (Valid(parameter.Default)) return new(parameter.Default!, RuntimeValueOrigins.ContractDefault, parameter.Type, parameter.Enum, false);
+        if (Valid(parameter.Example)) return new(parameter.Example!, RuntimeValueOrigins.OpenApiExample, parameter.Type, parameter.Enum, need.ObservedValueAvailable);
+        return null;
     }
 
     private static string Slug(string text)

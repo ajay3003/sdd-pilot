@@ -190,7 +190,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         selected.WaitForAssertion(() => selected.FindAll("[data-testid=psb-operation]").Should().NotBeEmpty());
         var get = selected.FindAll("[data-testid=psb-operation]").Single(o => o.GetAttribute("data-key")!.EndsWith("GET /api/person/{personId}"));
         get.GetAttribute("data-evidence").Should().Be("DeclaredOnly");
-        get.QuerySelector("[data-testid=psb-data-none]")!.TextContent.Should().Be("No compatible approved Test Data yet (one possible value source)");
+        get.QuerySelector("[data-testid=psb-data-none]")!.TextContent.Should().Be("No compatible approved Test Data (optional — one possible value source)");
         get.TextContent.Should().NotContain("Test Data missing", "a dynamic parameter is not a Test Data requirement");
         get.QuerySelector("[data-testid=psb-open-test-data]")!.GetAttribute("href").Should()
             .Be("/test-data?consumer=performance-test-review&consumerId=def-1&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&dataType=SimpleValues&in=path&contentType=string&environment=Development");

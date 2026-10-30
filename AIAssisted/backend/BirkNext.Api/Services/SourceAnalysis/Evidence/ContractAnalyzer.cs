@@ -351,6 +351,10 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                     .Select(p => new ContractParameter(Safe(p.Str("name")!), p.Str("in")!.ToLowerInvariant(), p.Str("in") == "path" || p.Str("required") == "true", TypeOf(p["schema"] ?? p))
                     {
                         HasExample = p.Has("example") || p.Has("examples") || p["schema"]?.Has("example") == true || p["schema"]?.Has("default") == true,
+                        Example = DeclaredValue(p.Str("name")!, p.Str("example") ?? p["schema"]?.Str("example")
+                            ?? p["examples"]?.Entries.Select(e => e.Value.Str("value")).FirstOrDefault(v => v is not null)),
+                        Default = DeclaredValue(p.Str("name")!, p["schema"]?.Str("default") ?? p.Str("default")),
+                        Enum = DeclaredValues(p.Str("name")!, p["schema"]?.Strings("enum") ?? p.Strings("enum")),
                     }).ToList();
                 List<string> contentTypes;
                 string? requestSchema;
@@ -592,6 +596,26 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         };
     }
 
+    /// <summary>Parameters whose value can be a credential or a personal identifier: their declared values are never kept.</summary>
+    private static readonly Regex SensitiveParameter = new(@"(?i)(pass(word)?|secret|token|api[-_]?key|auth|cookie|session|signature|ssn|fnr|f(oe|ø)dsels|personnummer|birth)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// A declared example/default value usable to pre-fill a scenario runtime value: a scalar of at most 200 characters, on a parameter that is not
+    /// credential-like, which the shared redaction leaves unchanged (a value that would be redacted is dropped, never stored redacted).
+    /// </summary>
+    internal static string? DeclaredValue(string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 200 || value.Any(char.IsControl) || SensitiveParameter.IsMatch(name)) return null;
+        value = value.Trim().Trim('"');
+        return value.Length > 0 && SafeSchemaValue("value", value) == value ? value : null;
+    }
+
+    internal static List<string>? DeclaredValues(string name, IEnumerable<string> values)
+    {
+        var list = values.Take(100).Select(v => DeclaredValue(name, v)).ToList();
+        return list.Count == 0 || list.Any(v => v is null) ? null : [.. list.OfType<string>().Distinct(StringComparer.Ordinal)];
+    }
+
     private static string? SafeSchemaValue(string facet, string? value)
     {
         if (value is null) return null;
@@ -640,7 +664,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                     ops.AddRange(rootType.Fields.Select(f => new ContractOperation($"{kind} {f.Name}", kind, null, f.Arguments.Select(a => a.Name).ToList())
                     {
                         OperationId = f.Name, Summary = f.Description is { } d ? SourceEvidenceRedaction.SafePath(d.Length > 160 ? d[..160] : d) : null,
-                        ParameterDetails = [.. f.Arguments.Select(a => new ContractParameter(a.Name, "argument", a.Type?.Kind == "NON_NULL", TypeText(a.Type)) { HasExample = a.DefaultValue is not null })],
+                        ParameterDetails = [.. f.Arguments.Select(a => new ContractParameter(a.Name, "argument", a.Type?.Kind == "NON_NULL", TypeText(a.Type)) { HasExample = a.DefaultValue is not null, Default = DeclaredValue(a.Name, a.DefaultValue?.ToString()) })],
                         ResultType = TypeText(f.Type), Detailed = true,
                     }));
         }

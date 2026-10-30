@@ -36,7 +36,7 @@ public sealed class PerformanceScenarioRuntimeTests
     public void A_dynamic_parameter_needs_a_value_source_and_every_source_kind_resolves()
     {
         Issues(Definition(Step("get", "/api/users/{id}"))).Should().ContainSingle(i => i.Key == "runtime" && i.State == PerformanceReadinessState.NeedsConfiguration)
-            .Which.Message.Should().Contain("id: runtime value source not configured").And.NotContain("Test Data missing");
+            .Which.Message.Should().Contain("id: runtime value missing — choose a value source").And.NotContain("Test Data missing");
         Issues(Definition(Producer, Consumer)).Should().NotContain(i => new[] { "runtime", "dependency", "testdata", "output" }.Contains(i.Key));
         Issues(Definition(Step("get", "/api/users/{id}", new ScenarioDataMapping("id", [], TestDataDataType.SimpleValues, "path") { Source = RuntimeValueSource.Fixed, FixedValue = "u-1" })))
             .Should().NotContain(i => new[] { "runtime", "testdata" }.Contains(i.Key));

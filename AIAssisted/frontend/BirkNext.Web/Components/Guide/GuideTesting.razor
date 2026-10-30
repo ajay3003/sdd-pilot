@@ -45,15 +45,17 @@
     <p>Candidate operations come from <em>Recommended</em>, <em>OpenAPI / Swagger</em>, <em>GraphQL</em>, <em>Live Discovery</em> and <em>Manual</em>. A candidate is a proposal; adding it creates an executable step that the scenario owns. Contracts come from the saved choice, else a single Project-bound snapshot — never simply the newest.</p>
 
     <h3 id="dynamic-parameters" class="ug-subtitle">Dynamic parameters need a runtime value</h3>
-    <p>A path such as <code>/api/users/{brukerId}</code> has a dynamic parameter. It is <strong>not automatically Test Data</strong>: each one needs a runtime value source, chosen on the step.</p>
+    <p>A path such as <code>/tilgang/{id}</code> has a dynamic parameter. It needs a <strong>runtime value</strong>, not necessarily Test Data: <strong>Test Data is optional</strong>, and a scenario is never invalid only because it uses none. Each value has a source, chosen on the step.</p>
     <ul class="ug-list">
-        <li><strong>Test Data</strong> — an approved asset (suggested, never mapped silently).</li>
+        <li><strong>Auto-filled value</strong> — a contract default, or an OpenAPI example valid for the declared type (e.g. <code>id = 12345</code>), filled in when the step is added and shown with its origin. The step is <em>Ready</em> without Test Data. When Live Discovery also observed values for the parameter, the example shows <em>Needs review</em> until you choose <em>Use suggested value</em> or another source.</li>
+        <li><strong>Fixed value</strong> — a literal stored with the scenario, checked against the declared type (integer, number, boolean, UUID, date, allowed values from a list).</li>
         <li><strong>Previous-step output</strong> — a value read from an earlier step’s response.</li>
         <li><strong>Scenario variable</strong> — one value shared by several steps.</li>
-        <li><strong>Fixed value</strong> — a literal.</li>
+        <li><strong>Test Data (optional)</strong> — an approved central asset, for values that should be centrally managed or reused across scenarios. A matching asset is suggested, never mapped silently.</li>
         <li><strong>Generated value</strong> — only for query/header parameters or correlation, request, trace and timestamp values.</li>
-        <li><strong>Observed sample</strong> — a value seen in Live Discovery, used only after you review it.</li>
+        <li><strong>Observed sample</strong> — a value seen in Live Discovery. After you show it, <em>Use in scenario</em> stores it as an auto-filled value (origin Live Discovery), or you can review it for Test Data.</li>
     </ul>
+    <p>Precedence when a step is added: a Test Data asset you chose, else a contract default or valid example; anything else stays <em>Runtime value missing — choose a value source</em>. Optional query parameters are left out and never block. <em>Use as Test Data</em> on an auto-filled or fixed value lets you map or create an asset explicitly — values are never promoted automatically. <em>Test Data missing</em> appears only when Test Data is the chosen source and its asset is missing. The scenario summary shows <em>Runtime values n/N resolved · Test Data k assets used</em>. Authentication headers and secrets are never runtime values or Test Data.</p>
 
     <h3 id="step-ordering" class="ug-subtitle">Step order and dependencies</h3>
     <p>Reorder steps by dragging the handle, or with <em>Move up</em> / <em>Move down</em> from the keyboard. Order is execution order and is validated: a step that uses another step’s output cannot run before it. A conflicting move shows the dependency and offers to move the dependent steps along. Each step inherits the scenario’s authentication, or sets none or its own.</p>
