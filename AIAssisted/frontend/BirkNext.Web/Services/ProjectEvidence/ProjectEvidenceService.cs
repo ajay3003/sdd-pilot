@@ -10,11 +10,15 @@ namespace BirkNext.Web.Services.ProjectEvidence;
 /// </summary>
 public interface IProjectEvidenceService
 {
-    /// <summary>The environment's project evidence (default: the active Target Environment). Source setup is read once per environment and cached.</summary>
+    /// <summary>The environment's project evidence (default: the active Target Environment). Source setup is read once per environment and
+    /// cached; the cache is re-read when it no longer covers the imported packages (a later import's snapshot) or after <see cref="Invalidate"/>.</summary>
     Task<ProjectEvidenceView> GetAsync(string? environmentId = null, bool refresh = false, CancellationToken cancellationToken = default);
 
     /// <summary>The resolved view without a backend call: package capabilities from the workspace only (no Source Analysis areas).</summary>
     ProjectEvidenceView Peek(string? environmentId = null);
+
+    /// <summary>Forget the cached Source Analysis setup of every environment (after an import or a re-analysis) and notify the views.</summary>
+    void Invalidate() { }
 
     Task<bool> SelectProjectAsync(string environmentId, string importId);
     Task<IReadOnlyList<string>> ChangeProjectAsync(string environmentId, string importId);
@@ -79,13 +83,35 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
     {
         var profile = Profile(environmentId);
         var key = profile?.Id ?? "";
-        if (refresh || !_setup.TryGetValue(key, out var setup))
+        if (refresh || !_setup.TryGetValue(key, out var setup) || Stale(key, setup))
         {
             try { setup = (await _journeys.SourceSetupAsync(profile?.Id, cancellationToken)).Value; }
             catch (Exception ex) when (ex is not OperationCanceledException) { setup = null; }
             _setup[key] = setup;
+            _missingAfterRead[key] = Missing(setup);
         }
         return Build(profile, setup);
+    }
+
+    /// <summary>
+    /// The cached setup no longer describes the imported packages: an import names a Source Analysis snapshot the cache does not hold (it was
+    /// imported, re-analyzed or retried after the cache was read). Without this, a later package kept its snapshot-less capabilities — no
+    /// contracts, infrastructure or shared-library classification — and was not offered for those roles.
+    /// </summary>
+    /// <para>A snapshot the backend itself no longer has (deleted) is not re-read on every call: only a change of the missing set triggers a read.</para>
+    private bool Stale(string key, SourceSetupView? setup) =>
+        !Missing(setup).SetEquals(_missingAfterRead.GetValueOrDefault(key) ?? []);
+
+    private HashSet<Guid> Missing(SourceSetupView? setup) =>
+        [.. _workspace.SddLifecycle.ProjectImports.Select(i => i.SourceSnapshotId).OfType<Guid>().Where(id => setup is null || setup.Snapshots.All(s => s.SnapshotId != id))];
+
+    private readonly Dictionary<string, HashSet<Guid>> _missingAfterRead = new(StringComparer.Ordinal);
+
+    public void Invalidate()
+    {
+        _setup.Clear();
+        _missingAfterRead.Clear();
+        Changed?.Invoke();
     }
 
     public ProjectEvidenceView Peek(string? environmentId = null)
@@ -105,6 +131,10 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
 
     private async Task<bool> MutateAsync(string environmentId, Func<FrontendAnalysisProfile, bool> change)
     {
+        // Every change judges packages on current Source Analysis facts: without this, a project created (or a role bound) before the setup was
+        // read — or with a stale read — saw the main package without its snapshot (no contracts) and left Contracts unbound ("Suggested").
+        if (Profile(environmentId) is null) return false;
+        await GetAsync(environmentId);
         if (Profile(environmentId) is not { } profile || !change(profile)) return false;
         await _settings.MaterializeAsync(_js, profile.Id);
         await _settings.SaveAsync(_js);

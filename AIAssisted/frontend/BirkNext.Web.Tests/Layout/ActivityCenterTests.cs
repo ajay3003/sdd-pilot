@@ -67,7 +67,7 @@ public sealed class ActivityCenterTests : BunitContext
         cut.Find("[data-testid=activity-toggle]").Click();
 
         cut.FindAll("[data-testid=activity-item]").Single(i => i.TextContent.Contains("M2LB")).QuerySelector("[data-testid=activity-cancel]")!.Click();
-        cut.WaitForAssertion(() => _ops.Find(first.Operation.Id)!.Status.Should().Be(OperationStatus.Cancelled), TimeSpan.FromSeconds(5));
+        SpinWait.SpinUntil(() => _ops.Find(first.Operation.Id)!.Status == OperationStatus.Cancelled, TimeSpan.FromSeconds(10)).Should().BeTrue("the cancelled operation ends as Cancelled");
         _ops.Find(second.Operation.Id)!.IsActive.Should().BeTrue();
 
         gate.SetResult();

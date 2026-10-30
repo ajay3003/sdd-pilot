@@ -92,7 +92,9 @@ public static class ProjectSetupPlanner
         foreach (var role in roles)
         {
             var items = new List<ChecklistItem>();
-            foreach (var package in packages.Where(p => ProjectEvidencePackages.Satisfies(p, role.Capability)))
+            // A bound package is always listed (and stays selected): saving the checklist must never drop an existing binding because the
+            // package's capability is not detected at the moment (analysis pending or re-analyzed) — the user removes it explicitly.
+            foreach (var package in packages.Where(p => ProjectEvidencePackages.Satisfies(p, role.Capability) || role.Sources.Any(s => s.ImportId == p.ImportId)))
             {
                 var bound = role.Sources.Any(s => s.ImportId == package.ImportId);
                 var isDeclined = declined.Any(d => d.RoleKey == role.RoleKey && d.ImportId == package.ImportId);

@@ -19,7 +19,7 @@ public enum ProjectImportPhase { Choose, Validating, Classifying, Preview, Impor
 /// </summary>
 public sealed class ProjectImportSession(IProjectImportApiService api, ProjectImportActivation activation, WorkspaceArtifactRepository repository,
     ProjectApplicabilityState applicability, IWorkspaceAutoSaveService autoSave, BackgroundOperationService operations,
-    Microsoft.Extensions.Logging.ILogger<ProjectImportSession>? logger = null)
+    Microsoft.Extensions.Logging.ILogger<ProjectImportSession>? logger = null, BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService? evidence = null)
 {
     public const string Route = "project-import";
     public const long MaxUploadBytes = 50L * 1024 * 1024;
@@ -221,6 +221,8 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             Notify();
             SaveWarning = !await autoSave.SaveNowAsync();
             if (commit.Source.SnapshotId is not null) await applicability.RefreshAsync();
+            // Project Evidence (every Target Environment) re-reads its sources: the new package is selectable at once, bindings unchanged.
+            evidence?.Invalidate();
             Failure = null;
             ResultSeen = false;
             Phase = ProjectImportPhase.Result;

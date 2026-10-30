@@ -154,7 +154,7 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.ApplicationSource).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Infrastructure).GetAttribute("data-state").Should().Be("Ready");
-        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Advanced evidence bindings", "the checklist and the table show the same bindings");
+        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Evidence bindings", "the checklist and the table show the same bindings");
         _js.Json.Should().Contain("\"importId\":\"b\"").And.NotContain("FR-001", "only references are stored");
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull("configuring the environment's project never changes the current project");
         _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "no package is created or copied");
