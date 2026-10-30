@@ -198,7 +198,9 @@ public sealed class BackgroundOperationService(TimeProvider? clock = null)
         lock (_gate) Transition(entry, OperationStatus.Preparing, s => s with { Stage = "Preparing" });
         Notify();
         OperationOutcome outcome;
-        try { outcome = await work(new Reporter(this, entry), ct); }
+        // The manager's own continuation needs no caller context (state is lock-protected; subscribers marshal with InvokeAsync): it never
+        // waits for the context of whoever started the work, which may be blocked.
+        try { outcome = await work(new Reporter(this, entry), ct).ConfigureAwait(false); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { outcome = new(false, "Cancelled."); }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

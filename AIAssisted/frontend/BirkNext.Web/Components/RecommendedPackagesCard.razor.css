@@ -1,0 +1,12 @@
+.rpc { margin: 1rem 0; border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 8px; padding: .75rem 1rem; background: var(--clr-surface-white); }
+.rpc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.rpc-title { font-size: 1.1rem; margin: 0; }
+.rpc-muted { color: var(--clr-text-muted); font-size: .85rem; }
+.rpc-summary { margin: .35rem 0; font-weight: 600; }
+.rpc-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .3rem; }
+.rpc-item { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; padding: .3rem 0; border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); overflow-wrap: anywhere; }
+.rpc-name { font-weight: 600; }
+.rpc-status { margin-left: auto; font-size: .88rem; }
+.rpc-missing .rpc-status { color: #7a4b00; }
+.rpc-imported .rpc-status { color: var(--clr-success); }
+.rpc-import { display: inline-block; margin-top: .5rem; font-weight: 600; }

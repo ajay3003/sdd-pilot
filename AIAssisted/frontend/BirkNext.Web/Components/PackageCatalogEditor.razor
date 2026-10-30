@@ -1,0 +1,134 @@
+@using BirkNext.Web.Services.ProjectEvidence
+@implements IDisposable
+@inject PackageCatalogService Catalog
+
+@* Package catalog (configuration view): the project's recommended packages and package roles. One catalog per logical project, shared by
+   Recommended Workflow; it never imports, binds or changes readiness. *@
+<section class="pce" data-testid="pce" aria-labelledby="pce-title">
+    <h4 id="pce-title" class="pce-title">Package catalog <span class="pce-muted">· @Project</span></h4>
+    <p class="pce-muted">Which packages this project expects to import. Recommended Workflow shows the same list. Recommendations never bind evidence: bind imported sources below.</p>
+    @if (_error is { } error) { <p class="pce-error" role="alert" data-testid="pce-error">@error</p> }
+
+    @{ var matches = Catalog.Matches(Project); }
+    @if (matches.Count == 0) { <p class="pce-muted" data-testid="pce-empty">No recommended packages yet.</p> }
+    else
+    {
+        <div class="pce-table-wrap">
+            <table class="pce-table" data-testid="pce-table">
+                <thead><tr><th scope="col">Package</th><th scope="col">File / pattern</th><th scope="col">Role</th><th scope="col">Requirement</th><th scope="col">Import</th><th scope="col">Actions</th></tr></thead>
+                <tbody>
+                    @foreach (var (m, index) in matches.Select((m, i) => (m, i)))
+                    {
+                        var r = m.Recommendation;
+                        <tr data-testid="pce-row" data-id="@r.Id" data-status="@m.Status">
+                            <th scope="row">@r.DisplayName</th>
+                            <td><code>@r.FilePattern</code></td>
+                            <td data-testid="pce-row-role">@m.RoleName</td>
+                            <td>@(r.Required ? "Required" : "Optional")</td>
+                            <td data-testid="pce-row-status">@m.StatusLabel@(m.Imports.FirstOrDefault() is { } latest ? $" · {latest.ArchiveFileName}" : "")</td>
+                            <td class="pce-actions">
+                                <button type="button" class="btn btn-link btn-sm" data-testid="pce-up" disabled="@(index == 0)" aria-label="@($"Move {r.DisplayName} up")" @onclick="() => RunAsync(Catalog.MoveAsync(Project, r.Id, -1))">↑</button>
+                                <button type="button" class="btn btn-link btn-sm" data-testid="pce-down" disabled="@(index == matches.Count - 1)" aria-label="@($"Move {r.DisplayName} down")" @onclick="() => RunAsync(Catalog.MoveAsync(Project, r.Id, 1))">↓</button>
+                                <button type="button" class="btn btn-link btn-sm" data-testid="pce-edit" @onclick="() => Edit(r)">Edit</button>
+                                <button type="button" class="btn btn-link btn-sm" data-testid="pce-remove" @onclick="() => RunAsync(Catalog.RemoveRecommendationAsync(Project, r.Id))">Remove</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <form class="pce-form" data-testid="pce-form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <h5 class="pce-subtitle">@(_editId is null ? "Add recommended package" : "Edit recommended package")</h5>
+        <label class="pce-field"><span>Display name</span><input data-testid="pce-name" @bind="_name" maxlength="120" placeholder="e.g. M2LB application" /></label>
+        <label class="pce-field"><span>Expected file name or pattern</span><input data-testid="pce-pattern" @bind="_pattern" maxlength="200" placeholder="e.g. M2LB.zip or M2LB*.zip" /></label>
+        <label class="pce-field"><span>Package role</span>
+            @* Combo box: choose an existing role or type a new one (created as a custom role on save). *@
+            <input role="combobox" list="pce-roles" data-testid="pce-role" @bind="_role" placeholder="Choose or type a role" aria-describedby="pce-role-help" />
+            <datalist id="pce-roles">@foreach (var role in Catalog.Roles(Project)) { <option value="@role.Name"></option> }</datalist>
+            <small id="pce-role-help" class="pce-muted">Package roles describe what a package is for; they are separate from evidence capabilities and readiness.</small>
+        </label>
+        <label class="pce-check"><input type="checkbox" data-testid="pce-required" @bind="_required" /> Required</label>
+        <div class="pce-buttons">
+            <button type="submit" class="btn btn-primary btn-sm" data-testid="pce-save">@(_editId is null ? "Add" : "Save")</button>
+            @if (_editId is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="pce-cancel" @onclick="Clear">Cancel</button> }
+        </div>
+    </form>
+
+    <details class="pce-roles" data-testid="pce-role-management">
+        <summary>Package roles (@Catalog.Roles(Project).Count)</summary>
+        <ul class="pce-role-list">
+            @foreach (var role in Catalog.Roles(Project))
+            {
+                var used = Catalog.Catalog(Project).Packages.Count(p => p.RoleId == role.Id);
+                <li data-testid="pce-role-item" data-role="@role.Id" data-predefined="@(role.Predefined ? "true" : "false")">
+                    @if (_renameId == role.Id)
+                    {
+                        <label class="visually-hidden" for="pce-rename-@role.Id">New name for @role.Name</label>
+                        <input id="pce-rename-@role.Id" data-testid="pce-rename-input" @bind="_renameValue" maxlength="60" />
+                        <button type="button" class="btn btn-link btn-sm" data-testid="pce-rename-save" @onclick="() => RenameAsync(role.Id)">Save</button>
+                        <button type="button" class="btn btn-link btn-sm" @onclick="() => _renameId = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <span>@role.Name</span> <span class="pce-muted">@(role.Predefined ? "predefined" : "custom") · used by @used</span>
+                        @if (!role.Predefined)
+                        {
+                            <button type="button" class="btn btn-link btn-sm" data-testid="pce-rename" @onclick="() => { _renameId = role.Id; _renameValue = role.Name; }">Rename</button>
+                            @if (used > 0)
+                            {
+                                <label class="visually-hidden" for="pce-reassign-@role.Id">Reassign recommendations of @role.Name to</label>
+                                <select id="pce-reassign-@role.Id" data-testid="pce-reassign" @bind="_reassign">
+                                    <option value="">Reassign to…</option>
+                                    @foreach (var other in Catalog.Roles(Project).Where(o => o.Id != role.Id)) { <option value="@other.Id">@other.Name</option> }
+                                </select>
+                            }
+                            <button type="button" class="btn btn-link btn-sm" data-testid="pce-role-remove" @onclick="() => RemoveRoleAsync(role.Id, used)">Remove</button>
+                        }
+                    }
+                </li>
+            }
+        </ul>
+    </details>
+</section>
+
+@code {
+    /// <summary>The logical project (Target Application name) whose catalog is edited.</summary>
+    [Parameter, EditorRequired] public string Project { get; set; } = "";
+
+    private string? _editId, _error, _renameId, _reassign;
+    private string _name = "", _pattern = "", _role = "Main Application", _renameValue = "";
+    private bool _required = true;
+
+    protected override void OnInitialized() => Catalog.Changed += OnChanged;
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Catalog.Changed -= OnChanged;
+
+    private async Task RunAsync(Task<string?> change) => _error = await change;
+
+    private void Edit(PackageRecommendation r)
+    {
+        _editId = r.Id; _name = r.DisplayName; _pattern = r.FilePattern; _role = Catalog.RoleName(Project, r.RoleId); _required = r.Required; _error = null;
+    }
+
+    private void Clear() { _editId = null; _name = ""; _pattern = ""; _role = "Main Application"; _required = true; _error = null; }
+
+    private async Task SaveAsync()
+    {
+        _error = await Catalog.SaveRecommendationAsync(Project, _editId, _name, _pattern, _role, _required);
+        if (_error is null) Clear();
+    }
+
+    private async Task RenameAsync(string roleId)
+    {
+        _error = await Catalog.RenameRoleAsync(Project, roleId, _renameValue);
+        if (_error is null) _renameId = null;
+    }
+
+    private async Task RemoveRoleAsync(string roleId, int used)
+    {
+        _error = await Catalog.RemoveRoleAsync(Project, roleId, used > 0 && !string.IsNullOrEmpty(_reassign) ? _reassign : null);
+        if (_error is null) _reassign = null;
+    }
+}

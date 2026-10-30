@@ -1,0 +1,57 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.ProjectEvidence
+@implements IDisposable
+@inject IServiceProvider Services
+
+@* Recommended Workflow → Recommended packages: the simplified view of the project's package catalog (imported / missing, required /
+   optional). Editing happens in Target Environment → Project; importing in Import Project. Nothing here binds evidence. *@
+@if (Catalog is not null && Project is { Length: > 0 } project)
+{
+    var matches = Catalog.Matches(project);
+    <section class="rpc" data-testid="rpc" aria-labelledby="rpc-title">
+        <div class="rpc-head">
+            <h2 id="rpc-title" class="rpc-title">Recommended packages</h2>
+            <a class="rpc-edit" href="@EditHref" data-testid="rpc-edit">Edit recommendations</a>
+        </div>
+        @if (matches.Count == 0)
+        {
+            <p class="rpc-muted" data-testid="rpc-empty">No recommended packages are defined for @project. <a href="@EditHref">Define which packages to import</a>.</p>
+        }
+        else
+        {
+            var missing = matches.Count(m => m.Status == RecommendationStatus.Missing && m.Recommendation.Required);
+            <p class="rpc-summary" data-testid="rpc-summary">@matches.Count(m => m.Status != RecommendationStatus.Missing) of @matches.Count imported@(missing > 0 ? $" · {missing} required missing" : "")</p>
+            <ul class="rpc-list">
+                @foreach (var m in matches)
+                {
+                    <li class="rpc-item rpc-@m.Status.ToString().ToLowerInvariant()" data-testid="rpc-item" data-status="@m.Status">
+                        <span class="rpc-name">@m.Recommendation.DisplayName</span>
+                        <span class="rpc-muted">@m.RoleName · @(m.Recommendation.Required ? "Required" : "Optional")</span>
+                        <span class="rpc-status" data-testid="rpc-status">@m.StatusLabel@(m.Imports.FirstOrDefault() is { } i ? $" · {i.ImportedAt.ToLocalTime():d MMM yyyy}" : "")</span>
+                    </li>
+                }
+            </ul>
+            @if (matches.Any(m => m.Status == RecommendationStatus.Missing))
+            {
+                <a class="rpc-import" href="project-import?import=1" data-testid="rpc-import-missing">Import missing packages</a>
+            }
+            <p class="rpc-muted">Imported is not bound: bind imported sources to evidence roles in Project evidence.</p>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>The logical project; default: the active Target Environment's Target Application.</summary>
+    [Parameter] public string? ProjectName { get; set; }
+
+    private PackageCatalogService? Catalog => _catalog ??= Services.GetService(typeof(PackageCatalogService)) as PackageCatalogService;
+    private PackageCatalogService? _catalog;
+    private IFrontendAnalysisSettingsService? Settings => Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService;
+
+    private string? Project => ProjectName ?? Catalog?.ProjectOf(Settings?.ActiveProfile);
+    private string EditHref => ProjectEvidenceResolver.ProjectTabHref(Settings?.ActiveProfile?.Id) + "#pce";
+
+    protected override void OnInitialized() { if (Catalog is { } c) c.Changed += OnChanged; }
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() { if (_catalog is { } c) c.Changed -= OnChanged; }
+}

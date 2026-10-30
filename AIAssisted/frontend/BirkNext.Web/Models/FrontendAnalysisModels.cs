@@ -199,6 +199,9 @@ public sealed class FrontendAnalysisSettings
     [JsonPropertyName("activeResolutionError")] public string? ActiveResolutionError { get; set; }
     [JsonPropertyName("profiles")]        public List<FrontendAnalysisProfile> Profiles        { get; set; } = [];
     [JsonPropertyName("activeProfileId")] public string?                       ActiveProfileId { get; set; }
+    /// <summary>Package catalogs per logical project (Target Application name): recommended packages and custom package roles. Absent in older
+    /// saved settings (read as empty).</summary>
+    [JsonPropertyName("packageCatalogs")] public Dictionary<string, BirkNext.Web.Services.ProjectEvidence.PackageCatalog> PackageCatalogs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class TargetApiCredentials

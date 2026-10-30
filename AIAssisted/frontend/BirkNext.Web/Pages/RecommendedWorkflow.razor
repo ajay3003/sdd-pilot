@@ -101,6 +101,9 @@
             </div>
         </section>
 
+        @* The project's package catalog (shared with Target Environment → Project): imported / missing recommended packages. *@
+        <BirkNext.Web.Components.RecommendedPackagesCard />
+
         <div class="rw-layout">
             <main class="rw-main" aria-label="Recommended workflow">
         @if (ChosenPath is { } chosen)

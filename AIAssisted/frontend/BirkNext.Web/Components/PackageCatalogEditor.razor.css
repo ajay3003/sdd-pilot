@@ -1,0 +1,18 @@
+.pce { margin: 1rem 0; border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 8px; padding: .75rem 1rem; }
+.pce-title { font-size: 1rem; margin: 0 0 .25rem; }
+.pce-subtitle { font-size: .92rem; margin: .5rem 0 .25rem; width: 100%; }
+.pce-muted { color: var(--clr-text-muted); font-size: .85rem; font-weight: 400; }
+.pce-error { color: var(--clr-danger); background: var(--clr-danger-bg-light); border: 1px solid var(--clr-danger-border); border-radius: 6px; padding: .4rem .6rem; }
+.pce-table-wrap { overflow-x: auto; position: relative; }
+.pce-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.pce-table th, .pce-table td { border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); padding: .35rem .45rem; text-align: left; vertical-align: top; }
+.pce-actions { white-space: nowrap; }
+.pce-form { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: flex-end; margin-top: .75rem; }
+.pce-field { display: flex; flex-direction: column; gap: .2rem; font-size: .88rem; min-width: min(14rem, 100%); flex: 1 1 14rem; }
+.pce-field > span { font-weight: 600; }
+.pce-field input, .pce-roles select, .pce-roles input { padding: .3rem .45rem; border: 1px solid var(--clr-border-input); border-radius: 6px; background: var(--clr-surface-white); color: var(--clr-text-body); }
+.pce-check { font-size: .9rem; }
+.pce-buttons { display: flex; gap: .4rem; }
+.pce-roles { margin-top: .75rem; }
+.pce-roles summary { cursor: pointer; font-weight: 600; }
+.pce-role-list { list-style: none; padding: 0; margin: .4rem 0 0; display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; }

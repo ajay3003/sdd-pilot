@@ -82,6 +82,11 @@
             }
         </section>
 
+        @if (CatalogProject is { Length: > 0 } catalogProject)
+        {
+            <div id="pce"><PackageCatalogEditor Project="@catalogProject" /></div>
+        }
+
         @if (!_view.IsConfigured || _setup)
         {
             @* Project evidence for the Target Application: its evidence checklist. Saves into the same bindings the advanced table below shows. *@
@@ -471,6 +476,9 @@
             }
         </div>
     };
+
+    /// <summary>The logical project whose package catalog is shown: this environment's Target Application (else its Project evidence name).</summary>
+    private string? CatalogProject => Services.GetService(typeof(PackageCatalogService)) is null ? null : _identity?.Name ?? _view?.Project?.ProjectName;
 
     private string? _sourceSearch;
     private bool _refreshing;

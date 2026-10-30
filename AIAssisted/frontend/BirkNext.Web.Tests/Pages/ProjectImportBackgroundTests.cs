@@ -121,7 +121,7 @@ public sealed class ProjectImportBackgroundTests : BunitContext
         // Completes only after activation and save; it is recorded under its own project, the user's selection is kept.
         _commit.SetResult((ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid()), null));
         back.WaitForAssertion(() => back.Find("[data-testid=pi-result]"));
-        ImportOperation.Status.Should().Be(OperationStatus.Completed);
+        SpinWait.SpinUntil(() => ImportOperation.Status == OperationStatus.Completed, TimeSpan.FromSeconds(10)).Should().BeTrue();
         _autoSave.Verify(a => a.SaveNowAsync(), Times.Once);
         _repository.SddLifecycle.ProjectImports.Should().ContainSingle(i => i.ImportId == _preview.ImportId);
         _repository.ProjectName.Should().Be("Other sample project", "a late import never replaces the project selected meanwhile");
@@ -169,7 +169,7 @@ public sealed class ProjectImportBackgroundTests : BunitContext
 
         page.Find("[data-testid=pi-cancel-running]").Click();
 
-        page.WaitForAssertion(() => ImportOperation.Status.Should().Be(OperationStatus.Cancelled));
+        SpinWait.SpinUntil(() => ImportOperation.Status == OperationStatus.Cancelled, TimeSpan.FromSeconds(10)).Should().BeTrue();
         _commitToken.IsCancellationRequested.Should().BeTrue("explicit cancellation aborts the backend request");
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty("a cancelled import activates nothing");
         Operations.Find(other.Operation.Id)!.IsActive.Should().BeTrue("other operations are not affected");
@@ -183,7 +183,7 @@ public sealed class ProjectImportBackgroundTests : BunitContext
     {
         var page = StartImport();
         _commit.SetResult((null, new SourceUploadFailure("PROJECT_IMPORT_FAILED", "commit", "The import could not be completed.", CorrelationId: "trace-1")));
-        page.WaitForAssertion(() => ImportOperation.Status.Should().Be(OperationStatus.Failed));
+        SpinWait.SpinUntil(() => ImportOperation.Status == OperationStatus.Failed, TimeSpan.FromSeconds(10)).Should().BeTrue();
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty("a failed import is never presented as complete");
         var failed = ImportOperation;
 
@@ -192,6 +192,7 @@ public sealed class ProjectImportBackgroundTests : BunitContext
         _commit.SetResult((ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid()), null));
 
         page.WaitForAssertion(() => page.Find("[data-testid=pi-result]"));
+        SpinWait.SpinUntil(() => Operations.Operations.Any(o => o.Kind == OperationKind.ProjectImport && o.Status == OperationStatus.Completed), TimeSpan.FromSeconds(10)).Should().BeTrue();
         var retried = Operations.Operations.Single(o => o.Kind == OperationKind.ProjectImport && o.Status == OperationStatus.Completed);
         retried.RetryOf.Should().Be(failed.Id);
         Operations.Find(failed.Id)!.Error.Should().Be("The import could not be completed.");
