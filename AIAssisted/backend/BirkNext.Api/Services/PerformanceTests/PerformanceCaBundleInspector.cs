@@ -52,8 +52,12 @@ public static class PerformanceCaBundleInspector
             if (certificates.Count == 0) return Invalid("The PEM bundle contains no loadable certificate.");
             var authorities = certificates.Count(IsAuthority);
             var fingerprint = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()[..16];
+            if (authorities == 0)
+                return Invalid("The PEM bundle contains no CA certificate (only end-entity certificates). Add the issuing root or intermediate CA certificates.");
+            var expired = certificates.Count(c => c.NotAfter.ToUniversalTime() < DateTime.UtcNow);
             return new(PerformanceCaBundleState.Ready,
-                $"{certificates.Count} certificate{(certificates.Count == 1 ? "" : "s")} ({authorities} CA) loaded from {file.Name}; mounted read-only into the container. TLS verification stays on.",
+                $"{certificates.Count} certificate{(certificates.Count == 1 ? "" : "s")} ({authorities} CA) loaded from {file.Name}; mounted read-only into the container. TLS verification stays on."
+                + (expired > 0 ? $" {expired} certificate{(expired == 1 ? " is" : "s are")} expired and will not establish trust." : ""),
                 certificates.Count, fingerprint);
         }
         finally { foreach (var certificate in certificates) certificate.Dispose(); }

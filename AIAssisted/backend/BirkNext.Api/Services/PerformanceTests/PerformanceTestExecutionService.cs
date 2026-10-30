@@ -25,10 +25,23 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
             return new PerformanceReachability { TargetOrigin = d.TargetOrigin, State = "Unknown", Detail = $"No provider '{d.ProviderId}' is registered.", CheckedAt = DateTimeOffset.UtcNow };
         // Stamped with the network/TLS configuration it ran with: a later change (CA bundle, proxy, runtime, image, target) makes it stale.
         var result = await provider.CheckReachabilityAsync(d, ct) with { NetworkFingerprint = NetworkFingerprint(d) };
+        // A TLS failure in the container is explained from the host: the presented chain and the failing trust layer (never trusted, never sent).
+        if (result.State is PerformanceProbeStates.TlsTrustFailure or PerformanceProbeStates.HostnameMismatch or PerformanceProbeStates.TlsFailure
+            && Uri.TryCreate(d.TargetOrigin, UriKind.Absolute, out var origin) && origin.Scheme == Uri.UriSchemeHttps)
+        {
+            using var bundle = TlsChainInspector.LoadBundle(options?.Container.EffectiveCaBundlePath) is { } loaded ? new DisposableCollection(loaded) : null;
+            result = result with { Chain = await TlsChainInspector.InspectAsync(origin, bundle?.Certificates, TimeSpan.FromSeconds(10), ct) };
+        }
         _reachability[$"{d.ProviderId}|{d.TargetOrigin}"] = result;
         // The same check validates Container TLS trust (System Settings → Performance Test Engines): one trust for the check and the run.
         localExecution?.Record(result);
         return result;
+    }
+
+    private sealed class DisposableCollection(System.Security.Cryptography.X509Certificates.X509Certificate2Collection certificates) : IDisposable
+    {
+        public System.Security.Cryptography.X509Certificates.X509Certificate2Collection Certificates { get; } = certificates;
+        public void Dispose() { foreach (var c in Certificates) c.Dispose(); }
     }
 
     /// <summary>The current network/TLS configuration fingerprint for a definition (see <see cref="PerformanceCaBundleInspector.NetworkFingerprint"/>).</summary>

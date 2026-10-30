@@ -339,6 +339,9 @@ public static class PerformanceProviderIds
 /// </summary>
 public sealed record PerformanceReachability
 {
+    /// <summary>After a TLS failure: the certificate chain the target presents and the failing trust layer (see TlsChainDiagnostics).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TlsChainDiagnostics? Chain { get; init; }
     public string TargetOrigin { get; init; } = "";
     /// <summary>The origin as the container addresses it (e.g. loopback rewritten to the container host gateway).</summary>
     public string ExecutionOrigin { get; init; } = "";

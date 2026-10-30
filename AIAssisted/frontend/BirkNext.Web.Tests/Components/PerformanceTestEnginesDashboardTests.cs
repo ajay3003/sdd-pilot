@@ -291,7 +291,8 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
         _api.Providers = [K6()];
         _api.Resources = Resources();
         var cut = RenderPage();
-        cut.Find("[data-testid=pte-summary-local]").TextContent.Should().Contain("Local execution").And.Contain("Not configured");
+        cut.Find("[data-testid=pte-summary-local]").TextContent.Should().Contain("Target execution readiness").And.Contain("Not configured").And.Contain("not checked for a target");
+        cut.Find("[data-testid=pte-ca-readiness-note]").TextContent.Should().Contain("Engine availability").And.Contain("is not target readiness");
         cut.Find("[data-testid=pte-summary]").TextContent.Should().Contain("Performance engine").And.Contain("Ready", "the engine can be ready while trust is not configured");
         var card = cut.Find("[data-testid=pte-ca-card]");
         card.Id.Should().Be("container-tls-trust", "the readiness deep link focuses this card");
@@ -352,6 +353,32 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
         cut.Find("[data-testid=pte-ca-stage][data-stage=http]").GetAttribute("data-state").Should().Be("Not reached");
         P.Trust(ContainerTlsTrustStates.NeedsRecheck).Should().Match<CapabilityStatus>(t => t.Label == "Needs recheck" && t.Tone == CapabilityTone.Caution);
         P.Trust(ContainerTlsTrustStates.Validated).Tone.Should().Be(CapabilityTone.Positive);
+    }
+
+    [Fact]
+    public void A_tls_failure_shows_the_presented_chain_the_failing_layer_and_the_guidance()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        var chain = new TlsChainDiagnostics
+        {
+            Reached = true, FailedLayer = TlsTrustLayers.ContainerDefaultStore, Guidance = "Windows trusts this chain through the root “CN=Corp Root”…",
+            Certificates = [new("CN=m2lbdev.bufetat.no", "CN=Corp Issuing CA", DateTimeOffset.UtcNow.AddDays(-10), DateTimeOffset.UtcNow.AddDays(100), "aa11", false, false),
+                            new("CN=Corp Root", "CN=Corp Root", DateTimeOffset.UtcNow.AddYears(-5), DateTimeOffset.UtcNow.AddYears(5), "bb22", true, true)],
+            SentByServer = 2, HostTrusted = true, HostDetail = "Windows trusts this chain.", BundleDetail = "No CA bundle is configured: the container uses its default CA store.", CheckedAt = DateTimeOffset.UtcNow,
+        };
+        var failed = new ContainerTlsValidation { TargetOrigin = "https://m2lbdev.bufetat.no", ProbeState = PerformanceProbeStates.TlsTrustFailure, ErrorCode = 1310, CheckedAt = DateTimeOffset.UtcNow, Chain = chain };
+        _api.Local = new PerformanceLocalExecutionStatus { TrustState = ContainerTlsTrustStates.ValidationFailed, TrustDetail = "TLS trust failed.", LastValidation = failed, Stages = PerformanceNetworkStages.From(failed) };
+        var cut = RenderPage();
+
+        cut.Find("[data-testid=pte-ca-chain]").GetAttribute("data-layer").Should().Be(TlsTrustLayers.ContainerDefaultStore);
+        cut.Find("[data-testid=pte-ca-chain-guidance]").TextContent.Should().Contain("CN=Corp Root");
+        cut.FindAll("[data-testid=pte-ca-chain-cert]").Select(c => c.TextContent).Should().SatisfyRespectively(
+            leaf => leaf.Should().Contain("Leaf").And.Contain("CN=m2lbdev.bufetat.no").And.Contain("issued by CN=Corp Issuing CA"),
+            root => root.Should().Contain("Root").And.Contain("CN=Corp Root"));
+        cut.Find("[data-testid=pte-ca-chain-host]").TextContent.Should().Be("Windows trusts this chain.");
+        cut.Find("[data-testid=pte-ca-stage][data-stage=http]").GetAttribute("data-state").Should().Be("Not reached");
+        cut.Markup.Should().NotContain("PRIVATE KEY");
     }
 
     [Fact]

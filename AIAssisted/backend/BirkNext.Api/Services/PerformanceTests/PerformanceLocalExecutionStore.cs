@@ -84,6 +84,7 @@ public sealed class PerformanceLocalExecutionStore
                     TargetOrigin = result.TargetOrigin, ProbeState = result.State, Passed = result.State is PerformanceProbeStates.Reachable or PerformanceProbeStates.AuthChallenge,
                     ErrorCode = result.ErrorCode, Detail = result.Detail, CheckedAt = result.CheckedAt == default ? DateTimeOffset.UtcNow : result.CheckedAt,
                     TrustFingerprint = TrustFingerprint(result.TargetOrigin, bundle), CaFingerprint = bundle.Configured ? bundle.Fingerprint : "",
+                    Chain = result.Chain,
                 },
             };
             Save();

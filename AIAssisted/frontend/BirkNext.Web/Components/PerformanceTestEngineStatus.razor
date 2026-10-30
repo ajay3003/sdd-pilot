@@ -60,8 +60,8 @@
                 <div><dt>Execution</dt><dd>@P.RuntimeText(runtime)</dd></div>
             }
             <div data-testid="pte-summary-local">
-                <dt>Local execution</dt>
-                <dd>@if (_local is { } le) { @Pill(P.Trust(le.TrustState), "Container TLS trust") <span class="pte-muted">Container TLS trust</span> } else { <span class="pte-muted">Not loaded</span> }</dd>
+                <dt>Target execution readiness</dt>
+                <dd>@if (_local is { } le) { @Pill(P.Trust(le.TrustState), "Container TLS trust") <span class="pte-muted">Container TLS trust@(le.LastValidation is { } lv ? $" · {lv.TargetOrigin}" : " · not checked for a target")</span> } else { <span class="pte-muted">Not loaded</span> }</dd>
             </div>
             <div>
                 <dt>Resource observation</dt>
@@ -315,6 +315,7 @@
                     </div>
                     <p class="pte-card-summary" role="status" data-testid="pte-ca-detail">@le.TrustDetail</p>
                     <p class="pte-guidance" data-testid="pte-ca-safety">TLS verification is never disabled. The bundle is mounted read-only into the container and used identically by the network check and the run.</p>
+                    <p class="pte-guidance" data-testid="pte-ca-readiness-note">Engine availability (Podman and k6 work) is not target readiness: a target is ready for performance testing only when the container network check reaches it with DNS, TCP, TLS and HTTP passed.</p>
 
                     <dl class="pte-facts" data-testid="pte-ca-facts">
                         <div><dt>Source</dt><dd data-testid="pte-ca-source">@le.Source</dd></div>
@@ -335,6 +336,32 @@
                             <li data-testid="pte-ca-stage" data-stage="@stage.Key" data-state="@stage.State"><span class="pte-stage-name">@stage.Name</span> @Pill(P.Stage(stage.State), null)@if (stage.Detail.Length > 0) { <span class="pte-stage-detail">@stage.Detail</span> }</li>
                         }
                     </ol>
+                    @if (le.LastValidation?.Chain is { } chain)
+                    {
+                        <section class="pte-chain" aria-labelledby="pte-chain-title" data-testid="pte-ca-chain" data-layer="@chain.FailedLayer">
+                            <h5 id="pte-chain-title" class="pte-chain-title">Certificate chain presented by the target</h5>
+                            @if (!chain.Reached) { <p class="pte-muted" data-testid="pte-ca-chain-detail">@chain.Detail</p> }
+                            else
+                            {
+                                <p data-testid="pte-ca-chain-layer"><strong>Failed trust layer:</strong> @chain.FailedLayer</p>
+                                <p class="pte-guidance" data-testid="pte-ca-chain-guidance">@chain.Guidance</p>
+                                <ol class="pte-chain-list">
+                                    @foreach (var (cert, i) in chain.Certificates.Select((c, i) => (c, i)))
+                                    {
+                                        <li data-testid="pte-ca-chain-cert">
+                                            <strong>@(i == 0 ? "Leaf" : cert.SelfSigned ? "Root" : "Intermediate"):</strong> @cert.Subject
+                                            <span class="pte-muted">issued by @cert.Issuer · valid @cert.NotBefore.ToString("yyyy-MM-dd") – @cert.NotAfter.ToString("yyyy-MM-dd")@(cert.ExpiredAt(chain.CheckedAt) ? " · expired" : "") · SHA-256 @cert.Sha256</span>
+                                        </li>
+                                    }
+                                </ol>
+                                <dl class="pte-facts">
+                                    <div><dt>Sent by the server</dt><dd>@chain.SentByServer of @chain.Certificates.Count@(chain.MissingIntermediate ? " · intermediate missing" : "")</dd></div>
+                                    <div><dt>Windows (host)</dt><dd data-testid="pte-ca-chain-host">@chain.HostDetail</dd></div>
+                                    <div><dt>Container with the CA bundle</dt><dd data-testid="pte-ca-chain-bundle">@chain.BundleDetail</dd></div>
+                                </dl>
+                            }
+                        </section>
+                    }
                     @if (le.LastValidation is null)
                     {
                         <p class="pte-guidance" data-testid="pte-ca-how-to-validate">Validate by running “Check container network” for a saved definition in Performance Test Review. It sends one request from the k6 container — never a load test.</p>

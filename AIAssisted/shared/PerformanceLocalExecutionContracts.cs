@@ -23,6 +23,47 @@ public static class ContainerTlsTrustSources
     public const string ConfigurationFile = "Configuration file";
 }
 
+/// <summary>One certificate the target presented (public certificate facts only — never key material).</summary>
+public sealed record TlsCertificateInfo(string Subject, string Issuer, DateTimeOffset NotBefore, DateTimeOffset NotAfter, string Sha256, bool IsAuthority, bool SelfSigned)
+{
+    public bool ExpiredAt(DateTimeOffset now) => now > NotAfter || now < NotBefore;
+}
+
+/// <summary>Which trust layer failed (see <see cref="TlsChainDiagnostics.FailedLayer"/>).</summary>
+public static class TlsTrustLayers
+{
+    public const string TargetCertificate = "Target certificate";
+    public const string ServerChain = "Server certificate chain";
+    public const string ContainerCaBundle = "Container CA bundle";
+    public const string ContainerDefaultStore = "Container default CA store";
+    public const string Unknown = "Not determined";
+}
+
+/// <summary>
+/// The certificate chain the target presents, inspected from the BirkNext host after a TLS failure in the k6 container: presented certificates
+/// (leaf first), host (Windows) trust, whether the configured CA bundle would let the container trust it (no certificate downloads, like k6),
+/// the failing layer and what to do. Inspection always rejects the certificate; TLS verification is never relaxed.
+/// </summary>
+public sealed record TlsChainDiagnostics
+{
+    public bool Reached { get; init; }
+    public string Detail { get; init; } = "";
+    public IReadOnlyList<TlsCertificateInfo> Certificates { get; init; } = [];
+    /// <summary>How many of <see cref="Certificates"/> the server itself sent (the rest the host found locally or downloaded).</summary>
+    public int SentByServer { get; init; }
+    public bool HostnameMatches { get; init; } = true;
+    public bool Expired { get; init; }
+    public bool HostTrusted { get; init; }
+    public string HostDetail { get; init; } = "";
+    /// <summary>Null when no CA bundle is configured.</summary>
+    public bool? BundleTrusted { get; init; }
+    public string BundleDetail { get; init; } = "";
+    public bool MissingIntermediate { get; init; }
+    public string FailedLayer { get; init; } = TlsTrustLayers.Unknown;
+    public string Guidance { get; init; } = "";
+    public DateTimeOffset CheckedAt { get; init; }
+}
+
 /// <summary>One stage of the container network check. State: Passed, Failed, Not reached, Not applicable, Not checked.</summary>
 public sealed record PerformanceNetworkStage(string Key, string Name, string State, string Detail);
 
@@ -39,6 +80,9 @@ public sealed record ContainerTlsValidation
     public string TrustFingerprint { get; init; } = "";
     /// <summary>The CA bundle fingerprint at validation time ("" = default container CA store).</summary>
     public string CaFingerprint { get; init; } = "";
+    /// <summary>The presented chain and the failing trust layer, after a TLS failure (null otherwise or for older records).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TlsChainDiagnostics? Chain { get; init; }
 }
 
 /// <summary>Local execution summary + Container TLS trust card. Distinct from engine readiness (runtime/image/k6 version).</summary>
