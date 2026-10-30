@@ -934,6 +934,17 @@ public sealed class SecurityClassificationTests
         findings.Should().Contain(f => f.Severity == IntegrationFindingSeverityV2.High && f.Domain == IntegrationReviewDomain.DataQuality);
     }
 
+    [Fact]
+    public void AnotherRecordWithTheLevelField_DoesNotReplaceTheCdcEvent()
+    {
+        // A response DTO declared before the event also carries Sikkerhetsnivaa; the guard's input (the CDC event) is still the one analysed.
+        var code = Fixture();
+        code.Insert(0, new("M2LB/PersonAdapter/src/Adapter/AOppslagResponse.cs", "public sealed record OppslagEksternIdResponse(Guid Id, int? Sikkerhetsnivaa);"));
+        var evidence = Analyze(code: code);
+        Fact(evidence, "cdc-deserializer").Title.Should().Contain("CdcProcessorWorker.Deserialize");
+        Fact(evidence, "cdc-deserializer").State.Should().NotBe(ClassificationState.NotFound);
+    }
+
     // ── Real read-only acceptance (runs only where the developer's archive exists) ─────────────────────────────────
 
     [Fact]

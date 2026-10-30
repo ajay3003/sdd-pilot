@@ -309,9 +309,13 @@ public static class ClassificationSourceAnalyzer
     private static (List<ClassificationFact> Facts, ClassificationCdcSummary Summary) CdcPath(List<Code> production)
     {
         var facts = new List<ClassificationFact>();
-        // The CDC event type: a record with a Sikkerhetsnivaa parameter.
-        var eventRecord = production.SelectMany(c => c.Root.DescendantNodes().OfType<RecordDeclarationSyntax>().Select(r => (Code: c, Record: r)))
-            .FirstOrDefault(r => r.Record.ParameterList?.Parameters.Any(p => p.Identifier.Text == "Sikkerhetsnivaa" && p.Type?.ToString() is "int" or "int?") == true);
+        // The CDC event type: a record with a Sikkerhetsnivaa parameter. Other records (e.g. API response DTOs) can carry the same field, so
+        // the record a production method takes as a parameter and reads the level from (the guard's input) wins, then the first one.
+        var candidates = production.SelectMany(c => c.Root.DescendantNodes().OfType<RecordDeclarationSyntax>().Select(r => (Code: c, Record: r)))
+            .Where(r => r.Record.ParameterList?.Parameters.Any(p => p.Identifier.Text == "Sikkerhetsnivaa" && p.Type?.ToString() is "int" or "int?") == true).ToList();
+        var eventRecord = candidates.FirstOrDefault(r => Methods(production).Any(cm => cm.Method.ParameterList.Parameters.Any(p => p.Type?.ToString().TrimEnd('?') == r.Record.Identifier.Text)
+                && cm.Method.ToString().Contains(".Sikkerhetsnivaa", StringComparison.Ordinal)));
+        if (eventRecord.Record is null) eventRecord = candidates.FirstOrDefault();
         var eventType = eventRecord.Record?.Identifier.Text;
         var levelParameter = eventRecord.Record?.ParameterList!.Parameters.Select((p, i) => (p.Identifier.Text, i)).First(p => p.Text == "Sikkerhetsnivaa");
         // Declared in another source (e.g. a shared contract package): a production method returning T that constructs T with a named
