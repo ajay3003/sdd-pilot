@@ -50,7 +50,9 @@ public class FrontendBrowserRuntimeController : ControllerBase
                     request.ProfileId,
                     request.AuthenticatedSessionId,
                     options)
-                : new BrowserRuntimeExecutionRequest(request.TargetUrl, Options: options);
+                : request.ExecutionMode == BrowserRuntimeExecutionMode.UnattendedLoginPage
+                    ? new BrowserRuntimeExecutionRequest(request.TargetUrl, BrowserRuntimeExecutionMode.UnattendedLoginPage, Options: options)
+                    : new BrowserRuntimeExecutionRequest(request.TargetUrl, Options: options);
 
             if (execution.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage &&
                 (string.IsNullOrWhiteSpace(execution.ReviewSessionId) ||

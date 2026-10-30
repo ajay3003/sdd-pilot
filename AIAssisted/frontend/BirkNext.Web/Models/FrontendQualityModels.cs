@@ -258,7 +258,7 @@ public enum BrowserRuntimeEngineStatusDto
     NotApplicable,
 }
 
-public enum BrowserRuntimeExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage }
+public enum BrowserRuntimeExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage, UnattendedLoginPage }
 public enum BrowserRuntimeOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin, SessionUnavailable, TargetPolicyRejected, DisabledInSystemSettings, EngineUnavailable, EngineError, ResourceUnavailable }
 
 public enum BrowserStartupStateDto

@@ -293,6 +293,8 @@ builder.Services.AddHttpClient<IAiCodeReviewApiService, AiCodeReviewApiService>(
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IDeliveryReportingApiService, DeliveryReportingApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<IBrowserAuthenticationApiService, BrowserAuthenticationApiService>(client =>
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITestCoverageApiService, TestCoverageApiService>(client =>
     client.BaseAddress = backendBase);
 // IQR → Active tests: one shared client for every scenario provider; every gate is the backend's. With Entra configured, protected calls

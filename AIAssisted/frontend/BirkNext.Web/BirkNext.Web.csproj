@@ -52,6 +52,7 @@
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
     <Compile Include="../../shared/ProjectImportContracts.cs" Link="Models/ProjectImportContracts.cs" />
     <Compile Include="../../shared/DeliveryReportingContracts.cs" Link="Models/DeliveryReportingContracts.cs" />
+    <Compile Include="../../shared/BrowserAuthenticationContracts.cs" Link="Models/BrowserAuthenticationContracts.cs" />
     <Compile Include="../../shared/ProjectCompatibilityContracts.cs" Link="Models/ProjectCompatibilityContracts.cs" />
     <Compile Include="../../shared/MarkdownDiagnosticsContracts.cs" Link="Models/MarkdownDiagnosticsContracts.cs" />
     <Compile Include="../../shared/SourceIntegrationContracts.cs" Link="Models/SourceIntegrationContracts.cs" />

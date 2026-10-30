@@ -12,6 +12,21 @@
     <p>An environment with no URL, or with the example URL it was created with, is <em>Partial</em>. The Authentication tab keeps configuration, verification, verification prerequisites and the testing context apart — see <a href="@UserGuideContent.Href("testing")">Runtime testing</a>.</p>
 </section>
 
+<section id="browser-authentication" class="ug-section ug-topic" data-topic="browser-authentication" aria-labelledby="browser-authentication-title">
+    <h2 id="browser-authentication-title" class="ug-section-title" tabindex="-1">Browser authentication</h2>
+    <p class="ug-lead"><a href="/admin/system-settings?section=authentication">System Settings → Authentication</a> shows the two browser authentication modes side by side. Both can be available at the same time; they are not one setting with two values.</p>
+    <h3 id="attended-login" class="ug-subtitle">Attended login</h3>
+    <p>Used when a person must complete login or MFA: the dedicated Edge browser, Managed Edge or the local HTTPS proxy, configured per environment in Target Environment → Authentication. It is unchanged, remains the default for manual and interactive runs, and is the right choice for any identity that requires MFA.</p>
+    <h3 id="unattended-login" class="ug-subtitle">Unattended login</h3>
+    <p>Used for automated browser tests with a dedicated test identity that does not require MFA. Configure the automation identity, its login name and password (stored encrypted on the backend, never shown again), the login URL and how to recognise a successful login (URL text or an authenticated page marker). Then choose <strong>Validate unattended login</strong>: an isolated browser signs in once. Opening the page never starts a login.</p>
+    <ul class="ug-list">
+        <li><strong>Ready</strong> only after a successful validation with the current configuration; changing the identity, credential, login target or success detection returns it to <strong>Not verified</strong>. <strong>Configured · Disabled</strong> keeps the configuration but automated runs do not use it.</li>
+        <li><strong>MFA is never automated.</strong> An MFA, one-time code or conditional access challenge stops the login and reports it; use attended login for that identity. A rejected credential is never retried, so the test account is not locked.</li>
+        <li><strong>Separate sessions:</strong> each unattended run uses a fresh, empty browser context — never the attended browser profile, cookies or session — and closes it afterwards.</li>
+        <li><strong>Automated and scheduled execution</strong> require unattended login and never fall back to attended login. Browser login does not satisfy Altinn → MU, BirkNext → Altinn API credentials, Service Bus, Event Hub or other service-to-service authentication.</li>
+    </ul>
+</section>
+
 <section id="connected-systems" class="ug-section ug-topic" data-topic="connected-systems" aria-labelledby="connected-systems-title">
     <h2 id="connected-systems-title" class="ug-section-title" tabindex="-1">Connected Systems</h2>
     <p class="ug-lead"><a href="@UserGuideContent.TargetEnvironmentTab("external")">Connected Systems</a> holds the provider instances this environment talks to — Altinn, REST, GraphQL, Service Bus, Event Hub, databases, file/SFTP. Each system shows what it needs before testing, who owns each gap, and one next action.</p>

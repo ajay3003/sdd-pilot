@@ -813,6 +813,13 @@ else if (_settings is not null)
             }
 
             @* â•â• AI â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
+            @if (_activeSection == "authentication")
+            {
+                <div class="settings-card settings-card-full-width" role="region" aria-label="Authentication">
+                    <BrowserAuthenticationSettings />
+                </div>
+            }
+
             @if (_activeSection == "ai")
             {
                 <div class="settings-card settings-card-full-width">

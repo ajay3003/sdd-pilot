@@ -1,4 +1,6 @@
 using BirkNext.Api.Services.AuthenticatedReview;
+using BirkNext.Api.Services.BrowserAuthentication;
+using BirkNext.BrowserAuthentication;
 using Microsoft.Playwright;
 using Microsoft.Extensions.Options;
 
@@ -13,16 +15,17 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
     private readonly BrowserRuntimeFindingClassifier _findingClassifier;
     private readonly BrowserEvidenceSanitizer _sanitizer;
     private readonly IAuthenticatedBrowserSessionManager? _authenticatedSessions;
+    private readonly UnattendedLoginService? _unattended;
     private readonly bool _enabled;
 
     public FrontendBrowserRuntimeReviewService(ILogger<FrontendBrowserRuntimeReviewService> logger,
         BrowserTargetValidator targetValidator, BrowserRuntimeFindingClassifier findingClassifier,
         BrowserResourceClassifier resourceClassifier, BrowserEvidenceSanitizer sanitizer,
         IOptions<FrontendBrowserRuntimeOptions> options,
-        IAuthenticatedBrowserSessionManager? authenticatedSessions = null)
+        IAuthenticatedBrowserSessionManager? authenticatedSessions = null, UnattendedLoginService? unattended = null)
     {
         _logger = logger; _targetValidator = targetValidator; _findingClassifier = findingClassifier;
-        _sanitizer = sanitizer; _authenticatedSessions = authenticatedSessions;
+        _sanitizer = sanitizer; _authenticatedSessions = authenticatedSessions; _unattended = unattended;
         _enabled = options.Value.Enabled;
     }
 
@@ -33,9 +36,24 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
     {
         var validation = _targetValidator.ValidateTarget(request.TargetUrl);
         if (!validation.IsValid) return Rejected(request, BrowserRuntimeOutcomeReason.TargetPolicyRejected, validation.BlockReason ?? "Target validation failed.");
+        if (request.ExecutionMode == BrowserRuntimeExecutionMode.UnattendedLoginPage) return await ReviewUnattendedAsync(request, cancellationToken);
         return request.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage
             ? await ReviewAuthenticatedAsync(request, cancellationToken)
             : await ReviewAnonymousAsync(request, cancellationToken);
+    }
+
+    /// <summary>Unattended mode: a fresh isolated login with the automation identity, then the same observation in that context. The attended
+    /// session manager is never used, and a failed login is reported as such — there is no fallback to attended login.</summary>
+    private async Task<BrowserRuntimeResult> ReviewUnattendedAsync(BrowserRuntimeExecutionRequest request, CancellationToken cancellationToken)
+    {
+        if (!_enabled) return Rejected(request, BrowserRuntimeOutcomeReason.DisabledInSystemSettings, "Browser Runtime engine is disabled.");
+        if (_unattended is null) return Rejected(request, BrowserRuntimeOutcomeReason.AuthenticationRequired, "Unattended browser login is not available.");
+        var run = await _unattended.RunAuthenticatedAsync((page, ct) => ObserveAsync(page, page.Context.Browser?.Version, request, navigate: true, "UnattendedLogin", ct), cancellationToken);
+        if (run.Outcome == UnattendedLoginOutcome.Succeeded && run.Result is { } result) return result;
+        var reason = run.Outcome is UnattendedLoginOutcome.BrowserUnavailable ? BrowserRuntimeOutcomeReason.EngineUnavailable
+            : run.Outcome is UnattendedLoginOutcome.TargetUnavailable ? BrowserRuntimeOutcomeReason.ResourceUnavailable
+            : BrowserRuntimeOutcomeReason.AuthenticationRequired;
+        return Rejected(request, reason, $"Unattended login: {BrowserAuthenticationText.Outcome(run.Outcome)}. {run.Message}");
     }
 
     private async Task<BrowserRuntimeResult> ReviewAnonymousAsync(BrowserRuntimeExecutionRequest request, CancellationToken cancellationToken)
@@ -108,7 +126,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
             if (observation.BlazorDetected) observation.BlazorBootstrapCompleted = await IsBlazorBootstrapCompleteAsync(page);
             cancellationToken.ThrowIfCancellationRequested();
             var findings = _findingClassifier.ClassifyObservations(observation.Snapshot());
-            var authenticated = request.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage;
+            var authenticated = request.ExecutionMode is BrowserRuntimeExecutionMode.AuthenticatedSessionPage or BrowserRuntimeExecutionMode.UnattendedLoginPage;
             return new BrowserRuntimeResult(Status: BrowserRuntimeEngineStatus.Assessed, BrowserName: "Chromium", BrowserVersion: browserVersion,
                 RequestedUrl: authenticated ? _sanitizer.SanitizeAuthenticatedUrl(request.TargetUrl) : _sanitizer.SanitizeUrl(request.TargetUrl),
                 FinalUrl: authenticated ? _sanitizer.SanitizeAuthenticatedUrl(page.Url) : _sanitizer.SanitizeUrl(page.Url), StartedAt: startedAt,
@@ -116,7 +134,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
                 StartupState: DetermineStartupState(observation), ConsoleErrorCount: observation.ConsoleEvents.Count(e => e.Type == "error"),
                 PageErrorCount: observation.PageErrors.Count, CriticalResourceFailureCount: observation.CriticalResourceFailureCount,
                 Findings: authenticated ? _sanitizer.SanitizeAuthenticatedFindings(findings) : _sanitizer.SanitizeFindings(findings),
-                Limitations: authenticated ? ["Authenticated single-page runtime observation", $"Delivery context: {deliveryContext}", "No DOM, response body, request body, cookie, token, or storage evidence collected"] : ["Single-target startup observation only, no crawling", "No Lighthouse, Core Web Vitals, or active security scanning"],
+                Limitations: request.ExecutionMode == BrowserRuntimeExecutionMode.UnattendedLoginPage ? ["Unattended login with the automation identity, then single-page runtime observation", "No DOM, response body, request body, cookie, token, or storage evidence collected"] : authenticated ? ["Authenticated single-page runtime observation", $"Delivery context: {deliveryContext}", "No DOM, response body, request body, cookie, token, or storage evidence collected"] : ["Single-target startup observation only, no crawling", "No Lighthouse, Core Web Vitals, or active security scanning"],
                 ExecutionMode: request.ExecutionMode, DeliveryContext: deliveryContext);
         }
         catch (OperationCanceledException) when (request.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage)

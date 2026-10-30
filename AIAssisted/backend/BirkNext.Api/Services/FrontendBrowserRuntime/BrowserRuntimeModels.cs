@@ -5,7 +5,10 @@ namespace BirkNext.Api.Services.FrontendBrowserRuntime;
 public enum BrowserRuntimeExecutionMode
 {
     AnonymousOwnedBrowser,
-    AuthenticatedSessionPage
+    AuthenticatedSessionPage,
+    /// <summary>Explicitly requested unattended browser login (BrowserAuthenticationMode.UnattendedBrowser): a fresh isolated login with the
+    /// automation identity, then the observation. Never falls back to the attended session.</summary>
+    UnattendedLoginPage,
 }
 
 public enum BrowserRuntimeOutcomeReason

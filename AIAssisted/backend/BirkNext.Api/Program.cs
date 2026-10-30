@@ -257,6 +257,16 @@ builder.Services.AddScoped<BrowserResourceClassifier>();
 builder.Services.AddScoped<BrowserEvidenceSanitizer>();
 builder.Services.AddScoped<BrowserRuntimeFindingClassifier>();
 builder.Services.AddScoped<IFrontendBrowserRuntimeReviewService, FrontendBrowserRuntimeReviewService>();
+// Unattended browser login (System Settings → Authentication): separate from every attended flow; its credential is encrypted in its
+// own App_Data folder (BrowserAuthentication:StorageDirectory overrides it). Nothing here runs unless a consumer explicitly asks.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginStore(
+    sp.GetRequiredService<IConfiguration>()["BrowserAuthentication:StorageDirectory"] is { Length: > 0 } dir ? dir
+        : BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>())));
+builder.Services.AddSingleton<BirkNext.Api.Services.BrowserAuthentication.IUnattendedLoginBrowserLauncher, BirkNext.Api.Services.BrowserAuthentication.PlaywrightUnattendedLoginBrowserLauncher>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginRunner(
+    sp.GetRequiredService<BirkNext.Api.Services.BrowserAuthentication.IUnattendedLoginBrowserLauncher>(),
+    sp.GetRequiredService<ILogger<BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginRunner>>()));
+builder.Services.AddScoped<BirkNext.Api.Services.BrowserAuthentication.UnattendedLoginService>();
 
 // Interactive authenticated review is local-workstation-only and disabled by default.
 builder.Services.Configure<AuthenticatedReviewOptions>(

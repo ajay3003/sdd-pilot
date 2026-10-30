@@ -1,0 +1,48 @@
+/* System Settings → Authentication. Status is always written as text; tone colours only reinforce it. */
+.ba-page { display: flex; flex-direction: column; gap: 1rem; }
+.ba-title { font-size: 1.35rem; margin: 0; color: var(--clr-text-heading); }
+.ba-lead { margin: .25rem 0 0; color: var(--clr-text-muted); }
+.ba-h3 { font-size: 1.05rem; margin: 0 0 .6rem; color: var(--clr-text-heading); }
+.ba-section { display: flex; flex-direction: column; }
+.ba-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; }
+.ba-card { background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: 10px; padding: 1rem 1.15rem; display: flex; flex-direction: column; gap: .5rem; box-shadow: var(--shadow-sm); }
+.ba-card p { margin: 0; }
+.ba-card-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.ba-card-title { margin: 0; font-size: .95rem; letter-spacing: .04em; text-transform: uppercase; color: var(--clr-text-heading); }
+.ba-badge { display: inline-block; border: 1px solid currentColor; border-radius: 999px; padding: 0 .6rem; font-size: .82rem; font-weight: 600; white-space: nowrap; }
+.ba-tone-good { color: var(--clr-success); background: var(--clr-success-bg-light); }
+.ba-tone-bad { color: var(--clr-danger); background: var(--clr-danger-bg-light); }
+.ba-tone-warn { color: #7a4b00; background: var(--clr-warning-bg-light); }
+.ba-tone-neutral { color: var(--clr-text-muted); background: var(--clr-surface); }
+.ba-facts { display: grid; gap: .35rem; margin: .25rem 0; }
+.ba-facts > div { display: grid; grid-template-columns: 10rem 1fr; gap: .5rem; }
+.ba-facts dt { font-weight: 600; color: var(--clr-text-muted); }
+.ba-facts dd { margin: 0; word-break: break-word; }
+.ba-requirements { list-style: none; padding: 0; margin: .25rem 0; display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; }
+.ba-req-mark { display: inline-block; min-width: 4.2rem; font-weight: 600; }
+.ba-requirements .met .ba-req-mark { color: var(--clr-success); }
+.ba-requirements .unmet .ba-req-mark { color: #7a4b00; }
+.ba-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; align-items: center; }
+.ba-link-button { align-self: flex-start; text-decoration: none; }
+.ba-muted { color: var(--clr-text-muted); font-size: .9rem; }
+.ba-error { color: var(--clr-danger); background: var(--clr-danger-bg-light); border: 1px solid var(--clr-danger-border); border-radius: 6px; padding: .5rem .75rem; margin: 0; }
+.ba-error ul { margin: .25rem 0 0; padding-left: 1.1rem; }
+.ba-result { border-radius: 6px; padding: .5rem .75rem; margin-top: .5rem; }
+.ba-result.ok { background: var(--clr-success-bg-light); border: 1px solid var(--clr-success-border); }
+.ba-result.fail { background: var(--clr-danger-bg-light); border: 1px solid var(--clr-danger-border); }
+.ba-danger { color: var(--clr-danger); }
+.ba-automated { background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: 10px; padding: 1rem 1.15rem; }
+.ba-automated p { margin: .2rem 0; }
+.ba-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: flex; align-items: flex-start; justify-content: center; padding: 3rem 1rem; z-index: 1000; overflow-y: auto; }
+.ba-dialog { background: var(--clr-surface-white); border-radius: 12px; padding: 1.25rem 1.5rem; width: min(40rem, 100%); display: flex; flex-direction: column; gap: .6rem; box-shadow: var(--shadow-card); }
+.ba-dialog-small { width: min(30rem, 100%); }
+.ba-dialog h3:focus { outline: none; }
+.ba-field { display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; }
+.ba-field > span { font-weight: 600; }
+.ba-field input { padding: .35rem .5rem; border: 1px solid var(--clr-border-input); border-radius: 6px; }
+.ba-fieldset { border: 1px solid var(--clr-border); border-radius: 8px; padding: .5rem .75rem .75rem; display: flex; flex-direction: column; gap: .5rem; }
+.ba-fieldset legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }
+.ba-advanced summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+.ba-advanced[open] { display: flex; flex-direction: column; gap: .5rem; }
+.ba-check { display: flex; gap: .4rem; align-items: center; font-size: .9rem; }
+@media (max-width: 40rem) { .ba-facts > div { grid-template-columns: 1fr; } }

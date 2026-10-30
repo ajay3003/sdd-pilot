@@ -1,0 +1,322 @@
+@using BirkNext.BrowserAuthentication
+@using BirkNext.Web.Services
+@inject IBrowserAuthenticationApiService Api
+@inject IFrontendAnalysisSettingsService TargetEnvironments
+
+@* System Settings → Authentication. Two browser authentication modes side by side — never one "authentication type" choice. The attended
+   card is informational (its configuration and readiness stay in Target Environment → Authentication and are not changed here); the
+   unattended card configures the automation identity. Opening this page never starts a browser or a login: validation is explicit. *@
+
+<div class="ba-page" data-testid="ba-page">
+    <header class="ba-header">
+        <h2 class="ba-title">Authentication</h2>
+        <p class="ba-lead">Configure browser authentication used for interactive and automated test execution.</p>
+    </header>
+
+    <section aria-labelledby="ba-browser-title" class="ba-section">
+        <h3 id="ba-browser-title" class="ba-h3">Browser authentication</h3>
+        <div class="ba-cards">
+            <article class="ba-card" data-testid="ba-attended" aria-labelledby="ba-attended-title">
+                <div class="ba-card-head">
+                    <h4 id="ba-attended-title" class="ba-card-title">@BrowserAuthenticationText.AttendedTitle</h4>
+                    <span class="ba-badge ba-tone-good" data-testid="ba-attended-status">Available</span>
+                </div>
+                <p>@BrowserAuthenticationText.AttendedPurpose</p>
+                <dl class="ba-facts">
+                    <div><dt>Execution</dt><dd>Dedicated Edge / existing attended browser flow (Managed Edge, local HTTPS proxy)</dd></div>
+                    <div><dt>MFA</dt><dd>Supported — a person completes it</dd></div>
+                    <div><dt>Configuration</dt><dd>Existing attended configuration, per Target Environment</dd></div>
+                    <div><dt>Readiness</dt><dd>Shown for each environment in Target Environment → Authentication</dd></div>
+                </dl>
+                <a class="btn-secondary ba-link-button" href="@AttendedHref" data-testid="ba-attended-view">View existing configuration</a>
+            </article>
+
+            <article class="ba-card" data-testid="ba-unattended" aria-labelledby="ba-unattended-title" aria-busy="@(_loaded ? "false" : "true")">
+                <div class="ba-card-head">
+                    <h4 id="ba-unattended-title" class="ba-card-title">@BrowserAuthenticationText.UnattendedTitle</h4>
+                    @if (_view is { } v) { <span class="ba-badge @Tone(v.State)" data-testid="ba-unattended-status">@v.StateLabel</span> }
+                </div>
+                <p>@BrowserAuthenticationText.UnattendedPurpose</p>
+                @if (!_loaded) { <p role="status">Loading…</p> }
+                else if (_loadError is not null) { <p class="ba-error" role="alert">@_loadError</p> }
+                else if (_view is { Configured: false })
+                {
+                    <p class="ba-muted" data-testid="ba-unattended-empty">Use a dedicated automation test identity for browser tests that can run without human interaction.</p>
+                    <button type="button" class="btn-primary" data-testid="ba-configure" @onclick="OpenEditor">Configure unattended login</button>
+                }
+                else if (_view is { } view)
+                {
+                    <dl class="ba-facts">
+                        <div><dt>Automation identity</dt><dd data-testid="ba-identity">@view.IdentityAlias</dd></div>
+                        <div><dt>Credentials</dt><dd data-testid="ba-credential">@(view.CredentialConfigured ? $"Configured securely{(view.LoginNameHint is { } hint ? $" ({hint})" : "")}" : "Missing")</dd></div>
+                        <div><dt>Login target</dt><dd>@(view.LoginUrl ?? "Not configured")</dd></div>
+                        <div><dt>Success detection</dt><dd>@SuccessText(view)</dd></div>
+                        <div><dt>Login validation</dt><dd data-testid="ba-validation">@ValidationText(view)</dd></div>
+                    </dl>
+                    <ul class="ba-requirements" aria-label="Unattended login requirements">
+                        @foreach (var r in view.Requirements)
+                        {
+                            <li data-testid="ba-requirement" class="@(r.Met ? "met" : "unmet")"><span class="ba-req-mark">@(r.Met ? "Met" : "Not met")</span> @r.Label <span class="ba-muted">— @r.Detail</span></li>
+                        }
+                    </ul>
+                    <div class="ba-actions">
+                        <button type="button" class="btn-primary" data-testid="ba-validate" disabled="@(_busy || !view.Enabled)" @onclick="Validate">Validate unattended login</button>
+                        <button type="button" class="btn-secondary" data-testid="ba-edit" disabled="@_busy" @onclick="OpenEditor">Edit</button>
+                        <button type="button" class="btn-secondary" data-testid="ba-toggle" disabled="@_busy" @onclick="ToggleEnabled">@(view.Enabled ? "Disable" : "Enable")</button>
+                        <button type="button" class="btn-link ba-danger" data-testid="ba-remove" disabled="@_busy" @onclick="AskRemove">Remove configuration</button>
+                    </div>
+                }
+                <div role="status" aria-live="polite" data-testid="ba-result">
+                    @if (_busy && _validating) { <p>Validating with an isolated automation browser…</p> }
+                    @if (_result is { } result)
+                    {
+                        <div class="ba-result @(result.Outcome == UnattendedLoginOutcome.Succeeded ? "ok" : "fail")" data-testid="ba-result-box">
+                            <strong>@(result.Outcome == UnattendedLoginOutcome.Succeeded ? "Unattended login validated" : "Validation failed")</strong> — @BrowserAuthenticationText.Outcome(result.Outcome).
+                            <span>@result.Message</span>
+                            @if (result.Recommendation is { } recommendation) { <p class="ba-muted">@recommendation</p> }
+                        </div>
+                    }
+                </div>
+                @if (_actionError is not null) { <p class="ba-error" role="alert" data-testid="ba-action-error">@_actionError</p> }
+            </article>
+        </div>
+    </section>
+
+    @if (_automated is { } automated)
+    {
+        <section class="ba-section ba-automated" aria-labelledby="ba-automated-title" data-testid="ba-automated">
+            <h3 id="ba-automated-title" class="ba-h3">Automated browser execution</h3>
+            <p><span class="ba-badge @(automated.Available ? "ba-tone-good" : "ba-tone-warn")" data-testid="ba-automated-status">@(automated.Available ? "Available" : "Unavailable")</span>
+                @(automated.Available ? "" : "Automated browser execution unavailable.")</p>
+            <p><strong>Reason:</strong> <span data-testid="ba-automated-reason">@automated.Reason</span></p>
+            <p class="ba-muted">Automated and scheduled browser runs use unattended login only and never fall back to attended login. Browser login does not cover Altinn → MU, Altinn API credentials or service-to-service authentication; each consumer checks those, TLS trust and environment safety separately.</p>
+            @if (!automated.Available && _view is { Configured: false }) { <button type="button" class="btn-secondary" @onclick="OpenEditor">Configure unattended login</button> }
+        </section>
+    }
+
+    @if (_editing) { @Editor() }
+    @if (_confirmRemove) { @RemoveDialog() }
+</div>
+
+@code {
+    private RenderFragment Editor() => __builder =>
+    {
+        <div class="ba-backdrop">
+            <form class="ba-dialog" role="dialog" aria-modal="true" aria-labelledby="ba-editor-title" data-testid="ba-editor" @onsubmit="Save" @onsubmit:preventDefault @onkeydown="OnDialogKey">
+                <h3 id="ba-editor-title" class="ba-h3" tabindex="-1" @ref="_editorTitle">@(_view is { Configured: true } ? "Edit unattended login" : "Configure unattended login")</h3>
+                <p class="ba-muted">Use a dedicated automation test identity that does not require MFA. Unattended login never answers an MFA or interactive challenge; it stops instead.</p>
+                @if (_formErrors.Count > 0)
+                {
+                    <div class="ba-error" role="alert" data-testid="ba-form-errors" tabindex="-1" @ref="_errorSummary">
+                        <strong>Fix the following:</strong>
+                        <ul>@foreach (var e in _formErrors) { <li>@e</li> }</ul>
+                    </div>
+                }
+                <label class="ba-field"><span>Automation identity</span>
+                    <input data-testid="ba-form-identity" @bind="_identity" maxlength="120" placeholder="e.g. skolenaervaer-unattended-reporter" aria-describedby="ba-identity-help" />
+                    <small id="ba-identity-help" class="ba-muted">A name for the test identity, shown instead of the login name.</small>
+                </label>
+                <fieldset class="ba-fieldset">
+                    <legend>Credential</legend>
+                    <p class="ba-muted">@(_view?.CredentialConfigured == true ? "A credential is configured securely. Leave both fields empty to keep it; fill both to replace it." : "Stored encrypted on this backend. It is never shown again or returned by the API.")</p>
+                    <label class="ba-field"><span>Login name</span><input data-testid="ba-form-login" @bind="_loginName" autocomplete="off" spellcheck="false" /></label>
+                    <label class="ba-field"><span>Password</span><input type="password" data-testid="ba-form-password" @bind="_password" autocomplete="new-password" /></label>
+                </fieldset>
+                <label class="ba-field"><span>Login target (URL)</span>
+                    <input type="url" data-testid="ba-form-url" @bind="_loginUrl" maxlength="2000" placeholder="https://…" />
+                </label>
+                @if (TargetEnvironments.ActiveProfile?.TargetUrl is { Length: > 0 } activeUrl)
+                {
+                    <button type="button" class="btn-link" data-testid="ba-form-use-target" @onclick="() => _loginUrl = activeUrl">Use the active Target Environment URL (@activeUrl)</button>
+                }
+                <fieldset class="ba-fieldset">
+                    <legend>Success detection</legend>
+                    <p class="ba-muted">How BirkNext confirms the login worked. At least one is required; a page load alone never counts as signed in.</p>
+                    <label class="ba-field"><span>URL after login contains</span><input data-testid="ba-form-success-url" @bind="_successUrl" placeholder="e.g. /dashboard" /></label>
+                    <label class="ba-field"><span>Authenticated page marker (CSS selector)</span><input data-testid="ba-form-success-marker" @bind="_successSelector" placeholder="e.g. #user-menu" /></label>
+                </fieldset>
+                <details class="ba-advanced">
+                    <summary>Advanced: login page fields</summary>
+                    <p class="ba-muted">Only needed when the login page is not recognised automatically.</p>
+                    <label class="ba-field"><span>Login name field selector</span><input data-testid="ba-form-user-selector" @bind="_usernameSelector" /></label>
+                    <label class="ba-field"><span>Password field selector</span><input data-testid="ba-form-password-selector" @bind="_passwordSelector" /></label>
+                    <label class="ba-field"><span>Submit button selector</span><input data-testid="ba-form-submit-selector" @bind="_submitSelector" /></label>
+                </details>
+                <label class="ba-check"><input type="checkbox" data-testid="ba-form-enabled" @bind="_enabled" /> Enabled — automated browser execution may use it</label>
+                <div class="ba-actions">
+                    <button type="submit" class="btn-primary" data-testid="ba-form-save" disabled="@_busy">Save</button>
+                    <button type="button" class="btn-secondary" data-testid="ba-form-cancel" @onclick="CloseEditor">Cancel</button>
+                </div>
+            </form>
+        </div>
+    };
+
+    private RenderFragment RemoveDialog() => __builder =>
+    {
+        <div class="ba-backdrop">
+            <div class="ba-dialog ba-dialog-small" role="alertdialog" aria-modal="true" aria-labelledby="ba-remove-title" aria-describedby="ba-remove-text" data-testid="ba-remove-dialog" @onkeydown="OnDialogKey">
+                <h3 id="ba-remove-title" class="ba-h3">Remove unattended login?</h3>
+                <p id="ba-remove-text">The automation identity, its stored credential and validation are removed. Attended login and its configuration are not affected.</p>
+                <div class="ba-actions">
+                    <button type="button" class="btn-danger" data-testid="ba-remove-confirm" @ref="_removeButton" @onclick="Remove">Remove configuration</button>
+                    <button type="button" class="btn-secondary" data-testid="ba-remove-cancel" @onclick="() => _confirmRemove = false">Cancel</button>
+                </div>
+            </div>
+        </div>
+    };
+}
+
+@code {
+    public const string AttendedHref = "admin/system-settings?section=target-environments&tab=auth";
+
+    private bool _loaded, _busy, _validating, _editing, _confirmRemove, _focusEditor, _focusErrors, _focusRemove;
+    private string? _loadError, _actionError;
+    private UnattendedLoginView? _view;
+    private AutomatedBrowserExecutionReadiness? _automated;
+    private UnattendedLoginValidationResult? _result;
+    private List<string> _formErrors = [];
+    private string? _identity, _loginName, _password, _loginUrl, _successUrl, _successSelector, _usernameSelector, _passwordSelector, _submitSelector;
+    private bool _enabled = true;
+    private ElementReference _editorTitle, _errorSummary, _removeButton;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Metadata only: no browser starts and no login is attempted when the page opens.
+        var (view, error) = await Api.GetAsync();
+        _view = view;
+        _loadError = error;
+        _automated = await Api.AutomatedExecutionAsync();
+        _loaded = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusErrors) { _focusErrors = false; await _errorSummary.FocusAsync(); }
+        else if (_focusEditor) { _focusEditor = false; await _editorTitle.FocusAsync(); }
+        if (_focusRemove) { _focusRemove = false; await _removeButton.FocusAsync(); }
+    }
+
+    private static string Tone(UnattendedLoginState state) => state switch
+    {
+        UnattendedLoginState.Ready => "ba-tone-good",
+        UnattendedLoginState.ValidationFailed => "ba-tone-bad",
+        UnattendedLoginState.NotVerified => "ba-tone-warn",
+        _ => "ba-tone-neutral",
+    };
+
+    private static string SuccessText(UnattendedLoginView view) =>
+        string.Join(" · ", new[] { view.SuccessUrlContains is { } u ? $"URL contains “{u}”" : null, view.SuccessSelector is { } s ? $"marker {s}" : null }.Where(x => x is not null)) is { Length: > 0 } text ? text : "Not configured";
+
+    private static string ValidationText(UnattendedLoginView view) => view.LastValidation switch
+    {
+        null => "Not verified",
+        { Current: false } => "Not verified (configuration changed since the last validation)",
+        { Outcome: UnattendedLoginOutcome.Succeeded } v => $"Ready · validated {When(v.ValidatedAt)}",
+        var v => $"Failed · {BrowserAuthenticationText.Outcome(v.Outcome)} · {When(v.ValidatedAt)}",
+    };
+
+    private static string When(DateTimeOffset value) => value.ToLocalTime().ToString("d MMM yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void OpenEditor()
+    {
+        _identity = _view?.IdentityAlias;
+        _loginUrl = _view?.LoginUrl;
+        _successUrl = _view?.SuccessUrlContains;
+        _successSelector = _view?.SuccessSelector;
+        _usernameSelector = _view?.UsernameSelector;
+        _passwordSelector = _view?.PasswordSelector;
+        _submitSelector = _view?.SubmitSelector;
+        _enabled = _view is not { Configured: true } || _view.Enabled;
+        _loginName = _password = null;
+        _formErrors = [];
+        _editing = true;
+        _focusEditor = true;
+    }
+
+    private void CloseEditor()
+    {
+        _loginName = _password = null;
+        _editing = false;
+    }
+
+    private async Task Save()
+    {
+        _busy = true;
+        try
+        {
+            var (view, error) = await Api.SaveAsync(new SaveUnattendedLoginRequest
+            {
+                IdentityAlias = _identity, LoginName = _loginName, Password = _password, LoginUrl = _loginUrl, SuccessUrlContains = _successUrl,
+                SuccessSelector = _successSelector, UsernameSelector = _usernameSelector, PasswordSelector = _passwordSelector, SubmitSelector = _submitSelector, Enabled = _enabled,
+            });
+            if (view is null)
+            {
+                _formErrors = [error ?? "The configuration could not be saved."];
+                _focusErrors = true;
+                return;
+            }
+            _view = view;
+            _result = null;
+            CloseEditor();
+            _automated = await Api.AutomatedExecutionAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Validate()
+    {
+        _busy = _validating = true;
+        _result = null;
+        _actionError = null;
+        try
+        {
+            var (result, error) = await Api.ValidateAsync();
+            _result = result;
+            _actionError = error;
+            if (result is not null) _view = result.View;
+            _automated = await Api.AutomatedExecutionAsync();
+        }
+        finally { _busy = _validating = false; }
+    }
+
+    private async Task ToggleEnabled()
+    {
+        if (_view is null) return;
+        _busy = true;
+        try
+        {
+            var (view, error) = await Api.SetEnabledAsync(!_view.Enabled);
+            if (view is not null) _view = view;
+            _actionError = error;
+            _automated = await Api.AutomatedExecutionAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void AskRemove()
+    {
+        _confirmRemove = true;
+        _focusRemove = true;
+    }
+
+    private async Task Remove()
+    {
+        _confirmRemove = false;
+        _busy = true;
+        try
+        {
+            _actionError = await Api.ClearAsync();
+            _result = null;
+            (_view, _) = await Api.GetAsync();
+            _automated = await Api.AutomatedExecutionAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private void OnDialogKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (_confirmRemove) _confirmRemove = false;
+        else if (_editing) CloseEditor();
+    }
+}
