@@ -199,3 +199,23 @@ public sealed class BrowserAuthenticationSettingsTests : BunitContext
         page.Find("[data-testid=ba-form-errors]").GetAttribute("role").Should().Be("alert");
     }
 }
+
+/// <summary>Target Environment → Authentication points to the unattended capability without duplicating it (no credential fields there).</summary>
+public sealed class BrowserLoginModesNoteTests : BunitContext
+{
+    [Fact]
+    public void ShowsBothModes_UnattendedStateFromTheSharedCapability_AndNoCredentialInput()
+    {
+        var api = new Mock<IBrowserAuthenticationApiService>();
+        api.Setup(a => a.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new UnattendedLoginView { Configured = true, State = UnattendedLoginState.Ready, StateLabel = "Ready" }, (string?)null));
+        Services.AddSingleton(api.Object);
+
+        var note = Render<BrowserLoginModesNote>();
+
+        note.Find("[data-testid=blm]").TextContent.Should().Contain("Attended login").And.Contain("Unattended login").And.Contain("No credentials are stored on this tab");
+        note.Find("[data-testid=blm-unattended-state]").TextContent.Should().Be("Ready");
+        note.Find("[data-testid=blm-link]").GetAttribute("href").Should().Be("admin/system-settings?section=authentication");
+        note.FindAll("input, button, select").Should().BeEmpty();
+        api.Verify(a => a.ValidateAsync(It.IsAny<CancellationToken>()), Times.Never, "reading the state never starts a login");
+    }
+}

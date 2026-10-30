@@ -469,6 +469,8 @@
             @* ── Authentication ── *@
             @if (_activeTab == "auth")
             {
+                @* Where the two browser login modes live: attended here (unchanged), unattended in System Settings → Authentication (read-only link). *@
+                <BrowserLoginModesNote />
                 <div class="fa-auth-layout" data-testid="fa-auth-panel">
 
                 @*

@@ -1,0 +1,24 @@
+@using BirkNext.BrowserAuthentication
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Target Environment → Authentication: where the two browser login modes live. Attended login is configured on this tab (unchanged);
+   unattended login is a shared capability configured once in System Settings → Authentication. Read-only: no credential is entered or
+   stored here, and reading the state never starts a login. *@
+<aside class="blm" aria-label="Browser login modes" data-testid="blm">
+    <p class="blm-row"><strong>Attended login</strong> · configured on this tab (dedicated Edge, Managed Edge or the local HTTPS proxy). A person signs in and completes MFA.</p>
+    <p class="blm-row"><strong>Unattended login</strong> · <span data-testid="blm-unattended-state">@(_view?.StateLabel ?? (_loaded ? "Unknown" : "…"))</span> — a dedicated automation identity for automated browser runs, configured once in
+        <a href="@WorkflowPaths.AuthenticationRoute" data-testid="blm-link">System Settings → Authentication</a>. No credentials are stored on this tab.</p>
+</aside>
+
+@code {
+    private UnattendedLoginView? _view;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Services.GetService(typeof(IBrowserAuthenticationApiService)) is IBrowserAuthenticationApiService api)
+            (_view, _) = await api.GetAsync();
+        _loaded = true;
+    }
+}
