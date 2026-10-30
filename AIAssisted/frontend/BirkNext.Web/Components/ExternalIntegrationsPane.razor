@@ -11,11 +11,11 @@
         <h3 id="ei-title" class="ei-title">Connected Systems</h3>
         <div class="ei-actions">
             @* Discover first, add manually second: Detect stays the primary action even when systems exist (new evidence can reveal more). *@
-            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync">Detect systems</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)">Add system</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-import" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Import)">Import setup</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-export" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Export)">Export setup</button>
-            <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)">Setup Library</a>
+            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync" title="Propose systems from the project's imported evidence. Nothing is saved.">Detect systems</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)" title="Register a system manually (when it cannot be detected).">Add system</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-import" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Import)" title="Preview and apply a sanitized setup package (no secrets).">Import setup</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-export" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Export)" title="Export this environment's systems without secrets.">Export setup</button>
+            <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)" title="Reusable setup templates; applying one is explicit and never edits live systems silently.">Setup Library</a>
         </div>
     </header>
     <ProjectContextStrip EnvironmentId="@EnvironmentId" />
@@ -29,6 +29,13 @@
     }
     else
     {
+        @* Summary: actual counts. Detected is not registered; registered is not verified. *@
+        <dl class="ei-summary" data-testid="ei-summary">
+            <div><dt>Registered systems</dt><dd data-testid="ei-summary-registered">@_view.Integrations.Count</dd></div>
+            <div><dt>Enabled</dt><dd data-testid="ei-summary-enabled">@_view.Integrations.Count(i => i.Integration.Enabled)</dd></div>
+            <div><dt>Detected candidates</dt><dd data-testid="ei-summary-detected">@_view.Proposals.Count(p => !IsConfigured(p))</dd></div>
+            <div><dt>Need attention</dt><dd data-testid="ei-summary-attention">@_view.Integrations.Count(NeedsAttention)</dd></div>
+        </dl>
         @if (_mode == Mode.Add)
         {
             var descriptor = _view.Providers.First(p => p.Type == _newProvider);
@@ -59,7 +66,7 @@
             @* Detected proposals: Accept is the next safe action (primary), one per proposal and always explicit; nothing is saved by Detect. An
                ambiguous proposal or one that matches a configured system never offers a blind Accept. *@
             <section class="ei-proposals" data-testid="ei-proposals" aria-labelledby="ei-proposals-heading">
-                <h4 class="ei-h4" id="ei-proposals-heading" tabindex="-1">Detected systems <span class="ei-muted">(@_view.Proposals.Count pending · nothing saved)</span></h4>
+                <h4 class="ei-h4" id="ei-proposals-heading" tabindex="-1">Detected candidates <span class="ei-muted">(@_view.Proposals.Count pending · nothing saved@(_detectedAt is { } at ? $" · detected {at.ToLocalTime():d MMM HH:mm}" : ""))</span></h4>
                 @foreach (var proposal in _view.Proposals)
                 {
                     var configured = IsConfigured(proposal);
@@ -79,6 +86,11 @@
                             <button type="button" class="btn btn-primary btn-sm" data-testid="ei-accept" disabled="@_busy" @onclick="() => AcceptAsync(proposal)"
                                     aria-label="@($"Accept detected system {proposal.Name}")">Accept detected system</button>
                         }
+                        @if (!configured)
+                        {
+                            <button type="button" class="btn btn-link btn-sm" data-testid="ei-ignore" disabled="@_busy" @onclick="() => Ignore(proposal)"
+                                    aria-label="@($"Ignore detected system {proposal.Name}")">Ignore</button>
+                        }
                     </div>
                 }
             </section>
@@ -86,7 +98,14 @@
 
         @if (_view.Integrations.Count == 0)
         {
-            <p class="ei-muted" data-testid="ei-empty">No connected systems yet. Start with Detect systems. Add a system manually only if it cannot be discovered from project evidence.</p>
+            <div class="ei-empty" data-testid="ei-empty">
+                <p><strong>No connected systems are configured for this environment.</strong> Detect proposes systems from the project's imported evidence (source, configuration and infrastructure); nothing is registered until you accept it.</p>
+                <div class="ei-empty-actions">
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="ei-empty-detect" disabled="@_busy" @onclick="DetectAsync">Detect from imported evidence</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-empty-add" @onclick="() => Toggle(Mode.Add)">Add system manually</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-empty-import" @onclick="() => Toggle(Mode.Import)">Import existing setup</button>
+                </div>
+            </div>
         }
         <div class="ei-cards">
             @foreach (var item in _view.Integrations)
@@ -179,11 +198,33 @@
         else if (altinnFocus) { _mode = Mode.Add; _newProvider = ExternalProviderType.Altinn; }
     }
 
+    private ConnectedSystemsDetectionSession? Detections => Services.GetService<ConnectedSystemsDetectionSession>();
+    private DateTimeOffset? _detectedAt;
+
+    /// <summary>Configured systems from the server; detected candidates from this session's last detection of this environment.</summary>
     private async Task ReloadAsync()
     {
         if (_api is null) return;
         var result = await _api.ListAsync(EnvironmentId);
-        if (result.Value is { } view) { _view = view with { Proposals = _view?.Proposals ?? [] }; _error = null; } else _error = result.Error;
+        if (result.Value is { } view)
+        {
+            _view = view with { Proposals = Detections?.Pending(EnvironmentId) ?? _view?.Proposals ?? [] };
+            _view = _view with { Proposals = [.. _view.Proposals.Where(p => !IsConfigured(p))] };
+            _detectedAt = Detections?.Get(EnvironmentId)?.DetectedAt;
+            _error = null;
+        }
+        else _error = result.Error;
+    }
+
+    /// <summary>A registered system needs attention when any of its dimensions is Partial or Blocked.</summary>
+    private static bool NeedsAttention(ExternalIntegrationView item) =>
+        ExternalIntegrationPresentation.Dimensions(item.Summary).Any(d => ExternalIntegrationPresentation.Tone(d.State) is "warn" or "bad");
+
+    private void Ignore(ExternalIntegrationProposal proposal)
+    {
+        Detections?.Ignore(EnvironmentId, proposal);
+        if (_view is not null) _view = _view with { Proposals = [.. _view.Proposals.Where(p => p != proposal)] };
+        _notice = $"{proposal.Name} ignored for now. Detect again to see it.";
     }
 
     private void Toggle(Mode mode) => _mode = _mode == mode ? Mode.None : mode;
@@ -211,6 +252,8 @@
         if (result.Value is { } view)
         {
             _view = view;
+            _detectedAt = DateTimeOffset.UtcNow;
+            Detections?.Store(EnvironmentId, view.Proposals, _detectedAt.Value);
             _notice = view.Proposals.Count == 0 ? "Nothing new detected. Nothing was saved." : $"{view.Proposals.Count} integration(s) detected. Nothing was saved: review and accept.";
             // The result region takes focus (it is what the user asked for): the next Tab reaches the first Accept.
             if (view.Proposals.Count > 0) _focusToggle = "ei-proposals-heading";
@@ -248,6 +291,7 @@
         {
             // The other proposals stay pending: a reload returns configured systems only, so they are carried over (minus any now configured).
             var pending = _view!.Proposals.Where(p => p != proposal).ToList();
+            Detections?.Remove(EnvironmentId, proposal);
             await ReloadAsync();
             if (_view is not null) _view = _view with { Proposals = [.. pending.Where(p => !IsConfigured(p))] };
             _notice = $"{created.Integration.Name} accepted · review it.{(pending.Count > 0 ? $" {pending.Count} detected system(s) still pending." : "")}";

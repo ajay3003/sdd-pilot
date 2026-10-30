@@ -305,6 +305,7 @@ builder.Services.AddHttpClient<IBrowserAuthenticationApiService, BrowserAuthenti
 builder.Services.AddHttpClient<IRuntimeAuthenticationApiService, RuntimeAuthenticationApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddScoped<RuntimeAuthenticationChoices>();
+builder.Services.AddScoped<ConnectedSystemsDetectionSession>();
 builder.Services.AddHttpClient<ITestCoverageApiService, TestCoverageApiService>(client =>
     client.BaseAddress = backendBase);
 // IQR → Active tests: one shared client for every scenario provider; every gate is the backend's. With Entra configured, protected calls

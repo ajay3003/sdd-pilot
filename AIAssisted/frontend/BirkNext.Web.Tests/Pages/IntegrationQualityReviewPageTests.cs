@@ -66,14 +66,33 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         cards.Single(c => c.GetAttribute("data-domain") == "Performance").GetAttribute("data-readiness").Should().Be("NotAssessable");
     }
 
+    [Theory]
+    [InlineData(2, 0, 0, "disabled", "tab=integrations")]
+    [InlineData(0, 1, 0, "no-integrations", "tab=integrations")]
+    [InlineData(0, 0, 1, "detectable", "dev")]
+    public void EmptyState_NamesTheActualCondition(int configured, int systems, int snapshots, string condition, string href)
+    {
+        _api.Readiness = new IntegrationReviewReadiness
+        {
+            Headline = "Cannot run", ConfiguredIntegrations = configured,
+            Systems = [.. Enumerable.Range(0, systems).Select(i => new IntegrationSystemScope { SystemName = $"S{i}" })],
+            AvailableSourceSnapshots = [.. Enumerable.Range(0, snapshots).Select(_ => new IqrSourceSnapshot())],
+        };
+        var cut = Open();
+        cut.Find("[data-testid=iqr-zero-integrations]").GetAttribute("data-condition").Should().Be(condition);
+        cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain(href);
+        if (condition == "detectable") cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("Imported source evidence is available").And.Contain("Source Analysis");
+    }
+
     [Fact]
     public void NothingEnabledCannotRunAndLinksToIntegrations()
     {
         _api.Readiness = new IntegrationReviewReadiness { Headline = "Cannot run", Reasons = ["No enabled integration is configured."] };
         var cut = Open();
         cut.FindAll("[data-testid=iqr-run]").Should().BeEmpty("Cannot run never shows a (disabled) run button");
-        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No configured integrations.");
-        cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain("tab=integrations").And.Contain("profile=dev");
+        cut.Find("[data-testid=iqr-zero-integrations]").GetAttribute("data-condition").Should().Be("nothing");
+        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No connected systems, integrations or imported source evidence");
+        cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain("dev");
         cut.FindAll("[data-testid=iqr-readiness], [data-testid=iqr-attention-item]").Should().BeEmpty("an empty environment is one clear empty state, not a page of empty technical UI");
     }
 

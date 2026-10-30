@@ -187,7 +187,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         _api.Catalog = new IntegrationCatalog { EnvironmentId = "dev" };
         _api.Readiness = new IntegrationReviewReadiness { Headline = "Cannot run", Reasons = ["No enabled integration is configured."] };
         var cut = Open();
-        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No configured integrations");
+        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No connected systems");
         cut.FindAll("[data-testid=iqr-subject], [data-testid=iqr-readiness]").Should().BeEmpty();
     }
 

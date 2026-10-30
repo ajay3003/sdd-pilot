@@ -126,6 +126,68 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
     }
 
     [Fact]
+    public void Detected_candidates_survive_navigation_but_never_another_environment()
+    {
+        Services.AddScoped<ConnectedSystemsDetectionSession>();
+        _api.NoSystems = true;
+        _api.Proposals = [Proposal("Payments API"), Proposal("Orders API")];
+        var first = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        first.WaitForAssertion(() => first.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        first.Find("[data-testid=ei-detect]").Click();
+        first.WaitForAssertion(() => first.FindAll("[data-testid=ei-proposal]").Should().HaveCount(2));
+        first.Find("[data-testid=ei-summary-detected]").TextContent.Should().Be("2");
+        first.Find("[data-testid=ei-summary-registered]").TextContent.Should().Be("0");
+        first.Find("#ei-proposals-heading").TextContent.Should().Contain("detected");
+
+        // Leaving the page and coming back: a new component instance restores the session's candidates without detecting again.
+        var detections = _api.DetectCalls;
+        var again = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        again.WaitForAssertion(() => again.FindAll("[data-testid=ei-proposal]").Should().HaveCount(2));
+        _api.DetectCalls.Should().Be(detections);
+        _api.Saved.Should().BeEmpty("detected is not registered");
+
+        var other = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, "qa"));
+        other.WaitForAssertion(() => other.FindAll("[data-testid=ei-summary]").Should().ContainSingle());
+        other.FindAll("[data-testid=ei-proposal]").Should().BeEmpty("candidates belong to the environment they were detected for");
+    }
+
+    [Fact]
+    public void Ignoring_a_candidate_hides_it_without_saving_anything()
+    {
+        Services.AddScoped<ConnectedSystemsDetectionSession>();
+        _api.Proposals = [Proposal("Payments API"), Proposal("Orders API")];
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        cut.Find("[data-testid=ei-detect]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-ignore]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=ei-ignore]")[0].Click();
+        cut.FindAll("[data-testid=ei-proposal]").Select(p => p.QuerySelector("strong")!.TextContent).Should().Equal("Orders API");
+        _api.Saved.Should().BeEmpty();
+        var back = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        back.WaitForAssertion(() => back.FindAll("[data-testid=ei-proposal]").Should().ContainSingle());
+    }
+
+    [Fact]
+    public void Summary_counts_registered_enabled_and_systems_needing_attention()
+    {
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-summary-registered]").TextContent.Should().Be("2"));
+        cut.Find("[data-testid=ei-summary-attention]").TextContent.Should().Be("2", "both systems have a Partial authentication dimension");
+        cut.Find("[data-testid=ei-summary-detected]").TextContent.Should().Be("0", "nothing is detected until Detect runs");
+    }
+
+    [Fact]
+    public void Empty_environment_offers_detect_add_and_import()
+    {
+        _api.NoSystems = true;
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-empty]"));
+        cut.FindAll("[data-testid=ei-empty-detect], [data-testid=ei-empty-add], [data-testid=ei-empty-import]").Should().HaveCount(3);
+        cut.Find("[data-testid=ei-empty-add]").Click();
+        cut.Find("[data-testid=ei-add-form]").Should().NotBeNull();
+    }
+
+    [Fact]
     public void Ambiguous_and_already_configured_detections_offer_no_blind_accept()
     {
         _api.Proposals = [Proposal("Two candidates", ambiguous: true), Proposal("Person API")];
@@ -360,7 +422,7 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
         cut.FindAll(".ei-actions .btn-primary").Should().ContainSingle();
         cut.FindAll(".ei-actions > *").Select(e => e.GetAttribute("data-testid")).Should().Equal("ei-detect", "ei-add", "ei-import", "ei-export", "ei-library");
         if (empty)
-            cut.Find("[data-testid=ei-empty]").TextContent.Should().Be("No connected systems yet. Start with Detect systems. Add a system manually only if it cannot be discovered from project evidence.");
+            cut.Find("[data-testid=ei-empty]").TextContent.Should().Contain("No connected systems are configured for this environment.").And.Contain("nothing is registered until you accept it");
         else
             cut.FindAll("[data-testid=ei-empty]").Should().BeEmpty();
     }
@@ -435,7 +497,8 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
             BirkNext.Web.Tests.Components.ExternalIntegrationsUiTests.CatalogDescriptors);
 
         public Task<ActiveEventApiResult<ExternalIntegrationsView>> ListAsync(string environmentId, CancellationToken ct = default) => Ok(View(false));
-        public Task<ActiveEventApiResult<ExternalIntegrationsView>> DetectAsync(string environmentId, CancellationToken ct = default) => Ok(View(true));
+        public int DetectCalls { get; private set; }
+        public Task<ActiveEventApiResult<ExternalIntegrationsView>> DetectAsync(string environmentId, CancellationToken ct = default) { DetectCalls++; return Ok(View(true)); }
         public Task<ActiveEventApiResult<ExternalIntegrationView>> DetectOneAsync(string environmentId, string id, CancellationToken ct = default) => Ok(View(false).Integrations[1]);
         public Task<ActiveEventApiResult<ExternalIntegrationView>> SaveAsync(string environmentId, string? id, ExternalIntegrationRequest request, CancellationToken ct = default)
         { Saved.Add(request); return Ok(View(false).Integrations[1] with { Integration = new ExternalIntegration { Id = "new", Name = request.Name, ProviderType = request.ProviderType } }); }

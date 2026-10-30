@@ -60,6 +60,29 @@ public static class IntegrationReviewPrerunPresentation
     /// <summary>No enabled integration: the review has nothing to assess until Target Environment → Integration Catalog has one.</summary>
     public static bool NoEnabledIntegrations(IntegrationReviewReadiness readiness) => readiness.EnabledIntegrations == 0;
 
+    /// <summary>
+    /// Why nothing can be reviewed, as the actual condition: configured but all disabled; systems registered but no integration configured;
+    /// nothing registered while imported source evidence exists (detection possible); or nothing at all. Missing runtime setup never claims that
+    /// source evidence is missing.
+    /// </summary>
+    public static IqrEmptyState EmptyState(IntegrationReviewReadiness r, string? profileId)
+    {
+        var catalog = IntegrationReviewPresentation.IntegrationsHref(profileId);
+        var systems = ExternalIntegrationPresentation.ExternalHref(profileId ?? "");
+        if (r.ConfiguredIntegrations > 0)
+            return new("disabled", $"{r.ConfiguredIntegrations} integration{(r.ConfiguredIntegrations == 1 ? " is" : "s are")} configured, but none is enabled.",
+                "Integration Quality Review assesses enabled integrations only. Enable one in the Integration Catalog.", "Open Integration Catalog", catalog);
+        if (r.Systems.Count > 0)
+            return new("no-integrations", "Connected systems are registered, but no integration is configured.",
+                "Define which systems exchange data (producer → consumer) in the Integration Catalog; this review then assesses them.", "Open Integration Catalog", catalog);
+        if (r.AvailableSourceSnapshots.Count > 0)
+            return new("detectable", "No connected systems or integrations are configured for this environment.",
+                $"Imported source evidence is available ({r.AvailableSourceSnapshots.Count} snapshot{(r.AvailableSourceSnapshots.Count == 1 ? "" : "s")}): detect systems from it, then configure integrations. Source findings stay available in Source Analysis.",
+                "Detect connected systems", systems);
+        return new("nothing", "No connected systems, integrations or imported source evidence for this environment.",
+            "Import the project's source, or register systems manually, before configuring integrations.", "Open Connected Systems", systems);
+    }
+
     public static string ReadinessTone(IntegrationReviewReadiness readiness) =>
         !readiness.CanRun ? "blocked" : readiness.Headline == "Ready" ? "ready" : "limited";
 
@@ -302,3 +325,6 @@ public static class IntegrationReviewPrerunPresentation
         };
     }
 }
+
+/// <summary>The Integration Quality Review empty state: the actual condition, why, and the one action that changes it.</summary>
+public sealed record IqrEmptyState(string Key, string Title, string Detail, string ActionLabel, string ActionHref);

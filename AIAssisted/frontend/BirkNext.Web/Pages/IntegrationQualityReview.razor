@@ -76,9 +76,10 @@
             {
                 @if (IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness))
                 {
-                    <div class="iqr-card iqr-empty-state" data-testid="iqr-zero-integrations">
-                        <p><strong>No configured integrations.</strong> Integration Quality Review assesses the integrations configured and enabled under Target Environment → Integration Catalog.</p>
-                        <a class="btn-primary" href="@IntegrationsHref(profile)" data-testid="iqr-zero-integrations-action">Open Target Environment → Integration Catalog</a>
+                    var empty = IntegrationReviewPrerunPresentation.EmptyState(readiness, profile.Id);
+                    <div class="iqr-card iqr-empty-state" data-testid="iqr-zero-integrations" data-condition="@empty.Key">
+                        <p><strong>@empty.Title</strong> @empty.Detail</p>
+                        <a class="btn-primary" href="@empty.ActionHref" data-testid="iqr-zero-integrations-action">@empty.ActionLabel</a>
                     </div>
                 }
                 else if (subject is not null)
