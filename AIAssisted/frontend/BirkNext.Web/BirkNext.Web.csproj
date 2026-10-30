@@ -48,6 +48,8 @@
     <Compile Include="../../shared/AltinnEnvironmentContracts.cs" Link="Models/AltinnEnvironmentContracts.cs" />
     <Compile Include="../../shared/InteractionAuthContracts.cs" Link="Models/InteractionAuthContracts.cs" />
     <Compile Include="../../shared/ExternalIntegrationContracts.cs" Link="Models/ExternalIntegrationContracts.cs" />
+    <Compile Include="../../shared/ConnectedSystemTestData.cs" Link="Models/ConnectedSystemTestData.cs" />
+    <Compile Include="../../shared/TestDataUsageContexts.cs" Link="Models/TestDataUsageContexts.cs" />
     <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
     <Compile Include="../../shared/ProjectImportContracts.cs" Link="Models/ProjectImportContracts.cs" />

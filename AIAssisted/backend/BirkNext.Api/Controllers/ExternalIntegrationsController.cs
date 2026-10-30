@@ -13,7 +13,7 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/target-environments/external-integrations")]
-public sealed class ExternalIntegrationsController(ExternalIntegrationService integrations, EnvironmentSetupService setup) : ControllerBase
+public sealed class ExternalIntegrationsController(ExternalIntegrationService integrations, EnvironmentSetupService setup, ConnectedSystemTestDataService? testData = null) : ControllerBase
 {
     [AllowAnonymous]
     [HttpGet("providers")]
@@ -22,23 +22,43 @@ public sealed class ExternalIntegrationsController(ExternalIntegrationService in
     [AllowAnonymous]
     [HttpGet]
     public async Task<ActionResult<ExternalIntegrationsView>> List([FromQuery] string environmentId, CancellationToken ct) =>
-        Valid(environmentId) ? Ok(await integrations.ViewAsync(environmentId, detect: false, ct)) : BadRequest(new { message = "environmentId is required." });
+        Valid(environmentId) ? Ok(await WithTestData(await integrations.ViewAsync(environmentId, detect: false, ct), ct)) : BadRequest(new { message = "environmentId is required." });
+
+    private async Task<ExternalIntegrationsView> WithTestData(ExternalIntegrationsView view, CancellationToken ct) => testData is null ? view : await testData.AttachAsync(view, ct);
+
+    private async Task<ExternalIntegrationView> WithTestData(ExternalIntegrationView view, CancellationToken ct) => testData is null ? view : await testData.AttachAsync(view, ct);
+
+    /// <summary>Test Data requirements, explicit bindings and suggestions of one system (aliases only; never a value). Reading never binds.</summary>
+    [AllowAnonymous]
+    [HttpGet("{id}/test-data")]
+    public async Task<ActionResult<ConnectedSystemTestDataView>> TestData(string id, [FromQuery] string environmentId, CancellationToken ct) =>
+        testData is not null && await testData.ViewAsync(environmentId, id, ct) is { } view ? Ok(view) : NotFound(new { message = "The connected system does not exist." });
+
+    /// <summary>Apply / change / clear Test Data bindings (explicit). Incompatible assets are refused; values are never copied.</summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    [HttpPut("{id}/test-data")]
+    public async Task<ActionResult<ConnectedSystemTestDataView>> BindTestData(string id, [FromQuery] string environmentId, [FromBody] ConnectedSystemTestDataUpdate update, CancellationToken ct)
+    {
+        if (testData is null) return NotFound(new { message = "Test Data bindings are not available." });
+        var (view, problem) = await testData.UpdateAsync(environmentId, id, update ?? new([]), ct);
+        return view is not null ? Ok(view) : problem == "The connected system does not exist." ? NotFound(new { message = problem }) : UnprocessableEntity(new { message = problem });
+    }
 
     /// <summary>Detect integrations and settings: discovery only (proposals are accepted explicitly; nothing is saved).</summary>
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("detect")]
     public async Task<ActionResult<ExternalIntegrationsView>> Detect([FromQuery] string environmentId, CancellationToken ct) =>
-        Valid(environmentId) ? Ok(await integrations.ViewAsync(environmentId, detect: true, ct)) : BadRequest(new { message = "environmentId is required." });
+        Valid(environmentId) ? Ok(await WithTestData(await integrations.ViewAsync(environmentId, detect: true, ct), ct)) : BadRequest(new { message = "environmentId is required." });
 
     [AllowAnonymous]
     [HttpGet("{id}")]
     public async Task<ActionResult<ExternalIntegrationView>> Get(string id, [FromQuery] string environmentId, CancellationToken ct) =>
-        await integrations.ViewOneAsync(environmentId, id, detect: false, ct) is { } view ? Ok(view) : NotFound(new { message = "The integration does not exist." });
+        await integrations.ViewOneAsync(environmentId, id, detect: false, ct) is { } view ? Ok(await WithTestData(view, ct)) : NotFound(new { message = "The integration does not exist." });
 
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("{id}/detect")]
     public async Task<ActionResult<ExternalIntegrationView>> DetectOne(string id, [FromQuery] string environmentId, CancellationToken ct) =>
-        await integrations.ViewOneAsync(environmentId, id, detect: true, ct) is { } view ? Ok(view) : NotFound(new { message = "The integration does not exist." });
+        await integrations.ViewOneAsync(environmentId, id, detect: true, ct) is { } view ? Ok(await WithTestData(view, ct)) : NotFound(new { message = "The integration does not exist." });
 
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost]
@@ -53,7 +73,7 @@ public sealed class ExternalIntegrationsController(ExternalIntegrationService in
     private async Task<ActionResult<ExternalIntegrationView>> SaveAsync(string environmentId, string? id, ExternalIntegrationRequest request, CancellationToken ct)
     {
         var (saved, problems) = await integrations.SaveAsync(environmentId, id, request, "Configured manually", ct);
-        return saved is null ? BadRequest(new { message = string.Join(" ", problems) }) : Ok(await integrations.ViewOneAsync(environmentId, saved.Id, detect: false, ct));
+        return saved is null ? BadRequest(new { message = string.Join(" ", problems) }) : Ok(await WithTestData((await integrations.ViewOneAsync(environmentId, saved.Id, detect: false, ct))!, ct));
     }
 
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

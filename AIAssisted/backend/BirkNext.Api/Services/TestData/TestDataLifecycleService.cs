@@ -91,6 +91,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
             ValueEditable = valueEditable,
             ValueNote = valueEditable ? null : ValueNote(asset),
             CanRestoreDefault = asset.Ownership == TestDataOwnership.ProtectedDefault && editor?.CanRestoreDefault(asset) == true,
+            MetadataEditable = asset.Ownership == TestDataOwnership.Registered && !asset.MetadataFixed,
             Usages = await UsagesAsync(asset.Alias, ct),
         };
     }
@@ -116,14 +117,33 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         if (label is { Length: > 100 }) return (new(false, "The name is too long (at most 100 characters).", false, null, []), false);
         var valueChanged = value is { Length: > 0 } && value != asset.Value?.Reveal()?.Trim();
         var labelChanged = label is { Length: > 0 } && label != asset.Label;
-        if (!valueChanged && !labelChanged) return (new(false, "Nothing changed.", false, catalog.Summary(asset), []), false);
+        var role = request.SemanticRole is null ? asset.SemanticRole : Role(request.SemanticRole);
+        var contexts = request.AppliesTo is null ? asset.AppliesTo : Contexts(request.AppliesTo) ?? [];
+        var roleChanged = role != asset.SemanticRole;
+        var metadataChanged = roleChanged || !contexts.SequenceEqual(asset.AppliesTo);
+        if (!valueChanged && !labelChanged && !metadataChanged) return (new(false, "Nothing changed.", false, catalog.Summary(asset), []), false);
+        if (metadataChanged)
+        {
+            if (asset.MetadataFixed || asset.Ownership != TestDataOwnership.Registered)
+                return (new(false, "The semantic role and Applies to of this asset are declared by its source and cannot be changed here.", false, null, []), false);
+            if (request.SemanticRole is { Length: > 0 } && role is null) return (new(false, "The semantic role must be letters only (at most 40), e.g. Reporter or PersonId.", false, null, []), false);
+            // A role change that makes bound consumers incompatible is shown first and needs explicit confirmation; bindings are never changed here.
+            var bound = (await UsagesAsync(asset.Alias, ct)).Where(u => u.ConsumerType == BirkNext.Integrations.ConnectedSystemTestDataMatcher.ConsumerType).ToList();
+            if (roleChanged && bound.Count > 0 && !request.ConfirmRoleImpact)
+                return (new(false, $"Changing the role affects {bound.Count} bound consumer(s): {string.Join("; ", bound.Select(b => $"{b.ConsumerName} · {b.Location}"))}. "
+                    + "They stay bound and will show Needs review. Confirm to change the role.", false, null, bound), false);
+            registry.UpdateMetadata(asset.Alias, role, contexts);
+        }
 
         if (asset.ValueEditable && EditorOf(asset) is { } editor)
         {
             if (editor.Edit(asset, labelChanged ? label : null, valueChanged ? value : null, time.GetUtcNow()) is { } problem) return (new(false, problem, false, null, []), false);
         }
         else if (asset.Ownership == TestDataOwnership.Registered && !valueChanged)
-            registry.UpdateLabel(asset.Alias, label!);
+        {
+            if (labelChanged) registry.UpdateLabel(asset.Alias, label!);
+        }
+        else if (!labelChanged && !valueChanged) { }
         else
             return (new(false, valueChanged ? ValueNote(asset) : "This asset's name is owned by its source and cannot be edited here.", false, null, []), false);
 
@@ -146,6 +166,13 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         return (new(true, changed ? "Default value restored." : "The default value is already in use.", changed, updated is null ? null : catalog.Summary(updated),
             changed ? await UsagesAsync(asset.Alias, ct) : []), false);
     }
+
+    /// <summary>A semantic role id (letters only, at most 40) or null; "" clears it.</summary>
+    public static string? Role(string? role) => role?.Trim() is { Length: > 0 and <= 40 } r && r.All(char.IsLetter) ? r : null;
+
+    /// <summary>Known context ids only (unknown ids are dropped, never stored as free text); null when none.</summary>
+    public static List<string>? Contexts(IEnumerable<string>? ids) =>
+        ids?.Select(i => i.Trim()).Where(TestDataContexts.Valid).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } list ? list : null;
 
     // ── Delete / Replace ─────────────────────────────────────────────────────────────────────────────────────────────
 

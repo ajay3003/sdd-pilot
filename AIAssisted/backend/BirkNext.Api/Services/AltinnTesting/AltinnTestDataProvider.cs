@@ -23,6 +23,10 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
     private static partial Regex AliasPattern();
 
     public string Id => "altinn-local";
+
+    /// <summary>Canonical contexts of this source's identities (ids, not display text).</summary>
+    public static readonly IReadOnlyList<string> ReporterContexts = [TestDataContexts.AltinnIntake, TestDataContexts.Skolenaervaer];
+    public static readonly IReadOnlyList<string> ChildContexts = [TestDataContexts.AltinnIntake, TestDataContexts.SkolenaervaerReport];
     public string? StatusLabel(TestDataSourceStatus status) => status == TestDataSourceStatus.Available ? "Approved local references" : "No approved assets";
     public string Label => SourceLabel;
     public string Description => "Approved local test references supplied by environment or test configuration. Identifiers are never shown.";
@@ -54,6 +58,8 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 Value = string.IsNullOrWhiteSpace(reporter.TestIdPersonIdentifier) ? null : new TestDataValue(reporter.TestIdPersonIdentifier.Trim()),
                 Provenance = [Origin(reporter.BuiltIn, reporter.SessionExpiresAt)], Ownership = Ownership(reporter.BuiltIn, reporter.SessionExpiresAt),
                 ValueVersion = reporter.ValueVersion, ValueUpdatedAt = reporter.ValueUpdatedAt, ValueModified = reporter.ValueModified, ValueEditable = reporter.BuiltIn || reporter.SessionExpiresAt is not null,
+                // Declared by this source: a TestID reporter is the login/submission identity of Altinn intake (Skolenærvær).
+                SemanticRole = TestDataSemanticRoles.Reporter, AppliesTo = [.. ReporterContexts], MetadataFixed = true,
             });
         }
         foreach (var child in options.SyntheticChildren.Where(item => !string.IsNullOrWhiteSpace(item.Alias)))
@@ -70,6 +76,8 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 Value = string.IsNullOrWhiteSpace(child.TestPersonIdentifier) ? null : new TestDataValue(child.TestPersonIdentifier.Trim()),
                 Provenance = [Origin(child.BuiltIn, child.SessionExpiresAt)], Ownership = Ownership(child.BuiltIn, child.SessionExpiresAt),
                 ValueVersion = child.ValueVersion, ValueUpdatedAt = child.ValueUpdatedAt, ValueModified = child.ValueModified, ValueEditable = child.BuiltIn || child.SessionExpiresAt is not null,
+                // A synthetic child is the business identity inside the report payload — never an authentication identity.
+                SemanticRole = TestDataSemanticRoles.Child, AppliesTo = [.. ChildContexts], MetadataFixed = true,
             });
         }
         return assets;

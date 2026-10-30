@@ -192,6 +192,9 @@ public interface IExternalProviderHandler
     /// <summary>An integration BirkNext can propose for the environment from deterministic evidence, or none.</summary>
     Task<IReadOnlyList<ExternalIntegrationProposal>> ProposeAsync(string environmentId, IReadOnlyList<ExternalIntegration> existing, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ExternalIntegrationProposal>>([]);
+    /// <summary>Reusable system-level Test Data this provider needs (none by default: a generic API declares none until its runtime asks for them).</summary>
+    Task<IReadOnlyList<ConnectedSystemTestDataRequirement>> TestDataRequirementsAsync(ExternalIntegration integration, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ConnectedSystemTestDataRequirement>>([]);
 }
 
 /// <summary>
@@ -329,6 +332,10 @@ public sealed class AltinnProviderHandler(AltinnEnvironmentService altinn, Altin
 
     public async Task<Dictionary<string, string>> CurrentSettingsAsync(ExternalIntegration integration, CancellationToken ct) =>
         ToSettings(await store.GetAsync(integration.TargetEnvironmentId, ct));
+
+    /// <summary>Altinn intake: Reporter and Child identities (and the report payload fixture when a form contract is declared).</summary>
+    public async Task<IReadOnlyList<ConnectedSystemTestDataRequirement>> TestDataRequirementsAsync(ExternalIntegration integration, CancellationToken ct) =>
+        AltinnTestDataRequirements.For(await CurrentSettingsAsync(integration, ct));
 
     public static Dictionary<string, string> ToSettings(AltinnEnvironmentSettings saved)
     {

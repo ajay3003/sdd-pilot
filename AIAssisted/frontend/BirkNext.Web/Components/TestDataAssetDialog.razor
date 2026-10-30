@@ -93,6 +93,9 @@
                 _backendUsages = [.. _edit?.Usages ?? []];
                 _label = _edit?.Asset.Label;
                 _value = _edit?.Value;
+                _semanticRole = _edit?.Asset.SemanticRole ?? "";
+                _contexts.Clear();
+                foreach (var c in _edit?.Asset.AppliesTo ?? []) _contexts.Add(c);
             }
             else
             {
@@ -147,6 +150,8 @@
             <div><dt>Canonical ID</dt><dd class="tda-mono" data-testid="tda-id">@view.Asset.Id</dd></div>
             <div><dt>Type</dt><dd data-testid="tda-type">@TestDataDataTypes.Label(view.Asset.DataType ?? TestDataDataTypes.Of(view.Asset.Kind, view.Asset.MediaType))</dd></div>
             @if (view.Role is { } role) { <div><dt>Role</dt><dd data-testid="tda-role">@role</dd></div> }
+            <div><dt>Semantic role</dt><dd data-testid="tda-semantic-role">@TestDataSemanticRoles.Label(view.Asset.SemanticRole)@(view.MetadataEditable ? "" : " · declared by its source")</dd></div>
+            <div><dt>Applies to</dt><dd data-testid="tda-applies">@(view.Asset.AppliesTo is { Count: > 0 } contexts ? string.Join(", ", contexts.Select(TestDataContexts.Label)) : "Not specified")</dd></div>
             <div><dt>Scope</dt><dd data-testid="tda-scope">@(view.Asset.Environment ?? "Shared")</dd></div>
             <div><dt>Owner</dt><dd data-testid="tda-owner">@TestDataOwnerships.Label(view.Asset.Ownership)@(view.Asset.ValueModified ? " · Modified" : "")</dd></div>
             <div><dt>Usage</dt><dd data-testid="tda-usage-summary">@TestDataAssetWorkspace.UsedBy(usageCount)</dd></div>
@@ -158,6 +163,17 @@
             <div class="tda-actions">
                 <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="() => _confirmRestore = false">Cancel</button>
                 <button type="button" class="btn-primary" data-testid="tda-restore-confirm-button" disabled="@_busy" @onclick="RestoreAsync">Restore default value</button>
+            </div>
+            return;
+        }
+        if (_roleImpact is { } impact)
+        {
+            <div role="alert" data-testid="tda-role-impact">
+                <p><strong>Change the semantic role?</strong> @impact</p>
+            </div>
+            <div class="tda-actions">
+                <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="() => _roleImpact = null">Cancel</button>
+                <button type="button" class="btn-primary" data-testid="tda-role-confirm" disabled="@_busy" @onclick="() => SaveAsync(confirmed: true, confirmRole: true)">Change role</button>
             </div>
             return;
         }
@@ -191,25 +207,57 @@
             {
                 <p class="tda-muted" data-testid="tda-value-note">@note</p>
             }
+            @if (view.MetadataEditable)
+            {
+                <label for="@($"{_titleId}-semantic-role")">Semantic role</label>
+                <select id="@($"{_titleId}-semantic-role")" class="form-control" data-testid="tda-semantic-role-select" @bind="_semanticRole" aria-describedby="@($"{_titleId}-role-help")">
+                    <option value="">Not specified</option>
+                    @foreach (var r in TestDataSemanticRoles.All) { <option value="@r">@TestDataSemanticRoles.Label(r)</option> }
+                </select>
+                <p id="@($"{_titleId}-role-help")" class="tda-muted">What the value represents. Suggestions match the exact role — a Child is never offered where a Person ID is needed.</p>
+                <fieldset class="tda-contexts" data-testid="tda-applies-edit">
+                    <legend>Applies to</legend>
+                    @foreach (var (id, label) in TestDataContexts.All)
+                    {
+                        var contextId = id;
+                        <label><input type="checkbox" checked="@_contexts.Contains(contextId)" @onchange="e => ToggleContext(contextId, e.Value is true)" data-testid="tda-applies-option" data-context="@contextId" /> @label</label>
+                    }
+                    <p class="tda-muted">Helps BirkNext suggest this asset. It is not a binding: changing it never changes where the asset is actually used.</p>
+                </fieldset>
+            }
         </div>
         <div class="tda-actions">
             <button type="button" class="btn-secondary" data-testid="tda-cancel" @onclick="CloseAsync">Cancel</button>
-            @if (view.LabelEditable || view.ValueEditable) { <button type="button" class="btn-primary" data-testid="tda-save" disabled="@_busy" @onclick="() => SaveAsync(confirmed: false)">Save changes</button> }
+            @if (view.LabelEditable || view.ValueEditable || view.MetadataEditable) { <button type="button" class="btn-primary" data-testid="tda-save" disabled="@_busy" @onclick="() => SaveAsync(confirmed: false)">Save changes</button> }
             @if (view.CanRestoreDefault) { <button type="button" class="btn-secondary" data-testid="tda-restore" @onclick="() => _confirmRestore = true">Restore default value</button> }
         </div>
     };
 
-    private async Task SaveAsync(bool confirmed)
+    private string _semanticRole = "";
+    private readonly HashSet<string> _contexts = new(StringComparer.Ordinal);
+    private string? _roleImpact;
+
+    private void ToggleContext(string id, bool on) { if (on) _contexts.Add(id); else _contexts.Remove(id); }
+
+    private async Task SaveAsync(bool confirmed, bool confirmRole = false)
     {
         if (Api is not { } api || _edit is not { } view) return;
         var valueChanged = view.ValueEditable && (_value?.Trim() ?? "") != (view.Value ?? "") && !string.IsNullOrWhiteSpace(_value);
         // A value change of an asset in use needs the impact confirmation first.
         if (valueChanged && !confirmed && Usages.Count > 0) { _confirmImpact = true; return; }
+        var roleChanged = view.MetadataEditable && _semanticRole != (view.Asset.SemanticRole ?? "");
+        var contexts = TestDataContexts.All.Select(c => c.Id).Where(_contexts.Contains).ToList();
+        var contextsChanged = view.MetadataEditable && !contexts.SequenceEqual(view.Asset.AppliesTo ?? []);
         _busy = true; _error = null;
         try
         {
-            var (result, error) = await api.EditAsync(Asset.Id, new TestDataEditRequest(_label?.Trim() != view.Asset.Label ? _label : null, valueChanged ? _value : null));
-            if (result is not { Updated: true }) { _error = error ?? result?.Message ?? "The asset was not updated."; _confirmImpact = false; return; }
+            var (result, error) = await api.EditAsync(Asset.Id, new TestDataEditRequest(_label?.Trim() != view.Asset.Label ? _label : null, valueChanged ? _value : null)
+            {
+                SemanticRole = roleChanged ? _semanticRole : null, AppliesTo = contextsChanged ? contexts : null, ConfirmRoleImpact = confirmRole,
+            });
+            // A role change that affects bound consumers is shown first; the person confirms it explicitly.
+            if (result is { Updated: false, AffectedUsages.Count: > 0 } && roleChanged && !confirmRole) { _roleImpact = result.Message; return; }
+            if (result is not { Updated: true }) { _error = error ?? result?.Message ?? "The asset was not updated."; _confirmImpact = false; _roleImpact = null; return; }
             await OnClose.InvokeAsync(await Feedback("Test Data asset updated.", result.ValueChanged));
         }
         finally { _busy = false; }

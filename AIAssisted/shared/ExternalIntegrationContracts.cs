@@ -36,6 +36,8 @@ public sealed record ExternalIntegration
     public Dictionary<string, string> Settings { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> Provenance { get; init; } = new(StringComparer.Ordinal);
     public List<string> EvidenceReferences { get; init; } = [];
+    /// <summary>Explicit Test Data bindings (requirement → asset alias). References only — the value stays in Test Data and is resolved at run time.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ConnectedSystemTestDataBinding>? TestDataBindings { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }
@@ -68,6 +70,8 @@ public sealed record ExternalIntegrationView
     public AltinnDetectionSummary Detection { get; init; } = new(0, 0, 0, 0, 0, []);
     public bool Detected { get; init; }
     public IReadOnlyList<string> Notes { get; init; } = [];
+    /// <summary>Test Data requirements, bindings and suggestions — an independent readiness dimension (null when not assessed).</summary>
+    public ConnectedSystemTestDataView? TestData { get; init; }
     public static SetupReadinessItem Empty(string key) => new(key, key, SetupReadinessState.NotAssessed, "");
 }
 

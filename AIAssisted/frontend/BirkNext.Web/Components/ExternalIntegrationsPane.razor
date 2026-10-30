@@ -112,6 +112,10 @@
                             {
                                 <div data-key="@dim.Key"><dt>@dim.Label</dt><dd><span class="ei-pill ei-pill-@ExternalIntegrationPresentation.Tone(dim.State)" title="@dim.Reason">@ExternalIntegrationPresentation.Label(dim.State)</span></dd></div>
                             }
+                            @if (item.TestData is { } td)
+                            {
+                                <div data-key="test-data" data-testid="ei-dim-test-data"><dt>Test Data</dt><dd><span class="ei-pill ei-pill-@ExternalIntegrationPresentation.Tone(td.Readiness.State)" title="@td.Readiness.Reason">@td.StatusLabel</span></dd></div>
+                            }
                         </dl>
                     }
                     @if (!open)
@@ -134,6 +138,9 @@
                                 <GenericProviderPanel @key="integration.Id" EnvironmentId="@EnvironmentId" View="item" Descriptor="@_view.Providers.First(p => p.Type == integration.ProviderType)"
                                                       OnChanged="Replace" OnRemoved="RemovedAsync" />
                             }
+                            @* Test Data is its own section (not under advanced details): requirements, bindings, suggestions. *@
+                            <ConnectedSystemTestDataPanel @key="@($"td-{integration.Id}")" EnvironmentId="@EnvironmentId" IntegrationId="@integration.Id" View="item.TestData"
+                                                          OnChanged="view => ReplaceTestData(integration.Id, view)" />
                         </div>
                     }
                 </article>
@@ -216,6 +223,13 @@
     {
         if (_view is null) return;
         _view = _view with { Integrations = [.. _view.Integrations.Select(i => i.Integration.Id == one.Integration.Id ? one : i)] };
+    }
+
+    /// <summary>Test Data bindings were applied or cleared: refresh that system's Test Data dimension in place.</summary>
+    private void ReplaceTestData(string id, ConnectedSystemTestDataView view)
+    {
+        if (_view is null) return;
+        _view = _view with { Integrations = [.. _view.Integrations.Select(i => i.Integration.Id == id ? i with { TestData = view } : i)] };
     }
 
     private async Task RemovedAsync(string id) { _open.Remove(id); await ReloadAsync(); }

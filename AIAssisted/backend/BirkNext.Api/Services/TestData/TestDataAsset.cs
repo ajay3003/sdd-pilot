@@ -65,6 +65,12 @@ public sealed record TestDataAsset
     public bool ValueModified { get; init; }
     /// <summary>The value can be edited in Test Data (a protected default or a session entry; never backend configuration).</summary>
     public bool ValueEditable { get; init; }
+    /// <summary>What the value represents, declared by the provider or the registration (never derived from the alias).</summary>
+    public string? SemanticRole { get; init; }
+    /// <summary>Canonical usage contexts ("Applies to"): suggestion metadata, never a binding.</summary>
+    public List<string> AppliesTo { get; init; } = [];
+    /// <summary>Role and contexts are declared by the source and cannot be edited in Test Data.</summary>
+    public bool MetadataFixed { get; init; }
 }
 
 /// <summary>A data set: role → asset alias bindings chosen together for one purpose.</summary>

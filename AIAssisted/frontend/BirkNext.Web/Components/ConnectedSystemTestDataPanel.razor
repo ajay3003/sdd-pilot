@@ -1,0 +1,197 @@
+@using BirkNext.Integrations
+@using BirkNext.TestData
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Connected System → Test Data: the provider's requirements, what is bound (an alias — never a value), and deterministic suggestions from Test
+   Data metadata. A single strong match is preselected for "Apply selected" but nothing is saved until applied; ambiguity needs a choice; an
+   existing binding always wins. Credentials stay with Authentication: a Reporter identity says WHO signs in, never how. *@
+<section class="cstd" aria-labelledby="@_titleId" data-testid="cstd" data-status="@View?.StatusLabel">
+    <div class="cstd-head">
+        <h5 id="@_titleId" class="cstd-title">Test Data requirements</h5>
+        @if (View is { } v)
+        {
+            <span class="ei-pill ei-pill-@ExternalIntegrationPresentation.Tone(v.Readiness.State)" data-testid="cstd-status">@v.StatusLabel</span>
+            <span class="cstd-muted" data-testid="cstd-reason">@v.Readiness.Reason</span>
+        }
+        else
+        {
+            <span class="cstd-muted">@(_error ?? "Loading Test Data requirements…")</span>
+        }
+    </div>
+    <p class="visually-hidden" role="status" aria-live="polite" data-testid="cstd-message">@_message</p>
+    @if (_message is { Length: > 0 }) { <p class="cstd-note" aria-hidden="true">@_message</p> }
+    @if (View is { Rows.Count: 0 })
+    {
+        <p class="cstd-muted" data-testid="cstd-not-required">Not required — this system declares no Test Data requirements.</p>
+    }
+    else if (View is { } view)
+    {
+        <ul class="cstd-rows">
+            @foreach (var row in view.Rows)
+            {
+                var r = row;
+                var id = r.Requirement.Id;
+                var selectId = $"{_titleId}-{id}-select";
+                var changing = _changing.Contains(id);
+                <li class="cstd-row" data-testid="cstd-row" data-requirement="@id" data-state="@r.State">
+                    <div class="cstd-row-head">
+                        <strong>@r.Requirement.DisplayName</strong>
+                        <span class="cstd-muted">@(r.Requirement.Required ? "Required" : "Optional") · @TestDataSemanticRoles.Label(r.Requirement.SemanticRole) · @TestDataDataTypes.Label(r.Requirement.DataType)</span>
+                        <span class="ei-pill ei-pill-@Tone(r.State)" data-testid="cstd-state">@ConnectedSystemTestDataMatcher.StateLabel(r.State)</span>
+                    </div>
+                    <p class="cstd-muted">@r.Requirement.Description</p>
+                    @if (r.State is ConnectedSystemTestDataState.Bound or ConnectedSystemTestDataState.NeedsReview)
+                    {
+                        <p data-testid="cstd-bound"><code>@r.BoundAlias</code>@(r.BoundLabel is { } label ? $" · {label}" : "") <span class="cstd-muted">· @r.Detail</span></p>
+                    }
+                    else if (r.State == ConnectedSystemTestDataState.Suggested && !changing)
+                    {
+                        <label class="cstd-check" data-testid="cstd-suggestion">
+                            <input type="checkbox" checked="@_checked.Contains(id)" @onchange="e => Toggle(id, r.Suggested!, e.Value is true)" data-testid="cstd-apply-check"
+                                   aria-describedby="@($"{selectId}-why")" />
+                            Use suggested <code>@r.Suggested</code> @(_checked.Contains(id) ? "(selected — not saved yet)" : "")
+                        </label>
+                        <p class="cstd-muted" id="@($"{selectId}-why")">@r.Detail</p>
+                    }
+                    else
+                    {
+                        <p class="@(r.State is ConnectedSystemTestDataState.Missing or ConnectedSystemTestDataState.MissingReference ? "cstd-warn" : "cstd-muted")" data-testid="cstd-detail">@r.Detail</p>
+                        @if (r.State == ConnectedSystemTestDataState.MissingReference && r.Suggested is { } replacement)
+                        {
+                            <label class="cstd-check" data-testid="cstd-suggestion">
+                                <input type="checkbox" checked="@_checked.Contains(id)" @onchange="e => Toggle(id, replacement, e.Value is true)" data-testid="cstd-apply-check" />
+                                Use suggested replacement <code>@replacement</code> (not bound until applied)
+                            </label>
+                        }
+                    }
+                    @if (changing || r.State is ConnectedSystemTestDataState.NeedsSelection or ConnectedSystemTestDataState.Missing or ConnectedSystemTestDataState.OptionalMissing or ConnectedSystemTestDataState.MissingReference && r.Candidates.Count > 0)
+                    {
+                        @if (r.Candidates.Count > 0)
+                        {
+                            <label for="@selectId" class="cstd-select">Choose asset
+                                <select id="@selectId" value="@(_selected.GetValueOrDefault(id) ?? "")" @onchange="e => Choose(id, e.Value?.ToString())" data-testid="cstd-select">
+                                    <option value="">Choose…</option>
+                                    @foreach (var c in r.Candidates) { <option value="@c.Alias">@c.Alias@(c.Label is { } l ? $" · {l}" : "") — @(c.Strength == TestDataMatchStrength.Strong ? "strong match" : "possible") · @c.Scope</option> }
+                                </select></label>
+                        }
+                        else
+                        {
+                            <p class="cstd-muted">No compatible @TestDataSemanticRoles.Label(r.Requirement.SemanticRole) asset exists yet.</p>
+                        }
+                    }
+                    <p class="cstd-actions">
+                        @if (r.State is ConnectedSystemTestDataState.Bound or ConnectedSystemTestDataState.NeedsReview or ConnectedSystemTestDataState.Suggested)
+                        {
+                            <button type="button" class="btn btn-link btn-sm" aria-expanded="@(changing ? "true" : "false")" @onclick="() => ToggleChange(id)" data-testid="cstd-change">@(changing ? "Cancel change" : "Change")<span class="visually-hidden"> @r.Requirement.DisplayName</span></button>
+                        }
+                        @if (r.BoundAlias is not null)
+                        {
+                            <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => ClearAsync(id)" data-testid="cstd-clear">Clear binding<span class="visually-hidden"> of @r.Requirement.DisplayName</span></button>
+                        }
+                        @if (r.State is ConnectedSystemTestDataState.Missing or ConnectedSystemTestDataState.OptionalMissing or ConnectedSystemTestDataState.NeedsSelection or ConnectedSystemTestDataState.MissingReference)
+                        {
+                            <a class="btn btn-link btn-sm" href="@CreateHref(r.Requirement)" data-testid="cstd-create">Create Test Data<span class="visually-hidden"> for @r.Requirement.DisplayName</span></a>
+                        }
+                        <a class="btn btn-link btn-sm" href="/test-data" data-testid="cstd-open">Open Test Data</a>
+                    </p>
+                </li>
+            }
+        </ul>
+        <div class="cstd-apply">
+            <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || _checked.Count == 0)" @onclick="ApplyAsync" data-testid="cstd-apply">Apply selected (@_checked.Count)</button>
+            <span class="cstd-muted">Suggestions are preselected but saved only when you apply. A binding stores a reference to the Test Data asset — never its value; editing the asset's value later needs no rebinding. Credentials stay with Authentication.</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public string IntegrationId { get; set; } = "";
+    [Parameter] public ConnectedSystemTestDataView? View { get; set; }
+    [Parameter] public EventCallback<ConnectedSystemTestDataView> OnChanged { get; set; }
+
+    private readonly string _titleId = $"cstd-{Guid.NewGuid():N}";
+    private readonly HashSet<string> _checked = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _changing = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string?> _selected = new(StringComparer.Ordinal);
+    private string? _preselectedFor;
+    private string? _message, _error;
+    private bool _busy;
+
+    private IExternalIntegrationsApiService? Api => Services.GetService(typeof(IExternalIntegrationsApiService)) as IExternalIntegrationsApiService;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (View is null && Api is { } api)
+        {
+            // A host (or test double) without Test Data support answers nothing: the section then says so instead of failing.
+            var pending = api.TestDataAsync(EnvironmentId, IntegrationId);
+            var result = pending is null ? null : await pending;
+            View = result?.Value;
+            _error = result?.Error ?? (result is null ? "Test Data requirements are not available." : null);
+        }
+        Preselect();
+    }
+
+    /// <summary>A single strong match is preselected (once per loaded view) — announced and never saved until "Apply selected".</summary>
+    private void Preselect()
+    {
+        if (View is null) return;
+        var key = string.Join("|", View.Rows.Select(r => $"{r.Requirement.Id}:{r.State}:{r.Suggested}:{r.BoundAlias}"));
+        if (_preselectedFor == key) return;
+        _preselectedFor = key;
+        _checked.Clear(); _selected.Clear();
+        foreach (var r in View.Rows.Where(r => r.State == ConnectedSystemTestDataState.Suggested && r.Suggested is not null))
+        {
+            _checked.Add(r.Requirement.Id);
+            _selected[r.Requirement.Id] = r.Suggested;
+        }
+        if (_checked.Count > 0) _message = $"{_checked.Count} strong Test Data suggestion(s) preselected — not saved until you apply.";
+    }
+
+    private void Toggle(string id, string alias, bool on)
+    {
+        if (on) { _checked.Add(id); _selected[id] = alias; } else { _checked.Remove(id); _selected.Remove(id); }
+    }
+
+    private void Choose(string id, string? alias)
+    {
+        if (string.IsNullOrEmpty(alias)) { _selected.Remove(id); _checked.Remove(id); return; }
+        _selected[id] = alias; _checked.Add(id);
+    }
+
+    private void ToggleChange(string id) { if (!_changing.Remove(id)) _changing.Add(id); }
+
+    private async Task ApplyAsync() =>
+        await SaveAsync(new([.. _checked.Select(id => new ConnectedSystemTestDataBindingChange(id, _selected.GetValueOrDefault(id)))]), $"Applied {_checked.Count} Test Data binding(s).");
+
+    private Task ClearAsync(string id) => SaveAsync(new([new ConnectedSystemTestDataBindingChange(id, null)]), "Binding cleared.");
+
+    private async Task SaveAsync(ConnectedSystemTestDataUpdate update, string done)
+    {
+        if (Api is not { } api) return;
+        _busy = true;
+        var result = await api.BindTestDataAsync(EnvironmentId, IntegrationId, update);
+        _busy = false;
+        if (result.Value is { } view)
+        {
+            View = view; _changing.Clear(); _preselectedFor = null; Preselect();
+            _message = done;
+            await OnChanged.InvokeAsync(view);
+        }
+        else _message = $"Not saved: {result.Error}";
+    }
+
+    private static string Tone(ConnectedSystemTestDataState state) => ExternalIntegrationPresentation.Tone(state switch
+    {
+        ConnectedSystemTestDataState.Bound => SetupReadinessState.Ready,
+        ConnectedSystemTestDataState.Missing or ConnectedSystemTestDataState.MissingReference => SetupReadinessState.Blocked,
+        ConnectedSystemTestDataState.OptionalMissing => SetupReadinessState.NotApplicable,
+        _ => SetupReadinessState.Partial,
+    });
+
+    /// <summary>Test Data creation with the requirement prefilled (role, contexts, scope) — nothing is saved by following it.</summary>
+    private string CreateHref(ConnectedSystemTestDataRequirement r) =>
+        $"/test-data?role={Uri.EscapeDataString(r.SemanticRole)}&appliesTo={Uri.EscapeDataString(string.Join(",", r.Contexts))}";
+}

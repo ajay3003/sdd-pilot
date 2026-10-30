@@ -624,6 +624,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataLifecycleServi
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataAssetEditor, BirkNext.Api.Services.AltinnTesting.AltinnTestDataEditor>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.PerformanceTests.PerformanceTestDataReferences>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.CriticalE2E.CriticalE2ETestDataReferences>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataReferences>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataService>();
 
 // Altinn app testing (Skolenærvær Rapportmottak): TT02 App API steps executed by the shared journey runner after the tester's own
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.

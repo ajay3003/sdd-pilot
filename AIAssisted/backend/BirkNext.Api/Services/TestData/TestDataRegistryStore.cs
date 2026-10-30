@@ -24,6 +24,10 @@ public sealed record RegisteredTestDataAsset
     public string? StructureFingerprint { get; init; }
     /// <summary>"Source Analysis candidate" or "Manually registered".</summary>
     public string Origin { get; init; } = "Manually registered";
+    /// <summary>What the asset represents (<see cref="TestDataSemanticRoles"/>) — chosen explicitly; null = not specified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SemanticRole { get; init; }
+    /// <summary>"Applies to" context ids (<see cref="TestDataContexts"/>): suggestion metadata, never a binding.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? AppliesTo { get; init; }
     public DateTimeOffset RegisteredAt { get; init; }
     public string Id => $"{RegisteredTestDataProvider.ProviderId}:{Alias}";
 }
@@ -149,6 +153,18 @@ public sealed class TestDataRegistryStore
     }
 
     /// <summary>Changes a registered asset's label (metadata only; registered assets hold no value). False when no such asset.</summary>
+    /// <summary>Changes the semantic role / "Applies to" of a registered asset (metadata only; bindings are never changed here).</summary>
+    public bool UpdateMetadata(string alias, string? role, List<string>? appliesTo)
+    {
+        lock (_gate)
+        {
+            if (_registry.Assets.All(a => a.Alias != alias)) return false;
+            _registry = _registry with { Assets = [.. _registry.Assets.Select(a => a.Alias == alias ? a with { SemanticRole = role, AppliesTo = appliesTo is { Count: > 0 } ? appliesTo : null } : a)] };
+            Write();
+            return true;
+        }
+    }
+
     public bool UpdateLabel(string alias, string label)
     {
         lock (_gate)
@@ -268,6 +284,7 @@ public sealed class RegisteredTestDataProvider(TestDataRegistryStore store) : IT
             ApprovalDetail = "Registered in Test Data; approve it explicitly here before consumers use it.", Sensitivity = TestDataSensitivity.Sensitive,
             Source = "Registered assets", Provenance = provenance, Fields = [.. a.Fields], Tags = [.. a.Tags], SchemaRef = a.SchemaRef, CandidateId = a.CandidateId,
             ReviewRequested = a.CandidateId is not null, Ownership = TestDataOwnership.Registered,
+            SemanticRole = a.SemanticRole, AppliesTo = [.. a.AppliesTo ?? []],
             Schema = a.DataType == TestDataDataType.XmlPayload && a.SchemaRef is { } xsd && xsd.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)
                 ? new TestDataSchemaReference(xsd, a.SnapshotId, null, null, xsd) : null,
         };

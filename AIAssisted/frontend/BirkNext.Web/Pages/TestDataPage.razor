@@ -107,7 +107,11 @@
         @* Session test identities: the approved synthetic reporter and child for Altinn runs, entered here instead of a terminal. *@
         <section class="td-card" aria-labelledby="td-session-heading" data-testid="td-session-identities">
             <h2 id="td-session-heading">Session test identities</h2>
-            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" Assets="@(_catalog?.Assets ?? [])" />
+            @if (CreateRole is { Length: > 0 } createRole)
+            {
+                <p class="td-note" data-testid="td-create-context">Create Test Data for a Connected System requirement: <strong>@TestDataSemanticRoles.Label(createRole)</strong>@(CreateAppliesTo is { Length: > 0 } applies ? $" · applies to {string.Join(", ", applies.Split(',').Select(TestDataContexts.Label))}" : ""). Nothing is bound until you apply it in Target Environment → Connected Systems.</p>
+            }
+            <SessionTestIdentitiesPanel OnChanged="ReloadAsync" Assets="@(_catalog?.Assets ?? [])" InitialRole="@(CreateRole?.ToLowerInvariant())" />
         </section>
 
         @* XML fixtures: reusable message payloads for a test pack's contract, created here from the identities above (generation and validation
@@ -200,8 +204,10 @@
             <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
                 <h2 id="td-assets-heading">Test Data assets <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
                 <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
-                    <label>Search <input type="search" class="form-control" data-testid="td-search" placeholder="Name, type, contract, consumer, field" @bind="_query" @bind:event="oninput" /></label>
+                    <label>Search <input type="search" class="form-control" data-testid="td-search" placeholder="Name, role, applies to, type, contract, consumer, field" @bind="_query" @bind:event="oninput" /></label>
                     @Filter("Data type", "td-filter-type", _type, v => _type = v, catalog.Assets.Select(P.DataType).Distinct().Order().Select(t => (t.ToString(), TestDataDataTypes.Label(t))))
+                    @Filter("Role", "td-filter-role", _role, v => _role = v, catalog.Assets.Select(a => a.SemanticRole ?? "").Distinct().Order().Select(r => (r.Length == 0 ? NoRole : r, TestDataSemanticRoles.Label(r))))
+                    @Filter("Applies to", "td-filter-applies", _applies, v => _applies = v, catalog.Assets.SelectMany(a => a.AppliesTo ?? []).Distinct().Order().Select(c => (c, TestDataContexts.Label(c))))
                     @Filter("Status", "td-filter-status", _status, v => _status = v, catalog.Assets.Select(P.Status).Distinct().Order().Select(s => (s.ToString(), TestDataCatalogRules.Label(s))))
                     @Filter("Scope", "td-filter-scope", _scope, v => _scope = v, catalog.Assets.Select(P.Scope).Distinct().Order().Select(s => (s, s)))
                     @Filter("Source", "td-filter-source", _source, v => _source = v, catalog.Assets.Select(a => a.Source).Distinct().Order().Select(s => (s, s)))
@@ -222,8 +228,8 @@
                 else
                 {
                     <table class="td-table" data-testid="td-asset-table">
-                        <caption class="visually-hidden">Reusable Test Data assets with type, status, scope, source, contract status and consumers</caption>
-                        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Contract</th><th scope="col">Consumers</th><th scope="col">Actions</th></tr></thead>
+                        <caption class="visually-hidden">Reusable Test Data assets with type, semantic role, applies to, status, scope and consumers</caption>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Role</th><th scope="col">Applies to</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Consumers</th><th scope="col">Actions</th></tr></thead>
                         <tbody>
                             @foreach (var asset in shown)
                             {
@@ -236,9 +242,10 @@
                                         @if (asset.ProtectedDefault) { <span class="td-pill td-pill-neutral" data-testid="td-protected">Protected default@(asset.ValueModified ? " · Modified" : "")</span> }
                                         @if (asset.Ownership == TestDataOwnership.Generated && TestDataValueVersions.Changed(asset, catalog.Assets).Count > 0) { <span class="td-pill td-pill-attention" data-testid="td-mapped-changed">Mapped Test Data changed</span> }</th>
                                     <td data-label="Type" data-testid="td-data-type">@TestDataDataTypes.Label(P.DataType(asset))</td>
+                                    <td data-label="Role" data-testid="td-role">@P.Role(asset)</td>
+                                    <td data-label="Applies to" data-testid="td-applies" title="@string.Join(", ", (asset.AppliesTo ?? []).Select(TestDataContexts.Label))">@P.AppliesTo(asset)</td>
                                     <td data-label="Status"><span class="td-pill td-pill-@P.StatusTone(status)" data-testid="td-status">@TestDataCatalogRules.Label(status)</span></td>
                                     <td data-label="Scope" data-testid="td-scope">@P.Scope(asset)</td>
-                                    <td data-label="Contract"><span class="td-pill td-pill-@P.ContractTone(asset)" data-testid="td-contract">@P.ContractLabel(asset)</span></td>
                                     @{ var consumerCount = TestDataAssetWorkspace.Consumers(asset, workspaceUsages); }
                                     <td data-label="Consumers" data-testid="td-consumers"><span data-testid="td-used-count">@P.UsedBy(consumerCount)</span>
                                         @if (consumerCount > 0) { <button type="button" class="td-link-button" data-testid="td-view-usages" aria-label="@($"View usages of {asset.Alias}")" @onclick="() => OpenDialog(asset, TestDataAssetDialog.Mode.Usages)">View usages</button> }</td>
@@ -268,6 +275,8 @@
                                                     <div><dt>Data type</dt><dd data-testid="td-type">@TestDataDataTypes.Label(P.DataType(asset)) · @P.TypeLabel(asset)</dd></div>
                                                     <div><dt>Value</dt><dd data-testid="td-value">@P.ValueLabel(asset)</dd></div>
                                                     <div><dt>Sensitivity</dt><dd data-testid="td-sensitivity">@asset.Sensitivity</dd></div>
+                                                    <div><dt>Semantic role</dt><dd data-testid="td-role-detail">@P.Role(asset)@(asset.MetadataFixed ? " · declared by its source" : "")</dd></div>
+                                                    <div><dt>Applies to</dt><dd data-testid="td-applies-detail">@(asset.AppliesTo is { Count: > 0 } contexts ? string.Join(", ", contexts.Select(TestDataContexts.Label)) : "Not specified") — suggestion metadata; actual usage is listed under Consumers</dd></div>
                                                     @if (asset.EntityType is { } entity) { <div><dt>Refers to</dt><dd>@entity</dd></div> }
                                                     @if (TestDataCatalogRules.Version(asset) is { } version) { <div><dt>Version</dt><dd class="td-mono" data-testid="td-version">@version[..12]…</dd></div> }
                                                     @if (asset.ExpiresAt is { } expires) { <div><dt>Expires</dt><dd>@expires.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
@@ -441,6 +450,9 @@
 @code {
     // Consumer requirement context from a deep link (/test-data?consumer=…&variable=…&dataType=…). Generic: any consumer id and type.
     [SupplyParameterFromQuery(Name = "consumer")] public string? Consumer { get; set; }
+    /// <summary>"Create Test Data" from a Connected System requirement: the semantic role and contexts to prefill (never saved by following the link).</summary>
+    [SupplyParameterFromQuery(Name = "role")] public string? CreateRole { get; set; }
+    [SupplyParameterFromQuery(Name = "appliesTo")] public string? CreateAppliesTo { get; set; }
     [SupplyParameterFromQuery(Name = "consumerType")] public string? ConsumerType { get; set; }
     [SupplyParameterFromQuery(Name = "consumerName")] public string? ConsumerName { get; set; }
     [SupplyParameterFromQuery(Name = "operation")] public string? Operation { get; set; }
@@ -463,10 +475,11 @@
     private IReadOnlyList<(string Id, string Label)> _scopes = [];
     private string? _error, _detailError, _openId, _matchesFor, _confirmed, _actionStatus, _requestStatus;
     private bool _loading = true, _busy;
-    private string _query = "", _type = "", _status = "", _scope = "", _source = "", _contract = "", _usage = "", _consumer = "", _reqStatus = "", _reqConsumer = "";
+    private string _query = "", _type = "", _status = "", _scope = "", _source = "", _contract = "", _usage = "", _consumer = "", _reqStatus = "", _reqConsumer = "", _role = "", _applies = "";
+    private const string NoRole = "(none)";
 
-    private bool FiltersActive => (_query + _type + _status + _scope + _source + _contract + _usage + _consumer).Length > 0;
-    private void ClearFilters() { _query = _type = _status = _scope = _source = _contract = _usage = _consumer = ""; }
+    private bool FiltersActive => (_query + _type + _status + _scope + _source + _contract + _usage + _consumer + _role + _applies).Length > 0;
+    private void ClearFilters() { _query = _type = _status = _scope = _source = _contract = _usage = _consumer = _role = _applies = ""; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -493,6 +506,8 @@
         .Where(asset => P.Matches(asset, _query, usages))
         .Where(asset => _type.Length == 0 || P.DataType(asset).ToString() == _type)
         .Where(asset => _status.Length == 0 || P.Status(asset).ToString() == _status)
+        .Where(asset => _role.Length == 0 || (asset.SemanticRole ?? NoRole) == _role)
+        .Where(asset => _applies.Length == 0 || asset.AppliesTo?.Contains(_applies) == true)
         .Where(asset => _scope.Length == 0 || P.Scope(asset) == _scope)
         .Where(asset => _source.Length == 0 || asset.Source == _source)
         .Where(asset => _contract.Length == 0 || P.ContractLabel(asset) == _contract)

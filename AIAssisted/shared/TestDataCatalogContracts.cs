@@ -99,6 +99,10 @@ public sealed record TestDataRegistrationRequest
     /// <summary>Manual registration: safe field/parameter names only (never values).</summary>
     public List<string> Fields { get; init; } = [];
     public List<string> Tags { get; init; } = [];
+    /// <summary>What the asset represents (<see cref="TestDataSemanticRoles"/>); optional.</summary>
+    public string? SemanticRole { get; init; }
+    /// <summary>"Applies to" context ids (<see cref="TestDataContexts"/>); optional suggestion metadata.</summary>
+    public List<string>? AppliesTo { get; init; }
 }
 
 /// <summary>
@@ -325,10 +329,20 @@ public sealed record TestDataEditView
     public string? ValueNote { get; init; }
     /// <summary>A protected default with a seeded value to go back to ("Restore default value").</summary>
     public bool CanRestoreDefault { get; init; }
+    /// <summary>Semantic role and "Applies to" can be changed here (registered assets); otherwise declared by the source.</summary>
+    public bool MetadataEditable { get; init; }
     public IReadOnlyList<TestDataAssetUsage> Usages { get; init; } = [];
 }
 
-public sealed record TestDataEditRequest(string? Label, string? Value);
+public sealed record TestDataEditRequest(string? Label, string? Value)
+{
+    /// <summary>New semantic role (registered assets only); null = unchanged, "" = not specified.</summary>
+    public string? SemanticRole { get; init; }
+    /// <summary>New "Applies to" context ids (registered assets only); null = unchanged.</summary>
+    public List<string>? AppliesTo { get; init; }
+    /// <summary>The person confirmed a role change that affects bound consumers.</summary>
+    public bool ConfirmRoleImpact { get; init; }
+}
 
 public sealed record TestDataEditResult(bool Updated, string Message, bool ValueChanged, TestDataAssetSummary? Asset, IReadOnlyList<TestDataAssetUsage> AffectedUsages);
 

@@ -143,6 +143,7 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
             CandidateId = asset.CandidateId,
             Reviewable = true,
             Ownership = asset.Ownership,
+            SemanticRole = asset.SemanticRole, AppliesTo = asset.AppliesTo.Count > 0 ? [.. asset.AppliesTo] : null, MetadataFixed = asset.MetadataFixed,
             ValueVersion = asset.ValueVersion, ValueUpdatedAt = asset.ValueUpdatedAt, ValueModified = asset.ValueModified, ValueEditable = asset.ValueEditable,
         };
     }

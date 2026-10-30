@@ -21,6 +21,12 @@ public interface IExternalIntegrationsApiService
         IReadOnlyList<string>? testPacks = null, CancellationToken ct = default);
     Task<ActiveEventApiResult<SetupPreflightResult>> PreflightAsync(string environmentId, SetupPreflightRequest request, CancellationToken ct = default);
     Task<ActiveEventApiResult<SetupApplyPackageResult>> ApplyAsync(string environmentId, SetupApplyPackageRequest request, CancellationToken ct = default);
+    /// <summary>Test Data requirements, explicit bindings and suggestions of one system (aliases only). Reading never binds.</summary>
+    Task<ActiveEventApiResult<ConnectedSystemTestDataView>> TestDataAsync(string environmentId, string id, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<ConnectedSystemTestDataView>(null, "Test Data bindings are not available."));
+    /// <summary>Apply / change / clear bindings explicitly.</summary>
+    Task<ActiveEventApiResult<ConnectedSystemTestDataView>> BindTestDataAsync(string environmentId, string id, ConnectedSystemTestDataUpdate update, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<ConnectedSystemTestDataView>(null, "Test Data bindings are not available."));
 
     Task<ActiveEventApiResult<IReadOnlyList<SetupLibraryItemView>>> LibraryAsync(ExternalProviderType? provider = null, SetupLibraryStatus? status = null, string? testPack = null,
         SetupScope? setupType = null, CancellationToken ct = default);
@@ -63,6 +69,11 @@ public sealed class ExternalIntegrationsApiService(HttpClient http) : IExternalI
         Send<SetupPreflightResult>(HttpMethod.Post, $"{Base}/setup/preflight?environmentId={E(environmentId)}", Body(request), ct);
     public Task<ActiveEventApiResult<SetupApplyPackageResult>> ApplyAsync(string environmentId, SetupApplyPackageRequest request, CancellationToken ct = default) =>
         Send<SetupApplyPackageResult>(HttpMethod.Post, $"{Base}/setup/apply?environmentId={E(environmentId)}", Body(request), ct, environment: environmentId);
+
+    public Task<ActiveEventApiResult<ConnectedSystemTestDataView>> TestDataAsync(string environmentId, string id, CancellationToken ct = default) =>
+        Send<ConnectedSystemTestDataView>(HttpMethod.Get, $"{Base}/{E(id)}/test-data?environmentId={E(environmentId)}", null, ct);
+    public Task<ActiveEventApiResult<ConnectedSystemTestDataView>> BindTestDataAsync(string environmentId, string id, ConnectedSystemTestDataUpdate update, CancellationToken ct = default) =>
+        Send<ConnectedSystemTestDataView>(HttpMethod.Put, $"{Base}/{E(id)}/test-data?environmentId={E(environmentId)}", Body(update), ct, environment: environmentId);
 
     public Task<ActiveEventApiResult<IReadOnlyList<SetupLibraryItemView>>> LibraryAsync(ExternalProviderType? provider = null, SetupLibraryStatus? status = null, string? testPack = null,
         SetupScope? setupType = null, CancellationToken ct = default) =>

@@ -161,7 +161,13 @@ public static class TestDataPresentation
         string.IsNullOrWhiteSpace(consumer.Parent) ? consumer.DisplayName : $"{consumer.Parent} › {consumer.DisplayName}";
 
     /// <summary>No reference is not "unusable": a ready asset may simply not be referenced by a consumer yet.</summary>
-    public static string UsedBy(int consumers) => consumers switch { 0 => "No consumer references yet", 1 => "Used by 1 consumer", _ => $"Used by {consumers} consumers" };
+    public static string UsedBy(int consumers) => consumers switch { 0 => "Unused", _ => $"Used by {consumers}" };
+
+    /// <summary>"Reporter", "Not specified".</summary>
+    public static string Role(TestDataAssetSummary asset) => TestDataSemanticRoles.Label(asset.SemanticRole);
+
+    /// <summary>"Altinn intake +1" (table) — the full list is in the details.</summary>
+    public static string AppliesTo(TestDataAssetSummary asset) => TestDataContexts.Summary(asset.AppliesTo);
 
     /// <summary>A proposed alias from a candidate label ("CreatePersonRequest request body" → "createpersonrequest-request-body"); the person edits it.</summary>
     public static string SuggestAlias(string label)
@@ -178,6 +184,7 @@ public static class TestDataPresentation
         var q = query.Trim();
         bool Has(string? text) => text?.Contains(q, StringComparison.OrdinalIgnoreCase) == true;
         return Has(asset.Alias) || Has(asset.Label) || Has(TestDataDataTypes.Label(DataType(asset))) || Has(asset.SchemaRef) || Has(asset.Schema?.SchemaPath) || Has(asset.Source)
+            || Has(asset.SemanticRole) || Has(TestDataSemanticRoles.Label(asset.SemanticRole)) && asset.SemanticRole is not null || (asset.AppliesTo ?? []).Any(c => Has(c) || Has(TestDataContexts.Label(c)))
             || (asset.Fields ?? []).Any(Has) || asset.Provenance.Any(f => Has(f.Label) || Has(f.Value) && f.Label is "Contract" or "Source" or "Registered as")
             || usages.Where(u => u.AssetId == asset.Id).Any(u => Has(Consumer(u.Consumer)) || Has(u.Usage));
     }

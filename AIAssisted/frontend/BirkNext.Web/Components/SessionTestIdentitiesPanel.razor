@@ -89,7 +89,14 @@
     private string? _alias, _label, _identifier, _confirm, _message;
     private bool _knownToPerson = true, _busy;
 
-    protected override void OnInitialized() => _api = Services.GetService(typeof(IAltinnEnvironmentApiService)) as IAltinnEnvironmentApiService;
+    /// <summary>Prefill from a Connected System's "Create Test Data" link ("reporter" or "child"); nothing is created until Add.</summary>
+    [Parameter] public string? InitialRole { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _api = Services.GetService(typeof(IAltinnEnvironmentApiService)) as IAltinnEnvironmentApiService;
+        if (InitialRole is "reporter" or "child") _role = InitialRole;
+    }
 
     private async Task AddAsync()
     {

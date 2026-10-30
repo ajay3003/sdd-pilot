@@ -116,6 +116,7 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
             Alias = alias, Label = string.IsNullOrWhiteSpace(request.Label) ? null : request.Label.Trim(), DataType = request.DataType,
             EnvironmentId = string.IsNullOrWhiteSpace(request.EnvironmentId) ? null : request.EnvironmentId.Trim(), RegisteredAt = time.GetUtcNow(),
             Tags = [.. request.Tags.Select(t => t.Trim()).Where(t => t.Length is > 0 and <= 40).Distinct(StringComparer.OrdinalIgnoreCase).Take(20)],
+            SemanticRole = TestDataLifecycleService.Role(request.SemanticRole), AppliesTo = TestDataLifecycleService.Contexts(request.AppliesTo),
         };
         if (request.SnapshotId is { } snapshotId && request.CandidateId is { Length: > 0 } candidateId)
         {

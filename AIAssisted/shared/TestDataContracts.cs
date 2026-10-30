@@ -156,7 +156,36 @@ public sealed record TestDataAssetSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ValueModified { get; init; }
     /// <summary>The actual value can be edited in Test Data.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ValueEditable { get; init; }
+    /// <summary>What the value represents (<see cref="TestDataSemanticRoles"/>): declared by the provider or the registration, never guessed from a name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SemanticRole { get; init; }
+    /// <summary>Where the asset is relevant (<see cref="TestDataContexts"/> ids) — metadata for suggestions and filters, never a consumer binding.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? AppliesTo { get; init; }
+    /// <summary>The role cannot be changed in Test Data (declared by a protected default's source).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool MetadataFixed { get; init; }
 }
+
+/// <summary>
+/// What a Test Data value represents. Extensible (a string id): providers and registrations may declare others; matching is on the exact role,
+/// so a Child is never offered for a PersonId requirement only because both are identifiers.
+/// </summary>
+public static class TestDataSemanticRoles
+{
+    public const string Reporter = "Reporter", Child = "Child", PersonId = "PersonId", MessageId = "MessageId", CaseId = "CaseId", Payload = "Payload",
+        ReportXml = "ReportXml", GenericParameter = "GenericParameter";
+    public static readonly IReadOnlyList<string> All = [Reporter, Child, PersonId, MessageId, CaseId, Payload, ReportXml, GenericParameter];
+
+    public static string Label(string? role) => role switch
+    {
+        null or "" => "Not specified",
+        PersonId => "Person ID",
+        MessageId => "Message ID",
+        CaseId => "Case ID",
+        ReportXml => "Report XML",
+        GenericParameter => "Generic parameter",
+        _ => role,
+    };
+}
+
 
 public sealed record TestDataRoleBinding(string Role, string AssetAlias);
 

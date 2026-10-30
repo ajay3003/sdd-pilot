@@ -116,6 +116,14 @@
         <div class="ug-compare-col"><p class="ug-compare-label">Child</p><p>The business identity inside the payload, for example mapped to <span class="ug-path">Klient → Identifikator → Fodselsnummer</span>.</p></div>
     </div>
 
+    <h3 id="test-data-role-context" class="ug-subtitle">Semantic role, Applies to and Consumers</h3>
+    <ul class="ug-list">
+        <li><strong>Semantic role</strong> — what the value represents (Reporter, Child, Person ID, Message ID, Report XML …). <code>skolenaervaer-reporter-default</code> is a Reporter and <code>skolenaervaer-child-default</code> a Child; roles of protected defaults are declared by their source and cannot be edited.</li>
+        <li><strong>Applies to</strong> — where an asset is relevant (Altinn intake, Skolenærvær, Skolenærvær report payload, Person API …). It only helps BirkNext suggest assets; it is never a binding, and changing it never changes where an asset is used.</li>
+        <li><strong>Consumers</strong> — where an asset is actually bound or referenced: Connected Systems, performance scenarios, Critical E2E flows, XML field mappings. <em>Used by N</em> opens the details; <em>Unused</em> means no consumer references it.</li>
+    </ul>
+    <p>A Connected System declares its Test Data requirements (Altinn intake: <em>Reporter identity</em> and <em>Child identity</em>, plus an optional report payload fixture when a form contract is declared; a generic REST API declares none — <em>Not required</em>). Its <em>Test Data</em> section suggests compatible assets by exact role, data type, Applies to, scope and approval. A single strong match is preselected but saved only when you choose <em>Apply selected</em>; two compatible assets show <em>Needs selection</em>; none shows <em>Create Test Data</em>. The system stores the asset alias — never the value — so editing a protected default's value needs no rebinding. An existing binding is never replaced by a newer suggestion; if its asset is deleted or reset away, the requirement shows <em>Missing reference</em> with a suggested replacement that you apply explicitly. A Reporter identity says who signs in; the credential and the attended/unattended login stay with Authentication. Optional requirements never block readiness. Setup export carries roles (and an alias only when determined), never asset values; bindings are re-made at the destination.</p>
+
     <h3 id="asset-names" class="ug-subtitle">Display name and asset alias</h3>
     <p>An asset has a friendly display name and a canonical alias that consumers reference — for example <em>Skolenærvær default child</em> with alias <code>skolenaervaer-child-default</code>. Use the alias to tell assets apart when several reporters or children exist; the name can change, the reference cannot.</p>
 
