@@ -267,7 +267,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")!["nav-section-".Length..]).Should().Equal(
-            "getting-started", "project-inputs", "document-review", "traceability", "source-review", "analysis", "quality-testing", "extensions", "admin");
+            "getting-started", "project-inputs", "document-review", "traceability", "source-review", "analysis", "quality-testing", "extensions", "delivery-reporting", "admin");
         cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().StartWith(["Getting Started", "Project Inputs", "Document Review"]);
     }
 
@@ -280,6 +280,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("analysis", new[] { "impact-analysis" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
+    [InlineData("delivery-reporting", new[] { "delivery-reporting" })]
     [InlineData("admin", new[] { "admin/system-settings" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)
     {

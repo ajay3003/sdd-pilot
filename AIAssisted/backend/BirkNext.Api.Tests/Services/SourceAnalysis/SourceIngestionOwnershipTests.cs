@@ -26,6 +26,7 @@ public sealed class SourceIngestionOwnershipTests
             ["Controllers/ProjectImportController.cs"] = "POST api/project-import/preview — one project ZIP through the same reader and the same Source Analysis snapshot creation (not a second source store)",
             ["Controllers/DependencyReviewController.cs"] = "SBOM / lock-file import: deployed-inventory evidence, not a source repository",
             ["Controllers/TestEvidenceController.cs"] = "one .trx test-result artifact: execution evidence, never source (source tests come from the Source Analysis snapshot)",
+            ["Controllers/DeliveryReportingController.cs"] = "Delivery Reporting snapshot ZIP: read by the same SourceArchiveUpload and canonical bounded reader, parsed into delivery_reporting only (stories/tasks), never a source snapshot or Source Analysis input",
         };
         Sources().Where(f => f.Rel.StartsWith("Controllers/") && Regex.IsMatch(f.Text, @"ReadFormAsync|IFormFile|SourceArchiveUpload\.ReadAsync")).Select(f => f.Rel)
             .Should().BeEquivalentTo(allowed.Keys, "a new multipart endpoint must not become a second source upload");

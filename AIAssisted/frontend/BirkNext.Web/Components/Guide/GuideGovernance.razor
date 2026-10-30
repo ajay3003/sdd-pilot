@@ -38,3 +38,15 @@
         <li><strong>Decisions are explicit:</strong> review decisions are recorded per artifact revision (see <a href="@UserGuideContent.Href("review-decisions")">Review decisions</a>); BirkNext never decides release readiness for you.</li>
     </ul>
 </section>
+
+<section id="delivery-reporting" class="ug-section ug-topic" data-topic="delivery-reporting" aria-labelledby="delivery-reporting-title">
+    <h2 id="delivery-reporting-title" class="ug-section-title" tabindex="-1">Delivery reporting</h2>
+    <p class="ug-lead"><a href="/delivery-reporting">Delivery Reports</a> answer “what changed in the project this week?” for a Scrum Master or Project Leader: which stories progressed, which are new, completed or need attention, and what to focus on next week.</p>
+    <p>It is standalone: create a reporting project (for example M2LB), import a <strong>baseline</strong> and a <strong>current</strong> repository ZIP, then generate the weekly report. It has its own import and its own snapshots; it never uses Import Project, Source Analysis snapshots, Target Environment or Test Data. Each snapshot has an <strong>effective date</strong> (when the repository was in that state) separate from its import date, so a Git export of an earlier commit can be imported later as the baseline.</p>
+    <ul class="ug-list">
+        <li><strong>Stories</strong> come from Spec-Kit feature folders (<code>specs/&lt;feature&gt;/spec.md</code>); task progress comes from <code>tasks.md</code> checkboxes.</li>
+        <li><strong>Tasks complete is not Done.</strong> Ready for test, Testing, Blocked and Done are shown only when the feature documents state them explicitly; open clarification markers give Needs clarification.</li>
+        <li><strong>Removed is not completed:</strong> a story missing from the current snapshot is listed for review. Source changes are supporting evidence only.</li>
+        <li><strong>Reports are frozen:</strong> report history keeps every generated report exactly as generated, and Markdown/HTML exports always reproduce that version.</li>
+    </ul>
+</section>

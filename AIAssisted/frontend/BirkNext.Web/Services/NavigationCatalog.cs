@@ -168,6 +168,12 @@ public static class NavigationCatalog
             new("extensions/skolenaervaer", "Skolenærvær Testing", "nav-icon-constitution-compliance", Always,
                 Hint: "domain view over the shared CDC and integration journey engines"),
         ]),
+        // Standalone delivery reporting for Scrum Masters / Project Leaders: its own projects, snapshots and reports (never current BirkNext state).
+        new("delivery-reporting", "Delivery Reporting",
+        [
+            new("delivery-reporting", "Delivery Reports", "nav-icon-workflow", Always,
+                Hint: "weekly story/feature progress from imported repository snapshots: what changed, attention items, next-week focus"),
+        ]),
         new("ai-review", "AI Review",
         [
             new("ai-change-auditor", "AI Change Review", "nav-icon-ai-auditor", f => f.AiChangeReview, OptionalByDefault: true),

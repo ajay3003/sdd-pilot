@@ -1,0 +1,837 @@
+@page "/delivery-reporting"
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
+@using P = BirkNext.Web.Services.DeliveryReportingPresentation
+@inject IDeliveryReportingApiService Api
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Delivery Reporting: a standalone weekly delivery report for Scrum Masters and Project Leaders. Everything on this page comes from
+   Delivery Reporting's own projects, snapshots and frozen reports — never from the current workspace, Target Environment or Source Analysis. *@
+
+<PageTitle>Delivery Reporting</PageTitle>
+
+<div class="sd-workspace dlr-page" data-testid="dlr-page" aria-busy="@(_loaded ? "false" : "true")">
+    <header class="dlr-header">
+        <div>
+            <h1 class="dlr-title">@(_report is null ? "Delivery Reporting" : $"{_report.ProjectName} — Weekly Delivery Report")</h1>
+            <p class="dlr-lead">What changed in your stories and features this week: progress, attention items and next-week focus, compared between two imported snapshots.</p>
+        </div>
+        <div class="dlr-header-actions">
+            <label class="dlr-field dlr-project-field">
+                <span>Reporting project</span>
+                <select data-testid="dlr-project" value="@(_projectId?.ToString() ?? "")" @onchange="OnProjectChanged">
+                    @if (_projects.Count == 0) { <option value="">No reporting projects yet</option> }
+                    @foreach (var project in _projects) { <option value="@project.Id">@project.Name</option> }
+                </select>
+            </label>
+            <button type="button" class="btn-secondary" data-testid="dlr-new-project" aria-expanded="@(_newProjectOpen ? "true" : "false")" aria-controls="dlr-new-project-form"
+                    @onclick="ToggleNewProject">+ New reporting project</button>
+            <button type="button" class="btn-primary" data-testid="dlr-import-open" disabled="@(_projectId is null)" @onclick="OpenImport">Import snapshot</button>
+        </div>
+    </header>
+
+    @if (_newProjectOpen)
+    {
+        <form id="dlr-new-project-form" class="dlr-card dlr-inline-form" data-testid="dlr-new-project-form" @onsubmit="CreateProject" @onsubmit:preventDefault>
+            <h2 class="dlr-h2">New reporting project</h2>
+            <p class="dlr-muted">A reporting project holds its own snapshots and reports. No environment or existing BirkNext project is needed.</p>
+            <label class="dlr-field"><span>Name</span><input @ref="_newProjectName" data-testid="dlr-new-project-name" @bind="_newName" maxlength="200" required /></label>
+            <label class="dlr-field"><span>Description (optional)</span><input data-testid="dlr-new-project-description" @bind="_newDescription" maxlength="2000" /></label>
+            @if (_newProjectError is not null) { <p class="dlr-error" role="alert">@_newProjectError</p> }
+            <div class="dlr-actions">
+                <button type="submit" class="btn-primary" data-testid="dlr-new-project-save">Create project</button>
+                <button type="button" class="btn-secondary" @onclick="ToggleNewProject">Cancel</button>
+            </div>
+        </form>
+    }
+
+    @if (_error is not null) { <p class="dlr-error" role="alert" data-testid="dlr-error">@_error</p> }
+    @if (_notice is not null) { <p class="dlr-notice" role="status" data-testid="dlr-notice">@_notice</p> }
+
+    @if (!_loaded)
+    {
+        <div class="dlr-skeleton" role="status" aria-label="Loading Delivery Reporting"><span></span><span></span><span></span></div>
+    }
+    else if (_projectId is null)
+    {
+        <section class="dlr-card dlr-empty" data-testid="dlr-no-project">
+            <h2 class="dlr-h2">Create a reporting project to start</h2>
+            <p>Create a project such as <strong>M2LB</strong>, import a baseline and a current snapshot (repository ZIPs), and generate the weekly report.</p>
+            <button type="button" class="btn-primary" @onclick="ToggleNewProject">+ New reporting project</button>
+        </section>
+    }
+    else
+    {
+        <nav class="dlr-tabs" aria-label="Delivery Reporting sections">
+            @foreach (var (id, label) in P.Tabs)
+            {
+                <a href="@TabHref(id)" class="dlr-tab @(_tab == id ? "active" : "")" aria-current="@(_tab == id ? "page" : null)" data-testid="dlr-tab-@id">@label</a>
+            }
+        </nav>
+
+        @if (_tab == "overview") { @Overview() }
+        else if (_tab == "stories") { @Stories() }
+        else if (_tab == "snapshots") { @Snapshots() }
+        else { @History() }
+    }
+
+    @if (_importOpen) { @ImportDialog() }
+    @if (_confirm is not null) { @ConfirmDialog() }
+</div>
+
+@code {
+    // ── Overview ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Overview() => __builder =>
+    {
+        @GeneratePanel()
+        if (_report is null)
+        {
+            <section class="dlr-card dlr-empty" data-testid="dlr-no-report">
+                <h2 class="dlr-h2">No weekly report yet</h2>
+                <p>@(_snapshots.Count < 2 ? "Import a baseline and a current snapshot, then generate the weekly report." : "Choose a baseline and a current snapshot above and generate the weekly report.")</p>
+            </section>
+            return;
+        }
+        var report = _report;
+        <section class="dlr-card dlr-report-head" data-testid="dlr-report">
+            <div class="dlr-report-title">
+                <h2 class="dlr-h2">@report.Title — @report.WeekLabel</h2>
+                <ExportMenu TestId="dlr-export" Options="ExportOptions(report.ReportId)" />
+            </div>
+            <dl class="dlr-meta">
+                <div><dt>Project</dt><dd data-testid="dlr-meta-project">@report.ProjectName</dd></div>
+                <div><dt>Period</dt><dd data-testid="dlr-meta-period">@P.Period(report.PeriodStart, report.PeriodEnd)</dd></div>
+                <div><dt>Baseline</dt><dd data-testid="dlr-meta-baseline">@P.SnapshotLine(report.Baseline) <span class="dlr-muted">(@report.Baseline.Label)</span></dd></div>
+                <div><dt>Current</dt><dd data-testid="dlr-meta-current">@P.SnapshotLine(report.Current) <span class="dlr-muted">(@report.Current.Label)</span></dd></div>
+                <div><dt>Coverage</dt><dd><span class="dlr-badge @P.CoverageTone(report.Coverage)" data-testid="dlr-meta-coverage">@report.Coverage</span></dd></div>
+                <div><dt>Generated</dt><dd>@P.DayTime(report.GeneratedAt)</dd></div>
+            </dl>
+            <div class="dlr-export-options">
+                <label><input type="checkbox" data-testid="dlr-export-appendix" @bind="_exportAppendix" /> Include evidence appendix</label>
+                <label><input type="checkbox" data-testid="dlr-export-unchanged" @bind="_exportUnchanged" /> Include unchanged stories</label>
+                <span class="dlr-muted">PDF: open the HTML export and use your browser's Print → Save as PDF.</span>
+            </div>
+            @foreach (var note in report.CoverageNotes) { <p class="dlr-warning" role="note" data-testid="dlr-coverage-note"><strong>Coverage:</strong> @note</p> }
+        </section>
+
+        <section aria-label="Summary" class="dlr-cards" data-testid="dlr-cards">
+            @foreach (var metric in report.Metrics)
+            {
+                <div class="dlr-metric" data-testid="dlr-metric-@metric.Key" title="@metric.Hint">
+                    <span class="dlr-metric-value">@metric.Value</span>
+                    <span class="dlr-metric-label">@metric.Label</span>
+                </div>
+            }
+        </section>
+
+        <div class="dlr-grid">
+            <section class="dlr-card" data-testid="dlr-summary">
+                <h2 class="dlr-h2">This week</h2>
+                <ul class="dlr-list">@foreach (var line in report.ExecutiveSummary) { <li>@line</li> }</ul>
+                @{ var changed = report.Stories.Where(s => s.Changed).Take(8).ToList(); }
+                @if (changed.Count > 0)
+                {
+                    <h3 class="dlr-h3">Stories that moved</h3>
+                    <ul class="dlr-list dlr-moved">
+                        @foreach (var s in changed)
+                        {
+                            <li><span class="dlr-badge @P.MovementTone(s.Movement)">@DeliveryReportingText.Movement(s.Movement)</span> <strong>@s.Title</strong> <span class="dlr-muted">@DeliveryReportStories.ProgressChange(s)</span></li>
+                        }
+                    </ul>
+                    <a href="@TabHref("stories")" class="dlr-link">See all story changes</a>
+                }
+            </section>
+            <section class="dlr-card" data-testid="dlr-attention">
+                <h2 class="dlr-h2">Needs attention</h2>
+                @if (report.Attention.Count == 0) { <p class="dlr-muted">Nothing needs attention.</p> }
+                else
+                {
+                    <ul class="dlr-list">
+                        @foreach (var a in report.Attention)
+                        {
+                            <li><span class="dlr-badge @(a.Severity == DeliveryAttentionSeverity.Blocker ? "dlr-tone-bad" : "dlr-tone-warn")">@(a.Severity == DeliveryAttentionSeverity.Blocker ? "Blocker" : "Review")</span>
+                                <strong>@DeliveryReportingText.Attention(a.Kind)</strong> — @a.Title<br /><span class="dlr-muted">@a.Detail</span></li>
+                        }
+                    </ul>
+                }
+            </section>
+            <section class="dlr-card" data-testid="dlr-focus">
+                <h2 class="dlr-h2">Next-week focus</h2>
+                @if (report.NextWeekFocus.Count == 0) { <p class="dlr-muted">No open work found in the current snapshot.</p> }
+                else
+                {
+                    <ul class="dlr-list">
+                        @foreach (var f in report.NextWeekFocus)
+                        {
+                            <li>@f.Text
+                                @if (f.Features.Count > 0) { <ul class="dlr-sublist">@foreach (var name in f.Features) { <li>@name</li> }</ul> }
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </div>
+    };
+
+    private RenderFragment GeneratePanel() => __builder =>
+    {
+        <section class="dlr-card dlr-generate" data-testid="dlr-generate" aria-labelledby="dlr-generate-title">
+            <h2 class="dlr-h2" id="dlr-generate-title">Generate weekly report</h2>
+            @if (_snapshots.Count < 2)
+            {
+                <p class="dlr-muted">Import at least two snapshots (a baseline and a current one) to compare.</p>
+            }
+            else
+            {
+                <div class="dlr-generate-row">
+                    <label class="dlr-field"><span>Current snapshot</span>
+                        <select data-testid="dlr-current" value="@(_currentId?.ToString() ?? "")" @onchange="OnCurrentChanged">
+                            <option value="">Choose…</option>
+                            @foreach (var s in _snapshots) { <option value="@s.Id">@SnapshotOption(s)</option> }
+                        </select>
+                    </label>
+                    <label class="dlr-field"><span>Baseline snapshot</span>
+                        <select data-testid="dlr-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="e => _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null">
+                            <option value="">Choose…</option>
+                            @foreach (var s in _snapshots.Where(s => s.Id != _currentId)) { <option value="@s.Id">@SnapshotOption(s)</option> }
+                        </select>
+                    </label>
+                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || _baselineId is null || _currentId is null)" @onclick="Generate">Generate weekly report</button>
+                </div>
+                @if (_suggestion is not null)
+                {
+                    <p class="dlr-muted" data-testid="dlr-suggestion" role="status">@(_suggestion.SnapshotId is null ? "No baseline suggested: " : "Suggested baseline: ")@_suggestion.Reason</p>
+                }
+                @if (SelectedPeriod() is { } period) { <p class="dlr-muted" data-testid="dlr-generate-period">Period: @period</p> }
+            }
+            <p class="dlr-hint">Need an earlier baseline? Export the repository at the desired Git commit or date (for example <code>git archive --format=zip -o m2lb-monday.zip &lt;commit&gt;</code>) and import the ZIP with that effective date.</p>
+        </section>
+    };
+
+    // ── Stories ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Stories() => __builder =>
+    {
+        if (_report is null)
+        {
+            <section class="dlr-card dlr-empty" data-testid="dlr-stories-empty"><p>Generate a weekly report on the Overview to compare stories.</p></section>
+            return;
+        }
+        var rows = P.Filter(_report, _storyFilter, _storySearch, _storyModule);
+        <section class="dlr-card" data-testid="dlr-stories">
+            <h2 class="dlr-h2">Stories — @_report.WeekLabel</h2>
+            <div class="dlr-filters">
+                <label class="dlr-field"><span>Search</span><input type="search" data-testid="dlr-story-search" @bind="_storySearch" @bind:event="oninput" placeholder="Story or module" /></label>
+                <label class="dlr-field"><span>Show</span>
+                    <select data-testid="dlr-story-filter" @bind="_storyFilter">
+                        @foreach (var (id, label) in P.StoryFilters) { <option value="@id">@label</option> }
+                    </select>
+                </label>
+                @if (P.Modules(_report).Count > 1)
+                {
+                    <label class="dlr-field"><span>Module</span>
+                        <select data-testid="dlr-story-module" @bind="_storyModule">
+                            <option value="">All modules</option>
+                            @foreach (var m in P.Modules(_report)) { <option value="@m">@m</option> }
+                        </select>
+                    </label>
+                }
+            </div>
+            <p class="dlr-muted" role="status" data-testid="dlr-story-count">@rows.Count of @_report.Stories.Count stories shown@(_storyFilter == "default" ? " (changed this week or needing attention)" : "")</p>
+            @if (rows.Count == 0) { <p data-testid="dlr-stories-none">No stories match. Choose “All” to see unchanged stories.</p> }
+            else
+            {
+                <div class="dlr-table-wrap">
+                    <table class="dlr-table" data-testid="dlr-story-table">
+                        <thead><tr><th scope="col">Story / feature</th><th scope="col">Module</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Change this week</th><th scope="col">Task progress</th><th scope="col">Attention</th><th scope="col"><span class="visually-hidden">Evidence</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var s in rows)
+                            {
+                                var open = _expanded.Contains(s.FeatureKey);
+                                var detailId = $"dlr-evidence-{Math.Abs(s.FeatureKey.GetHashCode())}";
+                                <tr data-testid="dlr-story-row">
+                                    <th scope="row">@s.Title</th>
+                                    <td>@s.Module</td>
+                                    <td>@DeliveryReportStories.StatusOrDash(s.BaselineStatus)</td>
+                                    <td>@DeliveryReportStories.StatusOrDash(s.CurrentStatus)</td>
+                                    <td><span class="dlr-badge @P.MovementTone(s.Movement)">@DeliveryReportingText.Movement(s.Movement)</span></td>
+                                    <td>@DeliveryReportStories.ProgressChange(s)</td>
+                                    <td>@(s.Attention.Count == 0 ? "–" : string.Join(", ", s.Attention))</td>
+                                    <td><button type="button" class="btn-link" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="dlr-story-evidence-toggle" @onclick="() => Toggle(s.FeatureKey)">@(open ? "Hide evidence" : "Show evidence")<span class="visually-hidden"> for @s.Title</span></button></td>
+                                </tr>
+                                @if (open)
+                                {
+                                    <tr class="dlr-evidence-row"><td colspan="8" id="@detailId" data-testid="dlr-story-evidence">@Evidence(s)</td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    };
+
+    private RenderFragment Evidence(DeliveryStoryRow s) => __builder =>
+    {
+        var e = s.Evidence;
+        <div class="dlr-evidence">
+            <ul class="dlr-list">@foreach (var reason in s.Reasons) { <li>@reason</li> }</ul>
+            <dl class="dlr-meta">
+                @if (e.SpecPath is not null) { <div><dt>Specification</dt><dd><code>@e.SpecPath</code></dd></div> }
+                @if (e.TasksPath is not null) { <div><dt>Task source</dt><dd><code>@e.TasksPath</code></dd></div> }
+                @if (e.PlanPath is not null) { <div><dt>Plan (context only)</dt><dd><code>@e.PlanPath</code></dd></div> }
+                <div><dt>Task counts</dt><dd>Baseline @DeliveryReportStories.Progress(s.BaselineTaskCompleted, s.BaselineTaskTotal) · current @DeliveryReportStories.Progress(s.CurrentTaskCompleted, s.CurrentTaskTotal) · @s.TasksCompletedThisPeriod completed this period</dd></div>
+                @if (e.BaselineStatusReason is not null) { <div><dt>Baseline status</dt><dd>@e.BaselineStatusReason</dd></div> }
+                @if (e.CurrentStatusReason is not null) { <div><dt>Current status</dt><dd>@e.CurrentStatusReason</dd></div> }
+                @if (e.SourceSummary is not null) { <div><dt>Source comparison</dt><dd>@e.SourceSummary</dd></div> }
+            </dl>
+            @EvidenceList("Tasks completed this period", e.TasksCompleted)
+            @EvidenceList("Tasks reopened", e.TasksReopened)
+            @EvidenceList("Tasks added", e.TasksAdded)
+            @EvidenceList("Tasks removed", e.TasksRemoved)
+            @EvidenceList("Acceptance criteria added", e.AcceptanceAdded)
+            @EvidenceList("Acceptance criteria removed", e.AcceptanceRemoved)
+        </div>
+    };
+
+    private static RenderFragment EvidenceList(string title, List<string> items) => __builder =>
+    {
+        if (items.Count == 0) return;
+        <h4 class="dlr-h4">@title (@items.Count)</h4>
+        <ul class="dlr-list dlr-compact">@foreach (var item in items) { <li>@item</li> }</ul>
+    };
+
+    // ── Snapshots ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Snapshots() => __builder =>
+    {
+        <section class="dlr-card" data-testid="dlr-snapshots">
+            <div class="dlr-report-title">
+                <h2 class="dlr-h2">Snapshots</h2>
+                <button type="button" class="btn-primary" @onclick="OpenImport">Import snapshot</button>
+            </div>
+            <p class="dlr-muted">Only snapshots imported into Delivery Reporting for this project are listed. Imported snapshots never change; you can rename them, change their role or delete them.</p>
+            @if (_snapshots.Count == 0) { <p data-testid="dlr-snapshots-empty">No snapshots yet. Import a repository ZIP to create the first one.</p> }
+            else
+            {
+                <div class="dlr-table-wrap">
+                    <table class="dlr-table" data-testid="dlr-snapshot-table">
+                        <thead><tr><th scope="col">Snapshot</th><th scope="col">Effective date</th><th scope="col">Imported</th><th scope="col">Source</th><th scope="col">Features</th><th scope="col">Tasks</th><th scope="col">Role</th><th scope="col">Coverage</th><th scope="col">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in _snapshots)
+                            {
+                                <tr data-testid="dlr-snapshot-row">
+                                    <th scope="row">
+                                        @if (_renameId == s.Id)
+                                        {
+                                            <form class="dlr-rename" @onsubmit="() => Rename(s)" @onsubmit:preventDefault>
+                                                <label class="visually-hidden" for="dlr-rename-@s.Id">New label for @s.Label</label>
+                                                <input id="dlr-rename-@s.Id" data-testid="dlr-rename-input" @bind="_renameValue" maxlength="200" />
+                                                <button type="submit" class="btn-link">Save</button><button type="button" class="btn-link" @onclick="() => _renameId = null">Cancel</button>
+                                            </form>
+                                        }
+                                        else { @s.Label }
+                                    </th>
+                                    <td>@P.Day(s.EffectiveAt)</td>
+                                    <td>@P.DayTime(s.ImportedAt)</td>
+                                    <td>@DeliveryReportingText.Source(s.SourceType)<br /><span class="dlr-muted">@s.SourceFileName</span></td>
+                                    <td>@s.FeatureCount</td>
+                                    <td>@s.CompletedTaskCount/@s.TaskCount</td>
+                                    <td>
+                                        <label class="visually-hidden" for="dlr-role-@s.Id">Role of @s.Label</label>
+                                        <select id="dlr-role-@s.Id" data-testid="dlr-snapshot-role" value="@s.Role" @onchange="e => ChangeRole(s, e.Value?.ToString())">
+                                            @foreach (var role in Enum.GetValues<DeliverySnapshotRole>()) { <option value="@role">@DeliveryReportingText.Role(role)</option> }
+                                        </select>
+                                    </td>
+                                    <td><span class="dlr-badge @P.CoverageTone(s.Coverage)">@s.Coverage</span>@if (s.WarningsCount > 0) { <br /><span class="dlr-muted">@s.WarningsCount warning@(s.WarningsCount == 1 ? "" : "s")</span> }</td>
+                                    <td class="dlr-row-actions">
+                                        <button type="button" class="btn-link" data-testid="dlr-snapshot-view" aria-expanded="@(_viewId == s.Id ? "true" : "false")" @onclick="() => View(s)">View<span class="visually-hidden"> @s.Label</span></button>
+                                        <button type="button" class="btn-link" data-testid="dlr-snapshot-compare" @onclick="() => CompareFrom(s)">Compare<span class="visually-hidden"> @s.Label</span></button>
+                                        <button type="button" class="btn-link" data-testid="dlr-snapshot-rename" @onclick="() => { _renameId = s.Id; _renameValue = s.Label; }">Rename<span class="visually-hidden"> @s.Label</span></button>
+                                        <button type="button" class="btn-link dlr-danger" data-testid="dlr-snapshot-delete" @onclick="() => AskDeleteSnapshot(s)">Delete<span class="visually-hidden"> @s.Label</span></button>
+                                    </td>
+                                </tr>
+                                @if (_viewId == s.Id && _view is { } detail)
+                                {
+                                    <tr class="dlr-evidence-row"><td colspan="9" data-testid="dlr-snapshot-detail">
+                                        <p><strong>Modules:</strong> @(detail.Modules.Count == 0 ? "–" : string.Join(", ", detail.Modules))@(s.GitCommit is { } commit ? $" · Git commit {commit[..Math.Min(10, commit.Length)]}" : "")</p>
+                                        <ul class="dlr-list dlr-compact">@foreach (var f in detail.Features) { <li><strong>@f.Title</strong> <span class="dlr-muted">(@f.Module)</span> — @f.Status · @DeliveryReportStories.Progress(f.TaskCompleted, f.TaskTotal)</li> }</ul>
+                                        @if (detail.Warnings.Count > 0) { <h4 class="dlr-h4">Import warnings</h4><ul class="dlr-list dlr-compact">@foreach (var w in detail.Warnings) { <li>@w.Message</li> }</ul> }
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    };
+
+    // ── Report history ──────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment History() => __builder =>
+    {
+        <section class="dlr-card" data-testid="dlr-history">
+            <h2 class="dlr-h2">Report history</h2>
+            <p class="dlr-muted">Every generated report is kept exactly as it was generated. Opening or exporting an older report shows that version, even after new snapshots are imported.</p>
+            @if (_reports.Count == 0) { <p data-testid="dlr-history-empty">No reports generated yet.</p> }
+            else
+            {
+                <div class="dlr-table-wrap">
+                    <table class="dlr-table" data-testid="dlr-history-table">
+                        <thead><tr><th scope="col">Report</th><th scope="col">Period</th><th scope="col">Baseline → current</th><th scope="col">Generated</th><th scope="col">Coverage</th><th scope="col">Changed</th><th scope="col">Attention</th><th scope="col">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _reports)
+                            {
+                                <tr data-testid="dlr-history-row">
+                                    <th scope="row">@r.Title — @r.WeekLabel@if (_report?.ReportId == r.Id) { <span class="dlr-muted"> (open)</span> }</th>
+                                    <td>@P.Period(r.PeriodStart, r.PeriodEnd)</td>
+                                    <td>@r.BaselineLabel → @r.CurrentLabel</td>
+                                    <td>@P.DayTime(r.GeneratedAt)</td>
+                                    <td><span class="dlr-badge @P.CoverageTone(r.Coverage)">@r.Coverage</span></td>
+                                    <td>@r.StoriesChanged</td>
+                                    <td>@r.AttentionCount</td>
+                                    <td class="dlr-row-actions">
+                                        <button type="button" class="btn-link" data-testid="dlr-history-open" @onclick="() => OpenReport(r.Id)">Open<span class="visually-hidden"> @r.Title @r.WeekLabel</span></button>
+                                        <ExportMenu TestId="dlr-history-export" Options="ExportOptions(r.Id)" />
+                                        <button type="button" class="btn-link dlr-danger" data-testid="dlr-history-delete" @onclick="() => AskDeleteReport(r)">Delete<span class="visually-hidden"> @r.Title @r.WeekLabel</span></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    };
+
+    // ── Import dialog ───────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment ImportDialog() => __builder =>
+    {
+        <div class="dlr-backdrop">
+            <div class="dlr-dialog" role="dialog" aria-modal="true" aria-labelledby="dlr-import-title" data-testid="dlr-import-dialog" @onkeydown="OnDialogKey">
+                <h2 class="dlr-h2" id="dlr-import-title" tabindex="-1" @ref="_importTitle">Import snapshot</h2>
+                <p class="dlr-muted">Into reporting project <strong>@ProjectName</strong>. The ZIP is read once; only its stories, tasks and file fingerprints are kept.</p>
+                <div class="dlr-form-grid">
+                    <label class="dlr-field"><span>Source file (ZIP)</span>
+                        <InputFile accept=".zip,application/zip" data-testid="dlr-import-file" OnChange="OnFileSelected" disabled="@_busy" />
+                    </label>
+                    <label class="dlr-field"><span>Effective snapshot date and time</span>
+                        <input type="datetime-local" data-testid="dlr-import-effective" value="@_effectiveInput" @onchange="e => _effectiveInput = e.Value?.ToString() ?? string.Empty" aria-describedby="dlr-effective-help" />
+                        <small id="dlr-effective-help" class="dlr-muted">When the repository was in this state, not when you import it. For a historical Git export, use the commit date.</small>
+                    </label>
+                    <label class="dlr-field"><span>Snapshot role</span>
+                        <select data-testid="dlr-import-role" @bind="_importRole">
+                            @foreach (var role in Enum.GetValues<DeliverySnapshotRole>()) { <option value="@role">@DeliveryReportingText.Role(role)</option> }
+                        </select>
+                    </label>
+                    <label class="dlr-field"><span>Label (optional)</span><input data-testid="dlr-import-label" @bind="_importLabel" maxlength="200" placeholder="e.g. Monday baseline" /></label>
+                </div>
+                <p class="dlr-hint">Need an earlier baseline? Export the repository at the desired Git commit or date and import the ZIP here with that effective date. No Git access is needed in BirkNext.</p>
+
+                @if (_busy && _preview is null) { <p role="status" data-testid="dlr-import-reading">Reading the archive…</p> }
+                @if (_importError is not null) { <p class="dlr-error" role="alert" data-testid="dlr-import-error">@_importError</p> }
+
+                @if (_preview is { } preview)
+                {
+                    <section class="dlr-preview" aria-label="Import preview" data-testid="dlr-import-preview">
+                        <h3 class="dlr-h3">Preview</h3>
+                        <dl class="dlr-meta">
+                            <div><dt>Project</dt><dd>@ProjectName</dd></div>
+                            <div><dt>Source file</dt><dd>@preview.FileName (@DeliveryReportingText.Source(preview.SourceType))</dd></div>
+                            @if (preview.GitCommit is { } commit) { <div><dt>Git commit</dt><dd data-testid="dlr-preview-commit">@commit[..Math.Min(12, commit.Length)]</dd></div> }
+                            <div><dt>Effective date</dt><dd>@(P.ParseLocalInput(_effectiveInput) is { } eff ? P.DayTime(eff) : "Not set")</dd></div>
+                            <div><dt>Modules</dt><dd>@(preview.Modules.Count == 0 ? "–" : string.Join(", ", preview.Modules))</dd></div>
+                            <div><dt>Features detected</dt><dd data-testid="dlr-preview-features">@preview.Features.Count</dd></div>
+                            <div><dt>Tasks</dt><dd data-testid="dlr-preview-tasks">@preview.TaskTotal (@preview.TaskCompleted completed, @preview.TaskOpen open)</dd></div>
+                            <div><dt>Coverage</dt><dd><span class="dlr-badge @P.CoverageTone(preview.Coverage)">@preview.Coverage</span></dd></div>
+                        </dl>
+                        @if (preview.SuggestedEffectiveAt is { } suggested)
+                        {
+                            <p class="dlr-muted" data-testid="dlr-preview-suggested">The archive suggests @P.DayTime(suggested). @preview.SuggestedEffectiveReason
+                                <button type="button" class="btn-link" @onclick="() => _effectiveInput = P.LocalInput(suggested)">Use this date</button></p>
+                        }
+                        @if (preview.Features.Count > 0)
+                        {
+                            <ul class="dlr-list dlr-compact dlr-preview-features">
+                                @foreach (var f in preview.Features) { <li><strong>@f.Title</strong> <span class="dlr-muted">(@f.Module)</span> — @f.Status · @DeliveryReportStories.Progress(f.TaskCompleted, f.TaskTotal)@(f.HasSpecification ? "" : " · no spec.md")@(f.HasTasks ? "" : " · no tasks.md")</li> }
+                            </ul>
+                        }
+                        @if (preview.Warnings.Count > 0)
+                        {
+                            <h4 class="dlr-h4">Warnings (@preview.Warnings.Count)</h4>
+                            <ul class="dlr-list dlr-compact" data-testid="dlr-preview-warnings">@foreach (var w in preview.Warnings) { <li>@w.Message</li> }</ul>
+                        }
+                        @if (preview.DuplicateWarning is { } duplicate)
+                        {
+                            <div class="dlr-warning" role="alert" data-testid="dlr-duplicate-warning">
+                                <p>@duplicate</p>
+                                <label><input type="checkbox" data-testid="dlr-duplicate-confirm" @bind="_confirmDuplicate" /> Import it anyway as a new snapshot</label>
+                            </div>
+                        }
+                    </section>
+                }
+
+                <div class="dlr-actions">
+                    <button type="button" class="btn-primary" data-testid="dlr-import-confirm" disabled="@(_busy || _preview is null || (_preview.DuplicateWarning is not null && !_confirmDuplicate) || P.ParseLocalInput(_effectiveInput) is null)" @onclick="CommitImport">Import snapshot</button>
+                    <button type="button" class="btn-secondary" data-testid="dlr-import-cancel" @onclick="CloseImport">Cancel</button>
+                </div>
+            </div>
+        </div>
+    };
+
+    private RenderFragment ConfirmDialog() => __builder =>
+    {
+        var confirm = _confirm!;
+        <div class="dlr-backdrop">
+            <div class="dlr-dialog dlr-dialog-small" role="alertdialog" aria-modal="true" aria-labelledby="dlr-confirm-title" aria-describedby="dlr-confirm-text" data-testid="dlr-confirm" @onkeydown="OnDialogKey">
+                <h2 class="dlr-h2" id="dlr-confirm-title">@confirm.Title</h2>
+                <p id="dlr-confirm-text">@confirm.Text</p>
+                <div class="dlr-actions">
+                    <button type="button" class="btn-danger" data-testid="dlr-confirm-yes" @ref="_confirmButton" @onclick="RunConfirm">@confirm.Action</button>
+                    <button type="button" class="btn-secondary" data-testid="dlr-confirm-no" @onclick="() => _confirm = null">Cancel</button>
+                </div>
+            </div>
+        </div>
+    };
+}
+
+@code {
+    private sealed record Confirmation(string Title, string Text, string Action, Func<Task> Run);
+
+    [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "report")] public string? ReportQuery { get; set; }
+
+    private bool _loaded, _busy;
+    private string? _error, _notice;
+    private List<DeliveryProject> _projects = [];
+    private Guid? _projectId;
+    private string _tab = "overview";
+    private List<DeliverySnapshotSummary> _snapshots = [];
+    private List<DeliveryReportSummaryRow> _reports = [];
+    private WeeklyDeliveryReport? _report;
+
+    private bool _newProjectOpen;
+    private string _newName = "", _newDescription = "";
+    private string? _newProjectError;
+    private ElementReference _newProjectName;
+
+    private bool _importOpen, _confirmDuplicate;
+    private string _effectiveInput = "";
+    private DeliverySnapshotRole _importRole = DeliverySnapshotRole.Current;
+    private string _importLabel = "";
+    private DeliveryImportPreview? _preview;
+    private string? _importError;
+    private ElementReference _importTitle;
+    private bool _focusImport;
+
+    private Guid? _baselineId, _currentId;
+    private DeliveryBaselineSuggestion? _suggestion;
+
+    private string _storyFilter = "default";
+    private string? _storySearch, _storyModule;
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+
+    private Guid? _renameId, _viewId;
+    private string _renameValue = "";
+    private DeliverySnapshotDetail? _view;
+
+    private bool _exportAppendix, _exportUnchanged;
+    private Confirmation? _confirm;
+    private ElementReference _confirmButton;
+    private bool _focusConfirm;
+
+    private string? ProjectName => _projects.FirstOrDefault(p => p.Id == _projectId)?.Name;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _tab = P.TabOrDefault(TabQuery);
+        if (!_loaded)
+        {
+            var (projects, error) = await Api.ProjectsAsync();
+            _projects = projects;
+            _error = error;
+        }
+        var requested = Guid.TryParse(ProjectQuery, out var p) && _projects.Any(x => x.Id == p) ? p : _projects.FirstOrDefault()?.Id;
+        if (requested != _projectId || !_loaded)
+        {
+            _projectId = requested;
+            await LoadProjectAsync(Guid.TryParse(ReportQuery, out var r) ? r : null);
+        }
+        else if (Guid.TryParse(ReportQuery, out var r) && _report?.ReportId != r && _projectId is { } id)
+        {
+            _report = await Api.ReportAsync(id, r);
+        }
+        _loaded = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusImport) { _focusImport = false; await _importTitle.FocusAsync(); }
+        if (_focusConfirm) { _focusConfirm = false; await _confirmButton.FocusAsync(); }
+    }
+
+    private async Task LoadProjectAsync(Guid? reportId = null)
+    {
+        _report = null;
+        _snapshots = [];
+        _reports = [];
+        _baselineId = _currentId = null;
+        _suggestion = null;
+        if (_projectId is not { } id) return;
+        _snapshots = await Api.SnapshotsAsync(id);
+        _reports = await Api.ReportsAsync(id);
+        var open = reportId is { } r && _reports.Any(x => x.Id == r) ? r : _reports.FirstOrDefault()?.Id;
+        if (open is { } openId) _report = await Api.ReportAsync(id, openId);
+        await DefaultSelectionAsync();
+    }
+
+    /// <summary>Preselects the most recent snapshot as current and asks for a suggested baseline (never chosen when ambiguous).</summary>
+    private async Task DefaultSelectionAsync()
+    {
+        if (_snapshots.Count < 2) return;
+        _currentId = (_snapshots.FirstOrDefault(s => s.Role == DeliverySnapshotRole.Current) ?? _snapshots[0]).Id;
+        await SuggestAsync();
+    }
+
+    private async Task SuggestAsync()
+    {
+        _suggestion = null;
+        _baselineId = null;
+        if (_projectId is not { } id || _currentId is not { } current) return;
+        _suggestion = await Api.SuggestBaselineAsync(id, current);
+        _baselineId = _suggestion?.SnapshotId;
+    }
+
+    private string TabHref(string tab) => $"{P.Route}?project={_projectId}&tab={tab}{(_report is null ? "" : $"&report={_report.ReportId}")}";
+
+    private static string SnapshotOption(DeliverySnapshotSummary s) =>
+        $"{s.Label} · {P.Day(s.EffectiveAt)} · {DeliveryReportingText.Role(s.Role)} · {s.CompletedTaskCount}/{s.TaskCount} tasks";
+
+    private string? SelectedPeriod()
+    {
+        var baseline = _snapshots.FirstOrDefault(s => s.Id == _baselineId);
+        var current = _snapshots.FirstOrDefault(s => s.Id == _currentId);
+        if (baseline is null || current is null) return null;
+        return baseline.EffectiveAt > current.EffectiveAt
+            ? "The baseline is later than the current snapshot. Swap them."
+            : P.Period(baseline.EffectiveAt, current.EffectiveAt);
+    }
+
+    private void OnProjectChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id)) Nav.NavigateTo($"{P.Route}?project={id}&tab={_tab}");
+    }
+
+    private async Task OnCurrentChanged(ChangeEventArgs e)
+    {
+        _currentId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await SuggestAsync();
+    }
+
+    private void ToggleNewProject()
+    {
+        _newProjectOpen = !_newProjectOpen;
+        _newProjectError = null;
+    }
+
+    private async Task CreateProject()
+    {
+        var (project, error) = await Api.CreateProjectAsync(_newName, _newDescription);
+        if (project is null) { _newProjectError = error; return; }
+        _projects = (await Api.ProjectsAsync()).Projects;
+        _newProjectOpen = false;
+        _newName = _newDescription = "";
+        _notice = $"Reporting project “{project.Name}” created.";
+        Nav.NavigateTo($"{P.Route}?project={project.Id}&tab=snapshots");
+    }
+
+    private void Toggle(string key)
+    {
+        if (!_expanded.Remove(key)) _expanded.Add(key);
+    }
+
+    // ── Import ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private void OpenImport()
+    {
+        _importOpen = true;
+        _preview = null;
+        _importError = null;
+        _confirmDuplicate = false;
+        _importLabel = "";
+        _importRole = _snapshots.Count == 0 ? DeliverySnapshotRole.Baseline : DeliverySnapshotRole.Current;
+        _effectiveInput = P.LocalInput(DateTimeOffset.Now);
+        _focusImport = true;
+    }
+
+    private async Task CloseImport()
+    {
+        if (_preview is { } preview) await Api.DiscardAsync(preview.StagingId);
+        _preview = null;
+        _importOpen = false;
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _importError = null;
+        if (_preview is { } old) await Api.DiscardAsync(old.StagingId);
+        _preview = null;
+        _confirmDuplicate = false;
+        _busy = true;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 50L * 1024 * 1024);
+            var (preview, error) = await Api.PreviewAsync(_projectId, e.File.Name, stream);
+            _preview = preview;
+            _importError = error;
+        }
+        catch (IOException)
+        {
+            _importError = "The file could not be read. ZIPs up to 50 MB are supported.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CommitImport()
+    {
+        if (_preview is not { } preview || _projectId is not { } id || P.ParseLocalInput(_effectiveInput) is not { } effective) return;
+        _busy = true;
+        try
+        {
+            var result = await Api.CommitAsync(preview.StagingId, new DeliveryImportCommitRequest
+            {
+                ProjectId = id, EffectiveAt = effective, Role = _importRole, Label = string.IsNullOrWhiteSpace(_importLabel) ? null : _importLabel,
+                ConfirmDuplicate = _confirmDuplicate,
+            });
+            if (result.Snapshot is { } snapshot)
+            {
+                _importOpen = false;
+                _preview = null;
+                _notice = $"Snapshot “{snapshot.Label}” imported: {snapshot.FeatureCount} features, {snapshot.CompletedTaskCount}/{snapshot.TaskCount} tasks completed.";
+                _snapshots = await Api.SnapshotsAsync(id);
+                _projects = (await Api.ProjectsAsync()).Projects;
+                await DefaultSelectionAsync();
+            }
+            else if (result.DuplicateWarning is { } duplicate) _preview = preview with { DuplicateWarning = duplicate };
+            else _importError = result.Error;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task OnDialogKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (_confirm is not null) _confirm = null;
+        else if (_importOpen) await CloseImport();
+    }
+
+    // ── Reports ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private async Task Generate()
+    {
+        if (_projectId is not { } id || _baselineId is not { } baseline || _currentId is not { } current) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current));
+            if (report is null) { _error = error; return; }
+            _report = report;
+            _reports = await Api.ReportsAsync(id);
+            _notice = $"Weekly report {report.WeekLabel} generated and saved to report history.";
+            Nav.NavigateTo($"{P.Route}?project={id}&tab=overview&report={report.ReportId}");
+        }
+        finally { _busy = false; }
+    }
+
+    private void OpenReport(Guid reportId) => Nav.NavigateTo($"{P.Route}?project={_projectId}&tab=overview&report={reportId}");
+
+    private IReadOnlyList<ExportMenu.Option> ExportOptions(Guid reportId) =>
+    [
+        new("markdown", "Markdown (.md)", () => ExportAsync(reportId, DeliveryExportFormat.Markdown)),
+        new("html", "HTML (.html)", () => ExportAsync(reportId, DeliveryExportFormat.Html)),
+    ];
+
+    private async Task ExportAsync(Guid reportId, DeliveryExportFormat format)
+    {
+        if (_projectId is not { } id) return;
+        var (export, error) = await Api.ExportAsync(id, reportId, format, _exportAppendix, _exportUnchanged);
+        if (export is null) { _error = error; return; }
+        await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, export.ContentType);
+        _notice = $"Exported {export.FileName}.";
+    }
+
+    private void AskDeleteReport(DeliveryReportSummaryRow r)
+    {
+        _confirm = new("Delete report?", $"Delete “{r.Title} — {r.WeekLabel}” generated {P.DayTime(r.GeneratedAt)}? Snapshots are not affected.", "Delete report", async () =>
+        {
+            if (_projectId is not { } id) return;
+            _error = await Api.DeleteReportAsync(id, r.Id);
+            _reports = await Api.ReportsAsync(id);
+            if (_report?.ReportId == r.Id) _report = _reports.FirstOrDefault() is { } next ? await Api.ReportAsync(id, next.Id) : null;
+            _notice = _error is null ? "Report deleted." : null;
+        });
+        _focusConfirm = true;
+    }
+
+    // ── Snapshots ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private async Task View(DeliverySnapshotSummary s)
+    {
+        if (_viewId == s.Id) { _viewId = null; _view = null; return; }
+        _viewId = s.Id;
+        _view = _projectId is { } id ? await Api.SnapshotAsync(id, s.Id) : null;
+    }
+
+    private async Task CompareFrom(DeliverySnapshotSummary s)
+    {
+        _currentId = s.Id;
+        await SuggestAsync();
+        Nav.NavigateTo($"{P.Route}?project={_projectId}&tab=overview{(_report is null ? "" : $"&report={_report.ReportId}")}");
+    }
+
+    private async Task Rename(DeliverySnapshotSummary s)
+    {
+        if (_projectId is not { } id) return;
+        var (_, error) = await Api.UpdateSnapshotAsync(id, s.Id, new UpdateDeliverySnapshotRequest(_renameValue, null));
+        _error = error;
+        _renameId = null;
+        _snapshots = await Api.SnapshotsAsync(id);
+    }
+
+    private async Task ChangeRole(DeliverySnapshotSummary s, string? value)
+    {
+        if (_projectId is not { } id || !Enum.TryParse<DeliverySnapshotRole>(value, out var role)) return;
+        var (_, error) = await Api.UpdateSnapshotAsync(id, s.Id, new UpdateDeliverySnapshotRequest(null, role));
+        _error = error;
+        _snapshots = await Api.SnapshotsAsync(id);
+    }
+
+    private void AskDeleteSnapshot(DeliverySnapshotSummary s)
+    {
+        var reports = s.ReportCount > 0 ? $" {s.ReportCount} generated report{(s.ReportCount == 1 ? "" : "s")} used it and keep their saved content." : "";
+        _confirm = new("Delete snapshot?", $"Delete snapshot “{s.Label}” ({P.Day(s.EffectiveAt)})? Only Delivery Reporting data is removed.{reports}", "Delete snapshot", async () =>
+        {
+            if (_projectId is not { } id) return;
+            _error = await Api.DeleteSnapshotAsync(id, s.Id);
+            _snapshots = await Api.SnapshotsAsync(id);
+            if (_viewId == s.Id) { _viewId = null; _view = null; }
+            if (_baselineId == s.Id || _currentId == s.Id) await DefaultSelectionAsync();
+            _notice = _error is null ? "Snapshot deleted." : null;
+        });
+        _focusConfirm = true;
+    }
+
+    private async Task RunConfirm()
+    {
+        var confirm = _confirm;
+        _confirm = null;
+        if (confirm is not null) await confirm.Run();
+    }
+}

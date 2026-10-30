@@ -110,6 +110,14 @@ var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Co
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(databaseConnectionString));
+// Delivery Reporting: its own context, schema (delivery_reporting) and migration history on the same database. Its services never use
+// AppDbContext, so reports are built from Delivery Reporting snapshots only.
+builder.Services.AddDbContext<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>(options =>
+    BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddSingleton<BirkNext.Api.Services.DeliveryReporting.DeliveryImportStagingStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliverySnapshotStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingImportService>();
+builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.WeeklyReportService>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
@@ -762,7 +770,11 @@ try
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     // One process migrates at a time (parallel test hosts and multiple instances share the database).
     if (db.Database.IsRelational())
+    {
         await DatabaseMigrationLock.MigrateAsync(db);
+        // Skipped with the main context when a test host swaps it for a non-relational provider (no database to migrate).
+        await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>());
+    }
     // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
     await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();
 }
