@@ -133,11 +133,12 @@ public sealed class DeliveryOperationsTests : BunitContext
         var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
-        page.FindAll("[data-testid=do-tile]").Select(t => t.GetAttribute("data-status")).Should().Equal("Planned", "InProgress", "Implemented", "Verified", "Accepted", "Blocked");
+        page.FindAll("[data-testid=do-tile]").Select(t => t.GetAttribute("data-status")).Should().Equal("Planned", "InProgress", "ChecklistComplete", "ImplementationVerified", "QaVerified", "Accepted", "Blocked");
         page.Find("[data-testid=do-tile][data-status=InProgress] .do-tile-count").TextContent.Should().Be("2");
-        page.Find("[data-testid=do-tile][data-status=Verified] .do-tile-count").TextContent.Should().Be("–");
-        page.Find("[data-testid=do-verified-note]").TextContent.Should().Contain("never Verified because its tasks are checked");
-        page.Find("[data-testid=do-source]").TextContent.Should().Contain("From weekly report 2026-W44").And.Contain("baseline “Monday”");
+        page.Find("[data-testid=do-tile][data-status=QaVerified] .do-tile-count").TextContent.Should().Be("–");
+        page.Find("[data-testid=do-tile][data-status=ImplementationVerified] .do-tile-count").TextContent.Should().Be("–");
+        page.Find("[data-testid=do-verified-note]").TextContent.Should().Contain("never verified because its tasks are checked");
+        page.Find("[data-testid=do-source]").TextContent.Should().Contain("From report 2026-W44").And.Contain("baseline “Monday”");
         page.Find("[data-testid=do-provenance]").TextContent.Should().Be("ZIP import");
         page.Find("[data-testid=do-open-report]").GetAttribute("href").Should().Contain($"project={DeliveryReportingPageTests.ProjectId}").And.Contain("tab=stories");
 

@@ -6,12 +6,13 @@
 @inject NavigationManager Nav
 
 @* Delivery Overview: the virtual SDD backlog of a Delivery Reporting project (read-only). It shows what the newest frozen weekly report (or
-   newest snapshot) states — never current BirkNext workspace state and never a status the evidence does not state. *@
+   newest snapshot) states — never current BirkNext workspace state and never a status the evidence does not state. A feature opens in the
+   same feature explorer the report uses (?feature=), so project, report and filters are kept when going back. *@
 <PageTitle>Delivery Overview</PageTitle>
 <div class="do-page" data-testid="delivery-overview">
     <header class="do-head">
         <h1>Delivery Overview</h1>
-        <p class="do-lead">Virtual SDD backlog: every feature with its user stories, acceptance criteria and tasks, and its delivery status from the imported snapshots.</p>
+        <p class="do-lead">Virtual SDD backlog: every feature with its user stories, acceptance criteria, phases and tasks, and its delivery status from the imported snapshots.</p>
     </header>
 
     @if (!_loaded) { <p role="status">Loading delivery projects…</p> }
@@ -31,12 +32,6 @@
                     @foreach (var p in _projects) { <option value="@p.Id">@p.Name</option> }
                 </select>
             </label>
-            <label class="do-field"><span>Status</span>
-                <select data-testid="do-filter" value="@_filter" @onchange="e => _filter = e.Value?.ToString() ?? AllFilter">
-                    <option value="@AllFilter">All statuses</option>
-                    @foreach (var s in Enum.GetValues<BacklogStatus>()) { <option value="@s">@DeliveryBacklog.Label(s)</option> }
-                </select>
-            </label>
         </div>
 
         @if (_loadingProject) { <p role="status">Loading the backlog…</p> }
@@ -47,21 +42,53 @@
                 <p>Import a repository snapshot for this project in <a href="@($"delivery-reporting?project={_projectId}&tab=snapshots")">Delivery Reports</a>.</p>
             </section>
         }
+        else if (_report is not null && FeatureQuery is { Length: > 0 } feature && _report.Stories.Any(s => s.FeatureKey == feature))
+        {
+            <BirkNext.Web.Components.DeliveryFeatureExplorer @key="_report.ReportId" Report="_report" ProjectName="@(_projects.FirstOrDefault(p => p.Id == _projectId)?.Name ?? "")"
+                OpenFeatureKey="@feature" OnClose="CloseFeature" />
+        }
         else
         {
             var view = _view;
             <p class="do-source" data-testid="do-source">
-                @(view.Source.Kind == "report" ? $"From weekly report {view.Source.WeekLabel}" : "From the newest snapshot (no weekly report yet)") ·
+                @(view.Source.Kind == "report" ? $"From report {view.Source.WeekLabel}" : "From the newest snapshot (no report yet)") ·
                 current snapshot “@view.Source.SnapshotLabel” of @P.Day(view.Source.EffectiveAt) · <span data-testid="do-provenance">@DeliveryBacklog.Provenance(view.Source)</span>
                 @if (view.Source.BaselineLabel is { } baseline) { <span> · compared with baseline “@baseline”</span> }
             </p>
+
+            <section class="do-readiness" aria-labelledby="do-readiness-h" data-testid="do-readiness">
+                <h2 class="do-h2" id="do-readiness-h">Delivery readiness</h2>
+                <ul class="do-readiness-list">
+                    @foreach (var d in DeliveryBacklog.Readiness(view.Items))
+                    {
+                        <li class="do-dim @(d.Available ? "" : "do-dim-na")" data-testid="do-readiness-dim" data-key="@d.Key">
+                            <span class="do-dim-label">@d.Label</span>
+                            <span class="do-dim-value">@d.Value</span>
+                            <span class="do-muted do-dim-detail">@d.Detail</span>
+                        </li>
+                    }
+                </ul>
+            </section>
+
             <ul class="do-tiles" aria-label="Features by delivery status">
                 @foreach (var status in DeliveryBacklog.Columns)
                 {
-                    <li class="do-tile do-tile-@status.ToString().ToLowerInvariant()" data-testid="do-tile" data-status="@status">
-                        <span class="do-tile-count">@(status == BacklogStatus.Verified ? "–" : view.Count(status).ToString())</span>
-                        <span class="do-tile-label">@DeliveryBacklog.Label(status)</span>
-                        @if (status == BacklogStatus.Verified) { <span class="do-tile-note" data-testid="do-verified-note">@DeliveryBacklog.VerifiedNotAvailable</span> }
+                    var s = status;
+                    var notAvailable = DeliveryBacklog.NotFromSnapshots(status);
+                    <li class="do-tile do-tile-@status.ToString().ToLowerInvariant() @(_status == status.ToString() ? "do-tile-on" : "")" data-testid="do-tile" data-status="@status">
+                        @if (notAvailable)
+                        {
+                            <span class="do-tile-count">–</span>
+                            <span class="do-tile-label">@DeliveryBacklog.Label(status)</span>
+                            <span class="do-tile-note" data-testid="do-verified-note">@DeliveryBacklog.VerifiedNotAvailable</span>
+                        }
+                        else
+                        {
+                            <button type="button" class="do-tile-button" aria-pressed="@(_status == status.ToString() ? "true" : "false")" data-testid="do-tile-filter" @onclick="() => ToggleStatus(s)">
+                                <span class="do-tile-count">@view.Count(status)</span>
+                                <span class="do-tile-label">@DeliveryBacklog.Label(status)</span>
+                            </button>
+                        }
                     </li>
                 }
                 @if (view.Count(BacklogStatus.NeedsClarification) is > 0 and var unclear)
@@ -70,28 +97,70 @@
                 }
             </ul>
 
+            <div class="do-toolbar" role="group" aria-label="Filter features">
+                <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" placeholder="Feature or module" /></label>
+                @if (view.Items.Select(i => i.Module).Distinct().Count() > 1)
+                {
+                    <label class="do-field"><span>Module</span>
+                        <select data-testid="do-module" @bind="_module">
+                            <option value="">All modules</option>
+                            @foreach (var m in view.Items.Select(i => i.Module).Distinct().Order(StringComparer.OrdinalIgnoreCase)) { <option value="@m">@(m.Length == 0 ? "Project" : m)</option> }
+                        </select></label>
+                }
+                <label class="do-field"><span>Status</span>
+                    <select data-testid="do-filter" @bind="_status">
+                        <option value="@AllFilter">All statuses</option>
+                        @foreach (var st in Enum.GetValues<BacklogStatus>().Where(x => !DeliveryBacklog.NotFromSnapshots(x))) { <option value="@st">@DeliveryBacklog.Label(st)</option> }
+                    </select></label>
+                <label class="do-field"><span>Attention</span>
+                    <select data-testid="do-attention" @bind="_attention">
+                        <option value="@AllFilter">All features</option>
+                        <option value="attention">Needs attention</option>
+                        <option value="open">Has open tasks</option>
+                    </select></label>
+            </div>
+
             var items = Filtered(view);
+            <p class="do-muted" role="status" data-testid="do-count">@items.Count of @view.Items.Count features shown</p>
             <div class="do-table-wrap">
                 <table class="do-table" data-testid="do-backlog">
                     <caption class="visually-hidden">Backlog features</caption>
-                    <thead><tr><th scope="col">Feature</th><th scope="col">Module</th><th scope="col">Status</th><th scope="col">User stories</th><th scope="col">Criteria</th><th scope="col">Tasks</th><th scope="col">This period</th></tr></thead>
+                    <thead>
+                        <tr>
+                            @foreach (var (key, label) in SortColumns)
+                            {
+                                var k = key;
+                                <th scope="col" aria-sort="@(_sort == key ? (_descending ? "descending" : "ascending") : "none")">
+                                    <button type="button" class="do-sort" data-testid="do-sort" data-key="@key" @onclick="() => SortBy(k)">@label@(_sort == key ? (_descending ? " ▼" : " ▲") : "")</button>
+                                </th>
+                            }
+                            <th scope="col">Stories / criteria</th><th scope="col">This period</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         @foreach (var item in items)
                         {
+                            var key = item.FeatureKey;
                             <tr data-testid="do-item" data-status="@item.Status">
-                                <th scope="row">@item.Title</th>
-                                <td>@item.Module</td>
+                                <th scope="row">
+                                    @if (_report is not null)
+                                    {
+                                        <button type="button" class="do-feature" data-testid="do-feature-open" @onclick="() => OpenFeature(key)">@item.Title</button>
+                                    }
+                                    else { @item.Title }
+                                    @if (item.Attention > 0) { <span class="do-attention" data-testid="do-attention-count"> · @item.Attention attention</span> }
+                                </th>
+                                <td>@(item.Module.Length == 0 ? "Project" : item.Module)</td>
                                 <td><span class="do-badge do-badge-@item.Status.ToString().ToLowerInvariant()">@DeliveryBacklog.Label(item.Status)</span><br /><span class="do-muted">@item.StatusDetail</span></td>
-                                <td>@(view.Source.Kind == "report" ? item.Stories.ToString() : "–")</td>
-                                <td>@(view.Source.Kind == "report" ? item.Criteria.ToString() : "–")</td>
-                                <td>@item.TasksCompleted / @item.TasksTotal@(item.Phases > 0 ? $" · {item.Phases} phase{(item.Phases == 1 ? "" : "s")}" : "")</td>
+                                <td data-testid="do-tasks">@(item.TasksTotal == 0 ? "No tasks" : $"{item.TasksCompleted} / {item.TasksTotal} checked · {item.OpenTasks} open")@(item.Phases > 0 ? $" · {item.Phases} phase{(item.Phases == 1 ? "" : "s")}" : "")</td>
+                                <td>@(view.Source.Kind == "report" ? $"{item.Stories} / {item.Criteria}" : "–")</td>
                                 <td>@(item.Movement is { } m ? DeliveryReportingText.Movement(m) : "–")</td>
                             </tr>
                         }
                     </tbody>
                 </table>
             </div>
-            @if (items.Count == 0) { <p class="do-muted" data-testid="do-empty-filter">No feature has this status.</p> }
+            @if (items.Count == 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
             @if (view.RemovedFeatures.Count > 0)
             {
                 <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
@@ -99,9 +168,9 @@
             <p class="do-links">
                 @if (view.Source.ReportId is { } reportId)
                 {
-                    <a href="@($"delivery-reporting?project={_projectId}&tab=stories&report={reportId}")" data-testid="do-open-report">Open the weekly report (stories, criteria, tasks and changes)</a>
+                    <a href="@($"delivery-reporting?project={_projectId}&tab=stories&report={reportId}")" data-testid="do-open-report">Open the report (stories, criteria, tasks and changes)</a>
                 }
-                else { <a href="@($"delivery-reporting?project={_projectId}")">Generate a weekly report to see user stories, acceptance criteria and baseline changes</a> }
+                else { <a href="@($"delivery-reporting?project={_projectId}")">Generate a report to see user stories, acceptance criteria, phases and baseline changes</a> }
             </p>
         }
     }
@@ -109,14 +178,18 @@
 
 @code {
     private const string AllFilter = "all";
+    private static readonly (string Key, string Label)[] SortColumns = [("title", "Feature"), ("module", "Module"), ("status", "Status"), ("tasks", "Tasks")];
     [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "feature")] public string? FeatureQuery { get; set; }
 
     private bool _loaded, _loadingProject;
     private string? _error;
     private List<DeliveryProject> _projects = [];
     private Guid? _projectId;
     private DeliveryBacklogView? _view;
-    private string _filter = AllFilter;
+    private WeeklyDeliveryReport? _report;
+    private string _status = AllFilter, _module = "", _search = "", _attention = AllFilter, _sort = "module";
+    private bool _descending;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -134,22 +207,54 @@
     /// <summary>The backlog of the chosen delivery project only: its newest report, else its newest snapshot. Never another project's data.</summary>
     private async Task LoadAsync()
     {
-        _view = null;
+        _view = null; _report = null;
         if (_projectId is not { } id) return;
         _loadingProject = true;
         try
         {
             var reports = await Api.ReportsAsync(id);
             if (reports.OrderByDescending(r => r.GeneratedAt).FirstOrDefault() is { } newest && await Api.ReportAsync(id, newest.Id) is { } report && report.ProjectId == id)
+            {
+                _report = report;
                 _view = DeliveryBacklog.FromReport(report);
+            }
             else if ((await Api.SnapshotsAsync(id)).OrderByDescending(s => s.EffectiveAt).FirstOrDefault() is { } snapshot && await Api.SnapshotAsync(id, snapshot.Id) is { } detail)
                 _view = DeliveryBacklog.FromSnapshot(detail);
         }
         finally { _loadingProject = false; }
     }
 
-    private IReadOnlyList<BacklogItem> Filtered(DeliveryBacklogView view) =>
-        Enum.TryParse<BacklogStatus>(_filter, out var status) ? [.. view.Items.Where(i => i.Status == status)] : view.Items;
+    private IReadOnlyList<BacklogItem> Filtered(DeliveryBacklogView view)
+    {
+        IEnumerable<BacklogItem> items = view.Items;
+        if (Enum.TryParse<BacklogStatus>(_status, out var status)) items = items.Where(i => i.Status == status);
+        if (_module.Length > 0) items = items.Where(i => i.Module == _module);
+        if (_search.Length > 0) items = items.Where(i => i.Title.Contains(_search, StringComparison.OrdinalIgnoreCase) || i.Module.Contains(_search, StringComparison.OrdinalIgnoreCase));
+        if (_attention == "attention") items = items.Where(i => i.Attention > 0);
+        else if (_attention == "open") items = items.Where(i => i.OpenTasks > 0);
+        items = _sort switch
+        {
+            "title" => items.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
+            "status" => items.OrderBy(i => Array.IndexOf(Enum.GetValues<BacklogStatus>(), i.Status)).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
+            "tasks" => items.OrderBy(i => i.OpenTasks).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
+            _ => items.OrderBy(i => i.Module, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
+        };
+        var list = items.ToList();
+        if (_descending) list.Reverse();
+        return list;
+    }
+
+    private void SortBy(string key)
+    {
+        _descending = _sort == key && !_descending;
+        _sort = key;
+    }
+
+    private void ToggleStatus(BacklogStatus status) => _status = _status == status.ToString() ? AllFilter : status.ToString();
+
+    private void OpenFeature(string key) => Nav.NavigateTo($"delivery-overview?project={_projectId}&feature={Uri.EscapeDataString(key)}");
+
+    private void CloseFeature() => Nav.NavigateTo($"delivery-overview?project={_projectId}");
 
     private void OnProjectChanged(ChangeEventArgs e)
     {

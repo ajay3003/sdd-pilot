@@ -64,3 +64,14 @@
 .dfx-story-detail { display: grid; gap: .4rem; }
 @media (max-width: 640px) { .dfx-facts > div { grid-template-columns: 1fr; gap: 0; } }
 .dfx-badges { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+
+/* Phases table + task paging */
+.dfx-table-wrap { overflow-x: auto; position: relative; }
+.dfx-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.dfx-table th, .dfx-table td { border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); padding: .35rem .5rem; text-align: left; vertical-align: top; }
+.dfx-table thead th { font-weight: 600; white-space: nowrap; }
+.dfx-table tbody th { font-weight: 500; }
+.dfx-phase-title { overflow-wrap: anywhere; margin-right: .35rem; }
+.dfx-phase-detail td { background: var(--clr-surface-subtle, rgba(0, 0, 0, .025)); }
+.dfx-chip-link { cursor: pointer; border: 1px solid currentColor; background: none; margin: 0 .2rem .2rem 0; }
+.dfx-chip-link:focus-visible, .dfx-table button:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }

@@ -20,6 +20,7 @@ public static class WeeklyReportBuilder
         var weekLabel = $"{ISOWeek.GetYear(currentLocal.DateTime)}-W{ISOWeek.GetWeekOfYear(currentLocal.DateTime):00}";
 
         var (coverage, notes) = Coverage(baseline, current, DateOnly.FromDateTime(baselineLocal.DateTime), weekStartDate);
+        var (kind, warnings) = Period(baseline, current, DateOnly.FromDateTime(baselineLocal.DateTime), DateOnly.FromDateTime(currentLocal.DateTime), weekStartDate);
         var stories = comparison.Stories;
         var currentStatuses = current.Features.Select(f => f.Status).ToList();
         var explicitEvidence = current.Features.Concat(baseline.Features).Any(f => DeliveryReportingText.IsExplicitOnly(f.Status));
@@ -58,7 +59,10 @@ public static class WeeklyReportBuilder
             ReportId = reportId,
             ProjectId = projectId,
             ProjectName = projectName,
-            Title = $"{projectName} Weekly Delivery Status",
+            Title = kind == DeliveryReportKind.Weekly ? $"{projectName} Weekly Delivery Status" : $"{projectName} Delivery Change Report",
+            Kind = kind,
+            ComparisonWarnings = warnings,
+            CalculationVersion = CalculationVersion,
             WeekLabel = weekLabel,
             WeekStart = weekStart,
             PeriodStart = baseline.Ref.EffectiveAt,
@@ -77,6 +81,25 @@ public static class WeeklyReportBuilder
             NextWeekFocus = Focus(current, stories, comparison.Attention.Count),
             ScopeChanges = comparison.ScopeChanges,
         };
+    }
+
+    /// <summary>2: report kind, comparison warnings, unconfirmed removals under incomplete coverage.</summary>
+    public const int CalculationVersion = 2;
+
+    /// <summary>
+    /// Weekly only when the baseline is on or before the start of the current snapshot's ISO week and at most seven days before it, so the
+    /// comparison covers that week; everything else is a Delivery Change Report. Warnings name what makes the period weak.
+    /// </summary>
+    internal static (DeliveryReportKind Kind, List<string> Warnings) Period(DeliverySnapshotContent baseline, DeliverySnapshotContent current, DateOnly baselineDate, DateOnly currentDate, DateOnly weekStart)
+    {
+        var warnings = new List<string>();
+        if (baseline.Ref.EffectiveAt > current.Ref.EffectiveAt) warnings.Add("The baseline is later than the current snapshot: the date range is inverted.");
+        if (baselineDate == currentDate) warnings.Add($"Same-day comparison: both snapshots are from {Day(currentDate)}. This is a change report, not weekly coverage.");
+        if (baseline.Ref.Fingerprint.Length > 0 && baseline.Ref.Fingerprint == current.Ref.Fingerprint) warnings.Add("Both snapshots have identical content: no change can be measured.");
+        if (baseline.Ref.GitCommit is null && baseline.Ref.AzureDevOps is null || current.Ref.GitCommit is null && current.Ref.AzureDevOps is null)
+            warnings.Add("The source revision of at least one snapshot is unknown (no Git commit recorded).");
+        var weekly = baselineDate <= weekStart && baselineDate >= weekStart.AddDays(-7) && baselineDate < currentDate;
+        return (weekly ? DeliveryReportKind.Weekly : DeliveryReportKind.Change, warnings);
     }
 
     private static (DeliveryCoverage, List<string>) Coverage(DeliverySnapshotContent baseline, DeliverySnapshotContent current, DateOnly baselineDate, DateOnly weekStart)

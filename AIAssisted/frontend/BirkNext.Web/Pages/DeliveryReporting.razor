@@ -106,6 +106,7 @@
         <section class="dlr-card dlr-report-head" data-testid="dlr-report">
             <div class="dlr-report-title">
                 <h2 class="dlr-h2">@report.Title — @report.WeekLabel</h2>
+                <p class="dlr-muted" data-testid="dlr-report-kind">@(report.Kind == DeliveryReportKind.Weekly ? "Weekly report: the baseline covers this week." : "Delivery change report: compares two snapshots; not a full weekly period.") Baseline @P.DayTime(report.Baseline.EffectiveAt) (imported @P.DayTime(report.Baseline.ImportedAt)) → current @P.DayTime(report.Current.EffectiveAt) (imported @P.DayTime(report.Current.ImportedAt)).</p>
                 <ExportMenu TestId="dlr-export" Options="ExportOptions(report.ReportId)" />
             </div>
             <dl class="dlr-meta">
@@ -122,6 +123,7 @@
                 <span class="dlr-muted">PDF: open the HTML export and use your browser's Print → Save as PDF.</span>
             </div>
             @foreach (var note in report.CoverageNotes) { <p class="dlr-warning" role="note" data-testid="dlr-coverage-note"><strong>Coverage:</strong> @note</p> }
+            @foreach (var warning in report.ComparisonWarnings) { <p class="dlr-warning" role="note" data-testid="dlr-comparison-warning"><strong>Comparison:</strong> @warning</p> }
         </section>
 
         <section aria-label="Summary" class="dlr-cards" data-testid="dlr-cards">
@@ -190,7 +192,7 @@
             {
                 <p class="dlr-muted" role="status" data-testid="dlr-generate-running">Generating a report (@running.Context.Baseline → @running.Context.Revision) — it continues if you leave this page; see Activity.</p>
             }
-            <h2 class="dlr-h2" id="dlr-generate-title">Generate weekly report</h2>
+            <h2 class="dlr-h2" id="dlr-generate-title">Generate delivery report</h2>
             @if (_snapshots.Count < 2)
             {
                 <p class="dlr-muted">Import at least two snapshots (a baseline and a current one) to compare.</p>
@@ -210,7 +212,7 @@
                             @foreach (var s in _snapshots.Where(s => s.Id != _currentId)) { <option value="@s.Id">@SnapshotOption(s)</option> }
                         </select>
                     </label>
-                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null)" @onclick="Generate">Generate weekly report</button>
+                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null)" @onclick="Generate">Generate report</button>
                 </div>
                 @if (_suggestion is not null)
                 {

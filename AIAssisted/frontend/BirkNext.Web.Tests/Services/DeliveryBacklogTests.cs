@@ -12,9 +12,9 @@ public sealed class DeliveryBacklogTests
     [Theory]
     [InlineData(DeliveryStatus.NotStarted, BacklogStatus.Planned)]
     [InlineData(DeliveryStatus.InProgress, BacklogStatus.InProgress)]
-    [InlineData(DeliveryStatus.TasksComplete, BacklogStatus.Implemented)]
-    [InlineData(DeliveryStatus.ReadyForTest, BacklogStatus.Implemented)]
-    [InlineData(DeliveryStatus.Testing, BacklogStatus.Implemented)]
+    [InlineData(DeliveryStatus.TasksComplete, BacklogStatus.ChecklistComplete)]
+    [InlineData(DeliveryStatus.ReadyForTest, BacklogStatus.ChecklistComplete)]
+    [InlineData(DeliveryStatus.Testing, BacklogStatus.ChecklistComplete)]
     [InlineData(DeliveryStatus.Done, BacklogStatus.Accepted)]
     [InlineData(DeliveryStatus.Blocked, BacklogStatus.Blocked)]
     [InlineData(DeliveryStatus.NeedsClarification, BacklogStatus.NeedsClarification)]
@@ -22,14 +22,16 @@ public sealed class DeliveryBacklogTests
     public void Status_ComesFromExplicitEvidence_NeverInventsVerified(DeliveryStatus status, BacklogStatus expected)
     {
         DeliveryBacklog.Status(status).Should().Be(expected);
-        DeliveryBacklog.Status(status).Should().NotBe(BacklogStatus.Verified, "snapshots carry no verification evidence");
+        DeliveryBacklog.Status(status).Should().NotBe(BacklogStatus.QaVerified, "snapshots carry no verification evidence");
+        DeliveryBacklog.Status(status).Should().NotBe(BacklogStatus.ImplementationVerified, "checked tasks are not verified implementation");
     }
 
     [Fact]
-    public void TasksComplete_IsImplemented_NotAccepted_AndSaysSo()
+    public void TasksComplete_IsChecklistComplete_NotImplementedOrAccepted_AndSaysSo()
     {
-        DeliveryBacklog.Detail(DeliveryStatus.TasksComplete).Should().Contain("not stated as tested or done");
-        DeliveryBacklog.Columns.Should().Equal(BacklogStatus.Planned, BacklogStatus.InProgress, BacklogStatus.Implemented, BacklogStatus.Verified, BacklogStatus.Accepted, BacklogStatus.Blocked);
+        DeliveryBacklog.Detail(DeliveryStatus.TasksComplete).Should().Contain("not verified, tested or accepted");
+        DeliveryBacklog.Label(BacklogStatus.ChecklistComplete).Should().Be("Task checklist complete");
+        DeliveryBacklog.Columns.Should().Equal(BacklogStatus.Planned, BacklogStatus.InProgress, BacklogStatus.ChecklistComplete, BacklogStatus.ImplementationVerified, BacklogStatus.QaVerified, BacklogStatus.Accepted, BacklogStatus.Blocked);
     }
 
     [Fact]
@@ -53,10 +55,10 @@ public sealed class DeliveryBacklogTests
 
         var view = DeliveryBacklog.FromReport(report);
 
-        view.Items.Select(i => (i.Title, i.Status)).Should().Equal(("Case overview", BacklogStatus.Accepted), ("Child search", BacklogStatus.Implemented));
+        view.Items.Select(i => (i.Title, i.Status)).Should().Equal(("Case overview", BacklogStatus.Accepted), ("Child search", BacklogStatus.ChecklistComplete));
         view.Items.Single(i => i.Title == "Child search").Should().Match<BacklogItem>(i => i.Stories == 1 && i.Criteria == 5 && i.Phases == 1 && i.TasksCompleted == 8);
         view.RemovedFeatures.Should().Equal("Old export");
-        view.Count(BacklogStatus.Verified).Should().Be(0);
+        view.Count(BacklogStatus.QaVerified).Should().Be(0);
         view.Source.BaselineLabel.Should().Be("Monday");
         DeliveryBacklog.Provenance(view.Source).Should().Be("Azure DevOps · M2LB / M2LB / main · abc1234");
     }

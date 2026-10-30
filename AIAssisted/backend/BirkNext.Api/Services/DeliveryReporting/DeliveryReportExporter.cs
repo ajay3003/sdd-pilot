@@ -34,6 +34,7 @@ public static class DeliveryReportExporter
         md.AppendLine($"**Coverage:** {report.Coverage}  ");
         md.AppendLine($"**Generated:** {Time(report.GeneratedAt, zone)}").AppendLine();
         foreach (var note in report.CoverageNotes) md.AppendLine($"> **Coverage note:** {Md(note)}").AppendLine();
+        foreach (var warning in report.ComparisonWarnings) md.AppendLine($"> **Comparison warning:** {Md(warning)}").AppendLine();
 
         md.AppendLine("## Executive summary").AppendLine();
         foreach (var line in report.ExecutiveSummary) md.AppendLine($"- {Md(line)}");
@@ -77,7 +78,7 @@ public static class DeliveryReportExporter
         if (report.ScopeChanges.Count > 0)
         {
             md.AppendLine("## Scope changes").AppendLine();
-            foreach (var sc in report.ScopeChanges) md.AppendLine($"- **{(sc.Kind == "Removed" ? "Removed — review" : "New this period")}** · {Md(sc.Title)} ({Md(sc.Module)}): {Md(sc.Detail)}");
+            foreach (var sc in report.ScopeChanges) md.AppendLine($"- **{ScopeLabel(sc.Kind)}** · {Md(sc.Title)} ({Md(sc.Module)}): {Md(sc.Detail)}");
             md.AppendLine();
         }
 
@@ -145,6 +146,7 @@ public static class DeliveryReportExporter
         Meta(h, "Generated", Time(report.GeneratedAt, zone));
         h.AppendLine("</dl></header>");
         foreach (var note in report.CoverageNotes) h.AppendLine($"<p class=\"note\" role=\"note\"><strong>Coverage note:</strong> {E(note)}</p>");
+        foreach (var warning in report.ComparisonWarnings) h.AppendLine($"<p class=\"note\" role=\"note\"><strong>Comparison warning:</strong> {E(warning)}</p>");
 
         h.AppendLine("<section><h2>Executive summary</h2><ul>");
         foreach (var line in report.ExecutiveSummary) h.AppendLine($"<li>{E(line)}</li>");
@@ -171,7 +173,7 @@ public static class DeliveryReportExporter
         {
             h.AppendLine("<section><h2>Scope changes</h2><ul>");
             foreach (var sc in report.ScopeChanges)
-                h.AppendLine($"<li><span class=\"badge review\">{(sc.Kind == "Removed" ? "Removed — review" : "New this period")}</span> <strong>{E(sc.Title)}</strong> ({E(sc.Module)}): {E(sc.Detail)}</li>");
+                h.AppendLine($"<li><span class=\"badge review\">{ScopeLabel(sc.Kind)}</span> <strong>{E(sc.Title)}</strong> ({E(sc.Module)}): {E(sc.Detail)}</li>");
             h.AppendLine("</ul></section>");
         }
 
@@ -296,6 +298,8 @@ public static class DeliveryReportExporter
         try { return TimeZoneInfo.FindSystemTimeZoneById(report.TimeZone); }
         catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { return TimeZoneInfo.Utc; }
     }
+
+    private static string ScopeLabel(string kind) => kind switch { "Removed" => "Removed — review", "Missing" => "Missing — coverage incomplete", _ => "New this period" };
 
     private static string E(string text) => WebUtility.HtmlEncode(text);
 

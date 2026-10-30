@@ -322,6 +322,8 @@ public sealed record DeliveryStoryRow
     public bool AcceptanceCriteriaChanged { get; init; }
     public bool NewFeature { get; init; }
     public bool RemovedFeature { get; init; }
+    /// <summary>Absent from a current snapshot that was not read completely: missing, not a confirmed removal (review required).</summary>
+    public bool RemovalUnconfirmed { get; init; }
     public bool HasActiveAttention { get; init; }
     /// <summary>Plain-language reasons for the movement ("task completion changed from 3/8 to 7/8").</summary>
     public List<string> Reasons { get; init; } = [];
@@ -450,7 +452,17 @@ public sealed record WeeklyDeliveryReport
     public List<DeliveryFocusItem> NextWeekFocus { get; init; } = [];
     /// <summary>Features added to / removed from scope (v2). Separate from Needs attention.</summary>
     public List<DeliveryScopeChange> ScopeChanges { get; init; } = [];
+    /// <summary>Weekly only when the baseline covers the reporting week; any other interval (same day, a few days, several weeks) is a
+    /// Delivery Change Report. Reports frozen before this existed read as Weekly.</summary>
+    public DeliveryReportKind Kind { get; init; }
+    /// <summary>Comparison-period problems found at generation (same day, identical content, unknown revisions …). Frozen with the report.</summary>
+    public List<string> ComparisonWarnings { get; init; } = [];
+    /// <summary>Version of the delivery calculation rules the report was generated with (two reports of one period can differ by it).</summary>
+    public int CalculationVersion { get; init; } = 1;
 }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryReportKind { Weekly, Change }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DeliveryExportFormat { Markdown, Html }

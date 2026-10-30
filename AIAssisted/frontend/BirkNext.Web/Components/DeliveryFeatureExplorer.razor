@@ -50,10 +50,10 @@
                     {
                         var row = Report.Stories.FirstOrDefault(s => s.FeatureKey == sc.FeatureKey);
                         <li class="dfx-scope-item" data-testid="dlr-scope-change" data-kind="@sc.Kind">
-                            <span class="dfx-badge @(sc.Kind == "Removed" ? "dfx-warn" : "dfx-info")">@(sc.Kind == "Removed" ? "Removed — review" : "New this period")</span>
+                            <span class="dfx-badge @(sc.Kind is "Removed" or "Missing" ? "dfx-warn" : "dfx-info")">@(sc.Kind switch { "Removed" => "Removed — review", "Missing" => "Missing — coverage incomplete", _ => "New this period" })</span>
                             <strong>@sc.Title</strong> <span class="dfx-muted">@sc.Module</span>
                             <span class="dfx-muted">@sc.Detail</span>
-                            @if (row is not null) { <button type="button" class="dfx-link" @onclick="() => Open(row)" data-testid="dlr-scope-open">@(sc.Kind == "Removed" ? "View baseline feature" : "View feature")<span class="visually-hidden"> @sc.Title</span></button> }
+                            @if (row is not null) { <button type="button" class="dfx-link" @onclick="() => Open(row)" data-testid="dlr-scope-open">@(sc.Kind is "Removed" or "Missing" ? "View baseline feature" : "View feature")<span class="visually-hidden"> @sc.Title</span></button> }
                         </li>
                     }
                 </ul>
@@ -85,19 +85,51 @@
     private string _search = "", _filter = "default", _module = "", _phase = "", _tab = "overview";
     private DeliveryStoryRow? _open;
     private string? _openStory;
-    private string _taskFilter = "all";
+    private string _taskFilter = "all", _taskSearch = "", _taskPhase = "", _taskStory = "", _phaseFilter = "all";
+    private const string NoPhase = "(none)", NoStory = "(none)";
+    /// <summary>Tasks render in pages: large features (1,000+ tasks across a project) never render every row at once.</summary>
+    private const int TaskPage = 100;
+    private int _taskLimit = TaskPage;
+    private readonly HashSet<string> _expandedPhases = new(StringComparer.Ordinal);
+
+    /// <summary>Opens a feature from outside (Delivery Overview) once; Back then calls <see cref="OnClose"/> when set.</summary>
+    [Parameter] public string? OpenFeatureKey { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private string? _openedFromParameter;
+
+    protected override void OnParametersSet()
+    {
+        if (OpenFeatureKey is { } key && key != _openedFromParameter && Report.Stories.FirstOrDefault(r => r.FeatureKey == key) is { } row)
+        {
+            _openedFromParameter = key;
+            Open(row);
+        }
+    }
+
+    private void ResetTaskPage() => _taskLimit = TaskPage;
+    private void TogglePhase(string key) { if (!_expandedPhases.Remove(key)) _expandedPhases.Add(key); }
+    private void OpenStory(string key) { _tab = "stories"; _openStory = key; }
 
     private List<DeliveryStoryRow> Rows() => [.. P.Filter(Report, _filter, _search, _module)
         .Where(s => _phase.Length == 0 || s.Hierarchy?.Phases.Any(p => p.Key == _phase) == true)];
 
     private static string Id(string text) => string.Concat(text.Where(char.IsLetterOrDigit)).ToLowerInvariant() is { Length: > 0 } id ? id : "project";
 
-    private void Open(DeliveryStoryRow row) { _open = row; _tab = "overview"; _openStory = null; _taskFilter = "all"; }
-    private void Close() { _open = null; _openStory = null; }
+    private void Open(DeliveryStoryRow row)
+    {
+        _open = row; _tab = "overview"; _openStory = null; _taskFilter = "all"; _taskSearch = ""; _taskPhase = ""; _taskStory = ""; _phaseFilter = "all";
+        _taskLimit = TaskPage; _expandedPhases.Clear();
+    }
+
+    private async Task Close()
+    {
+        _open = null; _openStory = null;
+        if (OnClose.HasDelegate) await OnClose.InvokeAsync();
+    }
 
     /// <summary>The movement; "Specification changed" alone only when nothing else moved (it is shown as its own badge otherwise).</summary>
     private static string ChangeBadge(DeliveryStoryRow s) =>
-        s.RemovedFeature ? "Removed — review" : s.NewFeature ? "New this period"
+        s.RemovalUnconfirmed ? "Missing — review" : s.RemovedFeature ? "Removed — review" : s.NewFeature ? "New this period"
         : s.SpecificationChanged && s.Movement is DeliveryMovement.NeedsReview or DeliveryMovement.NoSignificantChange ? "Specification changed" : DeliveryReportingText.Movement(s.Movement);
 
     private static bool ExtraSpecBadge(DeliveryStoryRow s) => s.SpecificationChanged && !s.NewFeature && !s.RemovedFeature && ChangeBadge(s) != "Specification changed";
@@ -242,20 +274,65 @@
 
     private RenderFragment PhasesTab(DeliveryStoryRow s, DeliveryFeatureHierarchy h) => __builder =>
     {
-        <p class="dfx-muted">A phase is a delivery grouping from tasks.md, not a status.</p>
-        <ul class="dfx-cards">
-            @foreach (var ph in h.Phases)
+        var visible = h.Phases.Where(p => _phaseFilter switch
+        {
+            "open" => p.TaskTotal > p.TaskCompleted,
+            "changed" => p.Changes > 0 || p.Change != DeliveryItemChange.Unchanged,
+            _ => true,
+        }).ToList();
+        var unphased = h.Tasks.Count(t => t.PhaseKey is null && t.Change != DeliveryTaskChange.Removed);
+        <p class="dfx-muted">Phases are the “Phase N” groups of tasks.md, in source order. A phase is a delivery grouping, not a status, and a checked task is not verified implementation.</p>
+        <div class="dfx-filters" role="radiogroup" aria-label="Phase filter">
+            @foreach (var (id, label) in new[] { ("all", "All phases"), ("open", "With open tasks"), ("changed", "Changed this period") })
             {
-                <li class="dfx-card" data-testid="dlr-phase" data-phase="@ph.Key">
-                    <div class="dfx-card-top"><h4 class="dfx-card-title">@ph.Title</h4>@if (ph.Change != DeliveryItemChange.Unchanged) { <span class="dfx-badge @Tone(ph.Change)">Phase @DeliveryReportingText.Change(ph.Change).ToLowerInvariant()</span> }</div>
-                    <dl class="dfx-facts">
-                        <div><dt>Tasks</dt><dd>@ProgressBar((ph.TaskCompleted, ph.TaskTotal), ph.Title)</dd></div>
-                        <div><dt>User stories</dt><dd>@(ph.StoryKeys.Count == 0 ? "None explicit" : string.Join(", ", ph.StoryKeys))</dd></div>
-                        <div><dt>Changes this period</dt><dd>@ph.Changes</dd></div>
-                    </dl>
-                </li>
+                var f = id;
+                <label class="dfx-radio"><input type="radio" name="dfx-phase-filter" checked="@(_phaseFilter == f)" @onchange="() => _phaseFilter = f" data-testid="dlr-phase-filter" data-filter="@f" /> @label</label>
             }
-        </ul>
+        </div>
+        <p class="dfx-muted" role="status" data-testid="dlr-phase-count">@visible.Count of @h.Phases.Count phases shown@(unphased > 0 ? $" · {unphased} task{(unphased == 1 ? "" : "s")} without a phase (Tasks tab)" : "")</p>
+        <div class="dfx-table-wrap">
+            <table class="dfx-table" data-testid="dlr-phase-table">
+                <caption class="visually-hidden">Phases of @s.Title</caption>
+                <thead><tr><th scope="col">Phase</th><th scope="col">User stories</th><th scope="col">Tasks checked</th><th scope="col">Open</th><th scope="col">Verification</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                <tbody>
+                    @foreach (var ph in visible)
+                    {
+                        var key = ph.Key;
+                        var expanded = _expandedPhases.Contains(key);
+                        <tr data-testid="dlr-phase" data-phase="@ph.Key">
+                            <th scope="row"><span class="dfx-phase-title">@ph.Title</span>@if (ph.Change != DeliveryItemChange.Unchanged) { <span class="dfx-badge @Tone(ph.Change)">Phase @DeliveryReportingText.Change(ph.Change).ToLowerInvariant()</span> }</th>
+                            <td>
+                                @if (ph.StoryKeys.Count == 0) { <span class="dfx-muted">None explicit</span> }
+                                @foreach (var storyKey in ph.StoryKeys)
+                                {
+                                    var sk = storyKey;
+                                    <button type="button" class="dfx-chip dfx-chip-link" data-testid="dlr-phase-story" @onclick="() => OpenStory(sk)">@sk<span class="visually-hidden"> (open user story)</span></button>
+                                }
+                            </td>
+                            <td>@ph.TaskCompleted / @ph.TaskTotal</td>
+                            <td data-testid="dlr-phase-open">@(ph.TaskTotal - ph.TaskCompleted)</td>
+                            <td><span class="dfx-muted" title="Snapshots carry no implementation or test evidence">Not verified</span></td>
+                            <td><button type="button" class="dfx-link" aria-expanded="@(expanded ? "true" : "false")" data-testid="dlr-phase-toggle" @onclick="() => TogglePhase(key)">@(expanded ? "Hide tasks" : "Show tasks")<span class="visually-hidden"> of @ph.Title</span></button></td>
+                        </tr>
+                        @if (expanded)
+                        {
+                            var phaseTasks = h.Tasks.Where(t => t.PhaseKey == key).ToList();
+                            var stories = h.Stories.Where(st => ph.StoryKeys.Contains(st.Key)).ToList();
+                            <tr class="dfx-phase-detail" data-testid="dlr-phase-detail" data-phase="@ph.Key">
+                                <td colspan="6">
+                                    @if (stories.Count > 0)
+                                    {
+                                        <p class="dfx-muted">User stories: @string.Join(" · ", stories.Select(st => $"{st.Key} {st.Title}")) · @stories.Sum(st => st.Criteria.Count(c => c.Change != DeliveryItemChange.Removed)) acceptance criteria</p>
+                                    }
+                                    <p class="dfx-muted">Open work: @phaseTasks.Count(t => !t.Completed && t.Change != DeliveryTaskChange.Removed) open task(s). Implementation and QA verification: not available from snapshots.</p>
+                                    @TaskRows(phaseTasks)
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
     };
 
     private RenderFragment StoriesTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h, DeliveryUserStoryRow? open) => __builder =>
@@ -346,21 +423,55 @@
     private RenderFragment TasksTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h) => __builder =>
     {
         if (h is null) return;
-        var tasks = _taskFilter switch
-        {
-            "open" => h.Tasks.Where(t => !t.Completed && t.Change != DeliveryTaskChange.Removed),
-            "completed" => h.Tasks.Where(t => t.Completed && t.Change != DeliveryTaskChange.Removed),
-            "changed" => h.Tasks.Where(t => t.Change != DeliveryTaskChange.Unchanged),
-            _ => h.Tasks,
-        };
+        var all = h.Tasks;
+        var tasks = all.Where(t => _taskFilter switch
+            {
+                "open" => !t.Completed && t.Change != DeliveryTaskChange.Removed,
+                "completed" => t.Completed && t.Change != DeliveryTaskChange.Removed,
+                "changed" => t.Change != DeliveryTaskChange.Unchanged,
+                "unlinked" => t.UserStoryKey is null && t.Change != DeliveryTaskChange.Removed,
+                _ => true,
+            })
+            .Where(t => _taskPhase.Length == 0 || (_taskPhase == NoPhase ? t.PhaseKey is null : t.PhaseKey == _taskPhase))
+            .Where(t => _taskStory.Length == 0 || (_taskStory == NoStory ? t.UserStoryKey is null : t.UserStoryKey == _taskStory))
+            .Where(t => _taskSearch.Length == 0 || t.Text.Contains(_taskSearch, StringComparison.OrdinalIgnoreCase) || (t.TaskId?.Contains(_taskSearch, StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+        var live = all.Where(t => t.Change != DeliveryTaskChange.Removed).ToList();
+        <p class="dfx-muted" data-testid="dlr-task-totals">@live.Count(t => t.Completed) / @live.Count checked · @live.Count(t => !t.Completed) open · @live.Count(t => t.PhaseKey is null) without a phase · @live.Count(t => t.UserStoryKey is null) without a user story. Checked is the Markdown checkbox, not verified implementation.</p>
         <div class="dfx-filters" role="radiogroup" aria-label="Task filter">
-            @foreach (var (id, label) in new[] { ("all", "All"), ("open", "Open"), ("completed", "Completed"), ("changed", "Changed this period") })
+            @foreach (var (id, label) in new[] { ("all", "All"), ("open", "Open"), ("completed", "Checked"), ("changed", "Changed this period"), ("unlinked", "No user story") })
             {
                 var f = id;
-                <label class="dfx-radio"><input type="radio" name="dfx-task-filter" checked="@(_taskFilter == f)" @onchange="() => _taskFilter = f" data-testid="dlr-task-filter" data-filter="@f" /> @label</label>
+                <label class="dfx-radio"><input type="radio" name="dfx-task-filter" checked="@(_taskFilter == f)" @onchange="() => { _taskFilter = f; _taskLimit = TaskPage; }" data-testid="dlr-task-filter" data-filter="@f" /> @label</label>
             }
         </div>
-        @TaskList(tasks.ToList(), h)
+        <div class="dfx-filters" role="group" aria-label="Find tasks">
+            <label class="dfx-field"><span>Search</span><input type="search" data-testid="dlr-task-search" @bind="_taskSearch" @bind:event="oninput" @bind:after="ResetTaskPage" placeholder="Task text or ID" /></label>
+            @if (h.Phases.Count > 0)
+            {
+                <label class="dfx-field"><span>Phase</span>
+                    <select data-testid="dlr-task-phase" @bind="_taskPhase" @bind:after="ResetTaskPage">
+                        <option value="">All phases</option>
+                        @foreach (var ph in h.Phases) { <option value="@ph.Key">@ph.Title</option> }
+                        @if (all.Any(t => t.PhaseKey is null)) { <option value="@NoPhase">No phase</option> }
+                    </select></label>
+            }
+            @if (h.Stories.Count > 0)
+            {
+                <label class="dfx-field"><span>User story</span>
+                    <select data-testid="dlr-task-story" @bind="_taskStory" @bind:after="ResetTaskPage">
+                        <option value="">All user stories</option>
+                        @foreach (var st in h.Stories) { <option value="@st.Key">@st.Key · @st.Title</option> }
+                        <option value="@NoStory">No user story</option>
+                    </select></label>
+            }
+        </div>
+        <p class="dfx-muted" role="status" data-testid="dlr-task-count">@Math.Min(_taskLimit, tasks.Count) of @tasks.Count matching task@(tasks.Count == 1 ? "" : "s") shown (@all.Count in this feature)</p>
+        @TaskList(tasks.Take(_taskLimit).ToList(), h)
+        @if (tasks.Count > _taskLimit)
+        {
+            <button type="button" class="dfx-link" data-testid="dlr-task-more" @onclick="() => _taskLimit += TaskPage">Show @Math.Min(TaskPage, tasks.Count - _taskLimit) more</button>
+        }
     };
 
     /// <summary>Tasks grouped by traceability: by phase when explicit, then by user story within it, else feature level.</summary>
@@ -371,8 +482,17 @@
         {
             <section class="dfx-task-group" aria-label="@(group.Key is null ? "Feature-level tasks" : h.Phases.FirstOrDefault(p => p.Key == group.Key)?.Title ?? group.Key)" data-testid="dlr-task-group" data-phase="@(group.Key ?? "feature")">
                 <h5 class="dfx-h5">@(group.Key is null ? h.Phases.Count == 0 ? "Tasks" : "Other tasks (no phase)" : h.Phases.FirstOrDefault(p => p.Key == group.Key)?.Title ?? group.Key)</h5>
+                @TaskRows([.. group])
+            </section>
+        }
+    };
+
+    /// <summary>The task rows of one group: checkbox state, task id, text, story, change and source file.</summary>
+    private RenderFragment TaskRows(List<DeliveryTaskRow> tasks) => __builder =>
+    {
+        if (tasks.Count == 0) { <p class="dfx-muted">No tasks.</p>; return; }
                 <ul class="dfx-tasks">
-                    @foreach (var t in group)
+                    @foreach (var t in tasks)
                     {
                         <li data-testid="dlr-task" data-change="@t.Change" data-completed="@(t.Completed ? "true" : "false")">
                             <span class="dfx-check" aria-hidden="true">@(t.Completed ? "✓" : "○")</span>
@@ -385,8 +505,6 @@
                         </li>
                     }
                 </ul>
-            </section>
-        }
     };
 
     private RenderFragment ChangesTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h) => __builder =>

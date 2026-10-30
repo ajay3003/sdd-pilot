@@ -117,7 +117,13 @@ public static class DeliverySnapshotComparison
         var attentionKeys = attention.Where(a => a.FeatureKey is not null).GroupBy(a => a.FeatureKey!).ToDictionary(g => g.Key, g => g.Select(a => DeliveryReportingText.Attention(a.Kind)).Distinct().ToList());
         stories = stories.Select(s => attentionKeys.TryGetValue(s.FeatureKey, out var labels) ? s with { Attention = labels, HasActiveAttention = true } : s).ToList();
 
-        var scope = stories.Where(s => s.NewFeature || s.RemovedFeature).Select(s => s.RemovedFeature
+        // A feature absent from a current snapshot that was not read completely is Missing (review), never a confirmed removal.
+        if (current.Coverage != DeliveryCoverage.Complete)
+            stories = stories.Select(s => s.RemovedFeature ? s with { RemovalUnconfirmed = true, Movement = DeliveryMovement.NeedsReview,
+                Reasons = ["Not found in the current snapshot, which was not read completely – missing, not a confirmed removal (review)"] } : s).ToList();
+        var scope = stories.Where(s => s.NewFeature || s.RemovedFeature).Select(s => s.RemovalUnconfirmed
+            ? new DeliveryScopeChange("Missing", s.FeatureKey, s.Title, s.Module, $"Not found in the current snapshot, which was not read completely. Last known baseline: {s.BaselineTaskCompleted}/{s.BaselineTaskTotal} tasks. Review before treating it as removed.")
+            : s.RemovedFeature
             ? new DeliveryScopeChange("Removed", s.FeatureKey, s.Title, s.Module, $"In the baseline, not in the current snapshot. Last known baseline: {s.BaselineTaskCompleted}/{s.BaselineTaskTotal} tasks. Confirm whether the removal was intentional.")
             : new DeliveryScopeChange("Added", s.FeatureKey, s.Title, s.Module, $"New this period. Current state: {s.CurrentTaskCompleted}/{s.CurrentTaskTotal} tasks (not counted as completed this period).")).ToList();
         return new(stories, events, attention,
