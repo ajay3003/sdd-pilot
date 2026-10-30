@@ -83,3 +83,11 @@
 .tep-advanced > summary { cursor: pointer; font-weight: 600; }
 .tep-excluded { margin-top: .4rem; font-size: .88rem; }
 .tep-excluded summary { cursor: pointer; color: var(--clr-text-muted); }
+
+.tep-headline { margin: .4rem 0 .3rem; font-size: .95rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; }
+.tep-why summary { cursor: pointer; font-size: .82rem; color: var(--clr-link, #1d4ed8); }
+.tep-why summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+
+.tep-headline { margin: .4rem 0 .3rem; font-size: .95rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; }
+.tep-why summary { cursor: pointer; font-size: .82rem; color: var(--clr-link, #1d4ed8); }
+.tep-why summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }

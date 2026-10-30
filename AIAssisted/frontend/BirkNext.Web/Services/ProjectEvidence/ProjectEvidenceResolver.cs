@@ -119,6 +119,16 @@ public sealed record ProjectEvidenceView(
     /// <summary>Ready only when every required role is ready (bound AND satisfied) and nothing conflicts — never merely "everything selected".</summary>
     public bool RequiredReadyAll => RequiredReady == RequiredTotal && Conflicts == 0;
 
+    /// <summary>The one-word evidence readiness: Ready only when every required role is ready; bound-but-not-satisfied is Partial.</summary>
+    public string ReadinessHeadline => !IsConfigured ? "Not configured" : RequiredReadyAll ? "Ready" : RequiredMissing > 0 || Conflicts > 0 ? "Incomplete" : "Partial";
+
+    /// <summary>Why, in one sentence, from the same counts as the table (bound is never presented as ready).</summary>
+    public string ReadinessExplanation => !IsConfigured ? "No Project evidence is configured for this Target Application yet."
+        : RequiredReadyAll ? $"All {RequiredTotal} required roles are bound and satisfy their evidence requirements. Ready is not QA verified."
+        : RequiredMissing == 0 && Conflicts == 0
+            ? $"All {RequiredTotal} required roles are bound, but {RequiredTotal - RequiredReady} do{(RequiredTotal - RequiredReady == 1 ? "es" : "")} not yet fully satisfy their evidence requirements."
+            : $"{RequiredBound} of {RequiredTotal} required roles are bound and {RequiredReady} ready; {RequiredMissing} missing{(Conflicts > 0 ? $", {Conflicts} with a conflict" : "")}.";
+
     /// <summary>"2 required roles partial", "1 required role missing", "1 role needs decision", "1 conflict" — the compact problems summary.</summary>
     public IReadOnlyList<string> Problems
     {

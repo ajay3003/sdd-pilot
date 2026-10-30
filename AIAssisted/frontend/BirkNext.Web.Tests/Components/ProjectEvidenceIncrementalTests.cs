@@ -206,5 +206,23 @@ public sealed class ProjectEvidenceIncrementalTests : BunitContext
         cut.Find("[data-testid=tep-readiness-partial] strong").TextContent.Should().Be(required.Count(r => r.State == EvidenceRoleState.Partial).ToString());
         cut.Find("[data-testid=tep-readiness-missing] strong").TextContent.Should().Be(required.Count(r => !r.IsResolved).ToString());
         cut.FindAll("[data-testid=tep-role]").Count(r => r.GetAttribute("data-state") is "Ready").Should().Be(view.Rows.Count(r => r.IsReady));
+
+        // One headline from the same counts; bound is never shown as ready; diagnostics collapsed; requirements before sources before advanced.
+        cut.Find("[data-testid=tep-readiness-headline]").TextContent.Should().Contain($"Evidence readiness: {view.ReadinessHeadline}");
+        cut.Find("[data-testid=tep-readiness-explanation]").TextContent.Should().Be(view.ReadinessExplanation);
+        if (view.RequiredReadyAll) view.ReadinessHeadline.Should().Be("Ready"); else view.ReadinessHeadline.Should().NotBe("Ready");
+        cut.FindAll("[data-testid=tep-partial-detail]").Should().OnlyContain(d => d.ParentElement!.TagName == "DETAILS" && !d.ParentElement.HasAttribute("open"));
+        var markup = cut.Markup;
+        markup.IndexOf("data-testid=\"tep-roles\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"tep-sources\"", StringComparison.Ordinal));
+        markup.IndexOf("data-testid=\"tep-sources\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"tep-advanced\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task NotConfigured_StillListsTheImportedSources()
+    {
+        Import("a", "M2LB.zip");
+        var cut = Render<TargetEnvironmentProjectPane>(p => p.Add(x => x.EnvironmentId, "dev"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-source-row]").Should().ContainSingle());
+        (await _service.GetAsync("dev")).ReadinessHeadline.Should().Be("Not configured");
     }
 }

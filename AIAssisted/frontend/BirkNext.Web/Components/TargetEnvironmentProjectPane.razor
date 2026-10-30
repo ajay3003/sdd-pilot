@@ -39,54 +39,15 @@
             <div><dt>Imported sources</dt><dd data-testid="tep-source-total">@_view.Packages.Count@(_view.Packages.Count > 0 ? $" · latest import {_view.Packages.Max(p => p.ImportedAt).ToLocalTime():d MMM yyyy HH:mm}" : "")</dd></div>
         </dl>
 
-        @* Available Sources: every imported package of this workspace (the authoritative inventory: Import Project records + their Source
-           Analysis snapshots), whether bound or not — imported is not bound, bound is not ready. *@
-        <section class="tep-sources" aria-labelledby="tep-sources-h" data-testid="tep-sources">
-            <div class="tep-sources-head">
-                <h4 id="tep-sources-h" class="tep-subtitle">Available sources</h4>
-                <label class="visually-hidden" for="tep-source-search">Search sources</label>
-                <input id="tep-source-search" type="search" class="form-control form-control-sm tep-source-search" data-testid="tep-source-search" placeholder="Search sources…"
-                       value="@_sourceSearch" @oninput="e => _sourceSearch = e.Value?.ToString()" />
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-refresh-sources" disabled="@_refreshing" @onclick="RefreshSourcesAsync">@(_refreshing ? "Refreshing…" : "Refresh sources")</button>
-            </div>
-            @if (_view.Packages.Count == 0)
-            {
-                <p class="tep-muted" data-testid="tep-sources-empty">No package is imported yet. <a href="@ProjectImportPresentation.ImportSourceHref">Import a package</a>.</p>
-            }
-            else
-            {
-                <div class="tep-table-wrap">
-                    <table class="tep-table tep-sources-table" data-testid="tep-sources-table">
-                        <thead><tr><th scope="col">Source</th><th scope="col">Type</th><th scope="col">Capabilities</th><th scope="col">Analysis</th><th scope="col">Binding</th></tr></thead>
-                        <tbody>
-                            @foreach (var package in FilteredSources())
-                            {
-                                var roles = BoundRoles(package);
-                                <tr data-testid="tep-source-row" data-import="@package.ImportId">
-                                    <th scope="row">@package.ArchiveFileName<span class="tep-muted tep-source-meta">imported @package.ImportedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")</span></th>
-                                    <td>@package.Classification</td>
-                                    <td>@if (package.Capabilities.Count == 0) { <span class="tep-muted">None detected</span> }
-                                        else
-                                        {
-                                            <ul class="tep-badges" aria-label="@($"Capabilities of {package.ArchiveFileName}")">
-                                                @foreach (var c in package.Capabilities) { <li class="tep-badge tep-badge-compact" data-testid="tep-source-capability" data-status="@c.Status">@ShortCapability(c.Capability)@(c.Status == PackageCapabilityStatus.Ready ? "" : $" · {c.Status}")</li> }
-                                            </ul>
-                                        }</td>
-                                    <td data-testid="tep-source-analysis">@AnalysisLabel(package)</td>
-                                    <td data-testid="tep-source-binding">@(roles.Count == 0 ? "Available · not bound" : $"Bound: {string.Join(", ", roles)}")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
-
         @if (CatalogProject is { Length: > 0 } catalogProject)
         {
             <div id="pce"><PackageCatalogEditor Project="@catalogProject" /></div>
         }
 
+        @if (!_view.IsConfigured)
+        {
+            @SourcesSection
+        }
         @if (!_view.IsConfigured || _setup)
         {
             @* Project evidence for the Target Application: its evidence checklist. Saves into the same bindings the advanced table below shows. *@
@@ -111,6 +72,7 @@
                 <ul class="tep-impact" data-testid="tep-impact">@foreach (var line in _impact) { <li>@line</li> }</ul>
             }
 
+            <p class="tep-headline" data-testid="tep-readiness-headline"><strong>Evidence readiness: @_view.ReadinessHeadline</strong> <span class="tep-muted" data-testid="tep-readiness-explanation">@_view.ReadinessExplanation</span></p>
             @* Readiness summary: the same rows as the table below (bound ≠ ready; Partial counts as bound, never as ready). *@
             <ul class="tep-readiness" aria-label="Evidence readiness" data-testid="tep-readiness">
                 <li data-testid="tep-readiness-ready"><strong>@_view.RequiredReady</strong> required ready</li>
@@ -147,6 +109,7 @@
                             </th>
                             <td>
                                 <select class="form-select form-select-sm" aria-label="@($"Requirement of {row.Role.Label}")" data-testid="tep-requirement"
+                                        title="Required roles count toward evidence readiness. Changing this never bypasses checks a review itself requires."
                                         @onchange="e => SetRequirementAsync(row.Role.RoleKey, e.Value?.ToString())">
                                     <option value="Required" selected="@row.IsRequired">Required</option>
                                     <option value="Optional" selected="@(!row.IsRequired)">Optional</option>
@@ -174,7 +137,14 @@
                                 }</td>
                             <td><span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
                                 @if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">Bound: yes · @(row.IsReady ? "satisfies the role" : "role not fully satisfied")</span> }
-                                @if (row.PartialDetail is { } partial) { <span class="tep-partial-detail" data-testid="tep-partial-detail">@partial</span> }
+                                @if (row.PartialDetail is { } partial)
+                                {
+                                    @* Concise by default; the full diagnostic on request. *@
+                                    <details class="tep-why" data-testid="tep-partial-why">
+                                        <summary>Why @row.StatusLabel.ToLowerInvariant()?</summary>
+                                        <span class="tep-partial-detail" data-testid="tep-partial-detail">@partial</span>
+                                    </details>
+                                }
                                 @if (row.State == EvidenceRoleState.Conflict) { <span class="tep-partial-detail" data-testid="tep-conflict-detail">This role uses one source, but @row.Bound.Count are bound. Remove the one that is not authoritative.</span> }
                             </td>
                             <td>
@@ -191,6 +161,8 @@
                 </tbody>
             </table>
             </div>
+
+            @SourcesSection
 
             <details class="tep-advanced" data-testid="tep-advanced">
                 <summary>Advanced configuration — evidence dimensions, extra roles, Test Pack roles</summary>
@@ -274,6 +246,53 @@
     private TargetApplicationIdentity? _identity;
 
     /// <summary>Project evidence status: Not configured / Ready / Partial / Needs decision — never "Project not configured" when only evidence is missing.</summary>
+    /// <summary>Available sources: the authoritative imported-package inventory, bound or not (rendered whether or not evidence is configured).</summary>
+    private RenderFragment SourcesSection => __builder =>
+    {
+    @* Available Sources: every imported package of this workspace (the authoritative inventory: Import Project records + their Source
+           Analysis snapshots), whether bound or not — imported is not bound, bound is not ready. *@
+        <section class="tep-sources" aria-labelledby="tep-sources-h" data-testid="tep-sources">
+            <div class="tep-sources-head">
+                <h4 id="tep-sources-h" class="tep-subtitle">Available sources</h4>
+                <label class="visually-hidden" for="tep-source-search">Search sources</label>
+                <input id="tep-source-search" type="search" class="form-control form-control-sm tep-source-search" data-testid="tep-source-search" placeholder="Search sources…"
+                       value="@_sourceSearch" @oninput="e => _sourceSearch = e.Value?.ToString()" />
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-refresh-sources" disabled="@_refreshing" @onclick="RefreshSourcesAsync">@(_refreshing ? "Refreshing…" : "Refresh sources")</button>
+            </div>
+            @if (_view.Packages.Count == 0)
+            {
+                <p class="tep-muted" data-testid="tep-sources-empty">No package is imported yet. <a href="@ProjectImportPresentation.ImportSourceHref">Import a package</a>.</p>
+            }
+            else
+            {
+                <div class="tep-table-wrap">
+                    <table class="tep-table tep-sources-table" data-testid="tep-sources-table">
+                        <thead><tr><th scope="col">Source</th><th scope="col">Type</th><th scope="col">Capabilities</th><th scope="col">Analysis</th><th scope="col">Binding</th></tr></thead>
+                        <tbody>
+                            @foreach (var package in FilteredSources())
+                            {
+                                var roles = BoundRoles(package);
+                                <tr data-testid="tep-source-row" data-import="@package.ImportId">
+                                    <th scope="row">@package.ArchiveFileName<span class="tep-muted tep-source-meta">imported @package.ImportedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")</span></th>
+                                    <td>@package.Classification</td>
+                                    <td>@if (package.Capabilities.Count == 0) { <span class="tep-muted">None detected</span> }
+                                        else
+                                        {
+                                            <ul class="tep-badges" aria-label="@($"Capabilities of {package.ArchiveFileName}")">
+                                                @foreach (var c in package.Capabilities) { <li class="tep-badge tep-badge-compact" data-testid="tep-source-capability" data-status="@c.Status">@ShortCapability(c.Capability)@(c.Status == PackageCapabilityStatus.Ready ? "" : $" · {c.Status}")</li> }
+                                            </ul>
+                                        }</td>
+                                    <td data-testid="tep-source-analysis">@AnalysisLabel(package)</td>
+                                    <td data-testid="tep-source-binding">@(roles.Count == 0 ? "Available · not bound" : $"Bound: {string.Join(", ", roles)}")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    };
+
     private string EvidenceStatus => _view is not { IsConfigured: true } v ? "Not configured"
         : v.RequiredReadyAll ? $"Ready · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
         : v.NeedsDecision > 0 ? $"Needs decision · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
