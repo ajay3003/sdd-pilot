@@ -112,17 +112,25 @@ public sealed class ActiveTargetEnvironmentTests
         (await Factory(new(), js).GetActiveContextAsync()).ActiveProfile.Id.Should().Be("dev");
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("{\"profiles\":[],\"activeProfileId\":null}")]
-    public async Task FirstLoadAndPersistedEmptyStoreNeverAutoActivate(string? json)
+    [Fact]
+    public async Task PersistedEmptyStore_NeverAutoActivates()
     {
-        var js = new Storage(json);
+        var js = new Storage("{\"profiles\":[],\"activeProfileId\":null}");
         var settings = new FrontendAnalysisSettingsService();
         var context = await Factory(settings, js).GetActiveContextAsync();
-        settings.ActiveProfile.Should().BeNull();
+        settings.ActiveProfile.Should().BeNull("a saved state is never overridden");
         context.HasTargetUrl.Should().BeFalse();
-        if (json is not null) settings.Settings.Profiles.Should().BeEmpty();
+        settings.Settings.Profiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FreshInstallation_DefaultsToDevelopment_ActiveAndSelected_LocalOnlyAvailable()
+    {
+        var settings = new FrontendAnalysisSettingsService();
+        await settings.LoadAsync(new Storage(null));
+        settings.ActiveProfile!.Name.Should().Be("Development");
+        settings.Settings.Profiles.Select(p => p.Name).Should().Equal("Local", "Development", "QA", "Production");
+        settings.Settings.Profiles.Single(p => p.Name == "Development").TargetUrl.Should().Be("https://example-dev.local", "no project URL is a built-in default");
     }
 
     [Fact]

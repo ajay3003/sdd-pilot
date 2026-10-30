@@ -174,7 +174,9 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public async Task ResetForLocalDataResetAsync(IJSRuntime js)
     {
-        _settings = BuildSeedSettings();
+        // The Development environment's own configured frontend URL survives the reset (it is configuration of this installation, e.g.
+        // https://m2lbdev.bufetat.no — never a built-in default); everything else returns to the generic seed.
+        _settings = BuildSeedSettings(ConfiguredDevelopmentUrl(_settings));
         IsLoaded = true;
         _detectionSnapshots = new(StringComparer.Ordinal);
         await SaveAsync(js);
@@ -558,7 +560,21 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
-    private static FrontendAnalysisSettings BuildSeedSettings()
+    /// <summary>Seed placeholder URLs ("https://example-dev.local", "https://localhost:5001"): not a configured target.</summary>
+    internal static bool IsSeedPlaceholder(string? url) =>
+        string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Host.StartsWith("example", StringComparison.OrdinalIgnoreCase) && uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The frontend URL configured on the existing Development environment, when it is a real target (not a seed placeholder).</summary>
+    internal static string? ConfiguredDevelopmentUrl(FrontendAnalysisSettings? settings) =>
+        settings?.Profiles.Where(p => p.EnvironmentType == FrontendEnvironmentType.Development).Select(p => p.TargetUrl)
+            .FirstOrDefault(url => !IsSeedPlaceholder(url));
+
+    /// <summary>
+    /// The generic seed: Local, Development, QA and Production. Development is the default — active, and therefore selected — on a fresh
+    /// installation and after a complete data reset; Local is available but never chosen automatically. A saved selection is never
+    /// overridden: the seed is used only when nothing is saved, or by the reset.
+    /// </summary>
+    private static FrontendAnalysisSettings BuildSeedSettings(string? developmentUrl = null)
     {
         var localId = Guid.NewGuid().ToString("N");
         var devId   = Guid.NewGuid().ToString("N");
@@ -567,11 +583,11 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
         return new FrontendAnalysisSettings
         {
-            ActiveProfileId = null,
+            ActiveProfileId = devId,
             Profiles =
             [
                 MakeProfile(localId, "Local",       FrontendEnvironmentType.Local,       "Local development environment", "https://localhost:5001"),
-                MakeProfile(devId,   "Development", FrontendEnvironmentType.Development, "Development environment",       "https://example-dev.local"),
+                MakeProfile(devId,   "Development", FrontendEnvironmentType.Development, "Development environment",       developmentUrl ?? "https://example-dev.local"),
                 MakeProfile(qaId,    "QA",          FrontendEnvironmentType.QA,          "QA environment",                "https://example-qa.local"),
                 MakeProfile(prodId,  "Production",  FrontendEnvironmentType.Production,  "Production environment",        "https://example.local")
             ]

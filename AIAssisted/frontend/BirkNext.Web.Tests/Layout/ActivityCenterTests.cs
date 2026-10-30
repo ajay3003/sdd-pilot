@@ -24,7 +24,8 @@ public sealed class ActivityCenterTests : BunitContext
         var run = _ops.Start(new(kind, $"Importing project", new OperationContext(project, project) { Branch = "main" }, "project-import"), async (p, ct) =>
         {
             report?.Invoke(p);
-            await gate.Task.WaitAsync(ct);
+            // Not on xUnit's synchronization context: the test thread may block while waiting for this to finish.
+            await gate.Task.WaitAsync(ct).ConfigureAwait(false);
             return OperationOutcome.Success("project-import?done", "Open the imported project");
         });
         return (run, gate);

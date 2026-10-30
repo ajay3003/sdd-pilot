@@ -62,7 +62,7 @@ public sealed class LocalDataResetFrontendTests
         await provider.GetRequiredService<ApplicationRuntimeResetService>().ClearFrontendRuntimeStateAsync();
 
         settings.IsLoaded.Should().BeTrue();
-        settings.Settings.ActiveProfileId.Should().BeNull();
+        settings.Settings.ActiveProfileId.Should().Be(settings.Settings.Profiles.Single(p => p.Name == "Development").Id, "Development is the default after a reset, never Local");
         settings.Settings.Profiles.Select(p => p.Name).Should().Equal("Local", "Development", "QA", "Production");
         settings.Settings.Profiles.Should().OnlyContain(p => !p.TargetUrl.Contains("m2lb", StringComparison.OrdinalIgnoreCase));
     }
