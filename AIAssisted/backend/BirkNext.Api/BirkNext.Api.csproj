@@ -132,6 +132,7 @@
     <Compile Include="../../shared/DeliveryTargetScope.cs" Link="Models/DeliveryTargetScope.cs" />
     <Compile Include="../../shared/PerformanceSetupContracts.cs" Link="Models/PerformanceSetupContracts.cs" />
     <Compile Include="../../shared/PerformanceScenarioEngine.cs" Link="Models/PerformanceScenarioEngine.cs" />
+    <Compile Include="../../shared/ApiOperationCorrelation.cs" Link="Models/ApiOperationCorrelation.cs" />
     <Compile Include="../../shared/PerformanceScenarioRuntime.cs" Link="Models/PerformanceScenarioRuntime.cs" />
     <Compile Include="../../shared/PerformanceRequestResponse.cs" Link="Models/PerformanceRequestResponse.cs" />
     <Compile Include="../../shared/DeliveryEvidenceContracts.cs" Link="Models/DeliveryEvidenceContracts.cs" />

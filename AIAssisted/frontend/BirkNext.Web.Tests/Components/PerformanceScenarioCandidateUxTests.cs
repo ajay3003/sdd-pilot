@@ -66,6 +66,14 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         cut.FindAll("[data-testid=psb-operation]").Single(o => o.QuerySelector("[data-testid=psb-op-name]")!.TextContent == name);
 
     [Fact]
+    public void LiveDiscovery_WithZeroObservations_ShowsNoCandidates_AndNeverFallsBackToContractOperations()
+    {
+        var cut = Builder([]);
+        cut.FindAll("[data-testid=psb-operation]").Should().BeEmpty("Live Discovery lists observations only — never declared or recommended operations");
+        cut.Markup.Should().Contain("no API calls observed on this target yet");
+    }
+
+    [Fact]
     public void LiveDiscovery_WithoutASnapshot_ListsObservedOperations_AndANormalisedIdNeedsTestData_ValueHidden()
     {
         var cut = Builder([Rest($"/api/autorisasjon/v1/brukere/{ObservedId}/barn")]);

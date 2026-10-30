@@ -1,0 +1,11 @@
+.aro { display: flex; flex-direction: column; gap: .75rem; }
+.aro-target { border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 8px; padding: .6rem .8rem; }
+.aro-title { font-size: .95rem; margin: 0 0 .4rem; overflow-wrap: anywhere; }
+.aro-muted { color: var(--clr-text-muted); font-size: .85rem; }
+.aro-mono { font-family: var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.aro-counts { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin: 0 0 .5rem; font-size: .88rem; }
+.aro-counts dt { font-weight: 600; display: inline; }
+.aro-counts dd { display: inline; margin: 0 0 0 .3rem; }
+.aro-table-wrap { overflow-x: auto; position: relative; }
+.aro-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.aro-table th, .aro-table td { border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); padding: .3rem .45rem; text-align: left; vertical-align: top; }

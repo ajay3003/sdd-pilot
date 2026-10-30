@@ -207,6 +207,10 @@ public sealed class AuthorizationScenarioTests
         var handler = new Handler();
         var unregistered = await Service(handler, trust: new TrustedSecurityTargetRegistry(Options.Create(new SecurityTestingOptions()))).RunAsync(Run(scenarios: Scenario()));
         Assert.Equal(TrustedTargetState.NotRegistered, unregistered.Trust.State);
+        // The actual missing prerequisite is named (the server key and the API origins), and a configured frontend target is not a registration.
+        Assert.Contains("SecurityTesting:TrustedTargets:", unregistered.Trust.Reason);
+        Assert.Contains(":ApiOrigins", unregistered.Trust.Reason);
+        Assert.Contains("is not a server registration", unregistered.Trust.Reason);
         var arbitrary = Scenario();
         arbitrary.Url = "https://evil.example.test/api/children";
         var outside = await Service(handler).RunAsync(Run(scenarios: arbitrary));

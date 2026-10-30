@@ -1,0 +1,94 @@
+@using BirkNext.ApiReview
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* API Quality Review → Runtime observations: what Endpoint Discovery actually captured for each selected REST target, correlated with the
+   target's resolved OpenAPI contract (when one is bound) by the shared correlation engine. Observed is not verified: an HTTP status shows only
+   that this request was answered — never contract compatibility, authorization or business correctness. Nothing is executed here. *@
+<section class="aro" data-testid="aro">
+    @if (Targets.Count == 0)
+    {
+        <p class="aro-muted" data-testid="aro-empty">No REST target is selected.</p>
+    }
+    @foreach (var target in Targets)
+    {
+        var observed = Observed(target);
+        var result = _correlations.GetValueOrDefault(target.TargetId);
+        <article class="aro-target" data-testid="aro-target" data-target-id="@target.TargetId">
+            <h4 class="aro-title">@ApiReviewPresentation.DisplayName(target) <span class="aro-muted aro-mono">@target.Url</span></h4>
+            <dl class="aro-counts">
+                <div><dt>Declared</dt><dd data-testid="aro-declared">@(result is null ? "No contract bound" : result.DeclaredCount.ToString())</dd></div>
+                <div><dt>Observed</dt><dd data-testid="aro-observed">@observed.Count</dd></div>
+                <div><dt>Correlated</dt><dd data-testid="aro-correlated">@(result?.Correlated.ToString() ?? "–")</dd></div>
+                <div><dt>Unmatched observed</dt><dd data-testid="aro-unmatched">@(result is null ? "–" : (result.Unmatched + result.Candidates + result.Ambiguous).ToString())</dd></div>
+                <div><dt>Unobserved declared</dt><dd data-testid="aro-unobserved">@(result?.UnobservedDeclared.Count.ToString() ?? "–")</dd></div>
+                <div><dt>Contract compatibility</dt><dd data-testid="aro-verification">Not verified · run the review</dd></div>
+            </dl>
+            @if (observed.Count == 0)
+            {
+                <p class="aro-muted" data-testid="aro-none">No runtime request to this target has been observed. Run Endpoint Discovery (Target Environment) to collect observations.</p>
+            }
+            else
+            {
+                <div class="aro-table-wrap">
+                    <table class="aro-table" data-testid="aro-table">
+                        <thead><tr><th scope="col">Observed request</th><th scope="col">Last status</th><th scope="col">Auth</th><th scope="col">Seen</th><th scope="col">Evidence</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in observed)
+                            {
+                                var row = result?.Rows.FirstOrDefault(r => r.Observed == o);
+                                <tr data-testid="aro-row" data-confidence="@(row?.Confidence.ToString() ?? "NoContract")">
+                                    <th scope="row" class="aro-mono">@o.Method.ToUpperInvariant() @o.Path</th>
+                                    <td>@(o.LastStatus == 0 ? "–" : $"HTTP {o.LastStatus}")</td>
+                                    <td>@(o.AuthObserved ? "Bearer observed" : "None observed")</td>
+                                    <td>@o.Count× · @o.LastObservedAt.ToLocalTime().ToString("d MMM HH:mm")</td>
+                                    <td data-testid="aro-evidence">@Evidence(row)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <p class="aro-muted"><a href="@($"/admin/system-settings?section=target-environments&tab=endpoint&profile={Uri.EscapeDataString(EnvironmentId)}")" data-testid="aro-view-discovery">View in Endpoint Discovery</a></p>
+        </article>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<ApiReviewTarget> Targets { get; set; } = [];
+    [Parameter] public string EnvironmentId { get; set; } = "";
+    /// <summary>Per REST target, the snapshot of its resolved contract (from AQR's contract binding), if any.</summary>
+    [Parameter] public IReadOnlyDictionary<string, Guid?> ContractSnapshots { get; set; } = new Dictionary<string, Guid?>();
+
+    private readonly Dictionary<string, ApiOperationCorrelationResult> _correlations = new(StringComparer.Ordinal);
+
+    private static IReadOnlyList<ObservedApiOperation> Observed(ApiReviewTarget target) =>
+        [.. target.Operations.Where(o => o.Source == ApiReviewTargetSource.DiscoveredTraffic && o.OperationType == BirkNext.LocalHttpsProxy.GraphQlOperationType.None)
+            .Select(o => new ObservedApiOperation(o.Method, o.Path, o.LastStatus, o.AuthObserved, o.ObservedCount, o.LastObservedAt ?? DateTimeOffset.MinValue))];
+
+    private static string Evidence(ApiOperationCorrelationRow? row) => row is null ? "Observed · not verified"
+        : row.Confidence switch
+        {
+            OperationCorrelationConfidence.Confirmed => $"Correlated with {row.Declared[0].Method.ToUpperInvariant()} {row.Declared[0].PathTemplate} · not verified",
+            OperationCorrelationConfidence.Candidate => $"Candidate · {row.Reason}",
+            OperationCorrelationConfidence.Ambiguous => $"Ambiguous · {row.Reason}",
+            _ => $"Observed only · {row.Reason}",
+        };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _correlations.Clear();
+        if (Services.GetService(typeof(IPerformanceTestApiService)) is not IPerformanceTestApiService api) return;
+        foreach (var target in Targets)
+        {
+            if (ContractSnapshots.GetValueOrDefault(target.TargetId) is not { } snapshot) continue;
+            BirkNext.PerformanceTests.ScenarioContractCatalog? catalog;
+            try { catalog = await api.ScenarioContractsAsync(EnvironmentId, snapshot); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { catalog = null; }
+            if (catalog is null) continue;
+            var declared = catalog.Contracts.Where(c => c.Type == BirkNext.SourceDomains.SourceContractType.OpenApi)
+                .SelectMany(c => c.Operations.Where(o => o.Path is not null).Select(o => new DeclaredApiOperation(o.Kind, o.Path!, c.Name))).ToList();
+            _correlations[target.TargetId] = ApiOperationCorrelation.Correlate(declared, Observed(target), target.BasePath);
+        }
+    }
+}

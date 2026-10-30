@@ -40,11 +40,19 @@ public sealed class TrustedSecurityTargetRegistry(IOptions<SecurityTestingOption
     public TrustedTargetDecision Resolve(string? profileId, IEnumerable<string> destinationUrls)
     {
         if (string.IsNullOrWhiteSpace(profileId) || !options.Value.TrustedTargets.TryGetValue(profileId, out var registered))
+        {
+            // Fail closed, but name the exact missing prerequisite: the server registry is keyed by this Target Environment's profile id (a
+            // reachable, configured frontend target does not register it), and lists the API origins the check would contact.
+            var wanted = destinationUrls.Select(CorsProbeRules.NormalizeOrigin).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var key = $"{SecurityTestingOptions.SectionName}:TrustedTargets:{(string.IsNullOrWhiteSpace(profileId) ? "<profile id>" : profileId)}";
             return new TrustedTargetDecision
             {
                 State = TrustedTargetState.NotRegistered, ProfileId = profileId ?? "",
-                Reason = $"This Target Environment is not registered by the server for authorization scenarios or body fuzzing ({SecurityTestingOptions.SectionName}:TrustedTargets).",
+                Reason = $"This Target Environment is not registered by the server for authorization scenarios or body fuzzing. A configured and reachable "
+                    + $"frontend target is not a server registration: an operator must add {key}:EnvironmentType (Local, Development, QA or Test) and "
+                    + $"{key}:ApiOrigins{(wanted.Count > 0 ? $" ({string.Join(", ", wanted)})" : "")} to the backend configuration. The server allowlist is never relaxed from the browser.",
             };
+        }
         var origins = registered.ApiOrigins.Select(CorsProbeRules.NormalizeOrigin).Where(o => o is not null).Select(o => o!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var type = registered.EnvironmentType?.Trim();
         TrustedTargetDecision Decide(TrustedTargetState state, string reason) => new() { State = state, ProfileId = profileId, ServerEnvironmentType = type, RegisteredOrigins = origins, Reason = reason };

@@ -339,6 +339,14 @@
                 <ReviewDisclosure Text="Contract/schema details" CollapseText="Hide contract/schema details" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">
                     <ApiReviewContractPanel Contracts="contracts" />
                 </ReviewDisclosure>
+                @{ var restSelected = _targets.Where(t => t.ApiType == ApiReviewTargetType.Rest && _selected.Contains(t.TargetId)).ToList(); }
+                <ReviewDisclosure Text="Runtime observations" CollapseText="Hide runtime observations" Hint="@RuntimeObservationsHint(restSelected)" TestId="aqr-runtime-observations" Class="aqr-detail-disclosure" @bind-Expanded="_runtimeObservationsExpanded">
+                    @if (_runtimeObservationsExpanded)
+                    {
+                        <BirkNext.Web.Components.ApiRuntimeObservationsPanel Targets="restSelected" EnvironmentId="@(_context?.ActiveProfile.Id ?? "")"
+                            ContractSnapshots="@(restSelected.ToDictionary(t => t.TargetId, t => _contractBindings.GetValueOrDefault(t.TargetId)?.SnapshotId, StringComparer.Ordinal))" />
+                    }
+                </ReviewDisclosure>
                 <ReviewDisclosure Text="Source contract evidence" CollapseText="Hide source contract evidence" Hint="Published contract in a Source Analysis snapshot · separate from runtime behaviour" TestId="aqr-source-contracts" Class="aqr-detail-disclosure" @bind-Expanded="_sourceContractsExpanded">
                     @if (_sourceContractsExpanded) { <BirkNext.Web.Components.SourceDomains.SourceContractEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" /> }
                 </ReviewDisclosure>
@@ -758,6 +766,16 @@
     private ApiReviewReport? _report;
     private bool _running;
     private bool _schemaArtifactsExpanded;
+    private bool _runtimeObservationsExpanded;
+
+    /// <summary>"12 observed requests on 2 REST targets · Endpoint Discovery · not verified" — observed is never verified.</summary>
+    private static string RuntimeObservationsHint(IReadOnlyList<ApiReviewTarget> rest)
+    {
+        var observed = rest.SelectMany(t => t.Operations).Count(o => o.Source == ApiReviewTargetSource.DiscoveredTraffic && o.OperationType == BirkNext.LocalHttpsProxy.GraphQlOperationType.None);
+        return rest.Count == 0 ? "No REST target selected"
+            : observed == 0 ? "No runtime request observed for the selected REST targets"
+            : $"{observed} observed request{(observed == 1 ? "" : "s")} on {rest.Count} REST target{(rest.Count == 1 ? "" : "s")} · Endpoint Discovery · not verified";
+    }
     /// <summary>The selection picker opens only when nothing is selected; the target cards above it are the primary detail.</summary>
     private bool _targetsExpanded;
     private bool _diagnosticsExpanded;
