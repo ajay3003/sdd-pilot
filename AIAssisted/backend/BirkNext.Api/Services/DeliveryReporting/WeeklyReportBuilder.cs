@@ -104,6 +104,13 @@ public static class WeeklyReportBuilder
             partial = true;
             notes.Add($"Baseline is from {Day(baselineDate)}. Changes from {Range(weekStart, baselineDate)} are not included. Import an earlier baseline to cover the whole week.");
         }
+        if (baseline.Ref.AzureDevOps is { } ba && current.Ref.AzureDevOps is { } ca)
+        {
+            if (!string.Equals(ba.Repository, ca.Repository, StringComparison.OrdinalIgnoreCase) || !string.Equals(ba.Project, ca.Project, StringComparison.OrdinalIgnoreCase))
+            { partial = true; notes.Add($"The snapshots come from different repositories ({ba.Project}/{ba.Repository} and {ca.Project}/{ca.Repository}): the comparison may not describe one codebase."); }
+            else if (!string.Equals(ba.Branch, ca.Branch, StringComparison.Ordinal))
+                notes.Add($"The snapshots come from different branches ({ba.Branch} and {ca.Branch}).");
+        }
         if (baseline.Coverage != DeliveryCoverage.Complete || current.Coverage != DeliveryCoverage.Complete)
         {
             partial = true;

@@ -60,7 +60,7 @@
 .dlr-generate-row .dlr-field { min-width: 18rem; flex: 1; }
 
 .dlr-filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; margin-bottom: .5rem; }
-.dlr-table-wrap { overflow-x: auto; }
+.dlr-table-wrap { overflow-x: auto; position: relative; } /* positioned: the visually-hidden cell labels stay inside the scroll area */
 .dlr-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 .dlr-table th, .dlr-table td { border-bottom: 1px solid var(--clr-border-subtle); padding: .45rem .5rem; text-align: left; vertical-align: top; }
 .dlr-table thead th { background: var(--clr-surface); font-weight: 600; white-space: nowrap; }
@@ -81,3 +81,5 @@
 
 .dlr-skeleton { display: grid; gap: .75rem; }
 .dlr-skeleton span { display: block; height: 4rem; border-radius: 10px; background: var(--clr-surface); }
+.dlr-source-choice { display: flex; flex-wrap: wrap; gap: 1rem; border: 1px solid var(--clr-border-input); border-radius: 6px; padding: .4rem .75rem; margin: .5rem 0; }
+.dlr-source-choice legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }

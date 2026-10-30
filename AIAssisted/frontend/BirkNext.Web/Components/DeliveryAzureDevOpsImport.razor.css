@@ -1,0 +1,19 @@
+.ado { display: flex; flex-direction: column; gap: .6rem; margin-top: .5rem; }
+.ado-h3 { font-size: 1rem; margin: 0 0 .4rem; }
+.ado-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
+.ado-field { display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; min-width: 0; }
+.ado-field > span:first-child { font-weight: 600; color: var(--clr-text-body); }
+.ado-field input, .ado-field select { padding: .35rem .5rem; border: 1px solid var(--clr-border-input); border-radius: 6px; background: var(--clr-surface-white); color: var(--clr-text-body); min-width: 0; }
+.ado-inline { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ado-muted { color: var(--clr-text-muted); font-size: .85rem; margin: 0; }
+.ado-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ado-error { color: var(--clr-danger); background: var(--clr-danger-bg-light); border: 1px solid var(--clr-danger-border); border-radius: 6px; padding: .5rem .75rem; margin: 0; }
+.ado-ok { color: var(--clr-success, var(--clr-text-body)); margin: 0; font-size: .9rem; }
+.ado-time { border: 1px solid var(--clr-border-input); border-radius: 6px; padding: .5rem .75rem; display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; margin: 0; }
+.ado-time legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }
+.ado-commit { border: 1px solid var(--clr-border-input); border-radius: 6px; padding: .5rem .75rem; }
+.ado-commit dl { display: grid; gap: .25rem; margin: 0 0 .5rem; }
+.ado-commit dl div { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ado-commit dt { font-weight: 600; min-width: 6rem; }
+.ado-commit dd { margin: 0; overflow-wrap: anywhere; }
+.ado-note { background: var(--clr-warning-bg-light); border: 1px solid var(--clr-warning-border); border-radius: 6px; padding: .4rem .6rem; margin: 0 0 .5rem; font-size: .9rem; }

@@ -16,10 +16,12 @@ public sealed class DeliveryReportingPageTests : BunitContext
     private static readonly DateTimeOffset Monday = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset Friday = new(2026, 10, 30, 15, 0, 0, TimeSpan.Zero);
     private readonly FakeApi _api = new();
+    private readonly BirkNext.Web.Tests.Components.DeliveryAzureDevOpsImportTests.FakeApi _ado = new();
 
     public DeliveryReportingPageTests()
     {
         Services.AddSingleton<IDeliveryReportingApiService>(_api);
+        Services.AddSingleton<IDeliveryAzureDevOpsApiService>(_ado);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -174,6 +176,34 @@ public sealed class DeliveryReportingPageTests : BunitContext
         page.Find("[data-testid=dlr-import-effective]").Closest("label")!.TextContent.Should().Contain("Effective snapshot date and time");
         dialog.TextContent.Should().Contain("Need an earlier baseline?");
         page.Find("[data-testid=dlr-import-confirm]").HasAttribute("disabled").Should().BeTrue("nothing is imported before a preview");
+    }
+
+    [Fact]
+    public void ImportDialog_AzureDevOpsSource_PreviewsTheResolvedCommit_WithItsStateTimeAsEffectiveDate()
+    {
+        _ado.Connections.Add(new(Guid.NewGuid(), "Bufdir", "bufdir", true, "Connected", Monday));
+        _api.Snapshots.Add(new() { Id = Guid.NewGuid(), ProjectId = ProjectId, Label = "ADO", EffectiveAt = Monday, ImportedAt = Friday, Role = DeliverySnapshotRole.AdHoc,
+            SourceType = DeliverySourceType.AzureDevOps, SourceFileName = "M2LB@abc1234.zip", AzureDevOps = new("bufdir", "M2LB", "M2LB", "main", "abc1234def", Monday) });
+        var page = RenderAt($"?project={ProjectId}&tab=snapshots");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-snapshot-source]").Should().HaveCount(3));
+        page.FindAll("[data-testid=dlr-snapshot-source]").Select(s => s.TextContent).Should().Contain(t => t.Contains("Azure DevOps") && t.Contains("M2LB / M2LB / main · abc1234"));
+
+        page.Find("[data-testid=dlr-import-open]").Click();
+        page.Find("[data-testid=dlr-source-zip]").HasAttribute("checked").Should().BeTrue("Upload ZIP stays the default");
+        page.FindAll("[data-testid=dlr-ado]").Should().BeEmpty();
+        page.Find("[data-testid=dlr-source-ado]").Change(true);
+        page.FindAll("[data-testid=dlr-import-file]").Should().BeEmpty();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-ado-project] option").Should().HaveCount(3));
+        page.Find("[data-testid=dlr-ado-project]").Change("M2LB");
+        page.Find("[data-testid=dlr-ado-repository]").Change("M2LB");
+        page.Find("[data-testid=dlr-ado-at]").Change(true);
+        page.Find("[data-testid=dlr-ado-time]").Change(DeliveryReportingPresentation.LocalInput(Monday));
+        page.Find("[data-testid=dlr-ado-resolve]").Click();
+        page.Find("[data-testid=dlr-ado-preview]").Click();
+
+        page.Find("[data-testid=dlr-preview-ado]").TextContent.Should().Be("Azure DevOps · M2LB / M2LB / main");
+        page.Find("[data-testid=dlr-import-effective]").GetAttribute("value").Should().Be(DeliveryReportingPresentation.LocalInput(Monday), "the requested state time, not the import time");
+        page.Find("[data-testid=dlr-import-confirm]").HasAttribute("disabled").Should().BeFalse();
     }
 
     [Fact]

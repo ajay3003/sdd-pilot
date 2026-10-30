@@ -117,6 +117,16 @@ builder.Services.AddDbContext<BirkNext.Api.Data.DeliveryReporting.DeliveryReport
 builder.Services.AddSingleton<BirkNext.Api.Services.DeliveryReporting.DeliveryImportStagingStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliverySnapshotStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingImportService>();
+// Delivery Reporting → Azure DevOps (read-only). The PAT is stored encrypted (Data Protection) under App_Data, never in configuration or delivery_reporting.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore(
+    System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name is "testhost" or "ReSharperTestRunner"
+        ? System.IO.Path.Combine(System.IO.Path.GetTempPath(), "birknext-test-azure-devops", Guid.NewGuid().ToString("N"))
+        : BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>())));
+builder.Services.AddHttpClient(BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsGitClient.ClientName, client => client.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsGitClient(sp.GetRequiredService<IHttpClientFactory>(),
+    sp.GetRequiredService<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore>(),
+    BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsGitClient.DevelopmentBaseUri(builder.Environment, builder.Configuration)));
+builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.DeliveryAzureDevOpsImportService>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.WeeklyReportService>();
 
 builder.Services.AddHttpContextAccessor();

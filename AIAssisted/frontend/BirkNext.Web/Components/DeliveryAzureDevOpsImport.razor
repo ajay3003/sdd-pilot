@@ -1,0 +1,255 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.DeliveryReportingPresentation
+@inject IDeliveryAzureDevOpsApiService Api
+
+@* Import snapshot → Import from Azure DevOps: connection → project → repository → branch → date/time → resolved commit → the same import
+   preview as a ZIP. The token is entered once, stored encrypted by the backend and never shown again. Read-only against Azure DevOps. *@
+<section class="ado" data-testid="dlr-ado" aria-label="Import from Azure DevOps">
+    @if (_loadingConnections) { <p role="status" class="ado-muted">Loading Azure DevOps connections…</p> }
+    else if (_editing)
+    {
+        <form class="ado-connection-form" data-testid="dlr-ado-connection-form" @onsubmit="SaveConnection" @onsubmit:preventDefault>
+            <h3 class="ado-h3">@(_editId is null ? "Configure Azure DevOps connection" : "Edit Azure DevOps connection")</h3>
+            <div class="ado-grid">
+                <label class="ado-field"><span>Display name</span><input data-testid="dlr-ado-name" @bind="_name" maxlength="100" placeholder="e.g. Bufdir Azure DevOps" /></label>
+                <label class="ado-field"><span>Organization</span><input data-testid="dlr-ado-org" @bind="_organization" maxlength="120" placeholder="bufdir or https://dev.azure.com/bufdir" /></label>
+                <label class="ado-field"><span>Personal access token</span>
+                    <input type="password" data-testid="dlr-ado-pat" @bind="_pat" autocomplete="off" aria-describedby="ado-pat-help" />
+                    <small id="ado-pat-help" class="ado-muted">
+                        @if (EditedConnection is { CredentialConfigured: true }) { <span data-testid="dlr-ado-credential">Credential: Configured. Leave empty to keep it; enter a new token to replace it.</span> }
+                        else { <span>Needs read access to Code (scope Code (Read)). Stored encrypted on the BirkNext server, never shown again.</span> }
+                    </small>
+                </label>
+            </div>
+            @if (_formError is not null) { <p class="ado-error" role="alert" data-testid="dlr-ado-form-error">@_formError</p> }
+            <div class="ado-actions">
+                <button type="submit" class="btn-primary" data-testid="dlr-ado-save" disabled="@_busy">Save connection</button>
+                @if (_connections.Count > 0) { <button type="button" class="btn-secondary" @onclick="() => _editing = false">Cancel</button> }
+            </div>
+        </form>
+    }
+    else
+    {
+        <div class="ado-grid">
+            <label class="ado-field"><span>Azure DevOps connection</span>
+                <select data-testid="dlr-ado-connection" value="@_connectionId" @onchange="e => SelectConnection(e.Value?.ToString())">
+                    @foreach (var c in _connections) { <option value="@c.Id">@c.DisplayName (@c.Organization)</option> }
+                </select>
+            </label>
+            <div class="ado-field ado-connection-status">
+                <span>Connection</span>
+                <span data-testid="dlr-ado-connection-status">@(Selected is { } s ? StatusText(s) : "–")</span>
+                <span class="ado-inline">
+                    <button type="button" class="btn-link" data-testid="dlr-ado-validate" disabled="@_busy" @onclick="Validate">Validate</button>
+                    <button type="button" class="btn-link" data-testid="dlr-ado-edit" @onclick="EditSelected">Edit</button>
+                    <button type="button" class="btn-link" data-testid="dlr-ado-new" @onclick="NewConnection">Add connection</button>
+                </span>
+            </div>
+        </div>
+        @if (_validation is { } v) { <p class="@(v.Success ? "ado-ok" : "ado-error")" role="status" data-testid="dlr-ado-validation">@v.Message</p> }
+
+        <div class="ado-grid">
+            <label class="ado-field"><span>Project</span>
+                <select data-testid="dlr-ado-project" value="@_project" disabled="@(_projects.Count == 0)" @onchange="e => SelectProject(e.Value?.ToString())">
+                    <option value="">@(_loading == "projects" ? "Loading projects…" : _projects.Count == 0 ? "No projects" : "Choose a project")</option>
+                    @foreach (var p in _projects) { <option value="@p.Name">@p.Name</option> }
+                </select>
+            </label>
+            <label class="ado-field"><span>Repository</span>
+                <select data-testid="dlr-ado-repository" value="@_repository" disabled="@(_repositories.Count == 0)" @onchange="e => SelectRepository(e.Value?.ToString())">
+                    <option value="">@(_loading == "repositories" ? "Loading repositories…" : _project is null ? "Choose a project first" : _repositories.Count == 0 ? "No repositories" : "Choose a repository")</option>
+                    @foreach (var r in _repositories) { <option value="@r.Name">@r.Name</option> }
+                </select>
+            </label>
+            <label class="ado-field"><span>Branch</span>
+                <select data-testid="dlr-ado-branch" value="@_branch" disabled="@(_branches.Count == 0)" @onchange="e => { _branch = Empty(e.Value?.ToString()); ResetResolved(); }">
+                    <option value="">@(_loading == "branches" ? "Loading branches…" : _repository is null ? "Choose a repository first" : _branches.Count == 0 ? "No branches" : "Choose a branch")</option>
+                    @foreach (var b in _branches) { <option value="@b.Name">@b.Name</option> }
+                </select>
+            </label>
+        </div>
+        @if (_listError is not null) { <p class="ado-error" role="alert" data-testid="dlr-ado-list-error">@_listError</p> }
+
+        <fieldset class="ado-time">
+            <legend>Repository state</legend>
+            <label><input type="radio" name="ado-time" data-testid="dlr-ado-latest" checked="@_latest" @onchange="() => { _latest = true; ResetResolved(); }" /> Current / latest</label>
+            <label><input type="radio" name="ado-time" data-testid="dlr-ado-at" checked="@(!_latest)" @onchange="() => { _latest = false; ResetResolved(); }" /> At date and time</label>
+            @if (!_latest)
+            {
+                <label class="ado-field"><span>Date and time (local)</span>
+                    <input type="datetime-local" data-testid="dlr-ado-time" value="@_at" @onchange="e => { _at = e.Value?.ToString() ?? string.Empty; ResetResolved(); }" />
+                </label>
+            }
+        </fieldset>
+
+        <div class="ado-actions">
+            <button type="button" class="btn-secondary" data-testid="dlr-ado-resolve" disabled="@(!CanResolve)" @onclick="Resolve">Resolve commit</button>
+        </div>
+        @if (_resolveError is not null) { <p class="ado-error" role="alert" data-testid="dlr-ado-resolve-error">@_resolveError</p> }
+        @if (_commit is { } commit)
+        {
+            <div class="ado-commit" data-testid="dlr-ado-commit">
+                <dl>
+                    <div><dt>Requested</dt><dd>@(commit.RequestedAt is { } r ? P.DayTime(r) : "Now")</dd></div>
+                    <div><dt>Commit</dt><dd><code data-testid="dlr-ado-commit-id">@commit.ShortCommit</code> · @P.DayTime(commit.CommitAt)@(commit.CommitAuthor is { } a ? $" · {a}" : "")</dd></div>
+                    @if (commit.CommitMessage is { Length: > 0 } m) { <div><dt>Message</dt><dd>@m</dd></div> }
+                </dl>
+                @if (_note is not null) { <p class="ado-note" data-testid="dlr-ado-gap">@_note</p> }
+                <button type="button" class="btn-primary" data-testid="dlr-ado-preview" disabled="@(_busy || Disabled)" @onclick="Preview">Preview snapshot</button>
+            </div>
+        }
+        @if (_busy && _loading is null) { <p role="status" class="ado-muted" data-testid="dlr-ado-busy">@_busyText</p> }
+    }
+</section>
+
+@code {
+    [Parameter] public Guid? ProjectId { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>The import preview of the resolved commit (same preview as a ZIP) plus the resolution note.</summary>
+    [Parameter] public EventCallback<(DeliveryImportPreview Preview, string? Note)> OnPreview { get; set; }
+
+    private List<AzureDevOpsConnectionView> _connections = [];
+    private List<AzureDevOpsProjectItem> _projects = [];
+    private List<AzureDevOpsRepositoryItem> _repositories = [];
+    private List<AzureDevOpsBranchItem> _branches = [];
+    private Guid? _connectionId, _editId;
+    private string? _project, _repository, _branch, _loading, _listError, _formError, _resolveError, _note, _busyText;
+    private string _name = "", _organization = "", _pat = "", _at = P.LocalInput(DateTimeOffset.Now);
+    private bool _loadingConnections = true, _editing, _busy, _latest = true;
+    private AzureDevOpsValidationResult? _validation;
+    private DeliveryAzureDevOpsSource? _commit;
+
+    private AzureDevOpsConnectionView? Selected => _connections.FirstOrDefault(c => c.Id == _connectionId);
+    private AzureDevOpsConnectionView? EditedConnection => _connections.FirstOrDefault(c => c.Id == _editId);
+    private bool CanResolve => !_busy && _connectionId is not null && _project is not null && _repository is not null && _branch is not null && (_latest || P.ParseLocalInput(_at) is not null);
+
+    private static string? Empty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    public static string StatusText(AzureDevOpsConnectionView c) => c.LastValidationStatus switch
+    {
+        "Connected" => $"Connected{(c.LastValidatedAt is { } at ? $" (validated {P.DayTime(at)})" : "")}",
+        "AuthenticationFailed" => "Authentication failed",
+        "AccessDenied" => "Access denied",
+        "Failed" => "Validation failed",
+        _ => c.CredentialConfigured ? "Configured · not validated" : "Credential missing",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (connections, error) = await Api.ConnectionsAsync();
+        _connections = connections;
+        _listError = error;
+        _loadingConnections = false;
+        if (_connections.Count == 0) NewConnection();
+        else await SelectConnection(_connections[0].Id.ToString());
+    }
+
+    private void NewConnection() { _editId = null; _name = ""; _organization = ""; _pat = ""; _formError = null; _editing = true; }
+
+    private void EditSelected()
+    {
+        if (Selected is not { } c) return;
+        _editId = c.Id; _name = c.DisplayName; _organization = c.Organization; _pat = ""; _formError = null; _editing = true;
+    }
+
+    private async Task SaveConnection()
+    {
+        _busy = true; _formError = null;
+        try
+        {
+            var (connection, error) = await Api.SaveConnectionAsync(_editId, new(_name, _organization, string.IsNullOrWhiteSpace(_pat) ? null : _pat));
+            _pat = ""; // never kept in the page after sending
+            if (connection is null) { _formError = error; return; }
+            _connections = [.. _connections.Where(c => c.Id != connection.Id), connection];
+            _editing = false;
+            await SelectConnection(connection.Id.ToString());
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Validate()
+    {
+        if (_connectionId is not { } id) return;
+        _busy = true; _busyText = "Validating the connection…";
+        try
+        {
+            _validation = await Api.ValidateAsync(id);
+            var (connections, _) = await Api.ConnectionsAsync();
+            if (connections.Count > 0) _connections = connections;
+            if (_validation.Success && _projects.Count == 0) await LoadProjects(id);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SelectConnection(string? value)
+    {
+        _connectionId = Guid.TryParse(value, out var id) ? id : null;
+        _validation = null;
+        _projects = []; _repositories = []; _branches = []; _project = _repository = _branch = null;
+        ResetResolved();
+        if (_connectionId is { } c && Selected is { CredentialConfigured: true }) await LoadProjects(c);
+    }
+
+    private async Task LoadProjects(Guid id)
+    {
+        _loading = "projects"; _listError = null;
+        StateHasChanged();
+        var list = await Api.ProjectsAsync(id);
+        _projects = list.Items; _listError = list.Error; _loading = null;
+        if (_projects.Count == 1) await SelectProject(_projects[0].Name);
+    }
+
+    private async Task SelectProject(string? value)
+    {
+        _project = Empty(value); _repositories = []; _branches = []; _repository = _branch = null;
+        ResetResolved();
+        if (_project is null || _connectionId is not { } id) return;
+        _loading = "repositories"; _listError = null;
+        var list = await Api.RepositoriesAsync(id, _project);
+        _repositories = list.Items; _listError = list.Error; _loading = null;
+        if (_repositories.Count == 1) await SelectRepository(_repositories[0].Name);
+    }
+
+    private async Task SelectRepository(string? value)
+    {
+        _repository = Empty(value); _branches = []; _branch = null;
+        ResetResolved();
+        if (_repository is null || _project is null || _connectionId is not { } id) return;
+        _loading = "branches"; _listError = null;
+        var list = await Api.BranchesAsync(id, _project, _repository);
+        _branches = list.Items; _listError = list.Error; _loading = null;
+        var preferred = _repositories.FirstOrDefault(r => r.Name == _repository)?.DefaultBranch;
+        _branch = _branches.FirstOrDefault(b => b.Name == preferred)?.Name ?? (_branches.Count == 1 ? _branches[0].Name : null);
+    }
+
+    private void ResetResolved() { _commit = null; _note = null; _resolveError = null; }
+
+    private AzureDevOpsResolveRequest Request() =>
+        new(_connectionId!.Value, _project!, _repository!, _branch!, _latest ? null : P.ParseLocalInput(_at)) { ProjectId = ProjectId };
+
+    private async Task Resolve()
+    {
+        if (!CanResolve) return;
+        _busy = true; _busyText = "Resolving the commit…"; ResetResolved();
+        try
+        {
+            var result = await Api.ResolveAsync(Request());
+            _commit = result.Commit; _note = result.Note; _resolveError = result.Error;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Preview()
+    {
+        if (_commit is null || !CanResolve) return;
+        _busy = true; _busyText = "Downloading the commit tree and reading it…"; _resolveError = null;
+        try
+        {
+            var (preview, note, error) = await Api.PreviewAsync(Request());
+            if (preview is null) { _resolveError = error; return; }
+            await OnPreview.InvokeAsync((preview, note));
+        }
+        finally { _busy = false; }
+    }
+}

@@ -58,11 +58,21 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public async Task<DeliveryPreviewOutcome> PreviewAsync(Guid? projectId, string fileName, byte[] bytes, CancellationToken ct)
+    /// <param name="azureDevOps">Provenance when the bytes are the tree of a resolved Azure DevOps commit: the same parser runs either way.</param>
+    public async Task<DeliveryPreviewOutcome> PreviewAsync(Guid? projectId, string fileName, byte[] bytes, CancellationToken ct, DeliveryAzureDevOpsSource? azureDevOps = null)
     {
         var parsed = DeliverySnapshotParser.Parse(fileName, bytes, ct);
         if (parsed.Failure is { } failure) return new(null, failure);
         var snapshot = parsed.Snapshot!;
+        if (azureDevOps is not null)
+            snapshot = snapshot with
+            {
+                SourceType = DeliverySourceType.AzureDevOps, GitCommit = azureDevOps.CommitId, AzureDevOps = azureDevOps,
+                SuggestedEffectiveAt = azureDevOps.RequestedAt ?? azureDevOps.CommitAt,
+                SuggestedEffectiveReason = azureDevOps.RequestedAt is { } requested && requested != azureDevOps.CommitAt
+                    ? "Requested state time; the resolved commit is the latest at or before it."
+                    : "Time of the resolved commit.",
+            };
         var stagingId = staging.Add(snapshot);
         var duplicate = projectId is { } id ? await DuplicateWarningAsync(id, snapshot, ct) : null;
         return new(new DeliveryImportPreview
@@ -84,6 +94,7 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
             Coverage = snapshot.Coverage,
             Warnings = snapshot.Warnings,
             DuplicateWarning = duplicate,
+            AzureDevOps = snapshot.AzureDevOps,
         }, null);
     }
 
@@ -105,9 +116,11 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
         var source = new DeliveryReportSourceRecord
         {
             Id = Guid.NewGuid(), ProjectId = project.Id, SourceType = snapshot.SourceType.ToString(), OriginalFileName = snapshot.FileName,
-            ImportedAt = now, Fingerprint = snapshot.Fingerprint, GitCommit = snapshot.GitCommit, ArchiveBytes = snapshot.ArchiveBytes,
+            ImportedAt = now, Fingerprint = snapshot.Fingerprint, GitCommit = snapshot.GitCommit, GitBranch = snapshot.AzureDevOps?.Branch, ArchiveBytes = snapshot.ArchiveBytes,
             EntryCount = snapshot.EntryCount,
-            MetadataJson = JsonSerializer.Serialize(new { wrapperFolder = snapshot.WrapperFolder, suggestedEffectiveAt = snapshot.SuggestedEffectiveAt, archiveRetained = false }, Json),
+            // Safe provenance only (organization/project/repository/branch/commit/times) — never a credential.
+            MetadataJson = JsonSerializer.Serialize(new { wrapperFolder = snapshot.WrapperFolder, suggestedEffectiveAt = snapshot.SuggestedEffectiveAt, archiveRetained = false,
+                azureDevOps = snapshot.AzureDevOps }, Json),
         };
         var label = string.IsNullOrWhiteSpace(request.Label)
             ? $"{DeliveryReportingText.Role(request.Role)} {request.EffectiveAt:yyyy-MM-dd}"

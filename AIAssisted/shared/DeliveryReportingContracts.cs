@@ -10,7 +10,47 @@ namespace BirkNext.DeliveryReporting;
 //   Task progress ≠ delivery status · all tasks checked ≠ Done · source changed ≠ progress · effective date ≠ import date.
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum DeliverySourceType { ZipUpload, GitArchive, OtherLocalArchive }
+public enum DeliverySourceType { ZipUpload, GitArchive, OtherLocalArchive, AzureDevOps }
+
+/// <summary>
+/// Safe provenance of a snapshot imported from Azure DevOps: where the repository state came from and which commit was resolved. Never a credential.
+/// <see cref="RequestedAt"/> is the state point the user asked for (it drives the reporting period); <see cref="CommitAt"/> is when the resolved commit
+/// was made — the latest commit on the branch at or before the requested time, so that tree IS the repository state at the requested time.
+/// </summary>
+public sealed record DeliveryAzureDevOpsSource(string Organization, string Project, string Repository, string Branch, string CommitId, DateTimeOffset CommitAt)
+{
+    public DateTimeOffset? RequestedAt { get; init; }
+    public string? CommitAuthor { get; init; }
+    public string? CommitMessage { get; init; }
+    public string ShortCommit => CommitId.Length > 7 ? CommitId[..7] : CommitId;
+}
+
+// ── Azure DevOps (read-only source for Delivery Reporting snapshots) ──
+
+/// <summary>A configured Azure DevOps connection. The PAT is stored encrypted on the backend and never returned: only whether one is configured.</summary>
+public sealed record AzureDevOpsConnectionView(Guid Id, string DisplayName, string Organization, bool CredentialConfigured, string? LastValidationStatus, DateTimeOffset? LastValidatedAt);
+
+/// <summary>Create/update a connection. <see cref="Pat"/> null/empty on update keeps the stored credential.</summary>
+public sealed record AzureDevOpsConnectionRequest(string DisplayName, string Organization, string? Pat);
+
+public sealed record AzureDevOpsValidationResult(bool Success, string Status, string Message);
+
+public sealed record AzureDevOpsProjectItem(string Id, string Name);
+
+public sealed record AzureDevOpsRepositoryItem(string Id, string Name, string? DefaultBranch);
+
+/// <summary>A branch by its friendly name ("main", "release/1.2"); the full ref only as advanced detail.</summary>
+public sealed record AzureDevOpsBranchItem(string Name, string Ref);
+
+public sealed record AzureDevOpsList<T>(List<T> Items, string? Error);
+
+/// <summary>Resolve (and preview) the repository state at <see cref="RequestedAt"/> on a branch. Null RequestedAt = the branch head now ("Current/latest").</summary>
+public sealed record AzureDevOpsResolveRequest(Guid ConnectionId, string Project, string Repository, string Branch, DateTimeOffset? RequestedAt)
+{
+    public Guid? ProjectId { get; init; }
+}
+
+public sealed record AzureDevOpsResolveResult(DeliveryAzureDevOpsSource? Commit, string? Note, string? Error);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DeliverySnapshotRole { Baseline, Current, AdHoc }
@@ -83,6 +123,7 @@ public static class DeliveryReportingText
     {
         DeliverySourceType.GitArchive => "Git archive",
         DeliverySourceType.ZipUpload => "ZIP import",
+        DeliverySourceType.AzureDevOps => "Azure DevOps",
         _ => "Local archive",
     };
 
@@ -168,6 +209,8 @@ public sealed record DeliveryImportPreview
     public List<DeliveryImportWarning> Warnings { get; init; } = [];
     /// <summary>Set when the selected project already holds this exact archive or Git commit. The import then needs explicit confirmation.</summary>
     public string? DuplicateWarning { get; init; }
+    /// <summary>Azure DevOps provenance when the archive came from a resolved commit (null for an uploaded ZIP).</summary>
+    public DeliveryAzureDevOpsSource? AzureDevOps { get; init; }
 }
 
 public sealed record DeliveryImportCommitRequest
@@ -202,6 +245,7 @@ public sealed record DeliverySnapshotSummary
     public int CompletedTaskCount { get; init; }
     public int WarningsCount { get; init; }
     public int ReportCount { get; init; }
+    public DeliveryAzureDevOpsSource? AzureDevOps { get; init; }
 }
 
 public sealed record DeliverySnapshotFeature(string Key, string Title, string Module, string Status, string StatusReason, int TaskTotal,
@@ -235,6 +279,7 @@ public sealed record DeliveryReportSnapshotRef
     public int FeatureCount { get; init; }
     public int TaskCount { get; init; }
     public int CompletedTaskCount { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryAzureDevOpsSource? AzureDevOps { get; init; }
 }
 
 public sealed record DeliveryReportMetric(string Key, string Label, int Value, string? Hint = null);

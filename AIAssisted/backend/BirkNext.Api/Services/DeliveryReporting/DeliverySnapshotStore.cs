@@ -170,8 +170,19 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
         };
     }
 
+    private sealed record SourceMetadata(DeliveryAzureDevOpsSource? AzureDevOps);
+
+    /// <summary>Azure DevOps provenance stored with the source row (null for uploads and for rows written before it existed).</summary>
+    internal static DeliveryAzureDevOpsSource? AzureDevOps(DeliveryReportSourceRecord src)
+    {
+        if (src.SourceType != nameof(DeliverySourceType.AzureDevOps)) return null;
+        try { return JsonSerializer.Deserialize<SourceMetadata>(src.MetadataJson, Json)?.AzureDevOps; }
+        catch (JsonException) { return null; }
+    }
+
     internal static DeliveryReportSnapshotRef Ref(DeliverySnapshotRecord s, DeliveryReportSourceRecord src) => new()
     {
+        AzureDevOps = AzureDevOps(src),
         SnapshotId = s.Id, Label = s.Label, EffectiveAt = s.EffectiveAt, ImportedAt = s.ImportedAt, SourceType = Enum.Parse<DeliverySourceType>(src.SourceType),
         SourceFileName = src.OriginalFileName, GitCommit = src.GitCommit, Fingerprint = src.Fingerprint, FeatureCount = s.FeatureCount, TaskCount = s.TaskCount,
         CompletedTaskCount = s.CompletedTaskCount,
@@ -182,6 +193,6 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
         Id = s.Id, ProjectId = s.ProjectId, Label = s.Label, EffectiveAt = s.EffectiveAt, ImportedAt = s.ImportedAt, Role = Enum.Parse<DeliverySnapshotRole>(s.Role),
         SourceType = Enum.Parse<DeliverySourceType>(src.SourceType), SourceFileName = src.OriginalFileName, GitCommit = src.GitCommit, Fingerprint = src.Fingerprint,
         Coverage = Enum.Parse<DeliveryCoverage>(s.CoverageStatus), FeatureCount = s.FeatureCount, TaskCount = s.TaskCount, CompletedTaskCount = s.CompletedTaskCount,
-        WarningsCount = s.WarningsCount, ReportCount = reportCount,
+        WarningsCount = s.WarningsCount, ReportCount = reportCount, AzureDevOps = AzureDevOps(src),
     };
 }

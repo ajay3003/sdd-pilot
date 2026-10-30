@@ -286,7 +286,7 @@
                                     </th>
                                     <td>@P.Day(s.EffectiveAt)</td>
                                     <td>@P.DayTime(s.ImportedAt)</td>
-                                    <td>@DeliveryReportingText.Source(s.SourceType)<br /><span class="dlr-muted">@s.SourceFileName</span></td>
+                                    <td data-testid="dlr-snapshot-source">@DeliveryReportingText.Source(s.SourceType)<br /><span class="dlr-muted">@(s.AzureDevOps is { } ado ? $"{ado.Project} / {ado.Repository} / {ado.Branch} · {ado.ShortCommit}" : s.SourceFileName)</span></td>
                                     <td>@s.FeatureCount</td>
                                     <td>@s.CompletedTaskCount/@s.TaskCount</td>
                                     <td>
@@ -364,14 +364,26 @@
         <div class="dlr-backdrop">
             <div class="dlr-dialog" role="dialog" aria-modal="true" aria-labelledby="dlr-import-title" data-testid="dlr-import-dialog" @onkeydown="OnDialogKey">
                 <h2 class="dlr-h2" id="dlr-import-title" tabindex="-1" @ref="_importTitle">Import snapshot</h2>
-                <p class="dlr-muted">Into reporting project <strong>@ProjectName</strong>. The ZIP is read once; only its stories, tasks and file fingerprints are kept.</p>
+                <p class="dlr-muted">Into reporting project <strong>@ProjectName</strong>. The repository is read once; only its stories, tasks and file fingerprints are kept.</p>
+                <fieldset class="dlr-source-choice" data-testid="dlr-import-source">
+                    <legend>Source</legend>
+                    <label><input type="radio" name="dlr-import-source" data-testid="dlr-source-zip" checked="@(!_fromAzureDevOps)" @onchange="() => ChooseSource(false)" /> Upload ZIP</label>
+                    <label><input type="radio" name="dlr-import-source" data-testid="dlr-source-ado" checked="@_fromAzureDevOps" @onchange="() => ChooseSource(true)" /> Import from Azure DevOps</label>
+                </fieldset>
+                @if (_fromAzureDevOps)
+                {
+                    <BirkNext.Web.Components.DeliveryAzureDevOpsImport ProjectId="_projectId" Disabled="_busy" OnPreview="OnAzureDevOpsPreview" />
+                }
                 <div class="dlr-form-grid">
-                    <label class="dlr-field"><span>Source file (ZIP)</span>
-                        <InputFile accept=".zip,application/zip" data-testid="dlr-import-file" OnChange="OnFileSelected" disabled="@_busy" />
-                    </label>
+                    @if (!_fromAzureDevOps)
+                    {
+                        <label class="dlr-field"><span>Source file (ZIP)</span>
+                            <InputFile accept=".zip,application/zip" data-testid="dlr-import-file" OnChange="OnFileSelected" disabled="@_busy" />
+                        </label>
+                    }
                     <label class="dlr-field"><span>Effective snapshot date and time</span>
                         <input type="datetime-local" data-testid="dlr-import-effective" value="@_effectiveInput" @onchange="e => _effectiveInput = e.Value?.ToString() ?? string.Empty" aria-describedby="dlr-effective-help" />
-                        <small id="dlr-effective-help" class="dlr-muted">When the repository was in this state, not when you import it. For a historical Git export, use the commit date.</small>
+                        <small id="dlr-effective-help" class="dlr-muted">@(_fromAzureDevOps ? "Filled from the selected state time (or the commit time for Current/latest). You can still change it." : "When the repository was in this state, not when you import it. For a historical Git export, use the commit date.")</small>
                     </label>
                     <label class="dlr-field"><span>Snapshot role</span>
                         <select data-testid="dlr-import-role" @bind="_importRole">
@@ -380,7 +392,7 @@
                     </label>
                     <label class="dlr-field"><span>Label (optional)</span><input data-testid="dlr-import-label" @bind="_importLabel" maxlength="200" placeholder="e.g. Monday baseline" /></label>
                 </div>
-                <p class="dlr-hint">Need an earlier baseline? Export the repository at the desired Git commit or date and import the ZIP here with that effective date. No Git access is needed in BirkNext.</p>
+                @if (!_fromAzureDevOps) { <p class="dlr-hint">Need an earlier baseline? Export the repository at the desired Git commit or date and import the ZIP here with that effective date, or choose Import from Azure DevOps.</p> }
 
                 @if (_busy && _preview is null) { <p role="status" data-testid="dlr-import-reading">Reading the archive…</p> }
                 @if (_importError is not null) { <p class="dlr-error" role="alert" data-testid="dlr-import-error">@_importError</p> }
@@ -391,7 +403,12 @@
                         <h3 class="dlr-h3">Preview</h3>
                         <dl class="dlr-meta">
                             <div><dt>Project</dt><dd>@ProjectName</dd></div>
-                            <div><dt>Source file</dt><dd>@preview.FileName (@DeliveryReportingText.Source(preview.SourceType))</dd></div>
+                            @if (preview.AzureDevOps is { } ado)
+                            {
+                                <div><dt>Source</dt><dd data-testid="dlr-preview-ado">Azure DevOps · @ado.Project / @ado.Repository / @ado.Branch</dd></div>
+                                <div><dt>Commit time</dt><dd>@P.DayTime(ado.CommitAt)@(ado.RequestedAt is { } requested && requested != ado.CommitAt ? $" (requested {P.DayTime(requested)})" : "")</dd></div>
+                            }
+                            else { <div><dt>Source file</dt><dd>@preview.FileName (@DeliveryReportingText.Source(preview.SourceType))</dd></div> }
                             @if (preview.GitCommit is { } commit) { <div><dt>Git commit</dt><dd data-testid="dlr-preview-commit">@commit[..Math.Min(12, commit.Length)]</dd></div> }
                             <div><dt>Effective date</dt><dd>@(P.ParseLocalInput(_effectiveInput) is { } eff ? P.DayTime(eff) : "Not set")</dd></div>
                             <div><dt>Modules</dt><dd>@(preview.Modules.Count == 0 ? "–" : string.Join(", ", preview.Modules))</dd></div>
@@ -399,7 +416,8 @@
                             <div><dt>Tasks</dt><dd data-testid="dlr-preview-tasks">@preview.TaskTotal (@preview.TaskCompleted completed, @preview.TaskOpen open)</dd></div>
                             <div><dt>Coverage</dt><dd><span class="dlr-badge @P.CoverageTone(preview.Coverage)">@preview.Coverage</span></dd></div>
                         </dl>
-                        @if (preview.SuggestedEffectiveAt is { } suggested)
+                        @if (_adoNote is not null) { <p class="dlr-warning" data-testid="dlr-preview-ado-note">@_adoNote</p> }
+                        @if (preview.SuggestedEffectiveAt is { } suggested && preview.AzureDevOps is null)
                         {
                             <p class="dlr-muted" data-testid="dlr-preview-suggested">The archive suggests @P.DayTime(suggested). @preview.SuggestedEffectiveReason
                                 <button type="button" class="btn-link" @onclick="() => _effectiveInput = P.LocalInput(suggested)">Use this date</button></p>
@@ -470,7 +488,8 @@
     private string? _newProjectError;
     private ElementReference _newProjectName;
 
-    private bool _importOpen, _confirmDuplicate;
+    private bool _importOpen, _confirmDuplicate, _fromAzureDevOps;
+    private string? _adoNote;
     private string _effectiveInput = "";
     private DeliverySnapshotRole _importRole = DeliverySnapshotRole.Current;
     private string _importLabel = "";
@@ -611,6 +630,7 @@
     {
         _importOpen = true;
         _preview = null;
+        _adoNote = null;
         _importError = null;
         _confirmDuplicate = false;
         _importLabel = "";
@@ -624,6 +644,29 @@
         if (_preview is { } preview) await Api.DiscardAsync(preview.StagingId);
         _preview = null;
         _importOpen = false;
+    }
+
+    private async Task ChooseSource(bool azureDevOps)
+    {
+        if (_fromAzureDevOps == azureDevOps) return;
+        _fromAzureDevOps = azureDevOps;
+        if (_preview is { } old) await Api.DiscardAsync(old.StagingId);
+        _preview = null;
+        _adoNote = null;
+        _importError = null;
+        _confirmDuplicate = false;
+    }
+
+    /// <summary>The resolved commit's tree was previewed by the same pipeline as a ZIP; its state time becomes the effective date.</summary>
+    private async Task OnAzureDevOpsPreview((DeliveryImportPreview Preview, string? Note) result)
+    {
+        if (_preview is { } old && old.StagingId != result.Preview.StagingId) await Api.DiscardAsync(old.StagingId);
+        _preview = result.Preview;
+        _adoNote = result.Note;
+        _importError = null;
+        _confirmDuplicate = false;
+        if (result.Preview.SuggestedEffectiveAt is { } at) _effectiveInput = P.LocalInput(at);
+        if (string.IsNullOrWhiteSpace(_importLabel) && result.Preview.AzureDevOps is { } ado) _importLabel = $"{ado.Branch} {P.Day(result.Preview.SuggestedEffectiveAt ?? ado.CommitAt)}";
     }
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)

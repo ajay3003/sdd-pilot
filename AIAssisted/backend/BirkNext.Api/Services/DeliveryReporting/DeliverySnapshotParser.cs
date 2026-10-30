@@ -81,6 +81,8 @@ public sealed record ParsedDeliverySnapshot
     public List<ParsedDeliveryArtifact> Artifacts { get; init; } = [];
     public List<DeliveryImportWarning> Warnings { get; init; } = [];
     public DeliveryCoverage Coverage { get; init; }
+    /// <summary>Set when the archive is the tree of a resolved Azure DevOps commit (provenance only; parsing is identical to a ZIP upload).</summary>
+    public DeliveryAzureDevOpsSource? AzureDevOps { get; init; }
 }
 
 public sealed record DeliverySnapshotParseResult(ParsedDeliverySnapshot? Snapshot, SourceArchiveValidationFailure? Failure);
