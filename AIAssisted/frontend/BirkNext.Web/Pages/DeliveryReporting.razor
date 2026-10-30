@@ -16,7 +16,7 @@
     <header class="dlr-header">
         <div>
             <h1 class="dlr-title">@(_report is null ? "Delivery Reporting" : $"{_report.ProjectName} — Weekly Delivery Report")</h1>
-            <p class="dlr-lead">What changed in your stories and features this week: progress, attention items and next-week focus, compared between two imported snapshots.</p>
+            <p class="dlr-lead">What changed in your features and user stories this week: progress, scope changes, attention items and potential focus, compared between two imported snapshots.</p>
         </div>
         <div class="dlr-header-actions">
             <label class="dlr-field dlr-project-field">
@@ -134,7 +134,7 @@
                 @{ var changed = report.Stories.Where(s => s.Changed).Take(8).ToList(); }
                 @if (changed.Count > 0)
                 {
-                    <h3 class="dlr-h3">Stories that moved</h3>
+                    <h3 class="dlr-h3">Features that moved</h3>
                     <ul class="dlr-list dlr-moved">
                         @foreach (var s in changed)
                         {
@@ -159,7 +159,7 @@
                 }
             </section>
             <section class="dlr-card" data-testid="dlr-focus">
-                <h2 class="dlr-h2">Next-week focus</h2>
+                <h2 class="dlr-h2">@DeliveryReportStories.FocusHeading(report)</h2>
                 @if (report.NextWeekFocus.Count == 0) { <p class="dlr-muted">No open work found in the current snapshot.</p> }
                 else
                 {
@@ -220,58 +220,7 @@
             <section class="dlr-card dlr-empty" data-testid="dlr-stories-empty"><p>Generate a weekly report on the Overview to compare stories.</p></section>
             return;
         }
-        var rows = P.Filter(_report, _storyFilter, _storySearch, _storyModule);
-        <section class="dlr-card" data-testid="dlr-stories">
-            <h2 class="dlr-h2">Stories — @_report.WeekLabel</h2>
-            <div class="dlr-filters">
-                <label class="dlr-field"><span>Search</span><input type="search" data-testid="dlr-story-search" @bind="_storySearch" @bind:event="oninput" placeholder="Story or module" /></label>
-                <label class="dlr-field"><span>Show</span>
-                    <select data-testid="dlr-story-filter" @bind="_storyFilter">
-                        @foreach (var (id, label) in P.StoryFilters) { <option value="@id">@label</option> }
-                    </select>
-                </label>
-                @if (P.Modules(_report).Count > 1)
-                {
-                    <label class="dlr-field"><span>Module</span>
-                        <select data-testid="dlr-story-module" @bind="_storyModule">
-                            <option value="">All modules</option>
-                            @foreach (var m in P.Modules(_report)) { <option value="@m">@m</option> }
-                        </select>
-                    </label>
-                }
-            </div>
-            <p class="dlr-muted" role="status" data-testid="dlr-story-count">@rows.Count of @_report.Stories.Count stories shown@(_storyFilter == "default" ? " (changed this week or needing attention)" : "")</p>
-            @if (rows.Count == 0) { <p data-testid="dlr-stories-none">No stories match. Choose “All” to see unchanged stories.</p> }
-            else
-            {
-                <div class="dlr-table-wrap">
-                    <table class="dlr-table" data-testid="dlr-story-table">
-                        <thead><tr><th scope="col">Story / feature</th><th scope="col">Module</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Change this week</th><th scope="col">Task progress</th><th scope="col">Attention</th><th scope="col"><span class="visually-hidden">Evidence</span></th></tr></thead>
-                        <tbody>
-                            @foreach (var s in rows)
-                            {
-                                var open = _expanded.Contains(s.FeatureKey);
-                                var detailId = $"dlr-evidence-{Math.Abs(s.FeatureKey.GetHashCode())}";
-                                <tr data-testid="dlr-story-row">
-                                    <th scope="row">@s.Title</th>
-                                    <td>@s.Module</td>
-                                    <td>@DeliveryReportStories.StatusOrDash(s.BaselineStatus)</td>
-                                    <td>@DeliveryReportStories.StatusOrDash(s.CurrentStatus)</td>
-                                    <td><span class="dlr-badge @P.MovementTone(s.Movement)">@DeliveryReportingText.Movement(s.Movement)</span></td>
-                                    <td>@DeliveryReportStories.ProgressChange(s)</td>
-                                    <td>@(s.Attention.Count == 0 ? "–" : string.Join(", ", s.Attention))</td>
-                                    <td><button type="button" class="btn-link" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="dlr-story-evidence-toggle" @onclick="() => Toggle(s.FeatureKey)">@(open ? "Hide evidence" : "Show evidence")<span class="visually-hidden"> for @s.Title</span></button></td>
-                                </tr>
-                                @if (open)
-                                {
-                                    <tr class="dlr-evidence-row"><td colspan="8" id="@detailId" data-testid="dlr-story-evidence">@Evidence(s)</td></tr>
-                                }
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
+        <BirkNext.Web.Components.DeliveryFeatureExplorer @key="_report.ReportId" Report="_report" ProjectName="@(_report.ProjectName)" />
     };
 
     private RenderFragment Evidence(DeliveryStoryRow s) => __builder =>

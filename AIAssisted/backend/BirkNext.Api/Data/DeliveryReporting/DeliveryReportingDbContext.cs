@@ -18,6 +18,9 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
     public DbSet<DeliverySnapshotRecord> Snapshots => Set<DeliverySnapshotRecord>();
     public DbSet<DeliveryFeatureSnapshotRecord> FeatureSnapshots => Set<DeliveryFeatureSnapshotRecord>();
     public DbSet<DeliveryTaskSnapshotRecord> TaskSnapshots => Set<DeliveryTaskSnapshotRecord>();
+    public DbSet<DeliveryPhaseSnapshotRecord> PhaseSnapshots => Set<DeliveryPhaseSnapshotRecord>();
+    public DbSet<DeliveryUserStorySnapshotRecord> UserStorySnapshots => Set<DeliveryUserStorySnapshotRecord>();
+    public DbSet<DeliveryAcceptanceCriterionSnapshotRecord> AcceptanceCriterionSnapshots => Set<DeliveryAcceptanceCriterionSnapshotRecord>();
     public DbSet<DeliveryArtifactSnapshotRecord> ArtifactSnapshots => Set<DeliveryArtifactSnapshotRecord>();
     public DbSet<DeliveryEvidenceReferenceRecord> EvidenceReferences => Set<DeliveryEvidenceReferenceRecord>();
     public DbSet<DeliverySnapshotComparisonRecord> Comparisons => Set<DeliverySnapshotComparisonRecord>();
@@ -114,6 +117,7 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.TaskTotal).HasColumnName("task_total");
             e.Property(x => x.TaskCompleted).HasColumnName("task_completed");
             e.Property(x => x.UntrackedTaskCount).HasColumnName("untracked_task_count");
+            e.Property(x => x.HierarchyCaptured).HasColumnName("hierarchy_captured").HasDefaultValue(false);
             e.Property(x => x.Status).HasColumnName("status").HasMaxLength(40);
             e.Property(x => x.StatusReason).HasColumnName("status_reason").HasMaxLength(1000);
             e.HasOne<DeliverySnapshotRecord>().WithMany().HasForeignKey(x => x.SnapshotId).OnDelete(DeleteBehavior.Cascade);
@@ -133,8 +137,61 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.Completed).HasColumnName("completed");
             e.Property(x => x.Phase).HasColumnName("phase").HasMaxLength(400);
             e.Property(x => x.UserStory).HasColumnName("user_story").HasMaxLength(40);
+            e.Property(x => x.PhaseKey).HasColumnName("phase_key").HasMaxLength(40);
+            e.Property(x => x.UserStoryKey).HasColumnName("user_story_key").HasMaxLength(40);
             e.Property(x => x.Position).HasColumnName("position");
             e.Property(x => x.SourcePath).HasColumnName("source_path").HasMaxLength(1000);
+            e.HasOne<DeliveryFeatureSnapshotRecord>().WithMany().HasForeignKey(x => x.FeatureSnapshotId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.SnapshotId);
+            e.HasIndex(x => x.FeatureSnapshotId);
+        });
+
+        modelBuilder.Entity<DeliveryPhaseSnapshotRecord>(e =>
+        {
+            e.ToTable("phase_snapshot");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.SnapshotId).HasColumnName("snapshot_id");
+            e.Property(x => x.FeatureSnapshotId).HasColumnName("feature_snapshot_id");
+            e.Property(x => x.PhaseKey).HasColumnName("phase_key").HasMaxLength(40);
+            e.Property(x => x.Title).HasColumnName("title").HasMaxLength(400);
+            e.Property(x => x.Position).HasColumnName("position");
+            e.HasOne<DeliveryFeatureSnapshotRecord>().WithMany().HasForeignKey(x => x.FeatureSnapshotId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.SnapshotId);
+            e.HasIndex(x => new { x.FeatureSnapshotId, x.PhaseKey }).IsUnique();
+        });
+
+        modelBuilder.Entity<DeliveryUserStorySnapshotRecord>(e =>
+        {
+            e.ToTable("user_story_snapshot");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.SnapshotId).HasColumnName("snapshot_id");
+            e.Property(x => x.FeatureSnapshotId).HasColumnName("feature_snapshot_id");
+            e.Property(x => x.StoryKey).HasColumnName("story_key").HasMaxLength(60);
+            e.Property(x => x.Title).HasColumnName("title").HasMaxLength(300);
+            e.Property(x => x.Description).HasColumnName("description").HasMaxLength(1500);
+            e.Property(x => x.Priority).HasColumnName("priority").HasMaxLength(20);
+            e.Property(x => x.PhaseKeysJson).HasColumnName("phase_keys_json");
+            e.Property(x => x.Position).HasColumnName("position");
+            e.Property(x => x.SourceLine).HasColumnName("source_line");
+            e.HasOne<DeliveryFeatureSnapshotRecord>().WithMany().HasForeignKey(x => x.FeatureSnapshotId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.SnapshotId);
+            e.HasIndex(x => new { x.FeatureSnapshotId, x.StoryKey }).IsUnique();
+        });
+
+        modelBuilder.Entity<DeliveryAcceptanceCriterionSnapshotRecord>(e =>
+        {
+            e.ToTable("acceptance_criterion_snapshot");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.SnapshotId).HasColumnName("snapshot_id");
+            e.Property(x => x.FeatureSnapshotId).HasColumnName("feature_snapshot_id");
+            e.Property(x => x.StoryKey).HasColumnName("story_key").HasMaxLength(60);
+            e.Property(x => x.CriterionKey).HasColumnName("criterion_key").HasMaxLength(60);
+            e.Property(x => x.Text).HasColumnName("text").HasMaxLength(2000);
+            e.Property(x => x.Position).HasColumnName("position");
+            e.Property(x => x.SourceLine).HasColumnName("source_line");
             e.HasOne<DeliveryFeatureSnapshotRecord>().WithMany().HasForeignKey(x => x.FeatureSnapshotId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.SnapshotId);
             e.HasIndex(x => x.FeatureSnapshotId);

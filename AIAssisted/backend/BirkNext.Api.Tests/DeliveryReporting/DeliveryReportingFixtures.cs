@@ -91,7 +91,11 @@ internal static class DeliveryReportingFixtures
             Key = f.Key, Folder = f.Folder, Module = BirkNext.Web.Services.Explorers.ArtifactModules.Label(f.Module), Title = f.Title, Position = f.Position,
             SpecPath = f.SpecPath, TasksPath = f.TasksPath, PlanPath = f.PlanPath, SpecFingerprint = f.SpecFingerprint,
             AcceptanceFingerprint = f.AcceptanceFingerprint, AcceptanceCriteria = f.AcceptanceCriteria, Status = f.Status, StatusReason = f.StatusReason,
-            TaskTotal = f.TaskTotal, TaskCompleted = f.TaskCompleted, Tasks = f.Tasks.Select(t => new DeliveryContentTask(t.TaskKey, t.Text, t.Completed)).ToList(),
+            TaskTotal = f.TaskTotal, TaskCompleted = f.TaskCompleted,
+            Tasks = f.Tasks.Select(t => new DeliveryContentTask(t.TaskKey, t.Text, t.Completed) { TaskId = t.TaskId, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath }).ToList(),
+            HierarchyCaptured = true, Phases = [.. f.Phases.Select(p => new DeliveryContentPhase(p.Key, p.Title, p.Position))],
+            Stories = [.. f.Stories.Select(s => new DeliveryContentStory(s.Key, s.Title, s.Description, s.Priority, s.PhaseKeys, s.Position, s.Line))],
+            Criteria = [.. f.Criteria.Select(c => new DeliveryContentCriterion(c.Key, c.Text, c.StoryKey, c.Position))],
         }).ToList(),
         SourceFiles = parsed.Artifacts.Where(a => a.Kind == "Source")
             .ToDictionary(a => a.Path, a => (BirkNext.Web.Services.Explorers.ArtifactModules.Label(a.Module), a.Fingerprint), StringComparer.Ordinal),

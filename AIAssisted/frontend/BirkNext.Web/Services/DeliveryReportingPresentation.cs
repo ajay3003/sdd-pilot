@@ -16,9 +16,15 @@ public static class DeliveryReportingPresentation
     /// <summary>Story filters. The default is "changed this week + active attention"; unchanged old stories only appear under All.</summary>
     public static readonly IReadOnlyList<(string Id, string Label)> StoryFilters =
     [
-        ("default", "Changed + attention"), ("all", "All"), ("progressed", "Progressed"), ("new", "New"), ("completed", "Completed"),
-        ("blocked", "Blocked"), ("clarification", "Needs clarification"), ("specification", "Changed specification"),
+        ("default", "Changed + attention"), ("all", "All"), ("progressed", "Progressed"), ("new", "New"), ("removed", "Removed"), ("completed", "All tasks completed"),
+        ("blocked", "Blocked"), ("clarification", "Needs clarification"), ("specification", "Changed specification"), ("stories", "User stories changed"),
+        ("criteria", "Acceptance criteria changed"), ("attention", "Needs attention"),
     ];
+
+    /// <summary>Phases across the report's features (key + title of the first occurrence), only where explicit phases exist.</summary>
+    public static IReadOnlyList<(string Key, string Title)> Phases(WeeklyDeliveryReport report) =>
+        report.Stories.SelectMany(s => s.Hierarchy?.Phases ?? []).GroupBy(p => p.Key).Select(g => (g.Key, g.First().Title))
+            .OrderBy(p => int.TryParse(p.Key.Replace("phase-", ""), out var n) ? n : 999).ToList();
 
     public static IReadOnlyList<DeliveryStoryRow> Filter(WeeklyDeliveryReport report, string filter, string? search, string? module)
     {
@@ -32,13 +38,18 @@ public static class DeliveryReportingPresentation
             "blocked" => rows.Where(s => s.CurrentStatus == DeliveryStatus.Blocked || s.Movement == DeliveryMovement.Regressed),
             "clarification" => rows.Where(s => s.CurrentStatus == DeliveryStatus.NeedsClarification),
             "specification" => rows.Where(s => s.SpecificationChanged),
+            "removed" => rows.Where(s => s.RemovedFeature),
+            "stories" => rows.Where(s => s.Hierarchy is { } h && (h.StoriesAdded + h.StoriesRemoved + h.StoriesChanged) > 0),
+            "criteria" => rows.Where(s => s.Hierarchy is { } h && (h.CriteriaAdded + h.CriteriaChanged + h.CriteriaRemoved) > 0 || s.AcceptanceCriteriaChanged),
+            "attention" => rows.Where(s => s.HasActiveAttention),
             _ => rows.Where(DeliveryReportStories.IsDefaultVisible),
         };
         if (!string.IsNullOrWhiteSpace(module)) rows = rows.Where(s => s.Module == module);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            rows = rows.Where(s => s.Title.Contains(term, StringComparison.OrdinalIgnoreCase) || s.Module.Contains(term, StringComparison.OrdinalIgnoreCase));
+            rows = rows.Where(s => s.Title.Contains(term, StringComparison.OrdinalIgnoreCase) || s.Module.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (s.Hierarchy?.Stories ?? []).Any(st => st.Title.Contains(term, StringComparison.OrdinalIgnoreCase) || st.Key.Equals(term, StringComparison.OrdinalIgnoreCase)));
         }
         return rows.ToList();
     }

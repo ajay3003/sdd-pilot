@@ -5,7 +5,19 @@ namespace BirkNext.Api.Services.DeliveryReporting;
 
 // The normalized content of one stored snapshot, as the comparison reads it. Loaded from delivery_reporting only.
 
-public sealed record DeliveryContentTask(string Key, string Text, bool Completed);
+public sealed record DeliveryContentTask(string Key, string Text, bool Completed)
+{
+    public string? TaskId { get; init; }
+    public string? PhaseKey { get; init; }
+    public string? UserStoryKey { get; init; }
+    public string? SourcePath { get; init; }
+}
+
+public sealed record DeliveryContentPhase(string Key, string Title, int Position);
+
+public sealed record DeliveryContentStory(string Key, string Title, string? Description, string? Priority, List<string> PhaseKeys, int Position, int Line);
+
+public sealed record DeliveryContentCriterion(string Key, string Text, string? StoryKey, int Position);
 
 public sealed record DeliveryContentFeature
 {
@@ -25,6 +37,11 @@ public sealed record DeliveryContentFeature
     public int TaskTotal { get; init; }
     public int TaskCompleted { get; init; }
     public List<DeliveryContentTask> Tasks { get; init; } = [];
+    /// <summary>False for snapshots imported before hierarchy support: no phases/stories/criteria rows exist, none are invented.</summary>
+    public bool HierarchyCaptured { get; init; }
+    public List<DeliveryContentPhase> Phases { get; init; } = [];
+    public List<DeliveryContentStory> Stories { get; init; } = [];
+    public List<DeliveryContentCriterion> Criteria { get; init; } = [];
 }
 
 public sealed record DeliverySnapshotContent
@@ -40,7 +57,10 @@ public sealed record DeliverySnapshotContent
 public sealed record DeliveryStatusChange(string FeatureKey, string Kind, string? From, string? To, string Detail);
 
 public sealed record DeliveryComparisonResult(List<DeliveryStoryRow> Stories, List<DeliveryStatusChange> Events, List<DeliveryAttentionItem> Attention,
-    int FeaturesAdded, int FeaturesRemoved, int FeaturesChanged);
+    int FeaturesAdded, int FeaturesRemoved, int FeaturesChanged)
+{
+    public List<DeliveryScopeChange> ScopeChanges { get; init; } = [];
+}
 
 /// <summary>
 /// Compares two Delivery Reporting snapshots feature by feature. Deterministic: the same two snapshots always give the same rows, in the same
@@ -66,6 +86,8 @@ public static class DeliverySnapshotComparison
             var row = c is null ? Removed(b!, events, attention)
                 : b is null ? Added(c, events, attention)
                 : Changed(b, c, events, attention);
+            row = row with { Hierarchy = Hierarchy(b, c) };
+            if (c is not null && row.Hierarchy is { Captured: true } h) HierarchyAttention(c, h, attention);
             var module = (c ?? b)!.Module;
             if (c is not null && sourceByModule.TryGetValue(module, out var source))
                 row = row with { Evidence = row.Evidence with { SourceSummary = source } };
@@ -87,14 +109,19 @@ public static class DeliverySnapshotComparison
         foreach (var warning in current.Warnings.Where(w => w.Code == "TASKS_UNMAPPED"))
             attention.Add(new(DeliveryAttentionKind.UnmappedArtifact, DeliveryAttentionSeverity.Review, "Task file outside a feature",
                 "A tasks.md file is not inside a feature folder, so its tasks are not counted in any story."));
+        foreach (var warning in current.Warnings.Where(w => w.Code == "TASK_STORY_UNKNOWN"))
+            attention.Add(new(DeliveryAttentionKind.BrokenTraceability, DeliveryAttentionSeverity.Review, "Task references an unknown user story", warning.Message));
         foreach (var warning in current.Warnings.Where(w => w.Code == "DUPLICATE_FEATURE_ID"))
             attention.Add(new(DeliveryAttentionKind.AmbiguousFeatureIdentity, DeliveryAttentionSeverity.Review, "Duplicate feature number", warning.Message));
 
         var attentionKeys = attention.Where(a => a.FeatureKey is not null).GroupBy(a => a.FeatureKey!).ToDictionary(g => g.Key, g => g.Select(a => DeliveryReportingText.Attention(a.Kind)).Distinct().ToList());
         stories = stories.Select(s => attentionKeys.TryGetValue(s.FeatureKey, out var labels) ? s with { Attention = labels, HasActiveAttention = true } : s).ToList();
 
+        var scope = stories.Where(s => s.NewFeature || s.RemovedFeature).Select(s => s.RemovedFeature
+            ? new DeliveryScopeChange("Removed", s.FeatureKey, s.Title, s.Module, $"In the baseline, not in the current snapshot. Last known baseline: {s.BaselineTaskCompleted}/{s.BaselineTaskTotal} tasks. Confirm whether the removal was intentional.")
+            : new DeliveryScopeChange("Added", s.FeatureKey, s.Title, s.Module, $"New this period. Current state: {s.CurrentTaskCompleted}/{s.CurrentTaskTotal} tasks (not counted as completed this period).")).ToList();
         return new(stories, events, attention,
-            stories.Count(s => s.NewFeature), stories.Count(s => s.RemovedFeature), stories.Count(s => s.Changed));
+            stories.Count(s => s.NewFeature), stories.Count(s => s.RemovedFeature), stories.Count(s => s.Changed)) { ScopeChanges = scope };
     }
 
     private static List<(DeliveryContentFeature? Baseline, DeliveryContentFeature? Current)> Match(List<DeliveryContentFeature> baseline, List<DeliveryContentFeature> current)
@@ -132,8 +159,9 @@ public static class DeliverySnapshotComparison
         {
             FeatureKey = c.Key, Title = c.Title, Module = c.Module, CurrentStatus = c.Status, Movement = DeliveryMovement.NewThisPeriod,
             CurrentTaskCompleted = c.TaskCompleted, CurrentTaskTotal = c.TaskTotal, TaskDelta = c.TaskCompleted,
-            TasksCompletedThisPeriod = c.TaskCompleted, NewFeature = true,
-            Reasons = [c.TaskTotal > 0 ? $"New this period with {c.TaskCompleted} of {c.TaskTotal} tasks completed" : "New this period; no task progress yet"],
+            // The baseline cannot prove when a new feature's checked tasks were completed: they are inventory, not completed this period.
+            TasksCompletedThisPeriod = 0, NewFeature = true,
+            Reasons = [c.TaskTotal > 0 ? $"New this period; current state {c.TaskCompleted} of {c.TaskTotal} tasks checked" : "New this period; no task progress yet"],
             Evidence = new DeliveryStoryEvidence
             {
                 SpecPath = c.SpecPath, TasksPath = c.TasksPath, PlanPath = c.PlanPath, CurrentStatusReason = c.StatusReason,
@@ -144,9 +172,8 @@ public static class DeliverySnapshotComparison
 
     private static DeliveryStoryRow Removed(DeliveryContentFeature b, List<DeliveryStatusChange> events, List<DeliveryAttentionItem> attention)
     {
+        // A removal is a scope change (listed under Scope changes), not a quality problem.
         events.Add(new(b.Key, "FeatureRemoved", b.Status.ToString(), null, "Feature folder no longer present"));
-        attention.Add(new(DeliveryAttentionKind.FeatureRemoved, DeliveryAttentionSeverity.Review, b.Title,
-            $"\"{b.Title}\" is in the baseline but not in the current snapshot ({b.TaskCompleted}/{b.TaskTotal} tasks were completed). Removed is not completed: confirm whether it was descoped, merged or moved.", b.Key));
         return new DeliveryStoryRow
         {
             FeatureKey = b.Key, Title = b.Title, Module = b.Module, BaselineStatus = b.Status, Movement = DeliveryMovement.Removed,
@@ -160,7 +187,8 @@ public static class DeliverySnapshotComparison
     {
         var baseTasks = b.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var curTasks = c.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        var completedNow = c.Tasks.Where(t => t.Completed && !(baseTasks.TryGetValue(t.Key, out var bt) && bt.Completed)).ToList();
+        // Completed this period = matched task, open in the baseline and checked now. A new task that is already checked is inventory growth.
+        var completedNow = c.Tasks.Where(t => t.Completed && baseTasks.TryGetValue(t.Key, out var bt) && !bt.Completed).ToList();
         var reopened = c.Tasks.Where(t => !t.Completed && baseTasks.TryGetValue(t.Key, out var bt) && bt.Completed).ToList();
         var added = c.Tasks.Where(t => !baseTasks.ContainsKey(t.Key)).ToList();
         var removedTasks = b.Tasks.Where(t => !curTasks.ContainsKey(t.Key)).ToList();
@@ -180,8 +208,8 @@ public static class DeliverySnapshotComparison
         { movement = DeliveryMovement.Regressed; reasons.Add($"Task completion went backwards: {progress}"); }
         else if (DeliveryStatusDerivation.IsComplete(c.Status) && !DeliveryStatusDerivation.IsComplete(b.Status))
         { movement = DeliveryMovement.Completed; reasons.Add(c.Status == DeliveryStatus.Done ? "Marked Done" : $"All tasks completed: {progress}"); }
-        else if (delta > 0 || completedNow.Count > 0)
-        { movement = DeliveryMovement.Progressed; reasons.Add(delta > 0 ? $"Progressed: {progress}" : $"{completedNow.Count} task(s) completed this period"); }
+        else if (completedNow.Count > 0)
+        { movement = DeliveryMovement.Progressed; reasons.Add($"{completedNow.Count} task(s) completed this period; {progress}"); }
         else if (DeliveryStatusDerivation.Rank(c.Status) > DeliveryStatusDerivation.Rank(b.Status) && DeliveryStatusDerivation.Rank(b.Status) >= 0)
         { movement = DeliveryMovement.Progressed; reasons.Add($"Status moved from {DeliveryReportingText.Status(b.Status)} to {DeliveryReportingText.Status(c.Status)}"); }
         else if (b.Status == DeliveryStatus.Blocked && c.Status != DeliveryStatus.Blocked)
@@ -214,9 +242,6 @@ public static class DeliverySnapshotComparison
         if (removedTasks.Count > 0 && c.TaskTotal < b.TaskTotal)
             attention.Add(new(DeliveryAttentionKind.TasksDisappeared, DeliveryAttentionSeverity.Review, c.Title,
                 $"{removedTasks.Count} task(s) disappeared from tasks.md (total {b.TaskTotal} → {c.TaskTotal}).", c.Key));
-        if (acceptanceChanged && b.TaskCompleted > 0)
-            attention.Add(new(DeliveryAttentionKind.AcceptanceCriteriaChanged, DeliveryAttentionSeverity.Review, c.Title,
-                $"Acceptance criteria changed after work started ({acceptanceAdded.Count} added, {acceptanceRemoved.Count} removed). Check that completed tasks still cover them.", c.Key));
 
         return new DeliveryStoryRow
         {
@@ -235,6 +260,118 @@ public static class DeliverySnapshotComparison
                 TasksRemoved = removedTasks.Select(t => t.Text).Take(EvidenceListLimit).ToList(),
             },
         };
+    }
+
+    // ── Hierarchy ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Feature → Phase → User Story → Acceptance Criteria with traceable tasks and their change. Removed feature = baseline state, new = current
+    /// state. Stories match by key (US2); criteria match by exact text first, then by key; tasks by task key. Nothing is linked by similar text.
+    /// </summary>
+    public static DeliveryFeatureHierarchy Hierarchy(DeliveryContentFeature? b, DeliveryContentFeature? c)
+    {
+        var side = c ?? b!;
+        if (!side.HierarchyCaptured || b is not null && c is not null && !b.HierarchyCaptured)
+            return new DeliveryFeatureHierarchy { Captured = false, Tasks = TaskRows(b, c) };
+        var tasks = TaskRows(b, c);
+        var criteria = CriterionRows(b?.Criteria ?? [], c?.Criteria ?? [], b is null, c is null);
+        var storyKeys = (c?.Stories ?? []).Select(s => s.Key).Concat((b?.Stories ?? []).Select(s => s.Key)).Distinct(StringComparer.Ordinal).ToList();
+        var stories = storyKeys.Select(key =>
+        {
+            var bs = b?.Stories.FirstOrDefault(s => s.Key == key);
+            var cs = c?.Stories.FirstOrDefault(s => s.Key == key);
+            var s = cs ?? bs!;
+            var own = criteria.Where(x => x.StoryKey == key).ToList();
+            var storyTasks = tasks.Where(t => t.UserStoryKey == key && t.Change != DeliveryTaskChange.Removed).ToList();
+            var textChanged = bs is not null && cs is not null && (bs.Title != cs.Title || bs.Description != cs.Description);
+            var criteriaChanged = own.Any(x => x.Change != DeliveryItemChange.Unchanged);
+            var change = b is null || bs is null ? DeliveryItemChange.Added : c is null || cs is null ? DeliveryItemChange.Removed
+                : textChanged || criteriaChanged ? DeliveryItemChange.Changed : DeliveryItemChange.Unchanged;
+            if (b is null) change = DeliveryItemChange.Unchanged;
+            if (c is null) change = DeliveryItemChange.Unchanged;
+            return new DeliveryUserStoryRow(key, s.Title, change)
+            {
+                Description = s.Description, Priority = s.Priority, PhaseKeys = [.. s.PhaseKeys], Criteria = own, TaskTotal = storyTasks.Count, TaskCompleted = storyTasks.Count(t => t.Completed),
+                TextChanged = textChanged, CriteriaChanged = criteriaChanged, SourceLine = s.Line,
+            };
+        }).OrderBy(s => (c?.Stories ?? b!.Stories).FindIndex(x => x.Key == s.Key) is var i and >= 0 ? i : 1000 + (b?.Stories.FindIndex(x => x.Key == s.Key) ?? 0)).ToList();
+        var phaseKeys = (c?.Phases ?? []).Concat(b?.Phases ?? []).GroupBy(p => p.Key).Select(g => g.First()).ToList();
+        var phases = phaseKeys.Select(p =>
+        {
+            var inB = b?.Phases.Any(x => x.Key == p.Key) == true;
+            var inC = c?.Phases.Any(x => x.Key == p.Key) == true;
+            var phaseTasks = tasks.Where(t => t.PhaseKey == p.Key).ToList();
+            var changes = phaseTasks.Count(t => t.Change != DeliveryTaskChange.Unchanged);
+            var change = b is null || c is null ? DeliveryItemChange.Unchanged : !inB ? DeliveryItemChange.Added : !inC ? DeliveryItemChange.Removed
+                : changes > 0 ? DeliveryItemChange.Changed : DeliveryItemChange.Unchanged;
+            var live = phaseTasks.Where(t => t.Change != DeliveryTaskChange.Removed).ToList();
+            return new DeliveryPhaseRow(p.Key, p.Title, change)
+            {
+                Position = p.Position, TaskTotal = live.Count, TaskCompleted = live.Count(t => t.Completed), Changes = changes,
+                StoryKeys = [.. stories.Where(s => s.PhaseKeys.Contains(p.Key)).Select(s => s.Key)],
+            };
+        }).OrderBy(p => p.Position).ToList();
+        var pair = b is not null && c is not null;
+        return new DeliveryFeatureHierarchy
+        {
+            Captured = true, Phases = phases, Stories = stories, FeatureCriteria = [.. criteria.Where(x => x.StoryKey is null)], Tasks = tasks,
+            CriteriaBaseline = b?.Criteria.Count ?? 0, CriteriaCurrent = c?.Criteria.Count ?? 0,
+            CriteriaAdded = pair ? criteria.Count(x => x.Change == DeliveryItemChange.Added) : 0, CriteriaChanged = criteria.Count(x => x.Change == DeliveryItemChange.Changed),
+            CriteriaRemoved = pair ? criteria.Count(x => x.Change == DeliveryItemChange.Removed) : 0,
+            StoriesAdded = stories.Count(s => s.Change == DeliveryItemChange.Added), StoriesRemoved = stories.Count(s => s.Change == DeliveryItemChange.Removed),
+            StoriesChanged = stories.Count(s => s.Change == DeliveryItemChange.Changed),
+            TasksAdded = pair ? tasks.Count(t => t.Change == DeliveryTaskChange.New) : 0, TasksRemoved = tasks.Count(t => t.Change == DeliveryTaskChange.Removed),
+            TasksReopened = tasks.Count(t => t.Change == DeliveryTaskChange.Reopened), TasksTextChanged = tasks.Count(t => t.Change == DeliveryTaskChange.TextChanged),
+        };
+    }
+
+    private static List<DeliveryTaskRow> TaskRows(DeliveryContentFeature? b, DeliveryContentFeature? c)
+    {
+        DeliveryTaskRow Row(DeliveryContentTask t, DeliveryTaskChange change) =>
+            new(t.Key, t.TaskId, t.Text, t.Completed, change) { PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath };
+        if (c is null) return [.. b!.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged))];
+        if (b is null) return [.. c.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged))];
+        var baseTasks = b.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var curKeys = c.Tasks.Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
+        var rows = c.Tasks.Select(t => Row(t, !baseTasks.TryGetValue(t.Key, out var bt) ? DeliveryTaskChange.New
+            : !bt.Completed && t.Completed ? DeliveryTaskChange.CompletedThisPeriod
+            : bt.Completed && !t.Completed ? DeliveryTaskChange.Reopened
+            : bt.Text != t.Text ? DeliveryTaskChange.TextChanged : DeliveryTaskChange.Unchanged)).ToList();
+        rows.AddRange(b.Tasks.Where(t => !curKeys.Contains(t.Key)).Select(t => Row(t, DeliveryTaskChange.Removed)));
+        return rows;
+    }
+
+    /// <summary>Per owner (story or feature): identical text = unchanged; then same key with different text = changed; the rest added/removed.</summary>
+    private static List<DeliveryCriterionRow> CriterionRows(List<DeliveryContentCriterion> b, List<DeliveryContentCriterion> c, bool onlyCurrent, bool onlyBaseline)
+    {
+        var rows = new List<DeliveryCriterionRow>();
+        if (onlyCurrent || onlyBaseline)
+            return [.. (onlyCurrent ? c : b).Select(x => new DeliveryCriterionRow(x.Key, x.Text, DeliveryItemChange.Unchanged) { StoryKey = x.StoryKey })];
+        foreach (var owner in c.Select(x => x.StoryKey).Concat(b.Select(x => x.StoryKey)).Distinct())
+        {
+            var bo = b.Where(x => x.StoryKey == owner).ToList();
+            var co = c.Where(x => x.StoryKey == owner).ToList();
+            var unmatchedB = bo.Where(x => co.All(y => y.Text != x.Text)).ToList();
+            foreach (var x in co)
+            {
+                if (bo.Any(y => y.Text == x.Text)) { rows.Add(new(x.Key, x.Text, DeliveryItemChange.Unchanged) { StoryKey = owner }); continue; }
+                var same = unmatchedB.FirstOrDefault(y => y.Key == x.Key);
+                if (same is not null) { unmatchedB.Remove(same); rows.Add(new(x.Key, x.Text, DeliveryItemChange.Changed) { StoryKey = owner, BaselineText = same.Text }); }
+                else rows.Add(new(x.Key, x.Text, DeliveryItemChange.Added) { StoryKey = owner });
+            }
+            rows.AddRange(unmatchedB.Select(x => new DeliveryCriterionRow(x.Key, x.Text, DeliveryItemChange.Removed) { StoryKey = owner }));
+        }
+        return rows;
+    }
+
+    /// <summary>Broken or missing traceability in the current snapshot (quality problems, not change events).</summary>
+    private static void HierarchyAttention(DeliveryContentFeature c, DeliveryFeatureHierarchy h, List<DeliveryAttentionItem> attention)
+    {
+        // Story task coverage is expected only when the feature's tasks use story tags at all.
+        if (c.Tasks.Any(t => t.UserStoryKey is not null))
+            foreach (var story in h.Stories.Where(s => s.Change != DeliveryItemChange.Removed && s.TaskTotal == 0))
+                attention.Add(new(DeliveryAttentionKind.BrokenTraceability, DeliveryAttentionSeverity.Review, c.Title,
+                    $"{story.Key} \"{story.Title}\" has no traceable tasks, while other stories of this feature do.", c.Key));
     }
 
     /// <summary>Attention that holds in the current snapshot regardless of movement: blocked, clarification, specification without tasks.</summary>

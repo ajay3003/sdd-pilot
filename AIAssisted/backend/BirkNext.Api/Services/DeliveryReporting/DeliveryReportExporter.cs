@@ -45,22 +45,45 @@ public static class DeliveryReportExporter
         md.AppendLine();
 
         var stories = DeliveryReportStories.Select(report, options.IncludeUnchangedStories);
-        md.AppendLine(options.IncludeUnchangedStories ? "## All stories" : "## Changed stories").AppendLine();
-        if (stories.Count == 0) md.AppendLine("No stories changed in this period.").AppendLine();
+        md.AppendLine(options.IncludeUnchangedStories ? "## All features" : "## Changed features").AppendLine();
+        if (stories.Count == 0) md.AppendLine("No features changed in this period.").AppendLine();
         else
         {
-            md.AppendLine("| Story / feature | Module | Baseline | Current | Change this week | Task progress | Attention |");
-            md.AppendLine("|---|---|---|---|---|---|---|");
+            md.AppendLine("| Feature | Module | Baseline | Current | Change this week | Task progress | User stories & acceptance criteria | Attention |");
+            md.AppendLine("|---|---|---|---|---|---|---|---|");
             foreach (var s in stories)
-                md.AppendLine($"| {Cell(s.Title)} | {Cell(s.Module)} | {DeliveryReportStories.StatusOrDash(s.BaselineStatus)} | {DeliveryReportStories.StatusOrDash(s.CurrentStatus)} | {DeliveryReportingText.Movement(s.Movement)} | {DeliveryReportStories.ProgressChange(s)} | {(s.Attention.Count == 0 ? "–" : Cell(string.Join(", ", s.Attention)))} |");
+                md.AppendLine($"| {Cell(s.Title)} | {Cell(s.Module)} | {DeliveryReportStories.StatusOrDash(s.BaselineStatus)} | {DeliveryReportStories.StatusOrDash(s.CurrentStatus)} | {DeliveryReportingText.Movement(s.Movement)} | {DeliveryReportStories.ProgressChange(s)} | {(DeliveryReportStories.HierarchySummary(s) is { Length: > 0 } hs ? Cell(hs) : "–")} | {(s.Attention.Count == 0 ? "–" : Cell(string.Join(", ", s.Attention)))} |");
             md.AppendLine();
             if (!options.IncludeUnchangedStories && report.Stories.Count > stories.Count)
-                md.AppendLine($"_{report.Stories.Count - stories.Count} unchanged stor{(report.Stories.Count - stories.Count == 1 ? "y is" : "ies are")} not listed._").AppendLine();
+                md.AppendLine($"_{report.Stories.Count - stories.Count} unchanged feature{(report.Stories.Count - stories.Count == 1 ? " is" : "s are")} not listed._").AppendLine();
+            // Detail: only what changed in the hierarchy (never every unchanged criterion or task).
+            foreach (var s in stories.Where(s => s.Hierarchy is { Captured: true } && !s.NewFeature && !s.RemovedFeature))
+            {
+                var h = s.Hierarchy!;
+                var changedStories = h.Stories.Where(x => x.Change != DeliveryItemChange.Unchanged).ToList();
+                var changedCriteria = h.FeatureCriteria.Where(x => x.Change != DeliveryItemChange.Unchanged).ToList();
+                if (changedStories.Count == 0 && changedCriteria.Count == 0) continue;
+                md.AppendLine($"**{Md(s.Title)}**").AppendLine();
+                foreach (var st in changedStories)
+                {
+                    md.AppendLine($"- {st.Key} {Md(st.Title)} — {DeliveryReportingText.Change(st.Change)}{(st.TaskTotal > 0 ? $" · {st.TaskCompleted}/{st.TaskTotal} tasks" : "")}");
+                    foreach (var c in st.Criteria.Where(c => c.Change != DeliveryItemChange.Unchanged)) md.AppendLine($"  - {c.Key} {DeliveryReportingText.Change(c.Change)}: {Md(c.Text)}");
+                }
+                foreach (var c in changedCriteria) md.AppendLine($"- Feature-level {c.Key} {DeliveryReportingText.Change(c.Change)}: {Md(c.Text)}");
+                md.AppendLine();
+            }
+        }
+
+        if (report.ScopeChanges.Count > 0)
+        {
+            md.AppendLine("## Scope changes").AppendLine();
+            foreach (var sc in report.ScopeChanges) md.AppendLine($"- **{(sc.Kind == "Removed" ? "Removed — review" : "New this period")}** · {Md(sc.Title)} ({Md(sc.Module)}): {Md(sc.Detail)}");
+            md.AppendLine();
         }
 
         var moved = report.Stories.Where(s => s.Movement is DeliveryMovement.Progressed or DeliveryMovement.Completed).ToList();
         md.AppendLine("## Completed and progressed").AppendLine();
-        if (moved.Count == 0) md.AppendLine("No story progressed in this period.").AppendLine();
+        if (moved.Count == 0) md.AppendLine("No feature progressed in this period.").AppendLine();
         else
         {
             foreach (var s in moved) md.AppendLine($"- **{Md(s.Title)}** — {DeliveryReportingText.Movement(s.Movement)}: {Md(string.Join("; ", s.Reasons))}");
@@ -76,7 +99,7 @@ public static class DeliveryReportExporter
             md.AppendLine();
         }
 
-        md.AppendLine("## Next-week focus").AppendLine();
+        md.AppendLine($"## {DeliveryReportStories.FocusHeading(report)}").AppendLine();
         if (report.NextWeekFocus.Count == 0) md.AppendLine("No open work was found in the current snapshot.").AppendLine();
         else
         {
@@ -132,22 +155,29 @@ public static class DeliveryReportExporter
         h.AppendLine("</div></section>");
 
         var stories = DeliveryReportStories.Select(report, options.IncludeUnchangedStories);
-        h.AppendLine($"<section><h2>{(options.IncludeUnchangedStories ? "All stories" : "Changed stories")}</h2>");
-        if (stories.Count == 0) h.AppendLine("<p>No stories changed in this period.</p>");
+        h.AppendLine($"<section><h2>{(options.IncludeUnchangedStories ? "All features" : "Changed features")}</h2>");
+        if (stories.Count == 0) h.AppendLine("<p>No features changed in this period.</p>");
         else
         {
-            h.AppendLine("<table><thead><tr><th scope=\"col\">Story / feature</th><th scope=\"col\">Module</th><th scope=\"col\">Baseline</th><th scope=\"col\">Current</th><th scope=\"col\">Change this week</th><th scope=\"col\">Task progress</th><th scope=\"col\">Attention</th></tr></thead><tbody>");
+            h.AppendLine("<table><thead><tr><th scope=\"col\">Feature</th><th scope=\"col\">Module</th><th scope=\"col\">Baseline</th><th scope=\"col\">Current</th><th scope=\"col\">Change this week</th><th scope=\"col\">Task progress</th><th scope=\"col\">User stories &amp; acceptance criteria</th><th scope=\"col\">Attention</th></tr></thead><tbody>");
             foreach (var s in stories)
-                h.AppendLine($"<tr><th scope=\"row\">{E(s.Title)}</th><td>{E(s.Module)}</td><td>{E(DeliveryReportStories.StatusOrDash(s.BaselineStatus))}</td><td>{E(DeliveryReportStories.StatusOrDash(s.CurrentStatus))}</td><td><span class=\"badge {MovementClass(s.Movement)}\">{E(DeliveryReportingText.Movement(s.Movement))}</span></td><td>{E(DeliveryReportStories.ProgressChange(s))}</td><td>{(s.Attention.Count == 0 ? "–" : E(string.Join(", ", s.Attention)))}</td></tr>");
+                h.AppendLine($"<tr><th scope=\"row\">{E(s.Title)}</th><td>{E(s.Module)}</td><td>{E(DeliveryReportStories.StatusOrDash(s.BaselineStatus))}</td><td>{E(DeliveryReportStories.StatusOrDash(s.CurrentStatus))}</td><td><span class=\"badge {MovementClass(s.Movement)}\">{E(DeliveryReportingText.Movement(s.Movement))}</span></td><td>{E(DeliveryReportStories.ProgressChange(s))}</td><td>{(DeliveryReportStories.HierarchySummary(s) is { Length: > 0 } hs ? E(hs) : "–")}</td><td>{(s.Attention.Count == 0 ? "–" : E(string.Join(", ", s.Attention)))}</td></tr>");
             h.AppendLine("</tbody></table>");
             if (!options.IncludeUnchangedStories && report.Stories.Count > stories.Count)
-                h.AppendLine($"<p class=\"muted\">{report.Stories.Count - stories.Count} unchanged stor{(report.Stories.Count - stories.Count == 1 ? "y is" : "ies are")} not listed.</p>");
+                h.AppendLine($"<p class=\"muted\">{report.Stories.Count - stories.Count} unchanged feature{(report.Stories.Count - stories.Count == 1 ? " is" : "s are")} not listed.</p>");
         }
         h.AppendLine("</section>");
+        if (report.ScopeChanges.Count > 0)
+        {
+            h.AppendLine("<section><h2>Scope changes</h2><ul>");
+            foreach (var sc in report.ScopeChanges)
+                h.AppendLine($"<li><span class=\"badge review\">{(sc.Kind == "Removed" ? "Removed — review" : "New this period")}</span> <strong>{E(sc.Title)}</strong> ({E(sc.Module)}): {E(sc.Detail)}</li>");
+            h.AppendLine("</ul></section>");
+        }
 
         var moved = report.Stories.Where(s => s.Movement is DeliveryMovement.Progressed or DeliveryMovement.Completed).ToList();
         h.AppendLine("<section><h2>Completed and progressed</h2>");
-        if (moved.Count == 0) h.AppendLine("<p>No story progressed in this period.</p>");
+        if (moved.Count == 0) h.AppendLine("<p>No feature progressed in this period.</p>");
         else
         {
             h.AppendLine("<ul>");
@@ -167,7 +197,7 @@ public static class DeliveryReportExporter
         }
         h.AppendLine("</section>");
 
-        h.AppendLine("<section><h2>Next-week focus</h2>");
+        h.AppendLine($"<section><h2>{DeliveryReportStories.FocusHeading(report)}</h2>");
         if (report.NextWeekFocus.Count == 0) h.AppendLine("<p>No open work was found in the current snapshot.</p>");
         else
         {

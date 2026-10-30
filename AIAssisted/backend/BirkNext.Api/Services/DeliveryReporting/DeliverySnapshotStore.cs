@@ -143,6 +143,13 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
             .GroupBy(t => t.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.ToList());
         var sources = await db.ArtifactSnapshots.AsNoTracking().Where(a => a.SnapshotId == snapshotId && a.Kind == "Source")
             .Select(a => new { a.Path, a.Module, a.Fingerprint }).ToListAsync(ct);
+        var phases = (await db.PhaseSnapshots.AsNoTracking().Where(p => p.SnapshotId == snapshotId).OrderBy(p => p.Position).ToListAsync(ct))
+            .GroupBy(p => p.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.Select(p => new DeliveryContentPhase(p.PhaseKey, p.Title, p.Position)).ToList());
+        var stories = (await db.UserStorySnapshots.AsNoTracking().Where(s => s.SnapshotId == snapshotId).OrderBy(s => s.Position).ToListAsync(ct))
+            .GroupBy(s => s.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.Select(s => new DeliveryContentStory(s.StoryKey, s.Title, s.Description, s.Priority,
+                JsonSerializer.Deserialize<List<string>>(s.PhaseKeysJson, Json) ?? [], s.Position, s.SourceLine)).ToList());
+        var criteria = (await db.AcceptanceCriterionSnapshots.AsNoTracking().Where(a => a.SnapshotId == snapshotId).OrderBy(a => a.Position).ToListAsync(ct))
+            .GroupBy(a => a.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.Select(a => new DeliveryContentCriterion(a.CriterionKey, a.Text, a.StoryKey, a.Position)).ToList());
         return new DeliverySnapshotContent
         {
             Ref = Ref(row.s, row.src),
@@ -154,7 +161,10 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
                 PlanPath = f.PlanPath, SpecFingerprint = f.SpecFingerprint, AcceptanceFingerprint = f.AcceptanceFingerprint,
                 AcceptanceCriteria = JsonSerializer.Deserialize<List<string>>(f.AcceptanceCriteriaJson, Json) ?? [],
                 Status = Enum.Parse<DeliveryStatus>(f.Status), StatusReason = f.StatusReason, TaskTotal = f.TaskTotal, TaskCompleted = f.TaskCompleted,
-                Tasks = tasks.TryGetValue(f.Id, out var list) ? list.Select(t => new DeliveryContentTask(t.TaskKey, t.Text, t.Completed)).ToList() : [],
+                Tasks = tasks.TryGetValue(f.Id, out var list) ? list.Select(t => new DeliveryContentTask(t.TaskKey, t.Text, t.Completed)
+                    { TaskId = t.TaskId, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath }).ToList() : [],
+                HierarchyCaptured = f.HierarchyCaptured, Phases = phases.GetValueOrDefault(f.Id) ?? [], Stories = stories.GetValueOrDefault(f.Id) ?? [],
+                Criteria = criteria.GetValueOrDefault(f.Id) ?? [],
             }).ToList(),
             SourceFiles = sources.GroupBy(s => s.Path, StringComparer.Ordinal).ToDictionary(g => g.Key, g => (g.First().Module, g.First().Fingerprint), StringComparer.Ordinal),
         };

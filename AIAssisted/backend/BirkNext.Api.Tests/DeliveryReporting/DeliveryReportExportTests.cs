@@ -35,9 +35,9 @@ public sealed class DeliveryReportExportTests
         report.Coverage.Should().Be(DeliveryCoverage.Complete);
         report.HasExplicitStatusEvidence.Should().BeFalse();
         report.Metrics.Select(m => m.Key).Should().NotContain(["ready-for-test", "testing", "blocked"], "only statuses the engine can support are shown");
-        report.Metrics.Single(m => m.Key == "stories-changed").Value.Should().Be(1);
+        report.Metrics.Single(m => m.Key == "features-changed").Value.Should().Be(1);
         report.Metrics.Single(m => m.Key == "tasks-completed").Value.Should().Be(4);
-        report.NextWeekFocus.Should().Contain(f => f.Text.StartsWith("2 features still in progress"));
+        report.NextWeekFocus.Should().Contain(f => f.Text.StartsWith("2 features remain in progress"));
     }
 
     [Fact]
@@ -49,9 +49,9 @@ public sealed class DeliveryReportExportTests
 
         export.FileName.Should().Be("M2LB-Weekly-Delivery-Report-2026-W44.md");
         export.Content.Should().StartWith("# M2LB Weekly Delivery Status — 2026-W44");
-        export.Content.Should().Contain("| Child search | Frontend | In progress | In progress | Progressed | 3/8 → 7/8 | – |");
+        export.Content.Should().Contain("| Child search | Frontend | In progress | In progress | Progressed | 3/8 → 7/8 | 1 story · 1 phase | – |");
         export.Content.Should().NotContain("Case overview |", "unchanged stories are off by default");
-        export.Content.Should().Contain("1 unchanged story is not listed");
+        export.Content.Should().Contain("1 unchanged feature is not listed");
         export.Content.Should().NotContain("specs/001-child-search", "no file paths without the evidence appendix");
         export.Content.Should().NotContain(report.Current.Fingerprint).And.NotContain(report.ReportId.ToString());
         export.Content.Should().Contain("Nothing needs attention.");
@@ -64,7 +64,7 @@ public sealed class DeliveryReportExportTests
 
         var md = DeliveryReportExporter.Export(report, DeliveryExportFormat.Markdown, new(IncludeEvidenceAppendix: true, IncludeUnchangedStories: true)).Content;
 
-        md.Should().Contain("## All stories").And.Contain("| Case overview |");
+        md.Should().Contain("## All features").And.Contain("| Case overview |");
         md.Should().Contain("## Appendix: evidence").And.Contain("Frontend/specs/001-child-search/tasks.md").And.Contain(report.Current.Fingerprint);
     }
 

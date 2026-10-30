@@ -76,7 +76,9 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
             SuggestedEffectiveReason = snapshot.SuggestedEffectiveReason,
             Modules = snapshot.Modules,
             Features = snapshot.Features.Select(f => new DeliveryPreviewFeature(f.Key, f.Title, ArtifactModules.Label(f.Module), f.SpecPath is not null,
-                f.TasksPath is not null, f.TaskTotal, f.TaskCompleted, DeliveryReportingText.Status(f.Status))).ToList(),
+                f.TasksPath is not null, f.TaskTotal, f.TaskCompleted, DeliveryReportingText.Status(f.Status))
+                { PhaseCount = f.Phases.Count, StoryCount = f.Stories.Count, CriteriaCount = f.Criteria.Count }).ToList(),
+            PhaseCount = snapshot.Features.Sum(f => f.Phases.Count), StoryCount = snapshot.Features.Sum(f => f.Stories.Count), CriteriaCount = snapshot.Features.Sum(f => f.Criteria.Count),
             TaskTotal = snapshot.Features.Sum(f => f.TaskTotal),
             TaskCompleted = snapshot.Features.Sum(f => f.TaskCompleted),
             Coverage = snapshot.Coverage,
@@ -132,13 +134,27 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
                 AcceptanceCriteriaJson = JsonSerializer.Serialize(feature.AcceptanceCriteria, Json), RequirementCount = feature.RequirementCount,
                 UserStoryCount = feature.UserStoryCount, OpenClarifications = feature.OpenClarifications, TaskTotal = feature.TaskTotal,
                 TaskCompleted = feature.TaskCompleted, UntrackedTaskCount = feature.UntrackedTaskCount, Status = feature.Status.ToString(),
-                StatusReason = feature.StatusReason,
+                StatusReason = feature.StatusReason, HierarchyCaptured = true,
             };
             db.FeatureSnapshots.Add(featureRecord);
             db.TaskSnapshots.AddRange(feature.Tasks.Select(t => new DeliveryTaskSnapshotRecord
             {
                 Id = Guid.NewGuid(), SnapshotId = record.Id, FeatureSnapshotId = featureRecord.Id, TaskKey = t.TaskKey, TaskId = t.TaskId, Text = t.Text,
-                Completed = t.Completed, Phase = t.Phase, UserStory = t.UserStory, Position = t.Position, SourcePath = t.SourcePath,
+                Completed = t.Completed, Phase = t.Phase, UserStory = t.UserStory, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, Position = t.Position, SourcePath = t.SourcePath,
+            }));
+            db.PhaseSnapshots.AddRange(feature.Phases.Select(ph => new DeliveryPhaseSnapshotRecord
+            {
+                Id = Guid.NewGuid(), SnapshotId = record.Id, FeatureSnapshotId = featureRecord.Id, PhaseKey = ph.Key, Title = ph.Title, Position = ph.Position,
+            }));
+            db.UserStorySnapshots.AddRange(feature.Stories.Select(st => new DeliveryUserStorySnapshotRecord
+            {
+                Id = Guid.NewGuid(), SnapshotId = record.Id, FeatureSnapshotId = featureRecord.Id, StoryKey = st.Key, Title = st.Title, Description = st.Description,
+                Priority = st.Priority, PhaseKeysJson = JsonSerializer.Serialize(st.PhaseKeys, Json), Position = st.Position, SourceLine = st.Line,
+            }));
+            db.AcceptanceCriterionSnapshots.AddRange(feature.Criteria.Select(c => new DeliveryAcceptanceCriterionSnapshotRecord
+            {
+                Id = Guid.NewGuid(), SnapshotId = record.Id, FeatureSnapshotId = featureRecord.Id, StoryKey = c.StoryKey, CriterionKey = c.Key, Text = c.Text,
+                Position = c.Position, SourceLine = c.Line,
             }));
             db.EvidenceReferences.AddRange(feature.Evidence.Select(e => new DeliveryEvidenceReferenceRecord
             {

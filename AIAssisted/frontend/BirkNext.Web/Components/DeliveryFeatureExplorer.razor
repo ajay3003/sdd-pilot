@@ -1,0 +1,435 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.DeliveryReportingPresentation
+
+@* Delivery Reporting → Stories: the business-facing view of one frozen weekly report. Feature is the parent; explicit phases (only when the
+   task lists declare them) sit between feature and user story; acceptance criteria belong to their story or stay feature-level; tasks attach
+   through explicit evidence only. Changed + attention first; technical provenance lives under Evidence. Nothing here re-reads a snapshot. *@
+<section class="dfx" data-testid="dlr-stories" aria-labelledby="dfx-h">
+    <div class="dfx-head">
+        <h2 class="dfx-h2" id="dfx-h">Features &amp; user stories — @Report.WeekLabel</h2>
+        <p class="dfx-muted">Baseline @Report.Baseline.Label → current @Report.Current.Label. Task progress is not delivery status.</p>
+    </div>
+
+    @if (_open is { } open)
+    {
+        @Detail(open)
+    }
+    else
+    {
+        <div class="dfx-filters" role="group" aria-label="Filter features">
+            <label class="dfx-field"><span>Search</span><input type="search" data-testid="dlr-story-search" @bind="_search" @bind:event="oninput" placeholder="Feature, user story or module" /></label>
+            <label class="dfx-field"><span>Show</span>
+                <select data-testid="dlr-story-filter" @bind="_filter">
+                    @foreach (var (id, label) in P.StoryFilters) { <option value="@id">@label</option> }
+                </select></label>
+            @if (P.Modules(Report).Count > 1)
+            {
+                <label class="dfx-field"><span>Module</span>
+                    <select data-testid="dlr-story-module" @bind="_module">
+                        <option value="">All modules</option>
+                        @foreach (var m in P.Modules(Report)) { <option value="@m">@m</option> }
+                    </select></label>
+            }
+            @if (P.Phases(Report) is { Count: > 0 } phases)
+            {
+                <label class="dfx-field"><span>Phase</span>
+                    <select data-testid="dlr-story-phase" @bind="_phase">
+                        <option value="">All phases</option>
+                        @foreach (var (key, title) in phases) { <option value="@key">@title</option> }
+                    </select></label>
+            }
+        </div>
+
+        @if (Report.ScopeChanges.Count > 0 && _filter is "default" or "removed" or "new" or "all")
+        {
+            <section class="dfx-scope" aria-labelledby="dfx-scope-h" data-testid="dlr-scope-changes">
+                <h3 class="dfx-h3" id="dfx-scope-h">Scope changes</h3>
+                <ul class="dfx-scope-list">
+                    @foreach (var sc in Report.ScopeChanges)
+                    {
+                        var row = Report.Stories.FirstOrDefault(s => s.FeatureKey == sc.FeatureKey);
+                        <li class="dfx-scope-item" data-testid="dlr-scope-change" data-kind="@sc.Kind">
+                            <span class="dfx-badge @(sc.Kind == "Removed" ? "dfx-warn" : "dfx-info")">@(sc.Kind == "Removed" ? "Removed — review" : "New this period")</span>
+                            <strong>@sc.Title</strong> <span class="dfx-muted">@sc.Module</span>
+                            <span class="dfx-muted">@sc.Detail</span>
+                            @if (row is not null) { <button type="button" class="dfx-link" @onclick="() => Open(row)" data-testid="dlr-scope-open">@(sc.Kind == "Removed" ? "View baseline feature" : "View feature")<span class="visually-hidden"> @sc.Title</span></button> }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        var rows = Rows();
+        <p class="dfx-muted" role="status" data-testid="dlr-story-count">@rows.Count of @Report.Stories.Count features shown@(_filter == "default" ? " (changed this week or needing attention)" : "")</p>
+        @if (rows.Count == 0)
+        {
+            <p data-testid="dlr-stories-none">No features match. Choose “All” to see unchanged features.</p>
+        }
+        @foreach (var group in rows.GroupBy(r => r.Module).OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            <section class="dfx-module" aria-labelledby="@($"dfx-mod-{Id(group.Key)}")" data-testid="dlr-module-group">
+                <h3 class="dfx-module-title" id="@($"dfx-mod-{Id(group.Key)}")">@(group.Key.Length == 0 ? "Project" : group.Key)</h3>
+                <ul class="dfx-cards">
+                    @foreach (var s in group) { @Card(s) }
+                </ul>
+            </section>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WeeklyDeliveryReport Report { get; set; } = new();
+    [Parameter] public string ProjectName { get; set; } = "";
+
+    private string _search = "", _filter = "default", _module = "", _phase = "", _tab = "overview";
+    private DeliveryStoryRow? _open;
+    private string? _openStory;
+    private string _taskFilter = "all";
+
+    private List<DeliveryStoryRow> Rows() => [.. P.Filter(Report, _filter, _search, _module)
+        .Where(s => _phase.Length == 0 || s.Hierarchy?.Phases.Any(p => p.Key == _phase) == true)];
+
+    private static string Id(string text) => string.Concat(text.Where(char.IsLetterOrDigit)).ToLowerInvariant() is { Length: > 0 } id ? id : "project";
+
+    private void Open(DeliveryStoryRow row) { _open = row; _tab = "overview"; _openStory = null; _taskFilter = "all"; }
+    private void Close() { _open = null; _openStory = null; }
+
+    /// <summary>The movement; "Specification changed" alone only when nothing else moved (it is shown as its own badge otherwise).</summary>
+    private static string ChangeBadge(DeliveryStoryRow s) =>
+        s.RemovedFeature ? "Removed — review" : s.NewFeature ? "New this period"
+        : s.SpecificationChanged && s.Movement is DeliveryMovement.NeedsReview or DeliveryMovement.NoSignificantChange ? "Specification changed" : DeliveryReportingText.Movement(s.Movement);
+
+    private static bool ExtraSpecBadge(DeliveryStoryRow s) => s.SpecificationChanged && !s.NewFeature && !s.RemovedFeature && ChangeBadge(s) != "Specification changed";
+
+    private static string ChangeTone(DeliveryStoryRow s) =>
+        s.RemovedFeature ? "dfx-warn" : s.NewFeature ? "dfx-info" : s.Movement == DeliveryMovement.Regressed ? "dfx-bad"
+        : ChangeBadge(s) == "Specification changed" || s.Movement == DeliveryMovement.NeedsReview ? "dfx-warn"
+        : s.Movement is DeliveryMovement.Progressed or DeliveryMovement.Completed ? "dfx-good" : "dfx-neutral";
+
+    private static string Tone(DeliveryItemChange c) => c switch { DeliveryItemChange.Added => "dfx-info", DeliveryItemChange.Removed => "dfx-warn", DeliveryItemChange.Changed => "dfx-warn", _ => "dfx-neutral" };
+
+    private static string Tone(DeliveryTaskChange c) => c switch
+    {
+        DeliveryTaskChange.CompletedThisPeriod => "dfx-good", DeliveryTaskChange.New => "dfx-info", DeliveryTaskChange.Reopened => "dfx-bad",
+        DeliveryTaskChange.Removed or DeliveryTaskChange.TextChanged => "dfx-warn", _ => "dfx-neutral",
+    };
+
+    /// <summary>The task state the card shows: current for retained/new features, last known baseline for removed ones.</summary>
+    private static (int Done, int Total) Progress(DeliveryStoryRow s) => s.RemovedFeature ? (s.BaselineTaskCompleted, s.BaselineTaskTotal) : (s.CurrentTaskCompleted, s.CurrentTaskTotal);
+
+    private static int CriteriaCount(DeliveryFeatureHierarchy h) => h.Stories.Sum(st => st.Criteria.Count(c => c.Change != DeliveryItemChange.Removed)) + h.FeatureCriteria.Count(c => c.Change != DeliveryItemChange.Removed);
+
+    private static string Folder(string key) => key[(key.LastIndexOf("::", StringComparison.Ordinal) is var i and >= 0 ? i + 2 : 0)..];
+
+    private RenderFragment ProgressBar((int Done, int Total) p, string label) => __builder =>
+    {
+        if (p.Total == 0) { <span class="dfx-muted">No tasks</span>; return; }
+        <span class="dfx-progress" data-testid="dlr-progress">
+            <span class="dfx-progress-text">@p.Done / @p.Total tasks · @(p.Total - p.Done) open</span>
+            <span class="dfx-bar" role="img" aria-label="@($"{label}: {p.Done} of {p.Total} tasks checked")"><span class="dfx-bar-fill" style="width:@(p.Total == 0 ? 0 : 100 * p.Done / p.Total)%"></span></span>
+        </span>
+    };
+
+    private RenderFragment Card(DeliveryStoryRow s) => __builder =>
+    {
+        var h = s.Hierarchy;
+        var headingId = $"dfx-card-{Id(s.FeatureKey)}";
+        <li class="dfx-card" data-testid="dlr-story-row" data-feature="@s.FeatureKey" data-change="@(s.RemovedFeature ? "Removed" : s.NewFeature ? "Added" : s.Movement.ToString())" aria-labelledby="@headingId">
+            <div class="dfx-card-top">
+                <h4 class="dfx-card-title" id="@headingId">@s.Title</h4>
+                <span class="dfx-badges"><span class="dfx-badge @ChangeTone(s)" data-testid="dlr-feature-change">@ChangeBadge(s)</span>@if (ExtraSpecBadge(s)) { <span class="dfx-badge dfx-warn" data-testid="dlr-feature-spec-changed">Specification changed</span> }</span>
+            </div>
+            <p class="dfx-muted">@Folder(s.FeatureKey) · @(s.Module.Length == 0 ? "Project" : s.Module) · @(s.RemovedFeature ? $"Baseline {DeliveryReportStories.StatusOrDash(s.BaselineStatus)}" : $"Current {DeliveryReportStories.StatusOrDash(s.CurrentStatus)}")</p>
+            <dl class="dfx-facts">
+                @if (h is { Captured: true })
+                {
+                    <div><dt>User stories</dt><dd data-testid="dlr-feature-stories">@(h.Stories.Count == 0 ? "None explicit" : h.Stories.Count.ToString())@(h.StoriesAdded + h.StoriesChanged + h.StoriesRemoved > 0 ? $" · {h.StoriesAdded + h.StoriesChanged + h.StoriesRemoved} changed" : "")</dd></div>
+                    <div><dt>Acceptance criteria</dt><dd data-testid="dlr-feature-criteria">@(s.NewFeature || s.RemovedFeature || h.CriteriaBaseline == h.CriteriaCurrent ? CriteriaCount(h).ToString() : $"{h.CriteriaBaseline} → {h.CriteriaCurrent}")@(h.CriteriaChanged + h.CriteriaAdded > 0 ? $" · {h.CriteriaAdded} added, {h.CriteriaChanged} changed" : "")</dd></div>
+                    @if (h.Phases.Count > 0) { <div><dt>Phases</dt><dd>@h.Phases.Count</dd></div> }
+                }
+                <div><dt>@(s.RemovedFeature ? "Last known tasks" : "Tasks")</dt><dd>@ProgressBar(Progress(s), s.Title)</dd></div>
+                @if (s.Attention.Count > 0) { <div><dt>Attention</dt><dd data-testid="dlr-feature-attention">@s.Attention.Count · @string.Join(", ", s.Attention)</dd></div> }
+            </dl>
+            @if (h is { Captured: true, Phases.Count: > 0 } && !s.RemovedFeature)
+            {
+                <ul class="dfx-phase-mini" aria-label="@($"Phases of {s.Title}")">
+                    @foreach (var ph in h.Phases) { <li>@ph.Title · @ph.TaskCompleted/@ph.TaskTotal tasks · @ph.StoryKeys.Count stor@(ph.StoryKeys.Count == 1 ? "y" : "ies")@(ph.Changes > 0 ? $" · {ph.Changes} change{(ph.Changes == 1 ? "" : "s")}" : "")</li> }
+                </ul>
+            }
+            <p class="dfx-actions"><button type="button" class="dfx-primary" @onclick="() => Open(s)" data-testid="dlr-feature-open">@(s.RemovedFeature ? "View baseline feature" : "View feature")<span class="visually-hidden"> @s.Title</span></button></p>
+        </li>
+    };
+
+    private IEnumerable<(string Id, string Label)> Tabs(DeliveryStoryRow s)
+    {
+        yield return ("overview", "Overview");
+        if (s.Hierarchy is { Captured: true, Phases.Count: > 0 }) yield return ("phases", "Phases");
+        yield return ("stories", "User Stories");
+        yield return ("criteria", "Acceptance Criteria");
+        yield return ("tasks", "Tasks");
+        yield return ("changes", "Changes");
+        yield return ("evidence", "Evidence");
+    }
+
+    private RenderFragment Detail(DeliveryStoryRow s) => __builder =>
+    {
+        var h = s.Hierarchy;
+        var story = _openStory is { } key ? h?.Stories.FirstOrDefault(x => x.Key == key) : null;
+        <article class="dfx-detail" data-testid="dlr-feature-detail" aria-labelledby="dfx-detail-h">
+            <nav class="dfx-crumbs" aria-label="Breadcrumb" data-testid="dlr-breadcrumb">
+                <button type="button" class="dfx-link" @onclick="Close" data-testid="dlr-feature-back">@(ProjectName.Length == 0 ? "Features" : ProjectName)</button>
+                <span aria-hidden="true">›</span> <span>@(s.Module.Length == 0 ? "Project" : s.Module)</span>
+                <span aria-hidden="true">›</span>
+                @if (story is null) { <span aria-current="page">@s.Title</span> }
+                else
+                {
+                    <button type="button" class="dfx-link" @onclick="() => _openStory = null">@s.Title</button>
+                    @if (story.PhaseKeys.Count == 1 && h!.Phases.FirstOrDefault(p => p.Key == story.PhaseKeys[0]) is { } ph) { <span aria-hidden="true">›</span> <span>@ph.Title</span> }
+                    <span aria-hidden="true">›</span> <span aria-current="page">@story.Key</span>
+                }
+            </nav>
+            <div class="dfx-card-top">
+                <h3 class="dfx-detail-title" id="dfx-detail-h" tabindex="-1">@s.Title</h3>
+                <span class="dfx-badge @ChangeTone(s)">@ChangeBadge(s)</span>
+            </div>
+            <p class="dfx-muted">@Folder(s.FeatureKey) · Baseline @DeliveryReportStories.StatusOrDash(s.BaselineStatus) · Current @DeliveryReportStories.StatusOrDash(s.CurrentStatus)</p>
+            @if (h is not { Captured: true })
+            {
+                <p class="dfx-note" data-testid="dlr-hierarchy-not-captured">The user story / acceptance criteria hierarchy was not captured for this report (a snapshot imported before hierarchy support, or a report generated earlier). Re-import the snapshot and generate a new report to see it; this report is kept as it was frozen.</p>
+            }
+            <div class="dfx-tabs" role="tablist" aria-label="@($"{s.Title} sections")">
+                @foreach (var (id, label) in Tabs(s))
+                {
+                    var tabId = id;
+                    <button type="button" role="tab" id="@($"dfx-tab-{tabId}")" aria-selected="@(_tab == tabId ? "true" : "false")" aria-controls="dfx-panel" class="dfx-tab @(_tab == tabId ? "dfx-tab-on" : "")"
+                            @onclick="() => { _tab = tabId; _openStory = null; }" data-testid="dlr-feature-tab" data-tab="@tabId">@label</button>
+                }
+            </div>
+            <div id="dfx-panel" role="tabpanel" aria-labelledby="@($"dfx-tab-{_tab}")" class="dfx-panel" data-testid="dlr-feature-panel" data-tab="@_tab">
+                @switch (_tab)
+                {
+                    case "phases": @PhasesTab(s, h!) break;
+                    case "stories": @StoriesTab(s, h, story) break;
+                    case "criteria": @CriteriaTab(h) break;
+                    case "tasks": @TasksTab(s, h) break;
+                    case "changes": @ChangesTab(s, h) break;
+                    case "evidence": @EvidenceTab(s) break;
+                    default: @OverviewTab(s, h) break;
+                }
+            </div>
+        </article>
+    };
+
+    private RenderFragment OverviewTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h) => __builder =>
+    {
+        <ul class="dfx-summary" data-testid="dlr-feature-summary">
+            @if (h is { Captured: true })
+            {
+                <li><span class="dfx-num">@h.Stories.Count</span><span>User stories</span></li>
+                <li><span class="dfx-num">@CriteriaCount(h)</span><span>Acceptance criteria</span></li>
+                @if (h.Phases.Count > 0) { <li><span class="dfx-num">@h.Phases.Count</span><span>Phases</span></li> }
+            }
+            <li><span class="dfx-num">@Progress(s).Done/@Progress(s).Total</span><span>@(s.RemovedFeature ? "Tasks (baseline)" : "Tasks checked")</span></li>
+            <li><span class="dfx-num">@(Progress(s).Total - Progress(s).Done)</span><span>Open tasks</span></li>
+            <li><span class="dfx-num">@s.Attention.Count</span><span>Attention</span></li>
+        </ul>
+        @if (s.RemovedFeature) { <p class="dfx-note" data-testid="dlr-removed-note">Not present in the current snapshot. Shown as last known in the baseline; confirm whether the removal was intentional.</p> }
+        @if (s.NewFeature) { <p class="dfx-note">New this period: current state only. Checked tasks of a new feature are not counted as completed this period.</p> }
+        <ul class="dfx-list">@foreach (var r in s.Reasons) { <li>@r</li> }</ul>
+        @if (h is { Captured: true, Stories.Count: 0 }) { <p class="dfx-muted" data-testid="dlr-no-stories">No explicit user stories detected: acceptance criteria and tasks are shown at feature level.</p> }
+    };
+
+    private RenderFragment PhasesTab(DeliveryStoryRow s, DeliveryFeatureHierarchy h) => __builder =>
+    {
+        <p class="dfx-muted">A phase is a delivery grouping from tasks.md, not a status.</p>
+        <ul class="dfx-cards">
+            @foreach (var ph in h.Phases)
+            {
+                <li class="dfx-card" data-testid="dlr-phase" data-phase="@ph.Key">
+                    <div class="dfx-card-top"><h4 class="dfx-card-title">@ph.Title</h4>@if (ph.Change != DeliveryItemChange.Unchanged) { <span class="dfx-badge @Tone(ph.Change)">Phase @DeliveryReportingText.Change(ph.Change).ToLowerInvariant()</span> }</div>
+                    <dl class="dfx-facts">
+                        <div><dt>Tasks</dt><dd>@ProgressBar((ph.TaskCompleted, ph.TaskTotal), ph.Title)</dd></div>
+                        <div><dt>User stories</dt><dd>@(ph.StoryKeys.Count == 0 ? "None explicit" : string.Join(", ", ph.StoryKeys))</dd></div>
+                        <div><dt>Changes this period</dt><dd>@ph.Changes</dd></div>
+                    </dl>
+                </li>
+            }
+        </ul>
+    };
+
+    private RenderFragment StoriesTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h, DeliveryUserStoryRow? open) => __builder =>
+    {
+        if (h is not { Captured: true }) return;
+        if (h.Stories.Count == 0) { <p class="dfx-muted" data-testid="dlr-no-stories">No explicit user stories detected in this feature's specification.</p>; return; }
+        if (open is not null)
+        {
+            <section class="dfx-story-detail" data-testid="dlr-story-detail" aria-labelledby="dfx-story-h">
+                <h4 class="dfx-card-title" id="dfx-story-h" tabindex="-1">@open.Key · @open.Title</h4>
+                @if (open.Change != DeliveryItemChange.Unchanged) { <span class="dfx-badge @Tone(open.Change)">@StoryChangeLabel(open.Change)</span> }
+                <dl class="dfx-facts">
+                    <div><dt>Parent feature</dt><dd>@s.Title</dd></div>
+                    @if (open.PhaseKeys.Count > 0) { <div><dt>Phase</dt><dd>@string.Join(", ", open.PhaseKeys.Select(k => h.Phases.FirstOrDefault(p => p.Key == k)?.Title ?? k))</dd></div> }
+                    @if (open.Priority is { } priority) { <div><dt>Priority</dt><dd>@priority (declared)</dd></div> }
+                    <div><dt>Traceable tasks</dt><dd>@ProgressBar((open.TaskCompleted, open.TaskTotal), open.Title)</dd></div>
+                </dl>
+                @if (open.Description is { } d) { <p>@d</p> }
+                <h5 class="dfx-h5">Acceptance criteria</h5>
+                @Criteria(open.Criteria, true)
+                <h5 class="dfx-h5">Tasks referencing @open.Key</h5>
+                @TaskList(h.Tasks.Where(t => t.UserStoryKey == open.Key).ToList(), h)
+                <button type="button" class="dfx-link" @onclick="() => _openStory = null">Back to user stories</button>
+            </section>
+            return;
+        }
+        <ul class="dfx-cards">
+            @foreach (var st in h.Stories)
+            {
+                var item = st;
+                <li class="dfx-card" data-testid="dlr-user-story" data-story="@st.Key" data-change="@st.Change">
+                    <div class="dfx-card-top"><h4 class="dfx-card-title">@st.Key · @st.Title</h4>@if (st.Change != DeliveryItemChange.Unchanged) { <span class="dfx-badge @Tone(st.Change)">@StoryChangeLabel(st.Change)</span> }</div>
+                    @if (st.Description is { } d) { <p class="dfx-clamp">@d</p> }
+                    <dl class="dfx-facts">
+                        <div><dt>Acceptance criteria</dt><dd>@st.Criteria.Count(c => c.Change != DeliveryItemChange.Removed)@(st.Criteria.Count(c => c.Change == DeliveryItemChange.Added) is > 0 and var a ? $" · {a} added" : "")@(st.Criteria.Count(c => c.Change == DeliveryItemChange.Changed) is > 0 and var c ? $" · {c} changed" : "")</dd></div>
+                        <div><dt>Tasks</dt><dd>@(st.TaskTotal == 0 ? "No traceable tasks" : $"{st.TaskCompleted} / {st.TaskTotal}")</dd></div>
+                        @if (st.PhaseKeys.Count > 0) { <div><dt>Phase</dt><dd>@string.Join(", ", st.PhaseKeys.Select(k => h.Phases.FirstOrDefault(p => p.Key == k)?.Title ?? k))</dd></div> }
+                    </dl>
+                    <button type="button" class="dfx-link" @onclick="() => _openStory = item.Key" data-testid="dlr-user-story-open">View story<span class="visually-hidden"> @st.Key</span></button>
+                </li>
+            }
+        </ul>
+    };
+
+    private static string StoryChangeLabel(DeliveryItemChange c) => c switch
+    {
+        DeliveryItemChange.Added => "New this period", DeliveryItemChange.Removed => "Removed", DeliveryItemChange.Changed => "Changed", _ => "",
+    };
+
+    private RenderFragment CriteriaTab(DeliveryFeatureHierarchy? h) => __builder =>
+    {
+        if (h is not { Captured: true }) return;
+        foreach (var st in h.Stories.Where(x => x.Criteria.Count > 0))
+        {
+            <section class="dfx-ac-group" aria-label="@($"Acceptance criteria of {st.Key}")" data-testid="dlr-criteria-group" data-story="@st.Key">
+                <h4 class="dfx-h5">@st.Key · @st.Title</h4>
+                @Criteria(st.Criteria, true)
+            </section>
+        }
+        if (h.FeatureCriteria.Count > 0)
+        {
+            <section class="dfx-ac-group" aria-label="Feature-level acceptance criteria" data-testid="dlr-criteria-group" data-story="feature">
+                <h4 class="dfx-h5">Feature-level</h4>
+                @Criteria(h.FeatureCriteria, true)
+            </section>
+        }
+        if (h.Stories.All(x => x.Criteria.Count == 0) && h.FeatureCriteria.Count == 0) { <p class="dfx-muted">No acceptance criteria detected.</p> }
+    };
+
+    private RenderFragment Criteria(List<DeliveryCriterionRow> criteria, bool showBaseline) => __builder =>
+    {
+        <ol class="dfx-ac">
+            @foreach (var c in criteria)
+            {
+                <li data-testid="dlr-criterion" data-change="@c.Change">
+                    <span class="dfx-ac-key">@c.Key</span>
+                    @if (c.Change != DeliveryItemChange.Unchanged) { <span class="dfx-badge @Tone(c.Change)">@(c.Change == DeliveryItemChange.Added ? "Added this period" : DeliveryReportingText.Change(c.Change))</span> }
+                    <span class="@(c.Change == DeliveryItemChange.Removed ? "dfx-struck" : "")">@c.Text</span>
+                    @if (showBaseline && c.Change == DeliveryItemChange.Changed && c.BaselineText is { } before)
+                    {
+                        <details class="dfx-diff" data-testid="dlr-criterion-baseline"><summary>View baseline difference</summary><p><strong>Baseline:</strong> @before</p><p><strong>Current:</strong> @c.Text</p></details>
+                    }
+                </li>
+            }
+        </ol>
+    };
+
+    private RenderFragment TasksTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h) => __builder =>
+    {
+        if (h is null) return;
+        var tasks = _taskFilter switch
+        {
+            "open" => h.Tasks.Where(t => !t.Completed && t.Change != DeliveryTaskChange.Removed),
+            "completed" => h.Tasks.Where(t => t.Completed && t.Change != DeliveryTaskChange.Removed),
+            "changed" => h.Tasks.Where(t => t.Change != DeliveryTaskChange.Unchanged),
+            _ => h.Tasks,
+        };
+        <div class="dfx-filters" role="radiogroup" aria-label="Task filter">
+            @foreach (var (id, label) in new[] { ("all", "All"), ("open", "Open"), ("completed", "Completed"), ("changed", "Changed this period") })
+            {
+                var f = id;
+                <label class="dfx-radio"><input type="radio" name="dfx-task-filter" checked="@(_taskFilter == f)" @onchange="() => _taskFilter = f" data-testid="dlr-task-filter" data-filter="@f" /> @label</label>
+            }
+        </div>
+        @TaskList(tasks.ToList(), h)
+    };
+
+    /// <summary>Tasks grouped by traceability: by phase when explicit, then by user story within it, else feature level.</summary>
+    private RenderFragment TaskList(List<DeliveryTaskRow> tasks, DeliveryFeatureHierarchy h) => __builder =>
+    {
+        if (tasks.Count == 0) { <p class="dfx-muted">No tasks.</p>; return; }
+        foreach (var group in tasks.GroupBy(t => t.PhaseKey).OrderBy(g => g.Key is null ? 1 : 0).ThenBy(g => h.Phases.FindIndex(p => p.Key == g.Key)))
+        {
+            <section class="dfx-task-group" aria-label="@(group.Key is null ? "Feature-level tasks" : h.Phases.FirstOrDefault(p => p.Key == group.Key)?.Title ?? group.Key)" data-testid="dlr-task-group" data-phase="@(group.Key ?? "feature")">
+                <h5 class="dfx-h5">@(group.Key is null ? h.Phases.Count == 0 ? "Tasks" : "Other tasks (no phase)" : h.Phases.FirstOrDefault(p => p.Key == group.Key)?.Title ?? group.Key)</h5>
+                <ul class="dfx-tasks">
+                    @foreach (var t in group)
+                    {
+                        <li data-testid="dlr-task" data-change="@t.Change" data-completed="@(t.Completed ? "true" : "false")">
+                            <span class="dfx-check" aria-hidden="true">@(t.Completed ? "✓" : "○")</span>
+                            <span class="visually-hidden">@(t.Completed ? "Completed:" : "Open:")</span>
+                            @if (t.TaskId is { } id) { <span class="dfx-ac-key">@id</span> }
+                            <span class="@(t.Change == DeliveryTaskChange.Removed ? "dfx-struck" : "")">@t.Text</span>
+                            @if (t.UserStoryKey is { } us) { <span class="dfx-chip">@us</span> }
+                            @if (t.Change != DeliveryTaskChange.Unchanged) { <span class="dfx-badge @Tone(t.Change)">@DeliveryReportingText.TaskChange(t.Change)</span> }
+                            @if (t.SourcePath is { } path) { <span class="dfx-muted dfx-path" title="@path">@System.IO.Path.GetFileName(path)</span> }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    };
+
+    private RenderFragment ChangesTab(DeliveryStoryRow s, DeliveryFeatureHierarchy? h) => __builder =>
+    {
+        <dl class="dfx-facts dfx-changes" data-testid="dlr-feature-changes">
+            <div><dt>Feature</dt><dd>@ChangeBadge(s)</dd></div>
+            @if (h is { Captured: true } && !s.NewFeature && !s.RemovedFeature)
+            {
+                <div><dt>User stories</dt><dd>@h.StoriesAdded added · @h.StoriesChanged changed · @h.StoriesRemoved removed</dd></div>
+                <div><dt>Acceptance criteria</dt><dd>@h.CriteriaAdded added · @h.CriteriaChanged changed · @h.CriteriaRemoved removed</dd></div>
+                <div><dt>Tasks</dt><dd>@h.TasksAdded added · @h.TasksRemoved removed · @s.TasksCompletedThisPeriod completed this period · @h.TasksReopened reopened</dd></div>
+            }
+            <div><dt>Source</dt><dd>@(s.Evidence.SourceSummary ?? "No source comparison") <span class="dfx-muted">(evidence only, never a delivery status)</span></dd></div>
+        </dl>
+    };
+
+    private RenderFragment EvidenceTab(DeliveryStoryRow s) => __builder =>
+    {
+        var e = s.Evidence;
+        <div data-testid="dlr-story-evidence">
+            <dl class="dfx-facts">
+                @if (e.SpecPath is not null) { <div><dt>Specification</dt><dd><code>@e.SpecPath</code></dd></div> }
+                @if (e.TasksPath is not null) { <div><dt>Task source</dt><dd><code>@e.TasksPath</code></dd></div> }
+                @if (e.PlanPath is not null) { <div><dt>Plan (context only)</dt><dd><code>@e.PlanPath</code></dd></div> }
+                <div><dt>Task counts</dt><dd>Baseline @DeliveryReportStories.Progress(s.BaselineTaskCompleted, s.BaselineTaskTotal) · current @DeliveryReportStories.Progress(s.CurrentTaskCompleted, s.CurrentTaskTotal) · @s.TasksCompletedThisPeriod completed this period</dd></div>
+                @if (e.BaselineStatusReason is not null) { <div><dt>Baseline status</dt><dd>@e.BaselineStatusReason</dd></div> }
+                @if (e.CurrentStatusReason is not null) { <div><dt>Current status</dt><dd>@e.CurrentStatusReason</dd></div> }
+                @if (e.SourceSummary is not null) { <div><dt>Source comparison</dt><dd>@e.SourceSummary</dd></div> }
+                <div><dt>Snapshots</dt><dd>Baseline @Report.Baseline.SourceFileName · current @Report.Current.SourceFileName</dd></div>
+            </dl>
+            @EvidenceList("Tasks completed this period", e.TasksCompleted)
+            @EvidenceList("Tasks reopened", e.TasksReopened)
+            @EvidenceList("Tasks added", e.TasksAdded)
+            @EvidenceList("Tasks removed", e.TasksRemoved)
+            @EvidenceList("Acceptance criteria added", e.AcceptanceAdded)
+            @EvidenceList("Acceptance criteria removed", e.AcceptanceRemoved)
+        </div>
+    };
+
+    private static RenderFragment EvidenceList(string title, List<string> items) => __builder =>
+    {
+        if (items.Count == 0) return;
+        <h5 class="dfx-h5">@title (@items.Count)</h5>
+        <ul class="dfx-list">@foreach (var item in items) { <li>@item</li> }</ul>
+    };
+}

@@ -117,14 +117,16 @@ public sealed class DeliveryReportingPageTests : BunitContext
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-story-row]").Should().ContainSingle());
         var row = page.Find("[data-testid=dlr-story-row]");
-        row.TextContent.Should().Contain("Child search").And.Contain("Progressed").And.Contain("3/8 → 7/8");
-        page.Find("[data-testid=dlr-story-count]").TextContent.Should().Contain("1 of 2 stories shown");
+        row.TextContent.Should().Contain("Child search").And.Contain("Progressed").And.Contain("7 / 8 tasks");
+        page.Find("[data-testid=dlr-story-count]").TextContent.Should().Contain("1 of 2 features shown");
+        page.FindAll("[data-testid=dlr-story-evidence]").Should().BeEmpty("evidence is secondary: inside the feature detail");
 
-        var toggle = page.Find("[data-testid=dlr-story-evidence-toggle]");
-        toggle.GetAttribute("aria-expanded").Should().Be("false");
-        toggle.Click();
-        page.Find("[data-testid=dlr-story-evidence-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        row.QuerySelector("[data-testid=dlr-feature-open]")!.Click();
+        page.Find("[data-testid=dlr-breadcrumb]").TextContent.Should().Contain("Child search");
+        page.FindAll("[data-testid=dlr-feature-tab]").Select(t => t.GetAttribute("data-tab")).Should().Equal("overview", "stories", "criteria", "tasks", "changes", "evidence");
+        page.FindAll("[data-testid=dlr-feature-tab]").Single(t => t.GetAttribute("data-tab") == "evidence").Click();
         page.Find("[data-testid=dlr-story-evidence]").TextContent.Should().Contain("Frontend/specs/001-child-search/tasks.md").And.Contain("T004 Implement search");
+        page.Find("[data-testid=dlr-feature-back]").Click();
 
         page.Find("[data-testid=dlr-story-filter]").Change("all");
         page.FindAll("[data-testid=dlr-story-row]").Should().HaveCount(2);

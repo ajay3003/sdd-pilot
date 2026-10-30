@@ -87,7 +87,8 @@ public sealed class DeliveryReportingDatabaseTests
             tables.Where(t => t.Schema == "public").Should().BeEmpty("the reporting migration never creates anything in public");
             tables.Where(t => t.Schema == DeliveryReportingDbContext.Schema).Select(t => t.Name).Should().BeEquivalentTo([
                 "__ef_migrations_history", "project", "report_source", "report_snapshot", "feature_snapshot", "task_snapshot", "artifact_snapshot",
-                "evidence_reference", "snapshot_comparison", "feature_delta", "status_event", "weekly_report", "weekly_report_item"]);
+                "evidence_reference", "snapshot_comparison", "feature_delta", "status_event", "weekly_report", "weekly_report_item",
+                "phase_snapshot", "user_story_snapshot", "acceptance_criterion_snapshot"]);
         });
     }
 

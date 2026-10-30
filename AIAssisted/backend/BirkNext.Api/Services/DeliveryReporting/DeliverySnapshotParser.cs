@@ -9,7 +9,26 @@ using BirkNext.Web.Services.Explorers;
 
 namespace BirkNext.Api.Services.DeliveryReporting;
 
-public sealed record ParsedDeliveryTask(string TaskKey, string? TaskId, string Text, bool Completed, string? Phase, string? UserStory, int Position, string SourcePath);
+public sealed record ParsedDeliveryTask(string TaskKey, string? TaskId, string Text, bool Completed, string? Phase, string? UserStory, int Position, string SourcePath)
+{
+    /// <summary>The explicit phase ("Phase 2: …" task group) the task sits in; null for other groups.</summary>
+    public string? PhaseKey { get; init; }
+    /// <summary>The user story the task explicitly references ([US2]) when that story exists in the specification; null otherwise.</summary>
+    public string? UserStoryKey { get; init; }
+}
+
+/// <summary>An explicit implementation phase: a tasks.md group headed "Phase N …". A delivery grouping, never a status.</summary>
+public sealed record ParsedDeliveryPhase(string Key, string Title, int Position);
+
+/// <summary>An explicit user story section of spec.md ("User Story 2 - … (Priority: P1)"). Priority only when the heading declares it.</summary>
+public sealed record ParsedDeliveryStory(string Key, string Title, string? Description, string? Priority, int Position, int Line)
+{
+    /// <summary>Phases with explicit evidence for this story: a phase titled "… User Story N …", or a phase holding tasks tagged [USN].</summary>
+    public List<string> PhaseKeys { get; init; } = [];
+}
+
+/// <summary>An acceptance criterion: owned by the user story it is written under, else feature-level (StoryKey null). Never duplicated.</summary>
+public sealed record ParsedDeliveryCriterion(string Key, string Text, int Position, string? StoryKey, int Line);
 
 public sealed record ParsedDeliveryEvidence(string Kind, string Path, int Line, string Text);
 
@@ -35,6 +54,9 @@ public sealed record ParsedDeliveryFeature
     public List<ParsedDeliveryTask> Tasks { get; init; } = [];
     public int UntrackedTaskCount { get; init; }
     public List<ParsedDeliveryEvidence> Evidence { get; init; } = [];
+    public List<ParsedDeliveryPhase> Phases { get; init; } = [];
+    public List<ParsedDeliveryStory> Stories { get; init; } = [];
+    public List<ParsedDeliveryCriterion> Criteria { get; init; } = [];
     public DeliveryStatus Status { get; init; }
     public string StatusReason { get; init; } = "";
     public int TaskTotal => Tasks.Count;
@@ -78,6 +100,11 @@ public static class DeliverySnapshotParser
     private static readonly Regex TitlePrefixRe = new(@"^(?:Feature\s+Specification|Feature\s+Spec|Specification|Feature)\s*[:\-–]\s*", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex GitCommitRe = new(@"^[0-9a-f]{40}$", RegexOptions.Compiled);
     private static readonly Regex FeatureNumberRe = new(@"^(\d{1,4})[-_]", RegexOptions.Compiled);
+    private static readonly Regex StoryHeadingRe = new(@"^\s*User\s+Story\s+(\d+)\s*(?:[-–—:]\s*)?(.*?)\s*(?:\(\s*Priority\s*:\s*([A-Za-z0-9]+)\s*\))?\s*(?:🎯.*)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PhaseHeadingRe = new(@"^\s*Phase\s+(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PhaseStoryRe = new(@"\bUser\s+Story\s+(\d+)\b|\bUS\s*-?\s*(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex StoryTagRe = new(@"^US\s*-?\s*0*(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex DescriptionStopRe = new(@"^\s*\*{0,2}(Why this priority|Independent Test|Acceptance Scenarios|Acceptance Criteria)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly HashSet<string> SourceExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".cs", ".csproj", ".razor", ".sql", ".json", ".yaml", ".yml", ".tf", ".bicep", ".graphql", ".xsd", ".proto", ".props" };
@@ -133,6 +160,8 @@ public static class DeliverySnapshotParser
 
         foreach (var feature in features.Where(f => f.SpecPath is null))
             warnings.Add(new("NO_SPECIFICATION", $"\"{feature.Title}\" has tasks but no spec.md; its title comes from the folder name.", feature.TasksPath));
+        foreach (var feature in features.Where(f => f.SpecPath is not null && f.Stories.Count == 0))
+            warnings.Add(new("NO_USER_STORIES", $"\"{feature.Title}\": no explicit User Story structure detected; it is reported at feature level.", feature.SpecPath));
         foreach (var feature in features.Where(f => f.TasksPath is null))
             warnings.Add(new("NO_TASKS", $"\"{feature.Title}\" has no tasks.md; task progress is not known.", feature.SpecPath));
         foreach (var group in features.Where(f => FeatureNumberRe.IsMatch(f.Folder))
@@ -197,6 +226,8 @@ public static class DeliverySnapshotParser
         var evidence = new List<ParsedDeliveryEvidence>();
         string title = Humanize(folder);
         List<string> acceptance = [];
+        var parsedStories = new List<ParsedDeliveryStory>();
+        var criteria = new List<ParsedDeliveryCriterion>();
         int requirements = 0, stories = 0, clarifications = 0;
         DeliveryStatus? explicitStatus = null;
 
@@ -223,6 +254,7 @@ public static class DeliverySnapshotParser
                     .Select(n => Collapse(StripMarkdown(n.FullContent ?? n.Title))).Where(t => t.Length > 0).Distinct(StringComparer.Ordinal).ToList();
                 requirements = nodes.Count(n => n.NodeType == SpecNodeType.Requirement);
                 stories = nodes.Count(n => n.NodeType == SpecNodeType.UserStory);
+                (parsedStories, criteria) = Hierarchy(tree.Roots, s.Content);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -249,7 +281,7 @@ public static class DeliverySnapshotParser
                     var taskKey = keys.TryGetValue(baseKey, out var seen) ? $"{baseKey}#{seen + 1}" : baseKey;
                     keys[baseKey] = seen + 1;
                     parsedTasks.Add(new(taskKey, node.TaskId, Truncate(text, 2000), checkbox.Groups[1].Value is "x" or "X",
-                        node.PhaseTitle is { } p ? Truncate(p, 400) : null, node.UserStoryTag, order++, t.Path));
+                        node.PhaseTitle is { } p ? Truncate(p, 400) : null, node.UserStoryTag, order++, t.Path) { PhaseKey = PhaseKey(node.PhaseTitle) });
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -257,6 +289,19 @@ public static class DeliverySnapshotParser
                 warnings.Add(new("TASKS_UNREADABLE", $"The task list of \"{title}\" could not be read; task progress is not known.", t.Path));
             }
         }
+
+        // Phases: explicit "Phase N" task groups only (never inferred from task numbers). Task → story only through an explicit [USn] tag that
+        // names a story of this specification; a tag without such a story stays on the task as written and is reported, never re-pointed.
+        var phases = parsedTasks.Where(x => x.PhaseKey is not null).GroupBy(x => x.PhaseKey!).Select((g, i) => new ParsedDeliveryPhase(g.Key, Truncate(g.First().Phase!, 400), i)).ToList();
+        var storyKeys = parsedStories.Select(st => st.Key).ToHashSet(StringComparer.Ordinal);
+        parsedTasks = [.. parsedTasks.Select(x => StoryKey(x.UserStory) is { } sk && storyKeys.Contains(sk) ? x with { UserStoryKey = sk } : x)];
+        foreach (var unknown in parsedTasks.Where(x => x.UserStory is not null && x.UserStoryKey is null && parsedStories.Count > 0).Select(x => x.UserStory!).Distinct(StringComparer.Ordinal))
+            warnings.Add(new("TASK_STORY_UNKNOWN", $"Tasks of \"{title}\" reference [{unknown}], which is not a user story in its specification; they stay feature-level.", tasks?.Path));
+        parsedStories = [.. parsedStories.Select(st => st with
+        {
+            PhaseKeys = [.. phases.Where(ph => PhaseStoryRe.Matches(ph.Title).Any(m => StoryKey("US" + (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)) == st.Key)
+                    || parsedTasks.Any(x => x.PhaseKey == ph.Key && x.UserStoryKey == st.Key)).Select(ph => ph.Key)],
+        })];
 
         var specFingerprint = spec is { } sp ? Hash(Normalize(sp.Content)) : null;
         var acceptanceFingerprint = spec is null ? null : Hash(string.Join("\n", acceptance.OrderBy(a => a, StringComparer.Ordinal)));
@@ -267,10 +312,66 @@ public static class DeliverySnapshotParser
             SpecFingerprint = specFingerprint, AcceptanceFingerprint = acceptanceFingerprint, AcceptanceCriteria = acceptance,
             RequirementCount = requirements, UserStoryCount = stories, OpenClarifications = clarifications, ExplicitStatus = explicitStatus,
             Tasks = parsedTasks, UntrackedTaskCount = untracked, Evidence = evidence,
+            Phases = phases, Stories = parsedStories, Criteria = criteria,
         };
         var (status, reason) = DeliveryStatusDerivation.Derive(feature.TasksPath is not null, feature.TaskTotal, feature.TaskCompleted,
             feature.UntrackedTaskCount, feature.ExplicitStatus, feature.OpenClarifications);
         return feature with { Status = status, StatusReason = reason };
+    }
+
+    /// <summary>"Phase 2: Foundational" → "phase-2"; any other task group → null.</summary>
+    public static string? PhaseKey(string? groupTitle) =>
+        groupTitle is not null && PhaseHeadingRe.Match(StripMarkdown(groupTitle)) is { Success: true } m ? $"phase-{int.Parse(m.Groups[1].Value)}" : null;
+
+    /// <summary>"US2", "US-02", "us 2" → "US2"; anything else null.</summary>
+    public static string? StoryKey(string? tag) => tag is not null && StoryTagRe.Match(tag.Trim()) is { Success: true } m ? $"US{int.Parse(m.Groups[1].Value)}" : null;
+
+    /// <summary>
+    /// Explicit user stories (SpecExplorer UserStory nodes) and acceptance criteria with their owner: a criterion written under a story's section
+    /// belongs to that story; one outside every story (e.g. success criteria) stays feature-level. Criteria keys are their explicit id (SC-001)
+    /// or AC-n by order within the owner. A story without a number in its heading keys on its title. Nothing is invented.
+    /// </summary>
+    private static (List<ParsedDeliveryStory>, List<ParsedDeliveryCriterion>) Hierarchy(IEnumerable<SpecNode> roots, string content)
+    {
+        var stories = new List<ParsedDeliveryStory>();
+        var criteria = new List<ParsedDeliveryCriterion>();
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        int LineOf(string title) { for (var i = 0; i < lines.Length; i++) if (lines[i].Contains(title, StringComparison.Ordinal)) return i + 1; return 0; }
+        var counters = new Dictionary<string, int>(StringComparer.Ordinal);
+        void Walk(IEnumerable<SpecNode> nodes, string? owner)
+        {
+            foreach (var node in nodes)
+            {
+                var current = owner;
+                if (node.NodeType == SpecNodeType.UserStory && owner is null)
+                {
+                    var heading = Collapse(StripMarkdown(node.Title));
+                    var match = StoryHeadingRe.Match(heading);
+                    var key = match.Success ? $"US{int.Parse(match.Groups[1].Value)}" : StoryKey(node.SpecItemId) ?? "story:" + Hash(heading.ToLowerInvariant())[..10];
+                    if (stories.All(s => s.Key != key))
+                    {
+                        var title = match.Success && match.Groups[2].Value.Trim().Length > 0 ? match.Groups[2].Value.Trim() : heading;
+                        var description = string.Join(" ", (node.FullContent ?? "").Replace("\r\n", "\n").Split('\n').TakeWhile(l => !DescriptionStopRe.IsMatch(l))
+                            .Select(l => StripMarkdown(l).Trim()).Where(l => l.Length > 0));
+                        stories.Add(new(key, Truncate(title, 300), description.Length == 0 ? null : Truncate(Collapse(description), 1500),
+                            match.Success && match.Groups[3].Success ? match.Groups[3].Value.ToUpperInvariant() : null, stories.Count, LineOf(node.Title)));
+                    }
+                    current = key;
+                }
+                else if (node.NodeType is SpecNodeType.BddScenario or SpecNodeType.AcceptanceTest or SpecNodeType.SuccessCriterion)
+                {
+                    var text = Collapse(StripMarkdown(node.FullContent ?? node.Title));
+                    if (text.Length > 0 && !criteria.Any(c => c.StoryKey == owner && c.Text == text))
+                    {
+                        var n = counters[owner ?? ""] = counters.GetValueOrDefault(owner ?? "") + 1;
+                        criteria.Add(new(node.SpecItemId is { Length: > 0 } id && owner is null ? id : $"AC-{n}", Truncate(text, 2000), criteria.Count, owner, LineOf(node.Title)));
+                    }
+                }
+                Walk(node.Children, current);
+            }
+        }
+        Walk(roots, null);
+        return (stories, criteria);
     }
 
     /// <summary>A recognized "Status: …" line in the first lines of a feature document. Unknown values (Draft, In progress) are ignored, because

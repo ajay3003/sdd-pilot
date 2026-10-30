@@ -23,6 +23,55 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryAcceptanceCriterionSnapshotRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CriterionKey")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("criterion_key");
+
+                    b.Property<Guid>("FeatureSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_snapshot_id");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<int>("SourceLine")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_line");
+
+                    b.Property<string>("StoryKey")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("story_key");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeatureSnapshotId");
+
+                    b.HasIndex("SnapshotId");
+
+                    b.ToTable("acceptance_criterion_snapshot", "delivery_reporting");
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryArtifactSnapshotRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -238,6 +287,12 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("folder");
 
+                    b.Property<bool>("HierarchyCaptured")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("hierarchy_captured");
+
                     b.Property<string>("Module")
                         .IsRequired()
                         .HasMaxLength(400)
@@ -320,6 +375,47 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .IsUnique();
 
                     b.ToTable("feature_snapshot", "delivery_reporting");
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryPhaseSnapshotRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("FeatureSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_snapshot_id");
+
+                    b.Property<string>("PhaseKey")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("phase_key");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SnapshotId");
+
+                    b.HasIndex("FeatureSnapshotId", "PhaseKey")
+                        .IsUnique();
+
+                    b.ToTable("phase_snapshot", "delivery_reporting");
                 });
 
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryProjectRecord", b =>
@@ -620,6 +716,11 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("character varying(400)")
                         .HasColumnName("phase");
 
+                    b.Property<string>("PhaseKey")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("phase_key");
+
                     b.Property<int>("Position")
                         .HasColumnType("integer")
                         .HasColumnName("position");
@@ -656,6 +757,11 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("character varying(40)")
                         .HasColumnName("user_story");
 
+                    b.Property<string>("UserStoryKey")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("user_story_key");
+
                     b.HasKey("Id");
 
                     b.HasIndex("FeatureSnapshotId");
@@ -663,6 +769,66 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.HasIndex("SnapshotId");
 
                     b.ToTable("task_snapshot", "delivery_reporting");
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryUserStorySnapshotRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1500)
+                        .HasColumnType("character varying(1500)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("FeatureSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("feature_snapshot_id");
+
+                    b.Property<string>("PhaseKeysJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("phase_keys_json");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("priority");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<int>("SourceLine")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_line");
+
+                    b.Property<string>("StoryKey")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("story_key");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SnapshotId");
+
+                    b.HasIndex("FeatureSnapshotId", "StoryKey")
+                        .IsUnique();
+
+                    b.ToTable("user_story_snapshot", "delivery_reporting");
                 });
 
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryWeeklyReportItemRecord", b =>
@@ -795,6 +961,15 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.ToTable("weekly_report", "delivery_reporting");
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryAcceptanceCriterionSnapshotRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryFeatureSnapshotRecord", null)
+                        .WithMany()
+                        .HasForeignKey("FeatureSnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryArtifactSnapshotRecord", b =>
                 {
                     b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliverySnapshotRecord", null)
@@ -827,6 +1002,15 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliverySnapshotRecord", null)
                         .WithMany()
                         .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryPhaseSnapshotRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryFeatureSnapshotRecord", null)
+                        .WithMany()
+                        .HasForeignKey("FeatureSnapshotId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -884,6 +1068,15 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                 });
 
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryTaskSnapshotRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryFeatureSnapshotRecord", null)
+                        .WithMany()
+                        .HasForeignKey("FeatureSnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryUserStorySnapshotRecord", b =>
                 {
                     b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryFeatureSnapshotRecord", null)
                         .WithMany()

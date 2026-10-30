@@ -36,7 +36,7 @@ public enum DeliveryMovement { NoSignificantChange, Progressed, Completed, NewTh
 public enum DeliveryAttentionKind
 {
     Blocked, NeedsClarification, SpecificationWithoutTasks, TasksDisappeared, TaskCompletionWentBackwards, AcceptanceCriteriaChanged,
-    FeatureRemoved, AmbiguousFeatureIdentity, UnmappedArtifact,
+    FeatureRemoved, AmbiguousFeatureIdentity, UnmappedArtifact, BrokenTraceability,
 }
 
 /// <summary>Blocker = explicit blocked evidence only. Review = worth a look; never a blocker.</summary>
@@ -97,7 +97,26 @@ public static class DeliveryReportingText
         DeliveryAttentionKind.FeatureRemoved => "Feature removed",
         DeliveryAttentionKind.AmbiguousFeatureIdentity => "Ambiguous feature identity",
         DeliveryAttentionKind.UnmappedArtifact => "Unmapped task file",
+        DeliveryAttentionKind.BrokenTraceability => "Broken traceability",
         _ => kind.ToString(),
+    };
+
+    public static string Change(DeliveryItemChange change) => change switch
+    {
+        DeliveryItemChange.Added => "Added",
+        DeliveryItemChange.Removed => "Removed",
+        DeliveryItemChange.Changed => "Changed",
+        _ => "Unchanged",
+    };
+
+    public static string TaskChange(DeliveryTaskChange change) => change switch
+    {
+        DeliveryTaskChange.CompletedThisPeriod => "Completed this period",
+        DeliveryTaskChange.New => "New",
+        DeliveryTaskChange.Removed => "Removed",
+        DeliveryTaskChange.TextChanged => "Changed",
+        DeliveryTaskChange.Reopened => "Reopened",
+        _ => "Unchanged",
     };
 
     /// <summary>Statuses that only explicit evidence can produce (never task checkboxes alone).</summary>
@@ -117,7 +136,12 @@ public sealed record CreateDeliveryProjectRequest(string Name, string? Descripti
 public sealed record DeliveryImportWarning(string Code, string Message, string? Path = null);
 
 public sealed record DeliveryPreviewFeature(string Key, string Title, string Module, bool HasSpecification, bool HasTasks, int TaskTotal,
-    int TaskCompleted, string Status);
+    int TaskCompleted, string Status)
+{
+    public int PhaseCount { get; init; }
+    public int StoryCount { get; init; }
+    public int CriteriaCount { get; init; }
+}
 
 /// <summary>What an uploaded archive holds before anything is stored. Nothing is persisted until the import is confirmed.</summary>
 public sealed record DeliveryImportPreview
@@ -135,6 +159,11 @@ public sealed record DeliveryImportPreview
     public int TaskTotal { get; init; }
     public int TaskCompleted { get; init; }
     public int TaskOpen => TaskTotal - TaskCompleted;
+    /// <summary>Explicit hierarchy detected (phases from "Phase N" task groups, user story sections, acceptance criteria). A feature without
+    /// user stories is valid; warnings say so without blocking the import.</summary>
+    public int PhaseCount { get; init; }
+    public int StoryCount { get; init; }
+    public int CriteriaCount { get; init; }
     public DeliveryCoverage Coverage { get; init; }
     public List<DeliveryImportWarning> Warnings { get; init; } = [];
     /// <summary>Set when the selected project already holds this exact archive or Git commit. The import then needs explicit confirmation.</summary>
@@ -253,9 +282,88 @@ public sealed record DeliveryStoryRow
     public List<string> Reasons { get; init; } = [];
     public List<string> Attention { get; init; } = [];
     public DeliveryStoryEvidence Evidence { get; init; } = new();
+    /// <summary>Phases, user stories, acceptance criteria and traceable tasks with their change this period (report v2). Null in v1 reports.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryFeatureHierarchy? Hierarchy { get; init; }
 
     [JsonIgnore] public bool Changed => Movement != DeliveryMovement.NoSignificantChange;
 }
+
+/// <summary>How an item changed between baseline and current.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryItemChange { Unchanged, Added, Removed, Changed }
+
+/// <summary>A task's change: only a matched baseline-open → current-checked task is CompletedThisPeriod; a new checked task is New.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryTaskChange { Unchanged, CompletedThisPeriod, New, Removed, TextChanged, Reopened }
+
+public sealed record DeliveryCriterionRow(string Key, string Text, DeliveryItemChange Change)
+{
+    /// <summary>The baseline text when the criterion changed (shown only then).</summary>
+    public string? BaselineText { get; init; }
+    public string? StoryKey { get; init; }
+}
+
+public sealed record DeliveryTaskRow(string Key, string? TaskId, string Text, bool Completed, DeliveryTaskChange Change)
+{
+    public string? PhaseKey { get; init; }
+    /// <summary>Only an explicit [USn] reference to an existing story; null = feature-level.</summary>
+    public string? UserStoryKey { get; init; }
+    public string? SourcePath { get; init; }
+}
+
+public sealed record DeliveryUserStoryRow(string Key, string Title, DeliveryItemChange Change)
+{
+    public string? Description { get; init; }
+    /// <summary>Only when the heading declares it ("Priority: P1"); never invented.</summary>
+    public string? Priority { get; init; }
+    public List<string> PhaseKeys { get; init; } = [];
+    public List<DeliveryCriterionRow> Criteria { get; init; } = [];
+    public int TaskTotal { get; init; }
+    public int TaskCompleted { get; init; }
+    public bool TextChanged { get; init; }
+    public bool CriteriaChanged { get; init; }
+    public int SourceLine { get; init; }
+}
+
+/// <summary>An explicit implementation phase. Not a status: delivery state is derived separately.</summary>
+public sealed record DeliveryPhaseRow(string Key, string Title, DeliveryItemChange Change)
+{
+    public int Position { get; init; }
+    public int TaskTotal { get; init; }
+    public int TaskCompleted { get; init; }
+    public List<string> StoryKeys { get; init; } = [];
+    /// <summary>Task changes inside the phase this period (new, removed, completed, reopened, text changed).</summary>
+    public int Changes { get; init; }
+}
+
+/// <summary>
+/// The feature's hierarchy for the report: Feature → optional Phase → User Story → Acceptance Criteria, with traceable tasks. For a removed feature
+/// it is the baseline state, for a new feature the current state. <see cref="Captured"/> false = a snapshot imported before hierarchy support.
+/// </summary>
+public sealed record DeliveryFeatureHierarchy
+{
+    public bool Captured { get; init; }
+    public List<DeliveryPhaseRow> Phases { get; init; } = [];
+    public List<DeliveryUserStoryRow> Stories { get; init; } = [];
+    /// <summary>Criteria no story owns (kept feature-level, never duplicated under stories).</summary>
+    public List<DeliveryCriterionRow> FeatureCriteria { get; init; } = [];
+    public List<DeliveryTaskRow> Tasks { get; init; } = [];
+    public int CriteriaBaseline { get; init; }
+    public int CriteriaCurrent { get; init; }
+    public int CriteriaAdded { get; init; }
+    public int CriteriaChanged { get; init; }
+    public int CriteriaRemoved { get; init; }
+    public int StoriesAdded { get; init; }
+    public int StoriesRemoved { get; init; }
+    public int StoriesChanged { get; init; }
+    public int TasksAdded { get; init; }
+    public int TasksRemoved { get; init; }
+    public int TasksReopened { get; init; }
+    public int TasksTextChanged { get; init; }
+}
+
+/// <summary>A feature added to or removed from scope between baseline and current (scope change — not a quality problem).</summary>
+public sealed record DeliveryScopeChange(string Kind, string FeatureKey, string Title, string Module, string Detail);
 
 public sealed record DeliveryAttentionItem(DeliveryAttentionKind Kind, DeliveryAttentionSeverity Severity, string Title, string Detail, string? FeatureKey = null);
 
@@ -267,7 +375,9 @@ public sealed record DeliveryFocusItem(string Text, List<string> Features);
 /// </summary>
 public sealed record WeeklyDeliveryReport
 {
-    public const int CurrentVersion = 1;
+    /// <summary>2: feature hierarchy (phases, user stories, acceptance criteria, task changes), scope changes, inventory metrics. v1 reports keep
+    /// rendering as they were frozen.</summary>
+    public const int CurrentVersion = 2;
     public int Version { get; init; } = CurrentVersion;
     public Guid ReportId { get; init; }
     public Guid ProjectId { get; init; }
@@ -291,7 +401,10 @@ public sealed record WeeklyDeliveryReport
     public List<string> ExecutiveSummary { get; init; } = [];
     public List<DeliveryStoryRow> Stories { get; init; } = [];
     public List<DeliveryAttentionItem> Attention { get; init; } = [];
+    /// <summary>Shown as "Potential focus": observations only, no invented priority.</summary>
     public List<DeliveryFocusItem> NextWeekFocus { get; init; } = [];
+    /// <summary>Features added to / removed from scope (v2). Separate from Needs attention.</summary>
+    public List<DeliveryScopeChange> ScopeChanges { get; init; } = [];
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -315,4 +428,26 @@ public static class DeliveryReportStories
         : $"{Progress(story.BaselineTaskCompleted, story.BaselineTaskTotal)} → {Progress(story.CurrentTaskCompleted, story.CurrentTaskTotal)}";
 
     public static string StatusOrDash(DeliveryStatus? status) => status is { } s ? DeliveryReportingText.Status(s) : "–";
+
+    /// <summary>"3 stories · 1 story added · 1 acceptance criterion changed" — the feature's hierarchy changes this period (empty when not captured).</summary>
+    public static string HierarchySummary(DeliveryStoryRow row)
+    {
+        if (row.Hierarchy is not { Captured: true } h) return "";
+        var parts = new List<string> { h.Stories.Count == 0 ? "no explicit user stories" : $"{h.Stories.Count} {(h.Stories.Count == 1 ? "story" : "stories")}" };
+        if (h.Phases.Count > 0) parts.Add($"{h.Phases.Count} phase{(h.Phases.Count == 1 ? "" : "s")}");
+        if (row.NewFeature || row.RemovedFeature) return string.Join(" · ", parts);
+        void Add(int n, string what) { if (n > 0) parts.Add($"{n} {what}"); }
+        Add(h.StoriesAdded, h.StoriesAdded == 1 ? "story added" : "stories added");
+        Add(h.StoriesRemoved, h.StoriesRemoved == 1 ? "story removed" : "stories removed");
+        Add(h.StoriesChanged, h.StoriesChanged == 1 ? "story changed" : "stories changed");
+        Add(h.CriteriaAdded, h.CriteriaAdded == 1 ? "acceptance criterion added" : "acceptance criteria added");
+        Add(h.CriteriaChanged, h.CriteriaChanged == 1 ? "acceptance criterion changed" : "acceptance criteria changed");
+        Add(h.CriteriaRemoved, h.CriteriaRemoved == 1 ? "acceptance criterion removed" : "acceptance criteria removed");
+        Add(h.TasksAdded, h.TasksAdded == 1 ? "task added" : "tasks added");
+        Add(h.TasksRemoved, h.TasksRemoved == 1 ? "task removed" : "tasks removed");
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>"Potential focus" (v2) or the frozen v1 heading.</summary>
+    public static string FocusHeading(WeeklyDeliveryReport report) => report.Version >= 2 ? "Potential focus" : "Next-week focus";
 }

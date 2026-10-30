@@ -21,7 +21,7 @@ public sealed class DeliverySnapshotComparisonTests
         story.TasksCompletedThisPeriod.Should().Be(4);
         story.BaselineStatus.Should().Be(DeliveryStatus.InProgress);
         story.CurrentStatus.Should().Be(DeliveryStatus.InProgress);
-        story.Reasons.Should().Contain("Progressed: task completion changed from 3/8 to 7/8");
+        story.Reasons.Should().Contain("4 task(s) completed this period; task completion changed from 3/8 to 7/8");
         story.Evidence.TasksCompleted.Should().HaveCount(4);
     }
 
@@ -59,7 +59,8 @@ public sealed class DeliverySnapshotComparisonTests
         story.Movement.Should().Be(DeliveryMovement.Removed);
         story.Movement.Should().NotBe(DeliveryMovement.Completed);
         DeliveryReportingText.Movement(story.Movement).Should().Contain("needs review");
-        result.Attention.Should().Contain(a => a.Kind == DeliveryAttentionKind.FeatureRemoved && a.Severity == DeliveryAttentionSeverity.Review);
+        result.Attention.Should().NotContain(a => a.Kind == DeliveryAttentionKind.FeatureRemoved, "a removal is a scope change, not a quality problem");
+        result.ScopeChanges.Should().ContainSingle(s => s.Kind == "Removed" && s.Title == "Case overview" && s.Detail.Contains("Last known baseline"));
     }
 
     [Fact]
@@ -75,7 +76,7 @@ public sealed class DeliverySnapshotComparisonTests
         story.Movement.Should().Be(DeliveryMovement.NeedsReview);
         story.Evidence.AcceptanceAdded.Should().ContainSingle(a => a.Contains("protected child"));
         story.Evidence.AcceptanceRemoved.Should().ContainSingle(a => a.Contains("no match"));
-        result.Attention.Should().Contain(a => a.Kind == DeliveryAttentionKind.AcceptanceCriteriaChanged, "work had started when the criteria changed");
+        result.Attention.Should().NotContain(a => a.Kind == DeliveryAttentionKind.AcceptanceCriteriaChanged, "an ordinary specification change is a change, not an attention item");
     }
 
     [Fact]

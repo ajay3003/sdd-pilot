@@ -70,6 +70,9 @@ public sealed class DeliveryFeatureSnapshotRecord
     public int TaskTotal { get; set; }
     public int TaskCompleted { get; set; }
     public int UntrackedTaskCount { get; set; }
+    /// <summary>The feature hierarchy (phases, user stories, acceptance criteria) was parsed at import. False for snapshots imported before
+    /// hierarchy support: those are never re-parsed or re-interpreted (snapshot immutability).</summary>
+    public bool HierarchyCaptured { get; set; }
     public string Status { get; set; } = "";
     public string StatusReason { get; set; } = "";
 }
@@ -85,8 +88,51 @@ public sealed class DeliveryTaskSnapshotRecord
     public bool Completed { get; set; }
     public string? Phase { get; set; }
     public string? UserStory { get; set; }
+    /// <summary>Explicit phase key ("phase-2") when the task group is a "Phase N" heading; null otherwise.</summary>
+    public string? PhaseKey { get; set; }
+    /// <summary>Explicitly referenced user story key ("US2") when that story exists in the specification; null = feature-level.</summary>
+    public string? UserStoryKey { get; set; }
     public int Position { get; set; }
     public string SourcePath { get; set; } = "";
+}
+
+/// <summary>An explicit implementation phase of a feature (tasks.md "Phase N" group). A delivery grouping, never a status.</summary>
+public sealed class DeliveryPhaseSnapshotRecord
+{
+    public Guid Id { get; set; }
+    public Guid SnapshotId { get; set; }
+    public Guid FeatureSnapshotId { get; set; }
+    public string PhaseKey { get; set; } = "";
+    public string Title { get; set; } = "";
+    public int Position { get; set; }
+}
+
+/// <summary>An explicit user story of a feature's specification (child of the feature; optionally linked to phases).</summary>
+public sealed class DeliveryUserStorySnapshotRecord
+{
+    public Guid Id { get; set; }
+    public Guid SnapshotId { get; set; }
+    public Guid FeatureSnapshotId { get; set; }
+    public string StoryKey { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? Description { get; set; }
+    public string? Priority { get; set; }
+    public string PhaseKeysJson { get; set; } = "[]";
+    public int Position { get; set; }
+    public int SourceLine { get; set; }
+}
+
+/// <summary>An acceptance criterion: owned by a user story (StoryKey) or feature-level (null).</summary>
+public sealed class DeliveryAcceptanceCriterionSnapshotRecord
+{
+    public Guid Id { get; set; }
+    public Guid SnapshotId { get; set; }
+    public Guid FeatureSnapshotId { get; set; }
+    public string? StoryKey { get; set; }
+    public string CriterionKey { get; set; } = "";
+    public string Text { get; set; } = "";
+    public int Position { get; set; }
+    public int SourceLine { get; set; }
 }
 
 /// <summary>One file of a snapshot: the Markdown documents and readable source files, by path and content fingerprint (never content).</summary>
