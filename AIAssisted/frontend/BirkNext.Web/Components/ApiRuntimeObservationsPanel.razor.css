@@ -9,3 +9,4 @@
 .aro-table-wrap { overflow-x: auto; position: relative; }
 .aro-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .aro-table th, .aro-table td { border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); padding: .3rem .45rem; text-align: left; vertical-align: top; }
+.aro-stale { color: var(--clr-warning, #b45309); font-weight: 600; }

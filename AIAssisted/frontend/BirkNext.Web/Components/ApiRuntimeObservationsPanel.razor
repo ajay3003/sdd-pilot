@@ -41,7 +41,7 @@
                                     <th scope="row" class="aro-mono">@o.Method.ToUpperInvariant() @o.Path</th>
                                     <td>@(o.LastStatus == 0 ? "–" : $"HTTP {o.LastStatus}")</td>
                                     <td>@(o.AuthObserved ? "Bearer observed" : "None observed")</td>
-                                    <td>@o.Count× · @o.LastObservedAt.ToLocalTime().ToString("d MMM HH:mm")</td>
+                                    <td>@o.Count× · @o.LastObservedAt.ToLocalTime().ToString("d MMM HH:mm")@if (Stale(o)) { <span class="aro-stale" data-testid="aro-stale"> · stale</span> }</td>
                                     <td data-testid="aro-evidence">@Evidence(row)</td>
                                 </tr>
                             }
@@ -49,6 +49,7 @@
                     </table>
                 </div>
             }
+            <p class="aro-muted" data-testid="aro-provenance">Environment @EnvironmentId · captured by Endpoint Discovery from your own browsing (attended). Historical evidence: it does not show that access works now.</p>
             <p class="aro-muted"><a href="@($"/admin/system-settings?section=target-environments&tab=endpoint&profile={Uri.EscapeDataString(EnvironmentId)}")" data-testid="aro-view-discovery">View in Endpoint Discovery</a></p>
         </article>
     }
@@ -65,6 +66,9 @@
     private static IReadOnlyList<ObservedApiOperation> Observed(ApiReviewTarget target) =>
         [.. target.Operations.Where(o => o.Source == ApiReviewTargetSource.DiscoveredTraffic && o.OperationType == BirkNext.LocalHttpsProxy.GraphQlOperationType.None)
             .Select(o => new ObservedApiOperation(o.Method, o.Path, o.LastStatus, o.AuthObserved, o.ObservedCount, o.LastObservedAt ?? DateTimeOffset.MinValue))];
+
+    /// <summary>Older than <see cref="ApiReviewCapabilities.StaleAfter"/>: evidence of then, not of current access.</summary>
+    private static bool Stale(ObservedApiOperation o) => o.LastObservedAt != DateTimeOffset.MinValue && DateTimeOffset.UtcNow - o.LastObservedAt > ApiReviewCapabilities.StaleAfter;
 
     private static string Evidence(ApiOperationCorrelationRow? row) => row is null ? "Observed · not verified"
         : row.Confidence switch

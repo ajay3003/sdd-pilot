@@ -772,3 +772,10 @@
 @media (max-width: 760px) {
     .aqr-known-limitations .aqr-limitation-list > div { grid-template-columns: 1fr; }
 }
+
+.aqr-capabilities { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; gap: .3rem; }
+.aqr-capability { display: grid; grid-template-columns: minmax(10rem, 14rem) auto 1fr; gap: .2rem .6rem; align-items: baseline; font-size: .88rem; }
+.aqr-capability-label { font-weight: 600; }
+.aqr-capability-detail { overflow-wrap: anywhere; }
+.aqr-capability .aqr-link { grid-column: 3; }
+@media (max-width: 640px) { .aqr-capability { grid-template-columns: 1fr; } .aqr-capability .aqr-link { grid-column: 1; } }

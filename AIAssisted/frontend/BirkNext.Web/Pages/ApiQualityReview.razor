@@ -88,6 +88,7 @@
             @if (blocked)
             {
                 @* No enabled Run button while the review cannot run: the exact blockers and one corrective action replace it. *@
+                @CapabilityList(false)
                 <div class="aqr-blockers" data-testid="aqr-blockers">
                     <h3>Cannot run</h3>
                     <ul data-testid="aqr-decision-group" data-group="blocking">
@@ -107,6 +108,9 @@
             }
             else
             {
+                <BirkNext.Web.Components.RuntimeAuthenticationSelector OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.ApiAuthenticatedChecks"
+                    Profile="@_context?.ActiveProfileOrNull" ResolutionChanged="r => _authentication = r" />
+                @CapabilityList(true)
                 <div class="aqr-run-row" data-testid="aqr-run-row">
                     <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run" aria-describedby="@(!Eligibility.Enabled ? "aqr-run-reason" : null)">
                         @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
@@ -991,6 +995,31 @@
         else if (e.Key == "End") _tab = Tabs[^1];
     }
 
+    /// <summary>The shared runtime authentication resolution for authenticated API checks (null until resolved or when the backend is unreachable).</summary>
+    private BirkNext.RuntimeAuthentication.RuntimeAuthenticationResolution? _authentication;
+
+    /// <summary>The capability list; when Run is blocked the blocker owns the single corrective action, so capability actions are hidden.</summary>
+    private RenderFragment CapabilityList(bool showActions) => __builder =>
+    {
+        @* Capability-level readiness: each review capability is decided on its own; one that cannot run never blocks the others. *@
+        <ul class="aqr-capabilities" data-testid="aqr-capabilities" aria-label="What this review will run">
+            @foreach (var cap in ReviewCapabilities)
+            {
+                <li class="aqr-capability aqr-capability-@(cap.Runs ? "runs" : "skipped")" data-testid="aqr-capability" data-key="@cap.Key" data-state="@cap.State">
+                    <span class="aqr-capability-label">@cap.Label</span>
+                    <span class="aqr-state aqr-state-@(cap.Runs ? "pass" : "muted")" data-testid="aqr-capability-state">@BirkNext.Web.Services.ApiReviewCapabilities.StateLabel(cap.State)@(cap.Runs ? "" : " · skipped")</span>
+                    <span class="aqr-muted aqr-capability-detail">@cap.Detail</span>
+                    @if (showActions && cap.ActionText is not null && cap.ActionHref is not null) { <a class="aqr-link" href="@cap.ActionHref" data-testid="aqr-capability-action">@cap.ActionText</a> }
+                </li>
+            }
+        </ul>
+    };
+
+    /// <summary>The selected targets' capability-level readiness (static, public, runtime evidence, active authenticated, authorization).</summary>
+    private IReadOnlyList<BirkNext.Web.Services.ApiReviewCapability> ReviewCapabilities =>
+        BirkNext.Web.Services.ApiReviewCapabilities.Evaluate(_targets.Where(t => _selected.Contains(t.TargetId)).ToList(), _capabilities, _authentication,
+            ApiReviewPresentation.AuthenticationHref(_context), _authorizationPermission.Permitted, _authorizationPermission.Reason, DateTimeOffset.UtcNow);
+
     /// <summary>Creates the immutable review snapshot from the active environment at Run; settings edited while the review runs never affect it.</summary>
     private async Task RunReview()
     {
@@ -998,7 +1027,8 @@
         _running = true; _errorMessage = null; _progressMessage = "Reviewing selected API targets (read-only)…";
         var context = _context;
         var identity = context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(context);
-        var request = BuildRequest(context, identity, _targets, _selected, _history);
+        // The resolved mode is fixed for the run; it never changes during it.
+        var request = BuildRequest(context, identity, _targets, _selected, _history) with { AuthenticationMode = _authentication?.Effective ?? BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Auto };
         RuntimeReviews.MarkApiQualityRunning(context);
         StateHasChanged();
         try

@@ -205,6 +205,7 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
     public const string NoTargetsReason = "No REST or GraphQL API target is available for review.";
     public const string NoAuthContextReason = "Authenticated API context not available.";
     public const string NoAuthContextAction = "Open Authentication setup";
+    public const string StaticOnlyPrefix = "Read-only contract review of";
     public const string TargetEnvironmentsHref = "/admin/system-settings?section=target-environments";
 
     /// <summary>
@@ -228,6 +229,12 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
         if (runnable.Count > 0) return new(true, runnable.Count == selected.Count ? $"{Targets(selected.Count)} ready." : $"{runnable.Count} of {Targets(selected.Count)} runnable; authenticated targets will be reported as blocked (no timeout).", null, null);
         var method = context.ActiveProfile.Authentication.AuthenticatedTestingMethod;
         var authHref = AuthenticationHref(context.ActiveProfile.Id);
+        // The read-only contract review needs no authentication: a protected target with a published contract is still reviewed statically,
+        // and only its live authenticated checks are skipped. Missing authentication never blocks what can run without it.
+        var staticOnly = selected.Count(t => !string.IsNullOrWhiteSpace(t.ContractSource));
+        if (staticOnly > 0)
+            return new(true, $"{StaticOnlyPrefix} {Targets(staticOnly)}; authenticated checks will be skipped ({(capabilities?.ContextStatus == AuthenticatedApiContextStatus.Expired ? "authentication expired" : "no authenticated context")}).",
+                capabilities?.ContextStatus == AuthenticatedApiContextStatus.Expired ? "Re-authenticate" : NoAuthContextAction, authHref);
         return method switch
         {
             AuthenticatedTestingMethod.ManualOnly => new(false, "Authenticated automated API review is unavailable: the environment is manual-verification only.", "Change the authenticated testing method", authHref),
