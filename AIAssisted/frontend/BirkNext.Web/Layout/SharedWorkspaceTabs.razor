@@ -1,0 +1,39 @@
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Routing
+@inject NavigationManager Navigation
+@inject FeatureVisibilityService FeatureViz
+@implements IDisposable
+
+@* Shared workspaces: sibling pages (Plan & Tasks, Data Models & Schemas, API & Integration Quality, Generated Documentation …) one click
+   apart. The tabs are links between the existing routes — every route and deep link stays as it was — so they are a navigation landmark
+   with aria-current, not an ARIA tablist. *@
+@if (_workspace is { } workspace && NavigationCatalog.WorkspaceItems(workspace, FeatureViz) is { Count: > 1 } items)
+{
+    var path = NavigationCatalog.RelativePath(Navigation);
+    <nav class="sw-tabs" aria-label="@($"{workspace.Label} workspace")" data-testid="shared-workspace-tabs" data-workspace="@workspace.Id">
+        <span class="sw-label">@workspace.Label</span>
+        @foreach (var item in items)
+        {
+            var current = item.IsCurrent(path);
+            <a class="sw-tab @(current ? "sw-current" : "")" href="@item.Route" aria-current="@(current ? "page" : null)" data-testid="shared-workspace-tab" data-route="@item.Route">@item.Label</a>
+        }
+    </nav>
+}
+
+@code {
+    private SharedWorkspace? _workspace;
+
+    protected override void OnInitialized()
+    {
+        _workspace = NavigationCatalog.WorkspaceFor(NavigationCatalog.RelativePath(Navigation));
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(() =>
+    {
+        _workspace = NavigationCatalog.WorkspaceFor(NavigationCatalog.RelativePath(Navigation));
+        StateHasChanged();
+    });
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

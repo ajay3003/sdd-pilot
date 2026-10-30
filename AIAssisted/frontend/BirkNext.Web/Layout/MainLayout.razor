@@ -26,7 +26,10 @@ else
         </div>
 
         <main>
+            @* Activity Center: always available, on every page; observes long-running work, never owns it. *@
+            <div class="activity-row"><ActivityCenter /></div>
             <article class="content px-4">
+                <SharedWorkspaceTabs />
                 @Body
             </article>
         </main>

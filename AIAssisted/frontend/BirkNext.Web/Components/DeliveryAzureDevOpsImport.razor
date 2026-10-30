@@ -2,6 +2,9 @@
 @using BirkNext.Web.Services
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation
 @inject IDeliveryAzureDevOpsApiService Api
+@inject BirkNext.Web.Services.Operations.BackgroundOperationService Operations
+@inject DeliveryReportingSession Session
+@implements IDisposable
 
 @* Import snapshot → Import from Azure DevOps: connection → project → repository → branch → date/time → resolved commit → the same import
    preview as a ZIP. The token is entered once, stored encrypted by the backend and never shown again. Read-only against Azure DevOps. *@
@@ -105,6 +108,9 @@
 
 @code {
     [Parameter] public Guid? ProjectId { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    private bool _disposed;
+    public void Dispose() => _disposed = true;
     [Parameter] public bool Disabled { get; set; }
     /// <summary>The import preview of the resolved commit (same preview as a ZIP) plus the resolution note.</summary>
     [Parameter] public EventCallback<(DeliveryImportPreview Preview, string? Note)> OnPreview { get; set; }
@@ -240,16 +246,39 @@
         finally { _busy = false; }
     }
 
+    /// <summary>
+    /// Downloads and parses the resolved commit as a background operation (project, repository, branch and commit captured at start). Leaving the
+    /// page does not stop it: the finished preview is kept for its reporting project and offered again on return ("Review prepared import").
+    /// </summary>
     private async Task Preview()
     {
-        if (_commit is null || !CanResolve) return;
+        if (_commit is not { } commit || !CanResolve || ProjectId is not { } projectId) return;
         _busy = true; _busyText = "Downloading the commit tree and reading it…"; _resolveError = null;
+        var request = Request();
         try
         {
-            var (preview, note, error) = await Api.PreviewAsync(Request());
-            if (preview is null) { _resolveError = error; return; }
-            await OnPreview.InvokeAsync((preview, note));
+            (DeliveryImportPreview Preview, string? Note)? ready = null;
+            var run = Operations.Start(new(BirkNext.Web.Services.Operations.OperationKind.DeliveryAzureDevOpsImport, $"Azure DevOps snapshot {commit.ShortCommit}",
+                new(ProjectName ?? "Delivery project", projectId.ToString()) { Repository = $"{commit.Project}/{commit.Repository}", Branch = commit.Branch, Revision = commit.ShortCommit },
+                $"{P.Route}?project={projectId}&tab=snapshots")
+            {
+                IdempotencyKey = $"delivery-ado:{projectId}:{commit.CommitId}", Cancellable = true,
+            }, async (progress, ct) =>
+            {
+                progress.Stage("Downloading and reading the commit tree", $"{commit.Repository}@{commit.ShortCommit}");
+                var (preview, note, error) = await Api.PreviewAsync(request, ct);
+                if (preview is null) return BirkNext.Web.Services.Operations.OperationOutcome.Failure(error ?? "The commit could not be previewed.");
+                ct.ThrowIfCancellationRequested();
+                ready = (preview, note);
+                Session.SetPending(projectId, preview, note);
+                return BirkNext.Web.Services.Operations.OperationOutcome.Success($"{P.Route}?project={projectId}&tab=snapshots", "Review prepared import");
+            });
+            var done = await run.Completion;
+            if (_disposed) return;
+            if (ready is { } r) await OnPreview.InvokeAsync(r);
+            else if (done.Status == BirkNext.Web.Services.Operations.OperationStatus.Completed && Session.Pending(projectId) is { } pending) await OnPreview.InvokeAsync(pending);
+            else _resolveError = done.Error ?? (done.Status == BirkNext.Web.Services.Operations.OperationStatus.Cancelled ? "Cancelled." : "The commit could not be previewed.");
         }
-        finally { _busy = false; }
+        finally { if (!_disposed) _busy = false; }
     }
 }

@@ -16,7 +16,9 @@
 @inject IWorkspaceAutoSaveService AutoSave
 @inject IJSRuntime JS
 @inject IServiceProvider ServiceProvider
+@inject ProjectImportSession Session
 @implements IDisposable
+@using Phase = BirkNext.Web.Services.ProjectImport.ProjectImportPhase
 
 @* Project Import: one archive, uploaded once. Its documents become artifacts in the Shared Artifact Repository and its source becomes a
    Source Analysis snapshot. The two stay separate evidence domains; they share only the import identity and the archive fingerprint. *@
@@ -311,8 +313,15 @@
             {
                 <p class="pi-muted" data-testid="pi-stage-count">Source Analysis stage @stageNumber of @stageCount</p>
             }
-            @if (_phase is Phase.Validating or Phase.Importing)
+            @if (_phase == Phase.Validating && Session.UploadTotalBytes > 0)
             {
+                @* Measured: bytes read from the chosen file and sent, of its size. *@
+                <progress class="pi-progress" max="@Session.UploadTotalBytes" value="@Session.UploadedBytes" aria-label="Archive uploaded" data-testid="pi-upload-progress">@ProjectImportPresentation.Size(Session.UploadedBytes) of @ProjectImportPresentation.Size(Session.UploadTotalBytes)</progress>
+                <p class="pi-muted" data-testid="pi-upload-bytes">Uploaded @ProjectImportPresentation.Size(Session.UploadedBytes) of @ProjectImportPresentation.Size(Session.UploadTotalBytes)</p>
+            }
+            else if (_phase is Phase.Validating or Phase.Importing)
+            {
+                @* Stage n of N is not a share of the work: no percentage is shown for the analysis. *@
                 <progress class="pi-progress pi-progress-indeterminate" aria-label="Project import in progress"></progress>
             }
             @if (_phase is Phase.Validating or Phase.Classifying or Phase.Importing)
@@ -330,6 +339,11 @@
             @if (_phase == Phase.Classifying && _classifyTotal > 0)
             {
                 <progress class="pi-progress" max="@_classifyTotal" value="@_classified" aria-label="Documents classified">@_classified of @_classifyTotal</progress>
+            }
+            <p class="pi-muted" data-testid="pi-background-note">You can leave this page: the import continues and is shown under Activity. Come back here to see it.</p>
+            @if (Session.CanCancel)
+            {
+                <div class="pi-actions"><button type="button" class="btn-secondary" data-testid="pi-cancel-running" @onclick="CancelRunning">@(_phase == Phase.Importing ? "Cancel import" : "Cancel upload")</button></div>
             }
         </section>
     }
@@ -398,9 +412,17 @@
         @if (_failure is { } commitFailure)
         {
             <section class="pi-card pi-tone-rejected" role="alert" data-testid="pi-commit-failure" data-code="@commitFailure.Code">
-                <h2>The import did not return a result</h2>
-                <p>@commitFailure.Message</p>
-                <p>The workspace did not finish updating. Source Analysis may already have saved its snapshot. Retrying this staged archive reuses a completed snapshot.</p>
+                @if (commitFailure.Code == "IMPORT_CANCELLED")
+                {
+                    <h2>The import was cancelled</h2>
+                    <p>@commitFailure.Message</p>
+                }
+                else
+                {
+                    <h2>The import did not return a result</h2>
+                    <p>@commitFailure.Message</p>
+                    <p>The workspace did not finish updating. Source Analysis may already have saved its snapshot. Retrying this staged archive reuses a completed snapshot.</p>
+                }
                 @if (!string.IsNullOrWhiteSpace(commitFailure.CorrelationId)) { <p>Reference: <code>@commitFailure.CorrelationId</code></p> }
             </section>
         }
@@ -411,6 +433,7 @@
         var tone = ProjectImportPresentation.ToneClass(ProjectImportPresentation.OutcomeTone(outcome));
         <section class="pi-card pi-outcome pi-tone-@tone" aria-labelledby="pi-outcome-heading" data-testid="pi-result" data-outcome="@outcome">
             <h2 id="pi-outcome-heading" tabindex="-1"><span class="pi-badge pi-badge-@tone">@(outcome == ProjectImportOutcome.Imported ? "Imported" : "Imported with notes")</span> @ProjectImportPresentation.OutcomeTitle(outcome)</h2>
+            @if (Session.KeptSelectionNote is { } kept) { <p class="pi-muted" role="status" data-testid="pi-kept-selection">@kept</p> }
             <p><strong>@done.ProjectName</strong> is now the current project. Imported is not reviewed or approved: review the documents next.</p>
             @if (ProjectImportPresentation.Notes(done, doneDiscovery, _commit?.Source) is { Count: > 0 } notes)
             {
@@ -477,24 +500,25 @@
 </div>
 
 @code {
-    private enum Phase { Choose, Validating, Classifying, Preview, Importing, Result }
-    private int _classified;
-    private int _classifyTotal;
-    private Phase _phase = Phase.Choose;
-    private string? _fileName;
-    private ProjectImportPreview? _preview;
-    private ProjectImportArtifactDiscovery? _discovery;
-    private ProjectImportCommitResult? _commit;
-    private SourceUploadFailure? _failure;
+    // The import session (stage, archive, preview, progress, result, failure) lives in ProjectImportSession, not in this page: leaving the page
+    // never stops or forgets an import, and returning shows it again. These are views onto it so the markup reads as before.
+    private int _classified { get => Session.Classified; set => Session.Classified = value; }
+    private int _classifyTotal { get => Session.ClassifyTotal; set => Session.ClassifyTotal = value; }
+    private Phase _phase { get => Session.Phase; set => Session.Phase = value; }
+    private string? _fileName { get => Session.FileName; set => Session.FileName = value; }
+    private ProjectImportPreview? _preview { get => Session.Preview; set => Session.Preview = value; }
+    private ProjectImportArtifactDiscovery? _discovery { get => Session.Discovery; set => Session.Discovery = value; }
+    private ProjectImportCommitResult? _commit { get => Session.Commit; set => Session.Commit = value; }
+    private SourceUploadFailure? _failure { get => Session.Failure; set => Session.Failure = value; }
     /// <summary>Shown beside the import only; never sent with it and never a condition for the source snapshot.</summary>
     private bool _hasTarget;
-    private bool _saveWarning;
+    private bool _saveWarning { get => Session.SaveWarning; set => Session.SaveWarning = value; }
     private bool _retrying;
-    private ProjectImportCommitEvent? _progress;
+    private ProjectImportCommitEvent? _progress { get => Session.Progress; set => Session.Progress = value; }
     /// <summary>Changes on every reset or failure: the file input is re-created, so choosing the very same ZIP again always fires a change.</summary>
-    private int _inputGeneration;
+    private int _inputGeneration { get => Session.InputGeneration; set => Session.InputGeneration = value; }
     private string? _currentRetryMessage;
-    private DateTimeOffset? _importStartedAt;
+    private DateTimeOffset? _importStartedAt => Session.StartedAt;
     private TimeSpan _elapsed;
     private System.Threading.Timer? _elapsedTimer;
     private string? _focusId;
@@ -506,21 +530,28 @@
     private string? _environmentName;
     /// <summary>The current workspace with its project-wide pack overview; null in hosts without the projection (the summary then omits counts).</summary>
     private CurrentWorkspaceSnapshot? _workspace;
-    private ProjectImportDuplicate? _duplicate;
-    private bool _importAgain;
+    private ProjectImportDuplicate? _duplicate { get => Session.Duplicate; set => Session.Duplicate = value; }
+    private bool _importAgain { get => Session.ImportAgain; set => Session.ImportAgain = value; }
     private string? _useMessage;
     /// <summary>The upload block is shown while a project is current only after "Import another project" (or when a choice failed).</summary>
-    private bool _showUpload;
+    private bool _showUpload { get => Session.ShowUpload; set => Session.ShowUpload = value; }
+    private bool _disposed;
+    private Phase _renderedPhase;
 
     protected override async Task OnInitializedAsync()
     {
+        // Returning to the page while an import runs (or after it finished elsewhere) shows that import: the page observes the session.
+        if (_phase == Phase.Result && Session.ResultSeen) Session.Reset();
+        Session.Changed += OnSessionChanged;
+        _renderedPhase = _phase;
+        if (Session.IsBusy) StartElapsedTimer();
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is { } projection) projection.Changed += OnWorkspaceChanged;
         if (ServiceProvider.GetService<IArtifactExplorerContext>() is { } explorer) explorer.Changed += OnExplorerChanged;
         if (ServiceProvider.GetService<IFrontendAnalysisSettingsService>() is { } settings) settings.Changed += OnEnvironmentChanged;
         if (ServiceProvider.GetService<NavigationManager>() is { } navigation)
         {
             navigation.LocationChanged += OnLocationChanged;
-            if (ImportRequested(navigation.Uri)) ShowUpload();
+            if (ImportRequested(navigation.Uri) && !Session.IsBusy) ShowUpload();
         }
         await LoadEnvironmentAsync();
         await LoadSetupAsync();
@@ -691,101 +722,51 @@
         </label>
     };
 
-    private async Task ChooseAsync(InputFileChangeEventArgs args)
+    /// <summary>
+    /// Starts the upload/check of the chosen ZIP as a session operation. The browser file is first copied into memory while this page shows
+    /// its input (a local read, measured in bytes); the upload to the backend and everything after it then run from that copy, so leaving
+    /// the page no longer breaks them (the file input is removed with the page).
+    /// </summary>
+    private void ChooseAsync(InputFileChangeEventArgs args)
     {
-        // A new archive starts a new import session: nothing of the previous result (commit, warnings, duplicate choice) carries over.
-        // Persisted history, the current project, snapshots and IQR bindings are untouched.
-        _commit = null; _saveWarning = false; _retrying = false; _duplicate = null; _importAgain = false; _currentRetryMessage = null; _useMessage = null;
-        _failure = null;
-        // The progress card shows the preview's counts: the previous archive's preview must not be shown while this one validates.
-        _preview = null; _discovery = null; _classified = 0; _classifyTotal = 0;
-        _fileName = args.File.Name;
-        _phase = Phase.Validating;
-        _progress = new ProjectImportCommitEvent { Stage = "Uploading and validating the archive", Detail = "Reading the ZIP and checking its entries." };
+        _retrying = false; _currentRetryMessage = null; _useMessage = null;
+        var file = args.File;
+        // Opened here, while the file input is still on the page: the browser file stream starts its read when it is opened. The session
+        // then copies it and uploads from the copy, after the page has already switched to the progress view (input removed) or was left.
+        Stream? browserFile = file.Size > ProjectImportSession.MaxUploadBytes ? null : file.OpenReadStream(ProjectImportSession.MaxUploadBytes);
+        Func<CancellationToken, Task<Stream>> open = browserFile is null
+            ? _ => throw new IOException("The selected ZIP exceeds the upload limit.")
+            : ct => ProjectImportSession.CopyToMemoryAsync(browserFile, ct);
         StartElapsedTimer();
-        try
-        {
-            await using var stream = args.File.OpenReadStream(50 * 1024 * 1024);
-            var (preview, error) = await Api.PreviewAsync(args.File.Name, stream);
-            if (preview is null) { _failure = error; _inputGeneration++; _phase = Phase.Choose; _showUpload = true; StopElapsedTimer(); _focusId = "pi-choose-file"; return; }
-            _preview = preview;
-            _phase = Phase.Classifying;
-            _classified = 0;
-            _classifyTotal = preview.Documents.Count;
-            StateHasChanged();
-            _duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, Activation.Imports, Activation.Current?.ImportId, _setup);
-            _importAgain = false;
-            _discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
-            {
-                _classified = p.Done;
-                _classifyTotal = p.Total;
-                StateHasChanged();
-            }));
-            await LoadEnvironmentAsync();
-            _phase = Phase.Preview;
-            StopElapsedTimer();
-            _focusId = "pi-archive-heading";
-        }
-        catch (IOException) { Fail(new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024)); }
-        catch (HttpRequestException ex) { Fail(new("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was imported.")); }
-        catch (TaskCanceledException) { Fail(new("IMPORT_TIMEOUT", "upload", "The archive check did not finish before the request timed out. Nothing was imported; retry.")); }
-        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { Fail(new("IMPORT_PREVIEW_FAILED", "validation", BackendRequestClassifier.FromException("Project import", ex).UserMessage)); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { Fail(new("IMPORT_PREVIEW_FAILED", "validation", "The archive could not be previewed. Nothing was imported; choose it again and retry.")); }
+        // The page starts the work and does not wait for it: the session owns it (the page may be left at any time).
+        _ = Session.StartPreviewAsync(file.Name, file.Size, open, _setup);
     }
 
-    private async Task ImportAsync()
+    /// <summary>Starts the import of the staged archive. A repeated click while it runs returns the running import; no second one starts.</summary>
+    private void ImportAsync()
     {
-        if (_preview is not { } preview || _discovery is not { } discovery) return;
-        _failure = null;
-        _progress = new ProjectImportCommitEvent { Stage = "Starting the project import", Detail = "Sending the staged archive to the existing import service." };
         StartElapsedTimer();
-        _phase = Phase.Importing;
-        ProjectImportCommitResult? commit;
-        SourceUploadFailure? error;
-        var progress = new Progress<ProjectImportCommitEvent>(update =>
-        {
-            if (_phase == Phase.Importing)
-            {
-                _progress = update;
-                _ = InvokeAsync(StateHasChanged);
-            }
-        });
-        try { (commit, error) = await Api.CommitWithProgressAsync(preview.StagingId, progress); }
-        catch (HttpRequestException ex) { (commit, error) = (null, new SourceUploadFailure("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was activated; retry.")); }
-        catch (TaskCanceledException) { (commit, error) = (null, new SourceUploadFailure("IMPORT_TIMEOUT", "upload", "The import did not finish before the request timed out. Nothing was activated in this workspace; retry — the same archive reuses a snapshot that was already created.")); }
-        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { (commit, error) = (null, new SourceUploadFailure("IMPORT_RESPONSE_INVALID", "commit", BackendRequestClassifier.FromException("Project import", ex).UserMessage)); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { (commit, error) = (null, new SourceUploadFailure("IMPORT_FAILED", "commit", "The import stopped before a result was returned. Retry the staged archive; a completed source snapshot will be reused.")); }
-        if (commit is null)
-        {
-            // Nothing is activated without a commit result: the workspace never holds half an import.
-            StopElapsedTimer();
-            _failure = error;
-            _phase = error?.Code == "IMPORT_STAGING_EXPIRED" ? Phase.Choose : Phase.Preview;
-            if (_phase == Phase.Choose) { _preview = null; _discovery = null; _inputGeneration++; _showUpload = true; }
-            return;
-        }
-        _commit = commit;
-        try
-        {
-            _progress = new ProjectImportCommitEvent { Stage = "Activating project documents", Detail = "Applying the classified candidates to the Shared Artifact Repository." };
-            StateHasChanged();
-            Activation.Activate(preview, discovery, commit);
-            _progress = new ProjectImportCommitEvent { Stage = "Saving the workspace", Detail = "Saving the import selection and provenance." };
-            StateHasChanged();
-            _saveWarning = !await AutoSave.SaveNowAsync();
-            if (commit.Source.SnapshotId is not null) { await Applicability.RefreshAsync(); await LoadSetupAsync(); }
-            _failure = null;
-            await LoadProjectEvidenceAsync();
-            _phase = Phase.Result;
-            _focusId = "pi-outcome-heading";
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            _failure = new("PROJECT_IMPORT_ACTIVATION_FAILED", "workspace", "The workspace update did not finish. Source Analysis may already have saved its snapshot; retry this staged archive to continue.", CorrelationId: null);
-            _phase = Phase.Preview;
-        }
-        finally { StopElapsedTimer(); }
+        _ = Session.StartImportAsync();
     }
+
+    /// <summary>Explicit cancellation of the running upload or import (leaving the page never cancels).</summary>
+    private void CancelRunning() => Session.Cancel();
+
+    /// <summary>The session moved on (here or while the page was not shown): follow-up reads and focus when a stage is reached.</summary>
+    private void OnSessionChanged() => _ = InvokeAsync(async () =>
+    {
+        if (_disposed) return;
+        var previous = _renderedPhase;
+        _renderedPhase = _phase;
+        if (previous != _phase)
+        {
+            if (!Session.IsBusy) StopElapsedTimer();
+            if (_phase == Phase.Preview) { await LoadEnvironmentAsync(); _focusId = "pi-archive-heading"; }
+            else if (_phase == Phase.Result) { await LoadSetupAsync(); await LoadProjectEvidenceAsync(); _focusId = "pi-outcome-heading"; }
+            else if (_phase == Phase.Choose && _failure is not null) _focusId = "pi-choose-file";
+        }
+        if (!_disposed) StateHasChanged();
+    });
 
     private async Task RetrySourceAsync()
     {
@@ -836,20 +817,15 @@
         if (staging is { } stagingId) _ = DiscardQuietlyAsync(stagingId);
     }
 
-    private async Task DiscardQuietlyAsync(Guid stagingId)
-    {
-        try { await Api.DiscardAsync(stagingId); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { /* the staging expires on its own */ }
-    }
+    private Task DiscardQuietlyAsync(Guid stagingId) => Session.DiscardQuietlyAsync(stagingId);
 
     /// <summary>Clears every archive-specific value (preview, roles, source, fingerprint, name, errors, progress) and re-creates the file input.</summary>
     private void Reset()
     {
         StopElapsedTimer();
-        _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false; _retrying = false; _duplicate = null; _importAgain = false;
-        _progress = null; _fileName = null; _classified = 0; _classifyTotal = 0;
-        _inputGeneration++;
-        _phase = Phase.Choose;
+        _retrying = false;
+        Session.Reset();
+        _renderedPhase = _phase;
         _focusId = "pi-choose-file";
     }
 
@@ -887,10 +863,11 @@
         _ = AutoSave.SaveNowAsync();
     }
 
-    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _inputGeneration++; _phase = Phase.Choose; _showUpload = true; _focusId = "pi-choose-file"; }
+    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _inputGeneration++; _phase = Phase.Choose; _showUpload = true; _renderedPhase = _phase; _focusId = "pi-choose-file"; Session.NotifyChanged(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_phase == Phase.Result) Session.ResultSeen = true;
         if (_focusId is not { } id) return;
         _focusId = null;
         try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
@@ -898,6 +875,9 @@
 
     public void Dispose()
     {
+        // Unsubscribe only: the import (if any) keeps running in the session and is shown again on return.
+        _disposed = true;
+        Session.Changed -= OnSessionChanged;
         _elapsedTimer?.Dispose();
         if (ServiceProvider.GetService<ICurrentWorkspaceProjection>() is { } projection) projection.Changed -= OnWorkspaceChanged;
         if (ServiceProvider.GetService<IArtifactExplorerContext>() is { } explorer) explorer.Changed -= OnExplorerChanged;
@@ -907,8 +887,7 @@
 
     private void StartElapsedTimer()
     {
-        _importStartedAt = DateTimeOffset.UtcNow;
-        _elapsed = TimeSpan.Zero;
+        _elapsed = _importStartedAt is { } started ? DateTimeOffset.UtcNow - started : TimeSpan.Zero;
         _elapsedTimer?.Dispose();
         _elapsedTimer = new System.Threading.Timer(_ => _ = InvokeAsync(() =>
         {
@@ -924,7 +903,6 @@
     {
         _elapsedTimer?.Dispose();
         _elapsedTimer = null;
-        _importStartedAt = null;
     }
 
     private static string ElapsedText(TimeSpan elapsed) => elapsed.TotalHours >= 1

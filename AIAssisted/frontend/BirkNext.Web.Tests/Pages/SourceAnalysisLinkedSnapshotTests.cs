@@ -43,6 +43,8 @@ public sealed class SourceAnalysisLinkedSnapshotTests : BunitContext
         Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectImportSession>();
         Services.AddScoped<SourceAnalysisSnapshotState>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
         JSInterop.Mode = JSRuntimeMode.Loose;

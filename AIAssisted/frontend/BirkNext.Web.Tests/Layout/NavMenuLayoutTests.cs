@@ -262,26 +262,25 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     [Fact]
-    public void Sections_FollowTheEvidenceFlow_InputsFirst_ThenTheirConsumers()
+    public void Sections_FollowTheDeliveryConversation_WorkspaceFirst_HelpLast()
     {
         var cut = Render<NavMenu>();
 
         cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")!["nav-section-".Length..]).Should().Equal(
-            "getting-started", "project-inputs", "document-review", "traceability", "source-review", "analysis", "quality-testing", "extensions", "delivery-reporting", "admin");
-        cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().StartWith(["Getting Started", "Project Inputs", "Document Review"]);
+            "getting-started", "delivery-reporting", "document-review", "traceability", "source-review", "quality-testing", "extensions", "admin");
+        cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().Equal(
+            "Workspace", "Delivery Management", "Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Quality & Testing", "Project Extensions", "Help & Settings");
     }
 
     [Theory]
-    [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
-    [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
+    [InlineData("getting-started", new[] { "dashboard", "getting-started", "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
+    [InlineData("delivery-reporting", new[] { NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting" })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
-    [InlineData("traceability", new[] { "artifact-traceability" })]
+    [InlineData("traceability", new[] { "artifact-traceability", "impact-analysis" })]
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
-    [InlineData("analysis", new[] { "impact-analysis" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
-    [InlineData("delivery-reporting", new[] { "delivery-reporting" })]
-    [InlineData("admin", new[] { "admin/system-settings" })]
+    [InlineData("admin", new[] { "user-guide", "admin/system-settings" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)
     {
         var cut = Render<NavMenu>();
@@ -297,7 +296,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
 
         cut.FindAll("#nav-section-traceability a.nav-link").Select(a => a.GetAttribute("href")).Should()
-            .Equal("artifact-traceability", "implementation-traceability");
+            .Equal("artifact-traceability", "implementation-traceability", "impact-analysis");
     }
 
     [Fact]
@@ -317,10 +316,10 @@ public sealed class NavMenuLayoutTests : BunitContext
     {
         var cut = Render<NavMenu>();
 
-        var link = cut.Find("#nav-section-project-inputs a[href='admin/system-settings?section=target-environments']");
+        var link = cut.Find("#nav-section-getting-started a[href='admin/system-settings?section=target-environments']");
         link.QuerySelector(".nav-label")!.TextContent.Should().Be("Target Environments");
         link.GetAttribute("title").Should().Contain("opens System Settings");
-        cut.FindAll("#nav-section-admin a[href='admin/system-settings']").Should().ContainSingle("System Settings stays under Admin");
+        cut.FindAll("#nav-section-admin a[href='admin/system-settings']").Should().ContainSingle("System Settings stays under Help & Settings");
         DocumentationCatalog.NormalizeRoute(NavigationCatalog.TargetEnvironmentsRoute).Should().Be("/admin/system-settings");
     }
 
@@ -329,8 +328,9 @@ public sealed class NavMenuLayoutTests : BunitContext
     {
         var cut = Render<NavMenu>();
 
-        cut.Find("#nav-section-project-inputs").GetAttribute("role").Should().Be("group");
-        cut.Find("#nav-section-project-inputs").GetAttribute("aria-label").Should().Be("Project Inputs navigation group");
+        cut.Find("#nav-section-getting-started").GetAttribute("role").Should().Be("group");
+        cut.Find("#nav-section-getting-started").GetAttribute("aria-label").Should().Be("Workspace navigation group");
+        cut.Find("#nav-section-delivery-reporting").GetAttribute("aria-label").Should().Be("Delivery Management navigation group");
     }
 
     [Fact]
@@ -369,7 +369,7 @@ public sealed class NavMenuLayoutTests : BunitContext
 
         CurrentRows(cut).Should().Equal([NavigationCatalog.TargetEnvironmentsRoute], "the shortcut, not System Settings as well");
         cut.Find($"a[href='{NavigationCatalog.TargetEnvironmentsRoute}']").GetAttribute("aria-current").Should().Be("page");
-        cut.Find("#nav-section-project-inputs").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("#nav-section-getting-started").HasAttribute("hidden").Should().BeFalse();
 
         navigation.NavigateTo("admin/system-settings?section=performance-test-engines");
 
@@ -437,7 +437,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     {
         var all = NavigationCatalog.Sections.SelectMany(s => s.Items).Select(i => i.Route).ToList();
         all.Where(r => r.Contains("tab=", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty("Connected Systems, Setup Library and Integration Catalog are tabs of Target Environments");
-        RoutesOf("project-inputs").Should().Contain(NavigationCatalog.TargetEnvironmentsRoute);
+        RoutesOf("getting-started").Should().Contain(NavigationCatalog.TargetEnvironmentsRoute);
         RoutesOf("extensions").Should().Equal("security-classification-review", "extensions/skolenaervaer");
         var ids = NavigationCatalog.Sections.Select(s => s.Id).ToList();
         ids.IndexOf("extensions").Should().BeGreaterThan(ids.IndexOf("quality-testing")).And.BeLessThan(ids.IndexOf("admin"));

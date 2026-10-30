@@ -6,6 +6,9 @@
 @inject IDeliveryReportingApiService Api
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject BirkNext.Web.Services.Operations.BackgroundOperationService Operations
+@inject DeliveryReportingSession Session
+@implements IDisposable
 
 @* Delivery Reporting: a standalone weekly delivery report for Scrum Masters and Project Leaders. Everything on this page comes from
    Delivery Reporting's own projects, snapshots and frozen reports — never from the current workspace, Target Environment or Source Analysis. *@
@@ -29,6 +32,10 @@
             <button type="button" class="btn-secondary" data-testid="dlr-new-project" aria-expanded="@(_newProjectOpen ? "true" : "false")" aria-controls="dlr-new-project-form"
                     @onclick="ToggleNewProject">+ New reporting project</button>
             <button type="button" class="btn-primary" data-testid="dlr-import-open" disabled="@(_projectId is null)" @onclick="OpenImport">Import snapshot</button>
+            @if (PendingPreview is { } pending)
+            {
+                <button type="button" class="btn-secondary" data-testid="dlr-import-pending" @onclick="ReviewPending">Review prepared import (@(pending.Preview.AzureDevOps?.ShortCommit ?? pending.Preview.FileName))</button>
+            }
         </div>
     </header>
 
@@ -179,6 +186,10 @@
     private RenderFragment GeneratePanel() => __builder =>
     {
         <section class="dlr-card dlr-generate" data-testid="dlr-generate" aria-labelledby="dlr-generate-title">
+            @if (RunningGeneration is { } running)
+            {
+                <p class="dlr-muted" role="status" data-testid="dlr-generate-running">Generating a report (@running.Context.Baseline → @running.Context.Revision) — it continues if you leave this page; see Activity.</p>
+            }
             <h2 class="dlr-h2" id="dlr-generate-title">Generate weekly report</h2>
             @if (_snapshots.Count < 2)
             {
@@ -199,7 +210,7 @@
                             @foreach (var s in _snapshots.Where(s => s.Id != _currentId)) { <option value="@s.Id">@SnapshotOption(s)</option> }
                         </select>
                     </label>
-                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || _baselineId is null || _currentId is null)" @onclick="Generate">Generate weekly report</button>
+                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null)" @onclick="Generate">Generate weekly report</button>
                 </div>
                 @if (_suggestion is not null)
                 {
@@ -372,7 +383,7 @@
                 </fieldset>
                 @if (_fromAzureDevOps)
                 {
-                    <BirkNext.Web.Components.DeliveryAzureDevOpsImport ProjectId="_projectId" Disabled="_busy" OnPreview="OnAzureDevOpsPreview" />
+                    <BirkNext.Web.Components.DeliveryAzureDevOpsImport ProjectId="_projectId" ProjectName="@ProjectName" Disabled="_busy" OnPreview="OnAzureDevOpsPreview" />
                 }
                 <div class="dlr-form-grid">
                     @if (!_fromAzureDevOps)
@@ -515,6 +526,23 @@
     private bool _focusConfirm;
 
     private string? ProjectName => _projects.FirstOrDefault(p => p.Id == _projectId)?.Name;
+    private bool _disposed;
+
+    protected override void OnInitialized() => Operations.Changed += OnOperationsChanged;
+
+    // Generation/export/import operations of this project may finish while the page is open or after it was left; the page only observes.
+    private void OnOperationsChanged() => _ = InvokeAsync(() => { if (!_disposed) StateHasChanged(); });
+
+    public void Dispose()
+    {
+        // Unsubscribe only: running report generation, exports and Azure DevOps previews continue (Activity Center).
+        _disposed = true;
+        Operations.Changed -= OnOperationsChanged;
+    }
+
+    /// <summary>A report generation of the shown project that is still running (started here earlier, maybe before leaving the page).</summary>
+    private BirkNext.Web.Services.Operations.OperationSnapshot? RunningGeneration =>
+        _projectId is { } id ? Operations.Active.FirstOrDefault(o => o.Kind == BirkNext.Web.Services.Operations.OperationKind.DeliveryReportGeneration && o.Context.ProjectKey == id.ToString()) : null;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -626,6 +654,19 @@
 
     // ── Import ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>An Azure DevOps preview that finished while the page was not shown (or the dialog was closed by leaving): offered again.</summary>
+    private (DeliveryImportPreview Preview, string? Note)? PendingPreview => _projectId is { } id && !_importOpen ? Session.Pending(id) : null;
+
+    private void ReviewPending()
+    {
+        if (PendingPreview is not { } pending) return;
+        OpenImport();
+        _fromAzureDevOps = true;
+        _preview = pending.Preview;
+        _adoNote = pending.Note;
+        if (pending.Preview.SuggestedEffectiveAt is { } at) _effectiveInput = P.LocalInput(at);
+    }
+
     private void OpenImport()
     {
         _importOpen = true;
@@ -641,6 +682,7 @@
 
     private async Task CloseImport()
     {
+        if (_projectId is { } pid) Session.Clear(pid);
         if (_preview is { } preview) await Api.DiscardAsync(preview.StagingId);
         _preview = null;
         _importOpen = false;
@@ -703,6 +745,7 @@
             });
             if (result.Snapshot is { } snapshot)
             {
+                Session.Clear(id, preview.StagingId);
                 _importOpen = false;
                 _preview = null;
                 _notice = $"Snapshot “{snapshot.Label}” imported: {snapshot.FeatureCount} features, {snapshot.CompletedTaskCount}/{snapshot.TaskCount} tasks completed.";
@@ -725,21 +768,48 @@
 
     // ── Reports ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Generates the report as a background operation with its project, baseline and current snapshot captured at start. Leaving the page does
+    /// not stop it and its completion never navigates elsewhere: only a page still showing that project opens the new report; otherwise the
+    /// Activity Center offers it. The same baseline/current pair is not generated twice at once.
+    /// </summary>
     private async Task Generate()
     {
         if (_projectId is not { } id || _baselineId is not { } baseline || _currentId is not { } current) return;
         _busy = true;
         _error = null;
+        var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline)?.Label;
+        var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current)?.Label;
+        WeeklyDeliveryReport? generated = null;
         try
         {
-            var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current));
-            if (report is null) { _error = error; return; }
-            _report = report;
+            var run = Operations.Start(new(BirkNext.Web.Services.Operations.OperationKind.DeliveryReportGeneration, "Generating weekly report",
+                new(ProjectName ?? "Delivery project", id.ToString()) { Baseline = baselineLabel, Revision = currentLabel }, $"{P.Route}?project={id}&tab=history")
+            {
+                IdempotencyKey = $"delivery-report:{id}:{baseline}:{current}",
+                // The backend generates and saves in one request; it is not cancellable once sent.
+                Cancellable = false,
+            }, async (progress, ct) =>
+            {
+                progress.Stage("Comparing snapshots and generating the report", $"{baselineLabel} → {currentLabel}");
+                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current));
+                if (report is null) return BirkNext.Web.Services.Operations.OperationOutcome.Failure(error ?? "The report could not be generated.");
+                generated = report;
+                return BirkNext.Web.Services.Operations.OperationOutcome.Success($"{P.Route}?project={id}&tab=overview&report={report.ReportId}", $"Open report {report.WeekLabel}");
+            });
+            var done = await run.Completion;
+            if (_disposed || _projectId != id) return;
+            if (done.Status != BirkNext.Web.Services.Operations.OperationStatus.Completed) { _error = done.Error; return; }
             _reports = await Api.ReportsAsync(id);
-            _notice = $"Weekly report {report.WeekLabel} generated and saved to report history.";
-            Nav.NavigateTo($"{P.Route}?project={id}&tab=overview&report={report.ReportId}");
+            if (generated is { } report)
+            {
+                _report = report;
+                _notice = $"Weekly report {report.WeekLabel} generated and saved to report history.";
+                Nav.NavigateTo($"{P.Route}?project={id}&tab=overview&report={report.ReportId}");
+            }
+            else if (run.Duplicate) _notice = "This report was already being generated; it is now in report history.";
         }
-        finally { _busy = false; }
+        finally { if (!_disposed) _busy = false; }
     }
 
     private void OpenReport(Guid reportId) => Nav.NavigateTo($"{P.Route}?project={_projectId}&tab=overview&report={reportId}");
@@ -750,13 +820,37 @@
         new("html", "HTML (.html)", () => ExportAsync(reportId, DeliveryExportFormat.Html)),
     ];
 
+    /// <summary>
+    /// Exports as an operation: the file is kept by the Activity Center (download it again from there). The browser download starts only while
+    /// this page is shown; whether the browser saved the file cannot be observed, so the notice says the download was started.
+    /// </summary>
     private async Task ExportAsync(Guid reportId, DeliveryExportFormat format)
     {
         if (_projectId is not { } id) return;
-        var (export, error) = await Api.ExportAsync(id, reportId, format, _exportAppendix, _exportUnchanged);
-        if (export is null) { _error = error; return; }
-        await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, export.ContentType);
-        _notice = $"Exported {export.FileName}.";
+        var (appendix, unchanged) = (_exportAppendix, _exportUnchanged);
+        DeliveryReportExport? file = null;
+        var run = Operations.Start(new(BirkNext.Web.Services.Operations.OperationKind.DeliveryReportExport, $"Exporting report ({format})",
+            new(ProjectName ?? "Delivery project", id.ToString()) { Revision = _report?.WeekLabel }, $"{P.Route}?project={id}&tab=overview&report={reportId}")
+        {
+            IdempotencyKey = $"delivery-export:{id}:{reportId}:{format}:{appendix}:{unchanged}", Cancellable = false,
+        }, async (progress, ct) =>
+        {
+            progress.Stage("Rendering the export from the saved report");
+            var (export, error) = await Api.ExportAsync(id, reportId, format, appendix, unchanged);
+            if (export is null) return BirkNext.Web.Services.Operations.OperationOutcome.Failure(error ?? "The export could not be created.");
+            file = export;
+            return BirkNext.Web.Services.Operations.OperationOutcome.Success(file: new(export.FileName, export.ContentType, export.Content));
+        });
+        var done = await run.Completion;
+        if (_disposed) return;
+        if (done.Status != BirkNext.Web.Services.Operations.OperationStatus.Completed || (file ?? (done.File is { } f ? new DeliveryReportExport(f.FileName, f.ContentType, f.Content) : null)) is not { } ready)
+        { _error = done.Error ?? "The export could not be created."; return; }
+        try
+        {
+            await JS.InvokeVoidAsync("downloadTextFile", ready.FileName, ready.Content, ready.ContentType);
+            _notice = $"Download of {ready.FileName} started. It is also kept under Activity.";
+        }
+        catch (JSException) { _error = $"{ready.FileName} was created, but the browser download could not be started. Download it from Activity."; }
     }
 
     private void AskDeleteReport(DeliveryReportSummaryRow r)

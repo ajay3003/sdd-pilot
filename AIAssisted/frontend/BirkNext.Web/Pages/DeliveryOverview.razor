@@ -1,0 +1,158 @@
+@page "/delivery-overview"
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.DeliveryReportingPresentation
+@inject IDeliveryReportingApiService Api
+@inject NavigationManager Nav
+
+@* Delivery Overview: the virtual SDD backlog of a Delivery Reporting project (read-only). It shows what the newest frozen weekly report (or
+   newest snapshot) states — never current BirkNext workspace state and never a status the evidence does not state. *@
+<PageTitle>Delivery Overview</PageTitle>
+<div class="do-page" data-testid="delivery-overview">
+    <header class="do-head">
+        <h1>Delivery Overview</h1>
+        <p class="do-lead">Virtual SDD backlog: every feature with its user stories, acceptance criteria and tasks, and its delivery status from the imported snapshots.</p>
+    </header>
+
+    @if (!_loaded) { <p role="status">Loading delivery projects…</p> }
+    else if (_error is not null) { <p class="do-error" role="alert">@_error</p> }
+    else if (_projects.Count == 0)
+    {
+        <section class="do-card" data-testid="do-no-project">
+            <h2>No delivery project yet</h2>
+            <p>Create a delivery project and import a snapshot (ZIP or Azure DevOps) in <a href="delivery-reporting">Delivery Reports</a>.</p>
+        </section>
+    }
+    else
+    {
+        <div class="do-toolbar">
+            <label class="do-field"><span>Delivery project</span>
+                <select data-testid="do-project" value="@_projectId" @onchange="OnProjectChanged">
+                    @foreach (var p in _projects) { <option value="@p.Id">@p.Name</option> }
+                </select>
+            </label>
+            <label class="do-field"><span>Status</span>
+                <select data-testid="do-filter" value="@_filter" @onchange="e => _filter = e.Value?.ToString() ?? AllFilter">
+                    <option value="@AllFilter">All statuses</option>
+                    @foreach (var s in Enum.GetValues<BacklogStatus>()) { <option value="@s">@DeliveryBacklog.Label(s)</option> }
+                </select>
+            </label>
+        </div>
+
+        @if (_loadingProject) { <p role="status">Loading the backlog…</p> }
+        else if (_view is null)
+        {
+            <section class="do-card" data-testid="do-no-snapshot">
+                <h2>No snapshot imported</h2>
+                <p>Import a repository snapshot for this project in <a href="@($"delivery-reporting?project={_projectId}&tab=snapshots")">Delivery Reports</a>.</p>
+            </section>
+        }
+        else
+        {
+            var view = _view;
+            <p class="do-source" data-testid="do-source">
+                @(view.Source.Kind == "report" ? $"From weekly report {view.Source.WeekLabel}" : "From the newest snapshot (no weekly report yet)") ·
+                current snapshot “@view.Source.SnapshotLabel” of @P.Day(view.Source.EffectiveAt) · <span data-testid="do-provenance">@DeliveryBacklog.Provenance(view.Source)</span>
+                @if (view.Source.BaselineLabel is { } baseline) { <span> · compared with baseline “@baseline”</span> }
+            </p>
+            <ul class="do-tiles" aria-label="Features by delivery status">
+                @foreach (var status in DeliveryBacklog.Columns)
+                {
+                    <li class="do-tile do-tile-@status.ToString().ToLowerInvariant()" data-testid="do-tile" data-status="@status">
+                        <span class="do-tile-count">@(status == BacklogStatus.Verified ? "–" : view.Count(status).ToString())</span>
+                        <span class="do-tile-label">@DeliveryBacklog.Label(status)</span>
+                        @if (status == BacklogStatus.Verified) { <span class="do-tile-note" data-testid="do-verified-note">@DeliveryBacklog.VerifiedNotAvailable</span> }
+                    </li>
+                }
+                @if (view.Count(BacklogStatus.NeedsClarification) is > 0 and var unclear)
+                {
+                    <li class="do-tile" data-testid="do-tile" data-status="NeedsClarification"><span class="do-tile-count">@unclear</span><span class="do-tile-label">Needs clarification</span></li>
+                }
+            </ul>
+
+            var items = Filtered(view);
+            <div class="do-table-wrap">
+                <table class="do-table" data-testid="do-backlog">
+                    <caption class="visually-hidden">Backlog features</caption>
+                    <thead><tr><th scope="col">Feature</th><th scope="col">Module</th><th scope="col">Status</th><th scope="col">User stories</th><th scope="col">Criteria</th><th scope="col">Tasks</th><th scope="col">This period</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in items)
+                        {
+                            <tr data-testid="do-item" data-status="@item.Status">
+                                <th scope="row">@item.Title</th>
+                                <td>@item.Module</td>
+                                <td><span class="do-badge do-badge-@item.Status.ToString().ToLowerInvariant()">@DeliveryBacklog.Label(item.Status)</span><br /><span class="do-muted">@item.StatusDetail</span></td>
+                                <td>@(view.Source.Kind == "report" ? item.Stories.ToString() : "–")</td>
+                                <td>@(view.Source.Kind == "report" ? item.Criteria.ToString() : "–")</td>
+                                <td>@item.TasksCompleted / @item.TasksTotal@(item.Phases > 0 ? $" · {item.Phases} phase{(item.Phases == 1 ? "" : "s")}" : "")</td>
+                                <td>@(item.Movement is { } m ? DeliveryReportingText.Movement(m) : "–")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (items.Count == 0) { <p class="do-muted" data-testid="do-empty-filter">No feature has this status.</p> }
+            @if (view.RemovedFeatures.Count > 0)
+            {
+                <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
+            }
+            <p class="do-links">
+                @if (view.Source.ReportId is { } reportId)
+                {
+                    <a href="@($"delivery-reporting?project={_projectId}&tab=stories&report={reportId}")" data-testid="do-open-report">Open the weekly report (stories, criteria, tasks and changes)</a>
+                }
+                else { <a href="@($"delivery-reporting?project={_projectId}")">Generate a weekly report to see user stories, acceptance criteria and baseline changes</a> }
+            </p>
+        }
+    }
+</div>
+
+@code {
+    private const string AllFilter = "all";
+    [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
+
+    private bool _loaded, _loadingProject;
+    private string? _error;
+    private List<DeliveryProject> _projects = [];
+    private Guid? _projectId;
+    private DeliveryBacklogView? _view;
+    private string _filter = AllFilter;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_loaded)
+        {
+            var (projects, error) = await Api.ProjectsAsync();
+            _projects = projects;
+            _error = error;
+            _loaded = true;
+        }
+        var requested = Guid.TryParse(ProjectQuery, out var p) && _projects.Any(x => x.Id == p) ? p : _projects.FirstOrDefault()?.Id;
+        if (requested != _projectId) { _projectId = requested; await LoadAsync(); }
+    }
+
+    /// <summary>The backlog of the chosen delivery project only: its newest report, else its newest snapshot. Never another project's data.</summary>
+    private async Task LoadAsync()
+    {
+        _view = null;
+        if (_projectId is not { } id) return;
+        _loadingProject = true;
+        try
+        {
+            var reports = await Api.ReportsAsync(id);
+            if (reports.OrderByDescending(r => r.GeneratedAt).FirstOrDefault() is { } newest && await Api.ReportAsync(id, newest.Id) is { } report && report.ProjectId == id)
+                _view = DeliveryBacklog.FromReport(report);
+            else if ((await Api.SnapshotsAsync(id)).OrderByDescending(s => s.EffectiveAt).FirstOrDefault() is { } snapshot && await Api.SnapshotAsync(id, snapshot.Id) is { } detail)
+                _view = DeliveryBacklog.FromSnapshot(detail);
+        }
+        finally { _loadingProject = false; }
+    }
+
+    private IReadOnlyList<BacklogItem> Filtered(DeliveryBacklogView view) =>
+        Enum.TryParse<BacklogStatus>(_filter, out var status) ? [.. view.Items.Where(i => i.Status == status)] : view.Items;
+
+    private void OnProjectChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id)) Nav.NavigateTo($"delivery-overview?project={id}");
+    }
+}

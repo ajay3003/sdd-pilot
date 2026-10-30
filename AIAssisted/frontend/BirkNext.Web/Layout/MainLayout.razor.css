@@ -35,3 +35,5 @@ main {
         padding-right: 1.5rem !important;
     }
 }
+/* Activity Center row: sticky at the top of the content, right-aligned, never covering navigation. */
+.activity-row { position: sticky; top: 0; z-index: 900; display: flex; justify-content: flex-end; padding: .35rem 1rem; background: var(--clr-page-bg, var(--clr-surface)); }

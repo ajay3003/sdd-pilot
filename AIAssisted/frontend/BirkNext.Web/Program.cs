@@ -283,6 +283,10 @@ builder.Services.AddHttpClient<ITechnologyCoverageApiService, TechnologyCoverage
 builder.Services.AddHttpClient<IGeneratedDocumentationApiService, GeneratedDocumentationApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddScoped<ProjectApplicabilityState>();
+// Application-level owner of long-running work (Activity Center) and the Project Import session it runs: independent of page lifetimes.
+builder.Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+builder.Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectImportSession>();
+builder.Services.AddScoped<DeliveryReportingSession>(_ => new DeliveryReportingSession());
 builder.Services.AddScoped<NavigationSectionState>();
 // Performance Test Review: definitions, readiness, runs, baselines (backend owns safety and execution).
 builder.Services.AddHttpClient<IPerformanceTestApiService, PerformanceTestApiService>(client =>

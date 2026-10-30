@@ -21,23 +21,25 @@ public static class FeatureVisibilityTaxonomy
     public static IReadOnlyList<FeatureCategory> Categories { get; } =
     [
         // What do the documents say, how good are they, how do they align, and how do they compare?
-        new("document-review", "Document Review", "document-review",
+        new("document-review", "Specifications & Planning", "document-review",
         [
             "SpecificationExplorer", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer",
             "QualityReview", "ImplementationReview", "SpecDrift",
         ]),
         new("library", "Library", null, ["QaArtifactLibrary", "SampleProjects"]),
         // How are lifecycle artifacts and tracked delivery changes linked?
-        new("traceability", "Traceability", "traceability", ["ArtifactTraceability", "ImplementationTraceability"]),
+        new("traceability", "Traceability & Impact", "traceability", ["ArtifactTraceability", "ImplementationTraceability"]),
         // What does the source/implementation-oriented evidence say?
-        new("source-review", "Source Review", "source-review", ["SourceAnalysis", "GeneratedDocumentationExplorer", "GeneratedDocumentationHealth", "AzureEnvironmentAnalysis"]),
-        new("analysis", "Analysis", "analysis", ["ImpactAnalysis"]),
+        new("source-review", "Source & Architecture", "source-review", ["SourceAnalysis", "GeneratedDocumentationExplorer", "GeneratedDocumentationHealth", "AzureEnvironmentAnalysis"]),
+        // Impact Analysis sits in the Traceability & Impact sidebar group.
+        new("analysis", "Impact Analysis", "traceability", ["ImpactAnalysis"]),
         // How do we assess or test the solution?
         new("quality-testing", "Quality & Testing", "quality-testing",
         [
             "FrontendQualityReview", "ApiQualityReview", "IntegrationQualityReview", "CriticalE2ERegression", "BlazorWasmPerformanceReview",
         ]),
-        new("ai-review", "AI Review", "ai-review", ["AiChangeReview"]),
+        // AI Change Review sits in the Source & Architecture sidebar group.
+        new("ai-review", "AI Review", "source-review", ["AiChangeReview"]),
     ];
 
     /// <summary>Optional/legacy capabilities shown in their own Advanced Features group (unchanged by the taxonomy).</summary>

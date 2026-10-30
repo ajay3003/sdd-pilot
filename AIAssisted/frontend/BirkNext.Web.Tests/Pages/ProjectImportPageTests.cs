@@ -49,6 +49,8 @@ public sealed class ProjectImportPageTests : BunitContext
         Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddScoped<ProjectImportSession>();
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 

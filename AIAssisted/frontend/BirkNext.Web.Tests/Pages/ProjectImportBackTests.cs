@@ -55,6 +55,8 @@ public sealed class ProjectImportBackTests : BunitContext
         Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddScoped<ProjectImportSession>();
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -242,6 +244,8 @@ public sealed class ProjectImportBackTests : BunitContext
         cut.FindComponents<InputFile>().Single(i => i.Instance.AdditionalAttributes?["data-testid"]?.ToString() == "pi-import-another-file")
             .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "billing-b.zip"));
 
+        // The page starts the upload and returns (the session owns it): wait until the observer saw the validating view.
+        SpinWait.SpinUntil(() => validating is not null, TimeSpan.FromSeconds(10));
         validating.Should().NotBeNull("the validating view is rendered while the preview runs");
         validating.Should().Contain("billing-b.zip");
         validating.Should().NotContain("data-testid=\"pi-progress-detail\"", "the previous archive's document and source counts must not appear in the next import");

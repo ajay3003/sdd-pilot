@@ -11,7 +11,7 @@ namespace BirkNext.Web.Tests.Pages;
 /// <summary>Delivery Reporting page: its own projects, snapshots and frozen reports only; management-first overview; default story filter.</summary>
 public sealed class DeliveryReportingPageTests : BunitContext
 {
-    private static readonly Guid ProjectId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    internal static readonly Guid ProjectId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid ReportId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly DateTimeOffset Monday = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset Friday = new(2026, 10, 30, 15, 0, 0, TimeSpan.Zero);
@@ -22,11 +22,16 @@ public sealed class DeliveryReportingPageTests : BunitContext
     {
         Services.AddSingleton<IDeliveryReportingApiService>(_api);
         Services.AddSingleton<IDeliveryAzureDevOpsApiService>(_ado);
+        Services.AddSingleton(new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddSingleton(new DeliveryReportingSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
-    private sealed class FakeApi : IDeliveryReportingApiService
+    internal sealed class FakeApi : IDeliveryReportingApiService
     {
+        public TaskCompletionSource? GenerateGate { get; set; }
+        public int Generated { get; private set; }
+        public int Exports { get; private set; }
         public List<DeliveryProject> Projects { get; } = [new(ProjectId, "M2LB", null, Monday, Friday, 2, 1)];
         public List<DeliverySnapshotSummary> Snapshots { get; } =
         [
@@ -57,15 +62,22 @@ public sealed class DeliveryReportingPageTests : BunitContext
             Task.FromResult<DeliveryBaselineSuggestion?>(new(Snapshots[^1].Id, "Earliest snapshot in the week of the current snapshot (2026-10-26).", false, [Snapshots[^1].Id]));
         public Task<List<DeliveryReportSummaryRow>> ReportsAsync(Guid projectId, CancellationToken ct = default) =>
             Task.FromResult(new List<DeliveryReportSummaryRow> { new(ReportId, Report.Title, Report.WeekLabel, Monday, Friday, Friday, Report.Coverage, "Monday", "Friday", 1, Report.Attention.Count) });
-        public Task<(WeeklyDeliveryReport? Report, string? Error)> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct = default) =>
-            Task.FromResult<(WeeklyDeliveryReport?, string?)>((Report, null));
+        public async Task<(WeeklyDeliveryReport? Report, string? Error)> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct = default)
+        {
+            Generated++;
+            if (GenerateGate is { } gate) await gate.Task;
+            return (Report, null);
+        }
         public Task<WeeklyDeliveryReport?> ReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default) => Task.FromResult<WeeklyDeliveryReport?>(Report);
-        public Task<(DeliveryReportExport? Export, string? Error)> ExportAsync(Guid projectId, Guid reportId, DeliveryExportFormat format, bool appendix, bool unchanged, CancellationToken ct = default) =>
-            Task.FromResult<(DeliveryReportExport?, string?)>((new("M2LB-Weekly-Delivery-Report-2026-W44.md", "text/markdown", "# report"), null));
+        public Task<(DeliveryReportExport? Export, string? Error)> ExportAsync(Guid projectId, Guid reportId, DeliveryExportFormat format, bool appendix, bool unchanged, CancellationToken ct = default)
+        {
+            Exports++;
+            return Task.FromResult<(DeliveryReportExport?, string?)>((new("M2LB-Weekly-Delivery-Report-2026-W44.md", "text/markdown", "# report"), null));
+        }
         public Task<string?> DeleteReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default) => Task.FromResult<string?>(null);
     }
 
-    private static WeeklyDeliveryReport SampleReport() => new()
+    internal static WeeklyDeliveryReport SampleReport() => new()
     {
         ReportId = ReportId, ProjectId = ProjectId, ProjectName = "M2LB", Title = "M2LB Weekly Delivery Status", WeekLabel = "2026-W44",
         PeriodStart = Monday, PeriodEnd = Friday, GeneratedAt = Friday, Coverage = DeliveryCoverage.Complete,

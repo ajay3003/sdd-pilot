@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Layout;
 
-/// <summary>Source Analysis remains a Project Inputs item; generic source tooling such as Schema Studio lives under Source Review.</summary>
+/// <summary>Import Project is a Workspace input; Source Analysis and generic source tooling such as Schema Studio live under Source & Architecture.</summary>
 public sealed class NavMenuSourceAnalysisTests : BunitContext
 {
     public NavMenuSourceAnalysisTests() => Services.AddSingleton<FeatureVisibilityService>();
@@ -24,11 +24,11 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
 
         cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
         cut.FindAll("a").Count(a => a.TextContent.Trim() == "Source Analysis").Should().Be(1);
-        entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
-        entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Demo Projects", "Target Environments");
-        entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "§Source Review");
+        entries[0].Should().Be("§Workspace", "Source Analysis is no longer a special item above the groups");
+        entries.Should().ContainInConsecutiveOrder("Import Project", "Demo Projects", "Target Environments", "§Delivery Management");
+        entries.Should().ContainInConsecutiveOrder("§Traceability & Impact", "Requirements Traceability", "§Source & Architecture");
         entries.Should().NotContain("Change Traceability", "optional Azure DevOps provenance is off by default");
-        entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+        entries.Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
     }
@@ -41,7 +41,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("a[href='source-analysis']").Should().BeEmpty();
-        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Demo Projects", "Target Environments");
+        Entries(cut).Should().ContainInConsecutiveOrder("Import Project", "Demo Projects", "Target Environments");
 
         flags.ApplyLocalFlags(new FeatureVisibilityDto { SourceAnalysis = true });
         cut.Render();
@@ -72,8 +72,8 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
-        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "§Document Review");
-        Entries(cut).Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage");
+        Entries(cut).Should().ContainInConsecutiveOrder("Recommended Workflow", "Import Project", "§Delivery Management");
+        Entries(cut).Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage");
     }
 
     [Fact]

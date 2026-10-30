@@ -1,0 +1,23 @@
+.ac { position: relative; display: flex; justify-content: flex-end; }
+.ac-toggle { display: inline-flex; align-items: center; gap: .4rem; max-width: min(28rem, 100%); padding: .2rem .6rem; border: 1px solid var(--clr-border-input); border-radius: 999px; background: var(--clr-surface-white); color: var(--clr-text-body); font-size: .85rem; cursor: pointer; }
+.ac-toggle span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-toggle:focus-visible { outline: 2px solid var(--clr-focus, #1a56db); outline-offset: 2px; }
+.ac-dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--clr-text-muted); flex: none; }
+.ac-busy .ac-dot { background: var(--clr-primary, #1a56db); animation: ac-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .ac-busy .ac-dot { animation: none; } }
+@keyframes ac-pulse { 50% { opacity: .35; } }
+.ac-panel { position: absolute; top: calc(100% + .35rem); right: 0; z-index: 1100; width: min(26rem, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto; background: var(--clr-surface-white); border: 1px solid var(--clr-border-input); border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, .18); padding: .6rem .75rem; color: var(--clr-text-body); }
+.ac-head { display: flex; justify-content: space-between; align-items: baseline; }
+.ac-title { font-size: 1rem; margin: 0 0 .4rem; }
+.ac-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.ac-item { border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 6px; padding: .45rem .55rem; font-size: .88rem; overflow-wrap: anywhere; }
+.ac-item-head { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
+.ac-badge { font-size: .78rem; border: 1px solid currentColor; border-radius: 999px; padding: 0 .45rem; white-space: nowrap; }
+.ac-completed .ac-badge { color: var(--clr-success); }
+.ac-failed .ac-badge, .ac-error { color: var(--clr-danger); }
+.ac-cancelled .ac-badge, .ac-cancelling .ac-badge { color: var(--clr-text-muted); }
+.ac-progress { width: 100%; height: .5rem; margin: .25rem 0 .1rem; }
+.ac-muted { color: var(--clr-text-muted); font-size: .82rem; }
+.ac-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .25rem; }
+.ac-danger { color: var(--clr-danger); }
+.ac-foot { margin: .5rem 0 0; }

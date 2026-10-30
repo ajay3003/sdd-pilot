@@ -35,18 +35,20 @@ public sealed class FeatureVisibilityTaxonomyTests
             if (flags is not null) visibility.ApplyLocalFlags(flags);
             return NavigationCatalog.Sections.Single(s => s.Id == "traceability").Items.Where(i => i.Visible(visibility)).Select(i => i.Label);
         }
-        Visible(null).Should().Equal("Requirements Traceability");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = true }).Should().Equal("Requirements Traceability", "Change Traceability");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = false }).Should().Equal("Requirements Traceability");
+        // Traceability & Impact: Impact Analysis joined the group (its own key still gates it).
+        Visible(null).Should().Equal("Requirements Traceability", "Impact Analysis");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = false, ImpactAnalysis = false }).Should().Equal("Requirements Traceability");
         new FeatureVisibilityDto().ImplementationTraceability.Should().BeFalse("no explicit value means disabled");
-        SidebarLabels("traceability").Should().NotContain(["Task Alignment Review", "Documentation Drift", "Impact Analysis"]);
+        SidebarLabels("traceability").Should().NotContain(["Task Alignment Review", "Documentation Drift"], "document reviews stay in Specifications & Planning").And.Contain("Impact Analysis");
     }
 
     [Fact]
     public void Sidebar_source_review_holds_the_source_snapshot_features_including_generated_documentation_health()
     {
         SidebarLabels("source-review").Should().Equal(
-            "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+            "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis",
+            "AI Change Review");
     }
 
     [Theory]
@@ -100,8 +102,8 @@ public sealed class FeatureVisibilityTaxonomyTests
         var analysis = FeatureVisibilityTaxonomy.Categories.Single(c => c.Id == "analysis");
         analysis.Keys.Should().Equal("ImpactAnalysis");
         FeatureVisibilityTaxonomy.Categories.Single(c => c.Id == "quality-testing").Keys.Should().NotContain("QualityReview");
-        FeatureVisibilityTaxonomy.Categories.Select(c => c.Label).Should().Contain(["Document Review", "Traceability", "Source Review", "Quality & Testing"])
-            .And.NotContain("Review", "the explorers' category is Document Review")
+        FeatureVisibilityTaxonomy.Categories.Select(c => c.Label).Should().Contain(["Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Quality & Testing"])
+            .And.NotContain("Review", "the explorers' category is Specifications & Planning")
             .And.NotContain("Quality", "the quality category is Quality & Testing, as in the sidebar");
     }
 

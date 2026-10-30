@@ -206,3 +206,11 @@
         background: transparent;
     }
 }
+/* ── Workspace view + search ───────────────────────────────────────────────── */
+.nav-tools { display: flex; flex-direction: column; gap: .3rem; padding: .55rem .75rem .25rem; }
+.nav-tool-label { color: #94a3b8; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.nav-view, .nav-search { width: 100%; padding: .3rem .45rem; border: 1px solid #475569; border-radius: 6px; background: #0f172a; color: #e2e8f0; font-size: .84rem; }
+.nav-view:focus-visible, .nav-search:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
+.nav-search::placeholder { color: #94a3b8; }
+.nav-search-count { color: #94a3b8; font-size: .75rem; margin: .4rem .75rem .2rem; }
+.nav-more { color: #94a3b8; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; margin: 1rem .5rem 0; padding: .3rem .5rem 0; border-top: 1px solid #334155; }

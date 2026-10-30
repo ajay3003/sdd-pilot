@@ -94,6 +94,7 @@ public static class DocumentationCatalog
         ["performance-test-review"] = new("Defines and runs controlled performance workloads and comparisons.", "Scenario, workload, thresholds, engine readiness and selected target.", "Latest run is not baseline automatically; comparisons require comparability."),
         ["security-classification-review"] = new("Runs project-specific child security classification checks.", "M2LB extension and its supported project evidence.", "Extension-specific; not a generic security review or runtime verification."),
         ["extensions/skolenaervaer"] = new("Brings the Skolenærvær CDC and integration journeys into one domain-oriented view.", "Shared Active Event readiness and runs, Integration Journey readiness and history, IQR configuration, Target Environment and Source Analysis evidence.", "A navigation and composition shell only; execution, configuration, history, exports and architecture rule evaluation remain in shared services."),
+        ["delivery-overview"] = new("Shows a virtual SDD backlog of a delivery project: features, user stories, acceptance criteria and tasks with their delivery status.", "The newest frozen weekly report (or, without one, the newest imported snapshot) of a Delivery Reporting project, including its Azure DevOps provenance.", "Planned, In progress, Implemented, Verified, Accepted and Blocked stay separate; Verified and Accepted need explicit evidence and are never inferred from checked tasks."),
         ["delivery-reporting"] = new("Reports weekly story/feature movement, attention items and next-week focus between two imported repository snapshots.", "Delivery Reporting's own reporting projects and snapshots (spec.md and tasks.md of each feature folder), imported as ZIPs into the delivery_reporting schema.", "Task checkboxes are progress, not delivery status; stronger statuses need explicit evidence. It never reads current BirkNext project, target or review state."),
         ["dependency-review"] = new("Reviews supported dependency inventory/SBOM evidence.", "Source Analysis inventory and supported ecosystem/source mode.", "Unsupported package ecosystems remain tool limitations."),
         ["pipeline-review"] = new("Interprets CI/CD definitions and pipeline structure.", "CI/CD evidence from the selected Source Analysis snapshot.", "A definition does not prove execution, success or deployment."),
@@ -253,7 +254,8 @@ public static class DocumentationCatalog
             ("test-data","Test Data","/test-data","test-data","Quality & Testing",null,null),
             ("security-classification-review","M01 – Gradert tilgang (Kode 6/7)","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
             ("extensions/skolenaervaer","Skolenærvær Testing","/extensions/skolenaervaer","skolenaervaer","Extensions",null,null),
-            ("delivery-reporting","Delivery Reports","/delivery-reporting","delivery-reporting","Delivery Reporting",null,null),
+            ("delivery-overview","Delivery Overview","/delivery-overview","delivery-overview","Delivery Management",null,null),
+            ("delivery-reporting","Delivery Reports","/delivery-reporting","delivery-reporting","Delivery Management",null,null),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
             ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)
         };

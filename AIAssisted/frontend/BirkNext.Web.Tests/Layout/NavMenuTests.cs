@@ -22,9 +22,9 @@ public class NavMenuTests : BunitContext
 
         var navText = cut.Find("nav").TextContent;
         navText.Should().NotContain("Home");
-        navText.Should().Contain("Project Inputs");
-        navText.Should().Contain("Document Review");
-        navText.Should().Contain("Source Review");
+        navText.Should().Contain("Workspace");
+        navText.Should().Contain("Specifications & Planning");
+        navText.Should().Contain("Source & Architecture");
         navText.Should().Contain("Quality & Testing");
         navText.Should().Contain("Dashboard");
         navText.Should().Contain("Specification Explorer");
@@ -62,8 +62,7 @@ public class NavMenuTests : BunitContext
         var cut = Render<NavMenu>();
 
         var navText = cut.Find("nav").TextContent;
-        navText.Should().Contain("AI Review");
-        navText.Should().Contain("AI Change Review");
+        navText.Should().Contain("AI Change Review", "it sits in Source & Architecture");
         cut.Find("a[href='ai-change-auditor']").Should().NotBeNull();
     }
 

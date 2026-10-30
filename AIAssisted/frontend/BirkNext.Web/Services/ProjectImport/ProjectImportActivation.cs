@@ -67,11 +67,13 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     public SddProjectImportRecord? Current =>
         repository.SddLifecycle.CurrentProjectImportId is { } id ? repository.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == id) : null;
 
-    public SddProjectImportRecord Activate(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery, ProjectImportCommitResult? commit)
+    /// <param name="makeCurrent">False when the user selected another project while the import ran: the import is recorded with its documents
+    /// (history, "Use as current project") and the user's selection stays.</param>
+    public SddProjectImportRecord Activate(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery, ProjectImportCommitResult? commit, bool makeCurrent = true)
     {
         var lifecycle = repository.SddLifecycle;
         // A selected Sample Project is replaced by the imported project (one current project).
-        repository.ProjectName = null;
+        if (makeCurrent) repository.ProjectName = null;
         var record = lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == preview.ImportId);
         if (record is null) lifecycle.ProjectImports.Add(record = new SddProjectImportRecord { ImportId = preview.ImportId });
         record.ProjectName = preview.ProjectName;
@@ -86,7 +88,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         ApplySource(record, commit?.Source, preview.Source.Detected, commit?.StagingId, commit?.StagedUntil);
         RecordGeneratedSet(preview.ImportId, commit?.Source, [.. preview.Documents, .. preview.GeneratedArtifactTexts]);
 
-        lifecycle.CurrentProjectImportId = preview.ImportId;
+        if (makeCurrent) lifecycle.CurrentProjectImportId = preview.ImportId;
         var scope = ProjectImportScope.For(preview.ImportId)!;
         foreach (var role in discovery.Roles)
         {

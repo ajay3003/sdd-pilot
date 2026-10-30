@@ -3,10 +3,13 @@
 @inject FeatureVisibilityService FeatureViz
 @inject NavigationManager Navigation
 @inject IServiceProvider ServiceProvider
+@using Microsoft.JSInterop
 @implements IDisposable
 
 @* Rows and sections come from NavigationCatalog; statuses from the shared applicability evaluation (NavStatusPresentation).
-   Each row is [icon] [label] [status]. Feature Visibility decides which rows exist; collapsing a section is session UI state. *@
+   Each row is [icon] [label] [status]. Feature Visibility decides which rows exist. The Workspace View orders and expands groups (a
+   navigation preference, never a permission); collapsed groups, search and All Modules keep every module one step away. Collapsing and
+   the view are remembered in this browser. None of it touches the selected project or running work. *@
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="dashboard">QA Review Studio</a>
@@ -17,14 +20,54 @@
 </div>
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <div class="nav-tools" @onclick:stopPropagation="true">
+        <label class="nav-tool-label" for="nav-workspace-view">Workspace view</label>
+        <select id="nav-workspace-view" class="nav-view" data-testid="nav-workspace-view" value="@_sections.View" @onchange="OnViewChanged"
+                aria-describedby="nav-workspace-view-help">
+            @foreach (var view in WorkspaceViews.All) { <option value="@view.View">@view.Label</option> }
+        </select>
+        <span id="nav-workspace-view-help" class="visually-hidden">Changes which navigation groups come first. Not a permission; every module stays available.</span>
+        <label class="visually-hidden" for="nav-search">Search modules</label>
+        <input id="nav-search" type="search" class="nav-search" data-testid="nav-search" placeholder="Search modules…" autocomplete="off"
+               value="@_search" @oninput="e => _search = e.Value?.ToString()" @onkeydown="OnSearchKey" aria-controls="nav-search-results" />
+    </div>
     <nav class="flex-column" aria-label="Main">
         @{ var location = NavigationCatalog.RelativeLocation(Navigation); }
-        @foreach (var group in NavigationCatalog.Sections)
+        @if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var results = NavigationCatalog.Search(_search, FeatureViz);
+            <div id="nav-search-results" class="nav-group" role="group" aria-label="Search results" data-testid="nav-search-results">
+                <p class="nav-search-count" role="status" aria-live="polite" data-testid="nav-search-count">@(results.Count == 0 ? "No module found" : $"{results.Count} module{(results.Count == 1 ? "" : "s")}")</p>
+                @foreach (var (group, item) in results)
+                {
+                    var current = item.IsCurrentLocation(location);
+                    <div class="nav-item px-2">
+                        <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)" data-testid="nav-search-result" @onclick="ClearSearch">
+                            <span class="nav-icon @item.Icon" aria-hidden="true"></span>
+                            <span class="nav-label">@item.Label</span>
+                            <span class="nav-applicability nav-search-group" aria-hidden="true">@group.Label</span>
+                            <span class="visually-hidden">, in @group.Label</span>
+                        </a>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+        var focus = WorkspaceViews.Of(_sections.View).FocusSections;
+        var ordered = WorkspaceViews.Ordered(_sections.View);
+        var dividerShown = false;
+        @foreach (var group in ordered)
         {
             var items = group.Items.Where(i => i.Visible(FeatureViz)).ToList();
             if (items.Count == 0) continue;
             var collapsed = _sections.IsCollapsed(group.Id);
             var listId = $"nav-section-{group.Id}";
+            if (focus.Count > 0 && !focus.Contains(group.Id) && !dividerShown)
+            {
+                dividerShown = true;
+                <p class="nav-more" data-testid="nav-more-modules">More modules</p>
+            }
             <button type="button" class="nav-section" data-testid="nav-section-@group.Id"
                     aria-expanded="@((!collapsed).ToString().ToLowerInvariant())" aria-controls="@listId"
                     @onclick="() => _sections.Toggle(group.Id)" @onclick:stopPropagation="true">@group.Label</button>
@@ -48,6 +91,7 @@
                 }
             </div>
         }
+        }
     </nav>
 </div>
 
@@ -57,11 +101,16 @@
     private ICurrentWorkspaceProjection? _workspace;
     private NavigationSectionState _sections = new();
 
+    private string? _search;
+    private bool _restored;
+    private const string PreferencesKey = "birknext.navigation.v1";
+
     protected override async Task OnInitializedAsync()
     {
         // Optional services: hosts (and tests) that do not register them still render the menu, without statuses.
         _sections = ServiceProvider.GetService<NavigationSectionState>() ?? _sections;
         ExpandCurrentSection();
+        _sections.Changed += OnSectionsChanged;
         Navigation.LocationChanged += OnLocationChanged;
 
         _applicability = ServiceProvider.GetService<ProjectApplicabilityState>();
@@ -97,8 +146,60 @@
 
     private void OnApplicabilityChanged() => InvokeAsync(StateHasChanged);
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _restored) return;
+        _restored = true;
+        // Remembered navigation preferences (this browser only; no project or review state).
+        if (ServiceProvider.GetService<IJSRuntime>() is not { } js) return;
+        try
+        {
+            var stored = await js.InvokeAsync<string?>("localStorage.getItem", PreferencesKey);
+            _sections.Restore(stored);
+            ExpandCurrentSection();
+        }
+        // Storage unavailable (private mode, blocked, a host without it): the defaults stay; navigation never depends on it.
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
+
+    private void OnSectionsChanged()
+    {
+        _ = SaveAsync();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!_restored || ServiceProvider.GetService<IJSRuntime>() is not { } js) return;
+        try { await js.InvokeVoidAsync("localStorage.setItem", PreferencesKey, _sections.Serialize()); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
+
+    /// <summary>Switching the Workspace View opens its landing page. It changes nothing else (project, running work, page state).</summary>
+    private void OnViewChanged(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<WorkspaceView>(e.Value?.ToString(), out var view)) return;
+        _sections.SetView(view);
+        ExpandCurrentSection();
+        Navigation.NavigateTo(WorkspaceViews.Of(view).LandingRoute);
+    }
+
+    private void OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { _search = null; return; }
+        if (e.Key == "Enter" && NavigationCatalog.Search(_search, FeatureViz) is { Count: > 0 } results)
+        {
+            var route = results[0].Item.Route;
+            _search = null;
+            Navigation.NavigateTo(route);
+        }
+    }
+
+    private void ClearSearch() => _search = null;
+
     public void Dispose()
     {
+        _sections.Changed -= OnSectionsChanged;
         Navigation.LocationChanged -= OnLocationChanged;
         if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged;
         if (_workspace is not null) _workspace.Changed -= OnWorkspaceChanged;

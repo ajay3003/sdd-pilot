@@ -1,0 +1,147 @@
+@using BirkNext.Web.Services.Operations
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* Activity Center: one small, permanent place to see long-running work (imports, analysis, report generation, exports) while moving freely
+   around the application. It only observes operations; closing it, leaving a page or switching project/Workspace View never stops them.
+   Progress is shown as a percentage only when measured (bytes, documents); otherwise the stage is shown. *@
+@if (Operations is not null)
+{
+<div class="ac" data-testid="activity-center">
+    <button type="button" class="ac-toggle @(_active.Count > 0 ? "ac-busy" : "")" data-testid="activity-toggle" aria-expanded="@(_open ? "true" : "false")"
+            aria-controls="activity-panel" @onclick="Toggle" title="Activity">
+        <span class="ac-dot" aria-hidden="true"></span>
+        <span data-testid="activity-summary">@Summary</span>
+    </button>
+    <span class="visually-hidden" role="status" aria-live="polite" data-testid="activity-live">@_announcement</span>
+    @if (_open)
+    {
+        <section id="activity-panel" class="ac-panel" role="region" aria-label="Activity" data-testid="activity-panel" @onkeydown="OnKey">
+            <header class="ac-head">
+                <h2 class="ac-title">Activity</h2>
+                <button type="button" class="btn-link" data-testid="activity-close" @onclick="Close">Close</button>
+            </header>
+            @if (_all.Count == 0) { <p class="ac-muted" data-testid="activity-empty">No imports, analyses, reports or exports have run in this browser tab.</p> }
+            else
+            {
+                <ul class="ac-list">
+                    @foreach (var op in _all)
+                    {
+                        <li class="ac-item ac-@op.Status.ToString().ToLowerInvariant()" data-testid="activity-item" data-kind="@op.Kind" data-status="@op.Status">
+                            <div class="ac-item-head">
+                                <strong>@op.Title</strong>
+                                <span class="ac-badge" data-testid="activity-status">@StatusText(op.Status)</span>
+                            </div>
+                            <div class="ac-muted" data-testid="activity-project">@op.Context.ProjectLabel@(Extra(op.Context) is { Length: > 0 } extra ? $" · {extra}" : "") · started @op.StartedAt.ToLocalTime().ToString("HH:mm")</div>
+                            @if (op.IsActive)
+                            {
+                                <div data-testid="activity-stage">@op.Stage@(op.Detail is { Length: > 0 } d ? $" — {d}" : "")</div>
+                                @if (op.Percent is { } percent && op.Unit != "stages")
+                                {
+                                    <progress class="ac-progress" max="100" value="@percent" aria-label="@($"{op.Title}: {percent}%")">@percent%</progress>
+                                    <span class="ac-muted" data-testid="activity-percent">@percent% · @Measured(op)</span>
+                                }
+                                else { <progress class="ac-progress" aria-label="@($"{op.Title}: in progress")"></progress> }
+                            }
+                            else if (op.Status == OperationStatus.Failed) { <div class="ac-error" data-testid="activity-error">@op.Error</div> }
+                            else if (op.Status == OperationStatus.Cancelled) { <div class="ac-muted">@op.Detail</div> }
+                            <div class="ac-actions">
+                                @if (op.Status == OperationStatus.Completed && op.File is { } file)
+                                {
+                                    <button type="button" class="btn-link" data-testid="activity-download" @onclick="() => DownloadAsync(file)">Download @file.FileName</button>
+                                }
+                                <a class="btn-link" href="@(op.Status == OperationStatus.Completed ? op.ResultRoute ?? op.DetailsRoute : op.DetailsRoute)" data-testid="activity-open"
+                                   @onclick="Close">@(op.Status == OperationStatus.Completed && op.ResultLabel is { } label ? label : "Open details")</a>
+                                @if (op.IsActive && op.CanCancel)
+                                {
+                                    <button type="button" class="btn-link ac-danger" data-testid="activity-cancel" @onclick="() => Operations!.Cancel(op.Id)">Cancel</button>
+                                }
+                                @if (!op.IsActive)
+                                {
+                                    <button type="button" class="btn-link" data-testid="activity-dismiss" @onclick="() => Operations!.Dismiss(op.Id)">Dismiss</button>
+                                }
+                            </div>
+                        </li>
+                    }
+                </ul>
+                <p class="ac-muted ac-foot">Kept in this browser tab for up to 2 hours. Leaving a page does not stop an operation; reloading the tab ends what runs in it.</p>
+            }
+        </section>
+    }
+</div>
+}
+
+@code {
+    // Optional so hosts (and tests) without the operation manager still render the layout.
+    private BackgroundOperationService? Operations;
+
+    private bool _open;
+    private IReadOnlyList<OperationSnapshot> _all = [];
+    private IReadOnlyList<OperationSnapshot> _active = [];
+    private string _announcement = "";
+    private readonly Dictionary<Guid, OperationStatus> _known = [];
+
+    protected override void OnInitialized()
+    {
+        Operations = Services.GetService<BackgroundOperationService>();
+        if (Operations is null) return;
+        Operations.Changed += OnChanged;
+        Refresh();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() => { Refresh(); StateHasChanged(); });
+
+    private void Refresh()
+    {
+        if (Operations is null) return;
+        _all = Operations.Operations;
+        _active = [.. _all.Where(o => o.IsActive)];
+        // Announce only transitions to a finished state (not every progress tick).
+        foreach (var op in _all)
+        {
+            if (_known.TryGetValue(op.Id, out var before) && before != op.Status && !op.IsActive)
+                _announcement = $"{op.Title}: {StatusText(op.Status)}";
+            _known[op.Id] = op.Status;
+        }
+    }
+
+    /// <summary>"M2LB — Importing project · 65%", "2 operations running", or "Activity" when nothing runs.</summary>
+    private string Summary => _active.Count switch
+    {
+        0 => "Activity",
+        1 when _active[0] is var op => $"{op.Context.ProjectLabel} — {op.Stage}{(op.Percent is { } p && op.Unit != "stages" ? $" · {p}%" : "")}",
+        var n => $"{n} operations running",
+    };
+
+    public static string StatusText(OperationStatus status) => status switch
+    {
+        OperationStatus.Queued => "Queued",
+        OperationStatus.Preparing => "Preparing",
+        OperationStatus.Running => "Running",
+        OperationStatus.Cancelling => "Cancelling…",
+        OperationStatus.Completed => "Completed",
+        OperationStatus.Failed => "Failed",
+        OperationStatus.Cancelled => "Cancelled",
+        _ => status.ToString(),
+    };
+
+    private static string Extra(OperationContext c) => string.Join(" · ", new[] { c.Repository, c.Branch, c.Baseline is { } b ? $"baseline {b}" : null }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static string Measured(OperationSnapshot op) => op.Unit == "bytes"
+        ? $"{op.Done / 1024 / 1024.0:0.0} of {op.Total / 1024 / 1024.0:0.0} MB"
+        : $"{op.Done} of {op.Total} {op.Unit}";
+
+    private void Toggle() => _open = !_open;
+    private void Close() => _open = false;
+    private void OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") _open = false; }
+
+    /// <summary>Starts the browser download of a completed export again. Whether the browser saved it is not observable, so it is not claimed.</summary>
+    private async Task DownloadAsync(OperationFile file)
+    {
+        try { await JS.InvokeVoidAsync("downloadTextFile", file.FileName, file.Content, file.ContentType); }
+        catch (JSException) { _announcement = "The download could not be started in this browser."; }
+    }
+
+    public void Dispose() { if (Operations is not null) Operations.Changed -= OnChanged; }
+}

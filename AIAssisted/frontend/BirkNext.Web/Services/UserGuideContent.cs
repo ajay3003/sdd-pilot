@@ -75,6 +75,7 @@ public static class UserGuideContent
 
         new("documentation-drift", "Documentation Drift", Governance, "drift compare changes overview authored generated lineage consistent difference conflict", "drift-statuses"),
         new("readiness", "Readiness and review decisions", Governance, "readiness blockers ownership next action review decision"),
+        new("delivery-overview", "Delivery overview", Governance, "delivery overview virtual sdd backlog planned in progress implemented verified accepted blocked features user stories acceptance criteria"),
         new("delivery-reporting", "Delivery reporting", Governance, "delivery weekly report scrum master project leader stories features tasks progress baseline current snapshot export"),
 
         new("status-reference", "Status meanings", Reference, "status configured detected bound ready observed verified partial blocked needs review missing unavailable not applicable",

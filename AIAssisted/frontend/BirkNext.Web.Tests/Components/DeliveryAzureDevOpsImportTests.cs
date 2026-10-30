@@ -17,6 +17,8 @@ public sealed class DeliveryAzureDevOpsImportTests : BunitContext
     public DeliveryAzureDevOpsImportTests()
     {
         Services.AddSingleton<IDeliveryAzureDevOpsApiService>(_api);
+        Services.AddSingleton(new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddSingleton(new DeliveryReportingSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -89,7 +91,7 @@ public sealed class DeliveryAzureDevOpsImportTests : BunitContext
     {
         _api.Connections.Add(new(Guid.NewGuid(), "Bufdir", "bufdir", true, "Connected", Requested));
         (DeliveryImportPreview Preview, string? Note)? handed = null;
-        var cut = Render<DeliveryAzureDevOpsImport>(p => p.Add(c => c.OnPreview, (Action<(DeliveryImportPreview, string?)>)(r => handed = r)));
+        var cut = Render<DeliveryAzureDevOpsImport>(p => p.Add(c => c.ProjectId, Guid.NewGuid()).Add(c => c.OnPreview, (Action<(DeliveryImportPreview, string?)>)(r => handed = r)));
 
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=dlr-ado-project] option").Should().HaveCount(3));
         cut.Find("[data-testid=dlr-ado-repository]").HasAttribute("disabled").Should().BeTrue();

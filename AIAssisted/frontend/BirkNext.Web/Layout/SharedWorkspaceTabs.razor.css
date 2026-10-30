@@ -1,0 +1,6 @@
+.sw-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .4rem; margin: 0 0 .75rem; padding-bottom: .35rem; border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); }
+.sw-label { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--clr-text-muted); margin-right: .35rem; }
+.sw-tab { padding: .3rem .65rem; border-radius: 6px 6px 0 0; color: var(--clr-text-body); text-decoration: none; font-size: .9rem; border-bottom: 3px solid transparent; }
+.sw-tab:hover { background: var(--clr-surface); }
+.sw-tab:focus-visible { outline: 2px solid var(--clr-focus, #1a56db); outline-offset: 1px; }
+.sw-current { font-weight: 600; border-bottom-color: var(--clr-primary, #1a56db); }

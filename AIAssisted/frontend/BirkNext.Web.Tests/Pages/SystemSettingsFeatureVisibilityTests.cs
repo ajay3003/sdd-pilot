@@ -63,7 +63,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         var cut = RenderFeatureVisibility();
 
         cut.FindAll(".fv-sections-grid .fv-section-label").Select(l => l.TextContent.Trim()).Should().StartWith(
-            ["Document Review", "Library", "Traceability", "Source Review", "Analysis", "Quality & Testing", "AI Review", "Advanced Features", "Admin"]);
+            ["Specifications & Planning", "Library", "Traceability & Impact", "Source & Architecture", "Impact Analysis", "Quality & Testing", "AI Review", "Advanced Features", "Admin"]);
         SectionLabels(cut, "document-review").Should().Equal(
             "Specification Explorer", "Constitution Explorer", "Data Model Explorer", "Plan Explorer", "Task Explorer",
             "Document Quality Review", "Task Alignment Review", "Documentation Drift");

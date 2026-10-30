@@ -39,6 +39,17 @@
     </ul>
 </section>
 
+<section id="delivery-overview" class="ug-section ug-topic" data-topic="delivery-overview" aria-labelledby="delivery-overview-title">
+    <h2 id="delivery-overview-title" class="ug-section-title" tabindex="-1">Delivery overview</h2>
+    <p class="ug-lead"><a href="/delivery-overview">Delivery Overview</a> is a virtual SDD backlog of a delivery project: every feature with its user stories, acceptance criteria, phases and tasks, and one delivery status, from the newest frozen weekly report (or, without a report, the newest imported snapshot).</p>
+    <ul class="ug-list">
+        <li><strong>Statuses stay separate.</strong> <em>Planned</em> (not started), <em>In progress</em>, <em>Implemented</em> (all tasks checked; ready for test and testing are shown as such), <em>Verified</em>, <em>Accepted</em> (an explicit “Status: Done” in the feature documents) and <em>Blocked</em> (explicit only). <em>Verified</em> needs verification evidence that snapshots do not contain, so it is shown as not available rather than inferred; checked tasks never make a feature Verified or Accepted.</li>
+        <li><strong>Evidence:</strong> each row names the snapshot it comes from — a ZIP, or Azure DevOps project / repository / branch · commit (read-only). The baseline comparison of the report shows what changed this period; open the weekly report for details.</li>
+        <li><strong>Workspace View</strong> (top of the sidebar: Project Leader, Scrum Master, Test Lead, Technical Reviewer, All Modules) only changes which groups come first and are expanded, and where it lands. It is a navigation preference, not a permission: every module stays available (collapsed groups, the sidebar search — also by former names such as “Implementation Review” or “Schema Studio” — and All Modules). Changing it never changes the selected project, and selecting a project never changes it.</li>
+        <li><strong>Activity</strong> (top right of every page) lists imports, report generation, exports and Azure DevOps snapshot downloads. They continue while you move between pages, Workspace Views and projects; each keeps the project, repository, branch and baseline it started with. Cancel is explicit. A completed export can be downloaded again from Activity. Reloading or closing the browser tab ends what runs in that tab.</li>
+    </ul>
+</section>
+
 <section id="delivery-reporting" class="ug-section ug-topic" data-topic="delivery-reporting" aria-labelledby="delivery-reporting-title">
     <h2 id="delivery-reporting-title" class="ug-section-title" tabindex="-1">Delivery reporting</h2>
     <p class="ug-lead"><a href="/delivery-reporting">Delivery Reports</a> answer “what changed in the project this week?” for a Scrum Master or Project Leader: which stories progressed, which are new, completed or need attention, and what to focus on next week.</p>

@@ -143,7 +143,7 @@ public sealed class ProjectInputWorkflowTests
 
         r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review");
         r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain("quality-review");
-        r.ApplicableReviews.Should().NotContain(x => x.Lane == "Source Review", "no source: source reviews do not apply yet");
+        r.ApplicableReviews.Should().NotContain(x => x.Lane == "Source & Architecture", "no source: source reviews do not apply yet");
         r.NextRecommendedAction.Route.Should().NotBe("source-analysis").And.NotBe(NavigationCatalog.TargetEnvironmentsRoute);
     }
 
@@ -166,7 +166,7 @@ public sealed class ProjectInputWorkflowTests
         r.PathOf(WorkflowPathKind.Documents)!.State.Should().Be(WorkflowPathState.Unavailable);
         r.PathOf(WorkflowPathKind.Documents)!.PrimaryLabel.Should().Be("Import project documents");
         r.PathOf(WorkflowPathKind.Runtime)!.State.Should().Be(WorkflowPathState.NeedsSetup);
-        r.ApplicableReviews.Select(x => (x.ReviewId, x.Lane)).Should().Contain([("dependency-review", "Source Review"), ("pipeline-review", "Source Review")]);
+        r.ApplicableReviews.Select(x => (x.ReviewId, x.Lane)).Should().Contain([("dependency-review", "Source & Architecture"), ("pipeline-review", "Source & Architecture")]);
         r.AlternativeActions.Should().BeEmpty();
         VerifyNoDocumentSteps();
     }
@@ -213,7 +213,7 @@ public sealed class ProjectInputWorkflowTests
 
         var r = await ReadinessAsync();
 
-        r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Document Review", "Quality & Testing"]);
+        r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Specifications & Planning", "Quality & Testing"]);
         r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain(["quality-review", "api-quality-review"]);
         r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review", "Document Review appears before runtime reviews in the sidebar");
     }
@@ -359,8 +359,8 @@ public sealed class ProjectInputWorkflowTests
         r.ApplicableReviews.Select(x => x.ReviewId).Should().NotContain(
             ["generated-documentation-health", "documentation-drift", "change-traceability", "task-alignment"],
             "no generated docs in the session and no Azure DevOps: these optional reviews never appear by category");
-        r.ApplicableReviews.Should().Contain(x => x.ReviewId == "quality-review" && x.Lane == "Document Review");
-        r.ApplicableReviews.Should().Contain(x => x.ReviewId == "dependency-review" && x.Lane == "Source Review", "source prerequisites unchanged");
+        r.ApplicableReviews.Should().Contain(x => x.ReviewId == "quality-review" && x.Lane == "Specifications & Planning");
+        r.ApplicableReviews.Should().Contain(x => x.ReviewId == "dependency-review" && x.Lane == "Source & Architecture", "source prerequisites unchanged");
         NavigationCatalog.Sections.SelectMany(s => s.Items)
             .Where(i => i.Route is "task-alignment" or "documentation-drift" or NavigationCatalog.GeneratedDocumentationHealthRoute)
             .Should().HaveCount(3).And.OnlyContain(i => i.ReviewId == null, "no applicability-driven workflow step is derived from these rows");
@@ -374,7 +374,7 @@ public sealed class ProjectInputWorkflowTests
 
         var r = await ReadinessAsync();
 
-        r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Source Review", "Quality & Testing"]);
+        r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Source & Architecture", "Quality & Testing"]);
         r.ApplicableReviews.Should().NotContain(x => x.ReviewId == "quality-review", "no documents: no requirements to review");
         r.NextRecommendedAction!.Key.Should().Be(WorkflowPaths.ChoosePathKey, "source and runtime are both open paths; neither is forced");
         r.PathOf(WorkflowPathKind.Source)!.State.Should().Be(WorkflowPathState.Ready);
