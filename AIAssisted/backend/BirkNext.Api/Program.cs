@@ -499,6 +499,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationContra
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationReviewEngine>(client => client.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewEvidenceSources, BirkNext.Api.Services.Integrations.IntegrationReviewEvidenceSources>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore, BirkNext.Api.Services.Integrations.SourceEvidence.IntegrationEvidenceBindingStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ContractRelationshipReviewService>();

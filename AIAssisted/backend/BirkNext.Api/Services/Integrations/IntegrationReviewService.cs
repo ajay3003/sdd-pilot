@@ -23,8 +23,19 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
     IApplicationMessagingStore? messaging = null, BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null,
     SourceAnalysis.IReviewSourceEvidenceProvider? source = null, AzureEnvironment.IAzureEnvironmentEvidenceProvider? azure = null,
     IntegrationJourneys.IIntegrationJourneyService? journeys = null, SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null,
-    IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null) : IIntegrationReviewService
+    IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null, IIntegrationReviewEvidenceSources? evidence = null) : IIntegrationReviewService
 {
+    /// <summary>The one evidence composition readiness and run share: catalog + Integration Topology + Connected Systems. Reviewable discovered
+    /// integrations join the catalog for this evaluation only; nothing is written to the Integration Catalog.</summary>
+    private async Task<(IntegrationCatalog Effective, IntegrationReviewEvidenceSet Set)> ComposeAsync(IntegrationCatalog catalog, string environmentId, CancellationToken ct)
+    {
+        if (evidence is null) return (catalog, IntegrationReviewEvidence.Compose(catalog, null, null, null, null, null));
+        var (topology, topologyError) = await evidence.TopologyAsync(environmentId, ct);
+        var (systems, systemsError) = await evidence.ConnectedSystemsAsync(environmentId, ct);
+        var set = IntegrationReviewEvidence.Compose(catalog, topology, topologyError, systems, systemsError, topology?.EnvironmentName);
+        return (set.Effective(catalog), set);
+    }
+
     private IReadOnlyList<IntegrationAlias> Aliases => [.. (packs ?? []).SelectMany(pack => pack.Aliases)];
 
     /// <summary>The catalog seen by a scoped review: only the selected integration and the platform it uses. Unrelated transports contribute no
@@ -80,25 +91,58 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
 
     public async Task<IntegrationReviewReadiness> ReadinessAsync(string environmentId, string? environmentType, string? targetUrl, string? integrationId, CancellationToken ct = default)
     {
-        var full = await catalog.GetAsync(environmentId, environmentType, targetUrl, ct);
+        var (full, composed) = await ComposeAsync(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct), environmentId, ct);
         var scopeId = integrationId is not null && full.Integrations.Any(item => item.Enabled && item.Id == integrationId) ? integrationId : null;
         var configured = Scope(full, scopeId);
         var facts = await FactsAsync(environmentId, ct);
         var readiness = engine.Readiness(configured, new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)), messaging is null ? null : await messaging.GetAsync(environmentId, ct),
             facts);
         // The selector always lists every enabled integration; everything else is for the scope alone.
-        readiness = readiness with { ScopeIntegrationId = scopeId, Subjects = IntegrationReviewEngine.Subjects(full, facts) };
+        var candidates = composed.Candidates.ToDictionary(c => c.IntegrationId, StringComparer.Ordinal);
+        readiness = readiness with
+        {
+            ScopeIntegrationId = scopeId,
+            Subjects = [.. IntegrationReviewEngine.Subjects(full, facts).Select(subject => candidates.TryGetValue(subject.IntegrationId, out var c) ? subject with { Sources = c.Sources } : subject)],
+            Candidates = [.. composed.Candidates],
+        };
         // SCIM identity provisioning is summarized beside the other layers; it never changes whether the review can run.
         readiness = scim is null ? readiness : readiness with { Scim = [.. await scim.ReadinessAsync(configured, ct)] };
         // Source evidence: each in-scope integration's own canonical binding, correlated with that integration — never every stored snapshot.
         var (snapshots, scopes) = await BoundEvidenceAsync(environmentId, [.. configured.Integrations.Where(item => item.Enabled)], ct);
         readiness = readiness with { SourceScopes = scopes, AvailableSourceSnapshots = source is { SourceAnalysisEnabled: true } ? [.. await source.ListAsync(environmentId, ct)] : [] };
-        return snapshots.Count == 0 ? readiness with { SourceSnapshots = [] } : SourceEvidence.IqrSourceReview.Augment(readiness, snapshots);
+        readiness = snapshots.Count == 0 ? readiness with { SourceSnapshots = [] } : SourceEvidence.IqrSourceReview.Augment(readiness, snapshots);
+        var stored = await contracts.LoadAsync(environmentId, ct);
+        return readiness with { Evidence = [.. Families(readiness, composed, stored.Count)], EvaluatedAt = DateTimeOffset.UtcNow };
+    }
+
+    /// <summary>The six evidence families of the readiness snapshot, in reading order: what the project provides, what the topology and the
+    /// registered systems establish, what is configured, the contracts and the runtime evidence.</summary>
+    private IReadOnlyList<IntegrationEvidenceFamilyStatus> Families(IntegrationReviewReadiness r, IntegrationReviewEvidenceSet composed, int contractCount)
+    {
+        var bound = r.SourceScopes.Count(s => s.SnapshotBound);
+        var project = source is not { SourceAnalysisEnabled: true }
+            ? new IntegrationEvidenceFamilyStatus(IntegrationEvidenceFamily.ProjectEvidence, IntegrationEvidenceFamilyState.NotConfigured, 0, "Source Analysis is not enabled in this instance")
+            : r.AvailableSourceSnapshots.Count == 0
+                ? new(IntegrationEvidenceFamily.ProjectEvidence, IntegrationEvidenceFamilyState.None, 0, "No Source Analysis snapshot is stored for this environment")
+                : new(IntegrationEvidenceFamily.ProjectEvidence, IntegrationEvidenceFamilyState.Available, r.AvailableSourceSnapshots.Count,
+                    $"{r.AvailableSourceSnapshots.Count} source snapshot{(r.AvailableSourceSnapshots.Count == 1 ? "" : "s")} · {bound} bound to an integration") { CapturedAt = r.AvailableSourceSnapshots.Max(s => s.AnalyzedAt) };
+        var contractsFamily = contractCount == 0
+            ? new IntegrationEvidenceFamilyStatus(IntegrationEvidenceFamily.Contracts, IntegrationEvidenceFamilyState.None, 0, "No trusted contract is stored; source schemas still inform the review")
+            : new(IntegrationEvidenceFamily.Contracts, IntegrationEvidenceFamilyState.Available, contractCount, $"{contractCount} trusted contract{(contractCount == 1 ? "" : "s")} stored");
+        var delivered = r.EvidenceAdapters.Count(a => a.State == IntegrationEvidenceState.Available);
+        var runtime = delivered > 0
+            ? new IntegrationEvidenceFamilyStatus(IntegrationEvidenceFamily.RuntimeEvidence, IntegrationEvidenceFamilyState.Available, delivered, $"{delivered} runtime evidence source{(delivered == 1 ? "" : "s")} available")
+            : !r.AzureRuntimeEnabled && r.EvidenceAdapters.Count > 0
+                ? new(IntegrationEvidenceFamily.RuntimeEvidence, IntegrationEvidenceFamilyState.NotConfigured, 0, r.AzureRuntimeReason ?? "Azure runtime evidence is not enabled for this instance")
+                : new(IntegrationEvidenceFamily.RuntimeEvidence, IntegrationEvidenceFamilyState.None, 0, "No runtime evidence source is configured — the review is static");
+        var byFamily = composed.Families.ToDictionary(f => f.Family);
+        return [project, byFamily[IntegrationEvidenceFamily.IntegrationTopology], byFamily[IntegrationEvidenceFamily.ConnectedSystems],
+            byFamily[IntegrationEvidenceFamily.IntegrationCatalog], contractsFamily, runtime];
     }
 
     public async Task<IntegrationReviewResult> RunAsync(IntegrationReviewRunRequest request, string? environmentType, string? targetUrl, CancellationToken ct = default)
     {
-        var full = await catalog.GetAsync(request.EnvironmentId, environmentType, targetUrl, ct);
+        var (full, _) = await ComposeAsync(await catalog.GetAsync(request.EnvironmentId, environmentType, targetUrl, ct), request.EnvironmentId, ct);
         if (request.IntegrationId is { } requested && !full.Integrations.Any(item => item.Enabled && item.Id == requested))
             throw new SourceEvidence.InvalidSourceSelectionException("The selected integration is not an enabled configured integration of this environment.");
         var configured = Scope(full, request.IntegrationId);

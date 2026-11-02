@@ -82,7 +82,7 @@ public sealed class IntegrationReviewEngine(
         return [.. catalog.Integrations.Where(i => i.Enabled).Select(i => new IntegrationReviewSubject(i.Id, i.DisplayName, i.Kind, IntegrationReviewProfiles.Capability(i.Kind))
         {
             Producer = i.Producer, Consumer = i.Consumer.DisplayName, EndpointOrTopic = i.EndpointOrTopic, MappingState = i.Consumer.MappingState,
-            Facts = factsById.GetValueOrDefault(i.Id),
+            Facts = factsById.GetValueOrDefault(i.Id), Origin = i.Origin,
         })];
     }
 

@@ -81,7 +81,9 @@ public enum IntegrationConfigurationState { Ready, NeedsConfirmation, NeedsConfi
 
 /// <summary>Where a catalog record came from.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile, SourceSuggestion, Template }
+/// <remarks><see cref="Discovered"/>: a review subject derived from evidence (Integration Topology, Connected Systems) for one readiness
+/// evaluation or run — never stored in the Integration Catalog.</remarks>
+public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile, SourceSuggestion, Template, Discovered }
 
 /// <summary>What the consumer of a CDC topic expects for deletes. Tombstones are only judged against an explicit expectation.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -619,6 +621,47 @@ public sealed record IntegrationReviewReadiness
     /// <summary>Each enabled integration as the review sees it: identity, review capability (which decides the domain profile) and the
     /// evidence facts its test pack knows (reference metadata, canonical source). Display and profile input only.</summary>
     public List<IntegrationReviewSubject> Subjects { get; init; } = [];
+    /// <summary>The canonical evidence snapshot the readiness was evaluated from: one state per evidence family (Project Evidence, Integration
+    /// Topology, Connected Systems, Integration Catalog, contracts, runtime evidence) — so a missing family is never read as "nothing exists".</summary>
+    public List<IntegrationEvidenceFamilyStatus> Evidence { get; init; } = [];
+    /// <summary>Every integration the evidence knows about, wherever it comes from, and whether the review covers it. Reviewable discovered
+    /// candidates are subjects of the review without being defined in the Integration Catalog.</summary>
+    public List<IntegrationReviewCandidate> Candidates { get; init; } = [];
+    public DateTimeOffset? EvaluatedAt { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationEvidenceFamily { ProjectEvidence, IntegrationTopology, ConnectedSystems, IntegrationCatalog, Contracts, RuntimeEvidence }
+
+/// <summary>Available: the family delivered evidence. None: it was read and holds nothing. NotConfigured: the family is not set up for this
+/// instance or environment. Failed: it could not be read (a limitation, never a blocker and never "none").</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationEvidenceFamilyState { Available, None, NotConfigured, Failed }
+
+public sealed record IntegrationEvidenceFamilyStatus(IntegrationEvidenceFamily Family, IntegrationEvidenceFamilyState State, int Count, string Detail)
+{
+    public DateTimeOffset? CapturedAt { get; init; }
+}
+
+/// <summary>
+/// Reviewed: in the review (a catalog integration, or a discovered one whose producer/consumer the evidence establishes). NeedsConfirmation:
+/// partial evidence only — listed, not reviewed, until stronger evidence or a catalog entry exists. Excluded: a person disabled it in the
+/// Integration Catalog.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationCandidateState { Reviewed, NeedsConfirmation, Excluded }
+
+/// <summary>One integration as the evidence knows it: identity, which families state it, how strong the relationship evidence is, and whether
+/// the review covers it. <see cref="IntegrationId"/> is the catalog id, or the derived id of a discovered subject.</summary>
+public sealed record IntegrationReviewCandidate(string IntegrationId, string DisplayName, IntegrationKind Kind, IntegrationRecordOrigin Origin, IntegrationCandidateState State)
+{
+    public string? Producer { get; init; }
+    public string? Consumer { get; init; }
+    public string? EndpointOrTopic { get; init; }
+    public List<IntegrationEvidenceFamily> Sources { get; init; } = [];
+    /// <summary>Relationship confidence from Integration Topology ("Resolved", "Strongly supported", "Candidate" …), when the topology states it.</summary>
+    public string? Relationship { get; init; }
+    public string Reason { get; init; } = "";
 }
 
 /// <summary>What kind of review an integration gets: the transport/technology decides which checks are relevant (an HTTP/API webhook has
@@ -634,6 +677,9 @@ public sealed record IntegrationReviewSubject(string IntegrationId, string Displ
     public string? EndpointOrTopic { get; init; }
     public ConsumerMappingState MappingState { get; init; }
     public IntegrationReviewEvidenceFacts? Facts { get; init; }
+    /// <summary>Discovered: derived from evidence for this review, not defined in the Integration Catalog.</summary>
+    public IntegrationRecordOrigin Origin { get; init; } = IntegrationRecordOrigin.Manual;
+    public List<IntegrationEvidenceFamily> Sources { get; init; } = [];
 }
 
 /// <summary>

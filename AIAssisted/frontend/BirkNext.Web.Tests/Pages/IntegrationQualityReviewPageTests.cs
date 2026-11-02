@@ -68,7 +68,6 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
 
     [Theory]
     [InlineData(2, 0, 0, "disabled", "tab=integrations")]
-    [InlineData(0, 1, 0, "no-integrations", "tab=integrations")]
     [InlineData(0, 0, 1, "detectable", "dev")]
     public void EmptyState_NamesTheActualCondition(int configured, int systems, int snapshots, string condition, string href)
     {
@@ -81,7 +80,20 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=iqr-zero-integrations]").GetAttribute("data-condition").Should().Be(condition);
         cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain(href);
-        if (condition == "detectable") cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("Imported source evidence is available").And.Contain("Source Analysis");
+        if (condition == "detectable") cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("Imported source evidence is available").And.Contain("Integration Topology");
+    }
+
+    [Fact]
+    public void EmptyState_PointsToTheTopologyWhenIntegrationsAreDiscoveredButNotEstablished()
+    {
+        _api.Readiness = new IntegrationReviewReadiness
+        {
+            Headline = "Cannot run", ConfiguredIntegrations = 2,
+            Candidates = [new("discovered:a", "Portal → Unknown consumer", IntegrationKind.ServiceBus, IntegrationRecordOrigin.Discovered, IntegrationCandidateState.NeedsConfirmation)],
+        };
+        var cut = Open();
+        cut.Find("[data-testid=iqr-zero-integrations]").GetAttribute("data-condition").Should().Be("needs-confirmation", "discovered evidence comes before a disabled catalog entry");
+        cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Be("/integration-topology");
     }
 
     [Fact]
@@ -91,7 +103,7 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         var cut = Open();
         cut.FindAll("[data-testid=iqr-run]").Should().BeEmpty("Cannot run never shows a (disabled) run button");
         cut.Find("[data-testid=iqr-zero-integrations]").GetAttribute("data-condition").Should().Be("nothing");
-        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No connected systems, integrations or imported source evidence");
+        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No integration evidence for this environment").And.Contain("nothing has to be defined by hand");
         cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain("dev");
         cut.FindAll("[data-testid=iqr-readiness], [data-testid=iqr-attention-item]").Should().BeEmpty("an empty environment is one clear empty state, not a page of empty technical UI");
     }

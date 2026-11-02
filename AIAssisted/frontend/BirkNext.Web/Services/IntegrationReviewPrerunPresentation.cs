@@ -58,7 +58,7 @@ public static class IntegrationReviewPrerunPresentation
     public static string RunLabel(IntegrationReviewReadiness readiness) => "Run review";
 
     /// <summary>No enabled integration: the review has nothing to assess until Target Environment → Integration Catalog has one.</summary>
-    public static bool NoEnabledIntegrations(IntegrationReviewReadiness readiness) => readiness.EnabledIntegrations == 0;
+    public static bool NoEnabledIntegrations(IntegrationReviewReadiness readiness) => readiness.EnabledIntegrations == 0 && readiness.Subjects.Count == 0;
 
     /// <summary>
     /// Why nothing can be reviewed, as the actual condition: configured but all disabled; systems registered but no integration configured;
@@ -69,18 +69,20 @@ public static class IntegrationReviewPrerunPresentation
     {
         var catalog = IntegrationReviewPresentation.IntegrationsHref(profileId);
         var systems = ExternalIntegrationPresentation.ExternalHref(profileId ?? "");
+        // Integrations are discovered from the evidence; the catalog is one source among several, never a prerequisite.
+        if (r.Candidates.Where(c => c.State == IntegrationCandidateState.NeedsConfirmation).ToList() is { Count: > 0 } unconfirmed)
+            return new("needs-confirmation", $"{unconfirmed.Count} integration{(unconfirmed.Count == 1 ? " is" : "s are")} discovered, but not established yet.",
+                "The evidence states one side of the flow or a weak relationship only. Import or bind the missing source so Integration Topology can resolve it — or define it in the Integration Catalog.",
+                "Open Integration Topology", IntegrationReviewDecisions.TopologyHref);
         if (r.ConfiguredIntegrations > 0)
             return new("disabled", $"{r.ConfiguredIntegrations} integration{(r.ConfiguredIntegrations == 1 ? " is" : "s are")} configured, but none is enabled.",
                 "Integration Quality Review assesses enabled integrations only. Enable one in the Integration Catalog.", "Open Integration Catalog", catalog);
-        if (r.Systems.Count > 0)
-            return new("no-integrations", "Connected systems are registered, but no integration is configured.",
-                "Define which systems exchange data (producer → consumer) in the Integration Catalog; this review then assesses them.", "Open Integration Catalog", catalog);
         if (r.AvailableSourceSnapshots.Count > 0)
-            return new("detectable", "No connected systems or integrations are configured for this environment.",
-                $"Imported source evidence is available ({r.AvailableSourceSnapshots.Count} snapshot{(r.AvailableSourceSnapshots.Count == 1 ? "" : "s")}): detect systems from it, then configure integrations. Source findings stay available in Source Analysis.",
-                "Detect connected systems", systems);
-        return new("nothing", "No connected systems, integrations or imported source evidence for this environment.",
-            "Import the project's source, or register systems manually, before configuring integrations.", "Open Connected Systems", systems);
+            return new("detectable", "No integration is found in the imported evidence yet.",
+                $"Imported source evidence is available ({r.AvailableSourceSnapshots.Count} snapshot{(r.AvailableSourceSnapshots.Count == 1 ? "" : "s")}), but Integration Topology establishes no producer → consumer flow from it. Register the systems this environment talks to, or import the other side's source.",
+                "Open Connected Systems", systems);
+        return new("nothing", "No integration evidence for this environment.",
+            "Import the project's source or register Connected Systems; integrations are then discovered from that evidence — nothing has to be defined by hand.", "Open Connected Systems", systems);
     }
 
     public static string ReadinessTone(IntegrationReviewReadiness readiness) =>
@@ -254,10 +256,14 @@ public static class IntegrationReviewPrerunPresentation
         var runtime = total == 0 ? "Not verified" : available == 0 ? "Not configured" : available < total ? "Partially available" : "Available";
         var configured = !string.IsNullOrWhiteSpace(subject.EndpointOrTopic);
         var confirmed = subject.MappingState == ConsumerMappingState.Confirmed;
+        // A discovered integration's ends come from the evidence that established it; nothing waits for manual configuration.
+        var discovered = subject.Origin == IntegrationRecordOrigin.Discovered;
         return
         [
-            new("configuration", "Configuration", configured ? "Configured" : "Needs configuration", configured ? "ready" : "attention"),
-            new("mapping", "Consumer mapping", confirmed ? "Confirmed" : "Needs confirmation", confirmed ? "ready" : "attention"),
+            discovered ? new("configuration", "Origin", IntegrationReviewDecisions.OriginLabel(subject.Origin, subject.Sources), "ready")
+                : new("configuration", "Configuration", configured ? "Configured" : "Needs configuration", configured ? "ready" : "attention"),
+            discovered ? new("mapping", "Consumer", subject.Consumer is null ? "Not established" : "From evidence", subject.Consumer is null ? "attention" : "ready")
+                : new("mapping", "Consumer mapping", confirmed ? "Confirmed" : "Needs confirmation", confirmed ? "ready" : "attention"),
             new("source", $"{facts?.SourceRole ?? "Source"} evidence", source, source == "Bound" ? "ready" : source == "Missing" ? "fail" : "attention"),
             new("contract", "Contract/reference", contract, contract == "Partial" ? "attention" : "muted"),
             new("runtime", "Runtime evidence", runtime, runtime == "Available" ? "ready" : "muted"),
