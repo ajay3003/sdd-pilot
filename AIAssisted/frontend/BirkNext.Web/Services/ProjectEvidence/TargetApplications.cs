@@ -32,11 +32,20 @@ public static class TargetApplications
     public static TargetApplicationIdentity FromOption(ProjectOption option, DateTimeOffset now) => new()
     {
         Name = option.Name.Trim(), ImportId = option.Package?.ImportId, ArchiveSha256 = option.Package?.ArchiveSha256, Manual = option.Package is null, SetAt = now,
+        Origin = TargetApplicationOrigins.Chosen,
+    };
+
+    /// <summary>A detected candidate the user accepted with one click ("Use M2LB"): chosen, with the evidence that suggested it.</summary>
+    public static TargetApplicationIdentity FromCandidate(ApplicationCandidate candidate, DateTimeOffset now) => new()
+    {
+        Name = candidate.Name.Trim(), ImportId = candidate.Package?.ImportId, ArchiveSha256 = candidate.Package?.ArchiveSha256, Manual = candidate.Package is null,
+        SetAt = now, Origin = TargetApplicationOrigins.Chosen, Confidence = candidate.Confidence, Reasons = [.. candidate.Reasons],
     };
 
     public static TargetApplicationIdentity Manual(string name, string? description, DateTimeOffset now) => new()
     {
         Name = name.Trim(), Manual = true, Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(), SetAt = now,
+        Origin = TargetApplicationOrigins.Manual,
     };
 
     public static bool SameApplication(TargetApplicationIdentity? a, string? name) =>

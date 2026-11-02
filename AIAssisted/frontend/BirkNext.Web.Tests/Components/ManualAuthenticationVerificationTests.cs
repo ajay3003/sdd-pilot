@@ -207,13 +207,15 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         var cut = Open();
         cut.Find("#target-tab-target").Click(); Click(cut, "Check target application");
         // Missing framework or warnings are target-detection facts, not a stale-settings problem.
-        cut.WaitForAssertion(() => Assert.Contains("Target detection incomplete", cut.Markup));
+        // The target was detected — never "detection incomplete" (authentication verification is a separate step).
+        cut.WaitForAssertion(() => Assert.Equal("Target detected", cut.Find("[data-testid=target-check-state]").TextContent.Trim()));
+        Assert.DoesNotContain("Target detection incomplete", cut.Markup);
         AuthenticationTab(cut);
         Click(cut, "Open manual sign-in check");
         Click(cut, "Record sign-in check completed");
         Assert.Equal("Completed (recorded manually)", CheckStatus(cut));
         cut.Find("#target-tab-target").Click();
-        Assert.Contains("Target detection incomplete", cut.Markup);
+        Assert.Equal("Target detected", cut.Find("[data-testid=target-check-state]").TextContent.Trim());
         Assert.DoesNotContain("Detection needs current settings", cut.Markup);
         Assert.False(ActivationDisabled(cut));
     }

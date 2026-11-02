@@ -91,3 +91,8 @@
 .tep-headline { margin: .4rem 0 .3rem; font-size: .95rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; }
 .tep-why summary { cursor: pointer; font-size: .82rem; color: var(--clr-link, #1d4ed8); }
 .tep-why summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.tep-review { display: grid; gap: .35rem; margin: .5rem 0; }
+.tep-review-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.tep-review-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.tep-review-actions { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+.tep-role-rules { list-style: none; padding: 0; display: grid; gap: .3rem; max-width: 32rem; }

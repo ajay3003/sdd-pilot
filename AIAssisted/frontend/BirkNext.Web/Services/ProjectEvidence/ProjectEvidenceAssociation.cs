@@ -84,6 +84,8 @@ public static class ProjectEvidenceAssociation
             if (application is null || record?.ApplicationId != application.Id)
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role,
                     application is null ? $"No imported evidence is recorded for {name} yet." : "Imported as evidence for another application.");
+            if (project?.Declined.Any(d => d.ImportId == p.ImportId && d.RoleKey == ProjectEvidenceService.IgnoredRole) == true)
+                return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role, $"Not used for {name} (your decision). The import is kept.");
             if (declined.Contains(p.ImportId) && !userBound.Contains(p.ImportId))
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role, "Removed from this application's evidence earlier.");
             return role switch

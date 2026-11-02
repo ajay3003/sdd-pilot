@@ -333,7 +333,7 @@
                             </div>
                         }
                     </div>
-                    <p class="fa-detection-help">Checks this Frontend URL and proposes target values. Nothing is saved automatically.</p>
+                    <p class="fa-detection-help">Refreshes and verifies target detection for this Frontend URL and proposes target values. The application itself is identified from imported evidence and this check — the check is not the only way to establish it. Nothing is saved automatically.</p>
                 </section>
 
                 @if (_detectionResult?.Success == true)
@@ -344,6 +344,10 @@
                             <span class="fa-card-status fa-card-status-muted" data-testid="target-detection-confidence">Detection confidence: @DetectionPresentation.ConfidenceLabel(_detectionResult.Confidence)</span>
                         </div>
 
+                        @* Summary first; once the Target Application is established the full detail is collapsed (still one click away). *@
+                        <p class="fa-detected-summary-line" data-testid="target-detected-line">@DetectedSummaryLine</p>
+                        <details class="fa-detected-details" data-testid="target-detected-details" open="@(BirkNext.Web.Services.ProjectEvidence.TargetApplications.Of(CurrentProfile) is null)">
+                            <summary>Detected target details</summary>
                         <dl class="fa-detected-list">
                             <div class="fa-detected-row"><dt>Reachability</dt><dd class="fa-detected-value">@_detectionResult.Reachability</dd><dd class="fa-source-badge">Detected</dd></div>
 
@@ -401,6 +405,7 @@
                                 <div class="fa-detected-row"><dt>Profile name</dt><dd class="fa-detected-value">@_detectionResult.SuggestedProfileName</dd><dd class="fa-source-badge fa-source-badge-suggested">Suggested</dd></div>
                             }
                         </dl>
+                        </details>
 
                         @if (IsDetectionStale)
                         {
@@ -2808,6 +2813,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool HasCurrentSuccessfulDetection =>
         CurrentDetectionState == DetectionState.Complete;
 
+    /// <summary>"Reachable · Blazor WebAssembly · Microsoft Entra ID · Development" — the detected target at a glance (identity of the app is
+    /// not claimed here: framework and identity provider are supporting evidence only).</summary>
+    private string DetectedSummaryLine => _detectionResult is not { } d ? "" : string.Join(" · ", new[]
+    {
+        d.Reachability.ToString(),
+        d.DetectedClientFramework.HasValue ? DetectionPresentation.FrameworkLabel(d.DetectedClientFramework) : null,
+        d.DetectedAuthenticationType != FrontendAuthenticationType.None ? AuthenticationPresentation.ProviderLabel(d.DetectedAuthenticationType) : null,
+        d.SuggestedEnvironmentType?.ToString(),
+    }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
     private string DetectionStateLabel =>
         CurrentDetectionState switch
         {
@@ -2817,7 +2832,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             // These two described the manual sign-in precondition, not target detection ("Detection needs current settings").
             DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Target detected — unsaved changes",
             DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Target detected — recheck after settings change",
-            DetectionState.ManualAuthenticationVerificationRequired => "Target detection incomplete",
+            // The target WAS detected: never "detection incomplete". Authentication verification is a separate step (explained below and on
+            // the Authentication tab), so the detection label does not claim anything about it.
+            DetectionState.ManualAuthenticationVerificationRequired => "Target detected",
             DetectionState.AuthenticationRequired => "Authentication required",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Needs browser inspection",
             DetectionState.Partial => "Detection incomplete",

@@ -13,3 +13,9 @@
 .tai-confirm { border: 1px solid var(--clr-warning-border); background: var(--clr-warning-bg-light); border-radius: 8px; padding: .6rem .8rem; }
 .tai-confirm h5 { margin: 0 0 .25rem; font-size: .95rem; }
 .tai-required { margin: 0 0 .5rem; padding: .4rem .6rem; border: 1px solid #fcd34d; border-left-width: 4px; border-radius: 6px; background: #fffbeb; color: #78350f; font-size: .9rem; }
+.tai-badge { display: inline-block; margin-left: .4rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--clr-border, #d0d7de); font-size: .8rem; }
+.tai-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .4rem 0; }
+.tai-candidates { list-style: none; margin: .3rem 0; padding: 0; display: grid; gap: .4rem; }
+.tai-candidates li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.tai-reasons { margin: .25rem 0 0 1rem; font-size: .9rem; }
+.tai-why summary, .tai-choose summary, .tai-advanced summary { cursor: pointer; font-size: .9rem; }

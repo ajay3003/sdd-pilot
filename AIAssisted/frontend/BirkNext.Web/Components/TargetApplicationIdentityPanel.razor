@@ -13,18 +13,58 @@
         <h4 id="tai-title" class="tai-title">Application</h4>
         @if (_identity is { } current && !_picking)
         {
+            @* Established: compact — name, provenance and confidence first; why it was identified on request. *@
             <p class="tai-current" data-testid="tai-current"><strong data-testid="tai-name">@current.Name</strong>
-                <span class="tai-muted">· @(current.Manual ? "Added manually" : current.ImportId is not null ? "Detected application package" : "Named application")@(current.Legacy ? " · from earlier Project setup" : "")</span>
-                <button type="button" class="btn btn-link btn-sm" data-testid="tai-change" @onclick="StartPicking">Change<span class="visually-hidden"> application</span></button></p>
-            <p class="tai-muted">Project evidence for @current.Name is bound on the <a href="@ProjectEvidenceResolver.ProjectTabHref(EnvironmentId)" data-testid="tai-project-link">Project tab</a>.</p>
+                <span class="tai-badge" data-testid="tai-provenance">@TargetApplicationInference.Provenance(current)</span></p>
+            @if (current.Reasons is { Count: > 0 } reasons)
+            {
+                <details class="tai-why" data-testid="tai-why"><summary>Why @current.Name?</summary>
+                    <ul class="tai-reasons">@foreach (var reason in reasons) { <li data-testid="tai-reason">@reason</li> }</ul>
+                </details>
+            }
+            @if (_inference.Unique is { Strong: true } other && !TargetApplications.SameApplication(current, other.Name))
+            {
+                @* An explicit choice wins over detection; a disagreeing detection is shown for review, never applied. *@
+                <p class="tai-required" role="note" data-testid="tai-detection-differs"><strong>Needs review:</strong> detection points to @other.Name (@other.Confidence confidence) while @current.Name is chosen.
+                    <button type="button" class="btn btn-link btn-sm" data-testid="tai-use-detected" @onclick="() => Choose(TargetApplications.FromCandidate(other, DateTimeOffset.UtcNow))">Use @other.Name</button></p>
+            }
+            <div class="tai-actions">
+                <a class="btn btn-secondary btn-sm" href="@ProjectEvidenceResolver.ProjectTabHref(EnvironmentId)" data-testid="tai-project-link">View project evidence</a>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-change" @onclick="StartPicking">Change application</button>
+            </div>
+            <p class="tai-muted" data-testid="tai-change-impact">Changing the application re-evaluates evidence associations. Imported packages, Source Analysis, Test Data and Connected Systems remain untouched.</p>
         }
         else
         {
             @if (_identity is null)
             {
-                @* The target URL and check below say WHERE the application runs; Project evidence needs WHICH application it is. *@
-                <p class="tai-required" role="note" data-testid="tai-empty"><strong>Application not chosen.</strong> The target URL and check below describe where the application runs; choose which application/system it is (for example M2LB) so Project evidence can be associated with it.</p>
+                @if (_inference.Candidates.Count > 0)
+                {
+                    @* Detected candidates: one click, never a form. Several (or a conflict) need a decision — nothing is chosen silently. *@
+                    <section class="tai-detected" aria-labelledby="tai-detected-h" data-testid="tai-detected" data-state="@_inference.State">
+                        <p id="tai-detected-h" class="tai-required"><strong>@(_inference.State == TargetApplicationInference.Detected ? "Detected application" : "Needs review")</strong> · @_inference.Summary</p>
+                        <ul class="tai-candidates">
+                            @foreach (var candidate in _inference.Candidates)
+                            {
+                                <li data-testid="tai-candidate" data-name="@candidate.Name">
+                                    <strong>@candidate.Name</strong> <span class="tai-muted">· Confidence: @candidate.Confidence</span>
+                                    <button type="button" class="btn btn-primary btn-sm" data-testid="tai-use-candidate" @onclick="() => Choose(TargetApplications.FromCandidate(candidate, DateTimeOffset.UtcNow))">Use @candidate.Name</button>
+                                    <details class="tai-why"><summary>Evidence<span class="visually-hidden"> for @candidate.Name</span></summary>
+                                        <ul class="tai-reasons">@foreach (var reason in candidate.Reasons) { <li>@reason</li> }</ul>
+                                    </details>
+                                </li>
+                            }
+                        </ul>
+                    </section>
+                }
+                else
+                {
+                    @* The target URL and check below say WHERE the application runs; Project evidence needs WHICH application it is. *@
+                    <p class="tai-required" role="note" data-testid="tai-empty"><strong>Application not chosen.</strong> No imported application source identifies it yet. Import the application's source (BirkNext then detects it), or choose an application below.</p>
+                }
             }
+            <details class="tai-choose" data-testid="tai-choose" open="@(_identity is not null || _inference.Candidates.Count == 0)">
+                <summary>@(_identity is null ? "Choose another application" : $"Choose a different application than {_identity.Name}")</summary>
             <div class="tai-picker" data-testid="tai-picker">
                 <label for="tai-search" class="tai-label">Application</label>
                 <input id="tai-search" type="search" class="form-control" placeholder="Search applications" autocomplete="off" data-testid="tai-search"
@@ -45,28 +85,25 @@
                     }
                     @if (ProjectSetupPlanner.Search(_options, _query).Count == 0) { <p class="tai-muted" role="status">No detected application matches “@_query”.</p> }
                 </div>
-                @if (_adding)
-                {
+                @* Manual is the exception (custom system, no source evidence, unsupported type) — kept, but not the normal path. *@
+                <details class="tai-advanced" data-testid="tai-advanced" open="@_adding">
+                    <summary>Advanced — add an application manually</summary>
                     <div class="tai-manual" data-testid="tai-manual">
                         <label>Application name <input class="form-control" maxlength="120" data-testid="tai-manual-name" @bind="_manualName" @bind:event="oninput" /></label>
                         <label>Description (optional) <input class="form-control" maxlength="300" data-testid="tai-manual-description" @bind="_manualDescription" /></label>
                         <button type="button" class="btn btn-primary btn-sm" data-testid="tai-manual-save" disabled="@string.IsNullOrWhiteSpace(_manualName)"
                                 @onclick="() => Choose(TargetApplications.Manual(_manualName!, _manualDescription, DateTimeOffset.UtcNow))">Use this application</button>
-                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _adding = false">Cancel</button>
                     </div>
-                }
-                else
-                {
-                    <button type="button" class="btn btn-link btn-sm" data-testid="tai-add-manual" @onclick="() => _adding = true">+ Add application manually</button>
-                }
+                </details>
                 @if (_identity is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-keep" @onclick="() => _picking = false">Keep @_identity.Name</button> }
             </div>
+            </details>
         }
         @if (_pending is { } pending)
         {
             <section class="tai-confirm" role="alertdialog" aria-labelledby="tai-confirm-h" aria-describedby="tai-confirm-text" data-testid="tai-confirm">
                 <h5 id="tai-confirm-h">Change the Target Application to @pending.Name?</h5>
-                <p id="tai-confirm-text">The Project evidence bound for @_identity?.Name is archived for this environment (not deleted) and evidence suggestions are recalculated for @pending.Name. Imported packages and Source Analysis snapshots are not changed.</p>
+                <p id="tai-confirm-text">Evidence associations are re-evaluated for @pending.Name; the Project evidence of @_identity?.Name is archived for this environment (not deleted). Imported packages, Source Analysis, Test Data and Connected Systems are not changed.</p>
                 <button type="button" class="btn btn-primary btn-sm" data-testid="tai-confirm-yes" @ref="_confirmButton" @onclick="() => SaveAsync(pending)">Change application</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-confirm-no" @onclick="() => _pending = null">Cancel</button>
             </section>
@@ -83,6 +120,7 @@
     private bool _hasEvidence, _picking, _adding, _focusConfirm;
     private string? _query, _manualName, _manualDescription, _status, _loadedFor;
     private IReadOnlyList<ProjectOption> _options = [];
+    private ApplicationInference _inference = ApplicationInference.None;
     private TargetApplicationIdentity? _pending;
     private ElementReference _confirmButton;
 
@@ -107,6 +145,7 @@
         _identity = evidence.TargetApplicationOf(EnvironmentId);
         _hasEvidence = view.IsConfigured;
         _options = TargetApplications.Options(view.Packages, evidence.KnownProjectNames());
+        _inference = evidence.InferApplication(EnvironmentId);
         _picking = _identity is null;
     }
 
@@ -124,7 +163,7 @@
         _pending = null;
         if (Evidence is not { } evidence) return;
         var saved = await evidence.SetTargetApplicationAsync(EnvironmentId, next);
-        _status = saved ? $"Target Application set to {next.Name}. Bind its evidence on the Project tab." : $"Target Application is already {next.Name}.";
+        _status = saved ? $"Target Application set to {next.Name}. Its evidence is associated automatically; review it on the Project tab." : $"Target Application is already {next.Name}.";
         _adding = false; _manualName = _manualDescription = null;
         await LoadAsync();
         _picking = false;

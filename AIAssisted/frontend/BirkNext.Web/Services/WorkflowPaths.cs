@@ -192,7 +192,7 @@ public static class WorkflowPaths
         var identity = ProjectEvidence.TargetApplications.Of(environment);
         var urlReady = ProjectInputPresentation.Target(environment).Status == ProjectInputStatus.Ready;
         steps.Add(new(TargetApplicationStep, "Target Application", identity is not null && urlReady,
-            identity is null ? $"What application/system does {name} represent? Choose it, then set its URL."
+            identity is null ? $"Which application/system does {name} represent? It is detected automatically from imported source and the target check when the evidence is clear; otherwise choose it."
             : urlReady ? $"{identity.Name} · {environment.TargetUrl}" : $"{identity.Name} · set its URL and run the target check.",
             "Configure Target Application", TabHref(environment.Id, "target")));
 

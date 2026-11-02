@@ -71,6 +71,13 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
 
     private FrontendAnalysisProfile DevProfile => _settings.Settings.Profiles.Single(p => p.Id == "dev");
 
+    /// <summary>Two imported application sources and a host naming neither: nothing decides the application, so it stays unchosen (Needs review).</summary>
+    private void AmbiguousApplications()
+    {
+        Import("t", "Tiltak.zip", Guid.NewGuid());
+        DevProfile.TargetUrl = "https://app-dev.example.org";
+    }
+
     /// <summary>The Target Application (as the Target Application tab sets it): the M2LB application package by default.</summary>
     private void Application(string name = "M2LB", string? importId = "a") =>
         TargetApplications.Set(DevProfile, new TargetApplicationIdentity { Name = name, ImportId = importId, Manual = importId is null, SetAt = DateTimeOffset.UtcNow }, DateTimeOffset.UtcNow);
@@ -90,6 +97,65 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-roles]").Should().NotBeEmpty());
     }
 
+    // ── One guided workflow: the application is detected, its evidence associated ─────────────────────────────────────────
+
+    [Fact]
+    public void A_unique_application_source_and_an_agreeing_target_host_detect_M2LB_without_manual_creation()
+    {
+        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-name]").TextContent.Should().Be("M2LB"));
+        panel.Find("[data-testid=tai-provenance]").TextContent.Should().Be("Detected automatically · Very High confidence");
+        panel.FindAll("[data-testid=tai-reason]").Select(r => r.TextContent).Should().Contain(["Imported primary application source: M2LB.zip", "Target host m2lbdev.bufetat.no names M2LB"]);
+        panel.FindAll("[data-testid=tai-empty]").Should().BeEmpty("no manual creation is needed");
+        DevProfile.TargetApplication!.Should().Match<TargetApplicationIdentity>(t => t.Origin == TargetApplicationOrigins.Detected && t.ImportId == "a" && !t.Manual);
+        _settings.Settings.ActiveProfileId.Should().Be("dev", "detection never changes activation");
+        panel.Find("[data-testid=tai-change-impact]").TextContent.Should().Contain("re-evaluates evidence associations").And.Contain("remain untouched");
+    }
+
+    [Fact]
+    public void An_existing_manual_M2LB_is_confirmed_by_detection_in_place_never_duplicated()
+    {
+        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        TargetApplications.Set(DevProfile, TargetApplications.Manual("M2LB", "added before detection", DateTimeOffset.UtcNow), DateTimeOffset.UtcNow);
+        var original = DevProfile.TargetApplication!;
+
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-provenance]").TextContent.Should().StartWith("Confirmed by detection"));
+        panel.Find("[data-testid=tai-provenance]").TextContent.Should().EndWith("originally added manually");
+        DevProfile.TargetApplication.Should().BeSameAs(original, "the same entity is reused and its provenance upgraded");
+        (original.Origin, original.Description, original.ConfirmedByDetectionAt is not null).Should().Be((TargetApplicationOrigins.Manual, "added before detection", true));
+        DevProfile.ArchivedProjects.Should().BeNull("nothing was archived or duplicated");
+    }
+
+    [Fact]
+    public void An_explicit_different_application_wins_over_detection_and_the_disagreement_is_shown_for_review()
+    {
+        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        TargetApplications.Set(DevProfile, TargetApplications.Manual("Skolenærvær", null, DateTimeOffset.UtcNow), DateTimeOffset.UtcNow);
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-detection-differs]").TextContent.Should().Contain("detection points to M2LB"));
+        DevProfile.TargetApplication!.Name.Should().Be("Skolenærvær", "explicit user decisions override automatic inference");
+    }
+
+    [Fact]
+    public void The_project_tab_is_compact_by_default_and_keeps_rules_and_the_package_catalog_under_Advanced()
+    {
+        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        var cut = RenderPane(withApplication: false);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-application-provenance]").TextContent.Should().Contain("Detected automatically"));
+        cut.Find("[data-testid=tep-needs-review-count]").TextContent.Should().Be("0");
+        if (cut.FindAll("[data-testid=tep-roles]").Count > 0)
+        {
+            cut.FindAll("[data-testid=tep-requirement]").Should().OnlyContain(select => select.Closest("[data-testid=tep-advanced]") != null, "requirement editing is advanced");
+            cut.FindAll("[data-testid=tep-clear-project]").Should().OnlyContain(button => button.Closest("[data-testid=tep-advanced]") != null, "removal is advanced");
+            cut.Find("[data-testid=tep-edit-evidence]").TextContent.Should().Be("Review evidence");
+        }
+        cut.FindAll("[data-testid=pce-pattern]").Should().OnlyContain(input => input.Closest("[data-testid=tep-advanced]") != null, "expected filename patterns are advanced");
+    }
+
     private static AngleSharp.Dom.IElement Item(IRenderedComponent<TargetEnvironmentProjectPane> cut, string role, string import) =>
         cut.Find($"[data-testid=psp-role][data-role={role}] [data-testid=psp-item][data-import={import}]");
 
@@ -98,22 +164,28 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     [Fact]
     public void AConfiguredTargetUrlWithoutAChosenApplication_IsNamedAsSuch_WithTheOneActionThatFixesIt()
     {
-        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        AmbiguousApplications();
         var cut = RenderPane(withApplication: false);
 
         cut.Find("[data-testid=tep-target-application]").TextContent.Should().StartWith("Application not chosen");
-        cut.Find("[data-testid=tep-target-url-only]").TextContent.Should().Contain("https://m2lbdev.bufetat.no is configured, but the application (for example M2LB) is not chosen");
-        cut.Find("[data-testid=psp-url-configured]").TextContent.Should().Contain("The target URL (https://m2lbdev.bufetat.no) is configured, but no application is chosen yet");
-        cut.Find("[data-testid=psp-configure-target-application]").TextContent.Should().StartWith("Choose application");
+        cut.Find("[data-testid=tep-target-url-only]").TextContent.Should().Contain("https://app-dev.example.org is configured, but the application (for example M2LB) is not chosen");
+        cut.Find("[data-testid=psp-url-configured]").TextContent.Should().Contain("The target URL (https://app-dev.example.org) is configured, but no application is chosen yet");
         cut.Find("[data-testid=psp-configure-target-application]").GetAttribute("href").Should().Contain("tab=target");
 
+        // Ambiguous evidence is shown for one-click review — never chosen silently, never a form to fill in.
         var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
-        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-empty]").TextContent.Should().StartWith("Application not chosen.").And.Contain("target URL"));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-detected]").GetAttribute("data-state").Should().Be(TargetApplicationInference.NeedsReview));
+        panel.FindAll("[data-testid=tai-candidate]").Select(c => c.GetAttribute("data-name")).Should().BeEquivalentTo(["M2LB", "Tiltak"]);
+        DevProfile.TargetApplication.Should().BeNull("two application sources and an unrelated host decide nothing");
+        panel.Find("[data-testid=tai-candidate][data-name=M2LB] [data-testid=tai-use-candidate]").Click();
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-provenance]").TextContent.Should().Be("Chosen by you"));
+        DevProfile.TargetApplication!.Origin.Should().Be(TargetApplicationOrigins.Chosen);
     }
 
     [Fact]
     public void NoTargetApplication_ProjectShowsThePrerequisite_NoProjectSearch_NoManualProject()
     {
+        AmbiguousApplications();
         var cut = RenderPane(withApplication: false);
 
         cut.Find("[data-testid=psp]").TextContent.Should().Contain("Target Application required").And.Contain("after choosing the application/system this environment represents");
@@ -133,10 +205,11 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     [Fact]
     public void TargetApplication_OffersApplicationsOnly_NeverAnInfrastructurePackage()
     {
+        AmbiguousApplications();
         var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
 
-        panel.WaitForAssertion(() => panel.FindAll("[data-testid=tai-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB", "M2LB-docs"],
-            "the application first, then the documentation project; Terraform-iac is evidence, never an application"));
+        panel.WaitForAssertion(() => panel.FindAll("[data-testid=tai-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB", "Tiltak", "M2LB-docs"],
+            "applications first, then the documentation project; Terraform-iac is evidence, never an application"));
         panel.Find("[data-testid=tai-search]").Input("terraform");
         panel.FindAll("[data-testid=tai-option]").Should().BeEmpty("package file names are not application names");
         panel.Find("[data-testid=tai-search]").Input("");
@@ -171,12 +244,13 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.Find("[data-testid=psp-save]").Click();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=tep-project]").TextContent.Should().StartWith("Ready"));
-        cut.Find("[data-testid=tep-target-application]").TextContent.Should().Be("M2LB");
+        cut.Find("[data-testid=tep-target-application]").TextContent.Should().StartWith("M2LB");
+        cut.Find("[data-testid=tep-application-provenance]").TextContent.Should().Contain("Confirmed by detection", "the chosen M2LB is the one detection points to — confirmed in place");
         var rows = cut.FindAll("[data-testid=tep-role]");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.ApplicationSource).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Infrastructure).GetAttribute("data-state").Should().Be("Ready");
-        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Evidence roles", "the checklist and the table show the same associations");
+        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Evidence summary", "the checklist and the table show the same associations");
         _js.Json.Should().Contain("\"importId\":\"b\"").And.NotContain("FR-001", "only references are stored");
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull("configuring the environment's project never changes the current project");
         _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "no package is created or copied");
@@ -231,9 +305,10 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     [Fact]
     public void A_manual_application_is_added_on_Target_Application_then_its_evidence_is_bound_on_Project()
     {
+        AmbiguousApplications();
         var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
-        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-add-manual]"));
-        panel.Find("[data-testid=tai-add-manual]").Click();
+        // Manual is the exception: under Advanced, not the normal path.
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-advanced] summary").TextContent.Should().Be("Advanced — add an application manually"));
         panel.Find("[data-testid=tai-manual-name]").Input("Skolenærvær");
         panel.Find("[data-testid=tai-manual-description]").Change("School attendance reporting");
         panel.Find("[data-testid=tai-manual-save]").Click();
@@ -261,7 +336,8 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         panel.Find("[data-testid=tai-change]").Click();
         panel.Find("[data-testid=tai-option][data-name=M2LB-docs]").Click();
 
-        panel.Find("[data-testid=tai-confirm]").TextContent.Should().Contain("archived").And.Contain("not deleted").And.Contain("recalculated for M2LB-docs");
+        panel.Find("[data-testid=tai-confirm]").TextContent.Should().Contain("archived").And.Contain("not deleted").And.Contain("re-evaluated for M2LB-docs")
+            .And.Contain("Imported packages, Source Analysis, Test Data and Connected Systems are not changed");
         DevProfile.TargetApplication!.Name.Should().Be("M2LB", "nothing is applied before confirmation");
         panel.Find("[data-testid=tai-confirm-yes]").Click();
 

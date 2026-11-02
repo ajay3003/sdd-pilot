@@ -1,5 +1,6 @@
 using BirkNext.Integrations;
 using BirkNext.Web.Models;
+using BirkNext.Web.Services.ProjectImport;
 using Microsoft.JSInterop;
 
 namespace BirkNext.Web.Services.ProjectEvidence;
@@ -47,6 +48,14 @@ public interface IProjectEvidenceService
     /// <summary>The environment profile's Target Application identity (legacy profiles: read from their Project).</summary>
     TargetApplicationIdentity? TargetApplicationOf(string? environmentId) => null;
 
+    /// <summary>Which application the environment's evidence points to (imported primary sources + target detection) — the same inference
+    /// <see cref="GetAsync"/> applies when it is unique and strong. Never writes.</summary>
+    ApplicationInference InferApplication(string? environmentId) => ApplicationInference.None;
+
+    /// <summary>"Not used for this application": a package that needs review is set aside for this environment (the import is untouched;
+    /// re-evaluation never re-associates it). Reversible by binding it explicitly.</summary>
+    Task<bool> IgnoreSourceAsync(string environmentId, string importId) => Task.FromResult(false);
+
     event Action? Changed;
 }
 
@@ -90,16 +99,57 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
             _setup[key] = setup;
             _missingAfterRead[key] = Missing(setup);
         }
-        // Deterministic association: strong matches are associated without a manual step (recomputed on every read; explicit choices win).
-        // Only with the backend's classification — an unreachable backend never removes or guesses associations.
-        if (profile is not null && setup is not null
-            && ProjectEvidenceAssociation.Apply(profile, Associations(profile, setup), _time.GetUtcNow()))
+        // One guided workflow: (1) the Target Application is inferred from imported primary sources + target detection and applied when the
+        // match is unique and strong (an existing same-named application is confirmed, never duplicated; an explicit different choice wins);
+        // (2) deterministic association: strong matches are associated without a manual step (recomputed on every read; explicit choices win).
+        // Only with the backend's classification — an unreachable backend never removes or guesses associations or applications.
+        if (profile is not null && setup is not null)
         {
-            await _settings.MaterializeAsync(_js, profile.Id);
-            await _settings.SaveAsync(_js);
+            await EnsureDetectionSnapshotsAsync();
+            var inferred = TargetApplicationInference.Apply(profile, Inference(profile, setup), _time.GetUtcNow());
+            var associated = ProjectEvidenceAssociation.Apply(profile, Associations(profile, setup), _time.GetUtcNow());
+            if (inferred || associated)
+            {
+                await _settings.MaterializeAsync(_js, profile.Id);
+                await _settings.SaveAsync(_js);
+            }
         }
         return Build(profile, setup);
     }
+
+    private bool _snapshotsLoaded;
+
+    /// <summary>Target detection results are persisted separately (public discovery evidence only); read them once per session.</summary>
+    private async Task EnsureDetectionSnapshotsAsync()
+    {
+        if (_snapshotsLoaded) return;
+        _snapshotsLoaded = true;
+        try { await _settings.LoadDetectionSnapshotsAsync(_js); } catch (Exception ex) when (ex is InvalidOperationException or JSException) { }
+    }
+
+    private ApplicationInference Inference(FrontendAnalysisProfile profile, SourceSetupView? setup)
+    {
+        var lifecycle = _workspace.SddLifecycle;
+        // The same classification Import Project and the association use: primary application sources only (a related component is not one).
+        var primary = lifecycle.Applications.SelectMany(a => ApplicationContexts.Packages(lifecycle, a.Id, setup))
+            .Where(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource).Select(p => p.ImportId).ToHashSet(StringComparer.Ordinal);
+        return TargetApplicationInference.Infer(ProjectEvidencePackages.All(lifecycle, setup), profile.TargetUrl,
+            _settings.GetDetectionSnapshot(profile.Id)?.Result, KnownProjectNames(), primary);
+    }
+
+    public ApplicationInference InferApplication(string? environmentId) =>
+        Profile(environmentId) is { } profile ? Inference(profile, _setup.GetValueOrDefault(profile.Id)) : ApplicationInference.None;
+
+    public Task<bool> IgnoreSourceAsync(string environmentId, string importId) => MutateAsync(environmentId, profile =>
+    {
+        if (profile.Project is not { } project || project.Declined.Any(d => d.ImportId == importId && d.RoleKey == IgnoredRole)) return false;
+        project.Declined.Add(new ProjectEvidenceDecline { RoleKey = IgnoredRole, ImportId = importId, At = _time.GetUtcNow() });
+        foreach (var role in project.Evidence) role.Sources.RemoveAll(s => s.ImportId == importId && s.BoundBy == ProjectEvidenceAssociation.Detected);
+        return true;
+    });
+
+    /// <summary>The decline marker of "Not used for this application" (every role).</summary>
+    public const string IgnoredRole = "*";
 
     private IReadOnlyList<PackageAssociation> Associations(FrontendAnalysisProfile? profile, SourceSetupView? setup) =>
         ProjectEvidenceAssociation.Of(TargetApplications.Of(profile), profile?.Project, _workspace.SddLifecycle, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup);

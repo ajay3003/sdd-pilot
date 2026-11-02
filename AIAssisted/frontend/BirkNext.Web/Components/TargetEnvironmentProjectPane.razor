@@ -30,23 +30,38 @@
     {
         <dl class="tep-facts" data-testid="tep-facts">
             <div><dt>Target Environment</dt><dd data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</dd></div>
-            <div><dt>Target Application</dt><dd data-testid="tep-target-application">@if (_identity is { } app) { @app.Name } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Application not chosen</a>@if (TargetUrl is { Length: > 0 } url) { <span class="tep-muted" data-testid="tep-target-url-only"> · URL @url is configured, but the application (for example M2LB) is not chosen</span> } }</dd></div>
+            <div><dt>Target Application</dt><dd data-testid="tep-target-application">@if (_identity is { } app) { @app.Name <span class="tep-muted" data-testid="tep-application-provenance"> · @TargetApplicationInference.Provenance(app)</span> } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Application not chosen</a>@if (TargetUrl is { Length: > 0 } url) { <span class="tep-muted" data-testid="tep-target-url-only"> · URL @url is configured, but the application (for example M2LB) is not chosen</span> } }</dd></div>
             <div><dt>Project evidence</dt><dd data-testid="tep-project" data-state="@_view.EvidenceState">@EvidenceStatus</dd></div>
             @if (_view.IsConfigured)
             {
                 <div><dt>Evidence roles</dt><dd data-testid="tep-binding-summary">@_view.Summary</dd></div>
             }
             <div><dt>Imported sources</dt><dd data-testid="tep-source-total">@_view.Packages.Count@(_view.Packages.Count > 0 ? $" · latest import {_view.Packages.Max(p => p.ImportedAt).ToLocalTime():d MMM yyyy HH:mm}" : "")</dd></div>
+            <div><dt>Needs review</dt><dd data-testid="tep-needs-review-count">@ReviewItems.Count</dd></div>
         </dl>
 
-        @if (_identity is not null && _view.NeedsReviewCount > 0)
+        @if (_identity is not null && ReviewItems.Count > 0)
         {
-            <p class="tep-banner" role="status" data-testid="tep-needs-review">@_view.NeedsReviewCount source association@(_view.NeedsReviewCount == 1 ? " requires" : "s require") confirmation. Strong matches were associated automatically.</p>
-        }
-
-        @if (CatalogProject is { Length: > 0 } catalogProject)
-        {
-            <div id="pce"><PackageCatalogEditor Project="@catalogProject" /></div>
+            @* Only a human decision belongs here (ambiguous role, possible other component, conflict) — never limited analyzer coverage (Partial). *@
+            <section class="tep-review" aria-labelledby="tep-review-h" data-testid="tep-needs-review">
+                <h4 id="tep-review-h" class="tep-subtitle">Needs review</h4>
+                <p class="tep-muted">@ReviewItems.Count source@(ReviewItems.Count == 1 ? " needs" : "s need") your decision. Strong matches were associated automatically.</p>
+                <ul class="tep-review-list">
+                    @foreach (var item in ReviewItems)
+                    {
+                        var importId = item.Package.ImportId;
+                        <li data-testid="tep-review-item" data-import="@importId">
+                            <strong>@item.Package.ArchiveFileName</strong> <span class="tep-state tep-tone-partial">Needs review</span>
+                            <span class="tep-muted" data-testid="tep-review-why">Why: @item.Detail</span>
+                            <span class="tep-review-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-review-associate" @onclick="() => AssociateAsync(item)">Associate<span class="visually-hidden"> @item.Package.ArchiveFileName</span></button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-review-ignore" @onclick="() => IgnoreAsync(importId)">Not used for @_identity.Name<span class="visually-hidden"> (@item.Package.ArchiveFileName)</span></button>
+                                @if (item.Package.SnapshotId is { } snapshot) { <a class="btn btn-link btn-sm" data-testid="tep-review-inspect" href="@($"source-analysis?snapshot={snapshot:D}")">Inspect<span class="visually-hidden"> @item.Package.ArchiveFileName</span></a> }
+                            </span>
+                        </li>
+                    }
+                </ul>
+            </section>
         }
 
         @if (!_view.IsConfigured)
@@ -68,10 +83,11 @@
                 <p class="tep-banner" role="status" data-testid="tep-main-unavailable">The application package of @_view.ProjectName is not imported in this workspace. Consumers fall back to the current project until it is imported again or the Target Application is changed.</p>
             }
             <div class="tep-project-actions">
-                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-edit-evidence" @onclick="() => OpenSetup(pick: false)">Edit Project evidence</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-edit-evidence" @onclick="() => OpenSetup(pick: false)">Review evidence</button>
                 <a class="btn btn-secondary btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="tep-change-application">Change Target Application</a>
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove project evidence</button>
+                <a class="btn btn-link btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="tep-view-detection">View target detection</a>
             </div>
+            <p class="tep-muted" data-testid="tep-change-impact">Changing the Target Application re-evaluates these associations; imported packages, Source Analysis, Test Data and Connected Systems remain untouched.</p>
             @if (_impact.Count > 0)
             {
                 <ul class="tep-impact" data-testid="tep-impact">@foreach (var line in _impact) { <li>@line</li> }</ul>
@@ -98,11 +114,11 @@
                 </section>
             }
 
-            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Evidence roles</h4>
-            <p class="tep-muted">One row per evidence role: its sources (associated automatically or confirmed by you), readiness and Change / add. Associated is not reviewed, tested or ready.</p>
+            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Evidence summary</h4>
+            <p class="tep-muted">One row per evidence role: its sources, how they were associated, and whether the evidence is ready. Associated is not the same as ready.</p>
             <div class="tep-table-wrap">
             <table class="tep-table" data-testid="tep-roles">
-                <thead><tr><th scope="col">Role / capability</th><th scope="col">Requirement</th><th scope="col">Selected source</th><th scope="col">Capabilities</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
+                <thead><tr><th scope="col">Role</th><th scope="col">Requirement</th><th scope="col">Sources</th><th scope="col">Capabilities</th><th scope="col">Association · Readiness</th><th scope="col">Action</th></tr></thead>
                 <tbody>
                     @foreach (var row in _view.Rows)
                     {
@@ -112,14 +128,7 @@
                                 @row.Role.Label
                                 <span class="tep-required-by" data-testid="tep-required-by">Required by: @row.Role.RequiredBy</span>
                             </th>
-                            <td>
-                                <select class="form-select form-select-sm" aria-label="@($"Requirement of {row.Role.Label}")" data-testid="tep-requirement"
-                                        title="Required roles count toward evidence readiness. Changing this never bypasses checks a review itself requires."
-                                        @onchange="e => SetRequirementAsync(row.Role.RoleKey, e.Value?.ToString())">
-                                    <option value="Required" selected="@row.IsRequired">Required</option>
-                                    <option value="Optional" selected="@(!row.IsRequired)">Optional</option>
-                                </select>
-                            </td>
+                            <td><span class="tep-badge" data-testid="tep-requirement-label">@(row.IsRequired ? "Required" : "Optional")</span></td>
                             <td data-testid="tep-selected">
                                 @if (row.Bound.Count == 0 && row.UnavailableSources.Count == 0) { <span>—</span> }
                                 @if (row.Bound.Count > 1) { <div class="tep-source-count" data-testid="tep-source-count">@row.Bound.Count sources</div> }
@@ -140,15 +149,12 @@
                                         @foreach (var c in row.Bound.SelectMany(b => b.Capabilities).Select(c => c.Capability).Distinct()) { <li class="tep-badge tep-badge-compact" data-testid="tep-role-capability">@ShortCapability(c)</li> }
                                     </ul>
                                 }</td>
-                            <td><span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
-                                @if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">Source associated · @(row.IsReady ? "satisfies the role" : "role not fully satisfied")</span> }
+                            <td>@if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">@AssociationLabel(row)</span> }
+                                <span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
                                 @if (row.PartialDetail is { } partial)
                                 {
-                                    @* Concise by default; the full diagnostic on request. *@
-                                    <details class="tep-why" data-testid="tep-partial-why">
-                                        <summary>Why @row.StatusLabel.ToLowerInvariant()?</summary>
-                                        <span class="tep-partial-detail" data-testid="tep-partial-detail">@partial</span>
-                                    </details>
+                                    @* Association and readiness are separate facts: the reason a role is not ready is shown, not hidden. *@
+                                    <span class="tep-partial-detail" data-testid="tep-partial-detail">Reason: @partial</span>
                                 }
                                 @if (row.State == EvidenceRoleState.Conflict) { <span class="tep-partial-detail" data-testid="tep-conflict-detail">This role uses one source, but @row.Bound.Count are associated. Remove the one that is not authoritative.</span> }
                             </td>
@@ -170,7 +176,24 @@
             @SourcesSection
 
             <details class="tep-advanced" data-testid="tep-advanced">
-                <summary>Advanced configuration — evidence dimensions, extra roles, Test Pack roles</summary>
+                <summary>Advanced configuration — evidence roles and rules, package catalog, Test Pack roles, diagnostics</summary>
+            <h4 class="tep-subtitle">Evidence roles and rules</h4>
+            <p class="tep-muted">Required roles count toward evidence readiness. Changing a requirement never bypasses checks a review itself requires.</p>
+            <ul class="tep-role-rules" data-testid="tep-role-rules">
+                @foreach (var row in _view.Rows)
+                {
+                    <li><label>@row.Role.Label
+                        <select class="form-select form-select-sm" aria-label="@($"Requirement of {row.Role.Label}")" data-testid="tep-requirement"
+                                @onchange="e => SetRequirementAsync(row.Role.RoleKey, e.Value?.ToString())">
+                            <option value="Required" selected="@row.IsRequired">Required</option>
+                            <option value="Optional" selected="@(!row.IsRequired)">Optional</option>
+                        </select></label></li>
+                }
+            </ul>
+            @if (CatalogProject is { Length: > 0 } catalogProject)
+            {
+                <div id="pce"><PackageCatalogEditor Project="@catalogProject" /></div>
+            }
             <div class="tep-cards" data-testid="tep-dimensions">
                 @foreach (var d in ProjectEvidenceResolver.Dimensions(_view))
                 {
@@ -235,6 +258,8 @@
                     }
                 }
             }
+            <p class="tep-muted">Removing the project evidence keeps every import and Source Analysis snapshot; associations can be re-created.</p>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove project evidence</button>
             </details>
         }
 
@@ -512,6 +537,30 @@
     };
 
     /// <summary>The logical project whose package catalog is shown: this environment's Target Application (else its Project evidence name).</summary>
+    /// <summary>Sources that need a human decision (ambiguous role, possibly another component, conflict) — never "Partial" coverage.</summary>
+    private IReadOnlyList<PackageAssociation> ReviewItems => _view?.Associations.Where(a => a.State == EvidenceAssociationState.NeedsReview).ToList() ?? [];
+
+    /// <summary>"Associated automatically", "Confirmed by you" or both for a multi-source role.</summary>
+    private static string AssociationLabel(EvidenceRoleRow row)
+    {
+        var sources = row.Role.Sources.Where(s => row.Bound.Any(b => b.ImportId == s.ImportId)).ToList();
+        var detected = sources.Count(s => s.BoundBy == ProjectEvidenceAssociation.Detected);
+        return detected == sources.Count ? "Associated automatically" : detected == 0 ? "Confirmed by you" : "Associated automatically · confirmed by you";
+    }
+
+    private async Task IgnoreAsync(string importId)
+    {
+        if (Evidence is null) return;
+        if (await Evidence.IgnoreSourceAsync(EnvironmentId, importId)) { _notice = $"Set aside for {_identity?.Name}. The import is kept; re-evaluation will not associate it again."; await ReloadAsync(); }
+    }
+
+    /// <summary>Associate a source that needs review: open the role it fits (the user confirms the binding there).</summary>
+    private void AssociateAsync(PackageAssociation item)
+    {
+        var role = _view?.Rows.FirstOrDefault(r => item.Package.Has(r.Role.Capability)) ?? _view?.Rows.FirstOrDefault();
+        if (role is not null) { _openRole = role.Role.RoleKey; _focusPending = true; _appliedFocus = role.Role.RoleKey; }
+    }
+
     private string? CatalogProject => Services.GetService(typeof(PackageCatalogService)) is null ? null : _identity?.Name ?? _view?.Project?.ProjectName;
 
     private string? _sourceSearch;

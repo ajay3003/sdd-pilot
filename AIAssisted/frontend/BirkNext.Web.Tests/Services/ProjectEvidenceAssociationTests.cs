@@ -176,4 +176,87 @@ public sealed class ProjectEvidenceAssociationTests
         foreach (var input in new[] { waiting, configured })
             (input.Detail + input.ActionLabel + input.StatusLabel).Should().NotContainEquivalentOf("bind", "the Project tab associates automatically; there is no Bind step to send the tester to");
     }
+
+    // ── Target Application inference (one guided workflow with the association above) ──────────────────────────────────
+
+    private IReadOnlySet<string> Primary() => Lifecycle.Applications.SelectMany(a => ApplicationContexts.Packages(Lifecycle, a.Id, Setup))
+        .Where(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource).Select(p => p.ImportId).ToHashSet(StringComparer.Ordinal);
+
+    private ApplicationInference Infer(string? url, TargetEnvironmentDetectionResult? detection = null) =>
+        TargetApplicationInference.Infer(ProjectEvidencePackages.All(Lifecycle, Setup), url, detection, [], Primary());
+
+    [Fact]
+    public void The_real_M2LB_workspace_infers_M2LB_Very_High_with_the_target_host_and_High_from_source_alone()
+    {
+        UserWorkspace();
+        var detection = new TargetEnvironmentDetectionResult { Success = true, Reachability = TargetReachability.Reachable, DetectedClientFramework = ClientFrameworkType.BlazorWebAssembly,
+            DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId, SuggestedProfileName = "M2LB DEV" };
+
+        var withHost = Infer("https://m2lbdev.bufetat.no", detection);
+        withHost.Unique!.Should().Match<ApplicationCandidate>(c => c.Name == "M2LB" && c.Confidence == TargetApplicationInference.VeryHigh && c.Package!.ArchiveFileName == "M2LB.zip");
+        withHost.Candidates.Should().ContainSingle("M2LB.Common is supporting, Terraform is infrastructure and Tiltak 2 is a related component — none is an application");
+        withHost.Unique.Reasons.Should().Contain(r => r.Contains("Target host m2lbdev.bufetat.no names M2LB"))
+            .And.Contain(r => r.Contains("Frontend framework detected") && r.Contains("supporting only"), "framework is supporting evidence, never identity")
+            .And.Contain(r => r.Contains("profile name") && r.Contains("supporting only"));
+
+        Infer(null).Unique!.Confidence.Should().Be(TargetApplicationInference.High, "source evidence alone works without a target URL");
+        Infer("https://app.example.org").Unique!.Confidence.Should().Be(TargetApplicationInference.High, "a neutral host neither confirms nor contradicts");
+    }
+
+    [Fact]
+    public void A_host_naming_another_application_is_a_conflict_and_several_sources_without_a_decision_need_review()
+    {
+        UserWorkspace();
+        var conflict = TargetApplicationInference.Infer(ProjectEvidencePackages.All(Lifecycle, Setup), "https://skolenaervaer-dev.example.org", null, ["Skolenaervaer"], Primary());
+        (conflict.State, conflict.Unique).Should().Be((TargetApplicationInference.Conflict, (ApplicationCandidate?)null), "source says M2LB, target names something else: never auto-associate");
+
+        var ambiguous = TargetApplicationInference.Infer(ProjectEvidencePackages.All(Lifecycle, Setup), null, null, [], primaryImports: null);
+        (ambiguous.State, ambiguous.Unique).Should().Be((TargetApplicationInference.NeedsReview, (ApplicationCandidate?)null),
+            "without the import classification M2LB and Tiltak 2 are both application sources; nothing is chosen silently");
+        TargetApplicationInference.Infer(ProjectEvidencePackages.All(Lifecycle, Setup), "https://m2lbdev.bufetat.no", null, [], primaryImports: null).Unique!.Name
+            .Should().Be("M2LB", "the target host deterministically decides between them");
+
+        var hostOnly = TargetApplicationInference.Infer([], "https://m2lbdev.bufetat.no", null, ["M2LB"]);
+        hostOnly.Candidates.Single().Should().Match<ApplicationCandidate>(c => c.Confidence == TargetApplicationInference.Medium && !c.Strong);
+        hostOnly.Unique.Should().BeNull("a host alone is a suggestion, never applied");
+    }
+
+    [Fact]
+    public void Apply_detects_once_confirms_an_existing_manual_M2LB_in_place_and_never_overrides_an_explicit_choice()
+    {
+        UserWorkspace();
+        var inference = Infer("https://m2lbdev.bufetat.no");
+        var fresh = Profile(null);
+        TargetApplicationInference.Apply(fresh, inference, T0).Should().BeTrue();
+        fresh.TargetApplication!.Should().Match<TargetApplicationIdentity>(t => t.Name == "M2LB" && t.Origin == TargetApplicationOrigins.Detected && t.Confidence == "Very High");
+        TargetApplicationInference.Apply(fresh, inference, T0.AddHours(1)).Should().BeFalse("unchanged evidence changes nothing");
+
+        var manual = Profile(null);
+        TargetApplications.Set(manual, TargetApplications.Manual("m2lb", "typed earlier", T0), T0);
+        var entity = manual.TargetApplication!;
+        TargetApplicationInference.Apply(manual, inference, T0).Should().BeTrue();
+        manual.TargetApplication.Should().BeSameAs(entity, "reused, never duplicated");
+        TargetApplicationInference.Provenance(entity).Should().Be("Confirmed by detection · Very High confidence · originally added manually");
+
+        var other = Profile("Skolenærvær");
+        TargetApplicationInference.Apply(other, inference, T0).Should().BeFalse();
+        other.TargetApplication!.Name.Should().Be("Skolenærvær");
+    }
+
+    [Fact]
+    public void Not_used_for_the_application_sets_a_source_aside_without_touching_the_import_and_re_evaluation_keeps_it_aside()
+    {
+        UserWorkspace();
+        var profile = Profile("M2LB");
+        ProjectEvidenceAssociation.Apply(profile, Associations(profile), T0);
+        var tiltak = For(Associations(profile), "Tiltak 2");
+        tiltak.State.Should().Be(EvidenceAssociationState.NeedsReview);
+        profile.Project!.Declined.Add(new ProjectEvidenceDecline { RoleKey = ProjectEvidenceService.IgnoredRole, ImportId = tiltak.Package.ImportId, At = T0 });
+
+        var after = For(Associations(profile), "Tiltak 2");
+        after.Should().Match<PackageAssociation>(a => a.State == EvidenceAssociationState.NotAssociated && a.Detail.StartsWith("Not used for M2LB"));
+        ProjectEvidenceAssociation.Apply(profile, Associations(profile), T0.AddHours(1));
+        For(Associations(profile), "Tiltak 2").State.Should().Be(EvidenceAssociationState.NotAssociated, "refresh preserves the explicit decision");
+        Lifecycle.ProjectImports.Should().Contain(i => i.ImportId == tiltak.Package.ImportId, "the import is kept");
+    }
 }

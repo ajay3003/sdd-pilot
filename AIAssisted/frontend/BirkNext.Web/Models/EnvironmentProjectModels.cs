@@ -73,6 +73,24 @@ public sealed class TargetApplicationIdentity
     [JsonPropertyName("setAt")] public DateTimeOffset SetAt { get; set; }
     /// <summary>Read from a Project saved before Target Application owned the identity (not persisted as such).</summary>
     [JsonIgnore] public bool Legacy { get; set; }
+    /// <summary>How the identity was established: <see cref="TargetApplicationOrigins"/> (null = chosen before origins were recorded).</summary>
+    [JsonPropertyName("origin"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Origin { get; set; }
+    /// <summary>The inference confidence when detected or confirmed by detection ("Very High", "High").</summary>
+    [JsonPropertyName("confidence"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Confidence { get; set; }
+    /// <summary>Why BirkNext identified the application (imported primary source, target host …) — explainable, never a guess.</summary>
+    [JsonPropertyName("reasons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? Reasons { get; set; }
+    /// <summary>A manually added or chosen application that target/source detection later confirmed (the same entity; never a duplicate).</summary>
+    [JsonPropertyName("confirmedByDetectionAt"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ConfirmedByDetectionAt { get; set; }
+}
+
+public static class TargetApplicationOrigins
+{
+    /// <summary>Identified automatically from strong, unique evidence.</summary>
+    public const string Detected = "Detected";
+    /// <summary>Chosen by the user from the detected candidates.</summary>
+    public const string Chosen = "Chosen";
+    /// <summary>Typed in by the user (custom system, no source evidence).</summary>
+    public const string Manual = "Manual";
 }
 
 /// <summary>An explicit "not this package for this role" decision from the Project evidence checklist.</summary>
