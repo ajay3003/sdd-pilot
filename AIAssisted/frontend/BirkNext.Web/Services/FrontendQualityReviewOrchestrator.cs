@@ -704,6 +704,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         enrichedReport = ApplyAuthenticatedApiSurface(enrichedReport, result.AuthenticatedApiSurface, context, active);
         enrichedReport = ApplyBrowserQuality(enrichedReport, result.BrowserQualityReport);
         enrichedReport = ApplyPerformanceQuality(enrichedReport, result.PerformanceQualityReport);
+        // The exact browser evidence this review used, frozen with the result: later captures never rewrite it.
+        if (result.BrowserQualityReport?.EvidenceUsed is { Count: > 0 } used) enrichedReport = enrichedReport with { BrowserEvidence = used };
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
             targetUrl, context, result, _runtime is not null, _accessibility is not null,
             _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested,

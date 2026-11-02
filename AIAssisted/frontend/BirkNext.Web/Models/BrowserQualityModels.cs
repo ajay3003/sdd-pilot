@@ -52,6 +52,8 @@ public sealed record BrowserQualityReviewResult
     [JsonPropertyName("limitations")] public List<string> Limitations { get; init; } = [];
     [JsonPropertyName("evaluatedAt")] public DateTimeOffset EvaluatedAt { get; init; }
     [JsonPropertyName("browserName")] public string? BrowserName { get; init; }
+    /// <summary>The exact evidence evaluated (live first): frozen with the review result.</summary>
+    [JsonPropertyName("evidenceUsed")] public List<BirkNext.Web.Services.BrowserEvidenceUsed> EvidenceUsed { get; init; } = [];
     public bool Assessed => CompanionState == BrowserCompanionState.Connected && PagesWithEvidence > 0
         || (CompanionState == BrowserCompanionState.Disconnected && PagesWithEvidence > 0);
 }

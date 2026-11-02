@@ -1,0 +1,9 @@
+.fbe { margin-top: 0.75rem; }
+.fbe h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+.fbe-pages { list-style: none; margin: 0.5rem 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.875rem; }
+.fbe-page { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.fbe-badge { border-radius: 999px; padding: 0 0.5rem; font-size: 0.75rem; background: var(--clr-surface, #f4f5f7); border: 1px solid var(--clr-border, #d0d5dd); }
+.fbe-page-live .fbe-badge { background: var(--clr-success-bg-light, #e7f6ec); border-color: var(--clr-success, #1a7f37); }
+.fbe-page-stale .fbe-badge { background: var(--clr-warning-bg-light, #fff4e5); border-color: var(--clr-warning, #b7791f); }
+.fbe-limitations { margin: 0.25rem 0; font-size: 0.875rem; }
+.fbe-require-live { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.875rem; }

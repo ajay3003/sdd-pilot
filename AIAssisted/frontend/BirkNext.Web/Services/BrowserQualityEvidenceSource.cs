@@ -67,6 +67,7 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
             Wcag = discovery.GetAssessment(profileId),
             CompanionState = status.State, CompanionMessage = message, ProxyEvidenceAvailable = proxyEvidence,
             PagesWithEvidence = pages.Count, PageIdentities = pages.Select(p => p.Identity).ToList(), Findings = findings,
+            EvidenceUsed = FrontendBrowserEvidences.Used(FrontendBrowserEvidences.From(discovery.GetSnapshot(profileId), status, approved, DateTimeOffset.UtcNow)),
             Limitations = limitations, EvaluatedAt = DateTimeOffset.UtcNow, BrowserName = pages.Select(p => p.BrowserEvidence!.BrowserName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
         };
     }

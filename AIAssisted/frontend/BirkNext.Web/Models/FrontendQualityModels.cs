@@ -89,6 +89,8 @@ public sealed class FrontendQualityCategoryScore
 
 public sealed record FrontendQualityReviewReport
 {
+    /// <summary>The browser evidence (pages, capture times, live/historical, per-kind versions) this review used — frozen; null for older reports.</summary>
+    [JsonPropertyName("browserEvidence")] public List<BirkNext.Web.Services.BrowserEvidenceUsed>? BrowserEvidence { get; init; }
     [JsonPropertyName("coveragePasses")] public List<FrontendQualityCoveragePass> CoveragePasses { get; init; } = [];
     /// <summary>The engine execution plan this review ran (scope, capabilities with providers, one plan per engine).</summary>
     [JsonPropertyName("executionPlan")] public FrontendQualityExecutionPlan? ExecutionPlan { get; init; }

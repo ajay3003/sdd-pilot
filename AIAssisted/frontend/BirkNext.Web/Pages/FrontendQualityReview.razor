@@ -71,8 +71,25 @@
                     </FrontendQualityTargetSummary>
                     @* Review scope, stated before the run: which criteria accessibility is judged against. *@
                     <FrontendQualityProfileCard Selected="SelectedWcagProfile" ProfileChanged="OnWcagProfileChanged" />
-                    <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
+                    @if (_evidenceLoaded)
+                    {
+                        <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
+                    }
+                    else
+                    {
+                        @* Never a verdict before the browser evidence query has completed. *@
+                        <section class="fqr-card fqr-readiness-assessing" role="status" aria-live="polite" data-testid="fqr-readiness-assessing">
+                            <h2>Assessing frontend review readiness…</h2>
+                            <p class="fqr-muted">Loading browser evidence (pages, live session, DOM, accessibility and performance evidence).</p>
+                        </section>
+                    }
                 </div>
+                @if (LandingBrowserEvidence is not null)
+                {
+                <FrontendQualityBrowserEvidencePanel Loaded="_evidenceLoaded" Evidence="_browserEvidence" Error="@_browserEvidenceError" RequireLive="_requireLive"
+                    RequireLiveChanged="v => _requireLive = v" AttendedConfiguration="@AttendedConfiguration"
+                    BrowserDiscoveryHref="@($"{TargetEnvironmentsHref}&tab=browser{(_context is null ? "" : "&profile=" + Uri.EscapeDataString(_context.ActiveProfile.Id))}")" />
+                }
                 <div class="fqr-run-bar" data-testid="fqr-run-bar">
                     <PrimaryButton OnClick="RunReview" Disabled="@RunDisabled" data-testid="fqr-run">@RunButtonText</PrimaryButton>
                     @if (_engineStatusPending)
@@ -329,6 +346,30 @@
                 <span aria-hidden="true">⚠</span>
                 <strong>@(report.PreflightStatus == PreflightStatus.TimedOut ? "Target timed out" : report.PreflightStatus == PreflightStatus.Unreachable ? "Target unreachable" : "Reachability check unavailable")</strong> — @report.PreflightMessage
             </div>
+        }
+
+        @if (EvidenceChanges(report) is { Count: > 0 } changes)
+        {
+            <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status" data-testid="fqr-newer-evidence">
+                <span aria-hidden="true">↻</span>
+                <strong>Newer browser evidence available</strong> — @(changes.Count == 1 ? $"{changes[0].Route} changed since this review." : $"{changes.Count} pages changed since this review.")
+                This result keeps the evidence it was reviewed with.
+                <button type="button" class="btn-secondary fa-btn-sm" @onclick="() => _showEvidenceChanges = !_showEvidenceChanges" data-testid="fqr-newer-evidence-review">Review changes</button>
+                <button type="button" class="btn-primary fa-btn-sm" @onclick="RunReview" data-testid="fqr-newer-evidence-run">Run review with latest evidence</button>
+                @if (_showEvidenceChanges)
+                {
+                    <ul class="fqr-list" data-testid="fqr-newer-evidence-list">
+                        @foreach (var c in changes) { <li><code>@c.Route</code> — @string.Join(", ", c.ChangedKinds) evidence changed (reviewed @(c.UsedCapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—"), latest @(c.LatestCapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—"))</li> }
+                    </ul>
+                }
+            </div>
+        }
+        @if (report.BrowserEvidence is { Count: > 0 } usedEvidence)
+        {
+            <details class="fqr-evidence-used" data-testid="fqr-evidence-used">
+                <summary>Browser evidence used by this review (@usedEvidence.Count page@(usedEvidence.Count == 1 ? "" : "s"): @usedEvidence.Count(u => u.Live) live, @usedEvidence.Count(u => !u.Live) historical)</summary>
+                <ul class="fqr-list">@foreach (var u in usedEvidence) { <li><code>@u.Route</code> · @(u.Live ? "Live evidence" : $"Historical evidence · captured {u.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "unknown"}") · version <code>@u.Fingerprint</code></li> }</ul>
+            </details>
         }
 
         @* Five views of one result. Every panel stays in the DOM (inactive ones hidden) so a view switch never re-runs a projection and
@@ -959,7 +1000,8 @@
         : "Run Frontend Quality Review";
     private bool _deliveryExpanded, _qualityEvidenceExpanded;
     private bool RunDisabled => _running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl
-        || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending;
+        || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending || !_evidenceLoaded || LiveRequiredBlocker is not null;
+    private string? LiveRequiredBlocker => _requireLive ? _browserEvidence?.LiveRequiredBlocker : null;
     /// <summary>Human-readable reason shown next to a disabled Run button. Mirrors <see cref="RunDisabled"/>; never a technical code.</summary>
     private string? RunDisabledReason =>
         _running ? null
@@ -967,7 +1009,40 @@
         : _context.ActiveTargetError is { } error ? $"{error} Select a Target Environment and choose Set as Active."
         : !_context.HasTargetUrl ? "The active Target Environment has no Frontend URL. Save a valid Frontend URL before running the review."
         : _activeEngines is not { HasActiveEngines: true } ? $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}"
+        : !_evidenceLoaded ? "Assessing frontend review readiness — loading browser evidence…"
+        : LiveRequiredBlocker is { } live ? live
         : null;
+
+    // ── Browser evidence (loaded by FQR itself; Browser Discovery is a capture/viewer surface, never a prerequisite) ─────────────
+    private FrontendBrowserEvidence? _browserEvidence;
+    private bool _evidenceLoaded;
+    private string? _browserEvidenceError;
+    private bool _requireLive;
+    private bool _showEvidenceChanges;
+
+    private string AttendedConfiguration => _context is null || _context.AuthenticationType == FrontendAuthenticationType.None
+        ? "Not configured" : $"Configured ({_context.AuthenticationConfiguration ?? _context.AuthenticationType.ToString()})";
+
+    private async Task LoadBrowserEvidenceAsync()
+    {
+        _evidenceLoaded = false;
+        _browserEvidenceError = null;
+        try
+        {
+            if (_context is { ActiveTargetError: null } context && ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) is IEndpointDiscoveryService discovery)
+                _browserEvidence = await FrontendBrowserEvidences.LoadAsync(discovery, JS, _companionRuntime, context.ActiveProfile);
+        }
+        catch (Exception ex) when (ex is JSException or HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            _browserEvidence = null;
+            _browserEvidenceError = $"Browser evidence could not be loaded ({ex.GetType().Name}); engines that need it are reported as not assessed, never as passed.";
+        }
+        _evidenceLoaded = true;
+    }
+
+    /// <summary>Pages whose browser evidence changed after the shown review used it (the review itself is never rewritten).</summary>
+    private IReadOnlyList<BrowserEvidenceChange> EvidenceChanges(FrontendQualityReviewReport report) =>
+        report.BrowserEvidence is { Count: > 0 } used && _browserEvidence is { } current ? FrontendBrowserEvidences.NewerThan(used, current) : [];
 
     /// <summary>
     /// The discovery snapshot the WCAG profile selection and manual reviews are written to. Read-only here: the
@@ -1274,13 +1349,10 @@
         // With no active backend engine (e.g. only HTTP Security + HTTP Performance) nothing is fetched at all.
         StartEngineStatusFetch();
         if (!_engineStatusPending) await ApplyRecommendedScopeAsync();
-        if (_report is null && _companionRuntime is not null && _context.ActiveTargetError is null)
-        {
-            // Read the existing owner's status and captured history even when FQR is opened directly.
-            // Pairing and configuration remain exclusively in Browser Discovery.
-            await _companionRuntime.FollowAsync(_context.ActiveProfile);
-            _companionRuntime.Changed += OnCompanionChanged;
-        }
+        // Browser evidence is loaded here, by FQR itself — never by Browser Discovery having been opened first (it also follows the
+        // existing Companion owner's status). Pairing and configuration remain exclusively in Browser Discovery.
+        await LoadBrowserEvidenceAsync();
+        if (_report is null && _companionRuntime is not null && _context.ActiveTargetError is null) _companionRuntime.Changed += OnCompanionChanged;
     }
 
     private bool _disposed;
