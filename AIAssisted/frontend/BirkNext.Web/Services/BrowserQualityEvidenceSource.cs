@@ -36,7 +36,7 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
 
         var approved = BrowserCompanionScope.ApprovedOrigins(context.ActiveProfile);
         var pages = discovery.GetSnapshot(profileId).Pages
-            .Where(p => p.BrowserEvidence is not null && approved.Contains(p.PageOrigin, StringComparer.OrdinalIgnoreCase))
+            .Where(p => p.BrowserEvidence is not null && approved.Contains(p.PageOrigin, StringComparer.OrdinalIgnoreCase) && FrontendQualityPageScope.Includes(context, p.Identity))
             .OrderByDescending(p => p.LastObservedAt)
             .ToList();
         var proxyEvidence = pages.Any(p => p.Endpoints.Count > 0);
@@ -51,6 +51,8 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
             proxyEvidence ? "Network evidence for these pages comes from the Local HTTPS proxy (Endpoint Discovery) and is correlated by page identity, not by causality."
                           : "Network correlation unavailable: no Local HTTPS proxy traffic was recorded for these pages (proxy not running or not configured in the browser).",
         };
+
+        if (FrontendQualityPageScope.Limitation(context) is { } scoped) limitations.Insert(0, scoped);
 
         var message = status.State switch
         {

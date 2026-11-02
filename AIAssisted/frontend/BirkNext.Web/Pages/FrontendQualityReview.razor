@@ -87,7 +87,7 @@
                 @if (LandingBrowserEvidence is not null)
                 {
                 <FrontendQualityBrowserEvidencePanel Loaded="_evidenceLoaded" Evidence="_browserEvidence" Error="@_browserEvidenceError" RequireLive="_requireLive"
-                    RequireLiveChanged="v => _requireLive = v" AttendedConfiguration="@AttendedConfiguration"
+                    RequireLiveChanged="v => _requireLive = v" CurrentPageOnly="_currentPageOnly" CurrentPageOnlyChanged="v => _currentPageOnly = v" AttendedConfiguration="@AttendedConfiguration"
                     BrowserDiscoveryHref="@($"{TargetEnvironmentsHref}&tab=browser{(_context is null ? "" : "&profile=" + Uri.EscapeDataString(_context.ActiveProfile.Id))}")" />
                 }
                 <div class="fqr-run-bar" data-testid="fqr-run-bar">
@@ -997,11 +997,17 @@
     private string EngineStatusPendingText => $"Checking {ActiveBackendEngineIds.Count} active engine{(ActiveBackendEngineIds.Count == 1 ? "" : "s")}…";
     private string RunButtonText => _running ? "Analysing..."
         : _engineStatusPending ? EngineStatusPendingText
+        : _currentPageOnly ? "Review current page"
         : "Run Frontend Quality Review";
     private bool _deliveryExpanded, _qualityEvidenceExpanded;
     private bool RunDisabled => _running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl
-        || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending || !_evidenceLoaded || LiveRequiredBlocker is not null;
-    private string? LiveRequiredBlocker => _requireLive ? _browserEvidence?.LiveRequiredBlocker : null;
+        || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending || !_evidenceLoaded || LiveRequiredBlocker is not null || CurrentPageBlocker is not null;
+    // The current page is live by definition, so "Require live evidence" says nothing more about a current-page review.
+    private string? LiveRequiredBlocker => _requireLive && !_currentPageOnly ? _browserEvidence?.LiveRequiredBlocker : null;
+    /// <summary>"Review current page only" needs exactly one page open in the paired browser.</summary>
+    private string? CurrentPageBlocker => !_currentPageOnly ? null
+        : _browserEvidence is { } evidence ? evidence.CurrentPageUnavailable : "Browser evidence could not be loaded, so the current page is not known.";
+    private bool _currentPageOnly;
     /// <summary>Human-readable reason shown next to a disabled Run button. Mirrors <see cref="RunDisabled"/>; never a technical code.</summary>
     private string? RunDisabledReason =>
         _running ? null
@@ -1011,6 +1017,7 @@
         : _activeEngines is not { HasActiveEngines: true } ? $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}"
         : !_evidenceLoaded ? "Assessing frontend review readiness — loading browser evidence…"
         : LiveRequiredBlocker is { } live ? live
+        : CurrentPageBlocker is { } page ? page
         : null;
 
     // ── Browser evidence (loaded by FQR itself; Browser Discovery is a capture/viewer surface, never a prerequisite) ─────────────
@@ -1561,6 +1568,19 @@
             StateHasChanged();
             return;
         }
+        if (_currentPageOnly)
+        {
+            // The page open NOW, not the one open when the option was chosen: the evidence is read again at run time.
+            await LoadBrowserEvidenceAsync();
+            if (_browserEvidence?.CurrentPage is not { } page)
+            {
+                _runNotStartedReason = CurrentPageBlocker ?? "No page is open in the paired browser.";
+                _running = false;
+                StateHasChanged();
+                return;
+            }
+            _context.ReviewPageIdentity = page.Identity;
+        }
         if (_engineStatusTask is { } pendingStatus)
             await pendingStatus; // Layer 1–3 status for the active backend engines feeds the execution snapshot.
         await ResolveAuthenticatedCapabilities();
@@ -1582,7 +1602,7 @@
         var snapshot = CaptureExecutionSnapshot();
         // The resolved authentication mode is fixed for this run; Unattended never falls back to the attended session.
         _context.RuntimeAuthentication = _authentication?.Effective ?? BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Auto;
-        var orchestration = await Orchestrator.RunAsync(_context.TargetUrl, _context, snapshot);
+        var orchestration = await Orchestrator.RunAsync(FrontendQualityPageScope.ReviewUrl(_context), _context, snapshot);
         _secError = orchestration.SecurityError;
         _perfError = orchestration.PerformanceError;
 
@@ -1634,7 +1654,7 @@
             CategoryScores = qualityReport.CategoryScores,
             Recommendations = qualityReport.Recommendations,
             Risks = qualityReport.Risks,
-            Limitations = qualityReport.Limitations,
+            Limitations = FrontendQualityPageScope.Limitation(_context) is { } pageScope ? [pageScope, .. qualityReport.Limitations] : qualityReport.Limitations,
             IsBlazorWasm = qualityReport.IsBlazorWasm,
             CookieSecurity = qualityReport.CookieSecurity,
             Coverage = qualityReport.Coverage,

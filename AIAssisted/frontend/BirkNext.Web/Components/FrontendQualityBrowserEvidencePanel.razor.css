@@ -7,3 +7,10 @@
 .fbe-page-stale .fbe-badge { background: var(--clr-warning-bg-light, #fff4e5); border-color: var(--clr-warning, #b7791f); }
 .fbe-limitations { margin: 0.25rem 0; font-size: 0.875rem; }
 .fbe-require-live { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.875rem; }
+.fbe-current { margin: 0.25rem 0; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; overflow-wrap: anywhere; }
+.fbe-badge-live { background: var(--clr-success-bg-light, #e7f6ec); border-color: var(--clr-success, #1a7f37); }
+.fbe-summary { margin: 0.25rem 0; font-size: 0.875rem; }
+.fbe-scope { border: 1px solid var(--clr-border, #d0d5dd); border-radius: 6px; padding: 0.4rem 0.75rem 0.5rem; margin: 0.5rem 0; display: grid; gap: 0.25rem; font-size: 0.875rem; }
+.fbe-scope legend { font-weight: 600; padding: 0 0.25rem; }
+.fbe-scope label { display: flex; gap: 0.5rem; align-items: baseline; overflow-wrap: anywhere; }
+.fbe-detail > summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; }

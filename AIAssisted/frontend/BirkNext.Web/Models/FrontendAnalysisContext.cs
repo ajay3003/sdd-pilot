@@ -7,6 +7,9 @@ public sealed class FrontendAnalysisContext
     /// Accessibility with the automation identity; it never falls back to the attended session. Auto/Attended/None keep the existing behaviour.</summary>
     public BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode RuntimeAuthentication { get; set; }
     public string? AuthenticationConfiguration { get; set; }
+    /// <summary>"Review current page only": the live page (origin + route) this run is narrowed to, or null for every captured page.
+    /// Page evidence engines read that page alone and URL engines review its address.</summary>
+    public string? ReviewPageIdentity { get; set; }
 
     /// <summary>Detached execution context; never changes Target Environment authentication settings.</summary>
     public FrontendAnalysisContext ForReviewScope(FrontendReviewAccessScope scope)

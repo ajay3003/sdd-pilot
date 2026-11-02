@@ -43,7 +43,7 @@ public sealed class PerformanceQualityEvidenceSource(BrowserCompanionRuntime com
         var approved = BrowserCompanionScope.ApprovedOrigins(profile);
         var snapshot = discovery.GetSnapshot(profileId);
         var pages = snapshot.Pages
-            .Where(p => approved.Count == 0 || approved.Contains(p.PageOrigin, StringComparer.OrdinalIgnoreCase))
+            .Where(p => (approved.Count == 0 || approved.Contains(p.PageOrigin, StringComparer.OrdinalIgnoreCase)) && FrontendQualityPageScope.Includes(context, p.Identity))
             .OrderByDescending(p => p.LastObservedAt)
             .Select(p => PerformanceQualityRules.Evaluate(p, context.PerformanceThresholds, context.CoreWebVitalsThresholds))
             .Where(p => p.HasEvidence)
@@ -62,6 +62,7 @@ public sealed class PerformanceQualityEvidenceSource(BrowserCompanionRuntime com
             "API latency is the proxy-observed duration (request head received → response relayed); p50/p95 are published only with at least " + PerformanceLatencyStatistics.MinimumSamplesForPercentiles + " samples.",
             "No configured polling classification exists; polling-like cadence is a heuristic that lowers confidence and never hides evidence.",
         };
+        if (FrontendQualityPageScope.Limitation(context) is { } scoped) limitations.Insert(0, scoped);
         if (!browserEvidence) limitations.Add("Browser performance: not assessed — Browser Companion not connected or no page visited; only network/API evidence is available.");
         if (!proxyEvidence) limitations.Add("Network/API correlation unavailable: no Local HTTPS proxy traffic was recorded for these pages (proxy not running or not configured in the browser).");
 

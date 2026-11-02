@@ -1,7 +1,9 @@
 @using BirkNext.Web.Services
 
 @* Browser evidence for the review, loaded by FQR itself (never by visiting Browser Discovery): which pages, live vs historical, which evidence
-   kinds, what is limited. Historical evidence is usable with a limitation; only "Require live evidence" makes it insufficient. *@
+   kinds, what is limited. Summary first — the live page leads, counts in one line, the page list and access detail collapsed. Historical
+   evidence is usable with a limitation; only "Require live evidence" makes it insufficient. "Review current page only" narrows one run to the
+   page open in the paired browser. *@
 <section class="fqr-card fbe" aria-labelledby="fbe-h" data-testid="fqr-evidence-summary">
     <h2 id="fbe-h">Pages and evidence</h2>
     @if (!Loaded)
@@ -19,37 +21,58 @@
     }
     else
     {
-        <dl class="fqr-technical-list-grid fbe-counts" data-testid="fqr-browser-evidence-counts">
-            <div><dt>Pages</dt><dd data-testid="fbe-pages">@e.Pages.Count</dd></div>
-            <div><dt>Live pages</dt><dd data-testid="fbe-live">@e.LivePages</dd></div>
-            <div><dt>Historical pages</dt><dd data-testid="fbe-historical">@e.HistoricalPages</dd></div>
-            <div><dt>DOM evidence</dt><dd>@e.DomPages/@e.Pages.Count</dd></div>
-            <div><dt>Accessibility evidence</dt><dd>@e.AccessibilityPages/@e.Pages.Count</dd></div>
-            <div><dt>Performance evidence</dt><dd>@e.PerformancePages/@e.Pages.Count</dd></div>
-        </dl>
-        <p class="fqr-muted fbe-access" data-testid="fqr-browser-evidence-access">
-            <strong>Access:</strong> observed in your own browser session — BirkNext performed no sign-in, and whether these pages required sign-in was not recorded.
-            <strong>Attended authentication:</strong> @AttendedConfiguration — not exercised by this browser evidence.
+        @if (e.CurrentPage is { } current)
+        {
+            <p class="fbe-current" data-testid="fqr-current-page"><span class="fbe-badge fbe-badge-live">Live now</span> <code>@current.Route</code>
+                <span class="fqr-muted">· strongest runtime evidence · @Kinds(current)</span></p>
+        }
+        <p class="fbe-summary" data-testid="fqr-browser-evidence-counts">
+            <span data-testid="fbe-pages">@e.Pages.Count</span> page@(e.Pages.Count == 1 ? "" : "s") ·
+            <span data-testid="fbe-live">@e.LivePages</span> live ·
+            <span data-testid="fbe-historical">@e.HistoricalPages</span> historical ·
+            DOM @e.DomPages/@e.Pages.Count · Accessibility @e.AccessibilityPages/@e.Pages.Count · Performance @e.PerformancePages/@e.Pages.Count
         </p>
         @if (e.Limitations.Count > 0)
         {
             <ul class="fqr-list fbe-limitations" data-testid="fqr-browser-evidence-limitations">@foreach (var l in e.Limitations) { <li>@l</li> }</ul>
         }
-        <ol class="fbe-pages" data-testid="fqr-browser-evidence-pages">
-            @foreach (var p in e.Pages)
-            {
-                <li class="fbe-page fbe-page-@p.Freshness.ToString().ToLowerInvariant()" data-testid="fqr-evidence-page" data-live="@(p.Live ? "true" : "false")" data-freshness="@p.Freshness">
-                    <code>@p.Route</code>
-                    <span class="fbe-badge" data-testid="fqr-evidence-badge">@FrontendBrowserEvidences.FreshnessLabel(p)@(p.Live ? " · strongest runtime evidence" : p.Freshness == PageEvidenceFreshness.Stale ? "" : " · not revalidated in current session")</span>
-                    <span class="fqr-muted">@string.Join(" · ", new[] { p.Dom ? "DOM" : null, p.Accessibility ? "accessibility" : null, p.Performance ? "performance" : null }.Where(x => x is not null))</span>
-                </li>
-            }
-        </ol>
-        <label class="fbe-require-live" data-testid="fqr-require-live">
-            <input type="checkbox" checked="@RequireLive" @onchange="e2 => RequireLiveChanged.InvokeAsync(e2.Value is true)" data-testid="fqr-require-live-input" />
-            Require live evidence (current-runtime review) — historical pages then block the run instead of being a limitation
-        </label>
-        @if (RequireLive && e.LiveRequiredBlocker is { } blocker) { <p class="fqr-run-reason" role="alert" data-testid="fqr-require-live-blocker">@blocker</p> }
+
+        <fieldset class="fbe-scope" data-testid="fqr-page-scope">
+            <legend>Pages to review</legend>
+            <label data-testid="fqr-page-scope-all">
+                <input type="radio" name="fbe-page-scope" checked="@(!CurrentPageOnly)" @onchange="() => CurrentPageOnlyChanged.InvokeAsync(false)" />
+                @FrontendQualityPageScope.AllPagesLabel (@e.Pages.Count)
+            </label>
+            <label data-testid="fqr-page-scope-current">
+                <input type="radio" name="fbe-page-scope" checked="@CurrentPageOnly" disabled="@(e.CurrentPage is null)" aria-describedby="fbe-scope-current-help"
+                       @onchange="() => CurrentPageOnlyChanged.InvokeAsync(true)" data-testid="fqr-page-scope-current-input" />
+                @FrontendQualityPageScope.CurrentPageLabel@(e.CurrentPage is { } page ? $" — {page.Route}" : "")
+            </label>
+            <span class="fqr-muted" id="fbe-scope-current-help" data-testid="fqr-page-scope-help">@(e.CurrentPageUnavailable ?? "Reviews the open page alone: its browser evidence, and its address for the URL engines.")</span>
+        </fieldset>
+
+        <details class="fbe-detail" data-testid="fqr-browser-evidence-detail">
+            <summary>Page list and access (@e.Pages.Count)</summary>
+            <ol class="fbe-pages" data-testid="fqr-browser-evidence-pages">
+                @foreach (var p in e.Pages)
+                {
+                    <li class="fbe-page fbe-page-@p.Freshness.ToString().ToLowerInvariant()" data-testid="fqr-evidence-page" data-live="@(p.Live ? "true" : "false")" data-freshness="@p.Freshness">
+                        <code>@p.Route</code>
+                        <span class="fbe-badge" data-testid="fqr-evidence-badge">@FrontendBrowserEvidences.FreshnessLabel(p)@(p.Live ? " · strongest runtime evidence" : p.Freshness == PageEvidenceFreshness.Stale ? "" : " · not revalidated in current session")</span>
+                        <span class="fqr-muted">@Kinds(p)</span>
+                    </li>
+                }
+            </ol>
+            <p class="fqr-muted fbe-access" data-testid="fqr-browser-evidence-access">
+                <strong>Access:</strong> observed in your own browser session — BirkNext performed no sign-in, and whether these pages required sign-in was not recorded.
+                <strong>Attended authentication:</strong> @AttendedConfiguration — not exercised by this browser evidence.
+            </p>
+            <label class="fbe-require-live" data-testid="fqr-require-live">
+                <input type="checkbox" checked="@RequireLive" @onchange="e2 => RequireLiveChanged.InvokeAsync(e2.Value is true)" data-testid="fqr-require-live-input" />
+                Require live evidence (current-runtime review) — historical pages then block the run instead of being a limitation
+            </label>
+        </details>
+        @if (RequireLive && !CurrentPageOnly && e.LiveRequiredBlocker is { } blocker) { <p class="fqr-run-reason" role="alert" data-testid="fqr-require-live-blocker">@blocker</p> }
     }
 </section>
 
@@ -59,7 +82,13 @@
     [Parameter] public string? Error { get; set; }
     [Parameter] public bool RequireLive { get; set; }
     [Parameter] public EventCallback<bool> RequireLiveChanged { get; set; }
+    /// <summary>"Review current page only" — narrows the next run to <see cref="FrontendBrowserEvidence.CurrentPage"/>.</summary>
+    [Parameter] public bool CurrentPageOnly { get; set; }
+    [Parameter] public EventCallback<bool> CurrentPageOnlyChanged { get; set; }
     /// <summary>"Configured (attended)" / "Not configured" — from the Target Environment, never from the evidence.</summary>
     [Parameter] public string AttendedConfiguration { get; set; } = "Not configured";
     [Parameter] public string BrowserDiscoveryHref { get; set; } = "/admin/system-settings?section=target-environments&tab=browser";
+
+    private static string Kinds(BrowserEvidencePage p) =>
+        string.Join(" · ", new[] { p.Dom ? "DOM" : null, p.Accessibility ? "accessibility" : null, p.Performance ? "performance" : null }.OfType<string>());
 }

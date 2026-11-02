@@ -62,6 +62,15 @@ public sealed record FrontendBrowserEvidence(IReadOnlyList<BrowserEvidencePage> 
         }
     }
 
+    /// <summary>The page "Review current page only" reviews: the one page open in the paired browser with evidence. Null when none is open,
+    /// or when several are (which one is "current" is then not known — never guessed).</summary>
+    public BrowserEvidencePage? CurrentPage => Pages.Where(p => p.Live).ToList() is [var only] ? only : null;
+
+    /// <summary>Why "Review current page only" is unavailable, or null when it is available.</summary>
+    public string? CurrentPageUnavailable => CurrentPage is not null ? null
+        : LivePages > 1 ? $"{LivePages} pages are open in the paired browser; keep only the page to review open."
+        : "No page is open in the paired browser. Open the page in your managed Edge to review it alone.";
+
     /// <summary>In "current runtime required" mode, pages without live evidence cannot be reviewed as current: that is the only blocker.</summary>
     public string? LiveRequiredBlocker => Pages.Count == 0 ? null
         : HistoricalPages > 0 ? $"Current-runtime review requires live evidence: {HistoricalPages} of {Pages.Count} page{(Pages.Count == 1 ? "" : "s")} have historical evidence only. Open them in the paired browser, or turn off \"Require live evidence\"."
