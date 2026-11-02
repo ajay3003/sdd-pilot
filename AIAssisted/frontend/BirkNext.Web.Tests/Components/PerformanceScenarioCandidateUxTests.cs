@@ -70,15 +70,16 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
     {
         var cut = Builder([]);
         cut.FindAll("[data-testid=psb-operation]").Should().BeEmpty("Live Discovery lists observations only — never declared or recommended operations");
-        cut.Markup.Should().Contain("no API calls observed on this target yet");
+        cut.Find("[data-testid=psb-live-actions]").TextContent.Should().Contain("Use declared contracts");
+        cut.FindAll("[data-testid=psb-contract-chooser]").Should().BeEmpty();
     }
 
     [Fact]
     public void LiveDiscovery_WithoutASnapshot_ListsObservedOperations_AndANormalisedIdNeedsTestData_ValueHidden()
     {
         var cut = Builder([Rest($"/api/autorisasjon/v1/brukere/{ObservedId}/barn")]);
-        cut.Find("[data-testid=psb-snapshot]").ParentElement!.TextContent.Should().Contain("Optional contract correlation source");
-        cut.Find("[data-testid=psb-correlation-help]").TextContent.Should().StartWith("Correlates observed traffic with declared operations. Live Discovery works without one");
+        cut.Find("[data-testid=psb-live]").Should().NotBeNull();
+        cut.FindAll("[data-testid=psb-snapshot]").Should().BeEmpty("Live Discovery works without a contract source; correlation is optional and only offered when one exists");
         var card = Card(cut, "GET /api/autorisasjon/v1/brukere/{id}/barn");
         card.QuerySelector("[data-testid=psb-evidence]")!.TextContent.Should().Be("Observed only");
         card.QuerySelector("[data-testid=psb-observation]")!.TextContent.Should().StartWith("13 calls · HTTP 200 · last seen");
@@ -178,8 +179,8 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         var step = new HttpPerformanceStep { Name = "orders", RelativePath = "/api/orders", Source = new ScenarioStepSource { OperationKey = "observed:GET /api/orders", Origin = ScenarioOperationOrigin.Observed, Evidence = ScenarioEvidence.ObservedOnly } };
         var cut = Builder(observed, Definition(step));
         var filters = cut.FindAll("[data-testid=psb-filter]").Select(f => f.TextContent.Trim()).ToList();
-        filters.Should().Equal("All (3)", "Ready (0)", "Needs review (1)", "Added (1)");
-        cut.FindAll("[data-testid=psb-evidence-filter]").Select(f => f.TextContent.Trim()).Should().Equal("Any (3)", "Declared + observed (0)", "Declared only (0)", "Observed only (3)", "REST (2)", "GraphQL (1)");
+        filters.Should().Equal("Candidates (3)", "Ready (0)", "Needs review (1)", "Added to scenario (1)");
+        cut.FindAll("[data-testid=psb-evidence-filter]").Select(f => f.TextContent.Trim()).Should().Equal("Any (3)", "Observed + declared (0)", "Observed only (3)", "REST (2)", "GraphQL (1)");
         cut.FindAll("[data-testid=psb-evidence-filter]").Single(f => f.GetAttribute("data-filter") == "graphql").Click();
         cut.FindAll("[data-testid=psb-operation]").Should().ContainSingle().Which.GetAttribute("data-state").Should().Be("notrunnable");
         cut.FindAll("[data-testid=psb-evidence-filter]").Single(f => f.GetAttribute("data-filter") == "all").Click();
@@ -189,18 +190,19 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
     }
 
     [Fact]
-    public void Recommended_ShowsARankedTopSubset_AndTechnicalTrafficOnlyOnRequest()
+    public void RecommendedFirst_IsARankingOfTheLiveList_PagedAndTechnicalTrafficOnlyOnRequest()
     {
         var observed = Enumerable.Range(1, 30).Select(i => Rest($"/api/resource{i:00}/list", count: i)).Concat(
             [Rest("/", category: ObservedTrafficCategory.OtherHttp), Rest("/appsettings.json", category: ObservedTrafficCategory.OtherHttp), Rest("/appsettings.Dev.json", category: ObservedTrafficCategory.OtherHttp), Rest("/health/ready")]).ToList();
+        // A scenario saved in the old "Recommended" view opens in the default evidence mode (Live Discovery); Recommended is only an ordering now.
         var cut = Builder(observed, source: PerformanceScenarioBuilder.RecommendedKey);
-        cut.FindAll("[data-testid=psb-operation]").Should().HaveCount(PerformanceScenarioBuilder.TopCount, "no massive uncontrolled first render");
-        cut.Find("[data-testid=psb-count]").TextContent.Should().StartWith("Top 5 recommended of 31");
+        cut.Find("[data-testid=psb-source-observed]").HasAttribute("checked").Should().BeTrue();
+        cut.FindAll("[data-testid=psb-source-recommended]").Should().BeEmpty("Recommended is not an evidence source");
+        cut.Find("[data-testid=psb-recommended-first]").HasAttribute("checked").Should().BeTrue();
+        cut.FindAll("[data-testid=psb-operation]").Should().HaveCount(10, "no massive uncontrolled first render");
+        cut.Find("[data-testid=psb-count]").TextContent.Should().StartWith("31 candidates · Added to scenario: 0");
         cut.Markup.Should().NotContain("appsettings", "technical/background traffic is hidden by default");
         cut.Find("[data-testid=psb-show-technical]").ParentElement!.TextContent.Should().Contain("Show technical/background endpoints (3)");
-        cut.Find("[data-testid=psb-show-all]").TextContent.Should().Be("Show all 31");
-        cut.Find("[data-testid=psb-show-all]").Click();
-        cut.FindAll("[data-testid=psb-operation]").Should().HaveCount(10, "then paged");
         cut.Find("[data-testid=psb-more]").TextContent.Should().Be("Show 21 more of 21");
         cut.FindAll("[data-testid=psb-operation]").Last().GetAttribute("data-traffic").Should().Be("Application");
 

@@ -190,6 +190,9 @@ builder.Services.AddScoped<ImpactAnalysisService>();
 builder.Services.AddScoped<SourceChangeImpactService>();
 builder.Services.AddScoped<ImpactAnalysisRunService>();
 builder.Services.AddScoped<BirkNext.Api.Services.ProjectActivity.ProjectActivityService>();
+// Endpoint Discovery history: runs + observed operations per Target Environment and host (persisted; never traffic content).
+builder.Services.AddScoped<BirkNext.Api.Services.LocalHttpsProxy.EndpointObservationHistoryService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.LocalHttpsProxy.IEndpointObservationRecorder, BirkNext.Api.Services.LocalHttpsProxy.EndpointObservationRecorder>();
 builder.Services.AddScoped<AIChangeAuditService>();
 builder.Services.AddScoped<SpecDriftDetectionService>();
 builder.Services.AddScoped<CodeTraceabilityService>();

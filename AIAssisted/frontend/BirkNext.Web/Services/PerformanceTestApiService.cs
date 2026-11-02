@@ -59,6 +59,12 @@ public interface IPerformanceTestApiService
         Task.FromResult(PerformanceApiResult<PerformanceTrialResult>.Fail("Validation requests are not available."));
     /// <summary>The stored API contracts of exactly one snapshot.</summary>
     Task<ScenarioContractCatalog?> ScenarioContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<ScenarioContractCatalog?>(null);
+    /// <summary>Persisted Endpoint Discovery history (runs + observed operations) of the environment and target host; null when it could not be read.</summary>
+    Task<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?> ObservationHistoryAsync(string environmentId, string targetUrl, CancellationToken ct = default) =>
+        Task.FromResult<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>(null);
+    /// <summary>One-time import of this browser's earlier observations as the baseline (ignored once any run exists).</summary>
+    Task<bool> ImportObservationBaselineAsync(string environmentId, string host, IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> observations, CancellationToken ct = default) =>
+        Task.FromResult(false);
     /// <summary>Validates and previews a Performance setup profile against the current Target Environment (never mutates).</summary>
     Task<PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>> PreviewSetupAsync(string environmentId, PerformanceTestDefinition target, BirkNext.Integrations.SetupProfileRequest request, CancellationToken ct = default) =>
         Task.FromResult(PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>.Fail("Performance setup profiles are not available."));
@@ -228,6 +234,13 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
 
     public Task<ScenarioContractCatalog?> ScenarioContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) =>
         Get<ScenarioContractCatalog>($"{Base}/scenario-contracts?{Env(environmentId)}&snapshotId={snapshotId}", ct);
+
+    public Task<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?> ObservationHistoryAsync(string environmentId, string targetUrl, CancellationToken ct = default) =>
+        Get<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView>($"api/endpoint-discovery/history?{Env(environmentId)}&targetUrl={Uri.EscapeDataString(targetUrl)}", ct);
+
+    public async Task<bool> ImportObservationBaselineAsync(string environmentId, string host, IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> observations, CancellationToken ct = default) =>
+        (await PostJson<BirkNext.LocalHttpsProxy.EndpointDiscoveryRunSummary?>($"api/endpoint-discovery/baseline?{Env(environmentId)}",
+            new BirkNext.LocalHttpsProxy.EndpointObservationBaselineRequest(host, observations), ct)).Value is not null;
 
     private static string Target(PerformanceTestDefinition d) =>
         $"targetOrigin={Uri.EscapeDataString(d.TargetOrigin)}&environmentType={Uri.EscapeDataString(d.EnvironmentType)}&environmentName={Uri.EscapeDataString(d.EnvironmentName)}";

@@ -53,7 +53,7 @@ public interface ILocalHttpsProxyStatusQuery
 public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> options, IOptions<AuthenticatedReviewOptions> runtime, IProxyCertificateAuthority authority,
     TransientAuthenticatedApiContextStore store, IUpstreamConnector upstream, IEdgeInstallationLocator edgeLocator, IProxyEdgeLauncher edgeLauncher,
     ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null, IOwnedEdgeProcessInspector? edgeInspector = null,
-    DedicatedCompanionProvisioner? companion = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
+    DedicatedCompanionProvisioner? companion = null, IEndpointObservationRecorder? recorder = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
 {
     public const string PortsOccupiedReason = "The configured loopback proxy ports are all occupied. BirkNext never stops the occupying process; free a port or configure LocalHttpsProxy:Port.";
     public const string EdgeMissingReason = "Microsoft Edge was not found in the standard installation locations. Install Edge to open the dedicated proxy browser.";
@@ -527,6 +527,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         logger?.LogInformation("ProxyStopRequested {RuntimeId} {ProfileId} {Port} {Reason}", session.Id, session.Scope.ProfileId, session.Port, reason);
         _last = Describe(session.Scope, session) with { RuntimeStatus = LocalHttpsProxyRuntimePhase.Stopping, StopReason = reason };
         session.Stopped = true;
+        // The capture becomes an Endpoint Discovery run (persisted history; a capture with no API traffic is still a run). Safe metadata only.
+        if (recorder is not null) await recorder.RecordAsync(session.Scope.ProfileId, session.Scope.TargetUrl, session.Id, session.CreatedAt, session.ObservedNetworkEndpoints).ConfigureAwait(false);
         companion?.Retire();
         if (session.Server is { } server) await server.DisposeAsync().ConfigureAwait(false);
         if (session.Edge is { } edge)

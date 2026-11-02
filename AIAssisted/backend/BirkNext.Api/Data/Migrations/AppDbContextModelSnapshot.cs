@@ -501,6 +501,62 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("dependency_review_runs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.EndpointDiscoveryRunRecord", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("environment_id");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("host");
+
+                    b.Property<int>("NewCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("new_count");
+
+                    b.Property<int>("NotSeenCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("not_seen_count");
+
+                    b.Property<int>("ObservedAgainCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("observed_again_count");
+
+                    b.Property<int>("ObservedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("observed_count");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "Host", "StartedAt");
+
+                    b.ToTable("endpoint_discovery_runs", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ExternalIntegrationRecord", b =>
                 {
                     b.Property<string>("Id")
@@ -986,6 +1042,103 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasIndex("EnvironmentId", "IntegrationId", "AnalyzedAt");
 
                     b.ToTable("iqr_source_snapshots", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.ObservedOperationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AuthObserved")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auth_observed");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("environment_id");
+
+                    b.Property<DateTimeOffset>("FirstObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_observed_at");
+
+                    b.Property<string>("FirstRunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("first_run_id");
+
+                    b.Property<string>("GraphQlOperationName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("graphql_operation_name");
+
+                    b.Property<string>("GraphQlOperationType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("graphql_operation_type");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("host");
+
+                    b.Property<string>("Identity")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("identity");
+
+                    b.Property<DateTimeOffset>("LastObservedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_observed_at");
+
+                    b.Property<string>("LastRunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("last_run_id");
+
+                    b.Property<int>("LastStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_status");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("method");
+
+                    b.Property<int>("ObservationCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("observation_count");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("path");
+
+                    b.Property<int>("Port")
+                        .HasColumnType("integer")
+                        .HasColumnName("port");
+
+                    b.Property<string>("Protocol")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("protocol");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "Host", "Identity")
+                        .IsUnique();
+
+                    b.ToTable("observed_operations", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.PerformanceBaselineRecord", b =>

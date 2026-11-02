@@ -870,7 +870,8 @@
         </div>
 
         <BirkNext.Web.Components.PerformanceScenarioBuilder Definition="_draft" EnvironmentId="@(_profile?.Id ?? "")" EnvironmentName="@_draft.EnvironmentName"
-            Observations="_observations" Assets="_testDataAssets" OnChange="Changed" OnStepAdded="FocusStep" OnNewGraphQlDefinition="NewGraphQlDefinition" />
+            Observations="_observations" History="_history" HistoryLoaded="_historyLoaded" Assets="_testDataAssets" OnChange="Changed" OnStepAdded="FocusStep" OnNewGraphQlDefinition="NewGraphQlDefinition"
+            EndpointDiscoveryHref="@(_profile is null ? null : $"/admin/system-settings?section=target-environments&tab=endpoint&profile={Uri.EscapeDataString(_profile.Id)}")" />
 
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
         <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations"
@@ -910,9 +911,32 @@
 
     private readonly Dictionary<int, string> _statusErrors = [];
     private IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> _observations = [];
+    /// <summary>Persisted Endpoint Discovery history of this environment + target host (null: not read or unreadable — never "no traffic").</summary>
+    private BirkNext.LocalHttpsProxy.EndpointObservationHistoryView? _history;
+    private bool _historyLoaded;
     private IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> _testDataAssets = [];
 
     /// <summary>Discovery observations (this browser's Endpoint Discovery store) and central Test Data summaries for the scenario builder. Both optional.</summary>
+    /// <summary>
+    /// Live Discovery evidence = the persisted Endpoint Discovery history (server-side, survives refresh and restart). Observations this
+    /// browser held before runs were recorded are imported once as the baseline — their own timestamps, no invented "new" deltas.
+    /// </summary>
+    private async Task LoadObservationHistoryAsync()
+    {
+        _historyLoaded = false;
+        if (_profile is not { TargetUrl: { Length: > 0 } targetUrl }) { _history = null; _historyLoaded = true; return; }
+        try
+        {
+            var history = await Api.ObservationHistoryAsync(_profile.Id, targetUrl);
+            if (history is { EverRun: false } && Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) && _observations.Any(o => string.Equals(o.Host, uri.Host, StringComparison.OrdinalIgnoreCase))
+                && await Api.ImportObservationBaselineAsync(_profile.Id, uri.Host, _observations))
+                history = await Api.ObservationHistoryAsync(_profile.Id, targetUrl);
+            _history = history;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _history = null; }
+        _historyLoaded = true;
+    }
+
     private async Task LoadScenarioEvidenceAsync()
     {
         if (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) is IEndpointDiscoveryService discovery && _profile is not null)
@@ -925,6 +949,7 @@
             }
             catch (Exception ex) when (ex is JSException or InvalidOperationException or System.Text.Json.JsonException) { _observations = []; }
         }
+        await LoadObservationHistoryAsync();
         // The registered client, or the host's HttpClient factory (the WASM host does not register the interface itself).
         if (ServiceProvider.GetService(typeof(ITestDataApiService)) is not null || ServiceProvider.GetService(typeof(IHttpClientFactory)) is not null)
         {

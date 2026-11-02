@@ -55,6 +55,8 @@ public class AppDbContext : DbContext
     public DbSet<SecurityExpectationDiscoveryRecord> SecurityExpectationDiscoveries => Set<SecurityExpectationDiscoveryRecord>();
     public DbSet<AzureEnvironmentSnapshotRecord> AzureEnvironmentSnapshots => Set<AzureEnvironmentSnapshotRecord>();
     public DbSet<ProjectActivityRecord> ProjectActivity => Set<ProjectActivityRecord>();
+    public DbSet<EndpointDiscoveryRunRecord> EndpointDiscoveryRuns => Set<EndpointDiscoveryRunRecord>();
+    public DbSet<ObservedOperationRecord> ObservedOperations => Set<ObservedOperationRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +89,45 @@ public class AppDbContext : DbContext
             entity.Property(r => r.CreatedAt).HasColumnName("created_at");
             entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.ProjectId, r.ProjectImportId, r.CreatedAt });
+        });
+        modelBuilder.Entity<EndpointDiscoveryRunRecord>(entity =>
+        {
+            entity.ToTable("endpoint_discovery_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(64);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Host).HasColumnName("host").HasMaxLength(255).IsRequired();
+            entity.Property(r => r.StartedAt).HasColumnName("started_at");
+            entity.Property(r => r.CompletedAt).HasColumnName("completed_at");
+            entity.Property(r => r.Status).HasColumnName("status").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ObservedCount).HasColumnName("observed_count");
+            entity.Property(r => r.NewCount).HasColumnName("new_count");
+            entity.Property(r => r.ObservedAgainCount).HasColumnName("observed_again_count");
+            entity.Property(r => r.NotSeenCount).HasColumnName("not_seen_count");
+            entity.HasIndex(r => new { r.EnvironmentId, r.Host, r.StartedAt });
+        });
+        modelBuilder.Entity<ObservedOperationRecord>(entity =>
+        {
+            entity.ToTable("observed_operations");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Host).HasColumnName("host").HasMaxLength(255).IsRequired();
+            entity.Property(r => r.Port).HasColumnName("port");
+            entity.Property(r => r.Identity).HasColumnName("identity").HasMaxLength(600).IsRequired();
+            entity.Property(r => r.Protocol).HasColumnName("protocol").HasMaxLength(16).IsRequired();
+            entity.Property(r => r.Method).HasColumnName("method").HasMaxLength(16).IsRequired();
+            entity.Property(r => r.Path).HasColumnName("path").HasMaxLength(500).IsRequired();
+            entity.Property(r => r.GraphQlOperationType).HasColumnName("graphql_operation_type").HasMaxLength(32);
+            entity.Property(r => r.GraphQlOperationName).HasColumnName("graphql_operation_name").HasMaxLength(200);
+            entity.Property(r => r.FirstObservedAt).HasColumnName("first_observed_at");
+            entity.Property(r => r.LastObservedAt).HasColumnName("last_observed_at");
+            entity.Property(r => r.ObservationCount).HasColumnName("observation_count");
+            entity.Property(r => r.FirstRunId).HasColumnName("first_run_id").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.LastRunId).HasColumnName("last_run_id").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.LastStatus).HasColumnName("last_status");
+            entity.Property(r => r.AuthObserved).HasColumnName("auth_observed");
+            entity.HasIndex(r => new { r.EnvironmentId, r.Host, r.Identity }).IsUnique();
         });
         modelBuilder.Entity<ProjectActivityRecord>(entity =>
         {

@@ -422,6 +422,33 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.Empty(stopped.ObservedNetworkEndpoints);
     }
 
+    private sealed class RecordingRecorder : IEndpointObservationRecorder
+    {
+        public List<(string Environment, string TargetUrl, string RunId, IReadOnlyList<ObservedNetworkEndpoint> Observed)> Runs { get; } = [];
+        public Task RecordAsync(string environmentId, string targetUrl, string runId, DateTimeOffset startedAt, IReadOnlyList<ObservedNetworkEndpoint> observed)
+        { Runs.Add((environmentId, targetUrl, runId, observed)); return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task StoppingACapture_RecordsItAsAnEndpointDiscoveryRun_BeforeItsInMemoryEvidenceIsCleared()
+    {
+        var recorder = new RecordingRecorder();
+        _service.Dispose();
+        _service = new LocalHttpsProxyService(Options.Create(new LocalHttpsProxyOptions { Port = 0, CredentialLifetimeMinutes = 30 }),
+            Options.Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation" }), _authority, _store,
+            new TestConnector(_upstream), _edge.Object, _ownedLauncher.Object, _log, () => _now, _inspector, recorder: recorder);
+        var port = await StartAsync(Scope());
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"GET /api/children HTTP/1.1\r\nHost: {ApiHost}\r\n\r\n");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.ObservedNetworkEndpoints.Count > 0);
+        var stopped = await _service.StopAsync(Session());
+
+        Assert.Empty(stopped.ObservedNetworkEndpoints);
+        var run = Assert.Single(recorder.Runs);
+        Assert.Equal("dev", run.Environment);
+        Assert.Equal(stopped.RuntimeId, run.RunId);
+        Assert.Contains(run.Observed, e => e.Path == "/api/children");
+    }
+
     // ── wipe rules ───────────────────────────────────────────────────────────
 
     private async Task<int> StartWithCredentialAsync(LocalHttpsProxyScopeRequest? scope = null)

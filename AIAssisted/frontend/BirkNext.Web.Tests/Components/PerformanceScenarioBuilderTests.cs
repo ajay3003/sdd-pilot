@@ -88,12 +88,14 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
     public void NoSnapshotIsChosenAutomatically_AndAChosenSnapshotProposesRankedOperationsWithEvidence()
     {
         var cut = Render(Persons(), Hendelse());
+        cut.Find("[data-testid=psb-live]").Should().NotBeNull("Live Discovery is the default with a Target Environment");
+        cut.FindAll("[data-testid=psb-contract-chooser]").Should().BeEmpty("contract disambiguation belongs to Declared contracts only");
+        cut.Find("[data-testid=psb-source-declared]").Change(true);
         cut.WaitForAssertion(() => cut.Find("[data-testid=psb-snapshot]"));
         cut.Find("[data-testid=psb-snapshot]").GetAttribute("value").Should().BeEmpty("the newest snapshot is never chosen for the user");
-        cut.Find("[data-testid=psb-count-observed]").TextContent.Should().Be("1 unique runtime endpoint on this target");
-        cut.Find("[data-testid=psb-observations]").TextContent.Should().Contain("a call count is never a workload");
         cut.Find("[data-testid=psb-snapshot]").Change(SnapshotId.ToString());
         cut.WaitForAssertion(() => cut.Find("[data-testid=psb-scope]").GetAttribute("data-state").Should().Be("Resolved"));
+        cut.Find("[data-testid=psb-count-correlated]").TextContent.Should().Be("1");
         cut.Find("[data-testid=psb-scope]").TextContent.Should().Contain("Persons API").And.NotContain("Hendelse");
         var first = cut.FindAll("[data-testid=psb-operation]")[0];
         first.GetAttribute("data-key").Should().Be("openapi:persons#GET /api/person/{personId}");
@@ -164,7 +166,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         step.Source!.Evidence.Should().Be(ScenarioEvidence.DeclaredAndObserved);
         _changed.Scenario.Name.Should().Be("Person lookup baseline");
         _changed.Scenario.ContractSnapshotId.Should().Be(SnapshotId);
-        _changed.Scenario.SourceKind.Should().Be("recommended");
+        _changed.Scenario.SourceKind.Should().Be(PerformanceScenarioBuilder.ObservedKey);
         cut.Find("[data-testid=psb-message]").TextContent.Should().EndWith("Nothing has run.");
     }
 
@@ -172,6 +174,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
     public void UnresolvedContracts_AskThePersonToChoose_AndMissingTestDataDeepLinksWithContext()
     {
         var cut = Render([Persons(), Hendelse()], [], [], authenticated: true);
+        cut.Find("[data-testid=psb-source-declared]").Change(true);
         cut.WaitForAssertion(() => cut.Find("[data-testid=psb-snapshot]"));
         cut.Find("[data-testid=psb-snapshot]").Change(SnapshotId.ToString());
         cut.WaitForAssertion(() => cut.Find("[data-testid=psb-scope]").GetAttribute("data-state").Should().Be("Unresolved"));
@@ -183,7 +186,7 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
 
         var selected = Render([Persons(), Hendelse()], [], [], authenticated: true, definition: new PerformanceTestDefinition
         {
-            Id = "def-1", TargetOrigin = Target, EnvironmentName = "Development", AuthenticationReference = "te", Scenario = new PerformanceScenario { ContractIds = ["persons"] },
+            Id = "def-1", TargetOrigin = Target, EnvironmentName = "Development", AuthenticationReference = "te", Scenario = new PerformanceScenario { ContractIds = ["persons"], SourceKind = PerformanceScenarioBuilder.DeclaredKey },
         });
         selected.WaitForAssertion(() => selected.Find("[data-testid=psb-snapshot]"));
         selected.Find("[data-testid=psb-snapshot]").Change(SnapshotId.ToString());
