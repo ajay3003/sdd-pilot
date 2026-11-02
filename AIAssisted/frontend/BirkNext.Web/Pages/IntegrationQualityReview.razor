@@ -72,6 +72,7 @@
         @* ── Overview ── *@
         <section class="iqr-group" aria-labelledby="iqr-group-overview-heading" data-testid="iqr-group-overview" hidden="@(CurrentView != IntegrationReviewPrerunPresentation.OverviewView)">
             <h2 class="iqr-group-heading visually-hidden" id="iqr-group-overview-heading">Overview</h2>
+            @RunDecision(profile)
             @if (_readiness is { } readiness)
             {
                 @if (IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness))
@@ -178,8 +179,17 @@
             <div class="iqr-stages" role="list" aria-label="Setup and evidence" data-testid="iqr-evidence-stages">
                 <div role="listitem" class="iqr-stage" data-testid="iqr-stage" data-stage="integration">
                     <h3 class="iqr-stage-title"><span class="iqr-stage-number" aria-hidden="true">1</span> Integration
-                        <span class="iqr-pill iqr-pill-@(enabled.Count > 0 ? "ready" : "muted")" data-testid="iqr-stage-status">@(enabled.Count > 0 ? "Configured" : "Not configured")</span></h3>
-                    @if (enabled.Count == 0)
+                        <span class="iqr-pill iqr-pill-@(enabled.Count > 0 ? "ready" : "muted")" data-testid="iqr-stage-status">@(_catalog is null ? "Loading…" : enabled.Count > 0 ? "Configured" : "Not configured")</span></h3>
+                    @if (_catalog is null && _error is null)
+                    {
+                        <p class="iqr-muted" role="status" data-testid="iqr-stage-loading">Loading configured integrations…</p>
+                    }
+                    else if (enabled.Count == 0 && _connectedSystems.Count > 0)
+                    {
+                        <p data-testid="iqr-stage-connected-system"><strong>Connected System available, but no Integration Catalog binding exists.</strong> @string.Join(", ", _connectedSystems) @(_connectedSystems.Count == 1 ? "is" : "are") registered under Connected Systems; this review assesses Integration Catalog integrations (producer → consumer).</p>
+                        <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-stage-integrations-action">Open Target Environment → Integration Catalog</a>
+                    }
+                    else if (enabled.Count == 0)
                     {
                         <p class="iqr-muted">No integration is enabled. Integrations are configured in Target Environment → Integration Catalog.</p>
                         <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-stage-integrations-action">Open Target Environment → Integration Catalog</a>
@@ -954,7 +964,7 @@
                                                 <span class="iqr-domain-chevron" aria-hidden="true">@(open ? "▾" : "▸")</span>@IntegrationReviewLabels.Domain(domain.Domain)
                                             </button>
                                         </th>
-                                        <td><span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(domain.Readiness)" data-testid="iqr-domain-status">@IntegrationReviewLabels.Readiness(domain.Readiness)</span></td>
+                                        <td><span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(domain.Readiness)" data-testid="iqr-domain-status">@IntegrationReviewDecisions.DomainLabel(domain, IntegrationReviewDecisions.RuntimeVerified(readiness))</span></td>
                                         <td class="iqr-domain-limitation" data-testid="iqr-domain-limitation">@(domain.Missing is { Count: > 0 } m ? m[0] : "—")</td>
                                         <td>@if (action is { } a) { <a class="iqr-link" href="@a.Href" data-testid="iqr-domain-row-action">@a.Label</a> } else { <span class="iqr-muted">—</span> }</td>
                                     </tr>
@@ -966,7 +976,8 @@
                         @if (_openDomain is { } openDomain && readiness.Domains.FirstOrDefault(d => d.Domain == openDomain) is { } detail)
                         {
                             var detailAction = IntegrationReviewPrerunPresentation.DomainAction(detail, readiness, profile.Id);
-                            <h4 data-testid="iqr-domain-detail-title">@IntegrationReviewLabels.Domain(detail.Domain) <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(detail.Readiness)">@IntegrationReviewLabels.Readiness(detail.Readiness)</span></h4>
+                            <h4 data-testid="iqr-domain-detail-title">@IntegrationReviewLabels.Domain(detail.Domain) <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(detail.Readiness)">@IntegrationReviewDecisions.DomainLabel(detail, IntegrationReviewDecisions.RuntimeVerified(readiness))</span></h4>
+                            <p class="iqr-muted" data-testid="iqr-domain-provenance">@IntegrationReviewDecisions.Provenance(detail, IntegrationReviewDecisions.RuntimeVerified(readiness))</p>
                             <p class="iqr-muted" data-testid="iqr-domain-reason">@detail.Explanation</p>
                             @if (detail.Available is { Count: > 0 } canRead)
                             {
@@ -1272,12 +1283,65 @@
             try { _pair = ScopeId is { } pairFor ? await Api.ContractRelationshipAsync(_profile!.Id, pairFor) : null; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _pair = null; }
             _history = await Api.HistoryAsync(_profile!.Id);
+            await LoadConnectedSystemsAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             _error = $"{BackendRequestClassifier.FromException("Configured integrations", ex).UserMessage} Configured integrations are stored by the backend.";
         }
     }
+
+    /// <summary>Connected Systems are a separate model (Target Environment → Connected Systems); read only to explain a missing catalog binding.</summary>
+    private List<string> _connectedSystems = [];
+
+    private async Task LoadConnectedSystemsAsync()
+    {
+        if (_profile is null || Services.GetService<IExternalIntegrationsApiService>() is not { } external) return;
+        try
+        {
+            var view = (await external.ListAsync(_profile.Id)).Value;
+            _connectedSystems = view?.Integrations.Where(i => i.Integration.Enabled)
+                .Select(i => string.IsNullOrWhiteSpace(i.Integration.EnvironmentName) ? i.Integration.Name : $"{i.Integration.Name} — {i.Integration.EnvironmentName}").ToList() ?? [];
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException) { _connectedSystems = []; }
+    }
+
+    /// <summary>
+    /// RUN DECISION on the shared review readiness model: Assessing while required evidence loads (never Blocked), then Ready / Ready with
+    /// limitations / Needs review / Blocked / Failed to assess. Review readiness ≠ runtime verification ≠ active execution: the last two are
+    /// limitations of the read-only review, never blockers.
+    /// </summary>
+    private RenderFragment RunDecision(FrontendAnalysisProfile profile) => __builder =>
+    {
+        var d = IntegrationReviewDecisions.Of(_readiness, _readiness is null && _error is null, _error, _connectedSystems,
+            _journeySummary is { } js ? (js.Total, js.Ready) : null, profile.Id);
+        <section class="iqr-card iqr-run-decision iqr-run-decision-@ReviewDecisions.Tone(d.Decision)" aria-labelledby="iqr-run-decision-h" data-testid="iqr-run-decision" data-decision="@d.Decision"
+                 role="@(d.Decision == ReviewDecision.Blocked ? "alert" : "status")" aria-live="polite">
+            <p class="iqr-run-decision-kicker">Run decision</p>
+            <h3 id="iqr-run-decision-h" data-testid="iqr-run-decision-title">@d.Title</h3>
+            <p class="iqr-muted" data-testid="iqr-run-decision-detail">@d.Detail</p>
+            @if (d.Decision is not (ReviewDecision.Assessing or ReviewDecision.FailedToAssess))
+            {
+                <dl class="iqr-dl iqr-run-decision-facts" data-testid="iqr-run-decision-facts">
+                    <div><dt>Integrations</dt><dd data-testid="iqr-decision-integrations">@d.Integrations</dd></div>
+                    <div><dt>Contracts</dt><dd data-testid="iqr-decision-contracts">@d.Contracts</dd></div>
+                    <div><dt>Runtime evidence</dt><dd data-testid="iqr-decision-runtime">@d.RuntimeEvidence</dd></div>
+                    <div><dt>Active verification</dt><dd data-testid="iqr-decision-active">@d.ActiveExecution</dd></div>
+                </dl>
+            }
+            @if (d.Limitations.Count > 0)
+            {
+                <details class="iqr-run-decision-limitations" data-testid="iqr-decision-limitations">
+                    <summary>Limitations (@d.Limitations.Count) — none blocks the read-only review</summary>
+                    <ul class="iqr-reasons">@foreach (var l in d.Limitations) { <li>@l</li> }</ul>
+                </details>
+            }
+            @if (d.Blockers.Count > 0) { <ul class="iqr-reasons" data-testid="iqr-decision-blockers">@foreach (var b in d.Blockers) { <li>@b</li> }</ul> }
+            @if (d.Decision == ReviewDecision.FailedToAssess) { <button type="button" class="btn-secondary" @onclick="LoadReadinessAsync" data-testid="iqr-decision-retry">Retry</button> }
+            @if (d.ActionLabel is { } label && d.ActionHref is { } href) { <a class="iqr-link" href="@href" data-testid="iqr-decision-action">@label</a> }
+            <a class="iqr-link" href="@ViewHref(IntegrationReviewPrerunPresentation.ReviewView)" data-testid="iqr-decision-details">View readiness details</a>
+        </section>
+    };
 
     private async Task RunAsync()
     {

@@ -109,7 +109,7 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
         Action("DataQuality").Should().Be("Manage contracts");
         cards.Select(c => c.GetAttribute("data-readiness")).Should().Equal(_api.Readiness.Domains.Select(d => d.Readiness.ToString()), "presentation never changes domain readiness");
         cards.Single(c => c.GetAttribute("data-domain") == "Connectivity").TextContent.Should().Contain("Limited");
-        cards.Single(c => c.GetAttribute("data-domain") == "Performance").TextContent.Should().Contain("Not assessable");
+        cards.Single(c => c.GetAttribute("data-domain") == "Performance").TextContent.Should().Contain("Not verified at runtime", "a runtime area without runtime evidence says so precisely");
     }
 
     [Fact]

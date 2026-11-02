@@ -152,7 +152,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         Arrange();
         var cut = Open("review");
         cut.Find("[data-testid=iqr-review-scope]").TextContent.Should().Contain("HTTP/API");
-        cut.FindAll("[data-testid=iqr-domain-status]").Select(s => s.TextContent).Should().Equal("Reviewable", "Partially reviewable", "Not assessable");
+        cut.FindAll("[data-testid=iqr-domain-status]").Select(s => s.TextContent).Should().Equal("Ready", "Reviewable with limitations", "Not verified at runtime");
         cut.Find("[data-testid=iqr-run-from-review]").TextContent.Trim().Should().Be("Run review");
         cut.Find("[data-testid=iqr-group-coverage]").TextContent.Should().Contain("No messages are published, consumed or changed.");
     }
