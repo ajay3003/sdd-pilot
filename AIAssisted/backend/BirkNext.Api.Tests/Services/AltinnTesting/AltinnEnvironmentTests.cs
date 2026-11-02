@@ -99,9 +99,10 @@ public sealed class AltinnEnvironmentTests
         view.Summary.Single(i => i.Key == "identities").State.Should().Be(AltinnReadinessState.Ready, "who is involved is ready");
         view.Summary.Single(i => i.Key == "testdata").Should().Match<AltinnReadinessItem>(i => i.State == AltinnReadinessState.Blocked && i.Reason.Contains("XML fixture missing"));
         view.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial);
-        view.ManualReadiness.Reason.Should().Contain("XML fixture: missing");
-        view.ManualMissing.Should().Contain("XML fixture");
-        view.AutomatedBlockers.Should().Contain(b => b.Contains("XML fixture"), "automated submission needs the payload too");
+        view.ManualReadiness.Reason.Should().Contain("Valid report payload: missing");
+        view.ManualMissing.Should().Contain("Valid report payload");
+        view.Issues.Single(issue => issue.Key == "payload").Blocks.Should().Contain([AltinnCapability.ManualPreparation, AltinnCapability.ManualSubmission, AltinnCapability.AutomatedExecution],
+            "automated submission needs the payload too");
         view.Summary.Select(i => i.Key).Should().StartWith(["app", "identities", "testdata", "reporter-access", "integration-auth", "authentication"],
             "authentication is per hop: reporter access, the integration's own authentication, then BirkNext execution credentials");
     }
@@ -144,9 +145,10 @@ public sealed class AltinnEnvironmentTests
 
         view.Summary.Single(i => i.Key == "testdata").State.Should().Be(AltinnReadinessState.Ready);
         view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, view.ManualReadiness.Reason);
-        view.ManualReadiness.Reason.Should().Contain("contract identifier is known").And.NotContain("contract are known");
+        view.ManualReadiness.Reason.Should().Contain("app, reporter and child are available").And.NotContain("contract are known");
         view.ManualReadiness.Reason.Should().ContainAny("Contract evidence is still incomplete", "Contract evidence is complete");
-        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked, "unattended authentication is still missing");
+        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.NotAssessed, "unattended authentication is missing, but automation was not requested");
+        view.Capabilities.Single(c => c.Capability == AltinnCapability.AutomatedExecution).StatusLabel.Should().Be("Optional · Not configured");
         view.Summary.Single(i => i.Key == "runtime").State.Should().Be(AltinnReadinessState.NotAssessed, "no runtime evidence");
     }
 
@@ -283,9 +285,23 @@ public sealed class AltinnEnvironmentTests
         var view = await bed.View();
 
         view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, view.ManualReadiness.Reason);
-        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked);
-        view.AutomatedBlockers.Should().Contain(blocker => blocker.Contains("client id")).And.Contain(blocker => blocker.Contains("client secret"));
+        view.Capabilities.Single(c => c.Capability == AltinnCapability.ManualSubmission).Status.Should().Be(AltinnCapabilityStatus.Ready);
+        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.NotAssessed, "optional until requested");
+        view.AutomatedBlockers.Should().BeEmpty("nothing blocks a capability nobody requested");
+        view.Issues.Where(issue => issue.Key is "client-id" or "client-secret").Should().HaveCount(2).And.OnlyContain(issue => issue.Kind == AltinnIssueKind.Optional);
+        view.Issues.Single(issue => issue.Key == "enabled").Status.Should().Be("Disabled", "disabled is a deliberate state, never Missing");
+        Field(view, "enabled").State.Should().Be(AltinnSettingState.Configured);
         view.Detection.ActionableGaps.Should().Contain(gap => gap.Contains("Client ID (automated execution)")).And.NotContain(gap => gap.Contains("Reporter"));
+
+        (await bed.Store.UpdateAsync(Env, new() { Enabled = true })).Problems.Should().BeEmpty();
+        var requested = await bed.View();
+        requested.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, "requesting automation never blocks manual testing");
+        requested.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked);
+        requested.AutomatedBlockers.Should().Contain(blocker => blocker.StartsWith("Client ID")).And.Contain(blocker => blocker.StartsWith("Client secret"))
+            .And.NotContain(blocker => blocker.StartsWith("Automated execution"), "enabled is not a blocker once it is on");
+        var automated = requested.Capabilities.Single(c => c.Capability == AltinnCapability.AutomatedExecution);
+        (automated.Status, automated.Blockers).Should().Be((AltinnCapabilityStatus.Blocked, requested.AutomatedBlockers.Count), "one model feeds the count and the list");
+        requested.Issues.Where(issue => issue.Key is "client-id" or "client-secret").Should().OnlyContain(issue => issue.Kind == AltinnIssueKind.Blocker);
     }
 
     [Fact] // F
@@ -329,6 +345,86 @@ public sealed class AltinnEnvironmentTests
         problem.Should().Contain("differs");
         Field(await bed.View(), "client-id").State.Should().Be(AltinnSettingState.Conflict);
     }
+
+    // ── Capability-scoped readiness (one requirement model) ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Manual_testing_is_ready_while_automation_is_optional_and_contract_and_mu_auth_are_review_items_for_end_to_end_only()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        var view = await bed.View();
+
+        Capability(view, AltinnCapability.ManualPreparation).Should().Match<AltinnCapabilityReadiness>(c => c.Status == AltinnCapabilityStatus.Ready && c.Blockers == 0);
+        Capability(view, AltinnCapability.ManualSubmission).Status.Should().Be(AltinnCapabilityStatus.Ready, "the reporter signs in interactively; no BirkNext credential is involved");
+        Capability(view, AltinnCapability.AutomatedExecution).Should().Match<AltinnCapabilityReadiness>(c => c.Status == AltinnCapabilityStatus.Optional && !c.Required && c.Blockers == 0);
+
+        var contractIssues = view.Issues.Where(issue => issue.Section == "contract").ToList();
+        contractIssues.Should().NotBeEmpty().And.OnlyContain(issue => issue.Kind == AltinnIssueKind.Review && !issue.Blocks.Contains(AltinnCapability.ManualPreparation));
+        view.Issues.Single(issue => issue.Key == "integration-auth").Should().Match<AltinnIssue>(issue => issue.Status == "Unknown" && issue.Kind == AltinnIssueKind.Review
+            && issue.Reviews.SequenceEqual(new[] { AltinnCapability.EndToEndVerification }) && issue.Blocks.Count == 0);
+        var endToEnd = Capability(view, AltinnCapability.EndToEndVerification);
+        endToEnd.Status.Should().Be(AltinnCapabilityStatus.NeedsReview);
+        endToEnd.ReviewItems.Should().Be(view.Issues.Count(issue => issue.Reviews.Contains(AltinnCapability.EndToEndVerification) && !issue.Blocks.Contains(AltinnCapability.EndToEndVerification)),
+            "review items and blockers are counted separately, from the same issues");
+
+        view.ContractDimensions.Select(d => d.Key).Should().Equal("identifier", "metadata", "form-data-type", "schema", "process", "deployed");
+        view.ContractDimensions.Single(d => d.Key == "identifier").Status.Should().Be("Known");
+        view.ContractDimensions.Single(d => d.Key == "deployed").Status.Should().BeOneOf("Not read", "Read", "Changed", "Refresh recommended");
+        view.Issues.Where(issue => issue.Key == "contract-deployed").Should().OnlyContain(issue => issue.Blocks.Count == 0, "the deployed contract's freshness only needs review");
+
+        Capability(view, AltinnCapability.RuntimeVerification).Status.Should().Be(AltinnCapabilityStatus.NotVerified);
+        view.Issues.Where(issue => issue.Kind == AltinnIssueKind.Runtime).Should().OnlyContain(issue => issue.Blocks.Count == 0, "runtime absence never blocks configuration");
+    }
+
+    [Fact]
+    public async Task Execution_safety_and_the_unattended_client_block_only_automated_execution_once_it_is_requested()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        (await bed.Store.UpdateAsync(Env, new() { Enabled = true })).Problems.Should().BeEmpty();
+        var view = await bed.View();
+
+        view.AutomationRequested.Should().BeTrue();
+        view.Issues.Where(issue => issue.Section is "safety" or "automated").Should().NotBeEmpty()
+            .And.OnlyContain(issue => issue.Kind == AltinnIssueKind.Blocker && issue.Blocks.SequenceEqual(new[] { AltinnCapability.AutomatedExecution }));
+        Capability(view, AltinnCapability.ManualPreparation).Status.Should().Be(AltinnCapabilityStatus.Ready);
+        Capability(view, AltinnCapability.ManualSubmission).Status.Should().Be(AltinnCapabilityStatus.Ready);
+        var automated = Capability(view, AltinnCapability.AutomatedExecution);
+        automated.Blockers.Should().Be(view.Issues.Count(issue => issue.Blocks.Contains(AltinnCapability.AutomatedExecution)));
+        automated.StatusLabel.Should().Be($"Blocked · {automated.Blockers} blockers");
+    }
+
+    [Fact]
+    public async Task A_complete_unattended_client_while_disabled_is_optional_disabled_and_the_secret_is_never_in_the_view()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        bed.Kit.ConfigureUnattended(enabled: false);
+        var view = await bed.View();
+
+        Field(view, "enabled").Should().Match<AltinnSettingField>(f => f.Value == "Disabled" && f.State == AltinnSettingState.Configured);
+        Field(view, "client-secret").State.Should().Be(AltinnSettingState.AvailableToBackend);
+        view.Issues.Should().NotContain(issue => issue.Key == "client-secret");
+        Capability(view, AltinnCapability.AutomatedExecution).Status.Should().Be(AltinnCapabilityStatus.Optional);
+        System.Text.Json.JsonSerializer.Serialize(view).Should().NotContain(AltinnTestKit.ClientSecret, "secrets never reach the view, its issues or details");
+    }
+
+    [Fact]
+    public async Task Public_metadata_detection_never_implies_a_runtime_login_or_a_secret()
+    {
+        var bed = new Bed();
+        ManualReady(bed);
+        var view = await bed.View(detect: true);
+
+        Field(view, "idporten-issuer").State.Should().Be(AltinnSettingState.Detected);
+        view.RuntimeStages.Single(stage => stage.Key == "login").Observed.Should().BeFalse("public metadata is not a login");
+        view.Summary.Single(item => item.Key == "reporter-access").Reason.Should().Contain("Runtime: Not observed");
+        Field(view, "client-secret").State.Should().Be(AltinnSettingState.Missing, "a secret is never discovered");
+        bed.Kit.Http.Calls.Should().OnlyContain(call => call.Uri.AbsoluteUri == AltinnTestingPolicy.IdPortenTestDiscovery, "only the fake public metadata endpoint is contacted");
+    }
+
+    private static AltinnCapabilityReadiness Capability(AltinnEnvironmentView view, AltinnCapability capability) => view.Capabilities.Single(c => c.Capability == capability);
 
     [Fact] // H
     public async Task Detect_without_reachable_metadata_is_unknown_not_an_error_and_never_authenticates()
@@ -424,7 +520,14 @@ public sealed class AltinnEnvironmentTests
         await bed.Store.RecordObservationAsync(Env, new AltinnRuntimeObservation { Kind = AltinnRuntimeObservationKind.Submission, Succeeded = true, ObservedAt = bed.Clock.Now });
         var view = await bed.View();
         view.Summary.Single(item => item.Key == "runtime").Reason.Should().Contain("Observed").And.Contain("not verified");
-        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked, "a manual submission does not prove BirkNext's client or secret");
+        view.AutomatedReadiness.State.Should().NotBe(AltinnReadinessState.Ready, "a manual submission does not prove BirkNext's client or secret");
+        view.Fields.Where(field => field.Group == AltinnEnvironmentService.AutomatedGroup && field.Key is "client-id" or "redirect-uri" or "client-secret")
+            .Should().OnlyContain(field => field.State == AltinnSettingState.Missing || field.State == AltinnSettingState.Declared, "observations never fill the unattended client");
+        view.RuntimeStages.Single(stage => stage.Key == "submission").Observed.Should().BeTrue();
+        view.RuntimeStages.Single(stage => stage.Key == "delivery").Should().Match<AltinnRuntimeStage>(stage => !stage.Observed && stage.Status == "Not verified",
+            "a submitted report proves nothing about MU, MM or downstream delivery");
+        view.Capabilities.Single(c => c.Capability == AltinnCapability.RuntimeVerification).Status.Should().Be(AltinnCapabilityStatus.Observed);
+        view.Capabilities.Single(c => c.Capability == AltinnCapability.ManualPreparation).Status.Should().Be(AltinnCapabilityStatus.Ready, "runtime never changes configuration readiness");
     }
 
     [Fact]
@@ -451,9 +554,11 @@ public sealed class AltinnEnvironmentTests
         var bed = new Bed();
         ManualReady(bed);
         bed.Flows.Configuration = bed.Flows.Configuration with { Environment = ExternalTestEnvironment.Production };
+        (await bed.Store.UpdateAsync(Env, new() { Enabled = true })).Problems.Should().BeEmpty();
         var view = await bed.View();
         view.ManualReadiness.State.Should().Be(AltinnReadinessState.Blocked);
         view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked);
+        view.Capabilities.Where(c => c.Capability != AltinnCapability.RuntimeVerification).Should().OnlyContain(c => c.Status == AltinnCapabilityStatus.Blocked);
     }
     // ── Form data type / content type detection ──
 
@@ -579,15 +684,19 @@ public sealed class AltinnEnvironmentTests
 
         view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready);
         view.ManualMissing.Should().BeEmpty();
-        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.Blocked);
-        view.AutomatedBlockers.Should().Contain(blocker => blocker.Contains("client", StringComparison.OrdinalIgnoreCase) || blocker.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        view.AutomatedReadiness.State.Should().Be(AltinnReadinessState.NotAssessed);
+        view.Issues.Where(issue => issue.Section is "automated" or "safety").Should().NotContain(issue => issue.Blocks.Contains(AltinnCapability.ManualPreparation)
+            || issue.Blocks.Contains(AltinnCapability.ManualSubmission), "unattended credentials and execution safety block automated execution only");
+        view.Issues.Where(issue => issue.Section == "safety").Should().NotBeEmpty().And.OnlyContain(issue => issue.Blocks.SequenceEqual(new[] { AltinnCapability.AutomatedExecution }));
         view.Summary.Single(item => item.Key == "runtime").State.Should().Be(AltinnReadinessState.NotAssessed, "runtime is never configuration readiness");
+        view.Summary.Single(item => item.Key == "reporter-access").Should().Match<AltinnReadinessItem>(item => item.State == AltinnReadinessState.Ready
+            && item.Reason.StartsWith("Configured") && item.Reason.Contains("Runtime: Not observed"), "configured reporter access is not Partial just because no login was observed");
 
         var noReporter = new Bed();
         noReporter.Flows.Configuration = noReporter.Flows.Configuration with { Environment = ExternalTestEnvironment.Test, AppIdentifier = AltinnTestKit.AppId };
         var missing = await noReporter.View();
-        missing.ManualMissing.Should().Contain(["Reporter", "Child"]);
-        missing.AutomatedBlockers.Should().Contain("Reporter: missing");
+        missing.ManualMissing.Should().Contain(["Reporter identity", "Child identity"]);
+        missing.Issues.Single(issue => issue.Key == "reporter").Blocks.Should().Contain(AltinnCapability.AutomatedExecution);
     }
 
     [Fact]
@@ -614,9 +723,10 @@ public sealed class AltinnEnvironmentTests
         var before = await bed.View();
 
         Field(before, "form-data-type").State.Should().Be(AltinnSettingState.Declared);
-        before.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial, "a suggested form data type is not configuration");
-        before.ManualMissing.Should().Contain("Form data type (not applied)");
-        before.AutomatedBlockers.Should().Contain("Content type: not applied");
+        before.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, "an unconfirmed form contract only affects activities that need the exact contract");
+        before.Issues.Single(issue => issue.Key == "contract-identifier").Should().Match<AltinnIssue>(issue => issue.Kind == AltinnIssueKind.Review
+            && issue.Blocks.SequenceEqual(new[] { AltinnCapability.AutomatedExecution }) && issue.Reviews.Contains(AltinnCapability.EndToEndVerification));
+        before.Issues.Single(issue => issue.Key == "content-type").Status.Should().Be("Not applied");
         before.Detection.ActionableGaps.Should().Contain(gap => gap.StartsWith("Not applied: Form data type"));
         (await bed.Db.AltinnEnvironmentSettings.CountAsync()).Should().Be(0, "viewing never applies a suggestion");
 
@@ -626,7 +736,7 @@ public sealed class AltinnEnvironmentTests
 
         Field(after, "form-data-type").State.Should().Be(AltinnSettingState.Configured);
         after.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, "readiness recalculates after Apply");
-        after.AutomatedBlockers.Should().NotContain(blocker => blocker.StartsWith("Content type"));
+        after.Issues.Should().NotContain(issue => issue.Key == "content-type" || issue.Key == "contract-identifier");
     }
 
     [Fact]
@@ -654,8 +764,8 @@ public sealed class AltinnEnvironmentTests
         var view = await bed.View();
 
         Field(view, "form-data-type").State.Should().Be(AltinnSettingState.Conflict);
-        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Partial);
-        view.ManualMissing.Should().Contain("Form data type (conflict)");
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, "a form contract conflict needs review; it does not block manual preparation");
+        view.Issues.Single(issue => issue.Key == "contract-identifier").Should().Match<AltinnIssue>(issue => issue.Status == "Conflict" && issue.Kind == AltinnIssueKind.Review);
         view.Fields.Where(field => field.Requirement == AltinnRequirement.Optional).Should().NotContain(field => view.Detection.ActionableGaps.Any(gap => gap.Contains(field.Label)));
     }
 

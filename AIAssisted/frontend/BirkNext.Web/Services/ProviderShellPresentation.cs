@@ -28,13 +28,16 @@ public sealed record ShellFixGroup(string Key, string Title, string Owner, strin
     public string? Impact { get; init; }
     public string? CountBadge { get; init; }
     public string? Details { get; init; }
+    /// <summary>Optional heading the issue is grouped under ("Blocks manual testing", "Needs review" …); null renders one flat list.</summary>
+    public string? Category { get; init; }
 }
 
 /// <summary>Issue severities: a blocker prevents a relevant action; a review item needs a decision but blocks nothing by itself.</summary>
 public static class ShellSeverity
 {
-    public const string Blocked = "Blocked", Review = "Review required";
-    public static string Tone(string severity) => severity == Blocked ? "bad" : "warn";
+    public const string Blocked = "Blocked", Review = "Review required", Optional = "Optional", NotVerified = "Not verified";
+    /// <summary>Red only for a real blocker, amber for review, grey for optional setup and runtime evidence not yet observed.</summary>
+    public static string Tone(string severity) => severity switch { Blocked => "bad", Review => "warn", _ => "muted" };
 }
 
 /// <summary>A detected or suggested value waiting for an explicit Apply: field, readable value, state and source.</summary>

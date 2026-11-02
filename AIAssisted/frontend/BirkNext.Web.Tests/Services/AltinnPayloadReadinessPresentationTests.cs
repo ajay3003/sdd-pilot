@@ -15,20 +15,22 @@ public sealed class AltinnPayloadReadinessPresentationTests
     public void A_missing_xml_fixture_is_its_own_test_data_group_and_card_reason()
     {
         var payload = new AltinnReadinessItem("testdata", "Test data", AltinnReadinessState.Blocked, "What is submitted: XML fixture missing · owner: Test Data");
-        var view = AltinnEnvironmentUiTests.View() with
+        var raw = AltinnEnvironmentUiTests.View() with
         {
             Summary = [.. AltinnEnvironmentUiTests.View().Summary.Where(i => i.Key != "testdata"), payload],
             Contract = new("contract", "Report contract", AltinnReadinessState.Partial, "Contract identifier known · deployed/source contract evidence incomplete"),
         };
+        var view = AltinnEnvironmentUiTests.Modelled(raw, automationRequested: false, AltinnEnvironmentUiTests.PartialContract());
 
         var groups = AltinnEnvironmentPresentation.ThingsToFix(view);
         var testData = groups.Single(g => g.Key == "testdata");
-        (testData.Owner, testData.Action, testData.Kind).Should().Be(("Test Data", "Manage", AltinnEnvironmentPresentation.FixAction.TestData));
-        testData.Items.Single().Should().Be(new AltinnEnvironmentPresentation.FixItem("XML fixture", "missing"));
+        (testData.Owner, testData.Action, testData.Kind, testData.Category).Should().Be(("Test Data", "Manage", AltinnEnvironmentPresentation.FixAction.TestData, AltinnEnvironmentPresentation.FixCategories.BlocksManual));
+        testData.Items.Single().Should().Be(new AltinnEnvironmentPresentation.FixItem("Valid report payload", "Missing"));
         AltinnEnvironmentPresentation.ToShell(testData).Href.Should().Be(AltinnEnvironmentPresentation.TestDataHref, "the owner is Test Data; no XML editing here");
         AltinnEnvironmentPresentation.CardReason(payload, view).Should().Be("XML fixture missing");
         var contract = groups.Single(g => g.Key == "contract");
-        contract.Items.Should().Equal([new("Contract identifier", "Known"), new("Source/deployed contract evidence", "Incomplete")], "partial evidence is not Missing");
+        contract.Items.Select(item => item.Label).Should().Equal("Form data type", "Data model schema", "Process contract", "Deployed contract");
+        contract.Items.Should().Contain(new AltinnEnvironmentPresentation.FixItem("Process contract", "Not confirmed"), "an unconfirmed process is not Missing");
         contract.Severity.Should().Be(ShellSeverity.Review, "incomplete contract evidence is a review item, not an execution blocker");
         contract.Details.Should().Be("Contract identifier known · deployed/source contract evidence incomplete", "the full diagnostic is kept behind Show details");
     }

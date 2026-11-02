@@ -211,7 +211,7 @@
                                 <td role="cell" data-label="Execution" data-testid="snt-journey-status">@if (view is not null && journey.JourneyId == RapportmottakId && _altinn is { } altinn)
                                     {
                                         <span class="snt-exec" data-testid="snt-exec-manual">@Dimension("Manual testing", "Manual: " + AltinnState(altinn.ManualReadiness.State))</span>
-                                        <span class="snt-exec" data-testid="snt-exec-automated">@Dimension("Automated execution", "Automated: " + AltinnState(altinn.AutomatedReadiness.State))</span>
+                                        <span class="snt-exec" data-testid="snt-exec-automated">@Dimension("Automated execution", "Automated: " + AltinnEnvironmentPresentation.ReadinessLabel(altinn.AutomatedReadiness))</span>
                                     }
                                     else
                                     {

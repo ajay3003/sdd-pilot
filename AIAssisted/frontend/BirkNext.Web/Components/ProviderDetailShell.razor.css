@@ -21,6 +21,9 @@
 .ps-fix-group { display: grid; gap: .35rem; align-content: start; min-width: 0; padding: .55rem .7rem; border: 1px solid var(--clr-border, #d0d7de); border-left-width: 4px; border-radius: 6px; }
 .ps-tone-bad { border-left-color: var(--clr-danger, #dc2626); background: color-mix(in sRGB, var(--clr-danger, #dc2626) 5%, transparent); }
 .ps-tone-warn { border-left-color: var(--clr-warning, #d97706); background: color-mix(in sRGB, var(--clr-warning, #d97706) 6%, transparent); }
+.ps-tone-muted { border-left-color: var(--clr-border-strong, #8c959f); }
+.ps-fix-category { display: grid; gap: .4rem; margin-top: .5rem; }
+.ps-fix-category-title { margin: 0; font-size: .9rem; font-weight: 600; }
 .ps-fix-header { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; }
 .ps-fix-header .ps-fix-count { display: flex; flex-wrap: wrap; gap: .35rem; }
 .ps-fix-title { font-size: .95rem; }

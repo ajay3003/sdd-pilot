@@ -34,7 +34,8 @@
         {
             @* Needs attention: one card per issue (owner + one action), true blockers apart from review-only items; long diagnostics collapsed. *@
             var blockers = FixGroups.Count(group => group.Severity == ShellSeverity.Blocked);
-            var reviews = FixGroups.Count - blockers;
+            var reviews = FixGroups.Count(group => group.Severity == ShellSeverity.Review);
+            var categorized = FixGroups.Any(group => group.Category is not null);
             <section class="ps-fix" data-testid="@($"{Prefix}-fix")" aria-labelledby="@($"{Prefix}-fix-title")">
                 <div class="ps-fix-header">
                     @Heading($"{Prefix}-fix-title", "Needs attention")
@@ -43,39 +44,30 @@
                         @if (reviews > 0) { <span class="ps-pill ps-pill-warn">@reviews review item@(reviews == 1 ? "" : "s")</span> }
                     </p>
                 </div>
+                @if (categorized)
+                {
+                    @* Grouped by what each issue affects: a blocker of a required capability, a review, runtime evidence not yet observed, optional
+                       setup. One mixed red list would read as "the system is blocked". Order follows the provider's categories. *@
+                    @foreach (var category in FixGroups.GroupBy(group => group.Category ?? ""))
+                    {
+                        var categoryId = $"{Prefix}-fix-cat-{System.Text.RegularExpressions.Regex.Replace(category.Key.ToLowerInvariant(), "[^a-z0-9]+", "-")}";
+                        <section class="ps-fix-category" data-testid="@($"{Prefix}-fix-category")" data-category="@category.Key" aria-labelledby="@categoryId">
+                            <h5 id="@categoryId" class="ps-fix-category-title">@category.Key <span class="ps-muted">(@category.Sum(group => group.Items.Count))</span></h5>
+                            <div class="ps-fix-groups">
+                                @foreach (var group in category) { @FixCard(group) }
+                            </div>
+                        </section>
+                    }
+                }
+                else
+                {
                 <div class="ps-fix-groups">
                     @foreach (var group in FixGroups.OrderBy(group => group.Severity == ShellSeverity.Blocked ? 0 : 1))
                     {
-                        var titleId = $"{Prefix}-fix-{group.Key}-title";
-                        <article class="ps-fix-group ps-tone-@ShellSeverity.Tone(group.Severity)" data-testid="@($"{Prefix}-fix-group")" data-key="@group.Key" data-severity="@group.Severity" aria-labelledby="@titleId">
-                            <div class="ps-fix-head">
-                                <strong id="@titleId" class="ps-fix-title">@group.Title</strong>
-                                <span class="ps-pill ps-pill-@ShellSeverity.Tone(group.Severity)" data-testid="@($"{Prefix}-fix-severity")" title="@ProviderShellPresentation.StatusHelp(group.Severity)">@group.Severity</span>
-                                @if (group.CountBadge is { } badge) { <span class="ps-pill ps-pill-muted" data-testid="@($"{Prefix}-fix-badge")">@badge</span> }
-                            </div>
-                            @if (group.Impact is { } impact) { <p class="ps-fix-impact" data-testid="@($"{Prefix}-fix-impact")">@impact</p> }
-                            <ul class="ps-list">
-                                @foreach (var item in group.Items) { <li data-testid="@($"{Prefix}-fix-item")">@item.Label <span class="ps-muted">· @item.Problem</span></li> }
-                            </ul>
-                            <p class="ps-fix-owner ps-muted">Owner: @group.Owner</p>
-                            <div class="ps-fix-actions">
-                                @if (group.Href is { } href)
-                                {
-                                    <a class="btn btn-secondary btn-sm" href="@href" data-testid="@($"{Prefix}-fix-action")">@group.ActionLabel<span class="visually-hidden"> · @group.Title</span></a>
-                                }
-                                else
-                                {
-                                    var current = group;
-                                    <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{Prefix}-fix-action")" disabled="@Busy" @onclick="() => FixAsync(current)">@group.ActionLabel<span class="visually-hidden"> · @group.Title</span></button>
-                                }
-                                @if (group.Details is { } details)
-                                {
-                                    <details class="ps-fix-details" data-testid="@($"{Prefix}-fix-details")"><summary>Show details</summary><p class="ps-muted">@details</p></details>
-                                }
-                            </div>
-                        </article>
+                        @FixCard(group)
                     }
                 </div>
+                }
             </section>
         }
         else if (Cards.Count > 0)
@@ -249,4 +241,37 @@
         if (group.OpenSection is { } section) _open.Add(section);
         await OnFix.InvokeAsync(group);
     }
+
+    /// <summary>One Needs attention card (shared by the flat and the categorized layout).</summary>
+    private RenderFragment FixCard(ShellFixGroup group) => __builder =>
+    {
+        var titleId = $"{Prefix}-fix-{group.Key}-title";
+        <article class="ps-fix-group ps-tone-@ShellSeverity.Tone(group.Severity)" data-testid="@($"{Prefix}-fix-group")" data-key="@group.Key" data-severity="@group.Severity" aria-labelledby="@titleId">
+            <div class="ps-fix-head">
+                <strong id="@titleId" class="ps-fix-title">@group.Title</strong>
+                <span class="ps-pill ps-pill-@ShellSeverity.Tone(group.Severity)" data-testid="@($"{Prefix}-fix-severity")" title="@ProviderShellPresentation.StatusHelp(group.Severity)">@group.Severity</span>
+                @if (group.CountBadge is { } badge) { <span class="ps-pill ps-pill-muted" data-testid="@($"{Prefix}-fix-badge")">@badge</span> }
+            </div>
+            @if (group.Impact is { } impact) { <p class="ps-fix-impact" data-testid="@($"{Prefix}-fix-impact")">@impact</p> }
+            <ul class="ps-list">
+                @foreach (var item in group.Items) { <li data-testid="@($"{Prefix}-fix-item")">@item.Label <span class="ps-muted">· @item.Problem</span></li> }
+            </ul>
+            <p class="ps-fix-owner ps-muted">Owner: @group.Owner</p>
+            <div class="ps-fix-actions">
+                @if (group.Href is { } href)
+                {
+                    <a class="btn btn-secondary btn-sm" href="@href" data-testid="@($"{Prefix}-fix-action")">@group.ActionLabel<span class="visually-hidden"> · @group.Title</span></a>
+                }
+                else
+                {
+                    var current = group;
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{Prefix}-fix-action")" disabled="@Busy" @onclick="() => FixAsync(current)">@group.ActionLabel<span class="visually-hidden"> · @group.Title</span></button>
+                }
+                @if (group.Details is { } details)
+                {
+                    <details class="ps-fix-details" data-testid="@($"{Prefix}-fix-details")"><summary>Show details</summary><p class="ps-muted">@details</p></details>
+                }
+            </div>
+        </article>
+    };
 }

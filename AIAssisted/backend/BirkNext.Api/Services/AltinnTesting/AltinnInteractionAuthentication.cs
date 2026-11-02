@@ -83,15 +83,17 @@ public static class AltinnInteractionAuthentication
     }
 
     /// <summary>Summary items for the three hops (keys reporter-access, integration-auth and the existing authentication = execution credentials).</summary>
-    public static IReadOnlyList<AltinnReadinessItem> Summary(IReadOnlyList<InteractionAuthentication> interactions, AltinnReadinessState executionState)
+    public static IReadOnlyList<AltinnReadinessItem> Summary(IReadOnlyList<InteractionAuthentication> interactions, AltinnReadinessState executionState, bool automationRequested = true)
     {
         var reporter = interactions.First(i => i.Key == ReporterApp);
         var app = interactions.First(i => i.Key == AppIntegration);
-        var observed = reporter.Runtime != "Not observed";
+        // Configuration and runtime are separate facts: the attended Browser/OIDC requirement is known (Configured) whether or not a login was
+        // observed yet. "Not observed" never makes the configuration look missing.
+        var known = reporter.Requirement.Requirement != InteractionAuthRequirement.Unknown && !reporter.Requirement.Conflict;
         return
         [
-            new("reporter-access", "Reporter access", observed ? AltinnReadinessState.Ready : AltinnReadinessState.Partial,
-                $"{InteractionAuthRules.Label(reporter.Requirement.Requirement)} · {reporter.Provider} · Runtime: {reporter.Runtime}"),
+            new("reporter-access", "Reporter access", known ? AltinnReadinessState.Ready : AltinnReadinessState.Partial,
+                $"{(known ? "Configured" : "Needs review")} · {InteractionAuthRules.Label(reporter.Requirement.Requirement)} · {reporter.Provider} · Runtime: {reporter.Runtime}"),
             new("integration-auth", $"{app.From} → {app.To} authentication",
                 app.Requirement.Conflict ? AltinnReadinessState.Partial
                 : app.Requirement.Requirement == InteractionAuthRequirement.Unknown ? AltinnReadinessState.NotAssessed : AltinnReadinessState.Ready,
@@ -99,7 +101,9 @@ public static class AltinnInteractionAuthentication
                 : app.Requirement.Requirement == InteractionAuthRequirement.Unknown ? "Unknown — not configured or reviewed for this integration (independent of the reporter's browser sign-in)"
                 : $"{InteractionAuthRules.Label(app.Requirement.Requirement)} · {app.Configuration} · Runtime: {app.Runtime}"),
             new("authentication", "BirkNext execution credentials", executionState,
-                executionState == AltinnReadinessState.Ready ? "Unattended client complete." : "Unattended client incomplete — only automated execution needs it."),
+                executionState == AltinnReadinessState.Ready ? "Unattended client complete."
+                : !automationRequested ? "Optional · Not configured — only automated BirkNext execution needs it, and it is not enabled."
+                : "Unattended client incomplete — only automated execution needs it."),
         ];
     }
 }

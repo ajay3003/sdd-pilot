@@ -31,7 +31,47 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         Key = key, Group = group, Label = label, Value = value, State = state, Source = source, SourceLabel = source.ToString(), Requirement = requirement, Proposal = proposal,
     };
 
-    internal static AltinnEnvironmentView View(bool detected = false) => new()
+    /// <summary>A complete, current report contract (every dimension present).</summary>
+    internal static AltinnAppContractView CompleteContract() => new()
+    {
+        Complete = true, Freshness = AltinnContractFreshness.Current, FreshnessDetail = "Read today",
+        Parts = [.. new[] { AltinnContractPartKind.ApplicationMetadata, AltinnContractPartKind.FormDataType, AltinnContractPartKind.DataModelSchema, AltinnContractPartKind.ProcessDefinition }
+            .Select(kind => new AltinnContractPartStatus(kind, true, AltinnContractSourceKind.PublicTt02Metadata, "Present."))],
+    };
+
+    /// <summary>The Skolenærvær contract shape: metadata read, form data type / schema / process not confirmed, deployed contract not read.</summary>
+    internal static AltinnAppContractView PartialContract() => new()
+    {
+        Complete = false, Freshness = AltinnContractFreshness.NotRead, FreshnessDetail = "The deployed contract has not been read from TT02.", Missing = ["form schema"],
+        Parts =
+        [
+            new(AltinnContractPartKind.ApplicationMetadata, true, AltinnContractSourceKind.PublicTt02Metadata, "Application metadata."),
+            new(AltinnContractPartKind.FormDataType, false, null, "No single app-logic (form) data type was found."),
+            new(AltinnContractPartKind.DataModelSchema, false, null, "No data model schema for the form data type."),
+            new(AltinnContractPartKind.ProcessDefinition, false, null, "Process task not confirmed."),
+        ],
+    };
+
+    /// <summary>Feeds a hand-built view through the shared requirement model exactly as the backend does, so fixtures carry the real issues,
+    /// capability readiness, contract dimensions and runtime stages instead of hand-written ones.</summary>
+    internal static AltinnEnvironmentView Modelled(AltinnEnvironmentView view, bool automationRequested = false, AltinnAppContractView? contract = null)
+    {
+        var reporter = view.Identities.Any(i => i.Role == "reporter" && i.State is AltinnSettingState.Configured or AltinnSettingState.Confirmed);
+        var confirmed = view.Identities.Any(i => i.Role == "reporter" && i.State == AltinnSettingState.Confirmed);
+        var child = view.Identities.Any(i => i.Role == "child" && i.State == AltinnSettingState.Configured);
+        (bool, string)? payload = view.Summary.FirstOrDefault(i => i.Key == "testdata") is { } p ? (p.State == AltinnReadinessState.Ready, AltinnEnvironmentPresentation.PayloadProblem(p)) : null;
+        var model = AltinnCapabilityModel.Build(new(view.Fields, false, reporter, confirmed, child, payload, contract ?? CompleteContract(), view.Interactions,
+            view.Saved.RuntimeObservations, automationRequested, ["openid"]));
+        return view with
+        {
+            AutomationRequested = automationRequested, Issues = model.Issues, Capabilities = model.Capabilities, ContractDimensions = model.ContractDimensions, RuntimeStages = model.RuntimeStages,
+            AutomatedBlockers = automationRequested ? [.. model.Issues.Where(i => i.Blocks.Contains(AltinnCapability.AutomatedExecution)).Select(i => $"{i.Label}: {i.Status}")] : [],
+        };
+    }
+
+    internal static AltinnEnvironmentView View(bool detected = false) => Modelled(Raw(detected), automationRequested: true);
+
+    private static AltinnEnvironmentView Raw(bool detected) => new()
     {
         EnvironmentId = Env, Detected = detected,
         Fields =
@@ -67,10 +107,13 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Find("[data-testid=ae]").GetAttribute("aria-label").Should().Be("Altinn · TT02", "the region is labelled; the card shows the visible name");
         cut.FindAll("h1, h2, h3, h4").Should().BeEmpty("the shell never repeats the system name as a heading");
         cut.FindAll("h5").Select(h => h.TextContent.Trim()).Should().Contain(["Needs attention", "Application", "Advanced details"]);
-        cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Ready");
-        cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Blocked").And.Contain("redirect URI");
+        // The fixture's environment is only suggested (not applied): that blocks manual testing; the missing redirect URI blocks only automation.
+        cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Blocked · 2 blockers").And.Contain("Missing: Altinn environment (not applied), Child identity");
+        cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Blocked · 3 blockers").And.NotContain("Optional");
+        cut.Find("[data-testid=ae-readiness-automated]").GetAttribute("data-blockers").Should().Be("3", "the automation capability counts its own blockers: environment, child and redirect URI");
+        cut.Find("[data-testid=ae-readiness-e2e]");
         var fixCount = cut.Find("[data-testid=ae-fix-count]");
-        (int.Parse(fixCount.GetAttribute("data-blockers")!) + int.Parse(fixCount.GetAttribute("data-reviews")!)).Should().Be(cut.FindAll("[data-testid=ae-fix-group]").Count, "issues are counted per card, never per setting");
+        int.Parse(fixCount.GetAttribute("data-blockers")!).Should().Be(cut.FindAll("[data-testid=ae-fix-group][data-severity=Blocked]").Count, "issues are counted per card, never per setting");
         foreach (var toggle in new[] { "ae-toggle-application", "ae-toggle-browser", "ae-toggle-automated" }) cut.Find($"[data-testid={toggle}]").Click();
         State(cut, "environment").Should().Be("Suggested", "a test-pack default is a suggestion, never 'configured'");
         State(cut, "form-data-type").Should().Be("Detected from source", "source evidence is not deployed runtime");
@@ -82,9 +125,6 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Markup.Should().NotContain("PowerShell").And.NotContain(".ps1");
         _api.Calls.Should().Equal("get");
     }
-
-    private static string State(IRenderedComponent<AltinnEnvironmentPane> cut, string key) =>
-        cut.Find($"[data-testid=ae-field][data-key={key}] [data-testid=ae-field-state]").TextContent;
 
     [Fact]
     public void Detect_never_saves_and_only_selected_proposals_are_applied()
@@ -173,7 +213,9 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
     private const string IntegrationRef = "15550bccc6b34a9e8118a99dc4e1fd82:httpapi:skolen-rv-r-altinn-report-intake";
 
     /// <summary>The Skolenærvær shape: app ready, unattended client empty, no identities, no trust, contract partial, public metadata read.</summary>
-    internal static AltinnEnvironmentView Skolenaervaer() => new()
+    internal static AltinnEnvironmentView Skolenaervaer() => Modelled(SkolenaervaerRaw(), automationRequested: false, PartialContract());
+
+    private static AltinnEnvironmentView SkolenaervaerRaw() => new()
     {
         EnvironmentId = Env, Detected = true,
         Fields =
@@ -192,7 +234,7 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
             F("client-id", "Automated execution", "Client ID", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
             F("redirect-uri", "Automated execution", "Registered redirect URI", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
             F("scopes", "Automated execution", "Scopes", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
-            F("enabled", "Automated execution", "Automated execution", "Not enabled", AltinnSettingState.Missing, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
+            F("enabled", "Automated execution", "Automated execution", "Disabled", AltinnSettingState.Configured, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
             F("client-secret", "Automated execution", "Client secret", null, AltinnSettingState.Missing, AltinnSettingSource.None, AltinnRequirement.Automated),
             F("trusted-environment", "Execution safety", "Trusted execution environment", null, AltinnSettingState.Missing, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
             F("app-approval", "Execution safety", "App approved for testing", "buf/skolenaervaer", AltinnSettingState.Configured, AltinnSettingSource.BackendConfiguration, AltinnRequirement.Automated),
@@ -200,15 +242,14 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         Summary =
         [
             new("app", "App", AltinnReadinessState.Ready, "Test (TT02) · buf/skolenaervaer"),
-            new("authentication", "Authentication", AltinnReadinessState.Blocked, "Unattended client incomplete."),
+            new("authentication", "Authentication", AltinnReadinessState.NotAssessed, "Optional · Not configured — only automated BirkNext execution needs it, and it is not enabled."),
             new("identities", "Test identities", AltinnReadinessState.Blocked, "Reporter missing · child missing"),
             new("runtime", "Runtime", AltinnReadinessState.NotAssessed, "Not verified."),
-            new("automated", "Automated execution", AltinnReadinessState.Blocked, "Blocked"),
+            new("automated", "Automated execution", AltinnReadinessState.NotAssessed, "Optional · Not configured"),
         ],
-        ManualReadiness = new("manual", "Manual test readiness", AltinnReadinessState.Partial, "Form data type: missing · Reporter: missing · Synthetic child: missing"),
-        ManualMissing = ["Form data type", "Reporter", "Child"],
-        AutomatedReadiness = new("automated", "Automated BirkNext execution", AltinnReadinessState.Blocked, "Blocked by 12 requirements"),
-        AutomatedBlockers = [.. Enumerable.Range(1, 12).Select(i => $"Blocker {i}")],
+        ManualReadiness = new("manual", "Manual test readiness", AltinnReadinessState.Partial, "Reporter identity: missing · Child identity: missing"),
+        ManualMissing = ["Reporter identity", "Child identity"],
+        AutomatedReadiness = new("automated", "Automated BirkNext execution", AltinnReadinessState.NotAssessed, "Optional · Not configured"),
         Contract = new("contract", "Report contract", AltinnReadinessState.Partial, "Public TT02 metadata · missing: form schema"),
     };
 
@@ -224,10 +265,10 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         }
         cut.FindAll("[data-testid=ae-advanced] [data-testid=ae-section-status]").Should().BeEmpty("Advanced details is not a readiness dimension");
         Status(cut, "access").Should().Be("Needs review", "BirkNext execution credentials are blocked, so access is not Ready");
-        Status(cut, "browser").Should().BeOneOf("Observed", "Not verified");
+        Status(cut, "browser").Should().BeOneOf("Observed", "Not observed");
         cut.Find("[data-testid=ae-section-application]").TextContent.Should().NotContain("Complete", "the badge carries the state; the line names the app");
         cut.Find("[data-testid=ae-section-contract]").TextContent.Should().Contain("Contract identifier").And.NotContain("No application metadata", "long diagnostics stay collapsed");
-        cut.Find("[data-testid=ae-section-runtime]").TextContent.Should().Contain("Verification:");
+        cut.Find("[data-testid=ae-section-runtime]").TextContent.Should().Contain("Report submitted: Not observed").And.Contain("Delivery to MU and downstream: Not verified");
     }
 
     private static string Status(IRenderedComponent<AltinnEnvironmentPane> cut, string key) =>
@@ -246,19 +287,25 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
     {
         var cut = RenderSkolenaervaer();
 
-        cut.FindAll("[data-testid=ae-card]").Select(card => card.GetAttribute("data-key")).Should().Equal("app", "authentication", "identities", "runtime", "automated");
-        cut.FindAll("[data-testid=ae-card-reason]").Select(reason => reason.TextContent).Should().Equal("5 automated settings missing", "Reporter and child missing", "12 requirements");
+        cut.FindAll("[data-testid=ae-card]").Select(card => card.GetAttribute("data-key")).Should().Equal(["app", "identities", "runtime", "automated"],
+            "BirkNext's credentials live under Automated execution — no separate red card");
+        cut.FindAll("[data-testid=ae-card-reason]").Select(reason => reason.TextContent).Should().Equal("Reporter identity missing · Child identity missing", "No runtime evidence yet · configuration unaffected");
         cut.Find("[data-key=runtime]").TextContent.Should().Contain("Not verified");
-        cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Missing: Form data type, Reporter, Child");
-        cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("12 requirements unresolved").And.NotContain("Blocker 1");
+        cut.Find("[data-testid=ae-card][data-key=automated]").TextContent.Should().Contain("Optional · Not configured").And.NotContain("Blocked");
+        cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().Contain("Blocked · 2 blockers").And.Contain("Missing: Reporter identity, Child identity");
+        cut.Find("[data-testid=ae-readiness-automated]").TextContent.Should().Contain("Optional · Not configured").And.Contain("Not required for manual testing").And.NotContain("Blocker");
+        cut.Find("[data-testid=ae-readiness-e2e]").TextContent.Should().Contain("Blocked · 2 blockers", "end-to-end needs a submission, which needs the identities");
         cut.FindAll("[data-testid=ae-blockers]").Should().BeEmpty();
 
-        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("4 blockers1 review item");
+        cut.FindAll("[data-testid=ae-fix-category]").Select(category => category.GetAttribute("data-category")).Should()
+            .Equal("Blocks manual testing", "Needs review", "Runtime not verified", "Optional setup");
+        cut.Find("[data-testid=ae-fix-count]").TextContent.Should().Be("1 blocker1 review item", "optional setup and runtime evidence are neither blockers nor review items");
         cut.Find("[data-testid=ae-fix-group][data-key=contract]").GetAttribute("data-severity").Should().Be("Review required", "incomplete contract evidence is not an execution blocker");
-        cut.Find("[data-testid=ae-fix-group][data-key=automated]").GetAttribute("data-severity").Should().Be("Blocked");
+        cut.Find("[data-testid=ae-fix-group][data-key=automated]").GetAttribute("data-severity").Should().Be("Optional", "automation was not requested");
+        cut.Find("[data-testid=ae-fix-group][data-key=safety]").TextContent.Should().Contain("Required for: Automated execution · Not required for: Manual submission");
         cut.Find("[data-testid=ae-fix-group][data-key=contract] [data-testid=ae-fix-details]").HasAttribute("open").Should().BeFalse("long contract diagnostics stay collapsed");
-        cut.FindAll("[data-testid=ae-fix-group]").Select(group => group.GetAttribute("data-key")).Should().Equal("application", "automated", "safety", "identities", "contract");
-        cut.Find("[data-testid=ae-fix-group][data-key=identities]").TextContent.Should().Contain("Owner: Test Data").And.Contain("Manage");
+        cut.FindAll("[data-testid=ae-fix-group]").Select(group => group.GetAttribute("data-key")).Should().Equal("identities", "contract", "runtime", "automated", "safety");
+        cut.Find("[data-testid=ae-fix-group][data-key=identities]").TextContent.Should().Contain("Owner: Test Data").And.Contain("Manage").And.Contain("Affects: Manual preparation");
         cut.Find("[data-testid=ae-fix-group][data-key=identities] [data-testid=ae-fix-action]").GetAttribute("href").Should().Be("/test-data");
 
         cut.Find("[data-testid=ae-proposals] [data-key=integration] [data-testid=ae-proposal-value]").TextContent.Should().Be("Skolenærvær – Altinn report intake");
@@ -266,6 +313,7 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Markup.Should().NotContain(IntegrationRef, "the internal id is only in advanced details");
         cut.Markup.Should().NotContain("https://test.idporten.no/token", "public endpoints are collapsed");
         cut.Find("[data-testid=ae-section-browser]").TextContent.Should().Contain("Detected from public metadata · PKCE S256");
+        cut.Find("[data-testid=ae-section-automated]").TextContent.Should().Contain("Advanced — Automated BirkNext execution");
         cut.FindAll("[data-testid=ae-field-table]").Should().BeEmpty("every technical table is collapsed by default");
         cut.FindAll("[data-testid=ae-secret]").Should().BeEmpty();
         cut.FindAll("[data-testid=ae-observe-form]").Should().BeEmpty();
@@ -278,7 +326,8 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
     {
         var cut = RenderSkolenaervaer();
 
-        cut.Find("[data-testid=ae-blockers-toggle]").Click();
+        cut.FindAll("[data-testid=ae-blockers-toggle]").Should().BeEmpty("an optional, unrequested automation has no blockers to view");
+        cut.Find("[data-testid=ae-e2e-blockers-toggle]").Click();
         JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments[0]).Should().Contain("ae-fix-title", "View blockers moves to the Needs attention cards");
         cut.Find("#ae-fix-title").GetAttribute("tabindex").Should().Be("-1");
         cut.Find("[data-testid=ae-toggle-browser]").Click();
@@ -314,12 +363,28 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         var view = Skolenaervaer();
         var groups = AltinnEnvironmentPresentation.ThingsToFix(view);
 
-        groups.Single(group => group.Key == "application").Items.Select(item => item.Label).Should().Equal("Form data type", "Content type");
-        groups.Single(group => group.Key == "automated").Items.Select(item => item.Label).Should().Equal("Client ID", "Redirect URI", "Scopes", "Enabled", "Client secret");
-        groups.Single(group => group.Key == "application").Kind.Should().Be(AltinnEnvironmentPresentation.FixAction.Application, "Detect already ran");
-        AltinnEnvironmentPresentation.ThingsToFix(view with { Detected = false }).First().Action.Should().Be("Detect settings");
+        var automated = groups.Single(group => group.Key == "automated");
+        (automated.Category, automated.Severity).Should().Be((AltinnEnvironmentPresentation.FixCategories.Optional, ShellSeverity.Optional), "automation was not requested");
+        automated.Items.Select(item => item.Label).Should().Equal("Content type", "Client ID", "Registered redirect URI", "Scopes", "Client secret", "Automated execution");
+        automated.Items.Single(item => item.Label == "Automated execution").Problem.Should().Be("Disabled", "disabled is a deliberate state, never Missing");
+        groups.Single(group => group.Key == "identities").Category.Should().Be(AltinnEnvironmentPresentation.FixCategories.BlocksManual);
+        AltinnEnvironmentPresentation.AutomatedSettingsLine(view).Should().Be("5 settings missing: Content type, Client ID, Registered redirect URI, Scopes, Client secret · Disabled");
         AltinnEnvironmentPresentation.ManualLine(view).Should().NotContain("Client").And.NotContain("secret").And.NotContain("Trusted");
-        AltinnEnvironmentPresentation.CardReason(view.Summary.Single(item => item.Key == "runtime"), view).Should().BeEmpty("runtime Not verified is its own state, not a configuration gap");
+        AltinnEnvironmentPresentation.CardReason(view.Summary.Single(item => item.Key == "runtime"), view).Should().Be("No runtime evidence yet · configuration unaffected",
+            "runtime Not verified is evidence, not a configuration gap");
+
+        // Requesting automation turns exactly the automation items into blockers — manual testing is unchanged.
+        var requested = Modelled(SkolenaervaerRaw(), automationRequested: true, PartialContract());
+        var blockers = AltinnEnvironmentPresentation.ThingsToFix(requested);
+        blockers.Single(group => group.Key == "automated").Should().Match<AltinnEnvironmentPresentation.FixGroup>(group =>
+            group.Category == AltinnEnvironmentPresentation.FixCategories.BlocksAutomated && group.Severity == ShellSeverity.Blocked && group.Items.All(item => item.Label != "Automated execution"));
+        blockers.Single(group => group.Key == "safety").Category.Should().Be(AltinnEnvironmentPresentation.FixCategories.BlocksAutomated);
+        AltinnEnvironmentPresentation.ManualTesting(requested).Blockers.Should().Be(AltinnEnvironmentPresentation.ManualTesting(view).Blockers);
+
+        // A suggested (not applied) application value is applied through the group's single action.
+        var suggested = AltinnEnvironmentPresentation.ThingsToFix(View(detected: false)).Single(group => group.Key == "application");
+        (suggested.Kind, suggested.ApplyKeys).Should().Be((AltinnEnvironmentPresentation.FixAction.ApplySuggested, suggested.ApplyKeys));
+        suggested.ApplyKeys.Should().Equal("environment");
     }
 
     [Fact]
@@ -327,38 +392,35 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
     {
         const string Pack = "Test Pack reference · OpenAPI";
         var suggestion = (string value) => new AltinnSettingCandidate(value, AltinnSettingState.Declared, AltinnSettingSource.TestPack, Pack);
-        var view = Skolenaervaer() with
+        var raw = SkolenaervaerRaw() with
         {
             Detected = false,
-            Summary = [.. Skolenaervaer().Summary.Select(item => item.Key == "app" ? item with { State = AltinnReadinessState.Partial } : item)],
-            Fields = [.. Skolenaervaer().Fields.Select(field => field.Key switch
+            Fields = [.. SkolenaervaerRaw().Fields.Select(field => field.Key switch
             {
                 "form-data-type" => field with { Value = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn", State = AltinnSettingState.Declared, SourceLabel = Pack, Proposal = suggestion("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn") },
                 "content-type" => field with { Value = "application/xml", State = AltinnSettingState.Declared, SourceLabel = Pack, Proposal = suggestion("application/xml") },
                 _ => field,
             })],
         };
-        _api.Next = view;
+        _api.Next = Modelled(raw, automationRequested: false, PartialContract());
         var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
         cut.WaitForAssertion(() => cut.Find("[data-testid=ae-fix]"));
 
-        cut.FindAll("[data-testid=ae-fix-group][data-key=application] [data-testid=ae-fix-item]").Select(item => item.TextContent.Trim()).Should()
-            .Equal($"Form data type · Not applied · Suggested by {Pack}", $"Content type · Not applied · Suggested by {Pack}");
-        cut.Find("[data-testid=ae-card][data-key=app] [data-testid=ae-card-reason]").TextContent.Should().Be("2 not applied");
+        // A suggested form contract only affects activities that need the exact contract: it is a review item, never a manual blocker.
+        cut.Find("[data-testid=ae-fix-group][data-key=contract]").TextContent.Should().Contain("Contract identifier · Not confirmed");
+        cut.Find("[data-testid=ae-fix-group][data-key=automated]").TextContent.Should().Contain("Content type · Not applied");
+        cut.Find("[data-testid=ae-readiness-manual]").TextContent.Should().NotContain("Form data type");
         _api.Saved.Should().BeEmpty("nothing is applied silently");
 
-        cut.Find("[data-testid=ae-fix-group][data-key=application] [data-testid=ae-fix-action]").Click();
+        cut.FindAll("[data-testid=ae-proposal] input").Where(box => box.HasAttribute("checked")).Should().BeEmpty("nothing is preselected without Detect");
+        cut.Find("[data-testid=ae-proposal][data-key=form-data-type] input").Change(true);
+        cut.Find("[data-testid=ae-proposal][data-key=content-type] input").Change(true);
+        cut.Find("[data-testid=ae-apply]").Click();
 
         cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
         _api.Saved[0].Should().Match<AltinnEnvironmentSettingsUpdate>(update => update.FormDataType == "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn"
             && update.ContentType == "application/xml" && update.IntegrationId == null && update.Environment == null);
     }
-
-    // ── Detected settings: preselected ≠ applied, Apply selected (N), conflicts never overwritten ──────────────────────
-
-    private static string ApplyText(IRenderedComponent<AltinnEnvironmentPane> cut) => cut.Find("[data-testid=ae-apply]").TextContent.Trim();
-    private static bool ApplyDisabled(IRenderedComponent<AltinnEnvironmentPane> cut) => cut.Find("[data-testid=ae-apply]").HasAttribute("disabled");
-    private static AngleSharp.Dom.IElement Box(IRenderedComponent<AltinnEnvironmentPane> cut, string key) => cut.Find($"[data-testid=ae-proposal][data-key={key}] input");
 
     [Fact]
     public void Detect_preselects_safe_values_and_Apply_selected_counts_them_while_saving_nothing()
@@ -419,10 +481,19 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
 
     // ---- Access & authentication per hop ----
 
-    private static AltinnEnvironmentView HopView() => View() with
+    private static string State(IRenderedComponent<AltinnEnvironmentPane> cut, string key) =>
+        cut.Find($"[data-testid=ae-field][data-key={key}] [data-testid=ae-field-state]").TextContent;
+
+    // ── Detected settings: preselected ≠ applied, Apply selected (N), conflicts never overwritten ──────────────────────
+
+    private static string ApplyText(IRenderedComponent<AltinnEnvironmentPane> cut) => cut.Find("[data-testid=ae-apply]").TextContent.Trim();
+    private static bool ApplyDisabled(IRenderedComponent<AltinnEnvironmentPane> cut) => cut.Find("[data-testid=ae-apply]").HasAttribute("disabled");
+    private static AngleSharp.Dom.IElement Box(IRenderedComponent<AltinnEnvironmentPane> cut, string key) => cut.Find($"[data-testid=ae-proposal][data-key={key}] input");
+
+    private static AltinnEnvironmentView HopView() => Modelled(Raw(false) with
     {
-        Fields = [.. View().Fields, F("app-base-url", "Application", "App base URL", "https://buf.apps.tt02.altinn.no", AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment)],
-        Summary = [.. View().Summary, new("reporter-access", "Reporter access", AltinnReadinessState.Partial, "Browser/OIDC · ID-porten TEST / TestID · Runtime: Not observed"),
+        Fields = [.. Raw(false).Fields, F("app-base-url", "Application", "App base URL", "https://buf.apps.tt02.altinn.no", AltinnSettingState.Configured, AltinnSettingSource.TargetEnvironment)],
+        Summary = [.. Raw(false).Summary, new("reporter-access", "Reporter access", AltinnReadinessState.Ready, "Configured · Browser/OIDC · ID-porten TEST / TestID · Runtime: Not observed"),
             new("integration-auth", "Altinn → Meldingsutveksleren (MU) authentication", AltinnReadinessState.NotAssessed, "Unknown — not configured or reviewed for this integration")],
         Interactions =
         [
@@ -435,7 +506,7 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
                 Runtime = "Not applicable until automated execution", ActionTarget = "automated",
                 Requirement = InteractionAuthRules.Resolve([new(InteractionAuthRequirement.BearerOAuthApi, InteractionAuthSource.SourceDeclaration, "BirkNext automated execution")]) },
         ],
-    };
+    }, automationRequested: true);
 
     private static BirkNext.Web.Models.EndpointDiscoverySnapshot Discovery(string appOrigin, string appPath)
     {
@@ -482,7 +553,7 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         hops[1].QuerySelector("[data-testid=ae-hop-requirement]")!.TextContent.Should().Be("Unknown — not configured or reviewed", "browser login never fills Altinn → MU");
         hops[1].QuerySelector("[data-testid=ae-hop-runtime]")!.TextContent.Should().Be("Not verified");
         hops[2].QuerySelector("[data-testid=ae-hop-configuration]")!.TextContent.Should().Be("Not configured", "browser login never fills execution credentials");
-        cut.Find("[data-testid=ae-card][data-key=reporter-access]").TextContent.Should().Contain("Ready").And.Contain("Authenticated session observed · Browser Discovery");
+        cut.Find("[data-testid=ae-card][data-key=reporter-access]").TextContent.Should().Contain("Configured").And.Contain("Authenticated session observed · Browser Discovery");
 
         cut.Find("[data-testid=ae-toggle-browser]").Click();
         cut.Find("[data-testid=ae-browser-evidence-used]").TextContent.Should().Contain("no manual recording is needed");
@@ -498,6 +569,53 @@ public sealed class AltinnEnvironmentUiTests : BunitContext
         cut.Find("[data-testid=ae-card][data-key=reporter-access]").TextContent.Should().NotContain("Ready");
         cut.Find("[data-testid=ae-toggle-browser]").Click();
         cut.Find("[data-testid=ae-browser-record]").TextContent.Should().Be("Record browser login observation");
+    }
+
+    // ── Capability-scoped readiness: one requirement model behind every surface ─────────────────────────────────────────
+
+    [Fact]
+    public void Detected_altinn_settings_are_grouped_and_never_claim_a_login_or_a_secret()
+    {
+        var cut = RenderSkolenaervaer();
+        cut.FindAll("[data-testid=ae-detected-group]").Select(group => group.GetAttribute("data-group")).Should()
+            .Equal("Application", "Reporter access", "Test data", "Automated execution", "Altinn → MU", "Contract");
+        var lines = cut.FindAll("[data-testid=ae-detected-line]").Select(line => (Text: line.TextContent.Trim(), Found: line.GetAttribute("data-found"))).ToList();
+        lines.Should().Contain(line => line.Text.Contains("App ID: buf/skolenaervaer") && line.Found == "true");
+        lines.Should().Contain(line => line.Text.Contains("Runtime login: Not observed") && line.Found == "false", "public metadata is never a login");
+        lines.Should().Contain(line => line.Text.Contains("Client secret: Missing") && line.Found == "false", "a secret is never discovered");
+        lines.Should().Contain(line => line.Text.Contains("Process contract: Not confirmed") && line.Found == "false");
+        cut.FindAll("[data-testid=ae-detect]").Should().ContainSingle("Detect Altinn settings is the one discovery action");
+        cut.Markup.Should().NotContain("Detect browser settings").And.NotContain("Detect unattended");
+    }
+
+    [Fact]
+    public void Reporter_access_is_configured_while_its_runtime_login_is_not_observed()
+    {
+        _api.Next = HopView();
+        var cut = Render<AltinnEnvironmentPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ae-summary]"));
+        var card = cut.Find("[data-testid=ae-card][data-key=reporter-access]").TextContent;
+        card.Should().Contain("Configured").And.Contain("Runtime: Not observed").And.NotContain("Partial");
+        cut.Find("[data-testid=ae-card][data-key=integration-auth]").TextContent.Should().Contain("Needs review", "an undetermined Altinn → MU authentication is a review item, never 'missing'");
+        cut.Find("[data-testid=ae-fix-group][data-key=access]").GetAttribute("data-severity").Should().Be("Review required");
+        cut.Find("[data-testid=ae-fix-group][data-key=access]").TextContent.Should().Contain("Review for: End-to-end verification");
+    }
+
+    [Fact]
+    public void Contract_dimensions_runtime_stages_and_the_requirement_table_come_from_the_same_model()
+    {
+        var view = Skolenaervaer();
+        var cut = RenderSkolenaervaer();
+        cut.Find("[data-testid=ae-section-contract]").TextContent.Should().Contain("Review required").And.NotContain("Partial");
+        cut.Find("[data-testid=ae-toggle-contract]").Click();
+        cut.FindAll("[data-testid=ae-contract-dimension]").Select(row => row.GetAttribute("data-key")).Should().Equal("identifier", "metadata", "form-data-type", "schema", "process", "deployed");
+        cut.Find("[data-testid=ae-contract-dimension][data-key=process]").TextContent.Should().Contain("Not confirmed").And.Contain("Automated execution");
+        cut.Find("[data-testid=ae-toggle-runtime]").Click();
+        cut.Find("[data-testid=ae-runtime-stage][data-key=delivery]").TextContent.Should().Contain("Not verified").And.Contain("not observable from Altinn");
+        cut.Find("[data-testid=ae-advanced-toggle]").Click();
+        cut.FindAll("[data-testid=ae-issue]").Should().HaveCount(view.Issues.Count, "Advanced lists the same issues the cards and Needs attention use");
+        var categorized = cut.FindAll("[data-testid=ae-fix-item]").Count;
+        categorized.Should().Be(view.Issues.Count, "every issue appears exactly once in Needs attention");
     }
 
     private sealed class FakeApi : IAltinnEnvironmentApiService

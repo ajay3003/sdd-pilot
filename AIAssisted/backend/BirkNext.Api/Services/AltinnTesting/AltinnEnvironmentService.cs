@@ -155,8 +155,9 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var enabled = policy.UnattendedEnabled(config);
         fields.Add(new AltinnSettingField
         {
-            Key = "enabled", Group = AutomatedGroup, Label = "Automated execution", Value = enabled ? "Enabled" : "Not enabled", Requirement = AltinnRequirement.Automated,
-            State = enabled ? AltinnSettingState.Configured : AltinnSettingState.Missing,
+            Key = "enabled", Group = AutomatedGroup, Label = "Automated execution", Value = enabled ? "Enabled" : "Disabled", Requirement = AltinnRequirement.Automated,
+            // Disabled is a deliberate, valid state (the default) — never "Missing". Only an explicitly enabled environment requires the rest.
+            State = AltinnSettingState.Configured,
             Source = saved.Unattended.Enabled is not null ? AltinnSettingSource.TargetEnvironment : AltinnSettingSource.BackendConfiguration,
             SourceLabel = saved.Unattended.Enabled is not null ? Label(AltinnSettingSource.TargetEnvironment) : Label(AltinnSettingSource.BackendConfiguration),
             Detail = "An explicit choice per environment. Trust, the execution policy and the run acknowledgement still apply.",
@@ -316,54 +317,46 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var confirmedReporter = identities.Any(item => item.Role == AltinnTestDataProvider.Reporter && item.State == AltinnSettingState.Confirmed);
         var child = identities.Any(item => item.Role == AltinnTestDataProvider.Child && item.State == AltinnSettingState.Configured);
 
-        // Manual testing needs the TT02 app, a reporter, a child, the integration and the contract — never the unattended client. A suggested
-        // value (a test pack default or reference) is not configuration: it satisfies nothing until it is applied. Detected values keep their
-        // meaning — they come from the IQR binding or the app's own contract evidence, which BirkNext already uses.
-        var manualGaps = new List<string>();
-        var manualMissing = new List<string>();
-        foreach (var key in new[] { "environment", "app", "form-data-type", "integration" })
-            if (!Satisfied(F(key)))
-            {
-                var problem = Problem(F(key));
-                manualGaps.Add($"{F(key).Label}: {problem}");
-                manualMissing.Add(problem == "missing" ? F(key).Label : $"{F(key).Label} ({problem})");
-            }
-        if (!reporter) { manualGaps.Add("Reporter: missing"); manualMissing.Add("Reporter"); }
-        if (!child) { manualGaps.Add("Synthetic child: missing"); manualMissing.Add("Child"); }
-        // The report payload: identities are who is involved, the XML fixture is what is submitted — manual submission needs both.
-        var xmlReady = xml is null || xml.State == BirkNext.TestData.TestDataXmlReadinessState.Ready && xml.Bound;
-        if (!xmlReady) { manualGaps.Add($"XML fixture: {PayloadProblem(xml!)}"); manualMissing.Add("XML fixture"); }
-        var contractNote = contract.Complete ? "Contract evidence is complete." : "Contract evidence is still incomplete.";
+        // One requirement model (AltinnCapabilityModel): each unresolved requirement names the capabilities it blocks or needs review for, so manual
+        // preparation can be Ready while automated execution is optional/unconfigured — an intended state, not a broken page. Automation-only
+        // requirements block only when automated execution was explicitly enabled.
+        var automationRequested = policy.UnattendedEnabled(config);
+        var interactionsForModel = AltinnInteractionAuthentication.Build(production, saved.BrowserAuthentication, integration, F("integration").DisplayValue, AltinnReadinessState.NotAssessed);
+        var model = AltinnCapabilityModel.Build(new(fields, production, reporter, confirmedReporter, child,
+            xml is null ? null : (xml.State == BirkNext.TestData.TestDataXmlReadinessState.Ready && xml.Bound, PayloadProblem(xml)),
+            contract, interactionsForModel, saved.RuntimeObservations, automationRequested, policy.Scopes(config)));
+        var preparation = model.Capabilities.First(item => item.Capability == AltinnCapability.ManualPreparation);
+        var automatedCapability = model.Capabilities.First(item => item.Capability == AltinnCapability.AutomatedExecution);
+        var manualBlockers = model.Issues.Where(issue => issue.Blocks.Contains(AltinnCapability.ManualPreparation)).ToList();
+        var manualMissing = manualBlockers.Select(issue => issue.Status == "Missing" ? issue.Label : $"{issue.Label} ({issue.Status.ToLowerInvariant()})").ToList();
+        var contractNote = contract.Complete ? "Contract evidence is complete." : "Contract evidence is still incomplete (a review item; it does not block manual preparation).";
         // Manual preparation needs the reporter's browser sign-in requirement to be known (it is performed interactively), never BirkNext's
         // unattended credentials and never the integration's own authentication; MU delivery is stated as not verified.
         var manualAuthNote = "Reporter access: Browser/OIDC (ID-porten) — the reporter signs in during preparation. Runtime delivery through the integration has not been verified.";
         var manual = production
             ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Blocked, "The environment is Production; Altinn testing never runs there.")
-            : manualGaps.Count == 0
+            : preparation.Status == AltinnCapabilityStatus.Ready
                 ? new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Ready,
-                    $"Ready for manual submission preparation: app, reporter, child and integration are configured{(xml is null ? "" : ", the XML fixture is valid")} and the contract identifier is known. {contractNote} {manualAuthNote}")
-                : new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Partial, string.Join(" · ", manualGaps) + $". {contractNote} {manualAuthNote}");
+                    $"Ready for manual submission preparation: app, reporter and child are available{(xml is null ? "" : " and the valid report payload is bound")}. BirkNext's unattended credentials are not needed. {contractNote} {manualAuthNote}")
+                : new AltinnReadinessItem("manual", "Manual test readiness", AltinnReadinessState.Partial,
+                    string.Join(" · ", manualBlockers.Select(issue => $"{issue.Label}: {issue.Status.ToLowerInvariant()}")) + $". {contractNote} {manualAuthNote}");
 
-        // Automated execution additionally needs the unattended client, the secret, trust and approval; every reason stays explicit.
-        var blockers = new List<string>(manualGaps);
-        if (production) blockers.Add("Production is never executable.");
-        blockers.AddRange(fields.Where(field => field.Requirement == AltinnRequirement.Automated && field.State is AltinnSettingState.Conflict or AltinnSettingState.Declared)
-            .Select(field => $"{field.Label}: {Problem(field)}"));
-        blockers.AddRange(policy.UnattendedProblems(config));
-        if (targetBlock is not null) blockers.Add(targetBlock);
-        if (!appApproved) blockers.Add(F("app-approval").Detail);
-        if (!contract.Complete) blockers.Add($"Contract: incomplete ({string.Join("; ", contract.Missing.DefaultIfEmpty("not confirmed"))}).");
-        if (reporter && !confirmedReporter) blockers.Add("Reporter TT02 profile: not confirmed.");
-        blockers = [.. blockers.Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal)];
-        var automated = new AltinnReadinessItem("automated", "Automated BirkNext execution", blockers.Count == 0 ? AltinnReadinessState.Ready : AltinnReadinessState.Blocked,
-            blockers.Count == 0 ? "Ready for dry run. A live run still needs an explicit acknowledgement; at most one process transition, no automatic retry."
+        // Automated execution: blockers only when it was requested; otherwise "Optional · Not configured" (never Blocked).
+        var blockers = automationRequested ? model.Issues.Where(issue => issue.Blocks.Contains(AltinnCapability.AutomatedExecution)).Select(issue => $"{issue.Label}: {issue.Status}").ToList() : [];
+        var automated = new AltinnReadinessItem("automated", "Automated BirkNext execution",
+            !automationRequested ? AltinnReadinessState.NotAssessed : blockers.Count == 0 ? AltinnReadinessState.Ready : AltinnReadinessState.Blocked,
+            !automationRequested ? $"{automatedCapability.StatusLabel} — {automatedCapability.Reason}"
+                : blockers.Count == 0 ? "Ready for dry run. A live run still needs an explicit acknowledgement; at most one process transition, no automatic retry."
                 : $"Blocked by {blockers.Count} requirement{(blockers.Count == 1 ? "" : "s")}: {blockers[0]}");
 
         var appState = production ? AltinnReadinessState.Blocked
             : new[] { "environment", "app", "app-base-url" }.All(key => Satisfied(F(key))) ? AltinnReadinessState.Ready : AltinnReadinessState.Partial;
         var automatedFields = fields.Where(field => field.Group == AutomatedGroup).ToList();
-        var authState = automatedFields.All(field => field.State is AltinnSettingState.Configured or AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend)
-            ? AltinnReadinessState.Ready : automatedFields.Any(field => field.State is AltinnSettingState.Configured or AltinnSettingState.Detected or AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend)
+        // BirkNext's own credentials: complete, partly configured, or — while automated execution is not requested — optional (never Blocked).
+        var credentialIssues = model.Issues.Count(issue => issue.Section == "automated" && issue.Key != "enabled");
+        var authState = credentialIssues == 0 ? AltinnReadinessState.Ready
+            : !automationRequested ? AltinnReadinessState.NotAssessed
+            : automatedFields.Any(field => field.Key != "enabled" && AltinnEnvironmentService.Satisfied(field)) || automatedFields.Any(field => field.State is AltinnSettingState.AvailableForSession or AltinnSettingState.AvailableToBackend)
             ? AltinnReadinessState.Partial : AltinnReadinessState.Blocked;
         var observations = saved.RuntimeObservations;
         var summary = new List<AltinnReadinessItem>
@@ -382,11 +375,11 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         }
         var interactions = AltinnInteractionAuthentication.Build(production, saved.BrowserAuthentication, integration,
             F("integration").DisplayValue, authState);
-        summary.AddRange(AltinnInteractionAuthentication.Summary(interactions, authState));
+        summary.AddRange(AltinnInteractionAuthentication.Summary(interactions, authState, automationRequested));
         summary.AddRange(new List<AltinnReadinessItem>
         {
             new("runtime", "Runtime", observations.Count > 0 ? AltinnReadinessState.Partial : AltinnReadinessState.NotAssessed,
-                observations.Count > 0 ? $"Observed ({observations.Count} observation{(observations.Count == 1 ? "" : "s")}); not verified by BirkNext." : "Not verified."),
+                observations.Count > 0 ? $"Observed ({observations.Count} observation{(observations.Count == 1 ? "" : "s")}); not verified by BirkNext. Configuration readiness is unaffected." : "Not verified. Configuration readiness is unaffected."),
             new("automated", "Automated execution", automated.State, automated.Reason),
         });
 
@@ -404,13 +397,14 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
             EnvironmentId = environmentId, Saved = saved, Fields = fields, Identities = identities, Summary = summary, Interactions = interactions,
             ManualReadiness = manual, AutomatedReadiness = automated, AutomatedBlockers = blockers, Detection = detection,
             ManualMissing = production ? [] : manualMissing,
+            AutomationRequested = automationRequested, Issues = model.Issues, Capabilities = model.Capabilities,
+            ContractDimensions = model.ContractDimensions, RuntimeStages = model.RuntimeStages,
         };
     }
 
     /// <summary>Whether a required value counts: configured, confirmed, verified or detected from evidence BirkNext already uses. A suggestion
     /// (Declared) does not count until applied; missing, unknown and conflicting values never do.</summary>
-    public static bool Satisfied(AltinnSettingField field) =>
-        field.Value is not null && field.State is not (AltinnSettingState.Missing or AltinnSettingState.Unknown or AltinnSettingState.Conflict or AltinnSettingState.Declared);
+    public static bool Satisfied(AltinnSettingField field) => AltinnCapabilityModel.Satisfied(field);
 
     private static string Problem(AltinnSettingField field) => field.State switch
     {

@@ -423,7 +423,10 @@ public sealed class ExternalIntegrationSetupTests
             ?? "schemaVersion: 1\npackage:\n  name: P\n  scope: Provider\nsystems:\n  - name: Altinn – Skolenærvær\n    provider: Altinn\n    settings:\n      appId: buf/skolenaervaer\n      formDataType: " + AltinnTestKit.RealFormDataType + "\n      integrationId: skolenaervaer-report-intake\n", "p.yaml"), "x", CancellationToken.None)).Applied.Should().BeTrue();
         var altinn = (await bed.Integrations().ViewAsync(Env, false, CancellationToken.None)).Integrations.Single();
         altinn.Fields.Single(field => field.Key == "client-secret").State.Should().Be(AltinnSettingState.Missing);
-        altinn.Summary.Execution.State.Should().Be(SetupReadinessState.Blocked);
+        altinn.Summary.Execution.State.Should().Be(SetupReadinessState.NotAssessed, "automated execution is optional until it is enabled — never a global blocker");
+        (await bed.Store.UpdateAsync(Env, new() { Enabled = true })).Problems.Should().BeEmpty();
+        (await bed.Integrations().ViewAsync(Env, false, CancellationToken.None)).Integrations.Single().Summary.Execution.State
+            .Should().Be(SetupReadinessState.Blocked, "once automation is requested, the missing secret blocks it");
     }
 
     // ── Setup Library ──

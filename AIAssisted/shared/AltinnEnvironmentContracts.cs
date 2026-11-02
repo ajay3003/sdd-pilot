@@ -144,6 +144,57 @@ public sealed record AltinnSettingField
 /// <summary>One readiness dimension of the Altinn environment, with the exact reason.</summary>
 public sealed record AltinnReadinessItem(string Key, string Label, AltinnReadinessState State, string Reason);
 
+/// <summary>
+/// What the Altinn environment is used for. A requirement blocks (or needs review for) only the capabilities it names — never "the system":
+/// a missing unattended client blocks automated execution, never a manual submission.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AltinnCapability { ManualPreparation, ManualSubmission, EndToEndVerification, AutomatedExecution, RuntimeVerification }
+
+/// <summary>How an issue counts right now: a blocker of a capability that is required, a human review, optional setup (it would block only a
+/// capability nobody has asked for, e.g. automation while it is disabled) or runtime evidence not yet observed.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AltinnIssueKind { Blocker, Review, Optional, Runtime }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AltinnCapabilityStatus { Ready, Blocked, NeedsReview, Optional, NotVerified, Observed }
+
+/// <summary>
+/// One unresolved Altinn requirement — the single issue model behind the summary cards, the capability readiness, Needs attention, the counts,
+/// the sections and Advanced details. <see cref="Blocks"/> and <see cref="Reviews"/> name the affected capabilities; <see cref="Section"/> is the
+/// page section that resolves it. Never contains a secret or an identifier.
+/// </summary>
+public sealed record AltinnIssue
+{
+    public string Key { get; init; } = "";
+    public string Label { get; init; } = "";
+    /// <summary>Missing, Conflict, Not applied, Not confirmed, Unknown, Incomplete, Not read, Disabled, Not observed, Not verified.</summary>
+    public string Status { get; init; } = "";
+    public string Section { get; init; } = "";
+    public string Owner { get; init; } = "";
+    public string Detail { get; init; } = "";
+    public IReadOnlyList<AltinnCapability> Blocks { get; init; } = [];
+    public IReadOnlyList<AltinnCapability> Reviews { get; init; } = [];
+    public AltinnIssueKind Kind { get; init; }
+}
+
+/// <summary>One capability's readiness with its own blocker and review counts (never a global count).</summary>
+public sealed record AltinnCapabilityReadiness(AltinnCapability Capability, string Label, AltinnCapabilityStatus Status, string StatusLabel, int Blockers, int ReviewItems, string Reason)
+{
+    /// <summary>False for a capability nobody has asked for (automated execution while disabled): it shows Optional, never Blocked.</summary>
+    public bool Required { get; init; } = true;
+}
+
+/// <summary>One report-contract dimension (identifier, application metadata, form data type, data model schema, process, deployed contract).</summary>
+public sealed record AltinnContractDimension(string Key, string Label, string Status, bool Present, string Detail)
+{
+    /// <summary>What a missing dimension affects ("Automated execution · End-to-end verification"); empty when present.</summary>
+    public string Affects { get; init; } = "";
+}
+
+/// <summary>One runtime stage and whether it was observed. An observed stage proves only itself (a submitted report never proves MU receipt).</summary>
+public sealed record AltinnRuntimeStage(string Key, string Label, string Status, bool Observed, string Detail);
+
 public sealed record AltinnIdentitySummary(string Role, string Alias, string Label, AltinnSettingState State, string Source, string Detail);
 
 public sealed record AltinnDetectionSummary(int Configured, int Detected, int Observed, int Missing, int Conflicts, IReadOnlyList<string> ActionableGaps);
@@ -169,6 +220,14 @@ public sealed record AltinnEnvironmentView
     public AltinnDetectionSummary Detection { get; init; } = new(0, 0, 0, 0, 0, []);
     /// <summary>True when this view includes a Detect run (public metadata read in memory); false for an ordinary read.</summary>
     public bool Detected { get; init; }
+    /// <summary>Automated BirkNext execution was explicitly enabled for this environment: only then do automation-only requirements block.</summary>
+    public bool AutomationRequested { get; init; }
+    /// <summary>The canonical issue model (see <see cref="AltinnIssue"/>).</summary>
+    public IReadOnlyList<AltinnIssue> Issues { get; init; } = [];
+    /// <summary>Manual preparation, manual submission, end-to-end verification, automated execution and runtime verification.</summary>
+    public IReadOnlyList<AltinnCapabilityReadiness> Capabilities { get; init; } = [];
+    public IReadOnlyList<AltinnContractDimension> ContractDimensions { get; init; } = [];
+    public IReadOnlyList<AltinnRuntimeStage> RuntimeStages { get; init; } = [];
     public IReadOnlyList<string> Notes { get; init; } = [];
 }
 
