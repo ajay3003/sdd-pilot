@@ -26,12 +26,13 @@ public static class DeliveryReportExporter
     {
         var zone = Zone(report);
         var md = new StringBuilder();
-        md.AppendLine($"# {Md(report.Title)} — {report.WeekLabel}").AppendLine();
+        md.AppendLine($"# {Md(DeliveryReportTitles.Display(report))}").AppendLine();
         md.AppendLine($"**Project:** {Md(report.ProjectName)}  ");
         md.AppendLine($"**Period:** {Period(report, zone)}  ");
         md.AppendLine($"**Baseline:** {SnapshotLine(report.Baseline, zone)}  ");
         md.AppendLine($"**Current:** {SnapshotLine(report.Current, zone)}  ");
-        md.AppendLine($"**Coverage:** {report.Coverage}  ");
+        md.AppendLine($"**Coverage:** {report.Coverage}{(report.CoverageText.Length > 0 ? $" · {Md(report.CoverageText)}" : "")}  ");
+        if (report.Direction is { } direction) md.AppendLine($"**Snapshot direction:** {direction.State}{(direction.Confirmed ? " (explicitly confirmed)" : "")}  ");
         md.AppendLine($"**Generated:** {Time(report.GeneratedAt, zone)}").AppendLine();
         foreach (var note in report.CoverageNotes) md.AppendLine($"> **Coverage note:** {Md(note)}").AppendLine();
         foreach (var warning in report.ComparisonWarnings) md.AppendLine($"> **Comparison warning:** {Md(warning)}").AppendLine();
@@ -42,7 +43,7 @@ public static class DeliveryReportExporter
 
         md.AppendLine("## Movement summary").AppendLine();
         md.AppendLine("| Measure | Count |").AppendLine("|---|---:|");
-        foreach (var metric in report.Metrics) md.AppendLine($"| {Cell(metric.Label)} | {metric.Value} |");
+        foreach (var metric in report.Metrics) md.AppendLine($"| {(report.Version >= 3 ? Cell(DeliveryMetricGroups.Label(metric.Group)) + " · " : "")}{Cell(metric.Label)} | {metric.Value} |");
         md.AppendLine();
 
         var stories = DeliveryReportStories.Select(report, options.IncludeUnchangedStories);
@@ -101,6 +102,7 @@ public static class DeliveryReportExporter
         }
 
         md.AppendLine($"## {DeliveryReportStories.FocusHeading(report)}").AppendLine();
+        if (report.Version >= 3) md.AppendLine($"_{DeliveryReportStories.FocusNote}_").AppendLine();
         if (report.NextWeekFocus.Count == 0) md.AppendLine("No open work was found in the current snapshot.").AppendLine();
         else
         {
@@ -135,14 +137,15 @@ public static class DeliveryReportExporter
         var zone = Zone(report);
         var h = new StringBuilder();
         h.AppendLine("<!doctype html>").AppendLine("<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-        h.AppendLine($"<title>{E(report.Title)} — {E(report.WeekLabel)}</title>");
+        h.AppendLine($"<title>{E(DeliveryReportTitles.Display(report))}</title>");
         h.AppendLine("<style>").AppendLine(Css).AppendLine("</style></head><body><main>");
-        h.AppendLine($"<header><h1>{E(report.Title)} — {E(report.WeekLabel)}</h1><dl class=\"meta\">");
+        h.AppendLine($"<header><h1>{E(DeliveryReportTitles.Display(report))}</h1><dl class=\"meta\">");
         Meta(h, "Project", report.ProjectName);
         Meta(h, "Period", Period(report, zone));
         Meta(h, "Baseline", SnapshotLine(report.Baseline, zone));
         Meta(h, "Current", SnapshotLine(report.Current, zone));
-        Meta(h, "Coverage", report.Coverage.ToString());
+        Meta(h, "Coverage", report.CoverageText.Length > 0 ? $"{report.Coverage} · {report.CoverageText}" : report.Coverage.ToString());
+        if (report.Direction is { } dir) Meta(h, "Snapshot direction", $"{dir.State}{(dir.Confirmed ? " (explicitly confirmed)" : "")}");
         Meta(h, "Generated", Time(report.GeneratedAt, zone));
         h.AppendLine("</dl></header>");
         foreach (var note in report.CoverageNotes) h.AppendLine($"<p class=\"note\" role=\"note\"><strong>Coverage note:</strong> {E(note)}</p>");
@@ -200,6 +203,7 @@ public static class DeliveryReportExporter
         h.AppendLine("</section>");
 
         h.AppendLine($"<section><h2>{DeliveryReportStories.FocusHeading(report)}</h2>");
+        if (report.Version >= 3) h.AppendLine($"<p class=\"note\">{E(DeliveryReportStories.FocusNote)}</p>");
         if (report.NextWeekFocus.Count == 0) h.AppendLine("<p>No open work was found in the current snapshot.</p>");
         else
         {

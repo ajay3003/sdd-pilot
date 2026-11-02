@@ -11,7 +11,12 @@ public sealed record DeliveryContentTask(string Key, string Text, bool Completed
     public string? PhaseKey { get; init; }
     public string? UserStoryKey { get; init; }
     public string? SourcePath { get; init; }
+    /// <summary>The raw [USn] tag as written (kept even when it names no story).</summary>
+    public string? StoryReference { get; init; }
+    public bool Parallel { get; init; }
 }
+
+public sealed record DeliveryContentRequirement(string Key, string Text);
 
 public sealed record DeliveryContentPhase(string Key, string Title, int Position);
 
@@ -42,6 +47,7 @@ public sealed record DeliveryContentFeature
     public List<DeliveryContentPhase> Phases { get; init; } = [];
     public List<DeliveryContentStory> Stories { get; init; } = [];
     public List<DeliveryContentCriterion> Criteria { get; init; } = [];
+    public List<DeliveryContentRequirement> Requirements { get; init; } = [];
 }
 
 public sealed record DeliverySnapshotContent
@@ -71,6 +77,10 @@ public sealed record DeliveryComparisonResult(List<DeliveryStoryRow> Stories, Li
 public static class DeliverySnapshotComparison
 {
     private const int EvidenceListLimit = 50;
+
+    /// <summary>"7/8 tasks checked"; never a measured-looking "0/0": no tasks.md or no checkbox tasks is said in words.</summary>
+    internal static string TaskText(int completed, int total, bool hasTaskList = true) =>
+        !hasTaskList ? "no task list found (progress cannot be derived from tasks)" : total == 0 ? "no checkbox tasks" : $"{completed}/{total} tasks checked";
     private static readonly Regex FeatureNumberRe = new(@"^(\d{1,4})[-_]", RegexOptions.Compiled);
 
     public static DeliveryComparisonResult Compare(DeliverySnapshotContent baseline, DeliverySnapshotContent current)
@@ -122,10 +132,10 @@ public static class DeliverySnapshotComparison
             stories = stories.Select(s => s.RemovedFeature ? s with { RemovalUnconfirmed = true, Movement = DeliveryMovement.NeedsReview,
                 Reasons = ["Not found in the current snapshot, which was not read completely – missing, not a confirmed removal (review)"] } : s).ToList();
         var scope = stories.Where(s => s.NewFeature || s.RemovedFeature).Select(s => s.RemovalUnconfirmed
-            ? new DeliveryScopeChange("Missing", s.FeatureKey, s.Title, s.Module, $"Not found in the current snapshot, which was not read completely. Last known baseline: {s.BaselineTaskCompleted}/{s.BaselineTaskTotal} tasks. Review before treating it as removed.")
+            ? new DeliveryScopeChange("Missing", s.FeatureKey, s.Title, s.Module, $"Not found in the current snapshot, which was not read completely. Last known baseline: {TaskText(s.BaselineTaskCompleted, s.BaselineTaskTotal)}. Review before treating it as removed.")
             : s.RemovedFeature
-            ? new DeliveryScopeChange("Removed", s.FeatureKey, s.Title, s.Module, $"In the baseline, not in the current snapshot. Last known baseline: {s.BaselineTaskCompleted}/{s.BaselineTaskTotal} tasks. Confirm whether the removal was intentional.")
-            : new DeliveryScopeChange("Added", s.FeatureKey, s.Title, s.Module, $"New this period. Current state: {s.CurrentTaskCompleted}/{s.CurrentTaskTotal} tasks (not counted as completed this period).")).ToList();
+            ? new DeliveryScopeChange("Removed", s.FeatureKey, s.Title, s.Module, $"In the baseline, not in the current snapshot. Last known baseline: {TaskText(s.BaselineTaskCompleted, s.BaselineTaskTotal)}. Confirm whether the removal was intentional.")
+            : new DeliveryScopeChange("Added", s.FeatureKey, s.Title, s.Module, $"New this period. Current state: {TaskText(s.CurrentTaskCompleted, s.CurrentTaskTotal, s.Hierarchy?.HasTaskList ?? true)} (not counted as completed this period).")).ToList();
         return new(stories, events, attention,
             stories.Count(s => s.NewFeature), stories.Count(s => s.RemovedFeature), stories.Count(s => s.Changed)) { ScopeChanges = scope };
     }
@@ -159,7 +169,7 @@ public static class DeliverySnapshotComparison
 
     private static DeliveryStoryRow Added(DeliveryContentFeature c, List<DeliveryStatusChange> events, List<DeliveryAttentionItem> attention)
     {
-        events.Add(new(c.Key, "FeatureAdded", null, c.Status.ToString(), $"New feature with {c.TaskCompleted}/{c.TaskTotal} tasks completed"));
+        events.Add(new(c.Key, "FeatureAdded", null, c.Status.ToString(), $"New feature with {TaskText(c.TaskCompleted, c.TaskTotal, c.TasksPath is not null)}"));
         CurrentStateAttention(c, attention);
         return new DeliveryStoryRow
         {
@@ -234,7 +244,7 @@ public static class DeliverySnapshotComparison
         if (added.Count > 0) reasons.Add($"{added.Count} task(s) added");
         if (removedTasks.Count > 0) reasons.Add($"{removedTasks.Count} task(s) removed");
         if (reopened.Count > 0) reasons.Add($"{reopened.Count} task(s) reopened");
-        if (movement == DeliveryMovement.NoSignificantChange) reasons.Add($"Unchanged at {c.TaskCompleted}/{c.TaskTotal} tasks");
+        if (movement == DeliveryMovement.NoSignificantChange) reasons.Add($"Unchanged · {TaskText(c.TaskCompleted, c.TaskTotal, c.TasksPath is not null)}");
 
         foreach (var t in completedNow) events.Add(new(c.Key, "TaskCompleted", null, null, t.Text));
         foreach (var t in reopened) events.Add(new(c.Key, "TaskReopened", null, null, t.Text));
@@ -278,7 +288,7 @@ public static class DeliverySnapshotComparison
     {
         var side = c ?? b!;
         if (!side.HierarchyCaptured || b is not null && c is not null && !b.HierarchyCaptured)
-            return new DeliveryFeatureHierarchy { Captured = false, Tasks = TaskRows(b, c) };
+            return new DeliveryFeatureHierarchy { Captured = false, Tasks = TaskRows(b, c), HasTaskList = side.TasksPath is not null };
         var tasks = TaskRows(b, c);
         var criteria = CriterionRows(b?.Criteria ?? [], c?.Criteria ?? [], b is null, c is null);
         var storyKeys = (c?.Stories ?? []).Select(s => s.Key).Concat((b?.Stories ?? []).Select(s => s.Key)).Distinct(StringComparer.Ordinal).ToList();
@@ -321,6 +331,7 @@ public static class DeliverySnapshotComparison
         return new DeliveryFeatureHierarchy
         {
             Captured = true, Phases = phases, Stories = stories, FeatureCriteria = [.. criteria.Where(x => x.StoryKey is null)], Tasks = tasks,
+            FunctionalRequirements = RequirementRows(b, c), HasTaskList = side.TasksPath is not null,
             CriteriaBaseline = b?.Criteria.Count ?? 0, CriteriaCurrent = c?.Criteria.Count ?? 0,
             CriteriaAdded = pair ? criteria.Count(x => x.Change == DeliveryItemChange.Added) : 0, CriteriaChanged = criteria.Count(x => x.Change == DeliveryItemChange.Changed),
             CriteriaRemoved = pair ? criteria.Count(x => x.Change == DeliveryItemChange.Removed) : 0,
@@ -331,10 +342,30 @@ public static class DeliverySnapshotComparison
         };
     }
 
+    /// <summary>Functional requirements by their explicit key (FR-001): same key + same text = unchanged; changed text = changed.</summary>
+    private static List<DeliveryRequirementRow> RequirementRows(DeliveryContentFeature? b, DeliveryContentFeature? c)
+    {
+        if (c is null) return [.. b!.Requirements.Select(r => new DeliveryRequirementRow(r.Key, r.Text, DeliveryItemChange.Unchanged))];
+        if (b is null) return [.. c.Requirements.Select(r => new DeliveryRequirementRow(r.Key, r.Text, DeliveryItemChange.Unchanged))];
+        var baseline = b.Requirements.ToDictionary(r => r.Key, StringComparer.Ordinal);
+        var rows = c.Requirements.Select(r => new DeliveryRequirementRow(r.Key, r.Text, !baseline.TryGetValue(r.Key, out var br) ? DeliveryItemChange.Added
+            : br.Text != r.Text ? DeliveryItemChange.Changed : DeliveryItemChange.Unchanged)).ToList();
+        var current = c.Requirements.Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
+        rows.AddRange(b.Requirements.Where(r => !current.Contains(r.Key)).Select(r => new DeliveryRequirementRow(r.Key, r.Text, DeliveryItemChange.Removed)));
+        return rows;
+    }
+
     private static List<DeliveryTaskRow> TaskRows(DeliveryContentFeature? b, DeliveryContentFeature? c)
     {
+        var baselineState = b?.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First().Completed, StringComparer.Ordinal);
         DeliveryTaskRow Row(DeliveryContentTask t, DeliveryTaskChange change) =>
-            new(t.Key, t.TaskId, t.Text, t.Completed, change) { PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath };
+            new(t.Key, t.TaskId, t.Text, t.Completed, change)
+            {
+                PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath, Parallel = t.Parallel,
+                // An explicit [USn] that names no story stays visible as written ("Parent story unresolved") — never re-pointed.
+                UnresolvedStoryReference = t.UserStoryKey is null && t.StoryReference is { Length: > 0 } raw ? raw : null,
+                BaselineCompleted = b is not null && c is not null && baselineState!.TryGetValue(t.Key, out var was) ? was : null,
+            };
         if (c is null) return [.. b!.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged))];
         if (b is null) return [.. c.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged))];
         var baseTasks = b.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);

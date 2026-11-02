@@ -27,6 +27,15 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
         }
     }
 
+    /// <summary>The Baseline → Current preview before generation (nothing is stored).</summary>
+    public async Task<(DeliveryComparisonPreview? Preview, string? Error)> PreviewAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct)
+    {
+        if (baselineId == currentId) return (null, "Choose two different snapshots: a baseline and a current snapshot.");
+        var baseline = await snapshots.ContentAsync(projectId, baselineId, ct);
+        var current = await snapshots.ContentAsync(projectId, currentId, ct);
+        return baseline is null || current is null ? (null, "Both snapshots must belong to this reporting project.") : (WeeklyReportBuilder.Preview(baseline, current, Zone), null);
+    }
+
     public async Task<WeeklyReportOutcome> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct)
     {
         var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProjectId, ct);
@@ -39,11 +48,20 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
             return new(null, "Both snapshots must belong to this reporting project.", StatusCodes.Status400BadRequest);
         if (baseline.Ref.EffectiveAt > current.Ref.EffectiveAt)
             return new(null, "The baseline must not be later than the current snapshot. Swap them or choose another baseline.", StatusCodes.Status400BadRequest);
+        // Direction review: a reduced current inventory may be legitimate (scope reduction) or a reversed pair — never decided silently.
+        var preview = WeeklyReportBuilder.Preview(baseline, current, Zone);
+        if (preview.RequiresConfirmation && !request.ConfirmDirection)
+            return new(null, $"{preview.Warnings[0]} Confirm the direction to generate anyway, or swap Baseline / Current.", StatusCodes.Status409Conflict);
+        var direction = new DeliveryDirectionReview
+        {
+            State = preview.Direction, Confirmed = preview.RequiresConfirmation && request.ConfirmDirection,
+            BaselineInventory = preview.BaselineInventory, CurrentInventory = preview.CurrentInventory, Warnings = preview.Warnings,
+        };
 
         var comparison = DeliverySnapshotComparison.Compare(baseline, current);
         var reportId = Guid.NewGuid();
         var now = clock.GetUtcNow();
-        var report = WeeklyReportBuilder.Build(reportId, project.Id, project.Name, now, baseline, current, comparison, Zone);
+        var report = WeeklyReportBuilder.Build(reportId, project.Id, project.Name, now, baseline, current, comparison, Zone, direction);
 
         var comparisonRecord = new DeliverySnapshotComparisonRecord
         {
@@ -95,8 +113,16 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
         return records.Select(r =>
         {
             var report = Deserialize(r);
+            static string Source(DeliveryReportSnapshotRef s) => $"{s.SourceFileName}{(s.Fingerprint.Length >= 8 ? $" · {s.Fingerprint[..8]}" : "")}";
             return new DeliveryReportSummaryRow(r.Id, r.Title, r.WeekLabel, r.PeriodStart, r.PeriodEnd, r.GeneratedAt, Enum.Parse<DeliveryCoverage>(r.CoverageStatus),
-                report?.Baseline.Label ?? "", report?.Current.Label ?? "", report?.Stories.Count(s => s.Changed) ?? 0, report?.Attention.Count ?? 0);
+                report?.Baseline.Label ?? "", report?.Current.Label ?? "", report?.Stories.Count(s => s.Changed) ?? 0, report?.Attention.Count ?? 0)
+            {
+                DisplayTitle = report is null ? $"{r.Title} — {r.WeekLabel}" : DeliveryReportTitles.Display(report), CoverageText = report?.CoverageText ?? "",
+                BaselineSource = report is null ? "" : Source(report.Baseline), CurrentSource = report is null ? "" : Source(report.Current),
+                BaselineEffectiveAt = report?.Baseline.EffectiveAt, CurrentEffectiveAt = report?.Current.EffectiveAt,
+                PairKey = $"{r.BaselineSnapshotId?.ToString() ?? report?.Baseline.SnapshotId.ToString()}→{r.CurrentSnapshotId?.ToString() ?? report?.Current.SnapshotId.ToString()}",
+                Direction = report?.Direction?.State, DirectionConfirmed = report?.Direction?.Confirmed == true, CalculationVersion = report?.CalculationVersion ?? 0,
+            };
         }).ToList();
     }
 

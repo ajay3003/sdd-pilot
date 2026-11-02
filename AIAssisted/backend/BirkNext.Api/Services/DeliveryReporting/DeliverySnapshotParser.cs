@@ -11,6 +11,8 @@ namespace BirkNext.Api.Services.DeliveryReporting;
 
 public sealed record ParsedDeliveryTask(string TaskKey, string? TaskId, string Text, bool Completed, string? Phase, string? UserStory, int Position, string SourcePath)
 {
+    /// <summary>The source marks the task [P].</summary>
+    public bool Parallel { get; init; }
     /// <summary>The explicit phase ("Phase 2: …" task group) the task sits in; null for other groups.</summary>
     public string? PhaseKey { get; init; }
     /// <summary>The user story the task explicitly references ([US2]) when that story exists in the specification; null otherwise.</summary>
@@ -18,6 +20,9 @@ public sealed record ParsedDeliveryTask(string TaskKey, string? TaskId, string T
 }
 
 /// <summary>An explicit implementation phase: a tasks.md group headed "Phase N …". A delivery grouping, never a status.</summary>
+/// <summary>A functional requirement as written: FR-001 and its text.</summary>
+public sealed record ParsedDeliveryRequirement(string Key, string Text);
+
 public sealed record ParsedDeliveryPhase(string Key, string Title, int Position);
 
 /// <summary>An explicit user story section of spec.md ("User Story 2 - … (Priority: P1)"). Priority only when the heading declares it.</summary>
@@ -34,6 +39,8 @@ public sealed record ParsedDeliveryEvidence(string Kind, string Path, int Line, 
 
 public sealed record ParsedDeliveryFeature
 {
+    /// <summary>Functional requirements as written (feature-level).</summary>
+    public List<ParsedDeliveryRequirement> Requirements { get; init; } = [];
     public string Key { get; init; } = "";
     public string Module { get; init; } = "";
     public string Folder { get; init; } = "";
@@ -96,15 +103,18 @@ public sealed record DeliverySnapshotParseResult(ParsedDeliverySnapshot? Snapsho
 /// </summary>
 public static class DeliverySnapshotParser
 {
+    /// <summary>3: Norwegian headings (Brukerhistorie / Prioritet / Fase), functional requirements and [P] markers stored.</summary>
+    public const int ParserVersion = 3;
     private static readonly Regex CheckboxRe = new(@"^\s*[-*+]\s+\[([ xX])\]", RegexOptions.Compiled);
     private static readonly Regex StatusLineRe = new(@"^\s*(?:[-*]\s+)?\*{0,2}(?:Delivery\s+)?Status\*{0,2}\s*:\s*\*{0,2}\s*(.+?)\s*\*{0,2}\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ClarificationRe = new(@"\[NEEDS CLARIFICATION", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TitlePrefixRe = new(@"^(?:Feature\s+Specification|Feature\s+Spec|Specification|Feature)\s*[:\-–]\s*", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex GitCommitRe = new(@"^[0-9a-f]{40}$", RegexOptions.Compiled);
     private static readonly Regex FeatureNumberRe = new(@"^(\d{1,4})[-_]", RegexOptions.Compiled);
-    private static readonly Regex StoryHeadingRe = new(@"^\s*User\s+Story\s+(\d+)\s*(?:[-–—:]\s*)?(.*?)\s*(?:\(\s*Priority\s*:\s*([A-Za-z0-9]+)\s*\))?\s*(?:🎯.*)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PhaseHeadingRe = new(@"^\s*Phase\s+(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PhaseStoryRe = new(@"\bUser\s+Story\s+(\d+)\b|\bUS\s*-?\s*(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // English and Norwegian headings: User Story / Brukerhistorie, Priority / Prioritet, Phase / Fase.
+    private static readonly Regex StoryHeadingRe = new(@"^\s*(?:User\s+Story|Brukerhistorie)\s+(\d+)\s*(?:[-–—:]\s*)?(.*?)\s*(?:\(\s*(?:Priority|Prioritet)\s*:\s*([A-Za-z0-9]+)\s*\))?\s*(?:🎯.*)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PhaseHeadingRe = new(@"^\s*(?:Phase|Fase)\s+(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex PhaseStoryRe = new(@"\b(?:User\s+Story|Brukerhistorie)\s+(\d+)\b|\bUS\s*-?\s*(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex StoryTagRe = new(@"^US\s*-?\s*0*(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DescriptionStopRe = new(@"^\s*\*{0,2}(Why this priority|Independent Test|Acceptance Scenarios|Acceptance Criteria)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -231,6 +241,7 @@ public static class DeliverySnapshotParser
         var parsedStories = new List<ParsedDeliveryStory>();
         var criteria = new List<ParsedDeliveryCriterion>();
         int requirements = 0, stories = 0, clarifications = 0;
+        var functionalRequirements = new List<ParsedDeliveryRequirement>();
         DeliveryStatus? explicitStatus = null;
 
         if (spec is { } s)
@@ -255,6 +266,10 @@ public static class DeliverySnapshotParser
                 acceptance = nodes.Where(n => n.NodeType is SpecNodeType.BddScenario or SpecNodeType.AcceptanceTest or SpecNodeType.SuccessCriterion)
                     .Select(n => Collapse(StripMarkdown(n.FullContent ?? n.Title))).Where(t => t.Length > 0).Distinct(StringComparer.Ordinal).ToList();
                 requirements = nodes.Count(n => n.NodeType == SpecNodeType.Requirement);
+                // Functional requirements as written (FR-001 …): feature-level, never folded into acceptance criteria.
+                functionalRequirements = nodes.Where(n => n.NodeType == SpecNodeType.Requirement && n.SpecItemId is { Length: > 0 })
+                    .Select(n => new ParsedDeliveryRequirement(n.SpecItemId!, Truncate(Collapse(StripMarkdown(n.FullContent ?? n.Title)), 2000)))
+                    .DistinctBy(r => r.Key, StringComparer.Ordinal).ToList();
                 stories = nodes.Count(n => n.NodeType == SpecNodeType.UserStory);
                 (parsedStories, criteria) = Hierarchy(tree.Roots, s.Content);
             }
@@ -283,7 +298,7 @@ public static class DeliverySnapshotParser
                     var taskKey = keys.TryGetValue(baseKey, out var seen) ? $"{baseKey}#{seen + 1}" : baseKey;
                     keys[baseKey] = seen + 1;
                     parsedTasks.Add(new(taskKey, node.TaskId, Truncate(text, 2000), checkbox.Groups[1].Value is "x" or "X",
-                        node.PhaseTitle is { } p ? Truncate(p, 400) : null, node.UserStoryTag, order++, t.Path) { PhaseKey = PhaseKey(node.PhaseTitle) });
+                        node.PhaseTitle is { } p ? Truncate(p, 400) : null, node.UserStoryTag, order++, t.Path) { PhaseKey = PhaseKey(node.PhaseTitle), Parallel = node.IsParallel });
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -314,7 +329,7 @@ public static class DeliverySnapshotParser
             SpecFingerprint = specFingerprint, AcceptanceFingerprint = acceptanceFingerprint, AcceptanceCriteria = acceptance,
             RequirementCount = requirements, UserStoryCount = stories, OpenClarifications = clarifications, ExplicitStatus = explicitStatus,
             Tasks = parsedTasks, UntrackedTaskCount = untracked, Evidence = evidence,
-            Phases = phases, Stories = parsedStories, Criteria = criteria,
+            Phases = phases, Stories = parsedStories, Criteria = criteria, Requirements = functionalRequirements,
         };
         var (status, reason) = DeliveryStatusDerivation.Derive(feature.TasksPath is not null, feature.TaskTotal, feature.TaskCompleted,
             feature.UntrackedTaskCount, feature.ExplicitStatus, feature.OpenClarifications);

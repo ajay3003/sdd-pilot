@@ -246,6 +246,9 @@ public sealed record DeliverySnapshotSummary
     public int WarningsCount { get; init; }
     public int ReportCount { get; init; }
     public DeliveryAzureDevOpsSource? AzureDevOps { get; init; }
+    /// <summary>Where the effective date comes from: "Entered at import", "Archive timestamps (Git export)", "Azure DevOps commit", "Corrected".</summary>
+    public string EffectiveAtProvenance { get; init; } = "Entered at import";
+    public List<DeliveryEffectiveDateCorrection> EffectiveAtCorrections { get; init; } = [];
 }
 
 public sealed record DeliverySnapshotFeature(string Key, string Title, string Module, string Status, string StatusReason, int TaskTotal,
@@ -254,17 +257,87 @@ public sealed record DeliverySnapshotFeature(string Key, string Title, string Mo
 public sealed record DeliverySnapshotDetail(DeliverySnapshotSummary Summary, List<string> Modules, List<DeliverySnapshotFeature> Features,
     List<DeliveryImportWarning> Warnings);
 
-public sealed record UpdateDeliverySnapshotRequest(string? Label, DeliverySnapshotRole? Role);
+/// <summary>Label/role edits, and an explicit effective-date correction (with a reason): the previous value is kept in the snapshot's audit trail.</summary>
+public sealed record UpdateDeliverySnapshotRequest(string? Label, DeliverySnapshotRole? Role, DateTimeOffset? EffectiveAt = null, string? EffectiveAtReason = null);
+
+/// <summary>One correction of a snapshot's effective date: never silent, never lost.</summary>
+public sealed record DeliveryEffectiveDateCorrection(DateTimeOffset Previous, DateTimeOffset Corrected, DateTimeOffset CorrectedAt, string? Reason);
 
 /// <summary>Nearest earlier snapshot of the same project. <see cref="SnapshotId"/> is null when nothing fits or the choice is ambiguous.</summary>
 public sealed record DeliveryBaselineSuggestion(Guid? SnapshotId, string Reason, bool Ambiguous, List<Guid> Candidates);
 
 // ── Weekly report (frozen document) ───────────────────────────────────────────────────────────────────────────────────
 
-public sealed record GenerateWeeklyReportRequest(Guid ProjectId, Guid BaselineSnapshotId, Guid CurrentSnapshotId);
+public sealed record GenerateWeeklyReportRequest(Guid ProjectId, Guid BaselineSnapshotId, Guid CurrentSnapshotId)
+{
+    /// <summary>Explicit confirmation that the direction is right when the comparison preview asks for it (e.g. the current snapshot holds fewer
+    /// features and tasks). Recorded in the frozen report; never inferred.</summary>
+    public bool ConfirmDirection { get; init; }
+}
+
+/// <summary>Full-period: the baseline covers the reporting week. Partial-period: part of it. Same-day: both snapshots on one day — a change report,
+/// never a week of delivery. Unknown: dates cannot support a coverage claim.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryPeriodCoverage { FullPeriod, PartialPeriod, SameDay, Unknown }
+
+/// <summary>Chronological = baseline earlier, inventories plausible. SameEffectiveDate = both on one day (order unknowable from dates).
+/// InventoryReduced = current holds fewer features/tasks than baseline: scope reduction, rollback or reversed snapshots — needs review, never
+/// auto-reversed. BaselineLater = dates are inverted (swap).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryDirectionState { Chronological, SameEffectiveDate, InventoryReduced, BaselineLater }
+
+public sealed record DeliveryInventory(int Features, int Tasks, int CheckedTasks);
+
+/// <summary>Shown before a report is generated: Baseline → Current inventories, deltas, direction and coverage. Nothing is stored.</summary>
+public sealed record DeliveryComparisonPreview
+{
+    public DeliveryReportSnapshotRef Baseline { get; init; } = new();
+    public DeliveryReportSnapshotRef Current { get; init; } = new();
+    public DeliveryInventory BaselineInventory { get; init; } = new(0, 0, 0);
+    public DeliveryInventory CurrentInventory { get; init; } = new(0, 0, 0);
+    public int FeatureDelta => CurrentInventory.Features - BaselineInventory.Features;
+    public int TaskDelta => CurrentInventory.Tasks - BaselineInventory.Tasks;
+    public int CheckedDelta => CurrentInventory.CheckedTasks - BaselineInventory.CheckedTasks;
+    public List<string> MissingFeatures { get; init; } = [];
+    public List<string> NewFeatures { get; init; } = [];
+    public DeliveryDirectionState Direction { get; init; }
+    public List<string> Warnings { get; init; } = [];
+    /// <summary>Generation needs <see cref="GenerateWeeklyReportRequest.ConfirmDirection"/>.</summary>
+    public bool RequiresConfirmation { get; init; }
+    /// <summary>False only for an impossible pair (same snapshot, inverted dates: swap them instead).</summary>
+    public bool CanGenerate { get; init; }
+    public DeliveryPeriodCoverage PeriodCoverage { get; init; }
+    public string CoverageText { get; init; } = "";
+    public DeliveryReportKind Kind { get; init; }
+}
+
+/// <summary>The direction decision frozen with a report: what was checked, what was found, and whether it was explicitly confirmed.</summary>
+public sealed record DeliveryDirectionReview
+{
+    public DeliveryDirectionState State { get; init; }
+    public bool Confirmed { get; init; }
+    public DeliveryInventory BaselineInventory { get; init; } = new(0, 0, 0);
+    public DeliveryInventory CurrentInventory { get; init; } = new(0, 0, 0);
+    public List<string> Warnings { get; init; } = [];
+}
 
 public sealed record DeliveryReportSummaryRow(Guid Id, string Title, string WeekLabel, DateTimeOffset PeriodStart, DateTimeOffset PeriodEnd,
-    DateTimeOffset GeneratedAt, DeliveryCoverage Coverage, string BaselineLabel, string CurrentLabel, int StoriesChanged, int AttentionCount);
+    DateTimeOffset GeneratedAt, DeliveryCoverage Coverage, string BaselineLabel, string CurrentLabel, int StoriesChanged, int AttentionCount)
+{
+    /// <summary>The frozen report's own display title (coverage-aware from v3).</summary>
+    public string DisplayTitle { get; init; } = "";
+    public string CoverageText { get; init; } = "";
+    /// <summary>Exact source identities of the compared pair: archive file name and content fingerprint (short).</summary>
+    public string BaselineSource { get; init; } = "";
+    public string CurrentSource { get; init; } = "";
+    public DateTimeOffset? BaselineEffectiveAt { get; init; }
+    public DateTimeOffset? CurrentEffectiveAt { get; init; }
+    /// <summary>Baseline/current snapshot ids: two reports of one week with different pairs are different comparisons, not versions of one.</summary>
+    public string PairKey { get; init; } = "";
+    public DeliveryDirectionState? Direction { get; init; }
+    public bool DirectionConfirmed { get; init; }
+    public int CalculationVersion { get; init; }
+}
 
 public sealed record DeliveryReportSnapshotRef
 {
@@ -282,7 +355,47 @@ public sealed record DeliveryReportSnapshotRef
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryAzureDevOpsSource? AzureDevOps { get; init; }
 }
 
-public sealed record DeliveryReportMetric(string Key, string Label, int Value, string? Hint = null);
+/// <summary>A report figure in one of three groups that are never mixed: "period" (changes between the snapshots), "inventory" (the current
+/// snapshot's totals) and "quality" (review and traceability signals).</summary>
+public sealed record DeliveryReportMetric(string Key, string Label, int Value, string? Hint = null)
+{
+    public string Group { get; init; } = DeliveryMetricGroups.Period;
+}
+
+public static class DeliveryMetricGroups
+{
+    public const string Period = "period", Inventory = "inventory", Quality = "quality";
+
+    public static string Label(string group) => group switch
+    {
+        Inventory => "Current inventory",
+        Quality => "Quality and review",
+        _ => "Period changes",
+    };
+}
+
+/// <summary>Three different kinds of signal, never one "needs attention" number: a scope change to confirm is not a defect, a traceability gap is
+/// a data-quality issue, and blocked/clarification/reopened work is a delivery signal.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryAttentionCategory { ScopeChange, DataQuality, DeliverySignal }
+
+public static class DeliveryAttentionCategories
+{
+    public static DeliveryAttentionCategory Of(DeliveryAttentionKind kind) => kind switch
+    {
+        DeliveryAttentionKind.TasksDisappeared or DeliveryAttentionKind.AcceptanceCriteriaChanged or DeliveryAttentionKind.FeatureRemoved => DeliveryAttentionCategory.ScopeChange,
+        DeliveryAttentionKind.SpecificationWithoutTasks or DeliveryAttentionKind.AmbiguousFeatureIdentity or DeliveryAttentionKind.UnmappedArtifact
+            or DeliveryAttentionKind.BrokenTraceability => DeliveryAttentionCategory.DataQuality,
+        _ => DeliveryAttentionCategory.DeliverySignal,
+    };
+
+    public static string Label(DeliveryAttentionCategory category) => category switch
+    {
+        DeliveryAttentionCategory.ScopeChange => "Scope and change review",
+        DeliveryAttentionCategory.DataQuality => "Data quality and traceability",
+        _ => "Delivery status signals",
+    };
+}
 
 /// <summary>Technical provenance of one story row. Shown under "Show evidence" and only in an export's evidence appendix.</summary>
 public sealed record DeliveryStoryEvidence
@@ -356,7 +469,16 @@ public sealed record DeliveryTaskRow(string Key, string? TaskId, string Text, bo
     /// <summary>Only an explicit [USn] reference to an existing story; null = feature-level.</summary>
     public string? UserStoryKey { get; init; }
     public string? SourcePath { get; init; }
+    /// <summary>The raw [USn] reference when it names no story in the specification ("Parent story unresolved"); never repaired by guessing.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? UnresolvedStoryReference { get; init; }
+    /// <summary>The source marks the task [P] (parallelisable).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Parallel { get; init; }
+    /// <summary>Completion state in the baseline (null when the task is new).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? BaselineCompleted { get; init; }
 }
+
+/// <summary>A feature-level functional requirement (FR-001 …). Kept separate from acceptance criteria; linked to a story only when the source does.</summary>
+public sealed record DeliveryRequirementRow(string Key, string Text, DeliveryItemChange Change);
 
 public sealed record DeliveryUserStoryRow(string Key, string Title, DeliveryItemChange Change)
 {
@@ -395,6 +517,10 @@ public sealed record DeliveryFeatureHierarchy
     /// <summary>Criteria no story owns (kept feature-level, never duplicated under stories).</summary>
     public List<DeliveryCriterionRow> FeatureCriteria { get; init; } = [];
     public List<DeliveryTaskRow> Tasks { get; init; } = [];
+    /// <summary>Functional requirements (feature-level). Empty in reports frozen before v3.</summary>
+    public List<DeliveryRequirementRow> FunctionalRequirements { get; init; } = [];
+    /// <summary>False when the feature has no tasks.md: progress cannot be derived from tasks (never "0/0").</summary>
+    public bool HasTaskList { get; init; } = true;
     public int CriteriaBaseline { get; init; }
     public int CriteriaCurrent { get; init; }
     public int CriteriaAdded { get; init; }
@@ -424,7 +550,7 @@ public sealed record WeeklyDeliveryReport
 {
     /// <summary>2: feature hierarchy (phases, user stories, acceptance criteria, task changes), scope changes, inventory metrics. v1 reports keep
     /// rendering as they were frozen.</summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public int Version { get; init; } = CurrentVersion;
     public Guid ReportId { get; init; }
     public Guid ProjectId { get; init; }
@@ -459,6 +585,34 @@ public sealed record WeeklyDeliveryReport
     public List<string> ComparisonWarnings { get; init; } = [];
     /// <summary>Version of the delivery calculation rules the report was generated with (two reports of one period can differ by it).</summary>
     public int CalculationVersion { get; init; } = 1;
+    /// <summary>v3: how much of the reporting period the evidence covers, in words ("Coverage: 30 Oct only").</summary>
+    public DeliveryPeriodCoverage PeriodCoverage { get; init; } = DeliveryPeriodCoverage.Unknown;
+    public string CoverageText { get; init; } = "";
+    /// <summary>v3: the direction check and its explicit confirmation, frozen with the report.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryDirectionReview? Direction { get; init; }
+    /// <summary>Version of the source parser that produced the snapshots' hierarchy (reproducibility).</summary>
+    public int ParserVersion { get; init; }
+}
+
+public static class DeliveryReportTitles
+{
+    /// <summary>
+    /// The title as shown and exported. v3 never implies more temporal coverage than the evidence supports: "Weekly Delivery Status — W44"
+    /// only for full-period coverage; "Partial weekly report — W44"; same-day comparisons are change reports for that day. Older reports keep
+    /// their frozen "Title — WeekLabel".
+    /// </summary>
+    public static string Display(WeeklyDeliveryReport r)
+    {
+        if (r.Version < 3) return $"{r.Title} — {r.WeekLabel}";
+        var week = r.WeekLabel.Contains("-W", StringComparison.Ordinal) ? r.WeekLabel[(r.WeekLabel.IndexOf("-W", StringComparison.Ordinal) + 1)..] : r.WeekLabel;
+        return r.PeriodCoverage switch
+        {
+            DeliveryPeriodCoverage.FullPeriod when r.Kind == DeliveryReportKind.Weekly => $"{r.ProjectName} Weekly Delivery Status — {week}",
+            DeliveryPeriodCoverage.SameDay => $"{r.ProjectName} Delivery Change Report — same-day comparison ({week})",
+            DeliveryPeriodCoverage.PartialPeriod or DeliveryPeriodCoverage.FullPeriod => $"{r.ProjectName} Partial weekly report — {week}",
+            _ => $"{r.ProjectName} Delivery Change Report — {week}",
+        };
+    }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -505,6 +659,12 @@ public static class DeliveryReportStories
         return string.Join(" · ", parts);
     }
 
-    /// <summary>"Potential focus" (v2) or the frozen v1 heading.</summary>
-    public static string FocusHeading(WeeklyDeliveryReport report) => report.Version >= 2 ? "Potential focus" : "Next-week focus";
+    /// <summary>"Delivery status signals" (v3), "Potential focus" (v2) or the frozen v1 heading.</summary>
+    public static string FocusHeading(WeeklyDeliveryReport report) => report.Version >= 3 ? "Delivery status signals" : report.Version >= 2 ? "Potential focus" : "Next-week focus";
+
+    public const string FocusNote = "Based on task evidence only — not project priority. A high share of checked tasks does not prove testing, production readiness or business priority.";
+
+    /// <summary>Feature progress in words: "No task list found — progress cannot be derived from tasks" instead of a measured-looking 0/0.</summary>
+    public static string TaskProgress(int completed, int total, bool hasTaskList) =>
+        !hasTaskList ? "No task list found — progress cannot be derived from tasks" : total == 0 ? "Task list has no checkbox tasks" : $"{completed}/{total} tasks checked";
 }

@@ -89,6 +89,8 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.CompletedTaskCount).HasColumnName("completed_task_count");
             e.Property(x => x.ModulesJson).HasColumnName("modules").HasColumnType("jsonb");
             e.Property(x => x.WarningsJson).HasColumnName("warnings").HasColumnType("jsonb");
+            e.Property(x => x.EffectiveAtProvenance).HasColumnName("effective_at_provenance").HasMaxLength(80).HasDefaultValue("Entered at import");
+            e.Property(x => x.EffectiveAtCorrectionsJson).HasColumnName("effective_at_corrections").HasColumnType("jsonb").HasDefaultValue("[]");
             e.HasOne<DeliveryProjectRecord>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<DeliveryReportSourceRecord>().WithMany().HasForeignKey(x => x.ReportSourceId).OnDelete(DeleteBehavior.NoAction);
             e.HasIndex(x => new { x.ProjectId, x.EffectiveAt });
@@ -117,6 +119,7 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.TaskTotal).HasColumnName("task_total");
             e.Property(x => x.TaskCompleted).HasColumnName("task_completed");
             e.Property(x => x.UntrackedTaskCount).HasColumnName("untracked_task_count");
+            e.Property(x => x.RequirementsJson).HasColumnName("requirements").HasColumnType("jsonb").HasDefaultValue("[]");
             e.Property(x => x.HierarchyCaptured).HasColumnName("hierarchy_captured").HasDefaultValue(false);
             e.Property(x => x.Status).HasColumnName("status").HasMaxLength(40);
             e.Property(x => x.StatusReason).HasColumnName("status_reason").HasMaxLength(1000);
@@ -141,6 +144,7 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.UserStoryKey).HasColumnName("user_story_key").HasMaxLength(40);
             e.Property(x => x.Position).HasColumnName("position");
             e.Property(x => x.SourcePath).HasColumnName("source_path").HasMaxLength(1000);
+            e.Property(x => x.IsParallel).HasColumnName("is_parallel").HasDefaultValue(false);
             e.HasOne<DeliveryFeatureSnapshotRecord>().WithMany().HasForeignKey(x => x.FeatureSnapshotId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.SnapshotId);
             e.HasIndex(x => x.FeatureSnapshotId);

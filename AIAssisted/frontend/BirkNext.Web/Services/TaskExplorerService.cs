@@ -425,7 +425,8 @@ public static class TaskExplorerService
         if (level == 2)
         {
             var lower = rawTitle.ToLowerInvariant();
-            if (lower.Contains("phase"))
+            // English "Phase N" and Norwegian "Fase N".
+            if (lower.Contains("phase") || System.Text.RegularExpressions.Regex.IsMatch(lower, @"(^|[^a-zæøå])fase\s+\d"))
                 return TaskNodeType.Phase;
             return TaskNodeType.TaskGroup; // narrative sections like Dependencies, Summary, etc.
         }

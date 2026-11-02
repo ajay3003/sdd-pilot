@@ -316,6 +316,13 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("requirement_count");
 
+                    b.Property<string>("RequirementsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("requirements");
+
                     b.Property<Guid>("SnapshotId")
                         .HasColumnType("uuid")
                         .HasColumnName("snapshot_id");
@@ -589,6 +596,21 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("effective_at");
 
+                    b.Property<string>("EffectiveAtCorrectionsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("effective_at_corrections");
+
+                    b.Property<string>("EffectiveAtProvenance")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasDefaultValue("Entered at import")
+                        .HasColumnName("effective_at_provenance");
+
                     b.Property<int>("FeatureCount")
                         .HasColumnType("integer")
                         .HasColumnName("feature_count");
@@ -710,6 +732,12 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.Property<Guid>("FeatureSnapshotId")
                         .HasColumnType("uuid")
                         .HasColumnName("feature_snapshot_id");
+
+                    b.Property<bool>("IsParallel")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_parallel");
 
                     b.Property<string>("Phase")
                         .HasMaxLength(400)

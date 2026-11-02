@@ -47,6 +47,9 @@ public sealed class DeliverySnapshotRecord
     public int CompletedTaskCount { get; set; }
     public string ModulesJson { get; set; } = "[]";
     public string WarningsJson { get; set; } = "[]";
+    /// <summary>Where the effective date comes from; "Corrected" after an explicit correction (audited in <see cref="EffectiveAtCorrectionsJson"/>).</summary>
+    public string EffectiveAtProvenance { get; set; } = "Entered at import";
+    public string EffectiveAtCorrectionsJson { get; set; } = "[]";
 }
 
 public sealed class DeliveryFeatureSnapshotRecord
@@ -70,6 +73,8 @@ public sealed class DeliveryFeatureSnapshotRecord
     public int TaskTotal { get; set; }
     public int TaskCompleted { get; set; }
     public int UntrackedTaskCount { get; set; }
+    /// <summary>Functional requirements (FR-001 …) as written: [{ "key", "text" }].</summary>
+    public string RequirementsJson { get; set; } = "[]";
     /// <summary>The feature hierarchy (phases, user stories, acceptance criteria) was parsed at import. False for snapshots imported before
     /// hierarchy support: those are never re-parsed or re-interpreted (snapshot immutability).</summary>
     public bool HierarchyCaptured { get; set; }
@@ -94,6 +99,8 @@ public sealed class DeliveryTaskSnapshotRecord
     public string? UserStoryKey { get; set; }
     public int Position { get; set; }
     public string SourcePath { get; set; } = "";
+    /// <summary>The source marks the task [P].</summary>
+    public bool IsParallel { get; set; }
 }
 
 /// <summary>An explicit implementation phase of a feature (tasks.md "Phase N" group). A delivery grouping, never a status.</summary>

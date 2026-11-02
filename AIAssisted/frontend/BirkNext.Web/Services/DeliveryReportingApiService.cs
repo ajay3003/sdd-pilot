@@ -22,6 +22,9 @@ public interface IDeliveryReportingApiService
     Task<DeliveryBaselineSuggestion?> SuggestBaselineAsync(Guid projectId, Guid currentId, CancellationToken ct = default);
     Task<List<DeliveryReportSummaryRow>> ReportsAsync(Guid projectId, CancellationToken ct = default);
     Task<(WeeklyDeliveryReport? Report, string? Error)> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct = default);
+    /// <summary>Baseline → Current preview before generation (direction, inventories, coverage). Nothing is stored.</summary>
+    Task<(DeliveryComparisonPreview? Preview, string? Error)> ComparisonPreviewAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct = default) =>
+        Task.FromResult<(DeliveryComparisonPreview?, string?)>((null, "Comparison preview is not available."));
     Task<WeeklyDeliveryReport?> ReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default);
     Task<(DeliveryReportExport? Export, string? Error)> ExportAsync(Guid projectId, Guid reportId, DeliveryExportFormat format, bool appendix, bool unchanged, CancellationToken ct = default);
     Task<string?> DeleteReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default);
@@ -139,6 +142,17 @@ public sealed class DeliveryReportingApiService(HttpClient http) : IDeliveryRepo
         }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
         { return (null, BackendRequestClassifier.FromException(DeliveryReportingText.Title, e, $"POST {Base}/reports", ct).UserMessage); }
+    }
+
+    public async Task<(DeliveryComparisonPreview? Preview, string? Error)> ComparisonPreviewAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/projects/{projectId}/comparison-preview?baselineId={baselineId}&currentId={currentId}", ct);
+            return response.IsSuccessStatusCode ? (await response.Content.ReadFromJsonAsync<DeliveryComparisonPreview>(Json, ct), null) : (null, await MessageAsync(response, ct));
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
+        { return (null, BackendRequestClassifier.FromException(DeliveryReportingText.Title, e, $"GET {Base}/projects/{{projectId}}/comparison-preview", ct).UserMessage); }
     }
 
     public async Task<WeeklyDeliveryReport?> ReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default)

@@ -69,6 +69,14 @@ public sealed class DeliveryReportingController(DeliverySnapshotStore store, Del
     public async Task<IActionResult> SuggestBaseline(Guid projectId, Guid snapshotId, CancellationToken ct) =>
         await store.SuggestBaselineAsync(projectId, snapshotId, reports.Zone, ct) is { } suggestion ? Ok(suggestion) : NotFound();
 
+    /// <summary>Baseline → Current preview before generation: inventories, deltas, direction and coverage. Nothing is stored.</summary>
+    [HttpGet("projects/{projectId:guid}/comparison-preview")]
+    public async Task<IActionResult> ComparisonPreview(Guid projectId, [FromQuery] Guid baselineId, [FromQuery] Guid currentId, CancellationToken ct)
+    {
+        var (preview, error) = await reports.PreviewAsync(projectId, baselineId, currentId, ct);
+        return preview is null ? BadRequest(new { message = error }) : Ok(preview);
+    }
+
     [HttpGet("projects/{projectId:guid}/reports")]
     public async Task<ActionResult<List<DeliveryReportSummaryRow>>> Reports(Guid projectId, CancellationToken ct) => await reports.ListAsync(projectId, ct);
 

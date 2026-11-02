@@ -105,7 +105,8 @@
         var report = _report;
         <section class="dlr-card dlr-report-head" data-testid="dlr-report">
             <div class="dlr-report-title">
-                <h2 class="dlr-h2">@report.Title — @report.WeekLabel</h2>
+                <h2 class="dlr-h2" data-testid="dlr-report-title">@DeliveryReportTitles.Display(report)</h2>
+                @if (report.CoverageText.Length > 0) { <p class="dlr-coverage-text" data-testid="dlr-report-coverage" data-coverage="@report.PeriodCoverage">@report.CoverageText</p> }
                 <p class="dlr-muted" data-testid="dlr-report-kind">@(report.Kind == DeliveryReportKind.Weekly ? "Weekly report: the baseline covers this week." : "Delivery change report: compares two snapshots; not a full weekly period.") Baseline @P.DayTime(report.Baseline.EffectiveAt) (imported @P.DayTime(report.Baseline.ImportedAt)) → current @P.DayTime(report.Current.EffectiveAt) (imported @P.DayTime(report.Current.ImportedAt)).</p>
                 <ExportMenu TestId="dlr-export" Options="ExportOptions(report.ReportId)" />
             </div>
@@ -116,6 +117,10 @@
                 <div><dt>Current</dt><dd data-testid="dlr-meta-current">@P.SnapshotLine(report.Current) <span class="dlr-muted">(@report.Current.Label)</span></dd></div>
                 <div><dt>Coverage</dt><dd><span class="dlr-badge @P.CoverageTone(report.Coverage)" data-testid="dlr-meta-coverage">@report.Coverage</span></dd></div>
                 <div><dt>Generated</dt><dd>@P.DayTime(report.GeneratedAt)</dd></div>
+                @if (report.Direction is { } direction)
+                {
+                    <div><dt>Snapshot direction</dt><dd data-testid="dlr-meta-direction" data-direction="@direction.State">@DirectionLabel(direction.State)@(direction.Confirmed ? " · explicitly confirmed" : "")</dd></div>
+                }
             </dl>
             <div class="dlr-export-options">
                 <label><input type="checkbox" data-testid="dlr-export-appendix" @bind="_exportAppendix" /> Include evidence appendix</label>
@@ -126,12 +131,21 @@
             @foreach (var warning in report.ComparisonWarnings) { <p class="dlr-warning" role="note" data-testid="dlr-comparison-warning"><strong>Comparison:</strong> @warning</p> }
         </section>
 
-        <section aria-label="Summary" class="dlr-cards" data-testid="dlr-cards">
-            @foreach (var metric in report.Metrics)
+        @* Period changes, current inventory and quality signals are different questions: grouped, never one undifferentiated row (v3). *@
+        <section aria-label="Summary" class="dlr-cards-groups" data-testid="dlr-cards">
+            @foreach (var group in report.Metrics.GroupBy(m => report.Version >= 3 ? m.Group : DeliveryMetricGroups.Period))
             {
-                <div class="dlr-metric" data-testid="dlr-metric-@metric.Key" title="@metric.Hint">
-                    <span class="dlr-metric-value">@metric.Value</span>
-                    <span class="dlr-metric-label">@metric.Label</span>
+                <div class="dlr-metric-group" data-testid="dlr-metric-group" data-group="@group.Key">
+                    @if (report.Version >= 3) { <h3 class="dlr-h3">@DeliveryMetricGroups.Label(group.Key)</h3> }
+                    <div class="dlr-cards">
+                        @foreach (var metric in group)
+                        {
+                            <div class="dlr-metric" data-testid="dlr-metric-@metric.Key" title="@metric.Hint">
+                                <span class="dlr-metric-value">@metric.Value</span>
+                                <span class="dlr-metric-label">@metric.Label</span>
+                            </div>
+                        }
+                    </div>
                 </div>
             }
         </section>
@@ -154,21 +168,36 @@
                 }
             </section>
             <section class="dlr-card" data-testid="dlr-attention">
-                <h2 class="dlr-h2">Needs attention</h2>
-                @if (report.Attention.Count == 0) { <p class="dlr-muted">Nothing needs attention.</p> }
+                <h2 class="dlr-h2">Review and signals</h2>
+                @if (report.Attention.Count == 0 && report.ScopeChanges.Count == 0) { <p class="dlr-muted">Nothing needs attention.</p> }
                 else
                 {
-                    <ul class="dlr-list">
-                        @foreach (var a in report.Attention)
-                        {
-                            <li><span class="dlr-badge @(a.Severity == DeliveryAttentionSeverity.Blocker ? "dlr-tone-bad" : "dlr-tone-warn")">@(a.Severity == DeliveryAttentionSeverity.Blocker ? "Blocker" : "Review")</span>
-                                <strong>@DeliveryReportingText.Attention(a.Kind)</strong> — @a.Title<br /><span class="dlr-muted">@a.Detail</span></li>
-                        }
-                    </ul>
+                    @* Three different kinds of item, counted separately: a scope change to confirm is not a defect. *@
+                    @foreach (var category in Enum.GetValues<DeliveryAttentionCategory>())
+                    {
+                        var items = report.Attention.Where(a => DeliveryAttentionCategories.Of(a.Kind) == category).ToList();
+                        var scope = category == DeliveryAttentionCategory.ScopeChange ? report.ScopeChanges : [];
+                        if (items.Count + scope.Count == 0) continue;
+                        <div class="dlr-attention-group" data-testid="dlr-attention-group" data-category="@category">
+                            <h3 class="dlr-h3">@DeliveryAttentionCategories.Label(category) <span class="dlr-count" data-testid="dlr-attention-count">@(items.Count + scope.Count)</span></h3>
+                            <ul class="dlr-list">
+                                @foreach (var sc in scope)
+                                {
+                                    <li data-testid="dlr-scope-item"><span class="dlr-badge dlr-tone-info">Scope change requiring confirmation</span> <strong>@sc.Kind</strong> — @sc.Title<br /><span class="dlr-muted">@sc.Detail</span></li>
+                                }
+                                @foreach (var a in items)
+                                {
+                                    <li><span class="dlr-badge @(a.Severity == DeliveryAttentionSeverity.Blocker ? "dlr-tone-bad" : "dlr-tone-warn")">@(a.Severity == DeliveryAttentionSeverity.Blocker ? "Blocker" : "Review")</span>
+                                        <strong>@DeliveryReportingText.Attention(a.Kind)</strong> — @a.Title<br /><span class="dlr-muted">@a.Detail</span></li>
+                                }
+                            </ul>
+                        </div>
+                    }
                 }
             </section>
             <section class="dlr-card" data-testid="dlr-focus">
                 <h2 class="dlr-h2">@DeliveryReportStories.FocusHeading(report)</h2>
+                @if (report.Version >= 3) { <p class="dlr-muted" data-testid="dlr-focus-note">@DeliveryReportStories.FocusNote</p> }
                 @if (report.NextWeekFocus.Count == 0) { <p class="dlr-muted">No open work found in the current snapshot.</p> }
                 else
                 {
@@ -207,13 +236,14 @@
                         </select>
                     </label>
                     <label class="dlr-field"><span>Baseline snapshot</span>
-                        <select data-testid="dlr-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="e => _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null">
+                        <select data-testid="dlr-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="OnBaselineChanged">
                             <option value="">Choose…</option>
                             @foreach (var s in _snapshots.Where(s => s.Id != _currentId)) { <option value="@s.Id">@SnapshotOption(s)</option> }
                         </select>
                     </label>
-                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null)" @onclick="Generate">Generate report</button>
+                    <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null || _comparison is { CanGenerate: false } || _comparison is { RequiresConfirmation: true } && !_confirmDirection)" @onclick="Generate">@(_comparison is { RequiresConfirmation: true } && _confirmDirection ? "Generate anyway" : "Generate report")</button>
                 </div>
+                @PreviewPanel()
                 @if (_suggestion is not null)
                 {
                     <p class="dlr-muted" data-testid="dlr-suggestion" role="status">@(_suggestion.SnapshotId is null ? "No baseline suggested: " : "Suggested baseline: ")@_suggestion.Reason</p>
@@ -233,7 +263,18 @@
             <section class="dlr-card dlr-empty" data-testid="dlr-stories-empty"><p>Generate a weekly report on the Overview to compare stories.</p></section>
             return;
         }
-        <BirkNext.Web.Components.DeliveryFeatureExplorer @key="_report.ReportId" Report="_report" ProjectName="@(_report.ProjectName)" />
+        <div class="dlr-stories-mode" role="radiogroup" aria-label="Stories layout" data-testid="dlr-stories-mode">
+            <label><input type="radio" name="dlr-stories-mode" checked="@(!_drillDown)" @onchange="() => _drillDown = false" data-testid="dlr-mode-workspace" /> Work items</label>
+            <label><input type="radio" name="dlr-stories-mode" checked="@_drillDown" @onchange="() => _drillDown = true" data-testid="dlr-mode-drilldown" /> Feature drill-down</label>
+        </div>
+        @if (_drillDown)
+        {
+            <BirkNext.Web.Components.DeliveryFeatureExplorer @key="_report.ReportId" Report="_report" ProjectName="@(_report.ProjectName)" />
+        }
+        else
+        {
+            <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" SelectedId="@ItemQuery" OnSelect="SelectWorkItem" />
+        }
     };
 
     private RenderFragment Evidence(DeliveryStoryRow s) => __builder =>
@@ -297,11 +338,20 @@
                                         }
                                         else { @s.Label }
                                     </th>
-                                    <td>@P.Day(s.EffectiveAt)</td>
+                                    <td data-testid="dlr-snapshot-effective">@P.Day(s.EffectiveAt)<br /><span class="dlr-muted" data-testid="dlr-snapshot-effective-provenance">@s.EffectiveAtProvenance@(s.EffectiveAtCorrections.Count > 0 ? $" · {s.EffectiveAtCorrections.Count} correction{(s.EffectiveAtCorrections.Count == 1 ? "" : "s")}" : "")</span>
+                                        @if (_correctId == s.Id)
+                                        {
+                                            <form class="dlr-correct" data-testid="dlr-correct-form" @onsubmit="() => CorrectEffectiveDate(s)" @onsubmit:preventDefault>
+                                                <label>Effective date <input type="datetime-local" data-testid="dlr-correct-date" @bind="_correctValue" /></label>
+                                                <label>Reason <input data-testid="dlr-correct-reason" @bind="_correctReason" maxlength="500" placeholder="Why the archive represents another date" /></label>
+                                                <button type="submit" class="btn-link" data-testid="dlr-correct-save">Save correction</button><button type="button" class="btn-link" @onclick="() => _correctId = null">Cancel</button>
+                                            </form>
+                                        }
+                                    </td>
                                     <td>@P.DayTime(s.ImportedAt)</td>
                                     <td data-testid="dlr-snapshot-source">@DeliveryReportingText.Source(s.SourceType)<br /><span class="dlr-muted">@(s.AzureDevOps is { } ado ? $"{ado.Project} / {ado.Repository} / {ado.Branch} · {ado.ShortCommit}" : s.SourceFileName)</span></td>
                                     <td>@s.FeatureCount</td>
-                                    <td>@s.CompletedTaskCount/@s.TaskCount</td>
+                                    <td>@(s.TaskCount == 0 ? "No tasks" : $"{s.CompletedTaskCount}/{s.TaskCount}")</td>
                                     <td>
                                         <label class="visually-hidden" for="dlr-role-@s.Id">Role of @s.Label</label>
                                         <select id="dlr-role-@s.Id" data-testid="dlr-snapshot-role" value="@s.Role" @onchange="e => ChangeRole(s, e.Value?.ToString())">
@@ -313,6 +363,7 @@
                                         <button type="button" class="btn-link" data-testid="dlr-snapshot-view" aria-expanded="@(_viewId == s.Id ? "true" : "false")" @onclick="() => View(s)">View<span class="visually-hidden"> @s.Label</span></button>
                                         <button type="button" class="btn-link" data-testid="dlr-snapshot-compare" @onclick="() => CompareFrom(s)">Compare<span class="visually-hidden"> @s.Label</span></button>
                                         <button type="button" class="btn-link" data-testid="dlr-snapshot-rename" @onclick="() => { _renameId = s.Id; _renameValue = s.Label; }">Rename<span class="visually-hidden"> @s.Label</span></button>
+                                        <button type="button" class="btn-link" data-testid="dlr-snapshot-correct" @onclick="() => { _correctId = s.Id; _correctValue = s.EffectiveAt.ToLocalTime().DateTime; _correctReason = null; }">Correct date<span class="visually-hidden"> of @s.Label</span></button>
                                         <button type="button" class="btn-link dlr-danger" data-testid="dlr-snapshot-delete" @onclick="() => AskDeleteSnapshot(s)">Delete<span class="visually-hidden"> @s.Label</span></button>
                                     </td>
                                 </tr>
@@ -320,7 +371,11 @@
                                 {
                                     <tr class="dlr-evidence-row"><td colspan="9" data-testid="dlr-snapshot-detail">
                                         <p><strong>Modules:</strong> @(detail.Modules.Count == 0 ? "–" : string.Join(", ", detail.Modules))@(s.GitCommit is { } commit ? $" · Git commit {commit[..Math.Min(10, commit.Length)]}" : "")</p>
-                                        <ul class="dlr-list dlr-compact">@foreach (var f in detail.Features) { <li><strong>@f.Title</strong> <span class="dlr-muted">(@f.Module)</span> — @f.Status · @DeliveryReportStories.Progress(f.TaskCompleted, f.TaskTotal)</li> }</ul>
+                                        @if (s.EffectiveAtCorrections.Count > 0)
+                                        {
+                                            <p data-testid="dlr-snapshot-corrections"><strong>Effective date corrections:</strong> @string.Join("; ", s.EffectiveAtCorrections.Select(c => $"{P.Day(c.Previous)} → {P.Day(c.Corrected)} on {P.DayTime(c.CorrectedAt)}{(c.Reason is { } why ? $" ({why})" : "")}"))</p>
+                                        }
+                                        <ul class="dlr-list dlr-compact">@foreach (var f in detail.Features) { <li><strong>@f.Title</strong> <span class="dlr-muted">(@f.Module)</span> — @f.Status · @DeliveryReportStories.TaskProgress(f.TaskCompleted, f.TaskTotal, f.TasksPath is not null)</li> }</ul>
                                         @if (detail.Warnings.Count > 0) { <h4 class="dlr-h4">Import warnings</h4><ul class="dlr-list dlr-compact">@foreach (var w in detail.Warnings) { <li>@w.Message</li> }</ul> }
                                     </td></tr>
                                 }
@@ -349,9 +404,12 @@
                             @foreach (var r in _reports)
                             {
                                 <tr data-testid="dlr-history-row">
-                                    <th scope="row">@r.Title — @r.WeekLabel@if (_report?.ReportId == r.Id) { <span class="dlr-muted"> (open)</span> }</th>
-                                    <td>@P.Period(r.PeriodStart, r.PeriodEnd)</td>
-                                    <td>@r.BaselineLabel → @r.CurrentLabel</td>
+                                    <th scope="row">@(r.DisplayTitle.Length > 0 ? r.DisplayTitle : $"{r.Title} — {r.WeekLabel}")@if (_report?.ReportId == r.Id) { <span class="dlr-muted"> (open)</span> }
+                                        @if (HistoryVersion(r) is { } version) { <br /><span class="dlr-muted" data-testid="dlr-history-version">@version</span> }</th>
+                                    <td>@P.Period(r.PeriodStart, r.PeriodEnd)@if (r.CoverageText.Length > 0) { <br /><span class="dlr-muted" data-testid="dlr-history-coverage">@r.CoverageText</span> }</td>
+                                    <td data-testid="dlr-history-pair">@r.BaselineLabel → @r.CurrentLabel
+                                        @if (r.BaselineSource.Length > 0) { <br /><span class="dlr-muted">@r.BaselineSource → @r.CurrentSource</span> }
+                                        @if (r.Direction is { } d && d != DeliveryDirectionState.Chronological) { <br /><span class="dlr-badge dlr-tone-warn">@DirectionLabel(d)@(r.DirectionConfirmed ? " · confirmed" : "")</span> }</td>
                                     <td>@P.DayTime(r.GeneratedAt)</td>
                                     <td><span class="dlr-badge @P.CoverageTone(r.Coverage)">@r.Coverage</span></td>
                                     <td>@r.StoriesChanged</td>
@@ -486,6 +544,11 @@
     [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
     [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
     [SupplyParameterFromQuery(Name = "report")] public string? ReportQuery { get; set; }
+    /// <summary>Deep link to one work item of the Stories workspace (browser back/forward move between selections).</summary>
+    [SupplyParameterFromQuery(Name = "item")] public string? ItemQuery { get; set; }
+    private bool _drillDown;
+
+    private void SelectWorkItem(string? id) => Nav.NavigateTo($"{TabHref("stories")}{(id is null ? "" : "&item=" + Uri.EscapeDataString(id))}");
 
     private bool _loaded, _busy;
     private string? _error, _notice;
@@ -595,6 +658,7 @@
         if (_snapshots.Count < 2) return;
         _currentId = (_snapshots.FirstOrDefault(s => s.Role == DeliverySnapshotRole.Current) ?? _snapshots[0]).Id;
         await SuggestAsync();
+        await LoadPreviewAsync();
     }
 
     private async Task SuggestAsync()
@@ -630,6 +694,7 @@
     {
         _currentId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
         await SuggestAsync();
+        await LoadPreviewAsync();
     }
 
     private void ToggleNewProject()
@@ -775,11 +840,103 @@
     /// not stop it and its completion never navigates elsewhere: only a page still showing that project opens the new report; otherwise the
     /// Activity Center offers it. The same baseline/current pair is not generated twice at once.
     /// </summary>
+    // ── Comparison preview, swap and direction confirmation ─────────────────────────────────────────────────────────────
+    private DeliveryComparisonPreview? _comparison;
+    private string? _comparisonError;
+    private bool _confirmDirection;
+    private Guid? _correctId;
+    private DateTime? _correctValue;
+    private string? _correctReason;
+
+    private async Task OnBaselineChanged(ChangeEventArgs e)
+    {
+        _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadPreviewAsync();
+    }
+
+    /// <summary>Baseline → Current before generation: never generated blind, never reversed silently.</summary>
+    private async Task LoadPreviewAsync()
+    {
+        _comparison = null; _comparisonError = null; _confirmDirection = false;
+        if (_projectId is not { } project || _baselineId is not { } baseline || _currentId is not { } current || baseline == current) return;
+        (_comparison, _comparisonError) = await Api.ComparisonPreviewAsync(project, baseline, current);
+    }
+
+    private async Task Swap()
+    {
+        (_baselineId, _currentId) = (_currentId, _baselineId);
+        await LoadPreviewAsync();
+    }
+
+    private static string DirectionLabel(DeliveryDirectionState state) => state switch
+    {
+        DeliveryDirectionState.InventoryReduced => "Possible rollback / scope reduction / reversed direction",
+        DeliveryDirectionState.SameEffectiveDate => "Same effective date — order not confirmable from dates",
+        DeliveryDirectionState.BaselineLater => "Reversed — the baseline is later than the current snapshot",
+        _ => "Chronological",
+    };
+
+    private static string Signed(int value) => value > 0 ? $"+{value}" : value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private RenderFragment PreviewPanel() => __builder =>
+    {
+        if (_comparisonError is { } previewError) { <p class="dlr-warning" role="alert" data-testid="dlr-preview-error">@previewError</p> }
+        if (_comparison is not { } pv) return;
+        <section class="dlr-preview" aria-labelledby="dlr-preview-h" data-testid="dlr-preview" data-direction="@pv.Direction">
+            <h3 class="dlr-h3" id="dlr-preview-h">Baseline → Current</h3>
+            <table class="dlr-table dlr-preview-table" data-testid="dlr-preview-table">
+                <thead><tr><th scope="col">Metric</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Change</th></tr></thead>
+                <tbody>
+                    <tr data-key="features"><th scope="row">Features</th><td>@pv.BaselineInventory.Features</td><td>@pv.CurrentInventory.Features</td><td>@Signed(pv.FeatureDelta)</td></tr>
+                    <tr data-key="tasks"><th scope="row">Tasks</th><td>@pv.BaselineInventory.Tasks</td><td>@pv.CurrentInventory.Tasks</td><td>@Signed(pv.TaskDelta)</td></tr>
+                    <tr data-key="checked"><th scope="row">Checked tasks</th><td>@pv.BaselineInventory.CheckedTasks</td><td>@pv.CurrentInventory.CheckedTasks</td><td>@Signed(pv.CheckedDelta)</td></tr>
+                </tbody>
+            </table>
+            <p class="dlr-muted" data-testid="dlr-preview-dates">Effective dates: @P.DayTime(pv.Baseline.EffectiveAt) → @P.DayTime(pv.Current.EffectiveAt) (imported @P.DayTime(pv.Baseline.ImportedAt) / @P.DayTime(pv.Current.ImportedAt))</p>
+            <p data-testid="dlr-preview-coverage">@pv.CoverageText</p>
+            <p data-testid="dlr-preview-direction"><strong>Direction:</strong> @DirectionLabel(pv.Direction)</p>
+            @foreach (var w in pv.Warnings) { <p class="dlr-warning" role="note" data-testid="dlr-preview-warning">@w</p> }
+            @if (pv.MissingFeatures.Count > 0) { <details data-testid="dlr-preview-missing"><summary>@pv.MissingFeatures.Count feature@(pv.MissingFeatures.Count == 1 ? "" : "s") only in the baseline</summary><ul class="dlr-list dlr-compact">@foreach (var f in pv.MissingFeatures) { <li>@f</li> }</ul></details> }
+            @if (pv.NewFeatures.Count > 0) { <details data-testid="dlr-preview-new"><summary>@pv.NewFeatures.Count feature@(pv.NewFeatures.Count == 1 ? "" : "s") only in the current snapshot</summary><ul class="dlr-list dlr-compact">@foreach (var f in pv.NewFeatures) { <li>@f</li> }</ul></details> }
+            <p class="dlr-preview-actions">
+                <button type="button" class="btn-secondary" data-testid="dlr-swap" @onclick="Swap">Swap Baseline / Current</button>
+                <a class="dlr-link" href="@TabHref("snapshots")" data-testid="dlr-preview-snapshots">Review snapshot details</a>
+            </p>
+            @if (pv.RequiresConfirmation)
+            {
+                <label class="dlr-confirm" data-testid="dlr-confirm-direction"><input type="checkbox" checked="@_confirmDirection" @onchange="e => _confirmDirection = e.Value is true" data-testid="dlr-confirm-direction-input" />
+                    I have verified the direction (e.g. a legitimate scope reduction). Record this confirmation in the report and generate anyway.</label>
+            }
+        </section>
+    };
+
+    /// <summary>"Version 2 of W44 · different snapshot pair" — reports of one week are listed as versions, and a different pair is said explicitly.</summary>
+    private string? HistoryVersion(DeliveryReportSummaryRow r)
+    {
+        var sameWeek = _reports.Where(x => x.WeekLabel == r.WeekLabel).OrderBy(x => x.GeneratedAt).ToList();
+        if (sameWeek.Count < 2) return null;
+        var version = sameWeek.FindIndex(x => x.Id == r.Id) + 1;
+        var differentPair = r.PairKey.Length > 0 && sameWeek.Any(x => x.Id != r.Id && x.PairKey.Length > 0 && x.PairKey != r.PairKey);
+        return $"Version {version} of {sameWeek.Count} for {r.WeekLabel}{(differentPair ? " · compares a different snapshot pair — not interchangeable" : " · same snapshot pair")}";
+    }
+
+    private async Task CorrectEffectiveDate(DeliverySnapshotSummary s)
+    {
+        if (_projectId is not { } project || _correctValue is not { } value) return;
+        var local = new DateTimeOffset(value, TimeZoneInfo.Local.GetUtcOffset(value));
+        var (updated, error) = await Api.UpdateSnapshotAsync(project, s.Id, new UpdateDeliverySnapshotRequest(null, null, local, _correctReason));
+        if (updated is null) { _error = error ?? "The effective date could not be corrected."; return; }
+        _correctId = null;
+        _snapshots = await Api.SnapshotsAsync(project);
+        await LoadPreviewAsync();
+    }
+
     private async Task Generate()
     {
         if (_projectId is not { } id || _baselineId is not { } baseline || _currentId is not { } current) return;
         _busy = true;
         _error = null;
+        var confirm = _confirmDirection;
         var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline)?.Label;
         var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current)?.Label;
         WeeklyDeliveryReport? generated = null;
@@ -794,7 +951,7 @@
             }, async (progress, ct) =>
             {
                 progress.Stage("Comparing snapshots and generating the report", $"{baselineLabel} → {currentLabel}");
-                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current));
+                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current) { ConfirmDirection = confirm });
                 if (report is null) return BirkNext.Web.Services.Operations.OperationOutcome.Failure(error ?? "The report could not be generated.");
                 generated = report;
                 return BirkNext.Web.Services.Operations.OperationOutcome.Success($"{P.Route}?project={id}&tab=overview&report={report.ReportId}", $"Open report {report.WeekLabel}");
@@ -881,6 +1038,7 @@
     {
         _currentId = s.Id;
         await SuggestAsync();
+        await LoadPreviewAsync();
         Nav.NavigateTo($"{P.Route}?project={_projectId}&tab=overview{(_report is null ? "" : $"&report={_report.ReportId}")}");
     }
 

@@ -11,7 +11,8 @@ namespace BirkNext.Api.Services.DeliveryReporting;
 public static class WeeklyReportBuilder
 {
     public static WeeklyDeliveryReport Build(Guid reportId, Guid projectId, string projectName, DateTimeOffset generatedAt,
-        DeliverySnapshotContent baseline, DeliverySnapshotContent current, DeliveryComparisonResult comparison, TimeZoneInfo zone)
+        DeliverySnapshotContent baseline, DeliverySnapshotContent current, DeliveryComparisonResult comparison, TimeZoneInfo zone,
+        DeliveryDirectionReview? direction = null)
     {
         var currentLocal = TimeZoneInfo.ConvertTime(current.Ref.EffectiveAt, zone);
         var baselineLocal = TimeZoneInfo.ConvertTime(baseline.Ref.EffectiveAt, zone);
@@ -28,6 +29,8 @@ public static class WeeklyReportBuilder
         // Rows are features (a Spec-Kit feature folder), so the metrics say Features; user stories are counted from the parsed hierarchy only.
         var hierarchies = stories.Select(s => s.Hierarchy).OfType<DeliveryFeatureHierarchy>().Where(h => h.Captured).ToList();
         var paired = stories.Where(s => !s.NewFeature && !s.RemovedFeature && s.Hierarchy is { Captured: true }).Select(s => s.Hierarchy!).ToList();
+        const string Inventory = DeliveryMetricGroups.Inventory, Quality = DeliveryMetricGroups.Quality;
+        var allTasks = hierarchies.SelectMany(h => h.Tasks).ToList();
         var metrics = new List<DeliveryReportMetric>
         {
             new("features-changed", "Features changed", stories.Count(s => s.Changed), "Features with any change between baseline and current"),
@@ -43,7 +46,24 @@ public static class WeeklyReportBuilder
             metrics.Add(new("stories-changed", "User stories changed", paired.Sum(h => h.StoriesAdded + h.StoriesRemoved + h.StoriesChanged), "Added, removed or changed user stories in retained features"));
             metrics.Add(new("criteria-changed", "Acceptance criteria changed", paired.Sum(h => h.CriteriaAdded + h.CriteriaChanged + h.CriteriaRemoved), "Added, changed or removed criteria in retained features"));
             metrics.Add(new("tasks-added", "Tasks added to inventory", paired.Sum(h => h.TasksAdded), "New tasks in retained features (inventory growth, not work completed)"));
+            metrics.Add(new("tasks-removed", "Tasks removed from inventory", paired.Sum(h => h.TasksRemoved), "Tasks no longer present in retained features (never counted as reopened)"));
+            metrics.Add(new("tasks-reopened", "Matched tasks reopened", paired.Sum(h => h.TasksReopened), "Matched tasks checked in the baseline and unchecked now"));
         }
+        // Current inventory: the current snapshot's totals — never a period delta.
+        metrics.Add(new("inventory-features", "Features", current.Features.Count) { Group = Inventory });
+        if (hierarchies.Count > 0) metrics.Add(new("inventory-stories", "User stories", stories.Where(s => !s.RemovedFeature).Sum(s => s.Hierarchy?.Stories.Count(x => x.Change != DeliveryItemChange.Removed) ?? 0)) { Group = Inventory });
+        metrics.Add(new("inventory-tasks", "Tasks", current.Features.Sum(f => f.TaskTotal)) { Group = Inventory });
+        metrics.Add(new("inventory-checked", "Checked tasks", current.Features.Sum(f => f.TaskCompleted)) { Group = Inventory });
+        metrics.Add(new("inventory-unchecked", "Unchecked tasks", current.Features.Sum(f => f.TaskTotal - f.TaskCompleted)) { Group = Inventory });
+        metrics.Add(new("inventory-no-tasks", "Features with no task data", current.Features.Count(f => f.TasksPath is null), "No tasks.md: progress cannot be derived from tasks") { Group = Inventory });
+        // Quality and review: signals about the evidence, never delivery status.
+        metrics.Add(new("quality-scope-review", "Scope changes to review", comparison.ScopeChanges.Count, "Added, removed or missing features to confirm — not defects") { Group = Quality });
+        metrics.Add(new("quality-traceability", "Traceability gaps", comparison.Attention.Count(a => DeliveryAttentionCategories.Of(a.Kind) == DeliveryAttentionCategory.DataQuality),
+            "Missing task files, unknown story references, ambiguous identities, unmapped documents") { Group = Quality });
+        metrics.Add(new("quality-unassigned-tasks", "Tasks without a user story", allTasks.Count(t => t.Change != DeliveryTaskChange.Removed && t.UserStoryKey is null),
+            "Tasks with no explicit [USn] reference (kept under their feature and phase)") { Group = Quality });
+        if (direction is { State: not DeliveryDirectionState.Chronological })
+            metrics.Add(new("quality-direction", "Snapshot direction warnings", 1, direction.State.ToString()) { Group = Quality });
         if (explicitEvidence)
         {
             metrics.Add(new("ready-for-test", "Ready for test", currentStatuses.Count(s => s == DeliveryStatus.ReadyForTest), "Explicitly marked in the feature documents"));
@@ -52,7 +72,8 @@ public static class WeeklyReportBuilder
         }
         if (currentStatuses.Contains(DeliveryStatus.NeedsClarification))
             metrics.Add(new("needs-clarification", "Needs clarification", currentStatuses.Count(s => s == DeliveryStatus.NeedsClarification), "Open clarification markers in the specification"));
-        metrics.Add(new("attention", "Needs attention", comparison.Attention.Count));
+        metrics.Add(new("attention", "Needs attention", comparison.Attention.Count) { Group = Quality });
+        var (periodCoverage, coverageText) = PeriodCoverage(kind, DateOnly.FromDateTime(baselineLocal.DateTime), DateOnly.FromDateTime(currentLocal.DateTime), weekStartDate);
 
         return new WeeklyDeliveryReport
         {
@@ -80,11 +101,67 @@ public static class WeeklyReportBuilder
             Attention = comparison.Attention.OrderBy(a => a.Severity).ThenBy(a => a.Kind).ThenBy(a => a.Title, StringComparer.Ordinal).ToList(),
             NextWeekFocus = Focus(current, stories, comparison.Attention.Count),
             ScopeChanges = comparison.ScopeChanges,
+            PeriodCoverage = periodCoverage,
+            CoverageText = coverageText,
+            Direction = direction,
+            ParserVersion = DeliverySnapshotParser.ParserVersion,
         };
     }
 
-    /// <summary>2: report kind, comparison warnings, unconfirmed removals under incomplete coverage.</summary>
-    public const int CalculationVersion = 2;
+    /// <summary>
+    /// What the dates can claim: Same-day (one day only — never a week), Full-period (the baseline covers the reporting week), Partial-period
+    /// (part of the week, or more than it), Unknown (inverted dates). The text says it in plain words for headers, exports and History.
+    /// </summary>
+    public static (DeliveryPeriodCoverage, string) PeriodCoverage(DeliveryReportKind kind, DateOnly baselineDate, DateOnly currentDate, DateOnly weekStart)
+    {
+        if (baselineDate > currentDate) return (DeliveryPeriodCoverage.Unknown, "Coverage: unknown — the baseline is later than the current snapshot");
+        if (baselineDate == currentDate) return (DeliveryPeriodCoverage.SameDay, $"Coverage: {currentDate.ToString("d MMM", CultureInfo.InvariantCulture)} only (same-day comparison)");
+        if (kind == DeliveryReportKind.Weekly) return (DeliveryPeriodCoverage.FullPeriod, $"Coverage: {Range(baselineDate, currentDate)} (full reporting week)");
+        return baselineDate > weekStart
+            ? (DeliveryPeriodCoverage.PartialPeriod, $"Coverage: {Range(baselineDate, currentDate)} — part of the week starting {weekStart.ToString("d MMM", CultureInfo.InvariantCulture)}")
+            : (DeliveryPeriodCoverage.PartialPeriod, $"Coverage: {Range(baselineDate, currentDate)} — longer than the reporting week");
+    }
+
+    /// <summary>
+    /// The comparison preview shown before generation: inventories, deltas, direction and coverage. Fewer features/tasks in the current snapshot
+    /// is a possible scope reduction, rollback or reversed pair — it needs explicit confirmation, it is never reversed automatically.
+    /// </summary>
+    public static DeliveryComparisonPreview Preview(DeliverySnapshotContent baseline, DeliverySnapshotContent current, TimeZoneInfo zone)
+    {
+        var baselineLocal = TimeZoneInfo.ConvertTime(baseline.Ref.EffectiveAt, zone);
+        var currentLocal = TimeZoneInfo.ConvertTime(current.Ref.EffectiveAt, zone);
+        var bDate = DateOnly.FromDateTime(baselineLocal.DateTime);
+        var cDate = DateOnly.FromDateTime(currentLocal.DateTime);
+        var weekStart = cDate.AddDays(-(((int)currentLocal.DayOfWeek + 6) % 7));
+        var (kind, warnings) = Period(baseline, current, bDate, cDate, weekStart);
+        var bInv = new DeliveryInventory(baseline.Features.Count, baseline.Features.Sum(f => f.TaskTotal), baseline.Features.Sum(f => f.TaskCompleted));
+        var cInv = new DeliveryInventory(current.Features.Count, current.Features.Sum(f => f.TaskTotal), current.Features.Sum(f => f.TaskCompleted));
+        var reduced = cInv.Features < bInv.Features || cInv.Tasks < bInv.Tasks;
+        var state = baseline.Ref.EffectiveAt > current.Ref.EffectiveAt ? DeliveryDirectionState.BaselineLater
+            : reduced ? DeliveryDirectionState.InventoryReduced
+            : bDate == cDate ? DeliveryDirectionState.SameEffectiveDate
+            : DeliveryDirectionState.Chronological;
+        if (reduced)
+            warnings.Insert(0, $"Current snapshot contains fewer {(cInv.Features < bInv.Features && cInv.Tasks < bInv.Tasks ? "features and tasks" : cInv.Features < bInv.Features ? "features" : "tasks")} than Baseline. "
+                + "This may be a legitimate scope reduction, a rollback, or a reversed pair. Verify that snapshot direction is correct.");
+        if (state == DeliveryDirectionState.SameEffectiveDate)
+            warnings.Add("Both snapshots have the same effective date: their order cannot be confirmed from the dates.");
+        var bKeys = baseline.Features.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        var cKeys = current.Features.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        var (coverage, text) = PeriodCoverage(kind, bDate, cDate, weekStart);
+        return new DeliveryComparisonPreview
+        {
+            Baseline = baseline.Ref, Current = current.Ref, BaselineInventory = bInv, CurrentInventory = cInv,
+            MissingFeatures = [.. baseline.Features.Where(f => !cKeys.Contains(f.Key)).Select(f => f.Title).Order(StringComparer.Ordinal).Take(50)],
+            NewFeatures = [.. current.Features.Where(f => !bKeys.Contains(f.Key)).Select(f => f.Title).Order(StringComparer.Ordinal).Take(50)],
+            Direction = state, Warnings = warnings, RequiresConfirmation = state == DeliveryDirectionState.InventoryReduced,
+            CanGenerate = state != DeliveryDirectionState.BaselineLater, PeriodCoverage = coverage, CoverageText = text, Kind = kind,
+        };
+    }
+
+    /// <summary>2: report kind, comparison warnings, unconfirmed removals under incomplete coverage. 3: period coverage, direction review,
+    /// grouped metrics (period / inventory / quality), functional requirements and task markers in the hierarchy.</summary>
+    public const int CalculationVersion = 3;
 
     /// <summary>
     /// Weekly only when the baseline is on or before the start of the current snapshot's ISO week and at most seven days before it, so the

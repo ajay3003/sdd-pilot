@@ -129,6 +129,9 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
         {
             Id = Guid.NewGuid(), ProjectId = project.Id, ReportSourceId = source.Id, Label = label.Length > 200 ? label[..200] : label,
             EffectiveAt = request.EffectiveAt.ToUniversalTime(), ImportedAt = now, Role = request.Role.ToString(),
+            // Provenance of the effective date: the archive's own date only when the user accepted it unchanged; otherwise what they entered.
+            EffectiveAtProvenance = snapshot.SuggestedEffectiveAt is { } suggested && suggested.ToUniversalTime() == request.EffectiveAt.ToUniversalTime()
+                ? snapshot.AzureDevOps is not null ? "Azure DevOps commit" : "Archive timestamps (Git export)" : "Entered at import",
             CoverageStatus = snapshot.Coverage.ToString(),
             ParseStatus = snapshot.Warnings.Count == 0 ? "Parsed" : "ParsedWithWarnings",
             WarningsCount = snapshot.Warnings.Count, FeatureCount = snapshot.Features.Count,
@@ -148,12 +151,14 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
                 UserStoryCount = feature.UserStoryCount, OpenClarifications = feature.OpenClarifications, TaskTotal = feature.TaskTotal,
                 TaskCompleted = feature.TaskCompleted, UntrackedTaskCount = feature.UntrackedTaskCount, Status = feature.Status.ToString(),
                 StatusReason = feature.StatusReason, HierarchyCaptured = true,
+                RequirementsJson = JsonSerializer.Serialize(feature.Requirements.Select(r => new { key = r.Key, text = r.Text }), Json),
             };
             db.FeatureSnapshots.Add(featureRecord);
             db.TaskSnapshots.AddRange(feature.Tasks.Select(t => new DeliveryTaskSnapshotRecord
             {
                 Id = Guid.NewGuid(), SnapshotId = record.Id, FeatureSnapshotId = featureRecord.Id, TaskKey = t.TaskKey, TaskId = t.TaskId, Text = t.Text,
                 Completed = t.Completed, Phase = t.Phase, UserStory = t.UserStory, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, Position = t.Position, SourcePath = t.SourcePath,
+                IsParallel = t.Parallel,
             }));
             db.PhaseSnapshots.AddRange(feature.Phases.Select(ph => new DeliveryPhaseSnapshotRecord
             {

@@ -1,0 +1,55 @@
+/* Work-item workspace: compact master/detail split; stacks on narrow screens. Data density over decoration. */
+.dws { display: grid; gap: 0.75rem; }
+.dws-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.dws-toolbar select, .dws-search input { font: inherit; padding: 0.25rem 0.5rem; border: 1px solid var(--clr-border); border-radius: 6px; background: var(--clr-surface-white, #fff); }
+.dws-search input { min-width: 14rem; }
+.dws-views { display: inline-flex; border: 1px solid var(--clr-border); border-radius: 6px; overflow: hidden; }
+.dws-view { padding: 0.25rem 0.75rem; cursor: pointer; font-size: 0.875rem; }
+.dws-view input { position: absolute; opacity: 0; pointer-events: none; }
+.dws-view.is-active { background: var(--clr-primary); color: #fff; }
+.dws-view:focus-within { outline: 2px solid var(--clr-primary); outline-offset: -2px; }
+.dws-check { font-size: 0.875rem; display: inline-flex; gap: 0.25rem; align-items: center; }
+.dws-split { display: grid; grid-template-columns: minmax(18rem, 2fr) minmax(20rem, 3fr); gap: 0.75rem; align-items: start; }
+.dws-master, .dws-detail { border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white, #fff); padding: 0.5rem; min-width: 0; }
+.dws-detail { position: sticky; top: 0.5rem; max-height: calc(100vh - 2rem); overflow: auto; }
+.dws-master { max-height: calc(100vh - 2rem); overflow: auto; }
+.dws-tree, .dws-tree ul, .dws-phase-list { list-style: none; margin: 0; padding: 0; }
+.dws-tree ul { padding-left: 0.9rem; }
+.dws-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.1rem 0.25rem; border-radius: 4px; font-size: 0.875rem; }
+.dws-row.is-selected { background: var(--clr-info-bg-light, #e8f1fd); }
+.dws-row.is-removed .dws-title { text-decoration: line-through; color: var(--clr-text-muted); }
+.dws-toggle { background: none; border: 0; padding: 0 0.15rem; cursor: pointer; font: inherit; color: inherit; }
+.dws-toggle-spacer { width: 1rem; display: inline-block; }
+.dws-item { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; display: inline-flex; gap: 0.35rem; min-width: 0; flex: 1; }
+.dws-item:focus-visible, .dws-card:focus-visible { outline: 2px solid var(--clr-primary); }
+.dws-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dws-id { font-family: ui-monospace, monospace; color: var(--clr-text-muted); white-space: nowrap; }
+.dws-icon-feature { color: #7b3fbf; } .dws-icon-story { color: #1f6feb; } .dws-icon-task { color: #5f6b7a; }
+.dws-meta { color: var(--clr-text-muted); font-size: 0.8rem; white-space: nowrap; }
+.dws-chip { font-size: 0.7rem; padding: 0 0.4rem; border-radius: 999px; border: 1px solid var(--clr-border); white-space: nowrap; }
+.dws-chip-change { background: var(--clr-info-bg-light, #e8f1fd); }
+.dws-chip-attention { background: var(--clr-warning-bg-light, #fff4e5); border-color: var(--clr-warning, #b7791f); }
+.dws-module > .dws-toggle { width: 100%; text-align: left; padding: 0.3rem 0.25rem; }
+.dws-board { display: grid; grid-template-columns: repeat(5, minmax(11rem, 1fr)); gap: 0.5rem; overflow-x: auto; }
+.dws-column { background: var(--clr-surface, #f6f7f9); border-radius: 6px; padding: 0.4rem; display: grid; gap: 0.35rem; align-content: start; }
+.dws-column-title { font-size: 0.85rem; margin: 0 0 0.25rem; }
+.dws-card { display: grid; gap: 0.1rem; text-align: left; background: var(--clr-surface-white, #fff); border: 1px solid var(--clr-border); border-radius: 6px; padding: 0.35rem 0.5rem; cursor: pointer; font: inherit; }
+.dws-card.is-selected { border-color: var(--clr-primary); }
+.dws-detail-head { border-bottom: 1px solid var(--clr-border); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
+.dws-kicker { margin: 0; font-size: 0.75rem; letter-spacing: 0.06em; color: var(--clr-text-muted); }
+.dws-detail-title { margin: 0.15rem 0 0.4rem; font-size: 1.1rem; }
+.dws-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.75rem; margin: 0.25rem 0; font-size: 0.875rem; }
+.dws-facts div { display: contents; }
+.dws-facts dt { color: var(--clr-text-muted); }
+.dws-facts dd { margin: 0; }
+.dws-h { font-size: 0.9rem; margin: 0.75rem 0 0.25rem; }
+.dws-rel-link { margin-right: 0.35rem; }
+.dws-section { margin-top: 0.5rem; }
+.dws-empty { color: var(--clr-text-muted); padding: 0.5rem; }
+.dws-tablewrap { overflow-x: auto; }
+.dws-table tr.is-selected { background: var(--clr-info-bg-light, #e8f1fd); }
+.dws-unassigned .dws-title { font-style: italic; }
+@media (max-width: 900px) {
+    .dws-split { grid-template-columns: 1fr; }
+    .dws-detail, .dws-master { position: static; max-height: none; }
+}

@@ -33,7 +33,7 @@ public static class SpecExplorerService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex UserStoryHeadingRe = new(
-        @"^User\s+Stor(?:y|ies)\s*(?:#?\d+|[:\-–]|$)",
+        @"^(?:User\s+Stor(?:y|ies)|Brukerhistori(?:e|er))\s*(?:#?\d+|[:\-–]|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ClarificationInlineRe = new(

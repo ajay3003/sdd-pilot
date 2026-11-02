@@ -48,7 +48,7 @@ public sealed class DeliveryReportExportTests
         var export = DeliveryReportExporter.Export(report, DeliveryExportFormat.Markdown, new());
 
         export.FileName.Should().Be("M2LB-Weekly-Delivery-Report-2026-W44.md");
-        export.Content.Should().StartWith("# M2LB Weekly Delivery Status — 2026-W44");
+        export.Content.Should().StartWith("# M2LB Weekly Delivery Status — W44");
         export.Content.Should().Contain("| Child search | Frontend | In progress | In progress | Progressed | 3/8 → 7/8 | 1 story · 1 phase | – |");
         export.Content.Should().NotContain("Case overview |", "unchanged stories are off by default");
         export.Content.Should().Contain("1 unchanged feature is not listed");

@@ -62,8 +62,17 @@ public sealed class DeliveryReportingPageTests : BunitContext
             Task.FromResult<DeliveryBaselineSuggestion?>(new(Snapshots[^1].Id, "Earliest snapshot in the week of the current snapshot (2026-10-26).", false, [Snapshots[^1].Id]));
         public Task<List<DeliveryReportSummaryRow>> ReportsAsync(Guid projectId, CancellationToken ct = default) =>
             Task.FromResult(new List<DeliveryReportSummaryRow> { new(ReportId, Report.Title, Report.WeekLabel, Monday, Friday, Friday, Report.Coverage, "Monday", "Friday", 1, Report.Attention.Count) });
+        public DeliveryComparisonPreview? Comparison { get; set; }
+        public List<(Guid Baseline, Guid Current)> PreviewRequests { get; } = [];
+        public GenerateWeeklyReportRequest? LastGenerate { get; private set; }
+        public Task<(DeliveryComparisonPreview? Preview, string? Error)> ComparisonPreviewAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct = default)
+        {
+            PreviewRequests.Add((baselineId, currentId));
+            return Task.FromResult<(DeliveryComparisonPreview?, string?)>((Comparison, Comparison is null ? "no preview" : null));
+        }
         public async Task<(WeeklyDeliveryReport? Report, string? Error)> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct = default)
         {
+            LastGenerate = request;
             Generated++;
             if (GenerateGate is { } gate) await gate.Task;
             return (Report, null);
@@ -128,6 +137,8 @@ public sealed class DeliveryReportingPageTests : BunitContext
     public void Stories_HideUnchangedByDefault_AndShowEvidenceOnRequest()
     {
         var page = RenderAt($"?project={ProjectId}&tab=stories");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-workspace]"), TimeSpan.FromSeconds(5));
+        page.Find("[data-testid=dlr-mode-drilldown]").Change(true);   // the feature drill-down is the second Stories layout
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-story-row]").Should().ContainSingle());
         var row = page.Find("[data-testid=dlr-story-row]");
@@ -227,5 +238,56 @@ public sealed class DeliveryReportingPageTests : BunitContext
         DeliveryReportingPresentation.Filter(report, "progressed", null, null).Should().ContainSingle();
         DeliveryReportingPresentation.Filter(report, "new", null, null).Should().BeEmpty();
         DeliveryReportingPresentation.TabOrDefault("nonsense").Should().Be("overview");
+    }
+
+    private static DeliveryComparisonPreview Reduced() => new()
+    {
+        BaselineInventory = new(29, 1471, 1413), CurrentInventory = new(28, 1415, 1359), Direction = DeliveryDirectionState.InventoryReduced, RequiresConfirmation = true, CanGenerate = true,
+        Warnings = ["Current snapshot contains fewer features and tasks than Baseline. This may be a legitimate scope reduction, a rollback, or a reversed pair. Verify that snapshot direction is correct."],
+        MissingFeatures = ["Legacy import"], PeriodCoverage = DeliveryPeriodCoverage.SameDay, CoverageText = "Coverage: 30 Oct only (same-day comparison)",
+    };
+
+    [Fact]
+    public void The_comparison_preview_shows_baseline_to_current_and_a_reduced_inventory_needs_explicit_confirmation()
+    {
+        _api.Comparison = Reduced();
+        var page = RenderAt($"?project={ProjectId}&tab=overview");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-preview]").GetAttribute("data-direction").Should().Be("InventoryReduced"));
+        var rows = page.FindAll("[data-testid=dlr-preview-table] tbody tr").Select(r => r.TextContent).ToList();
+        rows[0].Should().Contain("29").And.Contain("28").And.Contain("-1");
+        rows[1].Should().Contain("1471").And.Contain("1415").And.Contain("-56");
+        page.Find("[data-testid=dlr-preview-warning]").TextContent.Should().Contain("Verify that snapshot direction is correct");
+        page.Find("[data-testid=dlr-preview-coverage]").TextContent.Should().Be("Coverage: 30 Oct only (same-day comparison)");
+        page.Find("[data-testid=dlr-generate-run]").HasAttribute("disabled").Should().BeTrue("a possible reversal is never generated without a decision");
+
+        page.Find("[data-testid=dlr-confirm-direction-input]").Change(true);
+        page.Find("[data-testid=dlr-generate-run]").TextContent.Should().Be("Generate anyway");
+        page.Find("[data-testid=dlr-generate-run]").Click();
+        page.WaitForAssertion(() => _api.LastGenerate!.ConfirmDirection.Should().BeTrue("the confirmation is sent and recorded in the frozen report"));
+    }
+
+    [Fact]
+    public void Swap_exchanges_baseline_and_current_and_re_previews_never_silently()
+    {
+        _api.Comparison = Reduced();
+        var page = RenderAt($"?project={ProjectId}&tab=overview");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-swap]"));
+        var (baseline, current) = _api.PreviewRequests[^1];
+        page.Find("[data-testid=dlr-swap]").Click();
+        page.WaitForAssertion(() => _api.PreviewRequests[^1].Should().Be((current, baseline)));
+        page.Find("[data-testid=dlr-current]").GetAttribute("value").Should().Be(baseline.ToString());
+    }
+
+    [Fact]
+    public void Stories_default_to_the_work_item_workspace_with_deep_linked_selection()
+    {
+        var page = RenderAt($"?project={ProjectId}&tab=stories");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-workspace]"));
+        page.Find("[data-testid=dws-view-hierarchy]").HasAttribute("checked").Should().BeTrue("Hierarchy is the default view");
+        var feature = _api.Report.Stories[0];
+        page.Find("[data-testid=dws-module-toggle]").Click();
+        page.FindAll("[data-testid=dws-item]").First(i => i.TextContent.Contains(feature.Title)).Click();
+        page.WaitForAssertion(() => page.Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("&item=" + Uri.EscapeDataString(BirkNext.Web.Services.DeliveryWorkItems.FeatureId(feature.FeatureKey))));
+        page.Find("[data-testid=dws-detail-title]").TextContent.Should().Be(feature.Title);
     }
 }

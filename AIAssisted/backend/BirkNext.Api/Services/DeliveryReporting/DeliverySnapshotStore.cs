@@ -75,6 +75,16 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
         if (snapshot is null) return null;
         if (request.Label is { } label && label.Trim().Length > 0) snapshot.Label = label.Trim().Length > 200 ? label.Trim()[..200] : label.Trim();
         if (request.Role is { } role) snapshot.Role = role.ToString();
+        // An effective-date correction is explicit and audited: the previous value, the new one, when, and why. Contents never change.
+        if (request.EffectiveAt is { } corrected && corrected.ToUniversalTime() != snapshot.EffectiveAt)
+        {
+            var corrections = Corrections(snapshot.EffectiveAtCorrectionsJson);
+            corrections.Add(new DeliveryEffectiveDateCorrection(snapshot.EffectiveAt, corrected.ToUniversalTime(), clock.GetUtcNow(),
+                string.IsNullOrWhiteSpace(request.EffectiveAtReason) ? null : request.EffectiveAtReason.Trim()[..Math.Min(500, request.EffectiveAtReason.Trim().Length)]));
+            snapshot.EffectiveAtCorrectionsJson = JsonSerializer.Serialize(corrections, Json);
+            snapshot.EffectiveAt = corrected.ToUniversalTime();
+            snapshot.EffectiveAtProvenance = "Corrected";
+        }
         await db.SaveChangesAsync(ct);
         var source = await db.ReportSources.AsNoTracking().FirstAsync(s => s.Id == snapshot.ReportSourceId, ct);
         return Summary(snapshot, source, 0);
@@ -162,7 +172,8 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
                 AcceptanceCriteria = JsonSerializer.Deserialize<List<string>>(f.AcceptanceCriteriaJson, Json) ?? [],
                 Status = Enum.Parse<DeliveryStatus>(f.Status), StatusReason = f.StatusReason, TaskTotal = f.TaskTotal, TaskCompleted = f.TaskCompleted,
                 Tasks = tasks.TryGetValue(f.Id, out var list) ? list.Select(t => new DeliveryContentTask(t.TaskKey, t.Text, t.Completed)
-                    { TaskId = t.TaskId, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath }).ToList() : [],
+                    { TaskId = t.TaskId, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath, StoryReference = t.UserStory, Parallel = t.IsParallel }).ToList() : [],
+                Requirements = Requirements(f.RequirementsJson),
                 HierarchyCaptured = f.HierarchyCaptured, Phases = phases.GetValueOrDefault(f.Id) ?? [], Stories = stories.GetValueOrDefault(f.Id) ?? [],
                 Criteria = criteria.GetValueOrDefault(f.Id) ?? [],
             }).ToList(),
@@ -171,6 +182,19 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
     }
 
     private sealed record SourceMetadata(DeliveryAzureDevOpsSource? AzureDevOps);
+    private sealed record RequirementJson(string Key, string Text);
+
+    private static List<DeliveryContentRequirement> Requirements(string json)
+    {
+        try { return (JsonSerializer.Deserialize<List<RequirementJson>>(json, Json) ?? []).Select(r => new DeliveryContentRequirement(r.Key, r.Text)).ToList(); }
+        catch (JsonException) { return []; }
+    }
+
+    private static List<DeliveryEffectiveDateCorrection> Corrections(string json)
+    {
+        try { return JsonSerializer.Deserialize<List<DeliveryEffectiveDateCorrection>>(json, Json) ?? []; }
+        catch (JsonException) { return []; }
+    }
 
     /// <summary>Azure DevOps provenance stored with the source row (null for uploads and for rows written before it existed).</summary>
     internal static DeliveryAzureDevOpsSource? AzureDevOps(DeliveryReportSourceRecord src)
@@ -194,5 +218,6 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
         SourceType = Enum.Parse<DeliverySourceType>(src.SourceType), SourceFileName = src.OriginalFileName, GitCommit = src.GitCommit, Fingerprint = src.Fingerprint,
         Coverage = Enum.Parse<DeliveryCoverage>(s.CoverageStatus), FeatureCount = s.FeatureCount, TaskCount = s.TaskCount, CompletedTaskCount = s.CompletedTaskCount,
         WarningsCount = s.WarningsCount, ReportCount = reportCount, AzureDevOps = AzureDevOps(src),
+        EffectiveAtProvenance = s.EffectiveAtProvenance, EffectiveAtCorrections = Corrections(s.EffectiveAtCorrectionsJson),
     };
 }

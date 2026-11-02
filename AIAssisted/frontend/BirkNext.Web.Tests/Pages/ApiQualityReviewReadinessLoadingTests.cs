@@ -20,6 +20,8 @@ namespace BirkNext.Web.Tests.Pages;
 public sealed class ApiQualityReviewReadinessLoadingTests : BunitContext
 {
     private const string Origin = "https://app.example.test";
+    /// <summary>Generous under a loaded test host; the waits end as soon as the state is reached.</summary>
+    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
     private const string ApiHost = "app.example.test";
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
 
@@ -86,7 +88,7 @@ public sealed class ApiQualityReviewReadinessLoadingTests : BunitContext
 
     private static (string Decision, string Readiness, int Targets) Final(IRenderedComponent<ApiQualityReview> page)
     {
-        page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-decide]").Should().NotBeEmpty());
+        page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-decide]").Should().NotBeEmpty(), Wait);
         return (Decision(page), page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness")!, page.FindAll("[data-testid=aqr-target]").Count);
     }
 
@@ -147,7 +149,7 @@ public sealed class ApiQualityReviewReadinessLoadingTests : BunitContext
         page.FindAll("[data-testid=aqr-run]").Should().BeEmpty("nothing to run before readiness is evaluated");
 
         pending.SetResult(Live(Traffic()));
-        page.WaitForAssertion(() => Decision(page).Should().NotBe(nameof(ReviewDecision.Assessing)));
+        page.WaitForAssertion(() => Decision(page).Should().NotBe(nameof(ReviewDecision.Assessing)), Wait);
         Decision(page).Should().NotBe(nameof(ReviewDecision.Blocked));
         page.Find("[data-testid=aqr-runtime-evidence]").GetAttribute("data-source").Should().Be(nameof(RuntimeEvidenceSource.LiveCapture));
     }
@@ -159,7 +161,7 @@ public sealed class ApiQualityReviewReadinessLoadingTests : BunitContext
         discovery.Setup(d => d.LoadAsync(It.IsAny<IJSRuntime>())).ThrowsAsync(new JSException("storage unavailable"));
         var page = Render(discovery.Object);
 
-        page.WaitForAssertion(() => Decision(page).Should().Be(nameof(ReviewDecision.FailedToAssess)));
+        page.WaitForAssertion(() => Decision(page).Should().Be(nameof(ReviewDecision.FailedToAssess)), Wait);
         page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("Readiness could not be fully assessed").And.NotContain("Blocked");
         page.Find("[data-testid=aqr-assessment-error]").TextContent.Should().Contain("Nothing was evaluated as blocked").And.NotContain("storage unavailable", "diagnostics stay safe");
         page.Find("[data-testid=aqr-assessment-retry]").Should().NotBeNull();
@@ -230,16 +232,16 @@ public sealed class ApiQualityReviewReadinessLoadingTests : BunitContext
         runtime.Enqueue(Task.FromResult(Live(Traffic())));
         runtime.Enqueue(slow.Task);
         var proxy = new Mock<ILocalHttpsProxyApiService>();
-        proxy.Setup(p => p.GetRuntimeAsync()).Returns(() => runtime.Dequeue());
+        proxy.Setup(p => p.GetRuntimeAsync()).Returns(() => runtime.Count > 0 ? runtime.Dequeue() : slow.Task);
         var page = Render(new EndpointDiscoveryService(), proxy.Object);
         var before = Final(page);
 
         page.Find("[data-testid=aqr-refresh-readiness]").Click();
-        page.Find("[data-testid=aqr-refreshing]").TextContent.Should().Be("Refreshing evidence…");
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-refreshing]").TextContent.Should().Be("Refreshing evidence…"), Wait);
         Final(page).Should().Be(before, "the last assessed readiness stays while refreshing — no Assessing or Blocked flash");
 
         slow.SetResult(Live(Traffic()));
-        page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-refreshing]").Should().BeEmpty());
+        page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-refreshing]").Should().BeEmpty(), Wait);
         Final(page).Should().Be(before);
     }
 
