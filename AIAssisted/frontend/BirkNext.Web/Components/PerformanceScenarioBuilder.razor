@@ -5,6 +5,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Shared.Components.Common
 @using E = BirkNext.PerformanceTests.PerformanceScenarioEngine
+@using DD = BirkNext.PerformanceTests.PerformanceDiscoveryDrafts
 @inject IPerformanceTestApiService Api
 @inject IServiceProvider Services
 
@@ -209,14 +210,64 @@
         // date, never an unbound snapshot on its own; several bound sources need a decision.
         if (Definition.Scenario.ContractSnapshotId is { } saved && _snapshots.Any(s => s.Id == saved)) await LoadAsync(saved, "Saved scenario selection");
         else if (_bound.Count == 1) await LoadAsync(_bound.First(), "Bound from Project setup");
+        _initialized = true;
         Recompute();
     }
 
     protected override void OnParametersSet() => Recompute();
 
-    private void Recompute() =>
+    private void Recompute()
+    {
         _catalog = E.Build(_contracts?.Contracts ?? [], _contracts?.SnapshotId, _contracts?.Archive, Definition.TargetOrigin, EnvironmentName, EvidenceObservations, Assets,
             Definition.Scenario.ContractIds, Definition.AuthenticationReference is not null);
+        ReconcileDiscovery();
+    }
+
+    // ── Endpoint Discovery → discovered draft steps ──────────────────────────────────────────────────────────────────────
+
+    private bool _initialized;
+    private ScenarioDiscoveryReconciliation? _discovery;
+    private string? _discoveryNote, _emitted;
+
+    /// <summary>
+    /// Live Discovery keeps the scenario current: operations seen in the latest Endpoint Discovery run become "Discovered · review required" drafts
+    /// (disabled until accepted) and steps that follow the latest observation take newer evidence. Only after the contract source is settled (so a
+    /// declared + observed operation is not drafted as observed-only first), only in Live Discovery mode, and never silently: the result is an
+    /// unsaved change of the editor, saved by the person as a new version.
+    /// </summary>
+    private void ReconcileDiscovery()
+    {
+        if (!_initialized || !HistoryLoaded || History is not { EverRun: true } history || Mode != ObservedKey || _catalog is null) { _discovery = null; return; }
+        var current = _catalog.Operations.Where(o => o.Observation is not null && HistoryOf(o)?.Current == true).ToList();
+        _discovery = DD.Reconcile(Definition, current, history.LatestRun?.RunId, op => _contracts?.Contracts.FirstOrDefault(c => c.Id == op.ContractId)?.Types);
+        if (!_discovery.Changed) return;
+        var key = $"{Definition.Id}|{history.LatestRun?.RunId}|{string.Join("\n", _discovery.Changes.Select(c => $"{c.Kind}:{c.Text}"))}";
+        if (key == _emitted) return;
+        _emitted = key;
+        var (created, updated) = (_discovery.Created, _discovery.Updated);
+        _discoveryNote = string.Join(" · ", new[]
+        {
+            created > 0 ? $"Endpoint Discovery added {created} discovered step{(created == 1 ? "" : "s")} (review required, not run until accepted)" : null,
+            updated > 0 ? $"updated {updated} step{(updated == 1 ? "" : "s")} following the latest observation" : null,
+        }.OfType<string>()) + ". Save the definition to keep the changes.";
+        var next = _discovery.Definition;
+        _ = InvokeAsync(() => OnChange.InvokeAsync(next));
+    }
+
+    private RenderFragment DiscoverySummary() => __builder =>
+    {
+        var notices = _discovery?.Changes.Where(c => c.Kind is ScenarioDiscoveryChange.PinnedNewer or ScenarioDiscoveryChange.RequestDiffers).ToList() ?? [];
+        if (_discoveryNote is null && notices.Count == 0) return;
+        <div class="psb-discovery" role="status" data-testid="psb-discovery">
+            @if (_discoveryNote is { } note) { <p data-testid="psb-discovery-note"><strong>@note</strong></p> }
+            @if (notices.Count > 0)
+            {
+                <ul class="psb-discovery-notices" data-testid="psb-discovery-notices">
+                    @foreach (var n in notices) { <li data-testid="psb-discovery-notice" data-kind="@n.Kind"><strong>@n.StepName</strong> · @n.Text</li> }
+                </ul>
+            }
+        </div>
+    };
 
     private string SnapshotLabel(ScenarioSourceSnapshot s) =>
         $"{s.Archive} · {s.OpenApiContracts} OpenAPI · {s.GraphQlContracts} GraphQL · analyzed {s.AnalyzedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC"
@@ -365,6 +416,7 @@
                     }
                 </ul>
             }
+            @DiscoverySummary()
             @if (History is { EverRun: true })
             {
                 <div class="psb-filters psb-filters-secondary" role="radiogroup" aria-label="Observation scope" data-testid="psb-history-scope">
@@ -547,7 +599,7 @@
 
     /// <summary>One primary candidate state (text + tone): Added, Conflict, Not runnable in this definition, Review required or Ready to add.</summary>
     private (string Key, string Label) State(ScenarioOperation op, bool canAdd) =>
-        IsAdded(op) ? ("added", "Added to scenario")
+        IsAdded(op) ? ("added", Definition.Scenario.Steps.Any(s => s.Source?.OperationKey == op.Key && DD.IsDraft(s)) ? DD.Label : "Added to scenario")
         : InConflict(op) ? ("conflict", "Conflict")
         : op.ProposedDefinition || op.Level == ScenarioRecommendationLevel.ReviewRequired && canAdd ? ("review", "Review required")
         : !canAdd ? ("notrunnable", "Not runnable in this definition")

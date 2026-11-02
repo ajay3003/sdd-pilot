@@ -96,3 +96,8 @@ h4.psb-op-name { margin: 0; flex: 1 1 16rem; font-weight: 700; }
 .psb-source-label { font-size: .85rem; color: var(--clr-text-muted, #475569); }
 .psb-source-name { overflow-wrap: anywhere; }
 .psb-fact-wide { grid-column: 1 / -1; }
+
+.psb-discovery { border: 1px solid #f59e0b; border-left-width: 4px; border-radius: var(--radius-md, 8px); background: #fffbeb; padding: .45rem .7rem; margin: .5rem 0; }
+.psb-discovery p { margin: 0; }
+.psb-discovery-notices { margin: .3rem 0 0; padding-left: 1.1rem; }
+@media (prefers-color-scheme: dark) { .psb-discovery { background: rgba(245, 158, 11, .1); border-color: #b45309; } }

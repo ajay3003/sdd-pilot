@@ -6,6 +6,7 @@
 @using R = BirkNext.PerformanceTests.PerformanceScenarioRuntime
 @using RR = BirkNext.PerformanceTests.PerformanceRequestResponse
 @using D = BirkNext.Web.Services.PerformanceTestReviewDashboard
+@using DD = BirkNext.PerformanceTests.PerformanceDiscoveryDrafts
 @inject IJSRuntime JS
 
 @* Scenario design: the executable steps are the main working area. Each step owns its runtime values (auto-filled or fixed value, previous step
@@ -25,7 +26,7 @@
                         @foreach (var (key, label) in AuthOptions) { <option value="@key">@label</option> }
                     </select>
                     <span class="pss-hint" id="pss-auth-help">Steps inherit it unless they override it. A reference only — no token is copied.</span></dd></div>
-            <div><dt>Steps</dt><dd data-testid="pss-steps-count">@Definition.Scenario.Steps.Count@(Definition.Scenario.Steps.Count(s => s.Disabled) is > 0 and var off ? $" · {off} disabled" : "")</dd></div>
+            <div><dt>Steps</dt><dd data-testid="pss-steps-count">@Definition.Scenario.Steps.Count@(Definition.Scenario.Steps.Count(s => s.Disabled && !DD.IsDraft(s)) is > 0 and var off ? $" · {off} disabled" : "")@if (Definition.Scenario.Steps.Count(DD.IsDraft) is > 0 and var drafts) { <span class="pss-warn" data-testid="pss-drafts-count"> · @drafts discovered · review required</span> }</dd></div>
             <div><dt>Readiness</dt><dd><span class="pss-status pss-status-@Tone(readiness.Status)" data-testid="pss-readiness" data-status="@readiness.Status">@R.StatusLabel(readiness.Status)</span></dd></div>
             @if (values.Total > 0)
             {
@@ -264,10 +265,25 @@
     private async Task ToggleDisabled(int index)
     {
         var s = Steps[index];
+        if (DD.IsDraft(s)) { await AcceptDraft(index); return; }
         if (!s.Disabled && R.Dependents(Steps, s.Id) is { Count: > 0 } dependents) { _pending = (index, "disable", dependents); _focus = "pss-dependents-h"; return; }
         _announce = $"{s.Name} {(s.Disabled ? "enabled" : "disabled")}.";
         await UpdateStep(index, x => x with { Disabled = !x.Disabled });
     }
+
+    /// <summary>Accepting a discovered draft enables it (it keeps its observation tracking); nothing runs.</summary>
+    private async Task AcceptDraft(int index)
+    {
+        _announce = $"{Steps[index].Name} accepted; it now runs with the scenario.";
+        await UpdateStep(index, x => DD.Accept(x, DateTimeOffset.UtcNow));
+    }
+
+    private Task SetTracking(int index, ChangeEventArgs e) =>
+        Enum.TryParse<ObservationTracking>(e.Value?.ToString(), out var tracking) ? UpdateStep(index, x => DD.SetTracking(x, tracking)) : Task.CompletedTask;
+
+    private static string TrackingHelp(HttpPerformanceStep s) => DD.Tracking(s) == ObservationTracking.FollowLatest
+        ? "Newer Endpoint Discovery observations update this step's evidence; a changed request is only reported once the step is reviewed."
+        : $"Kept as reviewed{(s.Source?.ObservedLastSeen is { } seen ? $" (observation of {seen.ToUniversalTime():yyyy-MM-dd HH:mm} UTC)" : "")}; newer observations are only reported.";
 
     private async Task Delete(int index)
     {
@@ -284,8 +300,9 @@
             ? s with { DataMappings = (s.DataMappings ?? []).Where(m => !(m.Source == RuntimeValueSource.PreviousStep && m.FromStepId == removed.Id)).ToList() is { Count: > 0 } kept ? kept : null }
             : s).ToList();
         _pending = null;
-        _announce = $"{removed.Name} deleted{(dependents.Count > 0 ? $"; {dependents.Count} mapping{(dependents.Count == 1 ? "" : "s")} that used its output now need a runtime value source" : "")}.";
-        await SetSteps(steps);
+        _announce = $"{removed.Name} {(DD.IsDraft(removed) ? "dismissed" : "deleted")}{(dependents.Count > 0 ? $"; {dependents.Count} mapping{(dependents.Count == 1 ? "" : "s")} that used its output now need a runtime value source" : "")}.";
+        // A removed observed step is remembered: Endpoint Discovery does not re-create it as a discovered draft.
+        await Change(Definition with { Scenario = DD.Remember(Definition.Scenario, removed) with { Steps = steps } });
     }
 
     private async Task DisableNow(int index)
@@ -325,14 +342,21 @@
         var rows = R.Rows(Definition.Scenario, index, KnownAliases);
         var bodyId = $"pt-step-body-{s.Id}";
         @* Native dragover cancellation enables drop without dispatching every pointer movement through Blazor. *@
-        <li @key="s.Id" class="pt-step pss-step pss-tone-@Tone(status.Status) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
+        <li @key="s.Id" class="pt-step pss-step pss-tone-@(DD.IsDraft(s) ? "discovered" : Tone(status.Status)) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
             data-testid="pt-step" data-step-id="@s.Id" data-status="@status.Status" data-disabled="@(s.Disabled ? "true" : "false")" aria-labelledby="@($"pt-step-h-{index + 1}")"
             ondragover="event.preventDefault()" @ondragenter="() => _dropBefore = s.Id" @ondrop="() => DropBefore(s.Id)" @ondrop:stopPropagation>
             <div class="pss-step-head">
                 <span class="pss-handle" draggable="true" title="Drag to reorder" aria-hidden="true" data-testid="pt-step-drag"
                       @ondragstart="() => StartDrag(s.Id)" @ondragend="EndDrag">⋮⋮</span>
                 <h4 class="pss-step-title" id="@($"pt-step-h-{index + 1}")" tabindex="-1" data-testid="pt-step-heading">@(index + 1) · @(string.IsNullOrWhiteSpace(s.Name) ? "Unnamed step" : s.Name)</h4>
-                <span class="pss-status pss-status-@Tone(status.Status)" data-testid="pt-step-status" data-status="@status.Status">@R.StatusLabel(status.Status)</span>
+                @if (DD.IsDraft(s))
+                {
+                    <span class="pss-status pss-status-discovered" data-testid="pt-step-status" data-status="Discovered">@DD.Label</span>
+                }
+                else
+                {
+                    <span class="pss-status pss-status-@Tone(status.Status)" data-testid="pt-step-status" data-status="@status.Status">@R.StatusLabel(status.Status)</span>
+                }
                 <button type="button" class="btn-link pss-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@bodyId" @onclick="() => _expanded[s.Id] = !open" data-testid="pt-step-toggle">
                     @(open ? "Collapse" : "Expand")<span class="visually-hidden"> step @(index + 1)</span></button>
             </div>
@@ -341,6 +365,16 @@
                 @if (D.FromEvidence(s)) { <span class="pss-origin" data-testid="pt-step-origin">Added from detected operation</span><span> · </span> }
                 @D.StepSource(s)
             </p>
+            @if (DD.IsDraft(s))
+            {
+                <div class="pss-draft" role="group" aria-label="@($"Discovered step {index + 1} review")" data-testid="pt-step-draft">
+                    <p class="pss-hint">Created automatically from Endpoint Discovery with safe values only. It does not run until you accept it.</p>
+                    <p class="pss-actions">
+                        <button type="button" class="btn-secondary" @onclick="() => AcceptDraft(index)" data-testid="pt-step-accept">Accept step<span class="visually-hidden"> @(index + 1)</span></button>
+                        <button type="button" class="btn-link pss-danger" @onclick="() => Delete(index)" data-testid="pt-step-dismiss">Dismiss<span class="visually-hidden"> step @(index + 1)</span></button>
+                    </p>
+                </div>
+            }
             @if (!open)
             {
                 @if (status.Reasons.Count > 0 && status.Status != StepStatus.Disabled) { <p class="pss-hint" data-testid="pt-step-collapsed-reason">@status.Reasons[0]@(status.Reasons.Count > 1 ? $" (+{status.Reasons.Count - 1} more)" : "")</p> }
@@ -351,6 +385,14 @@
                     <dl class="pss-step-summary">
                         <div><dt>Runtime values</dt><dd data-testid="pt-step-values-summary">@(rows.Count == 0 ? "No dynamic parameters" : string.Join(" · ", rows.Select(r => $"{r.Parameter.Variable} → {(r.Mapping is null ? "not configured" : $"{r.SourceLabel} · {r.ValueText}")}")))</dd></div>
                         <div><dt>Authentication</dt><dd data-testid="pt-step-auth-summary">@R.AuthenticationLabel(Definition, s)</dd></div>
+                        @if (DD.Observed(s))
+                        {
+                            <div><dt><label for="@($"pt-step-tracking-{s.Id}")">Observation</label></dt>
+                                <dd><select id="@($"pt-step-tracking-{s.Id}")" value="@DD.Tracking(s)" @onchange="e => SetTracking(index, e)" aria-describedby="@($"pt-step-tracking-help-{s.Id}")" data-testid="pt-step-tracking">
+                                        @foreach (var t in new[] { ObservationTracking.FollowLatest, ObservationTracking.Pinned }) { <option value="@t">@DD.TrackingLabel(t)</option> }
+                                    </select>
+                                    <span class="pss-hint" id="@($"pt-step-tracking-help-{s.Id}")" data-testid="pt-step-tracking-help">@TrackingHelp(s)</span></dd></div>
+                        }
                     </dl>
                     @if (status.Reasons.Count > 0 && status.Status != StepStatus.Disabled)
                     {

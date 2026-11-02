@@ -409,7 +409,7 @@ public static partial class PerformanceScenarioRuntime
     public static StepReadiness Readiness(PerformanceTestDefinition d, int index, IReadOnlySet<string>? knownAliases = null, IReadOnlySet<string>? observedAuthentication = null)
     {
         var s = d.Scenario.Steps[index];
-        if (s.Disabled) return new(StepStatus.Disabled, ["Disabled — stays in the definition but does not run"]);
+        if (s.Disabled) return new(StepStatus.Disabled, [PerformanceDiscoveryDrafts.IsDraft(s) ? $"{PerformanceDiscoveryDrafts.Label} — created from Endpoint Discovery; not run until accepted" : "Disabled — stays in the definition but does not run"]);
         var blocked = new List<string>();
         var method = (s.Method ?? "").Trim().ToUpperInvariant();
         if (PerformanceTestRules.BlockedMethods.Contains(method)) blocked.Add($"{Step(index)}: {method} changes data — performance tests use read-only operations");
@@ -445,7 +445,7 @@ public static partial class PerformanceScenarioRuntime
         var status = steps.Any(r => r.Status == StepStatus.Blocked) ? StepStatus.Blocked
             : steps.Any(r => r.Status == StepStatus.NeedsConfiguration) || reasons.Count > 0 ? StepStatus.NeedsConfiguration
             : steps.Any(r => r.Status == StepStatus.Ready) ? StepStatus.Ready : StepStatus.NeedsConfiguration;
-        if (steps.All(r => r.Status == StepStatus.Disabled)) reasons.Insert(0, d.Scenario.Steps.Count == 0 ? "The scenario has no steps" : "Every step is disabled");
+        if (steps.All(r => r.Status == StepStatus.Disabled)) reasons.Insert(0, d.Scenario.Steps.Count == 0 ? "The scenario has no steps" : d.Scenario.Steps.Any(PerformanceDiscoveryDrafts.IsDraft) ? "Every step is disabled or a discovered draft awaiting review" : "Every step is disabled");
         return new(status, reasons);
     }
 

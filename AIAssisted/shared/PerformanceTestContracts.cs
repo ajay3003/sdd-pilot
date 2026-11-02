@@ -98,6 +98,29 @@ public sealed record HttpPerformanceStep
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public StepAuthenticationMode Authentication { get; init; }
     /// <summary>The approved authentication configuration referenced when <see cref="Authentication"/> is Override.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AuthenticationReference { get; init; }
+    /// <summary>Created or kept current by Endpoint Discovery: review state (a discovered draft is disabled until a person accepts it) and whether it
+    /// follows the latest observation or stays pinned. Null = an authored or legacy step (pinned: never changed automatically).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public StepDiscovery? Discovery { get; init; }
+}
+
+/// <summary>NeedsReview = "Discovered · review required": created automatically from Endpoint Discovery, disabled (never executed) until a person accepts it.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum StepDiscoveryState { NeedsReview, Reviewed }
+
+/// <summary>FollowLatest = newer Endpoint Discovery observations update the step's evidence (a draft's request too); Pinned = the step keeps the
+/// observation it was reviewed against and only reports that a newer one exists.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ObservationTracking { FollowLatest, Pinned }
+
+/// <summary>Endpoint Discovery bookkeeping of a step: safe metadata only (run id, observation time) — never an observed value, header or token.</summary>
+public sealed record StepDiscovery
+{
+    public StepDiscoveryState State { get; init; }
+    public ObservationTracking Tracking { get; init; }
+    /// <summary>The Endpoint Discovery run whose observation the step reflects.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RunId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ObservedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ReviewedAt { get; init; }
 }
 
 public sealed record PerformanceScenario
@@ -117,6 +140,8 @@ public sealed record PerformanceScenario
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TestDataSelection? DataSelection { get; init; }
     /// <summary>Scenario-level variables steps may reference (fixed, generated or an approved Test Data alias).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ScenarioVariable>? Variables { get; init; }
+    /// <summary>Operation keys a person dismissed or deleted: Endpoint Discovery never re-creates them as discovered drafts.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? DismissedDiscoveries { get; init; }
 }
 
 /// <summary>Provenance of a scenario step. Observed metadata is counts and timestamps only — never a token, cookie, header value or observed identifier.</summary>

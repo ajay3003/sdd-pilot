@@ -94,6 +94,9 @@ public static partial class PerformanceTestSafety
                 $"Run blocked — authentication required. Step '{r.Step}' · {PerformanceScenarioRuntime.AuthenticationRequirementProblem(r)}."));
 
         if (d.Scenario.Steps.Count == 0) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "The scenario has no request steps."));
+        else if (d.Scenario.Steps.All(s => s.Disabled))
+            issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", d.Scenario.Steps.Any(PerformanceDiscoveryDrafts.IsDraft)
+                ? "No step will run: every step is disabled or a discovered draft awaiting review." : "No step will run: every step is disabled."));
         if (d.Scenario.Steps.Count > 20) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "A scenario may contain at most 20 steps."));
         foreach (var s in d.Scenario.Steps.Where(s => !s.Disabled)) issues.AddRange(StepIssues(d, s, data));
 

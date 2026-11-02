@@ -837,3 +837,144 @@ public static partial class PerformanceScenarioEngine
             + $"{(environment is null ? "" : $"&environment={E(environment)}")}";
     }
 }
+
+/// <summary>What one reconciliation did or found for a step: Created (discovered draft), Updated (followed the latest observation),
+/// PinnedNewer (a newer observation exists; the pinned step is unchanged), RequestDiffers (the latest observation implies a different request than
+/// a reviewed or edited step — reported, never applied).</summary>
+public sealed record ScenarioDiscoveryChange(string StepId, string StepName, string Kind, string Text)
+{
+    public const string Created = "created", Updated = "updated", PinnedNewer = "pinned-newer", RequestDiffers = "request-differs";
+}
+
+public sealed record ScenarioDiscoveryReconciliation(PerformanceTestDefinition Definition, IReadOnlyList<ScenarioDiscoveryChange> Changes)
+{
+    public int Created => Changes.Count(c => c.Kind == ScenarioDiscoveryChange.Created);
+    public int Updated => Changes.Count(c => c.Kind == ScenarioDiscoveryChange.Updated);
+    /// <summary>The definition changed (drafts created or steps updated); notices alone change nothing.</summary>
+    public bool Changed => Created + Updated > 0;
+}
+
+/// <summary>
+/// Endpoint Discovery → scenario steps. Current observed application operations that are safe to read (REST GET/HEAD, GraphQL query) and match the
+/// definition's API style become "Discovered · review required" drafts: disabled — so never executed, never in the comparison fingerprint — until a
+/// person accepts them, pre-filled only with safe values (contract default/example; never an observed value). Steps that follow the latest
+/// observation take newer evidence (counts, last seen, an authentication requirement — never dropped); a draft also takes a changed request unless a
+/// person edited it. Pinned steps (and every authored or legacy step) are never changed: a newer observation is only reported. Dismissed or deleted
+/// operations are not re-created. Pure and idempotent: reconciling the result again changes nothing.
+/// </summary>
+public static class PerformanceDiscoveryDrafts
+{
+    public const string Label = "Discovered · review required";
+    public const int MaxSteps = 20, MaxDrafts = 10;
+
+    public static bool IsDraft(HttpPerformanceStep s) => s.Discovery is { State: StepDiscoveryState.NeedsReview };
+    /// <summary>Observed-evidence steps can follow the latest observation; authored and legacy steps are pinned.</summary>
+    public static bool Observed(HttpPerformanceStep s) => s.Source is { Evidence: ScenarioEvidence.ObservedOnly or ScenarioEvidence.DeclaredAndObserved };
+    public static ObservationTracking Tracking(HttpPerformanceStep s) => s.Discovery?.Tracking ?? ObservationTracking.Pinned;
+
+    public static string TrackingLabel(ObservationTracking t) => t == ObservationTracking.FollowLatest ? "Follow latest observation" : "Pinned";
+
+    /// <summary>Why an operation is not created as a discovered draft; null = eligible.</summary>
+    public static string? Ineligible(ScenarioOperation op, PerformanceTargetType targetType)
+    {
+        if (op.Observation is null) return "not observed";
+        if (op.Traffic != ScenarioTrafficKind.Application) return "not application traffic";
+        if (!op.Runnable || op.ProposedDefinition) return "not runnable as a step";
+        var graphQl = op.GraphQlKind is not null;
+        if (graphQl != (targetType == PerformanceTargetType.GraphQlHttp)) return "different API style than this definition";
+        if (graphQl ? op.GraphQlKind != "query" : op.Method.ToUpperInvariant() is not ("GET" or "HEAD")) return "not a read-only operation";
+        return null;
+    }
+
+    /// <param name="current">Operations seen in the latest Endpoint Discovery run (their <see cref="ScenarioOperation.Observation"/> set).</param>
+    /// <param name="typesOf">Contract types for a GraphQL operation's result (optional).</param>
+    public static ScenarioDiscoveryReconciliation Reconcile(PerformanceTestDefinition d, IReadOnlyList<ScenarioOperation> current, string? latestRunId,
+        Func<ScenarioOperation, IReadOnlyCollection<ContractTypeShape>?>? typesOf = null, bool createDrafts = true)
+    {
+        var steps = d.Scenario.Steps.ToList();
+        var changes = new List<ScenarioDiscoveryChange>();
+        ScenarioOperation? Find(HttpPerformanceStep s) => current.FirstOrDefault(o => o.Key == s.Source!.OperationKey)
+            ?? (s.Source!.EvidenceIdentity is { } id ? current.FirstOrDefault(o => Identity(o) == id) : null);
+
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var s = steps[i];
+            if (!Observed(s) || Find(s) is not { Observation: { } obs } op) continue;
+            if (s.Source!.ObservedLastSeen is { } seen && obs.LastSeen <= seen) continue;
+            if (Tracking(s) == ObservationTracking.Pinned)
+            {
+                changes.Add(new(s.Id, s.Name, ScenarioDiscoveryChange.PinnedNewer,
+                    $"Newer observation available ({Utc(obs.LastSeen)}) · pinned to {(s.Source.ObservedLastSeen is { } at ? Utc(at) : "its original evidence")}"));
+                continue;
+            }
+            var fresh = PerformanceScenarioEngine.ToStep(op, null, typesOf?.Invoke(op));
+            var source = s.Source with
+            {
+                ObservedCount = obs.Count, ObservedLastSeen = obs.LastSeen,
+                // A requirement observed now is taken; one observed before is never dropped automatically.
+                ObservedAuthentication = fresh.Source?.ObservedAuthentication ?? s.Source.ObservedAuthentication,
+            };
+            var next = s with { Source = source, Discovery = (s.Discovery ?? new StepDiscovery { State = StepDiscoveryState.Reviewed }) with { RunId = latestRunId, ObservedAt = obs.LastSeen } };
+            var differs = !string.Equals(fresh.Method, s.Method, StringComparison.OrdinalIgnoreCase) || fresh.RelativePath != s.RelativePath || fresh.GraphQlQuery != s.GraphQlQuery;
+            if (differs && IsDraft(s) && !s.Source.Modified)
+                next = next with
+                {
+                    Method = fresh.Method, RelativePath = fresh.RelativePath, QueryParameters = fresh.QueryParameters, BodyTemplate = fresh.BodyTemplate, ContentType = fresh.ContentType,
+                    GraphQlQuery = fresh.GraphQlQuery, GraphQlVariablesJson = fresh.GraphQlVariablesJson, GraphQlOperationName = fresh.GraphQlOperationName,
+                    // Values a person configured stay for variables the new request still has; safe defaults fill the rest.
+                    DataMappings = Merge(s.DataMappings, fresh.DataMappings, op.Needs.Select(n => n.Variable)),
+                };
+            else if (differs)
+                changes.Add(new(s.Id, s.Name, ScenarioDiscoveryChange.RequestDiffers,
+                    $"The latest observation implies {fresh.Method} {fresh.RelativePath} · not applied to {(s.Source.Modified ? "an edited" : "a reviewed")} step — review it"));
+            steps[i] = next;
+            changes.Add(new(s.Id, s.Name, ScenarioDiscoveryChange.Updated, $"Following the latest observation · {obs.Count} observed, last {Utc(obs.LastSeen)}"));
+        }
+
+        if (createDrafts)
+        {
+            var dismissed = new HashSet<string>(d.Scenario.DismissedDiscoveries ?? [], StringComparer.Ordinal);
+            foreach (var op in current.OrderBy(o => o.Tier).ThenByDescending(o => o.Score).ThenBy(o => o.Key, StringComparer.Ordinal))
+            {
+                if (steps.Count >= MaxSteps || steps.Count(IsDraft) >= MaxDrafts) break;
+                if (dismissed.Contains(op.Key) || Ineligible(op, d.TargetType) is not null) continue;
+                var identity = Identity(op);
+                if (steps.Any(s => s.Source?.OperationKey == op.Key || identity is not null && s.Source?.EvidenceIdentity == identity)) continue;
+                var step = PerformanceScenarioEngine.ToStep(op, null, typesOf?.Invoke(op)) with
+                {
+                    Disabled = true,
+                    Discovery = new StepDiscovery { State = StepDiscoveryState.NeedsReview, Tracking = ObservationTracking.FollowLatest, RunId = latestRunId, ObservedAt = op.Observation!.LastSeen },
+                };
+                steps.Add(step);
+                changes.Add(new(step.Id, step.Name, ScenarioDiscoveryChange.Created, $"{Label} · {op.Name}"));
+            }
+        }
+        var changed = changes.Any(c => c.Kind is ScenarioDiscoveryChange.Created or ScenarioDiscoveryChange.Updated);
+        return new(changed ? d with { Scenario = d.Scenario with { Steps = steps } } : d, changes);
+    }
+
+    /// <summary>Accept a discovered draft: enabled and reviewed (it keeps its tracking choice).</summary>
+    public static HttpPerformanceStep Accept(HttpPerformanceStep s, DateTimeOffset now) =>
+        s with { Disabled = false, Discovery = (s.Discovery ?? new StepDiscovery()) with { State = StepDiscoveryState.Reviewed, ReviewedAt = now } };
+
+    public static HttpPerformanceStep SetTracking(HttpPerformanceStep s, ObservationTracking tracking) =>
+        s with { Discovery = (s.Discovery ?? new StepDiscovery { State = StepDiscoveryState.Reviewed }) with { Tracking = tracking } };
+
+    /// <summary>Removing an observed step (dismissing a draft or deleting it) records its operation so Endpoint Discovery does not re-create it.</summary>
+    public static PerformanceScenario Remember(PerformanceScenario scenario, HttpPerformanceStep removed) =>
+        Observed(removed) && removed.Source!.OperationKey is { Length: > 0 } key && scenario.DismissedDiscoveries?.Contains(key) != true
+            ? scenario with { DismissedDiscoveries = [.. scenario.DismissedDiscoveries ?? [], key] }
+            : scenario;
+
+    private static string Utc(DateTimeOffset at) => $"{at.ToUniversalTime():yyyy-MM-dd HH:mm} UTC";
+
+    private static string? Identity(ScenarioOperation op) => PerformanceScenarioEngine.ToStep(op).Source?.EvidenceIdentity;
+
+    private static List<ScenarioDataMapping>? Merge(List<ScenarioDataMapping>? kept, List<ScenarioDataMapping>? fresh, IEnumerable<string> needed)
+    {
+        var variables = needed.ToHashSet(StringComparer.Ordinal);
+        var configured = (kept ?? []).Where(m => variables.Contains(m.Variable) && m.Source != RuntimeValueSource.AutoFilled).ToList();
+        var merged = configured.Concat((fresh ?? []).Where(f => configured.All(k => k.Variable != f.Variable))).ToList();
+        return merged.Count == 0 ? null : merged;
+    }
+}
