@@ -12,7 +12,7 @@
    output, scenario variable, generated value or optional Test Data), its response outputs, its authentication (inherit / none / override) and its request details. Order is
    execution order: drag ⋮⋮ or Move up / Move down; a move that would run a step before the step whose output it uses is refused with options. *@
 <section class="pss" aria-labelledby="pss-summary-h" data-testid="pss">
-    @{ var readiness = R.ScenarioReadiness(Definition, KnownAliases); var values = R.ValuesSummary(Definition.Scenario, KnownAliases); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
+    @{ var readiness = R.ScenarioReadiness(Definition, KnownAliases, ObservedAuthentication); var values = R.ValuesSummary(Definition.Scenario, KnownAliases); var dependencies = R.Dependencies(Definition.Scenario); var invalid = dependencies.Count(d => d.Problem != DependencyProblem.None); }
     <div class="pss-header" data-testid="pss-header">
         <h3 id="pss-summary-h" class="visually-hidden">Scenario summary</h3>
         <dl class="pss-facts">
@@ -91,6 +91,8 @@
     /// <summary>The catalog's aliases when it was loaded (null before): a mapped alias that no longer exists shows "Test Data reference missing".</summary>
     private IReadOnlySet<string>? KnownAliases => Assets.Count == 0 ? null : Assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
     [Parameter] public IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> Observations { get; set; } = [];
+    /// <summary>Operation identities persisted Endpoint Discovery observed with authentication: the same requirement source the backend reads.</summary>
+    [Parameter] public IReadOnlySet<string>? ObservedAuthentication { get; set; }
 
     /// <summary>Approved authentication configurations a scenario may reference (references only; credentials stay with their owner).</summary>
     public static readonly (string Key, string Label)[] AuthOptions = [("target-environment", "Target Environment authentication (approved configuration)")];
@@ -318,7 +320,7 @@
 
     private RenderFragment StepCard(int index, HttpPerformanceStep s) => __builder =>
     {
-        var status = R.Readiness(Definition, index, KnownAliases);
+        var status = R.Readiness(Definition, index, KnownAliases, ObservedAuthentication);
         var open = Expanded(s);
         var rows = R.Rows(Definition.Scenario, index, KnownAliases);
         var bodyId = $"pt-step-body-{s.Id}";

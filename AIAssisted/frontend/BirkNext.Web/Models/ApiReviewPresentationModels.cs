@@ -73,7 +73,8 @@ public sealed record ApiReviewAccessPanelModel(
     string ActionHref,
     IReadOnlyList<ApiReviewTechnicalField> Technical);
 
-public enum ApiReviewReadinessLevel { Loading, Blocked, Limited, Ready }
+/// <summary>Loading is never a verdict; NeedsReview is a choice still to make (no API selected); Blocked is a definitively unsatisfied required prerequisite.</summary>
+public enum ApiReviewReadinessLevel { Loading, Blocked, Limited, Ready, NeedsReview }
 
 public enum ApiReviewReadinessItemState { Ok, Warning, Missing }
 

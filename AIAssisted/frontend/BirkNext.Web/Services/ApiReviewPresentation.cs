@@ -258,6 +258,10 @@ public static class ApiReviewPresentation
     {
         var chosen = targets.Where(t => selected.Contains(t.TargetId)).ToList();
         if (context is null) return new(ApiReviewReadinessLevel.Loading, "Loading target environment", eligibility.Reason, chosen.Count, [], null, null);
+        // Targets exist and none is selected: the person still has to choose — that needs review, it is not a blocker.
+        if (!eligibility.Enabled && eligibility.Reason == ApiReviewRunEligibility.NoSelectionReason && targets.Count > 0)
+            return new(ApiReviewReadinessLevel.NeedsReview, "Needs review · choose the API targets to review", "Select at least one API target; nothing is blocked.", 0, [], null, null,
+                RunUnavailableReason: "Run unavailable — select at least one API target.");
         var availability = Availability(context, capabilities);
         if (!eligibility.Enabled)
         {
@@ -337,6 +341,23 @@ public static class ApiReviewPresentation
             : new(ApiReviewReadinessLevel.Ready, partialContract ? "Ready for read-only review · partial contract coverage" : "Ready for read-only review",
                 eligibility.Reason, chosen.Count, items, null, null);
     }
+
+    /// <summary>The shared review decision for an evaluated API readiness: partial contract coverage or limited authenticated access is
+    /// "Ready with limitations", never a blocker; loading is "Assessing", never Blocked.</summary>
+    public static ReviewDecision Decision(ApiReviewReadinessModel readiness) => readiness.Level switch
+    {
+        ApiReviewReadinessLevel.Loading => ReviewDecision.Assessing,
+        ApiReviewReadinessLevel.NeedsReview => ReviewDecision.NeedsReview,
+        ApiReviewReadinessLevel.Blocked => ReviewDecision.Blocked,
+        ApiReviewReadinessLevel.Limited => ReviewDecision.ReadyWithLimitations,
+        _ => readiness.Items.Any(i => i.State != ApiReviewReadinessItemState.Ok && !i.Label.StartsWith("No previous baseline", StringComparison.Ordinal))
+            ? ReviewDecision.ReadyWithLimitations : ReviewDecision.Ready,
+    };
+
+    /// <summary>"Available · Recent · 8 observed API operations · Endpoint Discovery" — evidence, never configuration.</summary>
+    public static string RuntimeEvidenceLabel(RuntimeEvidence evidence) => evidence.Available
+        ? $"Available · {ReviewDecisions.FreshnessLabel(evidence.Freshness)} · {evidence.ApiObservations} observed API operation{(evidence.ApiObservations == 1 ? "" : "s")} · {evidence.SourceLabel}"
+        : "Not available · no API traffic observed for this target";
 
     // ── Targets ───────────────────────────────────────────────────────────────────────────────────────────────────────
 

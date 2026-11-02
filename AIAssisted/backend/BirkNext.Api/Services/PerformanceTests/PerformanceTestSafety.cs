@@ -76,7 +76,9 @@ public static partial class PerformanceTestSafety
             yield return I($"Resource drift policy for {ResourceFormat.Label(p.Metric)}: accepted change must be zero or positive.");
     }
 
-    public static List<Issue> Check(PerformanceTestDefinition d, PerformanceTestDataProfile? data, PerformanceTestOptions options)
+    /// <param name="observedAuthentication">Operation identities Endpoint Discovery observed with authentication (persisted history); a step that
+    /// requires authentication and has none configured is blocked unless an explicit, still-valid unauthenticated override covers it.</param>
+    public static List<Issue> Check(PerformanceTestDefinition d, PerformanceTestDataProfile? data, PerformanceTestOptions options, IReadOnlySet<string>? observedAuthentication = null)
     {
         var issues = new List<Issue>();
         if (EnvironmentBlock(d.EnvironmentType) is { } env) issues.Add(new(PerformanceReadinessState.UnsafeEnvironment, "environment", env));
@@ -86,6 +88,10 @@ public static partial class PerformanceTestSafety
         if (d.Scenario.Steps.Any(s => !s.Disabled && PerformanceScenarioRuntime.EffectiveAuthentication(d, s) is not null) || d.Scenario.Steps.Count == 0 && d.AuthenticationReference is not null)
             issues.Add(new(PerformanceReadinessState.NeedsAuthentication, "authentication",
                 "Authenticated performance tests need a non-interactive, approved test credential; BirkNext does not yet issue one for load tests (interactive or MFA logins are never simulated). Use an unauthenticated test endpoint or run this test outside BirkNext."));
+        // Observed/declared authentication with nothing configured: a default None is not a confirmation that running unauthenticated is intended.
+        foreach (var r in PerformanceScenarioRuntime.AuthenticationRequirements(d, observedAuthentication).Where(r => r.Blocking))
+            issues.Add(new(PerformanceReadinessState.NeedsAuthentication, "authentication",
+                $"Run blocked — authentication required. Step '{r.Step}' · {PerformanceScenarioRuntime.AuthenticationRequirementProblem(r)}."));
 
         if (d.Scenario.Steps.Count == 0) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "The scenario has no request steps."));
         if (d.Scenario.Steps.Count > 20) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "A scenario may contain at most 20 steps."));

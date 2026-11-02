@@ -1,0 +1,76 @@
+@using System.Globalization
+@using BirkNext.PerformanceTests
+@using A = BirkNext.PerformanceTests.PerformanceExecutionAssessment
+@using P = BirkNext.Web.Services.PerformanceTestPresentation
+
+@* Execution evidence of one run, read from the run's persisted evidence only: how far execution got, whether load generation was confirmed,
+   why it stopped, and what was cleaned up. Nothing here is estimated; a value that was not observed says so (Unknown / Not instrumented). *@
+<section class="prr-card pee" aria-labelledby="pee-h" data-testid="pt-execution-evidence" data-level="@A.Level(Run)">
+    <h3 id="pee-h">Execution evidence</h3>
+    @if (StopHeadline is { } headline)
+    {
+        <p class="pee-stop" data-testid="pt-execution-stop">@headline</p>
+    }
+    <p class="pee-summary" data-testid="pt-execution-summary">@A.Summary(Run)</p>
+    @if (Insufficient)
+    {
+        <div class="prr-note pee-insufficient" role="note" data-testid="pt-execution-insufficient">
+            <strong>Execution evidence insufficient</strong>
+            <p>BirkNext could not confirm that load requests were generated before the run @(Run.State == PerformanceRunState.Cancelled ? "was cancelled" : "stopped").
+                @(Run.ExecutionEvidence?.Telemetry is PerformanceTelemetryState.NotInstrumented or null ? "This provider reported no request telemetry, so whether HTTP traffic occurred cannot be determined." : "")</p>
+        </div>
+    }
+    <table class="prr-table pee-milestones" data-testid="pt-execution-milestones">
+        <caption class="visually-hidden">Execution milestones</caption>
+        <thead><tr><th scope="col">Evidence</th><th scope="col">Status</th><th scope="col">At</th></tr></thead>
+        <tbody>
+            @foreach (var m in A.Milestones(Run))
+            {
+                <tr data-testid="pt-execution-milestone" data-key="@m.Key" data-status="@m.Status"><th scope="row">@m.Label</th><td>@m.Status</td><td>@(m.At is { } at ? Time(at) : "—")</td></tr>
+            }
+            <tr data-testid="pt-execution-milestone" data-key="requests-count"><th scope="row">Requests observed</th><td>@A.RequestsLabel(Run)</td><td></td></tr>
+        </tbody>
+    </table>
+    @if (Run.ExecutionEvidence is { } e)
+    {
+        @if (e.Timeline.Count > 0)
+        {
+            <details class="pee-details" data-testid="pt-execution-timeline">
+                <summary>Execution timeline (@e.Timeline.Count)</summary>
+                <ol class="prr-list">@foreach (var t in e.Timeline) { <li><time>@Time(t.At)</time> · @t.Event@(t.Detail is { } d ? $" — {d}" : "")</li> }</ol>
+            </details>
+        }
+        <details class="pee-details" data-testid="pt-execution-technical">
+            <summary>Technical details</summary>
+            <dl class="prr-mini">
+                <div><dt>Provider</dt><dd>@Run.ProviderId@(Run.ProviderVersion is { } v ? $" {v}" : "")</dd></div>
+                <div><dt>Image</dt><dd>@(Run.ContainerImage ?? "—")</dd></div>
+                <div><dt>Container</dt><dd data-testid="pt-execution-container">@(e.ContainerId ?? "—") · @e.Container</dd></div>
+                <div><dt>k6 process</dt><dd>@e.K6Process</dd></div>
+                <div><dt>Exit code</dt><dd data-testid="pt-execution-exit">@(e.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "Unknown")</dd></div>
+                <div><dt>Result artifact</dt><dd data-testid="pt-execution-artifact">@e.ResultArtifact@(e.ResultArtifactDetail is { } ad ? $" — {ad}" : "")</dd></div>
+                <div><dt>Request telemetry</dt><dd>@e.Telemetry@(e.TelemetrySource is { } ts ? $" · {ts}" : "")</dd></div>
+                <div><dt>Last k6 heartbeat</dt><dd>@(e.LastHeartbeatAt is { } hb ? Time(hb) : "—")</dd></div>
+                <div><dt>Last provider status</dt><dd>@(e.LastProviderPollAt is { } poll ? Time(poll) : "—")</dd></div>
+                <div><dt>Stop reason</dt><dd>@(e.StopReason == PerformanceStopReason.None ? "—" : $"{A.StopReasonLabel(e.StopReason)}{(e.StopDetail is { } sd ? $" — {sd}" : "")}")</dd></div>
+                <div><dt>Container cleanup</dt><dd>@(e.ContainerRemoved switch { true => "Completed", false => "Not confirmed", _ => "—" })</dd></div>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(e.LogTail)) { <pre class="prr-log" data-testid="pt-execution-log">@e.LogTail</pre> }
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PerformanceTestRun Run { get; set; } = default!;
+
+    private static string Time(DateTimeOffset at) => at.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+    /// <summary>"Cancelled by user — 1:35 elapsed": the observed cause, never a generic "Cancelled".</summary>
+    private string? StopHeadline => Run.ExecutionEvidence is { StopReason: not PerformanceStopReason.None } e && !Run.IsActive
+        ? $"{A.StopReasonLabel(e.StopReason)}{(Run.StartedAt is { } s && (Run.FinishedAt ?? e.StopRequestedAt) is { } f ? $" — {P.Duration((int)(f - s).TotalSeconds)} elapsed" : "")}"
+        : null;
+
+    /// <summary>A stopped (not completed) run without positive request evidence: the result cannot say whether load was generated.</summary>
+    private bool Insufficient => !Run.IsActive && Run.State is not (PerformanceRunState.Completed or PerformanceRunState.Blocked) && !A.LoadConfirmed(Run)
+        && !(Run.ExecutionEvidence is { Telemetry: PerformanceTelemetryState.Collected, RequestsObserved: 0 });
+}

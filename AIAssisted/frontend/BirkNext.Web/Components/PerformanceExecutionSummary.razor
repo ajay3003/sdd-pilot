@@ -1,0 +1,151 @@
+@using System.Globalization
+@using BirkNext.LocalHttpsProxy
+@using BirkNext.PerformanceTests
+@using R = BirkNext.PerformanceTests.PerformanceScenarioRuntime
+@using P = BirkNext.Web.Services.PerformanceTestPresentation
+
+@* Execution summary immediately above Run: the executable scenario as it will run (saved definition + backend readiness + persisted Endpoint
+   Discovery evidence), the authentication decision per operation, and endpoint-evidence freshness. The estimate is labelled as an estimate. *@
+<section class="ptc-panel pes" aria-labelledby="pes-h" data-testid="pt-execution-summary">
+    <h3 id="pes-h">Execution summary</h3>
+    <table class="prr-table pes-table" data-testid="pt-execution-summary-table">
+        <caption class="visually-hidden">What this run will execute</caption>
+        <tbody>
+            <tr data-key="target"><th scope="row">Target</th><td>@Definition.EnvironmentName · <span class="ptc-break">@Definition.TargetOrigin</span></td></tr>
+            <tr data-key="steps"><th scope="row">Steps</th><td>@Enabled.Count enabled@(Definition.Scenario.Steps.Count > Enabled.Count ? $" ({Definition.Scenario.Steps.Count - Enabled.Count} disabled)" : "")</td></tr>
+            <tr data-key="values"><th scope="row">Runtime values</th><td>@Values.Resolved/@Values.Total resolved</td></tr>
+            <tr data-key="evidence"><th scope="row">Endpoint evidence</th><td data-testid="pt-summary-evidence">@EvidenceSummary</td></tr>
+            <tr data-key="authentication" data-state="@AuthState"><th scope="row">Authentication</th><td data-testid="pt-summary-auth">@AuthLabel</td></tr>
+            <tr data-key="load"><th scope="row">Load</th><td>@P.Load(Definition.Workload)</td></tr>
+            <tr data-key="duration"><th scope="row">Configured duration</th><td>@P.Duration(Definition.Workload.TotalSeconds)</td></tr>
+            <tr data-key="estimate"><th scope="row">Estimated requests</th><td data-testid="pt-summary-estimate">@(Readiness is { EstimatedMaxRequests: > 0 } rr ? $"at most ~{rr.EstimatedMaxRequests.ToString("N0", CultureInfo.InvariantCulture)} (upper-bound estimate from the workload — not measured traffic)" : "Not estimated")</td></tr>
+            <tr data-key="provider"><th scope="row">Execution provider</th><td>@(Readiness?.Provider?.DisplayName ?? Definition.ProviderId) / container@(Readiness?.Provider?.Runtime is { } rt ? $" ({rt.DisplayName})" : "")</td></tr>
+            <tr data-key="tls"><th scope="row">TLS trust</th><td>@ItemLabel("ca-trust", "tls")</td></tr>
+            <tr data-key="reachability"><th scope="row">Reachability</th><td>@ItemLabel("network")</td></tr>
+        </tbody>
+    </table>
+
+    @if (Blocking.Count > 0)
+    {
+        <div class="ptc-empty ptc-empty-blocked pes-auth" role="alert" data-testid="pt-auth-blocked">
+            <span class="ptc-empty-icon" aria-hidden="true">!</span>
+            <div>
+                <h4>Run blocked — authentication required</h4>
+                <ul class="sd-list">
+                    @foreach (var r in Blocking)
+                    {
+                        <li data-testid="pt-auth-blocked-operation"><code>@r.Operation</code> — @(r.State == StepAuthenticationState.OverrideOutdated
+                            ? "the earlier decision to run without authentication no longer matches the scenario or endpoint evidence."
+                            : $"{r.Requirement}, but no valid authentication configuration is available for this operation.")</li>
+                    }
+                </ul>
+                @if (!_confirming)
+                {
+                    <p class="pes-actions">
+                        <button type="button" class="btn-primary" @onclick="OnConfigureAuthentication" data-testid="pt-auth-configure">Configure authentication</button>
+                        <button type="button" class="btn-secondary" @onclick="() => _confirming = true" data-testid="pt-auth-run-without">Run intentionally without authentication…</button>
+                    </p>
+                }
+                else
+                {
+                    <div class="prr-note" data-testid="pt-auth-confirm">
+                        <p><strong>@UnauthenticatedExecutionOverride.Statement</strong></p>
+                        <p>The decision is recorded with the time and the exact operations; it is shown with every run and becomes invalid when the scenario or endpoint evidence changes.
+                            It does not bypass any other safety rule.</p>
+                        <p class="pes-actions">
+                            <button type="button" class="btn-secondary" @onclick="() => _confirming = false" data-testid="pt-auth-confirm-cancel">Use configured authentication instead</button>
+                            <button type="button" class="btn-primary" @onclick="ConfirmAsync" data-testid="pt-auth-confirm-yes">Run intentionally without authentication</button>
+                        </p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (Intentional.Count > 0 && Definition.UnauthenticatedOverride is { } acknowledged)
+    {
+        <p class="prr-note" data-testid="pt-auth-intentional"><strong>Intentionally unauthenticated</strong> — acknowledged @P.Utc(acknowledged.AcknowledgedAt)@(acknowledged.AcknowledgedBy is { } by ? $" by {by}" : "")
+            for @string.Join(", ", Intentional.Select(r => r.Identity).Distinct()). Responses may be 401/403 or follow a different code path.</p>
+    }
+
+    @if (Evidence.Count > 0)
+    {
+        var newer = Evidence.Where(e => e.Info.State == PerformanceEndpointEvidenceState.NewerAvailable).ToList();
+        <details class="pes-evidence" open="@(newer.Count > 0)" data-testid="pt-endpoint-evidence">
+            <summary>Endpoint evidence — @EvidenceSummary</summary>
+            @if (newer.Count > 0)
+            {
+                <div class="prr-note" data-testid="pt-endpoint-newer">
+                    <strong>Newer endpoint evidence available</strong>
+                    <p>@newer.Count step(s) were reviewed against older observations (latest Endpoint Discovery @(History?.LatestRun is { } lr ? P.Utc(lr.CompletedAt ?? lr.StartedAt) : "—")).
+                        Authentication requirements changed: @newer.Count(e => e.Info.AuthenticationRequirementChanged). Reviewed values are never overwritten silently.</p>
+                    <button type="button" class="btn-secondary" @onclick="OnReviewScenario" data-testid="pt-endpoint-review">Review latest values</button>
+                </div>
+            }
+            <ul class="sd-list">
+                @foreach (var (step, info) in Evidence)
+                {
+                    <li data-testid="pt-endpoint-step" data-state="@info.State"><strong>@step.Name</strong> · <code>@info.Identity</code> · @PerformanceEndpointEvidence.Label(info.State)
+                        @(info.ReviewedAgainst is { } rv ? $" · reviewed against {P.Utc(rv)}" : "")@(info.LatestObserved is { } lo ? $" · last observed {P.Utc(lo)}" : "")</li>
+                }
+            </ul>
+        </details>
+    }
+</section>
+
+@code {
+    /// <summary>The saved definition that a run executes (never unsaved form state).</summary>
+    [Parameter, EditorRequired] public PerformanceTestDefinition Definition { get; set; } = default!;
+    [Parameter] public PerformanceTestReadiness? Readiness { get; set; }
+    /// <summary>Persisted Endpoint Discovery history of this environment and target host (null = not loaded / unreadable).</summary>
+    [Parameter] public EndpointObservationHistoryView? History { get; set; }
+    [Parameter] public EventCallback OnConfigureAuthentication { get; set; }
+    [Parameter] public EventCallback OnReviewScenario { get; set; }
+    /// <summary>The explicit decision to run the listed operations without authentication (the page records it as a new definition version).</summary>
+    [Parameter] public EventCallback<UnauthenticatedExecutionOverride> OnAcknowledgeUnauthenticated { get; set; }
+
+    private bool _confirming;
+
+    private List<HttpPerformanceStep> Enabled => Definition.Scenario.Steps.Where(s => !s.Disabled).ToList();
+    private (int Resolved, int Total, int TestDataAssets) Values => R.ValuesSummary(Definition.Scenario);
+
+    /// <summary>Operation identities Endpoint Discovery observed with authentication — the same set the backend reads.</summary>
+    private IReadOnlySet<string>? ObservedAuthentication => History?.Operations.Where(o => o.AuthObserved).Select(o => o.Identity).ToHashSet(StringComparer.Ordinal);
+    private IReadOnlyList<StepAuthenticationRequirement> Requirements => R.AuthenticationRequirements(Definition, ObservedAuthentication);
+    private List<StepAuthenticationRequirement> Blocking => Requirements.Where(r => r.Blocking).ToList();
+    private List<StepAuthenticationRequirement> Intentional => Requirements.Where(r => r.State == StepAuthenticationState.IntentionallyUnauthenticated).ToList();
+
+    private string AuthState => Blocking.Count > 0 ? "blocked" : Intentional.Count > 0 ? "intentional" : Requirements.Any(r => r.State == StepAuthenticationState.Configured) ? "configured" : "not-required";
+    private string AuthLabel => AuthState switch
+    {
+        "blocked" => $"Missing — Blocked ({Blocking.Count} operation{(Blocking.Count == 1 ? "" : "s")} observed or declared with authentication)",
+        "intentional" => "Intentionally unauthenticated (acknowledged)",
+        "configured" => "Configured",
+        _ => "None — no operation was observed or declared with authentication",
+    };
+
+    /// <summary>Discovered steps only: manual steps claim no endpoint provenance.</summary>
+    private List<(HttpPerformanceStep Step, PerformanceEndpointEvidenceInfo Info)> Evidence => History is null ? []
+        : Enabled.Where(s => s.Source is { Origin: ScenarioOperationOrigin.Observed } or { Evidence: ScenarioEvidence.DeclaredAndObserved or ScenarioEvidence.ObservedOnly })
+            .Select(s => (s, PerformanceEndpointEvidence.Of(s, History.Operations.FirstOrDefault(o => o.Identity == R.ObservationIdentity(s)), History.LatestRun, DateTimeOffset.UtcNow))).ToList();
+
+    private string EvidenceSummary
+    {
+        get
+        {
+            var discovered = Enabled.Count(s => s.Source is { Origin: ScenarioOperationOrigin.Observed } or { Evidence: ScenarioEvidence.DeclaredAndObserved or ScenarioEvidence.ObservedOnly });
+            if (discovered == 0) return Enabled.Any(s => s.Source is not null) ? "Declared only" : "Manual steps — no endpoint provenance";
+            if (History is null) return "Unknown — Endpoint Discovery history not loaded";
+            return string.Join(" · ", Evidence.GroupBy(e => e.Info.State).Select(g => $"{g.Count()} {PerformanceEndpointEvidence.Label(g.Key).ToLowerInvariant()}"));
+        }
+    }
+
+    private string ItemLabel(params string[] keys) => Readiness?.Items.FirstOrDefault(i => keys.Contains(i.Key)) is { } item
+        ? item.Blocking ? $"Blocked — {item.Headline}" : item.State == PerformanceReadinessState.Ready ? "Ready" : item.State.ToString()
+        : "Not checked yet";
+
+    private async Task ConfirmAsync()
+    {
+        _confirming = false;
+        await OnAcknowledgeUnauthenticated.InvokeAsync(R.AcknowledgeUnauthenticated(Definition with { UnauthenticatedOverride = null }, ObservedAuthentication, DateTimeOffset.UtcNow, actor: null));
+    }
+}

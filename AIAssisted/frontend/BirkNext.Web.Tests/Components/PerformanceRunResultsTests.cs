@@ -72,9 +72,9 @@ public sealed class PerformanceRunResultsTests : BunitContext
     }
 
     [Theory]
-    [InlineData(PerformanceRunState.Cancelled, "Cancelled", "Partial results — no pass/fail conclusion")]
+    [InlineData(PerformanceRunState.Cancelled, "Cancelled", "Partial — run cancelled · no pass/fail conclusion")]
     [InlineData(PerformanceRunState.ExecutionFailed, "Run failed", "Execution error — not a performance result")]
-    [InlineData(PerformanceRunState.Running, "Run in progress", "Partial metrics may change")]
+    [InlineData(PerformanceRunState.Running, "Run in progress", "Metrics are not available yet")]
     public void Execution_states_are_never_a_performance_verdict(PerformanceRunState state, string primary, string secondary)
     {
         var cut = Render(Run(state));

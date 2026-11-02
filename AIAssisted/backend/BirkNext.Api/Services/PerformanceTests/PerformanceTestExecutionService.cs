@@ -176,7 +176,9 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
 
     public async Task<PerformanceTestReadiness> EvaluateAsync(PerformanceTestDefinition d, PerformanceTestDataProfile? data, bool hasActiveBaseline, CancellationToken ct = default)
     {
-        var issues = PerformanceTestSafety.Check(d, data, options);
+        // Endpoint Discovery evidence is read from the persisted history directly (never from what a browser page happened to load).
+        var endpoint = await EndpointEvidenceAsync(d, ct);
+        var issues = PerformanceTestSafety.Check(d, data, options, endpoint.ObservedAuthentication);
         var provider = await providers.StatusAsync(d.ProviderId, ct);
         var providerIssues = providers.Find(d.ProviderId)?.Validate(d) ?? [];
         var ca = PerformanceCaBundleInspector.Inspect(options.Container.EffectiveCaBundlePath);
@@ -236,7 +238,14 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
             { Category = Safety, Summary = "TLS verification" });
         Item("scenario", "Scenario", By("scenario", "step-name", "method", "path", "header", "status", "think", "body", "graphql", "runtime", "dependency", "output", "variable"),
             $"{d.Scenario.Steps.Count} request step(s), read-only methods{(d.TargetType == PerformanceTargetType.GraphQlHttp ? ", GraphQL query only" : "")}.", Definition, "scenario", PerformanceReadinessActions.EditScenario);
-        Item("authentication", "Authentication", By("authentication"), "None — this definition is explicitly unauthenticated.", Definition, "authentication", null);
+        var auth = PerformanceScenarioRuntime.AuthenticationRequirements(d, endpoint.ObservedAuthentication);
+        var intentional = auth.Where(r => r.State == StepAuthenticationState.IntentionallyUnauthenticated).ToList();
+        Item("authentication", "Authentication", By("authentication"),
+            intentional.Count > 0 && d.UnauthenticatedOverride is { } acknowledged
+                ? $"Intentionally unauthenticated — acknowledged {acknowledged.AcknowledgedAt:yyyy-MM-dd HH:mm} UTC{(acknowledged.AcknowledgedBy is { } by ? $" by {by}" : "")} for {intentional.Count} operation(s) observed with authentication ({string.Join(", ", intentional.Select(r => r.Identity).Distinct())}). Responses may be 401/403 or follow a different code path."
+                : "None — no enabled step was observed or declared with authentication.",
+            Definition, "authentication", PerformanceReadinessActions.EditScenario);
+        if (endpoint.Item is { } endpointItem) items.Add(endpointItem);
         var central = PerformanceTestSafety.UsesCentralTestData(d);
         Item("testdata", "Test data", By("testdata", "placeholder"),
             central ? $"{PerformanceCentralTestData.Mappings(d).Count()} mapping(s) to central Test Data (values stay in Test Data; resolved by the backend at run time)."
@@ -270,6 +279,42 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
 
     /// <summary>Central Test Data mappings (approved, right type, right environment) and contract drift of declared steps — exact blockers
     /// ("Test Data missing for {personId}", "Contract changed · review required: request body changed"), never a generic "needs configuration".</summary>
+    /// <summary>
+    /// Endpoint evidence for the scenario's steps from the persisted Endpoint Discovery history of this environment and target host: which operation
+    /// identities were observed with authentication (an authentication requirement), and — informational, never blocking — whether each discovered
+    /// step's evidence is current, newer than when it was reviewed, historical, or no longer in the history. Manual steps claim no provenance.
+    /// </summary>
+    private async Task<(IReadOnlySet<string>? ObservedAuthentication, PerformanceReadinessItem? Item)> EndpointEvidenceAsync(PerformanceTestDefinition d, CancellationToken ct)
+    {
+        if (scopes is null || LocalHttpsProxy.EndpointObservationHistoryService.HostOf(d.TargetOrigin) is not { } host) return (null, null);
+        BirkNext.LocalHttpsProxy.EndpointObservationHistoryView view;
+        try
+        {
+            using var scope = scopes.CreateScope();
+            if (scope.ServiceProvider.GetService<LocalHttpsProxy.EndpointObservationHistoryService>() is not { } history) return (null, null);
+            view = await history.ViewAsync(d.EnvironmentId, host, null, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return (null, new PerformanceReadinessItem("endpoint-evidence", "Endpoint evidence", PerformanceReadinessState.Optional,
+                "Endpoint Discovery history could not be read; observed authentication requirements were not re-checked against it.", false)
+                { Category = PerformanceReadinessCategories.Optional, Summary = "endpoint evidence" });
+        }
+        var observedAuth = view.Operations.Where(o => o.AuthObserved).Select(o => o.Identity).ToHashSet(StringComparer.Ordinal);
+        var byIdentity = view.Operations.ToDictionary(o => o.Identity, StringComparer.Ordinal);
+        var discovered = d.Scenario.Steps.Where(s => !s.Disabled && s.Source is { Origin: ScenarioOperationOrigin.Observed } or { Evidence: ScenarioEvidence.DeclaredAndObserved or ScenarioEvidence.ObservedOnly }).ToList();
+        if (discovered.Count == 0) return (observedAuth, null);
+        var states = discovered.Select(s => PerformanceEndpointEvidence.Of(s, byIdentity.GetValueOrDefault(PerformanceScenarioRuntime.ObservationIdentity(s)), view.LatestRun, DateTimeOffset.UtcNow)).ToList();
+        var newer = states.Count(e => e.State == PerformanceEndpointEvidenceState.NewerAvailable);
+        var missing = states.Count(e => e.State == PerformanceEndpointEvidenceState.NotInHistory);
+        var detail = string.Join(" · ", states.GroupBy(e => e.State).Select(g => $"{g.Count()} {PerformanceEndpointEvidence.Label(g.Key).ToLowerInvariant()}"))
+            + (view.LatestRun is { } latest ? $" — latest Endpoint Discovery {latest.CompletedAt ?? latest.StartedAt:yyyy-MM-dd HH:mm} UTC." : ".")
+            + (newer > 0 ? " Review latest values before running; reviewed values are never overwritten silently." : "")
+            + (missing > 0 ? " A step not in the history keeps its reviewed values (it is not removed)." : "");
+        return (observedAuth, new PerformanceReadinessItem("endpoint-evidence", "Endpoint evidence", newer + missing > 0 ? PerformanceReadinessState.Optional : PerformanceReadinessState.Ready, detail, false)
+            { Category = PerformanceReadinessCategories.Definition, Summary = "endpoint evidence", Action = newer > 0 ? PerformanceReadinessActions.EditScenario : null });
+    }
+
     private async Task ScenarioEvidenceItemsAsync(PerformanceTestDefinition d, List<PerformanceReadinessItem> items, CancellationToken ct)
     {
         if (scopes is null) return;
@@ -417,6 +462,7 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
     /// <summary>Cancels every active run and waits (bounded) for each to stop its provider container and resource collectors. Used at API shutdown.</summary>
     public async Task CancelAllAsync(TimeSpan wait)
     {
+        foreach (var tracker in _trackers.Values) tracker.RequestStop(PerformanceStopReason.ApplicationShutdown, "BirkNext is shutting down.");
         foreach (var cts in _active.Values) { try { cts.Cancel(); } catch (ObjectDisposedException) { } }
         var tasks = _tasks.Values.ToArray();
         if (tasks.Length > 0) { try { await Task.WhenAll(tasks).WaitAsync(wait); } catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { } }
@@ -455,6 +501,105 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         }, config, windows);
     }
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _active = new();
+    private readonly ConcurrentDictionary<Guid, RunTracker> _trackers = new();
+
+    /// <summary>
+    /// The one live record of an executing run. Every in-flight save (lifecycle, resource rounds, live execution evidence, cancel) goes through
+    /// it, serialised, so concurrent writers never overwrite each other's fields; once the run is finished, a late update is a no-op (the store
+    /// also refuses to change a finished run). The stop reason is set once, by whoever observed the cause first (user, watchdog, shutdown).
+    /// </summary>
+    private sealed class RunTracker(PerformanceTestRun run, IServiceScopeFactory scopes, TimeProvider clock)
+    {
+        private readonly object _gate = new();
+        private readonly SemaphoreSlim _save = new(1, 1);
+        private PerformanceTestRun _run = run with { ExecutionEvidence = run.ExecutionEvidence ?? new PerformanceExecutionEvidence() };
+        private bool _finished;
+
+        public PerformanceTestRun Current { get { lock (_gate) return _run; } }
+        public PerformanceExecutionEvidence Evidence => Current.ExecutionEvidence!;
+        public void Update(Func<PerformanceTestRun, PerformanceTestRun> change) { lock (_gate) _run = change(_run); }
+        public void Evidence_(Func<PerformanceExecutionEvidence, PerformanceExecutionEvidence> change) => Update(r => r with { ExecutionEvidence = change(r.ExecutionEvidence ?? new()) });
+        public void Advance(PerformanceRunStage stage) => Evidence_(e => PerformanceLiveMonitor.Advance(e, stage, clock.GetUtcNow()));
+        public void Event(string name, string? detail = null) => Evidence_(e => PerformanceLiveMonitor.Event(e, clock.GetUtcNow(), name, detail));
+
+        public bool RequestStop(PerformanceStopReason reason, string detail)
+        {
+            lock (_gate)
+            {
+                var e = _run.ExecutionEvidence ?? new();
+                if (_finished || e.StopReason != PerformanceStopReason.None) return false;
+                var now = clock.GetUtcNow();
+                _run = _run with { ExecutionEvidence = PerformanceLiveMonitor.Event(e with { StopReason = reason, StopRequestedAt = now, StopDetail = detail }, now,
+                    PerformanceExecutionAssessment.StopReasonLabel(reason), detail) };
+                return true;
+            }
+        }
+
+        public async Task<PerformanceTestRun> PersistAsync()
+        {
+            await _save.WaitAsync();
+            try
+            {
+                if (_finished) return Current;
+                using var scope = scopes.CreateScope();
+                return await scope.ServiceProvider.GetRequiredService<PerformanceTestStore>().SaveRunAsync(Current, CancellationToken.None);
+            }
+            catch (InvalidOperationException) { _finished = true; return Current; }
+            finally { _save.Release(); }
+        }
+
+        /// <summary>The single terminal write; afterwards every update is ignored (no second terminal outcome, no late overwrite).</summary>
+        public async Task<PerformanceTestRun> FinishAsync(Func<PerformanceTestStore, PerformanceTestRun, Task<PerformanceTestRun>> finish)
+        {
+            await _save.WaitAsync();
+            try
+            {
+                if (_finished) return Current;
+                using var scope = scopes.CreateScope();
+                var done = await finish(scope.ServiceProvider.GetRequiredService<PerformanceTestStore>(), Current);
+                lock (_gate) { _run = done; _finished = true; }
+                return done;
+            }
+            finally { _save.Release(); }
+        }
+    }
+
+    /// <summary>
+    /// Live execution evidence while the provider runs: observes the run container through the runtime and reads the provider's own telemetry
+    /// stream (k6 JSON output), applies <see cref="PerformanceLiveMonitor"/> and persists. The watchdog stops the run with its own reason —
+    /// never as a user cancellation.
+    /// </summary>
+    private async Task MonitorAsync(RunTracker tracker, IPerformanceTestProvider provider, IPerformanceTelemetryReader? reader, Guid runId, DateTimeOffset providerStartedAt, CancellationToken stop)
+    {
+        var interval = TimeSpan.FromSeconds(Math.Max(1, options.LiveMonitorSeconds));
+        var containerInstrumented = true;
+        while (!stop.IsCancellationRequested)
+        {
+            try { await Task.Delay(interval, stop); } catch (OperationCanceledException) { return; }
+            PerformanceContainerObservation? observed = null;
+            try
+            {
+                observed = await provider.ObserveAsync(runId, stop);
+                if (observed is null) containerInstrumented = false;
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { logger.LogDebug("Run {RunId}: container observation failed ({Type}).", runId, ex.GetType().Name); }
+            var telemetry = reader?.Read();
+            PerformanceLiveMonitor.WatchdogStop? watchdog = null;
+            tracker.Evidence_(e =>
+            {
+                var (next, decision) = PerformanceLiveMonitor.Apply(e, _clock.GetUtcNow(), providerStartedAt, observed, containerInstrumented, telemetry, options);
+                watchdog = decision;
+                return next;
+            });
+            if (watchdog is { } w && tracker.RequestStop(w.Reason, w.Detail) && _active.TryGetValue(runId, out var cts))
+            {
+                logger.LogWarning("Performance test {RunId} stopped by the watchdog: {Reason}.", runId, w.Reason);
+                try { cts.Cancel(); } catch (ObjectDisposedException) { }
+            }
+            await tracker.PersistAsync();
+        }
+    }
 
     /// <summary>True while a run is executing in this process (the reset refuses to run under an active writer).</summary>
     public bool HasActiveRuns => !_active.IsEmpty;
@@ -519,8 +664,10 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
             Host = new PerformanceExecutionHost(RuntimeInformation.OSDescription, Environment.ProcessorCount, typeof(PerformanceTestExecutionService).Assembly.GetName().Version?.ToString() ?? "unknown"),
         };
         if (!_activeByEnvironment.TryAdd(environmentId, run.RunId)) return new(null, [], "A performance test is already running for this environment.");
+        run = run with { ExecutionEvidence = PerformanceLiveMonitor.Event(new PerformanceExecutionEvidence { StageChangedAt = now }, now, "Queued", $"readiness re-evaluated by the backend ({readiness.Items.Count} checks)") };
+        _trackers[run.RunId] = new RunTracker(run, scopes, _clock);
         try { await store.SaveRunAsync(run, ct); }
-        catch { _activeByEnvironment.TryRemove(environmentId, out _); throw; }
+        catch { _activeByEnvironment.TryRemove(environmentId, out _); _trackers.TryRemove(run.RunId, out _); throw; }
         var cts = new CancellationTokenSource();
         _active[run.RunId] = cts;
         LastExecution = Task.Run(() => ExecuteAsync(run, data, cts.Token));
@@ -537,10 +684,18 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         if (!run.IsActive) return run;
         if (_active.TryGetValue(runId, out var cts))
         {
-            var cancelling = run with { State = PerformanceRunState.Cancelling, StateReason = "Cancellation requested." };
-            await store.SaveRunAsync(cancelling, ct);
+            if (_trackers.TryGetValue(runId, out var tracker))
+            {
+                tracker.RequestStop(PerformanceStopReason.CancelledByUser, "Cancel requested by the user.");
+                tracker.Update(r => r with { State = PerformanceRunState.Cancelling, StateReason = "Cancellation requested by the user." });
+                var cancelling = await tracker.PersistAsync();
+                try { cts.Cancel(); } catch (ObjectDisposedException) { }
+                return cancelling;
+            }
+            var requested = run with { State = PerformanceRunState.Cancelling, StateReason = "Cancellation requested by the user." };
+            await store.SaveRunAsync(requested, ct);
             cts.Cancel();
-            return cancelling;
+            return requested;
         }
         return await ReconcileRunAsync(store, run, ct);
     }
@@ -555,27 +710,48 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
     private async Task<PerformanceTestRun> ReconcileRunAsync(PerformanceTestStore store, PerformanceTestRun run, CancellationToken ct)
     {
         if (_active.ContainsKey(run.RunId)) return run;
-        var failed = run with { State = PerformanceRunState.ExecutionFailed, StateReason = "BirkNext stopped while the run was active; the provider result is unknown.", FinishedAt = _clock.GetUtcNow(),
-            ThresholdResults = PerformanceTestRules.EvaluateThresholds(run.DefinitionSnapshot.Thresholds, null, false) };
+        var now = _clock.GetUtcNow();
+        var evidence = run.ExecutionEvidence is { } e
+            ? PerformanceLiveMonitor.Event(e with { Stage = PerformanceRunStage.Finished, StageChangedAt = now, StopReason = e.StopReason == PerformanceStopReason.None ? PerformanceStopReason.ApplicationShutdown : e.StopReason,
+                Telemetry = e.Telemetry == PerformanceTelemetryState.Receiving ? PerformanceTelemetryState.Unavailable : e.Telemetry }, now,
+                "Interrupted / orphaned", "BirkNext stopped while the run was active; evidence recorded before that is kept, nothing after it is known.")
+            : null;
+        var failed = run with { State = PerformanceRunState.ExecutionFailed, StateReason = "Interrupted — BirkNext stopped while the run was active; the provider result is unknown.", FinishedAt = now,
+            ThresholdResults = PerformanceTestRules.EvaluateThresholds(run.DefinitionSnapshot.Thresholds, null, false), ExecutionEvidence = evidence };
         return await store.SaveRunAsync(failed, ct);
+    }
+
+    /// <summary>One run as stored, reconciled first when it claims to be active but no longer executes in this process (polling never shows a stale "Running").</summary>
+    public async Task<PerformanceTestRun?> CurrentRunAsync(PerformanceTestStore store, Guid runId, CancellationToken ct = default)
+    {
+        var run = await store.RunAsync(runId, ct);
+        return run is { IsActive: true } && !_active.ContainsKey(runId) ? await ReconcileRunAsync(store, run, ct) : run;
     }
 
     private async Task ExecuteAsync(PerformanceTestRun queued, PerformanceTestDataProfile? data, CancellationToken ct)
     {
+        var tracker = _trackers.GetOrAdd(queued.RunId, _ => new RunTracker(queued, scopes, _clock));
         var run = queued;
         Resources.ResourceObservationSession? session = null;
         DateTimeOffset? workloadStart = null, workloadEnd = null;
+        using var monitorStop = new CancellationTokenSource();
+        Task? monitor = null;
+        async Task StopMonitorAsync()
+        {
+            monitorStop.Cancel();
+            if (monitor is not null) { try { await monitor; } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
+        }
         try
         {
-            using var scope = scopes.CreateScope();
-            var store = scope.ServiceProvider.GetRequiredService<PerformanceTestStore>();
-            run = await store.SaveRunAsync(run with { State = PerformanceRunState.Preparing }, CancellationToken.None);
+            tracker.Update(r => r with { State = PerformanceRunState.Preparing });
+            tracker.Advance(PerformanceRunStage.Preparing);
+            run = await tracker.PersistAsync();
             // Safety re-checked immediately before the provider starts (the definition snapshot, not whatever the UI shows).
             var blockers = PerformanceTestSafety.Check(run.DefinitionSnapshot, data, options);
             if (blockers.Count > 0)
             {
-                await store.SaveRunAsync(run with { State = PerformanceRunState.Blocked, StateReason = string.Join(" ", blockers.Select(b => b.Message)), FinishedAt = _clock.GetUtcNow(),
-                    ThresholdResults = PerformanceTestRules.EvaluateThresholds(run.DefinitionSnapshot.Thresholds, null, false) }, CancellationToken.None);
+                await tracker.FinishAsync((store, r) => store.SaveRunAsync(r with { State = PerformanceRunState.Blocked, StateReason = string.Join(" ", blockers.Select(b => b.Message)), FinishedAt = _clock.GetUtcNow(),
+                    ThresholdResults = PerformanceTestRules.EvaluateThresholds(r.DefinitionSnapshot.Thresholds, null, false), ExecutionEvidence = Ended(r.ExecutionEvidence, "Blocked before start") }, CancellationToken.None));
                 return;
             }
             var provider = providers.Find(run.ProviderId)!;
@@ -583,23 +759,36 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
             var reach = await providers.CheckReachabilityAsync(run.DefinitionSnapshot, ct);
             if (!reach.Reachable)
             {
-                await store.SaveRunAsync(run with { State = PerformanceRunState.Blocked, StateReason = reach.Detail, FinishedAt = _clock.GetUtcNow(), Reachability = reach,
-                    ThresholdResults = PerformanceTestRules.EvaluateThresholds(run.DefinitionSnapshot.Thresholds, null, false) }, CancellationToken.None);
+                await tracker.FinishAsync((store, r) => store.SaveRunAsync(r with { State = PerformanceRunState.Blocked, StateReason = reach.Detail, FinishedAt = _clock.GetUtcNow(), Reachability = reach,
+                    ThresholdResults = PerformanceTestRules.EvaluateThresholds(r.DefinitionSnapshot.Thresholds, null, false), ExecutionEvidence = Ended(r.ExecutionEvidence, "Blocked — target unreachable from the container network") }, CancellationToken.None));
                 return;
             }
-            run = await store.SaveRunAsync(run with { State = PerformanceRunState.Running, StartedAt = _clock.GetUtcNow(), Reachability = reach }, CancellationToken.None);
+            var startedAt = _clock.GetUtcNow();
+            // "Running" (the persisted state) means the provider was started — the stage and evidence below say how far execution actually got.
+            tracker.Update(r => r with { State = PerformanceRunState.Running, StartedAt = startedAt, Reachability = reach });
+            tracker.Evidence_(e => e with { ExpectedWorkloadEndAt = startedAt.AddSeconds(run.DefinitionSnapshot.Workload.TotalSeconds), Container = PerformanceObservedState.NotStarted });
+            tracker.Advance(PerformanceRunStage.StartingContainer);
+            run = await tracker.PersistAsync();
             // Resource observation starts with the workload; partial evidence is persisted after each round so it survives a cancel or a restart.
-            var running = run;
             session = StartResourceSession(run, async snapshot =>
             {
-                using var persistScope = scopes.CreateScope();
-                await persistScope.ServiceProvider.GetRequiredService<PerformanceTestStore>().SaveRunAsync(running with { Resources = snapshot }, CancellationToken.None);
+                tracker.Update(r => r with { Resources = snapshot });
+                await tracker.PersistAsync();
             });
             workloadStart = run.StartedAt;
             var timeout = TimeSpan.FromSeconds(run.DefinitionSnapshot.Workload.TotalSeconds + options.ProviderTimeoutGraceSeconds);
             var workDir = Path.Combine(Path.GetTempPath(), "birknext-performance", run.RunId.ToString("N"));
-            var result = await provider.ExecuteAsync(new PerformanceProviderInput(run.RunId, run.DefinitionSnapshot, data, workDir, timeout), null, ct);
+            var input = new PerformanceProviderInput(run.RunId, run.DefinitionSnapshot, data, workDir, timeout);
+            var reader = provider.OpenTelemetry(input);
+            tracker.Evidence_(e => e with
+            {
+                Telemetry = reader is null ? PerformanceTelemetryState.NotInstrumented : PerformanceTelemetryState.NotYetReceived, TelemetrySource = reader?.Source,
+            });
+            monitor = MonitorAsync(tracker, provider, reader, run.RunId, startedAt, monitorStop.Token);
+            var result = await provider.ExecuteAsync(input, null, ct);
+            await StopMonitorAsync();
             workloadEnd = _clock.GetUtcNow();
+            tracker.Advance(PerformanceRunStage.CollectingResults);
             // Optional post-load cooldown: does the component return toward its steady state once the load stops? Cancelling here keeps the result.
             if (session is not null && result.State == PerformanceRunState.Completed && run.DefinitionSnapshot.ResourceObservation?.CooldownSeconds is > 0 and var cooldown)
             {
@@ -607,28 +796,31 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
                 catch (OperationCanceledException) { }
             }
             if (session is not null) await session.StopAsync();
-            run = await FinishAsync(store, run, result, AssessResources(run, session, workloadStart.Value, workloadEnd.Value));
+            var assessment = AssessResources(tracker.Current, session, workloadStart.Value, workloadEnd.Value);
+            run = await tracker.FinishAsync((store, r) => FinishAsync(store, r, result, assessment));
             logger.LogInformation("Performance test {RunId} for {EnvironmentId}: {State}, verdict {Verdict}, {Requests} request(s).", run.RunId, run.EnvironmentId, run.State, run.Verdict, run.Metrics?.RequestCount ?? 0);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            await StopMonitorAsync();
             if (session is not null) await session.StopAsync();
-            using var scope = scopes.CreateScope();
-            await FinishAsync(scope.ServiceProvider.GetRequiredService<PerformanceTestStore>(), run,
-                new PerformanceProviderResult { State = PerformanceRunState.Cancelled, Reason = "Cancelled before the provider produced a result.", MetricsSource = run.ProviderId },
-                workloadStart is { } ws ? AssessResources(run, session, ws, workloadEnd ?? _clock.GetUtcNow()) : null);
+            tracker.RequestStop(PerformanceStopReason.Unknown, "Stopped without a recorded cause.");
+            var assessment = workloadStart is { } ws ? AssessResources(tracker.Current, session, ws, workloadEnd ?? _clock.GetUtcNow()) : null;
+            await tracker.FinishAsync((store, r) => FinishAsync(store, r,
+                new PerformanceProviderResult { State = PerformanceRunState.Cancelled, Reason = "Stopped before the provider produced a result.", MetricsSource = r.ProviderId }, assessment));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             logger.LogError("Performance test {RunId} failed to execute: {Type}", run.RunId, ex.GetType().Name);
             try
             {
+                await StopMonitorAsync();
                 if (session is not null) await session.StopAsync();
-                using var scope = scopes.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<PerformanceTestStore>().SaveRunAsync(run with { State = PerformanceRunState.ExecutionFailed,
-                    StateReason = $"The performance test could not be executed ({ex.GetType().Name}).", FinishedAt = _clock.GetUtcNow(),
-                    Resources = workloadStart is { } ws ? AssessResources(run, session, ws, workloadEnd ?? _clock.GetUtcNow()) : null,
-                    ThresholdResults = PerformanceTestRules.EvaluateThresholds(run.DefinitionSnapshot.Thresholds, null, false) }, CancellationToken.None);
+                tracker.RequestStop(PerformanceStopReason.ProviderFailure, $"The provider failed ({ex.GetType().Name}).");
+                var assessment = workloadStart is { } ws ? AssessResources(tracker.Current, session, ws, workloadEnd ?? _clock.GetUtcNow()) : null;
+                await tracker.FinishAsync((store, r) => store.SaveRunAsync(r with { State = PerformanceRunState.ExecutionFailed,
+                    StateReason = $"The performance test could not be executed ({ex.GetType().Name}).", FinishedAt = _clock.GetUtcNow(), Resources = assessment,
+                    ThresholdResults = PerformanceTestRules.EvaluateThresholds(r.DefinitionSnapshot.Thresholds, null, false), ExecutionEvidence = Ended(r.ExecutionEvidence, "Execution failed") }, CancellationToken.None));
             }
             catch (Exception inner) when (inner is not OutOfMemoryException) { logger.LogError("Performance test {RunId} result could not be stored: {Type}", run.RunId, inner.GetType().Name); }
         }
@@ -637,8 +829,53 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
             if (session is not null) await session.DisposeAsync();
             _tasks.TryRemove(queued.RunId, out _);
             if (_active.TryRemove(queued.RunId, out var cts)) cts.Dispose();
+            _trackers.TryRemove(queued.RunId, out _);
             _activeByEnvironment.TryRemove(new KeyValuePair<string, Guid>(queued.EnvironmentId, queued.RunId));
         }
+    }
+
+    private PerformanceExecutionEvidence? Ended(PerformanceExecutionEvidence? e, string outcome)
+    {
+        if (e is null) return null;
+        var now = _clock.GetUtcNow();
+        return PerformanceLiveMonitor.Event(e with { Stage = PerformanceRunStage.Finished, StageChangedAt = now }, now, outcome);
+    }
+
+    /// <summary>
+    /// The run's final execution evidence from the provider result: the final telemetry read (taken before the run directory was removed), exit
+    /// code, result artifact, cleanup and log tail; a stop cause is inferred only from the result itself (timeout, unexpected exit), never guessed.
+    /// </summary>
+    internal PerformanceExecutionEvidence? FinalEvidence(PerformanceExecutionEvidence? e, PerformanceProviderResult result)
+    {
+        if (e is null) return null;
+        var now = _clock.GetUtcNow();
+        if (result.Telemetry is { } t)
+        {
+            e = e with { TelemetrySource = result.TelemetrySource ?? e.TelemetrySource };
+            e = t.StreamOpened
+                ? e with
+                {
+                    Telemetry = PerformanceTelemetryState.Collected, ScriptInitializedAt = e.ScriptInitializedAt ?? t.StreamOpenedAt, RequestsObserved = t.Requests, FailedRequestsObserved = t.FailedRequests,
+                    IterationsObserved = t.Iterations, FirstRequestAt = t.FirstRequestAt, LastRequestAt = t.LastRequestAt, FirstIterationAt = t.FirstIterationAt, LastIterationAt = t.LastIterationAt,
+                    LastHeartbeatAt = t.LastHeartbeatAt ?? e.LastHeartbeatAt,
+                }
+                : e with { Telemetry = t.Error is not null ? PerformanceTelemetryState.Failed : PerformanceTelemetryState.Unavailable };
+        }
+        else if (e.Telemetry == PerformanceTelemetryState.Receiving) e = e with { Telemetry = PerformanceTelemetryState.Unavailable };
+        var reason = e.StopReason != PerformanceStopReason.None ? e.StopReason
+            : result.State == PerformanceRunState.TimedOut ? PerformanceStopReason.ExecutionTimeout
+            : result.State == PerformanceRunState.ExecutionFailed && result.ExitCode is { } code && code is not (0 or 99) ? PerformanceStopReason.UnexpectedProcessExit
+            : result.State == PerformanceRunState.ExecutionFailed && e.Container == PerformanceObservedState.Gone && result.ExitCode is null ? PerformanceStopReason.ContainerStoppedExternally
+            : PerformanceStopReason.None;
+        if (reason != e.StopReason) e = PerformanceLiveMonitor.Event(e with { StopReason = reason }, now, PerformanceExecutionAssessment.StopReasonLabel(reason));
+        if (result.ExitCode is { } exit) e = PerformanceLiveMonitor.Event(e with { ExitCode = exit, K6ExitedAt = e.K6ExitedAt ?? now, K6Process = PerformanceObservedState.Exited }, now, "k6 exited", $"exit code {exit}");
+        e = e with
+        {
+            ResultArtifact = result.ResultArtifact, ResultArtifactDetail = result.ResultArtifactDetail, ContainerRemoved = result.ContainerRemoved,
+            LogTail = result.Diagnostics is { Length: > 0 } log ? (log.Length > 4096 ? "…" + log[^4096..] : log) : e.LogTail, AppearsStuck = false,
+        };
+        if (result.ContainerRemoved is { } removed) e = PerformanceLiveMonitor.Event(e, now, "Container cleanup", removed ? "removed" : "not confirmed removed");
+        return PerformanceLiveMonitor.Event(e with { Stage = PerformanceRunStage.Finished, StageChangedAt = now }, now, $"Finished · {result.State}");
     }
 
     /// <summary>Threshold evaluation (only a Completed run with complete metrics is assessed), shared-scoring quality, and drift against the
@@ -654,9 +891,16 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         limitations.Add("Load-test metrics describe this workload from this load generator; they are not single-request API latency (API Quality Review) or browser performance (Frontend Quality Review).");
         limitations.Add("Observability enrichment is not configured; the run window is recorded for later telemetry correlation. Correlation is not root cause.");
         PerformanceDriftAssessment? drift = null;
+        var evidence = FinalEvidence(run.ExecutionEvidence, result);
+        var finishedAt = _clock.GetUtcNow();
+        // The stop cause leads the reason ("Cancelled by user after 1:35. …"); a cleanup outcome never becomes the run's outcome.
+        var stateReason = evidence is { StopReason: not PerformanceStopReason.None } stopped && result.State is not PerformanceRunState.Completed
+            ? $"{PerformanceExecutionAssessment.StopReasonLabel(stopped.StopReason)}{(run.StartedAt is { } began ? $" after {Elapsed(finishedAt - began)}" : "")}. {result.Reason}".Trim()
+            : result.Reason;
         var finished = run with
         {
-            State = result.State, StateReason = result.Reason, FinishedAt = _clock.GetUtcNow(), Metrics = result.Metrics, MetricsPartial = result.MetricsPartial,
+            ExecutionEvidence = evidence,
+            State = result.State, StateReason = stateReason, FinishedAt = finishedAt, Metrics = result.Metrics, MetricsPartial = result.MetricsPartial,
             ThresholdResults = thresholds, Quality = quality, Verdict = verdict, ProviderVersion = result.ProviderVersion ?? run.ProviderVersion, MetricsSource = result.MetricsSource,
             RuntimeId = result.RuntimeId ?? run.RuntimeId, RuntimeVersion = result.RuntimeVersion ?? run.RuntimeVersion, ContainerImage = result.ContainerImage ?? run.ContainerImage,
             ImageDigest = result.ImageDigest ?? run.ImageDigest,
@@ -670,4 +914,6 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         }
         return await store.SaveRunAsync(finished with { Drift = drift, ResourceDrift = resourceDrift }, CancellationToken.None);
     }
+
+    private static string Elapsed(TimeSpan span) => span.TotalHours >= 1 ? span.ToString(@"h\:mm\:ss") : span.ToString(@"m\:ss");
 }

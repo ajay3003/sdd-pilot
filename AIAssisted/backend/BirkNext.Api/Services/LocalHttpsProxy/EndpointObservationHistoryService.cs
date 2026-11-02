@@ -15,12 +15,19 @@ namespace BirkNext.Api.Services.LocalHttpsProxy;
 public sealed class EndpointObservationHistoryService(AppDbContext db, TimeProvider clock)
 {
     public sealed record Normalized(string Identity, string Protocol, string Method, string Path, string? GraphQlType, string? GraphQlName, int Port,
-        DateTimeOffset First, DateTimeOffset Last, int Count, int LastStatus, bool Auth);
+        DateTimeOffset First, DateTimeOffset Last, int Count, int LastStatus, bool Auth,
+        ObservedEndpointConfidence Confidence = ObservedEndpointConfidence.Candidate, RequestProvenance Provenance = RequestProvenance.Unknown);
+
+    /// <summary>Evidence of the application's own API traffic: discovery probes, BirkNext diagnostics, static/configuration/technical resources and
+    /// rejected observations are never history (they are not application operations).</summary>
+    public static bool IsOperationEvidence(ObservedNetworkEndpoint o) =>
+        NetworkEvidencePolicy.ProvenanceOf(o) is not (RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic)
+        && NetworkEvidencePolicy.ResourceOf(o) == NetworkResourceKind.Unknown && o.Confidence != ObservedEndpointConfidence.Rejected;
 
     /// <summary>The target API traffic of a capture, normalized and merged per identity (other hosts, static assets and telemetry excluded).</summary>
     public static IReadOnlyList<Normalized> Normalize(string host, IEnumerable<ObservedNetworkEndpoint> observed) =>
     [
-        .. observed.Where(o => string.Equals(o.Host, host, StringComparison.OrdinalIgnoreCase) && o.Method.Length > 0
+        .. observed.Where(o => string.Equals(o.Host, host, StringComparison.OrdinalIgnoreCase) && o.Method.Length > 0 && IsOperationEvidence(o)
                 && o.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl or ObservedTrafficCategory.OtherHttp)
             .Select(o =>
             {
@@ -37,7 +44,10 @@ public sealed class EndpointObservationHistoryService(AppDbContext db, TimeProvi
             .GroupBy(x => x.Identity, StringComparer.Ordinal)
             .Select(g => new Normalized(g.Key, g.First().Protocol, g.First().Method, g.First().Path, g.First().Type, g.First().Name, g.First().o.Port,
                 g.Min(x => x.o.FirstObservedAt), g.Max(x => x.o.LastObservedAt), g.Sum(x => Math.Max(1, x.o.Count)),
-                g.OrderByDescending(x => x.o.LastObservedAt).First().o.LastStatus, g.Any(x => x.o.AuthObserved))),
+                g.OrderByDescending(x => x.o.LastObservedAt).First().o.LastStatus, g.Any(x => x.o.AuthObserved),
+                (ObservedEndpointConfidence)g.Max(x => (int)x.o.Confidence),
+                g.Any(x => NetworkEvidencePolicy.ProvenanceOf(x.o) == RequestProvenance.ApplicationTraffic) ? RequestProvenance.ApplicationTraffic
+                : g.Any(x => NetworkEvidencePolicy.ProvenanceOf(x.o) == RequestProvenance.BrowserObservedTraffic) ? RequestProvenance.BrowserObservedTraffic : RequestProvenance.Unknown)),
     ];
 
     /// <summary>
@@ -62,6 +72,7 @@ public sealed class EndpointObservationHistoryService(AppDbContext db, TimeProvi
                 record.LastRunId = runId;
                 record.LastStatus = item.LastStatus;
                 record.AuthObserved |= item.Auth;
+                Strengthen(record, item);
                 again++;
             }
             else
@@ -142,11 +153,20 @@ public sealed class EndpointObservationHistoryService(AppDbContext db, TimeProvi
 
     private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a > b ? a : b;
 
+    /// <summary>Confidence and provenance only ever strengthen (Candidate → Verified, unknown → application traffic).</summary>
+    private static void Strengthen(ObservedOperationRecord record, Normalized item)
+    {
+        if (Enum.TryParse<ObservedEndpointConfidence>(record.Confidence, out var known) && item.Confidence > known) record.Confidence = item.Confidence.ToString();
+        if (item.Provenance == RequestProvenance.ApplicationTraffic || record.Provenance == nameof(RequestProvenance.Unknown) && item.Provenance != RequestProvenance.Unknown)
+            record.Provenance = item.Provenance.ToString();
+    }
+
     private static ObservedOperationRecord Record(string environmentId, string host, string runId, Normalized item) => new()
     {
         Id = Guid.NewGuid(), EnvironmentId = environmentId, Host = host, Port = item.Port, Identity = item.Identity, Protocol = item.Protocol, Method = item.Method,
         Path = item.Path, GraphQlOperationType = item.GraphQlType, GraphQlOperationName = item.GraphQlName, FirstObservedAt = item.First, LastObservedAt = item.Last,
         ObservationCount = item.Count, FirstRunId = runId, LastRunId = runId, LastStatus = item.LastStatus, AuthObserved = item.Auth,
+        Confidence = item.Confidence.ToString(), Provenance = item.Provenance.ToString(),
     };
 
     private static ObservedOperationHistory View(ObservedOperationRecord r) => new()
@@ -154,6 +174,8 @@ public sealed class EndpointObservationHistoryService(AppDbContext db, TimeProvi
         Identity = r.Identity, Protocol = r.Protocol, Host = r.Host, Port = r.Port, Method = r.Method, Path = r.Path, GraphQlOperationType = r.GraphQlOperationType,
         GraphQlOperationName = r.GraphQlOperationName, FirstObservedAt = r.FirstObservedAt, LastObservedAt = r.LastObservedAt, ObservationCount = r.ObservationCount,
         FirstRunId = r.FirstRunId, LastRunId = r.LastRunId, LastStatus = r.LastStatus, AuthObserved = r.AuthObserved,
+        Confidence = Enum.TryParse<ObservedEndpointConfidence>(r.Confidence, out var confidence) ? confidence : ObservedEndpointConfidence.Candidate,
+        Provenance = Enum.TryParse<RequestProvenance>(r.Provenance, out var provenance) ? provenance : RequestProvenance.Unknown,
     };
 
     private static EndpointDiscoveryRunSummary Summary(EndpointDiscoveryRunRecord r) =>

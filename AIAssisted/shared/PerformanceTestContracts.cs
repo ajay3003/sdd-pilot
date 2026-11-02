@@ -137,6 +137,28 @@ public sealed record ScenarioStepSource
     public DateTimeOffset? ObservedLastSeen { get; init; }
     /// <summary>Declared type/enum of the operation's dynamic parameters, so any value chosen later (fixed, auto-filled) is validated the same way.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ScenarioParameterShape>? Parameters { get; init; }
+    /// <summary>Authentication the operation was observed or declared with when the step was created ("Bearer observed", "Declared: Bearer");
+    /// null = none known. Evidence of a requirement — never a credential, and never copied into the request.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ObservedAuthentication { get; init; }
+    /// <summary>The normalized Endpoint Discovery identity ("GET /api/x/{id}", "graphql query Name") the step was reviewed against.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? EvidenceIdentity { get; init; }
+}
+
+/// <summary>
+/// An explicit, auditable decision to run operations that were observed (or declared) with authentication WITHOUT authentication — e.g. to test
+/// unauthenticated behaviour. Never inferred from a default None. Scoped to the exact authentication-requiring operations it was given for
+/// (<see cref="EvidenceFingerprint"/>): a changed scenario or changed endpoint evidence invalidates it and readiness blocks again.
+/// </summary>
+public sealed record UnauthenticatedExecutionOverride
+{
+    public const string Statement = "These operations were observed using authentication. Running without credentials may return 401/403 or exercise a different code path.";
+    public DateTimeOffset AcknowledgedAt { get; init; }
+    /// <summary>Who acknowledged it, when the host knows; null otherwise (never guessed).</summary>
+    public string? AcknowledgedBy { get; init; }
+    /// <summary>The operation identities ("GET /api/x/{id}") the decision covers.</summary>
+    public List<string> Operations { get; init; } = [];
+    /// <summary>Identities + requirements the decision was made against; recomputed at readiness — any difference invalidates the decision.</summary>
+    public string EvidenceFingerprint { get; init; } = "";
 }
 
 /// <summary>A dynamic parameter's declared shape: name, declared type ("integer", "string:uuid", "Int!") and allowed values.</summary>
@@ -286,6 +308,8 @@ public sealed record PerformanceTestDataProfile
 
 public sealed record PerformanceTestDefinition
 {
+    /// <summary>Explicit decision to run authentication-requiring operations without authentication (see <see cref="UnauthenticatedExecutionOverride"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public UnauthenticatedExecutionOverride? UnauthenticatedOverride { get; init; }
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
     public string EnvironmentId { get; init; } = "";
     public string? ProjectId { get; init; }
@@ -641,6 +665,8 @@ public sealed record PerformanceTestRun
     public Guid? SourceSnapshotId { get; init; }
     /// <summary>Bounded, redacted provider diagnostics (provider-specific, never the source of UI logic).</summary>
     public string? ProviderDiagnostics { get; init; }
+    /// <summary>What was actually observed about the execution (lifecycle, container/k6, request telemetry, stop reason, cleanup). Null for legacy runs.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PerformanceExecutionEvidence? ExecutionEvidence { get; init; }
     /// <summary>Resource Stability evidence of this run (null = not configured). Immutable once the run finishes.</summary>
     public ResourceStabilityAssessment? Resources { get; init; }
     /// <summary>Resource drift against the baseline active when the run was created (separate from absolute resource policies).</summary>

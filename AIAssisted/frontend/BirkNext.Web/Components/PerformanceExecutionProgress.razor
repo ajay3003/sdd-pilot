@@ -1,0 +1,79 @@
+@using System.Globalization
+@using BirkNext.PerformanceTests
+@using A = BirkNext.PerformanceTests.PerformanceExecutionAssessment
+@using P = BirkNext.Web.Services.PerformanceTestPresentation
+
+@* Live execution progress of the active run: the lifecycle stage and what was actually observed (container, k6, requests, heartbeat). A
+   container that runs is not load; a heartbeat is not load; requests are shown only as k6 recorded them, otherwise as Unknown / not yet. *@
+<div class="sd-panel pep" data-testid="pt-progress" data-stage="@(E?.Stage)">
+    <p role="status" aria-live="polite" data-testid="pt-progress-state"><span class="sd-pill sd-pill-@P.Tone(Run.State)">@StageTitle</span>
+        @(Run.StartedAt is { } s ? $" · elapsed {Clock(Now - s)} / {Clock(TimeSpan.FromSeconds(Run.DefinitionSnapshot.Workload.TotalSeconds))}" : "")</p>
+    <p class="pep-headline" data-testid="pt-progress-headline">@Headline</p>
+    @if (E is { AppearsStuck: true } stuck)
+    {
+        <div class="prr-note pep-stuck" role="alert" data-testid="pt-progress-stuck">
+            <strong>Run may be stuck</strong> — @stuck.StuckDetail
+            Last k6 heartbeat @(stuck.LastHeartbeatAt is { } hb ? Ago(hb) : "never") · container @stuck.Container · k6 @stuck.K6Process. You can cancel the run; diagnostics are kept.
+        </div>
+    }
+    <dl class="sd-mini pep-facts" data-testid="pt-progress-facts">
+        <div><dt>Container</dt><dd data-testid="pt-progress-container">@Observed(E?.Container, E?.ContainerObservedAt)</dd></div>
+        <div><dt>k6 process</dt><dd data-testid="pt-progress-k6">@Observed(E?.K6Process, E?.ContainerObservedAt)</dd></div>
+        <div><dt>Scenario</dt><dd data-testid="pt-progress-scenario">@(E?.ScriptInitializedAt is { } init ? $"Initialised {Time(init)}" : E?.Telemetry == PerformanceTelemetryState.NotInstrumented ? "Not instrumented" : "Not initialised yet")</dd></div>
+        <div><dt>Requests observed</dt><dd data-testid="pt-progress-requests">@A.RequestsLabel(Run)</dd></div>
+        @if (E?.IterationsObserved is { } iterations) { <div><dt>Iterations completed</dt><dd>@iterations.ToString("N0", CultureInfo.InvariantCulture)</dd></div> }
+        <div><dt>Last execution activity</dt><dd data-testid="pt-progress-activity">@(E?.LastActivityAt is { } act ? Ago(act) : "None observed yet")</dd></div>
+        <div><dt>Last k6 heartbeat</dt><dd data-testid="pt-progress-heartbeat">@(E?.LastHeartbeatAt is { } beat ? Ago(beat) : E?.Telemetry == PerformanceTelemetryState.NotInstrumented ? "Not instrumented" : "None yet")</dd></div>
+        <div><dt>Last provider status</dt><dd data-testid="pt-progress-poll">@(E?.LastProviderPollAt is { } poll ? Ago(poll) : "—")</dd></div>
+        @if (E?.ExpectedWorkloadEndAt is { } end) { <div><dt>Expected completion</dt><dd data-testid="pt-progress-eta">@(end > Now ? $"~{Clock(end - Now)} remaining (workload end {Time(end)})" : $"Workload ended {Time(end)} — finalizing results")</dd></div> }
+    </dl>
+    @if (E is null || E.Telemetry == PerformanceTelemetryState.NotInstrumented)
+    {
+        <p class="sd-muted" data-testid="pt-progress-limitation">Live request metrics unavailable for this provider. Final results will appear after completion.</p>
+    }
+    else
+    {
+        <p class="sd-muted" data-testid="pt-progress-limitation">Requests and iterations are counted from k6's own output stream; latency and error rates are final only after completion.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PerformanceTestRun Run { get; set; } = default!;
+    /// <summary>"Now" for elapsed/ago (injectable for tests).</summary>
+    [Parameter] public DateTimeOffset? At { get; set; }
+
+    private PerformanceExecutionEvidence? E => Run.ExecutionEvidence;
+    private DateTimeOffset Now => At ?? DateTimeOffset.UtcNow;
+
+    private string StageTitle => Run.State == PerformanceRunState.Cancelling ? "Cancelling" : E is null ? P.Label(Run.State) : A.StageLabel(E.Stage);
+
+    /// <summary>One sentence of truth about request generation.</summary>
+    private string Headline => E switch
+    {
+        null => "Running — no execution evidence is recorded for this run.",
+        { RequestsObserved: > 0 } => "Requests flowing — k6 is recording requests.",
+        { ScriptInitializedAt: not null } => "Scenario initialised — no request recorded yet.",
+        { Container: PerformanceObservedState.Running } => "Started, but no request activity observed yet.",
+        _ when Run.State is PerformanceRunState.Queued or PerformanceRunState.Preparing => "Preparing the run…",
+        _ => "Starting load test…",
+    };
+
+    private string Observed(PerformanceObservedState? state, DateTimeOffset? at) => state switch
+    {
+        PerformanceObservedState.Running => $"Running — observed{(at is { } a ? $" {Ago(a)}" : "")}",
+        PerformanceObservedState.NotInstrumented => "Not instrumented",
+        PerformanceObservedState.NotStarted => "Not started yet",
+        PerformanceObservedState.Exited => "Exited",
+        PerformanceObservedState.Gone => "No longer present",
+        _ => "Unknown",
+    };
+
+    private string Ago(DateTimeOffset at)
+    {
+        var seconds = (Now - at).TotalSeconds;
+        if (seconds <= 0) return Time(at);
+        return seconds >= 90 ? $"{seconds / 60:0} min ago ({Time(at)})" : $"{seconds:0} s ago ({Time(at)})";
+    }
+    private static string Time(DateTimeOffset at) => at.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+    private static string Clock(TimeSpan span) => span.Ticks <= 0 ? "0:00" : span.TotalHours >= 1 ? span.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture) : span.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+}

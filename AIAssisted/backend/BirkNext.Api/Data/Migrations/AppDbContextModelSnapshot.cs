@@ -1055,6 +1055,14 @@ namespace BirkNext.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("auth_observed");
 
+                    b.Property<string>("Confidence")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Candidate")
+                        .HasColumnName("confidence");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1132,6 +1140,14 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("protocol");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Unknown")
+                        .HasColumnName("provenance");
 
                     b.HasKey("Id");
 

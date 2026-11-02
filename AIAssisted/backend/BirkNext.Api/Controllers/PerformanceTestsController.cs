@@ -245,7 +245,7 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
 
     [HttpGet("runs/{runId:guid}")]
     public async Task<ActionResult<PerformanceTestRun>> GetRun([FromQuery] string environmentId, Guid runId, CancellationToken ct) =>
-        await store.RunAsync(runId, ct) is { } run && run.EnvironmentId == environmentId ? Ok(run) : NotFound();
+        await execution.CurrentRunAsync(store, runId, ct) is { } run && run.EnvironmentId == environmentId ? Ok(run) : NotFound();
 
     [HttpPost("runs/{runId:guid}/cancel")]
     public async Task<ActionResult<PerformanceTestRun>> Cancel([FromQuery] string environmentId, Guid runId, CancellationToken ct)

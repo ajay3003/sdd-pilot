@@ -127,6 +127,8 @@ public class AppDbContext : DbContext
             entity.Property(r => r.LastRunId).HasColumnName("last_run_id").HasMaxLength(64).IsRequired();
             entity.Property(r => r.LastStatus).HasColumnName("last_status");
             entity.Property(r => r.AuthObserved).HasColumnName("auth_observed");
+            entity.Property(r => r.Confidence).HasColumnName("confidence").HasMaxLength(16).HasDefaultValue("Candidate");
+            entity.Property(r => r.Provenance).HasColumnName("provenance").HasMaxLength(32).HasDefaultValue("Unknown");
             entity.HasIndex(r => new { r.EnvironmentId, r.Host, r.Identity }).IsUnique();
         });
         modelBuilder.Entity<ProjectActivityRecord>(entity =>

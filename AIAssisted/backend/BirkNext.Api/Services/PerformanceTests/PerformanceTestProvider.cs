@@ -24,6 +24,16 @@ public sealed record PerformanceTestOptions
     public BirkNext.Api.Services.PerformanceTests.Resources.PerformanceResourceOptions Resources { get; init; } = new();
     /// <summary>Extra time beyond the workload before the provider process is killed.</summary>
     public int ProviderTimeoutGraceSeconds { get; init; } = 120;
+    /// <summary>Watchdog: time from the provider start until k6 must have initialised the scenario (its output stream opened).</summary>
+    public int StartupTimeoutSeconds { get; init; } = 180;
+    /// <summary>Watchdog: k6 heartbeat silence after which the run "appears stuck" (shown, not acted on).</summary>
+    public int HeartbeatStaleSeconds { get; init; } = 60;
+    /// <summary>Watchdog: k6 heartbeat silence after which the run is terminated by the watchdog (only when heartbeats were being received).</summary>
+    public int WatchdogTerminateSeconds { get; init; } = 300;
+    /// <summary>How long a cancelled k6 gets to stop gracefully and write its partial summary before it is killed.</summary>
+    public int GracefulStopSeconds { get; init; } = 15;
+    /// <summary>Live execution monitor interval (container observation + telemetry read).</summary>
+    public int LiveMonitorSeconds { get; init; } = 2;
     public int MaxProviderOutputBytes { get; init; } = 64 * 1024;
     /// <summary>Hosts that are always refused (e.g. known production hosts), exact or "*.suffix".</summary>
     public IReadOnlyList<string> BlockedHosts { get; init; } = [];
@@ -46,6 +56,11 @@ public sealed record PerformanceTestOptions
             Container = PerformanceContainerOptions.From(s.GetSection("Container")),
             Resources = BirkNext.Api.Services.PerformanceTests.Resources.PerformanceResourceOptions.From(s.GetSection("Resources")),
             ProviderTimeoutGraceSeconds = Math.Clamp(s.GetValue("ProviderTimeoutGraceSeconds", d.ProviderTimeoutGraceSeconds), 10, 1800),
+            StartupTimeoutSeconds = Math.Clamp(s.GetValue("StartupTimeoutSeconds", d.StartupTimeoutSeconds), 15, 1800),
+            HeartbeatStaleSeconds = Math.Clamp(s.GetValue("HeartbeatStaleSeconds", d.HeartbeatStaleSeconds), 10, 3600),
+            WatchdogTerminateSeconds = Math.Clamp(s.GetValue("WatchdogTerminateSeconds", d.WatchdogTerminateSeconds), 30, 7200),
+            GracefulStopSeconds = Math.Clamp(s.GetValue("GracefulStopSeconds", d.GracefulStopSeconds), 1, 120),
+            LiveMonitorSeconds = Math.Clamp(s.GetValue("LiveMonitorSeconds", d.LiveMonitorSeconds), 1, 60),
             MaxProviderOutputBytes = Math.Clamp(s.GetValue("MaxProviderOutputBytes", d.MaxProviderOutputBytes), 1024, 1024 * 1024),
             BlockedHosts = s.GetSection("BlockedHosts").GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0).ToList(),
             AllowedHosts = s.GetSection("AllowedHosts").GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0).ToList(),
@@ -128,7 +143,21 @@ public sealed record PerformanceProviderResult
     public string? ImageDigest { get; init; }
     public string? Diagnostics { get; init; }
     public List<string> Limitations { get; init; } = [];
+    /// <summary>The load generator's process exit code (null when it was killed, timed out or never started).</summary>
+    public int? ExitCode { get; init; }
+    /// <summary>Execution resources removed after the run: null = not applicable, true = confirmed, false = not confirmed.</summary>
+    public bool? ContainerRemoved { get; init; }
+    public PerformanceResultArtifactState ResultArtifact { get; init; } = PerformanceResultArtifactState.NotProduced;
+    public string? ResultArtifactDetail { get; init; }
+    /// <summary>Final read of the provider's own request/iteration stream, taken before its files are removed. Null = not instrumented.</summary>
+    public PerformanceLiveTelemetry? Telemetry { get; init; }
+    public string? TelemetrySource { get; init; }
+    /// <summary>The provider was asked to stop gracefully (and the workload had the chance to write partial results).</summary>
+    public bool StoppedGracefully { get; init; }
 }
+
+/// <summary>One observation of a run's execution resource (container): it exists, it runs. Null from a provider = not instrumented.</summary>
+public sealed record PerformanceContainerObservation(bool Exists, bool Running, string? ContainerId);
 
 /// <summary>
 /// A load-generation engine. Generic BirkNext concepts (scenario, workload, thresholds) go in; normalized metrics come out. A provider
@@ -151,6 +180,10 @@ public interface IPerformanceTestProvider
     Task<string?> PrepareAsync(CancellationToken ct = default);
     /// <summary>Removes provider-managed execution resources left behind (e.g. containers of runs that are no longer active). Returns what was removed.</summary>
     Task<IReadOnlyList<string>> CleanupOrphansAsync(IReadOnlySet<Guid> activeRunIds, CancellationToken ct = default);
+    /// <summary>A reader of the provider's own live request/iteration stream for this run, or null when the provider exposes none.</summary>
+    IPerformanceTelemetryReader? OpenTelemetry(PerformanceProviderInput input) => null;
+    /// <summary>Observes the run's execution resource (container) without changing it; null when the provider cannot observe it.</summary>
+    Task<PerformanceContainerObservation?> ObserveAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<PerformanceContainerObservation?>(null);
 }
 
 // ── Process abstraction (no shell, bounded output, process-tree kill) ─────────────────────────────────────────────────

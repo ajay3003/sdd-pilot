@@ -1,3 +1,5 @@
+using BirkNext.LocalHttpsProxy;
+
 namespace BirkNext.Api.Models;
 
 /// <summary>One Endpoint Discovery run (table <c>endpoint_discovery_runs</c>): a proxy capture session of one Target Environment and target host,
@@ -40,4 +42,8 @@ public sealed class ObservedOperationRecord
     public string LastRunId { get; set; } = "";
     public int LastStatus { get; set; }
     public bool AuthObserved { get; set; }
+    /// <summary>Highest observed confidence (Candidate / Verified) — so persisted evidence resolves API targets exactly as the live snapshot does.</summary>
+    public string Confidence { get; set; } = nameof(ObservedEndpointConfidence.Candidate);
+    /// <summary>Application traffic vs browser-observed traffic (probes and BirkNext diagnostics are never stored).</summary>
+    public string Provenance { get; set; } = nameof(RequestProvenance.Unknown);
 }

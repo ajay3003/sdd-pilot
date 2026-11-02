@@ -5,6 +5,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @using Microsoft.AspNetCore.WebUtilities
+@implements IDisposable
 @inject IApiReviewService ReviewService
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IEndpointDiscoveryService Discovery
@@ -46,7 +47,12 @@
         var targetReviews = ApiReviewPreRunPresentation.TargetReviews(_targets, _selected, access.Availability, _schemaArtifacts, _history?.LastReport, _contractBindings);
     }
 
-    @if (_report is null)
+    @if (_report is null && !_evaluated)
+    {
+        @* Nothing is a verdict before the required evidence was evaluated: staged progress, or "could not be fully assessed" with Retry. *@
+        @AssessingPanel()
+    }
+    else if (_report is null)
     {
         <div class="aqr-decide" data-testid="aqr-decide">
         @*
@@ -60,7 +66,7 @@
             var blocked = readiness.Level == ApiReviewReadinessLevel.Blocked;
             var knownLimitations = ApiReviewPreRunPresentation.KnownLimitations(targetReviews, _authorizationChecks);
         }
-        <section class="aqr-card aqr-decision aqr-readiness aqr-readiness-@readiness.Level.ToString().ToLowerInvariant()" data-testid="aqr-readiness" data-readiness="@readiness.Level" aria-labelledby="aqr-readiness-heading" role="@(blocked ? "alert" : "status")">
+        <section class="aqr-card aqr-decision aqr-readiness aqr-readiness-@readiness.Level.ToString().ToLowerInvariant()" data-testid="aqr-readiness" data-readiness="@readiness.Level" data-decision="@ApiReviewPresentation.Decision(readiness)" aria-labelledby="aqr-readiness-heading" role="@(blocked ? "alert" : "status")">
             <div class="aqr-decision-status">
                 <p class="aqr-decision-kicker">Run decision</p>
                 <h2 id="aqr-readiness-heading"><span class="aqr-readiness-icon" aria-hidden="true">@ReadinessIcon(readiness.Level)</span> @readiness.Title</h2>
@@ -68,6 +74,20 @@
                 {
                     <p class="aqr-decision-counts" data-testid="aqr-decision-counts">@ApiReviewPreRunPresentation.Counts(targetReviews)</p>
                 }
+                @if (_runtime is { } runtimeEvidence)
+                {
+                    @* Runtime evidence is loaded by this review itself (browser history + live capture + persisted history); Bearer observed in it is
+                       authenticated traffic seen, never a reusable credential. *@
+                    <p class="aqr-decision-evidence" data-testid="aqr-runtime-evidence" data-source="@runtimeEvidence.Source" data-freshness="@runtimeEvidence.Freshness">
+                        <span class="aqr-decision-evidence-label">Runtime evidence:</span> @ApiReviewPresentation.RuntimeEvidenceLabel(runtimeEvidence)
+                        @if (runtimeEvidence.Available && _context is not null) { <a class="aqr-link" href="@AuthorizationEvidenceHref(_context.ActiveProfile.Id)" data-testid="aqr-view-discovery">View Endpoint Discovery evidence</a> }
+                    </p>
+                }
+                <p class="aqr-decision-refresh" data-testid="aqr-refresh-row">
+                    @if (_assessing) { <span role="status" aria-live="polite" data-testid="aqr-refreshing">Refreshing evidence…</span> }
+                    else { <button type="button" class="aqr-link-button" @onclick="AssessAsync" data-testid="aqr-refresh-readiness">Refresh readiness</button> }
+                    @if (_assessmentError is not null) { <span class="aqr-muted" data-testid="aqr-refresh-error"> · @_assessmentError Showing the last assessed readiness.</span> }
+                </p>
                 @if (blocked)
                 {
                     <p class="aqr-readiness-message" id="aqr-run-reason" data-testid="aqr-run-reason">@readiness.Message</p>
@@ -276,12 +296,25 @@
         {
             <section class="aqr-section aqr-known-limitations" data-testid="aqr-known-limitations" aria-labelledby="aqr-limitations-heading">
                 <div class="aqr-card-head"><h2 id="aqr-limitations-heading">Known limitations</h2><span class="aqr-muted">Do not block the read-only review</span></div>
+                @* The top three first; the rest stay one click away (View all limitations), never mixed with blockers. *@
                 <dl class="aqr-limitation-list">
-                    @foreach (var limitation in knownLimitations)
+                    @foreach (var limitation in knownLimitations.Take(3))
                     {
                         <div data-testid="aqr-known-limitation"><dt>@limitation.Area</dt><dd>@limitation.Text</dd></div>
                     }
                 </dl>
+                @if (knownLimitations.Count > 3)
+                {
+                    <details class="aqr-limitations-more" data-testid="aqr-limitations-more">
+                        <summary>View all limitations (@knownLimitations.Count)</summary>
+                        <dl class="aqr-limitation-list">
+                            @foreach (var limitation in knownLimitations.Skip(3))
+                            {
+                                <div data-testid="aqr-known-limitation"><dt>@limitation.Area</dt><dd>@limitation.Text</dd></div>
+                            }
+                        </dl>
+                    </details>
+                }
             </section>
         }
 
@@ -750,16 +783,15 @@
     private IReadOnlyDictionary<string, ApiReviewContractBinding> _contractBindings = new Dictionary<string, ApiReviewContractBinding>();
 
     /// <summary>Resolves REST contracts from this environment's Source Analysis snapshots (read-only); failure leaves configured/none bindings.</summary>
-    private async Task LoadContractBindingsAsync()
+    private async Task<IReadOnlyDictionary<string, ApiReviewContractBinding>> LoadContractBindingsCoreAsync(FrontendAnalysisContext context, IReadOnlyList<ApiReviewTarget> targets)
     {
         var snapshots = (IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot>)[];
-        if (_context is not null && _targets.Any(t => t.ApiType == ApiReviewTargetType.Rest)
-            && ServiceProvider.GetService<IIntegrationCatalogApiService>() is { } api)
+        if (targets.Any(t => t.ApiType == ApiReviewTargetType.Rest) && ServiceProvider.GetService<IIntegrationCatalogApiService>() is { } api)
         {
-            try { snapshots = await api.ListSourceSnapshotsAsync(_context.ActiveProfile.Id); }
+            try { snapshots = await api.ListSourceSnapshotsAsync(context.ActiveProfile.Id); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException) { snapshots = []; }
         }
-        _contractBindings = _targets.Where(t => t.ApiType == ApiReviewTargetType.Rest)
+        return targets.Where(t => t.ApiType == ApiReviewTargetType.Rest)
             .ToDictionary(t => t.TargetId, t => ApiReviewContractBindings.Resolve(t, snapshots), StringComparer.Ordinal);
     }
     private string? _schemaArtifactsError;
@@ -822,12 +854,13 @@
     private List<string>? _requestedSelection;
 
     /// <summary>Execution permission and suggestion evidence for authorization checks. Optional: a missing backend leaves both unknown.</summary>
-    private async Task LoadAuthorizationInputsAsync()
+    private async Task<(BirkNext.RuntimeSecurity.SecurityExecutionStatus? Security, AuthorizationCheckInputs Inputs)> LoadAuthorizationInputsCoreAsync(
+        FrontendAnalysisContext context, IReadOnlyList<ApiReviewTarget> targets)
     {
-        if (_context is null) return;
-        try { _securityExecution = await ReviewService.GetSecurityExecutionAsync(_context.ActiveProfile.Id); }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _securityExecution = null; }
-        _authorizationInputs = await new AuthorizationCheckInputsLoader(ServiceProvider).LoadAsync(_context.ActiveProfile.Id, _targets);
+        BirkNext.RuntimeSecurity.SecurityExecutionStatus? security;
+        try { security = await ReviewService.GetSecurityExecutionAsync(context.ActiveProfile.Id); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { security = null; }
+        return (security, await new AuthorizationCheckInputsLoader(ServiceProvider).LoadAsync(context.ActiveProfile.Id, targets));
     }
 
     /// <summary>This page's URL with the current API selection, so browser Back and "Back to API Quality Review" restore it.</summary>
@@ -846,47 +879,221 @@
         if (query.TryGetValue("targets", out var selection))
             _requestedSelection = selection.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         _report = RuntimeReviews.ApiQualityReview.Report;
-        await History.LoadAsync(JS);
-        await Discovery.LoadAsync(JS);
-        await RefreshContextAsync();
+        await AssessAsync();
     }
 
-    private async Task RefreshContextAsync()
+    // ── Readiness assessment ─────────────────────────────────────────────────────────────────────────────────────────
+    // One generation at a time: a newer assessment (Refresh readiness, Retry) cancels the older one, and only the current generation commits.
+    // Everything the decision renders is computed into locals and committed together, so no render ever mixes a half-loaded state; until the
+    // first commit the page shows staged progress — never Blocked. A refresh keeps the last assessed readiness visible ("Refreshing evidence…").
+    private static readonly (string Key, string Label)[] AssessmentStages =
+    [
+        ("target", "Loading target"), ("evidence", "Loading API evidence"), ("correlate", "Correlating runtime observations"),
+        ("auth", "Evaluating authentication"), ("capabilities", "Evaluating review capabilities"), ("readiness", "Calculating readiness"),
+    ];
+    private static readonly TimeSpan SlowAssessment = TimeSpan.FromSeconds(4);
+    private int _generation;
+    private ReviewAssessment? _assessment;
+    private bool _evaluated, _assessing, _slow;
+    private string? _assessmentError;
+    private RuntimeEvidence? _runtime;
+
+    private async Task AssessAsync()
     {
-        _context = await ContextFactory.GetActiveContextAsync();
-        if (_context.ActiveTargetError is not null) { _targets = []; _selected.Clear(); _capabilities = null; return; }
-        _history = History.For(_context.ActiveProfile.Id);
-        _report ??= _history.LastReport is { } last && last.Environment.EnvironmentId == _context.ActiveProfile.Id ? last : null;
-        _targets = ApiReviewTargetResolver.Resolve(_context, Discovery.GetSnapshot(_context.ActiveProfile.Id));
-        await LoadSchemaArtifactsAsync();
-        await LoadContractBindingsAsync();
-        _selected.Clear();
-        // A selection carried in the URL (returning from a deep link, or browser Back) wins over the default selection.
-        var restored = _requestedSelection?.Where(id => _targets.Any(t => t.TargetId == id)).ToList();
-        if (restored is { Count: > 0 }) foreach (var id in restored) _selected.Add(id);
-        else foreach (var t in _targets.Where(t => t.Selected)) _selected.Add(t.TargetId);
-        if (_requestedTargetId is not null && _targets.Any(t => t.TargetId == _requestedTargetId)) _selected.Add(_requestedTargetId);
-        _targetsExpanded = _selected.Count == 0;
-        await LoadAuthorizationInputsAsync();
-        _capabilities = null;
-        var identity = _context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(_context);
-        try { _capabilities = await Capabilities.ResolveAsync(identity); }
-        catch { _capabilities = new AuthenticatedReviewCapabilities { Method = identity.Method, PublicApi = true, Reason = "Authenticated capabilities could not be resolved; public targets only." }; }
+        _assessment?.Cancel();
+        var a = new ReviewAssessment(++_generation, AssessmentStages);
+        _assessment = a;
+        _assessing = true;
+        _slow = false;
+        _assessmentError = null;
+        _ = WatchSlowAssessmentAsync(a);
+        void Changed() { if (_generation == a.Generation) _ = InvokeAsync(StateHasChanged); }
+        try
+        {
+            await History.LoadAsync(JS);
+            var context = await a.StageAsync("target", _ => ContextFactory.GetActiveContextAsync(), Changed);
+            if (!a.IsCurrent(_generation)) return;
+            if (context.ActiveTargetError is not null)
+            {
+                foreach (var key in AssessmentStages.Skip(1).Select(s => s.Key)) a.Skip(key, "no active target");
+                Commit(a, context, null, [], null, (new Dictionary<string, GraphQlSchemaArtifact>(), null), new Dictionary<string, ApiReviewContractBinding>(), (null, AuthorizationCheckInputs.Empty));
+                return;
+            }
+            RuntimeEvidence? runtime = null;
+            try
+            {
+                runtime = await a.StageAsync("evidence", ct => RuntimeEvidenceLoader.LoadAsync(Discovery, JS, ServiceProvider.GetService<ILocalHttpsProxyApiService>(),
+                    ServiceProvider.GetService<IEndpointObservationHistoryApiService>(), context.ActiveProfile.Id, context.ReviewIdentity?.ContextFingerprint, context.TargetUrl, ct),
+                    Changed, r => r.Available ? $"{r.ApiObservations} observed" : "none observed");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !a.Cancelled)
+            {
+                // Optional evidence: the review continues with configured targets; with none, readiness is "could not be assessed", never Blocked.
+                Log(a, $"runtime evidence failed: {ex.GetType().Name}");
+            }
+            if (!a.IsCurrent(_generation)) return;
+            var targets = await a.StageAsync("correlate", _ => Task.FromResult(ApiReviewTargetResolver.Resolve(context, runtime?.Snapshot ?? new EndpointDiscoverySnapshot())), Changed,
+                t => $"{t.Count} API target{(t.Count == 1 ? "" : "s")}");
+            if (runtime is null && targets.Count == 0)
+            {
+                Fail(a, "Runtime evidence could not be assessed, so the API targets are unknown. Nothing was evaluated as blocked.");
+                return;
+            }
+            var identity = context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(context);
+            var capabilities = await a.StageAsync("auth", async ct =>
+            {
+                try { return await Capabilities.ResolveAsync(identity, ct); }
+                catch (Exception ex) when (ex is not OperationCanceledException || !a.Cancelled)
+                {
+                    return new AuthenticatedReviewCapabilities { Method = identity.Method, PublicApi = true, Reason = "Authenticated capabilities could not be resolved; public targets only." };
+                }
+            }, Changed);
+            var schemas = await a.StageAsync("capabilities", _ => LoadSchemaArtifactsCoreAsync(context, targets), Changed);
+            var bindings = await LoadContractBindingsCoreAsync(context, targets);
+            var authorization = await LoadAuthorizationInputsCoreAsync(context, targets);
+            if (!a.IsCurrent(_generation)) return;
+            await a.StageAsync("readiness", _ => Task.FromResult(true), Changed);
+            Commit(a, context, runtime, targets, capabilities, schemas, bindings, authorization);
+        }
+        catch (OperationCanceledException) when (a.Cancelled) { }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException or Microsoft.JSInterop.JSException)
+        {
+            Fail(a, $"The review evidence could not be loaded ({ex.GetType().Name}). Nothing was evaluated as blocked.");
+        }
+        finally
+        {
+            if (_generation == a.Generation) { _assessing = false; _slow = false; }
+            Log(a, $"assessment {(a.Cancelled ? "cancelled" : "finished")} in {a.Elapsed.TotalMilliseconds:0} ms: "
+                + string.Join(", ", a.Stages.Select(s => $"{s.Key}={s.State}{(s.Duration is { } d ? $"/{d.TotalMilliseconds:0}ms" : "")}")));
+        }
     }
+
+    private void Fail(ReviewAssessment a, string message)
+    {
+        if (!a.IsCurrent(_generation)) return;
+        _assessmentError = message;
+    }
+
+    /// <summary>The one atomic commit of an evaluated assessment; the current selection is kept where its targets still exist.</summary>
+    private void Commit(ReviewAssessment a, FrontendAnalysisContext context, RuntimeEvidence? runtime, List<ApiReviewTarget> targets, AuthenticatedReviewCapabilities? capabilities,
+        (IReadOnlyDictionary<string, GraphQlSchemaArtifact> Artifacts, string? Error) schemas, IReadOnlyDictionary<string, ApiReviewContractBinding> bindings,
+        (BirkNext.RuntimeSecurity.SecurityExecutionStatus? Security, AuthorizationCheckInputs Inputs) authorization)
+    {
+        if (!a.IsCurrent(_generation)) return;
+        var selected = new List<string>();
+        if (_evaluated && _selected.Count > 0 && _selected.All(id => targets.Any(t => t.TargetId == id))) selected.AddRange(_selected);
+        else
+        {
+            // A selection carried in the URL (returning from a deep link, or browser Back) wins over the default selection.
+            var restored = _requestedSelection?.Where(id => targets.Any(t => t.TargetId == id)).ToList();
+            if (restored is { Count: > 0 }) selected.AddRange(restored);
+            else selected.AddRange(targets.Where(t => t.Selected).Select(t => t.TargetId));
+            if (_requestedTargetId is not null && targets.Any(t => t.TargetId == _requestedTargetId)) selected.Add(_requestedTargetId);
+        }
+        _context = context;
+        _runtime = runtime;
+        _history = context.ActiveTargetError is null ? History.For(context.ActiveProfile.Id) : null;
+        _report ??= _history?.LastReport is { } last && last.Environment.EnvironmentId == context.ActiveProfile.Id ? last : null;
+        _targets = targets;
+        _capabilities = capabilities;
+        (_schemaArtifacts, _schemaArtifactsError) = schemas;
+        _contractBindings = bindings;
+        (_securityExecution, _authorizationInputs) = authorization;
+        _selected.Clear();
+        foreach (var id in selected) _selected.Add(id);
+        if (!_evaluated) _targetsExpanded = _selected.Count == 0;
+        _evaluated = true;
+    }
+
+    private async Task WatchSlowAssessmentAsync(ReviewAssessment a)
+    {
+        try { await Task.Delay(SlowAssessment, a.Token); }
+        catch (OperationCanceledException) { return; }
+        catch (ObjectDisposedException) { return; }
+        if (_generation != a.Generation || !_assessing) return;
+        _slow = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Log(ReviewAssessment a, string message) =>
+        (ServiceProvider.GetService(typeof(ILogger<ApiQualityReview>)) as ILogger)?.LogInformation("API Quality Review readiness (generation {Generation}): {Message}", a.Generation, message);
+
+    private static string StageGlyph(ReviewStageState state) => state switch
+    {
+        ReviewStageState.Done => "✓",
+        ReviewStageState.Running => "⟳",
+        ReviewStageState.Failed => "!",
+        ReviewStageState.Skipped => "–",
+        _ => "○",
+    };
+
+    private static string StageText(ReviewStage s) => s.State switch
+    {
+        ReviewStageState.Done => s.Detail is { } d ? $"done · {d}" : "done",
+        ReviewStageState.Running => "loading…",
+        ReviewStageState.Failed => "could not be assessed",
+        ReviewStageState.Skipped => s.Detail is { } d ? $"skipped · {d}" : "skipped",
+        _ => "pending",
+    };
+
+    /// <summary>Before the first evaluated snapshot: staged, announced progress (never red), or "Readiness could not be fully assessed" with Retry.</summary>
+    private RenderFragment AssessingPanel() => __builder =>
+    {
+        var a = _assessment;
+        var failed = _assessmentError is not null && !_assessing;
+        <section class="aqr-card aqr-decision aqr-readiness aqr-readiness-@(failed ? "failed" : "assessing")" data-testid="aqr-readiness" data-readiness="@(failed ? "FailedToAssess" : "Assessing")"
+                 data-decision="@(failed ? ReviewDecision.FailedToAssess : ReviewDecision.Assessing)" aria-labelledby="aqr-readiness-heading" role="status" aria-live="polite">
+            <div class="aqr-decision-status">
+                <p class="aqr-decision-kicker">Run decision</p>
+                @if (failed)
+                {
+                    <h2 id="aqr-readiness-heading"><span class="aqr-readiness-icon" aria-hidden="true">!</span> @ReviewDecisions.FailedTitle</h2>
+                    <p class="aqr-readiness-message" data-testid="aqr-assessment-error">@_assessmentError</p>
+                    <button type="button" class="btn-secondary" @onclick="AssessAsync" data-testid="aqr-assessment-retry">Retry</button>
+                }
+                else
+                {
+                    <h2 id="aqr-readiness-heading"><span class="aqr-spinner" aria-hidden="true">⟳</span> @(_slow ? "Still assessing readiness…" : "Assessing API review readiness…")</h2>
+                    @if (_slow && a?.Waiting is { } waiting) { <p class="aqr-readiness-message" data-testid="aqr-assessment-waiting">Waiting for: @waiting.Label</p> }
+                }
+                @if (a is not null)
+                {
+                    <ol class="aqr-assessment-stages" data-testid="aqr-assessment-stages">
+                        @foreach (var s in a.Stages)
+                        {
+                            <li class="aqr-assessment-stage aqr-assessment-stage-@s.State.ToString().ToLowerInvariant()" data-testid="aqr-assessment-stage" data-stage="@s.Key" data-state="@s.State">
+                                <span aria-hidden="true">@StageGlyph(s.State)</span> @s.Label · @StageText(s)
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
+        </section>
+    };
+
+    public void Dispose() => _assessment?.Dispose();
+
+    /// <summary>Endpoint Discovery of this environment — offered as provenance, never required before this review.</summary>
+    private static string AuthorizationEvidenceHref(string profileId) =>
+        $"{ApiReviewPresentation.TargetEnvironmentsHref}&tab=endpoint&profile={Uri.EscapeDataString(profileId)}";
 
     /// <summary>Trusted schema artifacts of THIS environment only; a failure leaves none (never another environment's) and says so.</summary>
     private async Task LoadSchemaArtifactsAsync()
     {
-        _schemaArtifactsError = null;
-        if (_context is null || !_targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl)) { _schemaArtifacts = new Dictionary<string, GraphQlSchemaArtifact>(); return; }
+        if (_context is null) return;
+        (_schemaArtifacts, _schemaArtifactsError) = await LoadSchemaArtifactsCoreAsync(_context, _targets);
+    }
+
+    private async Task<(IReadOnlyDictionary<string, GraphQlSchemaArtifact> Artifacts, string? Error)> LoadSchemaArtifactsCoreAsync(FrontendAnalysisContext context, IReadOnlyList<ApiReviewTarget> targets)
+    {
+        if (!targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl)) return (new Dictionary<string, GraphQlSchemaArtifact>(), null);
         try
         {
-            _schemaArtifacts = (await SchemaArtifacts.ListAsync(_context.ActiveProfile.Id)).ToDictionary(a => a.TargetId, StringComparer.Ordinal);
+            return ((await SchemaArtifacts.ListAsync(context.ActiveProfile.Id)).ToDictionary(a => a.TargetId, StringComparer.Ordinal), null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _schemaArtifacts = new Dictionary<string, GraphQlSchemaArtifact>();
-            _schemaArtifactsError = "Configured schema artifacts could not be loaded from the BirkNext backend.";
+            return (new Dictionary<string, GraphQlSchemaArtifact>(), "Configured schema artifacts could not be loaded from the BirkNext backend.");
         }
     }
 

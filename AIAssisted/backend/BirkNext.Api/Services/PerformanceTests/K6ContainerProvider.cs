@@ -38,6 +38,15 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
 
     public static string ContainerName(Guid runId, string purpose = "run") => $"birknext-k6-{purpose}-{runId:N}";
 
+    /// <summary>k6's NDJSON output stream inside the run's mounted output directory (read for counts only; removed with the run directory).</summary>
+    public const string TelemetryFile = "metrics.ndjson";
+
+    public IPerformanceTelemetryReader? OpenTelemetry(PerformanceProviderInput input) => new K6JsonTelemetryReader(Path.Combine(input.WorkingDirectory, "out", TelemetryFile));
+
+    /// <summary>The run container as the runtime sees it (the container's main process is k6 itself).</summary>
+    public async Task<PerformanceContainerObservation?> ObserveAsync(Guid runId, CancellationToken ct = default) =>
+        await runtime.InspectAsync(ContainerName(runId), ct) is { } info ? new(true, info.Running, info.Id.Length > 12 ? info.Id[..12] : info.Id) : new(false, false, null);
+
     /// <summary>Runtime → image → k6 version, each a separate, truthful state. Nothing here is a performance result.</summary>
     public async Task<PerformanceProviderStatus> StatusAsync(CancellationToken ct = default)
     {
@@ -174,32 +183,80 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             var executable = input.Definition with { TargetOrigin = target.ExecutionOrigin };
             await File.WriteAllTextAsync(Path.Combine(inDir, "test.js"), K6ScriptGenerator.Generate(executable, input.TestData, $"{OutDir}/summary.json"), new UTF8Encoding(false), ct);
             progress?.Report("Running");
+            // Cancellation is graceful first: SIGTERM lets k6 stop the test and still write its (partial) end-of-test summary into the mounted
+            // output directory; only when the runtime cannot stop it is the process killed. Results and diagnostics are read before any cleanup.
+            var stopRequested = false;
+            using var hard = new CancellationTokenSource();
+            using var onCancel = ct.Register(() =>
+            {
+                stopRequested = true;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (await runtime.StopAsync(name, options.GracefulStopSeconds, CancellationToken.None)) hard.CancelAfter(TimeSpan.FromSeconds(options.GracefulStopSeconds + 15));
+                        else hard.Cancel();
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException) { try { hard.Cancel(); } catch (ObjectDisposedException) { } }
+                });
+            });
             var outcome = await runtime.RunAsync(new ContainerRunSpec
             {
-                Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", $"{InDir}/test.js"],
+                Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", "--out", $"json={OutDir}/{TelemetryFile}", $"{InDir}/test.js"],
                 Mounts = Mounts(inDir, outDir, C.CaBundlePathFor(input.Definition.TargetOrigin)), Environment = Environment(C.CaBundlePathFor(input.Definition.TargetOrigin)),
                 Labels = Labels(input.RunId), Network = target.Network, HostGateway = target.HostGateway, Timeout = input.Timeout, MaxOutputBytes = options.MaxProviderOutputBytes,
                 MemoryMegabytes = C.MemoryMegabytes, Cpus = C.Cpus,
-            }, ct);
+            }, hard.Token);
+            // Everything is collected from the run's own directory before it is removed: diagnostics (already captured from the attached client),
+            // the final telemetry read and the summary artifact. Removing the container never removes these host-side files.
             var diagnostics = Redact(outcome.StandardError.Length > 0 ? outcome.StandardError : outcome.StandardOutput, options.MaxProviderOutputBytes);
+            var telemetry = new K6JsonTelemetryReader(Path.Combine(outDir, TelemetryFile)).Read();
             var notes = new List<string>();
             if (!outcome.Removed) notes.Add($"The container {name} could not be confirmed removed; cleanup runs again on the next start.");
             if (outcome.UnappliedLimits.Count > 0)
                 notes.Add($"The container ran without {string.Join("/", outcome.UnappliedLimits)} limits: the {runtime.DisplayName} host delegates no such cgroup controller (common for rootless machines). BirkNext's load limits still applied.");
-            var result = provenance with { Diagnostics = diagnostics, Limitations = notes };
-            if (outcome.Cancelled)
-                return result with { State = PerformanceRunState.Cancelled, Reason = "Cancelled; the k6 container was stopped and removed.",
-                    Limitations = [.. result.Limitations, "A cancelled run has no end-of-test summary: no metrics are reported and nothing is assessed."] };
+            var cancelled = stopRequested || outcome.Cancelled;
+            var graceful = stopRequested && !outcome.Cancelled;
+            var result = provenance with
+            {
+                Diagnostics = diagnostics, Limitations = notes, ExitCode = cancelled || outcome.TimedOut ? (graceful ? outcome.ExitCode : null) : outcome.ExitCode,
+                ContainerRemoved = outcome.Removed, Telemetry = telemetry, TelemetrySource = "k6 JSON output stream (http_reqs, iterations, vus points)", StoppedGracefully = graceful,
+            };
+            var summaryPath = Path.Combine(outDir, "summary.json");
+            async Task<(PerformanceMetrics? Metrics, string? Error)> SummaryAsync() => File.Exists(summaryPath)
+                ? K6SummaryParser.Parse(await File.ReadAllTextAsync(summaryPath, CancellationToken.None), input.Definition.Scenario.Steps.Select(s => s.Name).ToList())
+                : (null, null);
+            var removal = outcome.Removed ? "the container was removed" : "the container could not be confirmed removed";
+            if (cancelled)
+            {
+                // A gracefully stopped k6 may have written a partial summary: shown as "Partial — run cancelled", never as a final result.
+                var (partial, partialError) = await SummaryAsync();
+                return result with
+                {
+                    State = PerformanceRunState.Cancelled, Metrics = partial, MetricsPartial = partial is not null,
+                    ResultArtifact = partial is not null ? PerformanceResultArtifactState.Parsed : partialError is not null ? PerformanceResultArtifactState.ParseFailed : PerformanceResultArtifactState.NotProduced,
+                    ResultArtifactDetail = partial is not null ? "Partial end-of-test summary written by k6 after the stop request." : partialError ?? "k6 wrote no end-of-test summary before it stopped.",
+                    Reason = graceful
+                        ? $"k6 was asked to stop gracefully{(partial is not null ? " and wrote a partial end-of-test summary" : "; it wrote no end-of-test summary")}; {removal}."
+                        : $"The k6 process was terminated (graceful stop unavailable); no end-of-test summary was written; {removal}.",
+                    Limitations = [.. result.Limitations, partial is not null
+                        ? "Partial — run cancelled: the metrics cover only the time before the stop and are not a final result; no pass/fail conclusion."
+                        : "A cancelled run without an end-of-test summary has no metrics; nothing is assessed."],
+                };
+            }
             if (outcome.TimedOut)
-                return result with { State = PerformanceRunState.TimedOut, Reason = $"The provider exceeded its {input.Timeout.TotalSeconds:0} s timeout; the k6 container was stopped and removed." };
-            if (outcome.StartError is not null) return result with { State = PerformanceRunState.ExecutionFailed, Reason = outcome.StartError };
+                return result with { State = PerformanceRunState.TimedOut, ResultArtifact = PerformanceResultArtifactState.NotProduced,
+                    Reason = $"The provider exceeded its {input.Timeout.TotalSeconds:0} s timeout; the k6 process was terminated; {removal}." };
+            if (outcome.StartError is not null) return result with { State = PerformanceRunState.ExecutionFailed, Reason = outcome.StartError, ResultArtifact = PerformanceResultArtifactState.NotProduced };
             // 0 = finished; 99 = a k6 threshold crossed (BirkNext declares only always-true thresholds, to expose per-step metrics). Others = errors.
             if (outcome.ExitCode is not (0 or 99))
-                return result with { State = PerformanceRunState.ExecutionFailed, Reason = $"The k6 container exited with code {outcome.ExitCode}." };
-            var summaryPath = Path.Combine(outDir, "summary.json");
-            if (!File.Exists(summaryPath)) return result with { State = PerformanceRunState.ExecutionFailed, Reason = "k6 finished without writing its structured summary." };
-            var (metrics, error) = K6SummaryParser.Parse(await File.ReadAllTextAsync(summaryPath, ct), input.Definition.Scenario.Steps.Select(s => s.Name).ToList());
-            if (metrics is null) return result with { State = PerformanceRunState.ExecutionFailed, Reason = error };
+                return result with { State = PerformanceRunState.ExecutionFailed, Reason = $"The k6 container exited with code {outcome.ExitCode}.",
+                    ResultArtifact = File.Exists(summaryPath) ? PerformanceResultArtifactState.Pending : PerformanceResultArtifactState.Missing };
+            if (!File.Exists(summaryPath)) return result with { State = PerformanceRunState.ExecutionFailed, Reason = "k6 finished without writing its structured summary.",
+                ResultArtifact = PerformanceResultArtifactState.Missing, ResultArtifactDetail = "summary.json was not written by k6's handleSummary." };
+            var (metrics, error) = await SummaryAsync();
+            if (metrics is null) return result with { State = PerformanceRunState.ExecutionFailed, Reason = error, ResultArtifact = PerformanceResultArtifactState.ParseFailed, ResultArtifactDetail = error };
+            result = result with { ResultArtifact = PerformanceResultArtifactState.Parsed };
             var limitations = new List<string>(result.Limitations);
             if (metrics.DroppedIterations is > 0)
                 limitations.Add($"The load generator dropped {metrics.DroppedIterations} iteration(s): it lacked capacity to sustain the configured rate. Measured throughput may reflect the generator, not the target.");

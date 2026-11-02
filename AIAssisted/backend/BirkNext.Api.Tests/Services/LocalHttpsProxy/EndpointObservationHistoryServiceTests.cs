@@ -127,4 +127,23 @@ public sealed class EndpointObservationHistoryServiceTests : IDisposable
         stored.Should().NotContain("12345678901").And.NotContain("token").And.NotContain("abc").And.NotContain("Bearer").And.NotContain("ssn");
         (await _db.ObservedOperations.SingleAsync(o => o.Protocol == "REST")).Path.Should().Be("/api/person/{id}");
     }
+    [Fact]
+    public async Task Probes_diagnostics_and_technical_resources_are_never_operations_and_confidence_only_strengthens()
+    {
+        await Run("run-1", 0, observed:
+        [
+            Rest("GET", "/api/orders") with { Confidence = ObservedEndpointConfidence.Candidate, Provenance = RequestProvenance.BrowserObservedTraffic },
+            Rest("GET", "/birknext-unknown-route-probe-123"),
+            Rest("GET", "/api/health") with { Provenance = RequestProvenance.BirkNextDiagnostic },
+            Rest("GET", "/appsettings.json"),
+            Rest("GET", "/api/rejected") with { Confidence = ObservedEndpointConfidence.Rejected },
+        ]);
+        (await View()).Operations.Select(o => o.Identity).Should().Equal(["GET /api/orders"], "discovery probes and BirkNext's own diagnostics are not application operations");
+        (await View()).Operations.Single().Should().Match<ObservedOperationHistory>(o => o.Confidence == ObservedEndpointConfidence.Candidate && o.Provenance == RequestProvenance.BrowserObservedTraffic);
+
+        await Run("run-2", 60, observed: [Rest("GET", "/api/orders", 60) with { Confidence = ObservedEndpointConfidence.Verified, Provenance = RequestProvenance.ApplicationTraffic }]);
+        await Run("run-3", 120, observed: [Rest("GET", "/api/orders", 120) with { Confidence = ObservedEndpointConfidence.Candidate, Provenance = RequestProvenance.BrowserObservedTraffic }]);
+        (await View()).Operations.Single().Should().Match<ObservedOperationHistory>(o => o.Confidence == ObservedEndpointConfidence.Verified && o.Provenance == RequestProvenance.ApplicationTraffic,
+            "a later, weaker observation never downgrades what was verified");
+    }
 }

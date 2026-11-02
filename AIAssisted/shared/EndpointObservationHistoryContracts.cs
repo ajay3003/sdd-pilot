@@ -43,6 +43,8 @@ public sealed record ObservedOperationHistory
     public string LastRunId { get; init; } = "";
     public int LastStatus { get; init; }
     public bool AuthObserved { get; init; }
+    public ObservedEndpointConfidence Confidence { get; init; } = ObservedEndpointConfidence.Candidate;
+    public RequestProvenance Provenance { get; init; }
     public ObservedOperationState State { get; init; }
     /// <summary>Seen in the latest run (current observations); false = historical only.</summary>
     public bool Current => State is ObservedOperationState.New or ObservedOperationState.ObservedAgain or ObservedOperationState.Observed;

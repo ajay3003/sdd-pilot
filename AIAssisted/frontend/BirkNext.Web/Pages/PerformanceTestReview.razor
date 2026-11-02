@@ -532,6 +532,21 @@
 
     private void Changed(PerformanceTestDefinition next) { _draft = next; _dirty = true; _saveFailed = false; _saveError = null; }
 
+    /// <summary>Operation identities the persisted Endpoint Discovery history observed with authentication (the backend reads the same set).</summary>
+    private IReadOnlySet<string>? ObservedAuthentication => _history?.Operations.Where(o => o.AuthObserved).Select(o => o.Identity).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>The explicit decision to run authentication-requiring operations without authentication: saved as a new definition version, so it is
+    /// auditable with the run that uses it; readiness is re-evaluated by the backend.</summary>
+    private async Task AcknowledgeUnauthenticatedAsync(UnauthenticatedExecutionOverride acknowledgement)
+    {
+        _draft = _draft with { UnauthenticatedOverride = acknowledgement };
+        _dirty = true;
+        if (await SaveCoreAsync() is { } saved) _message = $"Saved as version {saved.Version}: intentionally unauthenticated for {acknowledgement.Operations.Count} operation(s).";
+    }
+
+    /// <summary>An explicit status refresh (the same backend read as polling, which also reconciles a run orphaned by a restart).</summary>
+    private Task RefreshActiveRunAsync() => PollAsync();
+
     private async Task SaveAsync()
     {
         if (await SaveCoreAsync() is { } saved) _message = $"Saved as version {saved.Version}. Earlier runs keep the version they ran with.";
@@ -556,10 +571,17 @@
 
     // ── Run / poll / cancel ───────────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>A start request in flight: a second click does nothing (the backend also allows one active run per environment).</summary>
+    private bool _starting;
+
     private async Task StartAsync()
     {
+        if (_starting) return;
+        _starting = true;
         _startBlockers = [];
-        var result = await Api.StartAsync(_profile!.Id, new PerformanceRunRequest { DefinitionId = _draft.Id, VersionLabel = _versionLabel });
+        PerformanceApiResult<PerformanceTestRun> result;
+        try { result = await Api.StartAsync(_profile!.Id, new PerformanceRunRequest { DefinitionId = _draft.Id, VersionLabel = _versionLabel }); }
+        finally { _starting = false; }
         if (result.Value is null) { _message = result.Error; _startBlockers = result.Blockers; return; }
         _message = "Performance test started.";
         _runs.Insert(0, result.Value);
@@ -874,7 +896,7 @@
             EndpointDiscoveryHref="@(_profile is null ? null : $"/admin/system-settings?section=target-environments&tab=endpoint&profile={Uri.EscapeDataString(_profile.Id)}")" />
 
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
-        <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations"
+        <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations" ObservedAuthentication="ObservedAuthentication"
             OnTrial="@(_profile is null ? null : d => Api.TrialAsync(_profile.Id, new PerformanceTrialRequest { Definition = d }))" />
 
         <section class="ptc-panel" aria-labelledby="pt-testdata-h" data-testid="pt-testdata">
@@ -1250,20 +1272,27 @@
         </section>
         @if (ActiveRun is { } active)
         {
-            <div class="sd-panel" data-testid="pt-progress">
-                <p role="status" aria-live="polite" data-testid="pt-progress-state"><span class="sd-pill sd-pill-@P.Tone(active.State)">@P.Label(active.State)</span>
-                    @(active.StartedAt is { } s ? $" · elapsed {P.Duration((int)(DateTimeOffset.UtcNow - s).TotalSeconds)}" : "")</p>
-                <p class="sd-muted">Live load metrics are not reported by the provider during the run; results appear when it finishes.</p>
-                @if (active.Resources is { Configured: true } live) { <BirkNext.Web.Components.PerformanceResourceResults Assessment="live" Mode="live" /> }
-                <button type="button" class="btn-secondary" @onclick="CancelAsync" disabled="@(active.State == PerformanceRunState.Cancelling)" data-testid="pt-cancel">Cancel test</button>
-            </div>
+            @* Execution progress: the lifecycle stage and what was actually observed — never "Running" as proof of load. *@
+            <BirkNext.Web.Components.PerformanceExecutionProgress Run="active" />
+            @if (active.Resources is { Configured: true } live) { <BirkNext.Web.Components.PerformanceResourceResults Assessment="live" Mode="live" /> }
+            <p class="ptc-actions-row"><button type="button" class="btn-secondary" @onclick="CancelAsync" disabled="@(active.State == PerformanceRunState.Cancelling)" data-testid="pt-cancel">Cancel test</button>
+                <button type="button" class="btn-secondary" @onclick="RefreshActiveRunAsync" data-testid="pt-progress-refresh">Refresh status</button>
+                <button type="button" class="btn-secondary" @onclick="() => { _selectedRun = active; _tab = Tab.Results; }" data-testid="pt-progress-diagnostics">View diagnostics</button></p>
         }
         else
         {
+            @if (!_isNew)
+            {
+                @* What a run executes: the SAVED definition version, readiness re-evaluated by the backend at start, persisted endpoint evidence. *@
+                <BirkNext.Web.Components.PerformanceExecutionSummary Definition="_draft" Readiness="_readiness" History="_history"
+                    OnConfigureAuthentication="() => PerformAction(PerformanceReadinessActions.EditScenario)" OnReviewScenario="() => PerformAction(PerformanceReadinessActions.EditScenario)"
+                    OnAcknowledgeUnauthenticated="AcknowledgeUnauthenticatedAsync" />
+                @if (_dirty) { <p class="sd-muted" data-testid="pt-summary-unsaved">Unsaved changes are not part of the run — save them as a new version first.</p> }
+            }
             @if (CanRun)
             {
                 <label class="ptc-inline-field">Release / version label (optional) <input @bind="_versionLabel" maxlength="100" data-testid="pt-version-label" /></label>
-                <button type="button" class="btn-primary ptc-add" @onclick="StartAsync" data-testid="pt-run-start">Run performance test</button>
+                <button type="button" class="btn-primary ptc-add" @onclick="StartAsync" disabled="@_starting" data-testid="pt-run-start">@(_starting ? "Starting…" : "Run performance test")</button>
             }
             else
             {

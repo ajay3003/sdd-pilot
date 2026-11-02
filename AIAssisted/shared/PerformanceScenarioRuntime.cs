@@ -31,6 +31,16 @@ public sealed record RuntimeValueRow(RuntimeParameter Parameter, ScenarioDataMap
 
 public sealed record StepReadiness(StepStatus Status, IReadOnlyList<string> Reasons);
 
+/// <summary>NotRequired: no authentication observed or declared. Configured: a configuration is referenced. Missing: required, nothing configured
+/// (a default None never counts). IntentionallyUnauthenticated: an explicit, still-valid override. OverrideOutdated: the override no longer matches.</summary>
+public enum StepAuthenticationState { NotRequired, Configured, Missing, IntentionallyUnauthenticated, OverrideOutdated }
+
+/// <summary>One enabled step's authentication requirement against its effective configuration (names and templated identities only).</summary>
+public sealed record StepAuthenticationRequirement(int Index, string Step, string Operation, string Identity, string? Requirement, string? Effective, StepAuthenticationState State)
+{
+    public bool Blocking => State is StepAuthenticationState.Missing or StepAuthenticationState.OverrideOutdated;
+}
+
 /// <summary>A suggested (never applied) value source for an unresolved parameter.</summary>
 public sealed record RuntimeValueSuggestion(RuntimeValueSource Source, string Text, string? Alias = null, string? FromStepId = null, string? Output = null);
 
@@ -253,6 +263,57 @@ public static partial class PerformanceScenarioRuntime
         _ => d.AuthenticationReference,
     };
 
+    // ── Authentication readiness (the one evaluator: candidate, step, scenario summary, Readiness tab, Run, backend start) ─────────────────────
+    // A requirement comes from evidence: authentication observed by Endpoint Discovery (on the step when it was created, or in the persisted
+    // observation history now) or declared by the contract. It is satisfied by a configured authentication, or by an explicit, still-valid
+    // unauthenticated override. A default None is NEVER a confirmation.
+
+    /// <summary>The Endpoint Discovery identity of a step: its recorded identity, else "METHOD /route/{id}" (every {param} and identifier-like segment templated).</summary>
+    public static string ObservationIdentity(HttpPerformanceStep s) => s.Source?.EvidenceIdentity is { Length: > 0 } identity ? identity
+        : $"{(s.Method ?? "GET").Trim().ToUpperInvariant()} {PerformanceScenarioEngine.Template(System.Text.RegularExpressions.Regex.Replace(s.RelativePath ?? "", "\\{[^}/]+\\}", "{id}"))}";
+
+    public static IReadOnlyList<StepAuthenticationRequirement> AuthenticationRequirements(PerformanceTestDefinition d, IReadOnlySet<string>? observedAuthentication = null)
+    {
+        var raw = d.Scenario.Steps.Select((s, i) => (s, i)).Where(x => !x.s.Disabled).Select(x =>
+        {
+            var identity = ObservationIdentity(x.s);
+            var requirement = x.s.Source?.ObservedAuthentication
+                ?? (observedAuthentication?.Contains(identity) == true ? "Authentication observed by Endpoint Discovery" : null);
+            return (x.s, x.i, identity, requirement, effective: EffectiveAuthentication(d, x.s));
+        }).ToList();
+        var fingerprint = Fingerprint(raw.Where(r => r.requirement is not null && r.effective is null).Select(r => (r.identity, r.requirement!)));
+        var overridden = d.UnauthenticatedOverride is { } o && o.EvidenceFingerprint.Length > 0 && o.EvidenceFingerprint == fingerprint;
+        return raw.Select(r => new StepAuthenticationRequirement(r.i, r.s.Name, $"{(r.s.Method ?? "").ToUpperInvariant()} {r.s.RelativePath}".Trim(), r.identity, r.requirement, r.effective,
+            r.requirement is null ? StepAuthenticationState.NotRequired
+            : r.effective is not null ? StepAuthenticationState.Configured
+            : overridden ? StepAuthenticationState.IntentionallyUnauthenticated
+            : d.UnauthenticatedOverride is not null ? StepAuthenticationState.OverrideOutdated
+            : StepAuthenticationState.Missing)).ToList();
+    }
+
+    /// <summary>Identities + requirements (templated routes only — no value, no credential), order-independent.</summary>
+    private static string Fingerprint(IEnumerable<(string Identity, string Requirement)> required) =>
+        string.Join("\n", required.Select(r => $"{r.Identity}|{r.Requirement}").Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal));
+
+    /// <summary>The explicit decision to run every authentication-requiring, unconfigured operation without authentication, as of now.</summary>
+    public static UnauthenticatedExecutionOverride AcknowledgeUnauthenticated(PerformanceTestDefinition d, IReadOnlySet<string>? observedAuthentication, DateTimeOffset now, string? actor)
+    {
+        var missing = AuthenticationRequirements(d with { UnauthenticatedOverride = null }, observedAuthentication)
+            .Where(r => r.State == StepAuthenticationState.Missing).ToList();
+        return new UnauthenticatedExecutionOverride
+        {
+            AcknowledgedAt = now, AcknowledgedBy = actor, Operations = [.. missing.Select(r => r.Identity).Distinct(StringComparer.Ordinal)],
+            EvidenceFingerprint = Fingerprint(missing.Select(r => (r.Identity, r.Requirement!))),
+        };
+    }
+
+    public static string AuthenticationRequirementProblem(StepAuthenticationRequirement r) => r.State switch
+    {
+        StepAuthenticationState.OverrideOutdated =>
+            $"{r.Operation}: {r.Requirement} — the earlier decision to run without authentication no longer matches the scenario or endpoint evidence; configure authentication or confirm again",
+        _ => $"{r.Operation}: {r.Requirement}, but no authentication is configured for this operation (None is not a confirmation)",
+    };
+
     public static string AuthenticationLabel(PerformanceTestDefinition d, HttpPerformanceStep s) => s.Authentication switch
     {
         StepAuthenticationMode.None => "None",
@@ -345,7 +406,7 @@ public static partial class PerformanceScenarioRuntime
     /// One primary status per step: Disabled; Blocked (performance safety: write method, REST POST not marked read-only, missing/invalid path,
     /// invalid ordering); Needs configuration (an unresolved runtime value); otherwise Ready. Reasons are precise ("Step 2 · brukerId: …").
     /// </summary>
-    public static StepReadiness Readiness(PerformanceTestDefinition d, int index, IReadOnlySet<string>? knownAliases = null)
+    public static StepReadiness Readiness(PerformanceTestDefinition d, int index, IReadOnlySet<string>? knownAliases = null, IReadOnlySet<string>? observedAuthentication = null)
     {
         var s = d.Scenario.Steps[index];
         if (s.Disabled) return new(StepStatus.Disabled, ["Disabled — stays in the definition but does not run"]);
@@ -364,6 +425,8 @@ public static partial class PerformanceScenarioRuntime
         if (blocked.Count > 0) return new(StepStatus.Blocked, blocked);
         var open = rows.Where(r => !r.Resolved).Select(r => $"{Step(index)} · {r.Parameter.Variable}: {r.Problem}").ToList();
         if (s.Authentication == StepAuthenticationMode.Override && s.AuthenticationReference is null) open.Add($"{Step(index)}: authentication override has no configuration");
+        if (AuthenticationRequirements(d, observedAuthentication).FirstOrDefault(r => r.Index == index) is { State: StepAuthenticationState.Missing or StepAuthenticationState.OverrideOutdated } auth)
+            open.Add($"{Step(index)}: authentication required — {AuthenticationRequirementProblem(auth)}");
         return open.Count > 0 ? new(StepStatus.NeedsConfiguration, open) : new(StepStatus.Ready, []);
     }
 
@@ -374,9 +437,9 @@ public static partial class PerformanceScenarioRuntime
     };
 
     /// <summary>Scenario-level summary of the step statuses: Blocked wins, then Needs configuration; Ready only with at least one enabled step.</summary>
-    public static StepReadiness ScenarioReadiness(PerformanceTestDefinition d, IReadOnlySet<string>? knownAliases = null)
+    public static StepReadiness ScenarioReadiness(PerformanceTestDefinition d, IReadOnlySet<string>? knownAliases = null, IReadOnlySet<string>? observedAuthentication = null)
     {
-        var steps = Enumerable.Range(0, d.Scenario.Steps.Count).Select(i => Readiness(d, i, knownAliases)).ToList();
+        var steps = Enumerable.Range(0, d.Scenario.Steps.Count).Select(i => Readiness(d, i, knownAliases, observedAuthentication)).ToList();
         var reasons = steps.SelectMany(r => r.Status == StepStatus.Disabled ? [] : r.Reasons).ToList();
         reasons.AddRange((d.Scenario.Variables ?? []).Select(VariableProblem).OfType<string>());
         var status = steps.Any(r => r.Status == StepStatus.Blocked) ? StepStatus.Blocked

@@ -42,7 +42,7 @@
                 <div><dt>Started</dt><dd>@P.Utc(r.StartedAt)</dd></div>
                 <div><dt>Duration</dt><dd data-testid="pt-result-duration">@(m is { DurationSeconds: > 0 } ? P.Duration((int)Math.Round(m.DurationSeconds)) : "—")</dd></div>
                 <div><dt>Workload</dt><dd data-testid="pt-result-workload">@snapshot.Workload.Purpose · @P.Load(snapshot.Workload)</dd></div>
-                <div><dt>Requests</dt><dd data-testid="pt-result-requests">@(m is null ? "—" : m.RequestCount.ToString("N0", CultureInfo.InvariantCulture))</dd></div>
+                <div><dt>Requests</dt><dd data-testid="pt-result-requests">@(m is null ? BirkNext.PerformanceTests.PerformanceExecutionAssessment.RequestsLabel(r) : m.RequestCount.ToString("N0", CultureInfo.InvariantCulture))</dd></div>
                 <div><dt>Failed requests</dt><dd data-testid="pt-result-failed">@(m is null ? "—" : $"{m.FailedRequests.ToString("N0", CultureInfo.InvariantCulture)} ({PerformanceTestRules.Format(m.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)})")</dd></div>
                 <div><dt>Throughput</dt><dd data-testid="pt-result-rps">@PerformanceTestRules.Format(m?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</dd></div>
                 <div><dt>p50 · p90 · p95 · p99</dt><dd data-testid="pt-result-percentiles">@string.Join(" · ", new[] { m?.Latency.P50Ms, m?.Latency.P90Ms, m?.Latency.P95Ms, m?.Latency.P99Ms }.Select(v => PerformanceTestRules.Format(v, PerformanceMetric.LatencyP95Ms)))</dd></div>
@@ -54,12 +54,13 @@
             <p class="visually-hidden"><span data-testid="pt-result-state">@P.Label(r.State)</span> · <span data-testid="pt-result-quality">@P.Label(r.Verdict)</span></p>
         </div>
         @if (r.StateReason is { } reason) { <p class="prr-reason" data-testid="pt-result-reason">@reason</p> }
-        @if (r.IsActive) { <p class="prr-note" role="status" data-testid="pt-result-in-progress">Run in progress — partial metrics may change and are not final.</p> }
+        @if (r.IsActive) { <p class="prr-note" role="status" data-testid="pt-result-in-progress">Run in progress — metrics are not available yet. Final results will appear when collection completes.</p> }
+        <PerformanceExecutionEvidencePanel Run="r" />
 
         <div class="prr-grid">
             <section class="prr-card" aria-labelledby="prr-perf-h" data-testid="pt-result-performance">
                 <h3 id="prr-perf-h">Performance</h3>
-                @if (m is null) { <p class="prr-muted">No metrics were recorded for this run.</p> }
+                @if (m is null) { <p class="prr-muted" data-testid="pt-result-no-metrics">@NoMetrics(r)</p> }
                 else
                 {
                     <dl class="prr-mini" data-testid="pt-latency">
@@ -72,7 +73,7 @@
             </section>
             <section class="prr-card" aria-labelledby="prr-rel-h" data-testid="pt-result-reliability">
                 <h3 id="prr-rel-h">Reliability</h3>
-                @if (m is null) { <p class="prr-muted">No metrics were recorded for this run.</p> }
+                @if (m is null) { <p class="prr-muted">@NoMetrics(r)</p> }
                 else
                 {
                     <dl class="prr-mini">
@@ -195,8 +196,11 @@
     /// <summary>One clear top-level status: execution first, then (only for a completed run) the threshold outcome. Never merged.</summary>
     public static (string Primary, string Secondary, string Tone) Status(PerformanceTestRun r) => r.State switch
     {
-        PerformanceRunState.Queued or PerformanceRunState.Preparing or PerformanceRunState.Running or PerformanceRunState.Cancelling => ("Run in progress", "Partial metrics may change", "info"),
-        PerformanceRunState.Cancelled => ("Cancelled", "Partial results — no pass/fail conclusion", "neutral"),
+        PerformanceRunState.Queued or PerformanceRunState.Preparing or PerformanceRunState.Running or PerformanceRunState.Cancelling => ("Run in progress", "Metrics are not available yet", "info"),
+        PerformanceRunState.Cancelled => (r.ExecutionEvidence is { StopReason: not PerformanceStopReason.None } stop ? PerformanceExecutionAssessment.StopReasonLabel(stop.StopReason) : "Cancelled",
+            r.Metrics is not null ? "Partial — run cancelled · no pass/fail conclusion" : "No metrics captured — no pass/fail conclusion", "neutral"),
+        PerformanceRunState.TimedOut => ("Timed out", "Execution timeout — not a performance result", "error"),
+        PerformanceRunState.ExecutionFailed when r.ExecutionEvidence?.StopReason == PerformanceStopReason.ApplicationShutdown => ("Interrupted", "BirkNext stopped while the run was active — not a performance result", "error"),
         PerformanceRunState.ExecutionFailed or PerformanceRunState.TimedOut or PerformanceRunState.Blocked => ("Run failed", "Execution error — not a performance result", "error"),
         _ => r.Verdict switch
         {
@@ -206,6 +210,22 @@
             _ => ("Run completed", r.ThresholdResults.Count == 0 ? "No thresholds configured" : "Thresholds not assessed", "neutral"),
         },
     };
+
+    /// <summary>Only after the run is terminal may "no metrics" be said — and then why, when it is known.</summary>
+    public static string NoMetrics(PerformanceTestRun r)
+    {
+        if (r.IsActive) return "Metrics are not available yet — the run is still in progress. Final results will appear when collection completes.";
+        var why = r.ExecutionEvidence switch
+        {
+            { ResultArtifact: PerformanceResultArtifactState.Missing } => "k6 wrote no result artifact.",
+            { ResultArtifact: PerformanceResultArtifactState.ParseFailed, ResultArtifactDetail: var d } => $"The result artifact could not be parsed{(d is null ? "" : $": {d}")}",
+            { Telemetry: PerformanceTelemetryState.Collected or PerformanceTelemetryState.Receiving, RequestsObserved: 0 } => "k6 recorded no requests.",
+            { } e when r.State == PerformanceRunState.Cancelled => e.RequestsObserved is > 0 ? "The run was cancelled before k6 wrote an end-of-test summary." : "The run was cancelled before metrics were produced.",
+            null => "",
+            _ => r.State == PerformanceRunState.Blocked ? "The run was blocked before the workload started." : "",
+        };
+        return $"No metrics were recorded for this run.{(why.Length > 0 ? " " + why : "")}";
+    }
 
     private static string ThresholdSummary(IReadOnlyList<PerformanceThresholdResult> t)
     {

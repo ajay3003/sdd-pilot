@@ -204,6 +204,8 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
 {
     public const string NoTargetsReason = "No REST or GraphQL API target is available for review.";
     public const string NoAuthContextReason = "Authenticated API context not available.";
+    /// <summary>A choice still to make, not a blocker: targets exist but none is selected.</summary>
+    public const string NoSelectionReason = "Select at least one API target.";
     public const string NoAuthContextAction = "Open Authentication setup";
     public const string StaticOnlyPrefix = "Read-only contract review of";
     public const string TargetEnvironmentsHref = "/admin/system-settings?section=target-environments";
@@ -223,7 +225,7 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
         if (context.ActiveTargetError is { Length: > 0 } error) return new(false, error, "Open Target Environments", TargetEnvironmentsHref);
         if (targets.Count == 0) return new(false, NoTargetsReason, "View Endpoint Discovery or configure an API target", TargetEnvironmentsHref);
         var selected = targets.Where(t => selectedIds.Contains(t.TargetId)).ToList();
-        if (selected.Count == 0) return new(false, "Select at least one API target.", null, null);
+        if (selected.Count == 0) return new(false, NoSelectionReason, null, null);
         var authenticatedAvailable = capabilities?.AuthenticatedApi == true;
         var runnable = selected.Where(t => !t.AuthRequired || authenticatedAvailable).ToList();
         if (runnable.Count > 0) return new(true, runnable.Count == selected.Count ? $"{Targets(selected.Count)} ready." : $"{runnable.Count} of {Targets(selected.Count)} runnable; authenticated targets will be reported as blocked (no timeout).", null, null);

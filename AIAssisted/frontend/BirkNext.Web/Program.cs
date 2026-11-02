@@ -192,6 +192,12 @@ builder.Services.AddHttpClient<ILocalHttpsProxyApiService, LocalHttpsProxyApiSer
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<LocalHttpsProxyRuntime>();
+// Persisted Endpoint Discovery history: the canonical runtime evidence reviews read directly (never via Endpoint Discovery being opened).
+builder.Services.AddHttpClient<IEndpointObservationHistoryApiService, EndpointObservationHistoryApiService>(client =>
+{
+    client.BaseAddress = backendBase;
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddHttpClient<IBrowserCompanionApiService, BrowserCompanionApiService>(client =>
 {
     client.BaseAddress = backendBase;

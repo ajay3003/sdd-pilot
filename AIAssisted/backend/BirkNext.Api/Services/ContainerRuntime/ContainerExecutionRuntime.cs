@@ -69,6 +69,9 @@ public interface IContainerExecutionRuntime
     /// <summary>Runs to completion, timeout or cancellation; the container is always removed afterwards (<see cref="ContainerRunOutcome.Removed"/>).</summary>
     Task<ContainerRunOutcome> RunAsync(ContainerRunSpec spec, CancellationToken ct);
     Task<bool> RemoveAsync(string name, CancellationToken ct = default);
+    /// <summary>Graceful stop (SIGTERM, then the runtime's kill after <paramref name="graceSeconds"/>): lets the workload write its own partial
+    /// results before cleanup. False = not supported or not stopped; the caller then terminates the run the hard way.</summary>
+    Task<bool> StopAsync(string name, int graceSeconds, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>Names of BirkNext-managed containers of one component (label birknext.managed=true + birknext.component), never other containers.</summary>
     Task<IReadOnlyList<string>> ListManagedAsync(string component, CancellationToken ct = default);
     /// <summary>cgroup controllers available to containers (empty when none are delegated, e.g. rootless without delegation).</summary>
@@ -218,6 +221,14 @@ public sealed partial class PodmanContainerExecutionRuntime(IProcessRunner runne
             removed = await RemoveAsync(spec.Name, CancellationToken.None);
         }
         return new ContainerRunOutcome(outcome.ExitCode, outcome.StandardOutput, outcome.StandardError, outcome.TimedOut, outcome.Cancelled, outcome.StartError, removed) { UnappliedLimits = unapplied };
+    }
+
+    public async Task<bool> StopAsync(string name, int graceSeconds, CancellationToken ct = default)
+    {
+        if (!ContainerArgumentRules.IsName(name)) return false;
+        var stop = await runner.RunAsync(new ProcessSpec(Cli, ["stop", "--time", Math.Clamp(graceSeconds, 1, 120).ToString(System.Globalization.CultureInfo.InvariantCulture), name],
+            Path.GetTempPath()), TimeSpan.FromSeconds(Math.Clamp(graceSeconds, 1, 120) + 30), 4096, ct);
+        return stop.ExitCode == 0;
     }
 
     public async Task<bool> RemoveAsync(string name, CancellationToken ct = default)

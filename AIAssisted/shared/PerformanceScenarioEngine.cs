@@ -728,6 +728,11 @@ public static partial class PerformanceScenarioEngine
         {
             OperationKey = op.Key, Origin = op.Origin, Evidence = op.Evidence, ContractId = op.ContractId, ContractName = op.ContractName, ContractFile = op.ContractFile,
             SnapshotId = op.SnapshotId, OperationFingerprint = op.Signature, ObservedCount = op.Observation?.Count ?? 0, ObservedLastSeen = op.Observation?.LastSeen,
+            // The requirement travels with the step (evidence, never a credential): observed authorization, else the contract's declared security.
+            ObservedAuthentication = op.Observation?.AuthObserved == true ? "Authenticated requests observed by Endpoint Discovery"
+                : op.Security.Count > 0 ? $"Declared authentication ({op.Security[0]})" : null,
+            EvidenceIdentity = op.GraphQl?.OperationName is { Length: > 0 } observedName ? $"graphql {(op.GraphQlKind == "mutation" ? "mutation" : "query")} {observedName}"
+                : op.Path is null ? null : $"{op.Method.ToUpperInvariant()} {Template(System.Text.RegularExpressions.Regex.Replace(op.Path, "\\{[^}/]+\\}", "{id}"))}",
             Parameters = op.Needs.Where(n => n.DataType == TestDataDataType.SimpleValues).Select(n => op.Parameters.FirstOrDefault(p => p.Name == n.Variable && p.In == (n.In == "variable" ? "argument" : n.In)))
                 .OfType<ContractParameter>().Where(p => p.Type is not null || p.Enum is not null).Select(p => new ScenarioParameterShape(p.Name, p.Type) { Enum = p.Enum }).ToList() is { Count: > 0 } shapes ? shapes : null,
         };
