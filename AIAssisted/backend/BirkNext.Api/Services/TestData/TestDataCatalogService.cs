@@ -17,8 +17,10 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
     {
         var view = await validation.ViewAsync(ct);
         var usages = registry.Usages();
-        // "Used by N": every consumer that references the alias (performance scenarios, Critical E2E flows, explicit bindings), not only bindings.
-        var references = lifecycle is null ? null : (await lifecycle.UsagesAsync(ct)).ToLookup(u => u.Alias, StringComparer.Ordinal);
+        // "Used by N": every active consumer reference (performance scenarios, Critical E2E flows, Connected System bindings by asset id, explicit
+        // bindings) — one per consumer, however many requirements of that consumer resolve the asset. Suggestions are never references.
+        var all = lifecycle is null ? null : await lifecycle.UsagesAsync(ct);
+        var references = all?.Where(u => !u.Unresolved).ToLookup(u => u.AssetId ?? u.Alias, StringComparer.Ordinal);
         var registered = registry.Assets().ToDictionary(a => a.Id, StringComparer.Ordinal);
         var drift = await DriftAsync(registered.Values, ct);
         return view with
@@ -28,9 +30,13 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
                 var (contract, note) = ContractStatus(asset, registered.GetValueOrDefault(asset.Id), drift);
                 var status = contract == TestDataContractStatus.NeedsReview && asset.Status == TestDataAssetStatus.Approved ? TestDataAssetStatus.NeedsReview : asset.Status;
                 var consumers = references is not null
-                    ? references[asset.Alias].Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct(StringComparer.Ordinal).Count()
+                    ? references[asset.Id].Concat(references[asset.Alias]).Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct(StringComparer.Ordinal).Count()
                     : usages.Where(u => u.AssetId == asset.Id).Select(u => u.Consumer.Key).Distinct().Count();
-                return asset with { Consumers = consumers, ContractStatus = contract, ContractNote = note, Status = status };
+                // Inputs the payload was generated from (mapped Test Data values) changed since: regeneration recommended, never a silent rewrite.
+                var changed = TestDataValueVersions.Changed(asset, view.Assets);
+                var staleness = changed.Count == 0 ? null
+                    : $"Regeneration recommended: {string.Join(", ", changed.Select(c => c.Missing ? $"{c.Alias} (no longer in Test Data)" : c.Alias))} changed since this version was generated.";
+                return asset with { Consumers = consumers, ContractStatus = contract, ContractNote = note, Status = status, Staleness = staleness };
             })],
         };
     }
@@ -156,13 +162,38 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
             : new(true, match.Alias, $"Existing approved Test Data match found: {match.Alias}.");
     }
 
-    /// <summary>Explicit approval of the asset's current version (fingerprint). A deprecated asset is not approved for new usage.</summary>
-    public string? Approve(string assetId)
+    /// <summary>
+    /// Explicit approval of one version (default: the current one) — the approve action of the Test Data API. A positive XML payload is approved
+    /// only when it is valid against its exact declared XSD: Invalid is refused; when the backend cannot evaluate the schema, the validation
+    /// recorded at generation against that same XSD must be Valid. A deliberately invalid negative-test fixture is approved as such. Approving a
+    /// draft version makes it the current version of the same asset id, so every consumer bound to the id uses it without rebinding.
+    /// </summary>
+    public async Task<string?> ApproveAsync(string assetId, int? version, CancellationToken ct)
     {
         if (catalog.Assets().FirstOrDefault(a => a.Id == assetId) is not { } asset) return "Unknown asset.";
+        if (catalog.VersionOf(asset, version) is not { } target) return $"{asset.Alias} has no version {version}.";
+        var negative = target.Capabilities.Contains(TestDataProtection.NegativeTest, StringComparer.Ordinal);
+        if (!negative && target.Schema is not null && TestDataValidator.MediaType(target.MediaType).EndsWith("xml", StringComparison.Ordinal))
+        {
+            var check = await validation.CheckAsync(target, ct);
+            if (check?.Status == TestDataSchemaStatus.Invalid)
+                return $"Validation failed: {target.Alias} (version {target.Version ?? 1}) is invalid against {check.Schema}; invalid XML cannot be approved. "
+                    + string.Join(" ", check.Issues.Take(3));
+            if (check?.Status != TestDataSchemaStatus.Validated && target.RecordedValidation is { } recorded && recorded != "Valid")
+                return $"{target.Alias} (version {target.Version ?? 1}) did not pass validation against its XSD when it was generated; invalid XML cannot be approved.";
+        }
+        return Approve(asset, target);
+    }
+
+    /// <summary>Explicit approval of the asset's current version (fingerprint). A deprecated asset is not approved for new usage.</summary>
+    public string? Approve(string assetId) =>
+        catalog.Assets().FirstOrDefault(a => a.Id == assetId) is { } asset ? Approve(asset, asset) : "Unknown asset.";
+
+    private string? Approve(TestDataAsset asset, TestDataAsset version)
+    {
         if (asset.Deprecated) return "A deprecated asset is not approved for new usage.";
-        var current = registry.Lifecycle(assetId) ?? new TestDataLifecycleRecord { AssetId = assetId };
-        registry.SetLifecycle(current with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(asset), ApprovedAt = time.GetUtcNow() });
+        var current = registry.Lifecycle(asset.Id) ?? new TestDataLifecycleRecord { AssetId = asset.Id };
+        registry.SetLifecycle(current with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(version), ApprovedAt = time.GetUtcNow() });
         return null;
     }
 

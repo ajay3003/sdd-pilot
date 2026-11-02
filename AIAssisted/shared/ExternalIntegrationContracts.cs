@@ -36,8 +36,11 @@ public sealed record ExternalIntegration
     public Dictionary<string, string> Settings { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> Provenance { get; init; } = new(StringComparer.Ordinal);
     public List<string> EvidenceReferences { get; init; } = [];
-    /// <summary>Explicit Test Data bindings (requirement → asset alias). References only — the value stays in Test Data and is resolved at run time.</summary>
+    /// <summary>Persisted Test Data bindings (requirement → stable asset id). References only — the value stays in Test Data and is resolved at run time.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ConnectedSystemTestDataBinding>? TestDataBindings { get; init; }
+    /// <summary>The Test Data reference migration this document has been through (null = never): consumed-but-unpersisted usage is recorded once,
+    /// so a binding a person later clears is never re-created.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? TestDataReferenceVersion { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }

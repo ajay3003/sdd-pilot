@@ -392,9 +392,9 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 "Choose the application/system this environment represents; its Project evidence (the imported packages that describe it) is bound next."
                 + (evidence.SuggestedProject is { } suggested ? $" Detected: {suggested.DisplayName}." : evidence.ProjectCandidates.Count > 1 ? $" {evidence.ProjectCandidates.Count} application candidates need a choice." : ""),
                 ProjectEvidence.TargetApplications.TabHref(environmentId), "Configure Target Application");
-        return Synthetic(ConfigureProjectKey, "Configure Project evidence",
-            $"Bind the imported evidence of {application.Name}: application source, documentation, contracts, infrastructure and supporting packages. Project evidence decides which documents and source the reviews read for this environment.",
-            ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Configure Project evidence");
+        return Synthetic(ConfigureProjectKey, "Review project evidence",
+            $"Imported evidence of {application.Name} (application source, documentation, contracts, infrastructure, supporting packages) is associated automatically when its role is clear; review the sources that need confirmation. Project evidence decides which documents and source the reviews read for this environment.",
+            ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environmentId), "Review project evidence");
     }
 
     private static WorkflowStepViewModel ChoosePath(string title, string description) =>
@@ -501,8 +501,8 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         {
             // Never "load project artifacts" when BirkNext already holds them: bind what is imported, import only what nobody has.
             if (inputs.Documents is { Status: ProjectInputStatus.NeedsAttention } unresolvedDocs && workspace.Evidence is not null)
-                return Synthetic(BindProjectEvidenceKey, workspace.DocumentationUnresolved ? "Bind project documentation source" : "Bind the imported project documents",
-                    unresolvedDocs.Detail, unresolvedDocs.Route, "Bind project documentation");
+                return Synthetic(BindProjectEvidenceKey, workspace.DocumentationUnresolved ? "Review project documentation source" : "Use the imported project documentation",
+                    unresolvedDocs.Detail, unresolvedDocs.Route, unresolvedDocs.ActionLabel);
             if (workspace.Evidence is not null)
             {
                 // No supported documents in any imported package. Required (Target Environment Project) -> import them; otherwise the source-based

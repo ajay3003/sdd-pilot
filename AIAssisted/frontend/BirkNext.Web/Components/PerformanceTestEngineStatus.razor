@@ -309,7 +309,7 @@
                         <span class="pte-icon pte-icon-engine" aria-hidden="true"></span>
                         <div class="pte-card-titles">
                             <h4 id="pte-ca-title" class="pte-card-title">Container TLS trust</h4>
-                            <p class="pte-card-kind">Corporate CA bundle for the k6 container</p>
+                            <p class="pte-card-kind">Target certificate trust for the k6 container</p>
                         </div>
                         <span data-testid="pte-ca-state">@Pill(trust, "Container TLS trust")</span>
                     </div>
@@ -330,6 +330,12 @@
                         }
                     </dl>
 
+                    @if (PerformanceTlsPresentation.BlockedHeadline(le.LastValidation) is { } blocked)
+                    {
+                        @* Runtime execution only: the engine stays Ready and Performance Test Review stays available for design work. *@
+                        <p class="pte-error" role="status" data-testid="pte-runtime-blocked"><strong>@blocked</strong> for @PerformanceTlsPresentation.Host(le.LastValidation!.TargetOrigin). The k6 engine itself is ready; you can continue designing the performance test.</p>
+                    }
+                    <h5 class="pte-chain-title">Network readiness</h5>
                     <ol class="pte-stages" aria-label="Container network check stages" data-testid="pte-ca-stages">
                         @foreach (var stage in le.Stages)
                         {
@@ -344,7 +350,21 @@
                             else
                             {
                                 <p data-testid="pte-ca-chain-layer"><strong>Failed trust layer:</strong> @chain.FailedLayer</p>
-                                <p class="pte-guidance" data-testid="pte-ca-chain-guidance">@chain.Guidance</p>
+                                <p data-testid="pte-ca-chain-cause" data-class="@chain.FailureClass"><strong>Cause:</strong> @TlsFailureClasses.Label(chain.FailureClass)</p>
+                                @* 1 problem · 2 recommended fix · 3 re-run validation · 4 advanced local trust — never the reverse. *@
+                                <section class="pte-remediation" aria-label="Recommended remediation" data-testid="pte-ca-remediation">
+                                    <h6 class="pte-chain-title">Recommended remediation</h6>
+                                    <p class="pte-guidance" data-testid="pte-ca-chain-guidance">@(chain.Remediation.Length > 0 ? chain.Remediation : chain.Guidance)</p>
+                                    <p class="pte-guidance" data-testid="pte-ca-rerun">After the fix: run “Check container network” again in Performance Test Review. BirkNext only diagnoses and guides; it never changes the target server.</p>
+                                    <div class="pte-ca-row">
+                                        <button type="button" class="btn-secondary" data-testid="pte-copy-certificate" @onclick="() => CopyAsync(PerformanceTlsPresentation.CertificateDetails(le.LastValidation!))">@(_copied == PerformanceTlsPresentation.CertificateDetails(le.LastValidation!) ? "Copied" : "Copy certificate details")</button>
+                                        @if (PerformanceTlsPresentation.RemediationSummary(le.LastValidation!) is { } summary)
+                                        {
+                                            <button type="button" class="btn-secondary" data-testid="pte-copy-remediation" @onclick="() => CopyAsync(summary)">@(_copied == summary ? "Copied" : "Copy remediation summary")</button>
+                                        }
+                                    </div>
+                                    @if (chain.AdvancedRemediation is { } advanced) { <p class="pte-muted" data-testid="pte-ca-advanced">@advanced</p> }
+                                </section>
                                 <ol class="pte-chain-list">
                                     @foreach (var (cert, i) in chain.Certificates.Select((c, i) => (c, i)))
                                     {
@@ -362,11 +382,14 @@
                             }
                         </section>
                     }
+                    @RepairSection(le)
                     @if (le.LastValidation is null)
                     {
                         <p class="pte-guidance" data-testid="pte-ca-how-to-validate">Validate by running “Check container network” for a saved definition in Performance Test Review. It sends one request from the k6 container — never a load test.</p>
                     }
 
+                    <h5 class="pte-chain-title" data-testid="pte-ca-advanced-title">Advanced local trust — CA bundle</h5>
+                    <p class="pte-section-sub" data-testid="pte-ca-advanced-context">Advanced — use for an approved corporate/private CA (an organization PKI or HTTPS-inspection CA that is intentionally not publicly trusted) or for temporary local diagnostics. Not the fix for a public server that sends an incomplete chain, an expired certificate or a wrong host name.</p>
                     <form class="pte-ca-form" @onsubmit="SaveCaAsync" @onsubmit:preventDefault="true" data-testid="pte-ca-form">
                         <label for="pte-ca-path" class="pte-ca-label">CA bundle file on this machine (.pem, .crt or .cer — public certificates only)</label>
                         <div class="pte-ca-row">
@@ -409,6 +432,61 @@
         _pulling = false;
         _message = result.Value is null ? $"Not pulled: {result.Error}" : "Image pulled.";
         _providers = await _api.ProvidersOrNullAsync();
+    }
+
+    private bool _modeBusy;
+
+    /// <summary>TLS trust: the automatic missing-intermediate repair setting and each host's repair (metadata only).</summary>
+    private RenderFragment RepairSection(PerformanceLocalExecutionStatus le) => __builder =>
+    {
+        <section class="pte-repair" aria-labelledby="pte-repair-title" data-testid="pte-tls-repair" data-mode="@le.RepairMode">
+            <h5 id="pte-repair-title" class="pte-chain-title">TLS trust — missing intermediate certificates</h5>
+            <fieldset class="pte-repair-mode" data-testid="pte-repair-mode">
+                <legend class="pte-ca-label">Automatically repair missing intermediate certificates</legend>
+                <label><input type="radio" name="pte-repair-mode" value="@TlsRepairModes.Automatic" checked="@(le.RepairMode == TlsRepairModes.Automatic)" disabled="@_modeBusy"
+                              data-testid="pte-repair-automatic" @onchange="() => SetModeAsync(TlsRepairModes.Automatic)" /> Automatic — retrieve and validate a missing intermediate against an already trusted root</label>
+                <label><input type="radio" name="pte-repair-mode" value="@TlsRepairModes.ManualOnly" checked="@(le.RepairMode == TlsRepairModes.ManualOnly)" disabled="@_modeBusy"
+                              data-testid="pte-repair-manual" @onchange="() => SetModeAsync(TlsRepairModes.ManualOnly)" /> Manual only — diagnose, never retrieve</label>
+            </fieldset>
+            <p class="pte-muted">Only an intermediate is ever added, for that host's k6 execution only, after its issuer, signature, CA constraint, key usage and validity check out and the chain ends at a root the k6 container (or your approved CA bundle) already trusts. A root, the leaf or a self-signed certificate is never trusted automatically; hostname and expiry checks stay on; TLS verification is never disabled.</p>
+            @foreach (var repair in le.Repairs)
+            {
+                <article class="pte-repair-host" data-testid="pte-repair-host" data-state="@repair.State">
+                    <p><strong>@PerformanceTlsPresentation.RepairStateLabel(repair.State)</strong> · @repair.Host@(repair.Port == 443 ? "" : $":{repair.Port}")</p>
+                    <p class="pte-guidance" data-testid="pte-repair-detail">@repair.Detail</p>
+                    @if (repair.State == TlsRepairStates.Applied)
+                    {
+                        <p class="pte-guidance" data-testid="pte-repair-warning">Local k6 trust repair applied. Server certificate chain is still incomplete. Recommended long-term fix: configure the server to send the complete certificate chain.</p>
+                    }
+                    <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="pte-repair-details" Class="disclosure-inline disclosure-small">
+                        <dl class="pte-tech">
+                            @TechRow("Certificate", repair.IntermediateSubject)
+                            @TechRow("Issuer", repair.IntermediateIssuer)
+                            @TechRow("Intermediate SHA-256 (first 16)", repair.IntermediateSha256)
+                            @TechRow("Trusted root", repair.RootSubject)
+                            @TechRow("Retrieved from (AIA)", repair.SourceUri)
+                            @TechRow("Managed bundle fingerprint", repair.BundleSha256)
+                            @TechRow("Validated", repair.ValidatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                            @TechRow("Revalidation", repair.RevalidationState)
+                            @foreach (var check in repair.Checks) { <div><dt>Check</dt><dd>@check</dd></div> }
+                        </dl>
+                    </ReviewDisclosure>
+                </article>
+            }
+        </section>
+    };
+
+    private async Task SetModeAsync(string mode)
+    {
+        if (_api is null) return;
+        _modeBusy = true;
+        try
+        {
+            var result = await _api.SetTlsRepairModeAsync(mode);
+            if (result.Value is { } status) { _local = status; _caMessage = mode == TlsRepairModes.Automatic ? "Automatic intermediate repair is on." : "Manual only: missing intermediates are diagnosed, never retrieved."; _caError = false; }
+            else { _caMessage = result.Error; _caError = true; }
+        }
+        finally { _modeBusy = false; }
     }
 
     private async Task CopyAsync(string text)

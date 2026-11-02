@@ -92,7 +92,7 @@ public sealed partial class ExternalIntegrationService(AppDbContext db, IEnumera
             Id = integrationId, TargetEnvironmentId = environmentId, Name = name, ProviderType = request.ProviderType, EnvironmentName = request.EnvironmentName?.Trim(),
             Enabled = request.Enabled, Settings = typed ? [] : settings, Provenance = provenanceMap, EvidenceReferences = current?.EvidenceReferences ?? [],
             // Test Data bindings are owned by the Test Data section; a settings save never drops or changes them.
-            TestDataBindings = current?.TestDataBindings,
+            TestDataBindings = current?.TestDataBindings, TestDataReferenceVersion = current?.TestDataReferenceVersion,
             CreatedAt = current?.CreatedAt ?? now, UpdatedAt = now,
         };
         if (handler is not GenericProviderHandler && await handler.ApplyAsync(integration, settings, ct) is { Count: > 0 } applyProblems) return (null, applyProblems);

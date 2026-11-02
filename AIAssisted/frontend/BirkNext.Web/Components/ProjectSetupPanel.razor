@@ -11,7 +11,12 @@
         <h4 id="psp-title" class="psp-title" tabindex="-1">Target Application required</h4>
         <div class="psp-prerequisite" role="note" data-testid="psp-target-application-required">
             <p>Project evidence can be configured after choosing the application/system this environment represents.</p>
-            <a class="btn btn-primary btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="psp-configure-target-application">Configure Target Application<span class="visually-hidden"> for @EnvironmentName</span></a>
+            @if (TargetUrl is { Length: > 0 } url)
+            {
+                @* The URL and target check on the Target Application tab say WHERE the application runs; they do not say WHICH application it is. *@
+                <p data-testid="psp-url-configured">The target URL (@url) is configured, but no application is chosen yet. On the Target Application tab, choose the application under <strong>Application</strong> (for example M2LB).</p>
+            }
+            <a class="btn btn-primary btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="psp-configure-target-application">Choose application<span class="visually-hidden"> for @EnvironmentName</span></a>
         </div>
     }
     else
@@ -98,6 +103,8 @@
     [Parameter] public EnvironmentProject? Current { get; set; }
     /// <summary>The environment's Target Application: the application this evidence is for. Null shows the prerequisite instead.</summary>
     [Parameter] public TargetApplicationIdentity? TargetApplication { get; set; }
+    /// <summary>The environment's target URL, when set: the prerequisite then says the URL is configured but the application is not chosen.</summary>
+    [Parameter] public string? TargetUrl { get; set; }
     [Parameter, EditorRequired] public IProjectEvidenceService Evidence { get; set; } = default!;
     [Parameter] public EventCallback<string> OnSaved { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }

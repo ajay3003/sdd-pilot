@@ -471,4 +471,50 @@ public sealed class XmlFixturePanelTests : BunitContext
         var bound = System.Text.RegularExpressions.Regex.Replace(xml, "<Fodselsnummer>[^<]*</Fodselsnummer>", "<Fodselsnummer>04061076692</Fodselsnummer>");
         SchemaStudioService.Validate(package, XsdFile, bound).Status.Should().Be(XmlSchemaValidationStatus.Valid);
     }
+
+    private static TestDataAssetSummary ApprovedFixture(int? draft = null, string? draftValidation = "Valid") => Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Validated) with
+    {
+        Alias = "skolenaervaer-valid-report", Id = "schema-studio:skolenaervaer-valid-report", Version = 1, VersionCount = draft is null ? 1 : 2,
+        DraftVersion = draft, DraftValidation = draft is null ? null : draftValidation, ProtectionKind = TestDataProtectionKinds.CanonicalFixture,
+    };
+
+    [Fact]
+    public void Regenerate_saves_by_default_as_a_draft_version_of_the_same_fixture_without_a_new_alias()
+    {
+        Setup(Context(Xsd()));
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, [.. Defaults, ApprovedFixture()]));
+        panel.WaitForElement("[data-testid=xf-regenerate]").Click();
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForElement("[data-testid=xf-xml]");
+        panel.Find("[data-testid=xf-validate]").Click();
+        panel.Find("[data-testid=xf-save-as-version]").HasAttribute("checked").Should().BeTrue();
+        panel.FindAll("[data-testid=xf-alias]").Should().BeEmpty("a version keeps the fixture's alias and Test Data id");
+        panel.Find("[data-testid=xf-save-button]").TextContent.Should().Be("Save as draft version");
+        panel.Find("[data-testid=xf-save-as-new]").Change(true);
+        panel.Find("[data-testid=xf-alias]").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void A_pending_draft_is_shown_beside_the_approved_version_and_approving_it_targets_that_version()
+    {
+        Setup(Context(Xsd()));
+        var api = Services.GetRequiredService<ITestDataApiService>();
+        Mock.Get(api).Setup(t => t.ApproveVersionAsync("schema-studio:skolenaervaer-valid-report", 2, It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, [.. Defaults, ApprovedFixture(draft: 2)]));
+        var draft = panel.WaitForElement("[data-testid=xf-draft]");
+        draft.TextContent.Should().Contain("version 2").And.Contain("Consumers use approved version 1");
+        panel.Find("[data-testid=xf-fixture-protected]").TextContent.Should().Be("Protected fixture");
+        panel.Find("[data-testid=xf-approve-draft]").Click();
+        Mock.Get(api).Verify(t => t.ApproveVersionAsync("schema-studio:skolenaervaer-valid-report", 2, It.IsAny<CancellationToken>()), Times.Once);
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-message]").TextContent.Should().Contain("now the current version"));
+    }
+
+    [Fact]
+    public void An_invalid_draft_cannot_be_approved()
+    {
+        Setup(Context(Xsd()));
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, [.. Defaults, ApprovedFixture(draft: 2, draftValidation: "Invalid")]));
+        panel.WaitForElement("[data-testid=xf-approve-draft]").HasAttribute("disabled").Should().BeTrue();
+        panel.Find("[data-testid=xf-draft]").TextContent.Should().Contain("cannot be approved");
+    }
 }

@@ -239,8 +239,9 @@
                                 var assetUsages = usages.Where(u => u.AssetId == asset.Id).ToList();
                                 <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind" data-status="@status">
                                     <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }
-                                        @if (asset.ProtectedDefault) { <span class="td-pill td-pill-neutral" data-testid="td-protected">Protected default@(asset.ValueModified ? " · Modified" : "")</span> }
-                                        @if (asset.Ownership == TestDataOwnership.Generated && TestDataValueVersions.Changed(asset, catalog.Assets).Count > 0) { <span class="td-pill td-pill-attention" data-testid="td-mapped-changed">Mapped Test Data changed</span> }</th>
+                                        @if (asset.ProtectionLabel is { } protection) { <span class="td-pill td-pill-neutral" data-testid="td-protected" data-protection="@asset.ProtectionKind" title="@asset.ProtectionReason">@protection@(asset.ValueModified ? " · Modified" : "")</span> }
+                                        @if (asset.Ownership == TestDataOwnership.Generated && TestDataValueVersions.Changed(asset, catalog.Assets).Count > 0) { <span class="td-pill td-pill-attention" data-testid="td-mapped-changed">Mapped Test Data changed</span> }
+                                        @if (asset.DraftVersion is { } draftVersion) { <span class="td-pill td-pill-neutral" data-testid="td-draft">Draft update available (v@(draftVersion))</span> }</th>
                                     <td data-label="Type" data-testid="td-data-type">@TestDataDataTypes.Label(P.DataType(asset))</td>
                                     <td data-label="Role" data-testid="td-role">@P.Role(asset)</td>
                                     <td data-label="Applies to" data-testid="td-applies" title="@string.Join(", ", (asset.AppliesTo ?? []).Select(TestDataContexts.Label))">@P.AppliesTo(asset)</td>
@@ -263,7 +264,7 @@
                                         }
                                         else
                                         {
-                                            <span class="td-protected-note" data-testid="td-not-deletable" title="@TestDataOwnerships.WhyNotDeletable(asset.Ownership)">@(asset.ProtectedDefault ? "Protected" : "Not deletable")<span class="visually-hidden">: @TestDataOwnerships.WhyNotDeletable(asset.Ownership)</span></span>
+                                            <span class="td-protected-note" data-testid="td-not-deletable" title="@asset.WhyNotDeletable">@(asset.IsProtected ? "Protected" : "Not deletable")<span class="visually-hidden">: @asset.WhyNotDeletable</span></span>
                                         }
                                     </div></td>
                                 </tr>
@@ -450,6 +451,8 @@
 @code {
     // Consumer requirement context from a deep link (/test-data?consumer=…&variable=…&dataType=…). Generic: any consumer id and type.
     [SupplyParameterFromQuery(Name = "consumer")] public string? Consumer { get; set; }
+    /// <summary>"Review Test Data" from a consumer (e.g. a Connected System binding): the asset alias to find (prefills the search, nothing else).</summary>
+    [SupplyParameterFromQuery(Name = "asset")] public string? FocusAsset { get; set; }
     /// <summary>"Create Test Data" from a Connected System requirement: the semantic role and contexts to prefill (never saved by following the link).</summary>
     [SupplyParameterFromQuery(Name = "role")] public string? CreateRole { get; set; }
     [SupplyParameterFromQuery(Name = "appliesTo")] public string? CreateAppliesTo { get; set; }
@@ -486,6 +489,7 @@
         try
         {
             _api = TestDataApiService.Resolve(Services);
+            if (FocusAsset is { Length: > 0 and <= 64 } focus) _query = focus;
             await ReloadAsync(null);
             if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts
                 && (await contexts.GetActiveContextAsync()).ActiveProfileOrNull is { } profile)

@@ -287,6 +287,10 @@ builder.Services.AddScoped<ProjectApplicabilityState>();
 // Application-level owner of long-running work (Activity Center) and the Project Import session it runs: independent of page lifetimes.
 builder.Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
 builder.Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectImportSession>();
+// Persistent project activity (Dashboard â†’ Recent activity), scoped by the logical application id; separate from the session operations above.
+builder.Services.AddHttpClient<BirkNext.Web.Services.ProjectActivity.IProjectActivityApiService, BirkNext.Web.Services.ProjectActivity.ProjectActivityApiService>(client =>
+    client.BaseAddress = backendBase);
+builder.Services.AddScoped<BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder>();
 builder.Services.AddScoped<DeliveryReportingSession>(_ => new DeliveryReportingSession());
 builder.Services.AddScoped<NavigationSectionState>();
 // Performance Test Review: definitions, readiness, runs, baselines (backend owns safety and execution).

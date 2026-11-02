@@ -24,6 +24,10 @@ public sealed record TestDataTesterStatus(IReadOnlyList<TestDataRoleStatus> Role
 /// </summary>
 public static class XmlFixturePresentation
 {
+    /// <summary>The draft version's validation as recorded at generation against its selected XSD.</summary>
+    public static string DraftValidation(TestDataAssetSummary fixture) =>
+        fixture.DraftValidation == "Valid" ? "Valid against its XSD" : $"Validation failed or not recorded ({fixture.DraftValidation ?? "not recorded"}) — cannot be approved";
+
     /// <summary>Test contexts that can produce a fixture: a template naming a contract and declaring the Test Data roles of its message.</summary>
     public static IReadOnlyList<IntegrationTemplateView> Contexts(IReadOnlyList<IntegrationTemplateView> templates) =>
         [.. templates.Where(t => t.SchemaName is { Length: > 0 } && t.FixtureBindings.Count > 0)];

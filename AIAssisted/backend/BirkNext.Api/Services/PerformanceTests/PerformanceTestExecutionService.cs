@@ -7,7 +7,8 @@ using BirkNext.PerformanceTests;
 namespace BirkNext.Api.Services.PerformanceTests;
 
 /// <summary>Resolves the provider for a definition by stable id.</summary>
-public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTestProvider> providers, PerformanceTestOptions? options = null, PerformanceLocalExecutionStore? localExecution = null)
+public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTestProvider> providers, PerformanceTestOptions? options = null, PerformanceLocalExecutionStore? localExecution = null,
+    IAiaCertificateFetcher? aia = null, Func<DateTimeOffset>? now = null)
 {
     private readonly Dictionary<string, IPerformanceTestProvider> _byId = providers.ToDictionary(p => p.ProviderId, StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, PerformanceProviderStatus Status)> _status = new();
@@ -25,17 +26,83 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
             return new PerformanceReachability { TargetOrigin = d.TargetOrigin, State = "Unknown", Detail = $"No provider '{d.ProviderId}' is registered.", CheckedAt = DateTimeOffset.UtcNow };
         // Stamped with the network/TLS configuration it ran with: a later change (CA bundle, proxy, runtime, image, target) makes it stale.
         var result = await provider.CheckReachabilityAsync(d, ct) with { NetworkFingerprint = NetworkFingerprint(d) };
+        var https = Uri.TryCreate(d.TargetOrigin, UriKind.Absolute, out var origin) && origin.Scheme == Uri.UriSchemeHttps;
         // A TLS failure in the container is explained from the host: the presented chain and the failing trust layer (never trusted, never sent).
-        if (result.State is PerformanceProbeStates.TlsTrustFailure or PerformanceProbeStates.HostnameMismatch or PerformanceProbeStates.TlsFailure
-            && Uri.TryCreate(d.TargetOrigin, UriKind.Absolute, out var origin) && origin.Scheme == Uri.UriSchemeHttps)
+        if (result.State is PerformanceProbeStates.TlsTrustFailure or PerformanceProbeStates.HostnameMismatch or PerformanceProbeStates.TlsFailure && https)
         {
+            var capture = new TlsChainInspector.Capture();
             using var bundle = TlsChainInspector.LoadBundle(options?.Container.EffectiveCaBundlePath) is { } loaded ? new DisposableCollection(loaded) : null;
-            result = result with { Chain = await TlsChainInspector.InspectAsync(origin, bundle?.Certificates, TimeSpan.FromSeconds(10), ct) };
+            var chain = await TlsChainInspector.InspectAsync(origin!, bundle?.Certificates, TimeSpan.FromSeconds(10), ct, capture: capture);
+            result = result with { Chain = chain };
+            if (chain.FailureClass == TlsFailureClasses.IncompleteServerChain && localExecution is not null)
+                result = await RepairAsync(provider, d, origin!, result, chain, capture, ct);
+        }
+        else if (https && result.Reachable && localExecution?.RepairFor(origin!.Host, origin.Port) is { State: TlsRepairStates.Applied } repair)
+        {
+            // The check passed with the managed bundle. If the server now sends its complete chain, the workaround is retired and the target is
+            // checked once more with its ordinary trust, so execution never depends on unnecessary repair state.
+            var capture = new TlsChainInspector.Capture();
+            var seen = await TlsChainInspector.InspectAsync(origin!, null, TimeSpan.FromSeconds(10), ct, capture: capture);
+            if (seen.Reached && !seen.MissingIntermediate)
+            {
+                localExecution.RetireRepair(origin!.Host, origin.Port, TlsRepairStates.NoLongerNeeded,
+                    "Server now provides the complete certificate chain: the local k6 trust repair is no longer used.");
+                result = await provider.CheckReachabilityAsync(d, ct) with { NetworkFingerprint = NetworkFingerprint(d) };
+                result = result with { TlsRepair = localExecution.RepairFor(origin.Host, origin.Port) };
+            }
+            else result = result with { TlsRepair = repair };
         }
         _reachability[$"{d.ProviderId}|{d.TargetOrigin}"] = result;
         // The same check validates Container TLS trust (System Settings → Performance Test Engines): one trust for the check and the run.
         localExecution?.Record(result);
         return result;
+    }
+
+    /// <summary>
+    /// One automatic repair attempt for an incomplete server chain, then one revalidation — never a loop. Trusted roots = the k6 image's own default
+    /// store + an approved configured CA bundle; only validated intermediates are added; the managed bundle (those roots + the intermediates) is used
+    /// for this host's network check AND run. A revalidation that still fails retires the bundle (runtime stays blocked, with the reason).
+    /// </summary>
+    private async Task<PerformanceReachability> RepairAsync(IPerformanceTestProvider provider, PerformanceTestDefinition d, Uri origin, PerformanceReachability result,
+        TlsChainDiagnostics chain, TlsChainInspector.Capture capture, CancellationToken ct)
+    {
+        var store = localExecution!;
+        var at = now?.Invoke() ?? DateTimeOffset.UtcNow;
+        TlsRepairOutcome Note(string state, string detail) => new() { State = state, Detail = detail, Host = origin.Host, Port = origin.Port };
+        if (store.RepairMode != TlsRepairModes.Automatic)
+            return result with { TlsRepair = Note(TlsRepairStates.Disabled, "Automatic repair is set to Manual only: nothing was retrieved. Fix the server chain, or allow automatic repair in System Settings → Performance Test Engines → TLS trust.") };
+        if (aia is null || provider is not K6PerformanceTestProvider k6)
+            return result with { TlsRepair = Note(TlsRepairStates.NotEligible, "Automatic repair is not available for this provider.") };
+        var defaults = await k6.DefaultCaStorePemAsync(ct);
+        if (defaults is null)
+            return result with { TlsRepair = Note(TlsRepairStates.Stopped, "Automatic repair stopped: the k6 image's default CA store could not be read, so the trusted roots are unknown. Nothing was trusted.") };
+        var roots = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection();
+        try
+        {
+            roots.ImportFromPem(defaults);
+            var configured = options?.Container.EffectiveCaBundlePath is { } path && File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
+            if (configured is not null) roots.ImportFromPem(configured);
+            var repaired = await TlsIntermediateRepair.RepairAsync(capture, origin.Host, origin.Port, roots, aia, at, ct);
+            var outcome = repaired.Outcome;
+            if (outcome.State != TlsRepairStates.Applied) return result with { TlsRepair = outcome, Chain = chain with { Repair = outcome } };
+            var pem = new System.Text.StringBuilder(defaults.TrimEnd()).AppendLine();
+            if (configured is not null) pem.AppendLine(configured.TrimEnd());
+            foreach (var intermediate in repaired.Intermediates) { pem.AppendLine(intermediate.ExportCertificatePem()); intermediate.Dispose(); }
+            store.SaveRepair(outcome, pem.ToString());
+            // One revalidation from the container with the managed bundle (the same bundle the run will mount).
+            var second = await provider.CheckReachabilityAsync(d, ct) with { NetworkFingerprint = NetworkFingerprint(d) };
+            if (second.Reachable)
+            {
+                outcome = outcome with { RevalidationState = second.State };
+                store.SaveRepair(outcome, pem.ToString());
+                return second with { TlsRepair = outcome, Chain = chain with { Repair = outcome } };
+            }
+            store.RetireRepair(origin.Host, origin.Port, TlsRepairStates.Rejected,
+                $"The k6 container still could not validate {origin.Host} with the repaired bundle ({PerformanceNetworkStages.Classification(second.State)}). Runtime execution stays blocked; fix the server chain.");
+            var failed = store.RepairFor(origin.Host, origin.Port)! with { RevalidationState = second.State };
+            return second with { NetworkFingerprint = NetworkFingerprint(d), TlsRepair = failed, Chain = (second.Chain ?? chain) with { Repair = failed } };
+        }
+        finally { foreach (var c in roots) c.Dispose(); }
     }
 
     private sealed class DisposableCollection(System.Security.Cryptography.X509Certificates.X509Certificate2Collection certificates) : IDisposable
@@ -48,7 +115,7 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
     public string NetworkFingerprint(PerformanceTestDefinition d)
     {
         var container = options?.Container ?? new PerformanceContainerOptions();
-        return PerformanceCaBundleInspector.NetworkFingerprint(d, container, PerformanceCaBundleInspector.Inspect(container.EffectiveCaBundlePath));
+        return PerformanceCaBundleInspector.NetworkFingerprint(d, container, PerformanceCaBundleInspector.Inspect(container.CaBundlePathFor(d.TargetOrigin)));
     }
 
     public void InvalidateStatus(string providerId) => _status.TryRemove(providerId, out _);
@@ -156,7 +223,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
                     { Category = toolReady ? Definition : Setup, Summary = "provider", Headline = "The load-test provider cannot run this definition", Action = toolReady ? PerformanceReadinessActions.EditScenario : PerformanceReadinessActions.OpenEngines });
 
         // Container-network reachability: the load generator's own network, not the BirkNext host's (VPN, corporate DNS, private routes).
-        var fingerprint = PerformanceCaBundleInspector.NetworkFingerprint(d, options.Container, ca);
+        var fingerprint = PerformanceCaBundleInspector.NetworkFingerprint(d, options.Container, PerformanceCaBundleInspector.Inspect(options.Container.CaBundlePathFor(d.TargetOrigin)));
         var reach = providers.LastReachability(d.ProviderId, d.TargetOrigin);
         var fresh = reach is not null && DateTimeOffset.UtcNow - reach.CheckedAt < TimeSpan.FromMinutes(options.Container.NetworkCheckValidMinutes);
         // A check made under another network/TLS configuration (CA bundle, proxy, runtime, image, target) is never reused.
@@ -248,7 +315,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         // A TLS trust failure is reported by the Corporate CA trust item (an execution-setup blocker owned by local configuration), not as a network fault.
         var tlsTrust = PerformanceProbeStates.IsTlsTrust(reach);
         return new("network", Label, tlsTrust ? PerformanceReadinessState.Optional : PerformanceReadinessState.NetworkUnavailable, tlsTrust
-                ? "The k6 container reached the target but cannot validate its certificate chain — resolve Corporate CA trust, then re-check the container network."
+                ? "The k6 container reached the target but cannot validate its certificate chain — see Container TLS trust for the cause and the recommended fix, then re-check the container network."
                 : reach.Detail, !tlsTrust)
         {
             Category = Category, Summary = Summary, Action = PerformanceReadinessActions.CheckNetwork, Status = reach.State,
@@ -262,7 +329,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         PerformanceProbeStates.Timeout => "The connection from the k6 container timed out",
         PerformanceProbeStates.ConnectionRefused => "The target refused the connection from the k6 container",
         PerformanceProbeStates.ConnectionFailed => "The k6 container could not connect to the target",
-        PerformanceProbeStates.TlsTrustFailure => "Container TLS trust is not configured",
+        PerformanceProbeStates.TlsTrustFailure => "TLS trust failed in the k6 container",
         PerformanceProbeStates.HostnameMismatch => "The target certificate does not match its host name",
         PerformanceProbeStates.TlsFailure => "The TLS handshake from the k6 container failed",
         PerformanceProbeStates.ProxyFailure => "The configured proxy failed for the k6 container",
@@ -279,7 +346,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
     /// </summary>
     internal static PerformanceReadinessItem CaTrustItem(PerformanceCaBundleState ca, PerformanceReachability? reach, PerformanceTestDefinition d)
     {
-        const string Label = "Corporate CA trust", Summary = "container TLS trust", Category = PerformanceReadinessCategories.ExecutionSetup;
+        const string Label = "Container TLS trust", Summary = "container TLS trust", Category = PerformanceReadinessCategories.ExecutionSetup;
         var https = d.TargetOrigin.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         var host = Uri.TryCreate(d.TargetOrigin, UriKind.Absolute, out var uri) ? uri.Host : d.TargetOrigin;
         var key = PerformanceCaBundleInspector.ConfigurationKey;
@@ -288,6 +355,31 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
             {
                 Category = Category, Summary = Summary, Status = "Invalid", Headline = "The corporate CA bundle is invalid", Owner = LocalExecution, ConfigurationKey = key,
                 Action = PerformanceReadinessActions.OpenLocalExecutionSetup, Technical = "TLS verification will not be disabled.",
+            };
+        // Failure-specific: an incomplete server chain, an expired or wrong-host certificate block runtime execution with the server-side fix
+        // first — never "configure a CA bundle" as the recommended fix. Only runtime execution is blocked; designing the test is not.
+        if (reach is { Chain: { FailureClass: not TlsFailureClasses.Other and not TlsFailureClasses.UntrustedPrivateOrCorporateCA } chain } && !reach.Reachable
+            && reach.State is PerformanceProbeStates.TlsTrustFailure or PerformanceProbeStates.HostnameMismatch or PerformanceProbeStates.TlsFailure)
+        {
+            var incomplete = chain.FailureClass == TlsFailureClasses.IncompleteServerChain;
+            var repair = reach.TlsRepair ?? chain.Repair;
+            var detail = incomplete
+                ? $"Execution blocked — target certificate chain is incomplete. The server does not send the intermediate certificate required by the k6 container to build a trusted TLS chain. {chain.Remediation}"
+                : $"Execution blocked — {TlsFailureClasses.Label(chain.FailureClass).ToLowerInvariant()}. {chain.Remediation}";
+            if (repair is { State: not TlsRepairStates.Applied }) detail += $" Automatic local repair: {repair.Detail}";
+            return new("ca-trust", Label, PerformanceReadinessState.NeedsConfiguration, detail, true)
+            {
+                Category = Category, Summary = Summary, Status = "Blocked", Owner = LocalExecution,
+                Headline = incomplete ? "Execution blocked — target certificate chain is incomplete" : $"Execution blocked — {TlsFailureClasses.Label(chain.FailureClass).ToLowerInvariant()}",
+                Action = PerformanceReadinessActions.OpenLocalExecutionSetup, Technical = $"{chain.FailureClass} · {reach.State} · TLS verification will not be disabled.",
+            };
+        }
+        if (reach is { Reachable: true, TlsRepair: { State: TlsRepairStates.Applied } applied })
+            return new("ca-trust", Label, PerformanceReadinessState.Ready,
+                $"Local k6 trust repair applied for {host}: the missing intermediate ({applied.IntermediateSubject}) was retrieved and validated against an existing trusted root. Server TLS configuration should still be corrected: the server chain is incomplete.", false)
+            {
+                Category = Category, Summary = Summary, Status = "Repaired locally", Owner = LocalExecution, Headline = "Server certificate chain is still incomplete",
+                Action = PerformanceReadinessActions.OpenLocalExecutionSetup, Technical = $"Repaired bundle {applied.BundleSha256} · validated {applied.ValidatedAt:yyyy-MM-dd HH:mm} UTC.",
             };
         if (reach is not null && PerformanceProbeStates.IsTlsTrust(reach))
             return new("ca-trust", Label, PerformanceReadinessState.NeedsConfiguration, ca.Usable

@@ -27,6 +27,19 @@ public sealed class SddLifecycleState
     public List<SddProjectImportRecord> ProjectImports { get; set; } = [];
     /// <summary>The imported project the workspace currently shows (artifact scope <c>import:{id}</c>), or null. Mutually exclusive with a selected Sample Project.</summary>
     public string? CurrentProjectImportId { get; set; }
+    /// <summary>
+    /// Logical applications/projects of this workspace. An imported package (ZIP) is evidence for one of them, never the application itself:
+    /// M2LB.zip (primary application source) and M2LB.Common.zip (supporting/shared source) are two packages of one application.
+    /// </summary>
+    public List<SddApplicationContext> Applications { get; set; } = [];
+    /// <summary>The logical application the workspace works on (Dashboard, Recent activity, Import Project), or null before any import.</summary>
+    public string? CurrentApplicationId { get; set; }
+    /// <summary>
+    /// The source every Explorer reads, chosen explicitly in an Explorer (shared by all explorers; saved with the workspace): an imported
+    /// package's import id, <c>"project-evidence"</c> for the Target Environment's aggregated Project evidence, or null for the default
+    /// (Project evidence when configured, else the application's documents). Importing another package never changes it.
+    /// </summary>
+    public string? ExplorerSource { get; set; }
     /// <summary>One Generated Documentation Set per Project Import: references to the generated documents of the import's source snapshot.</summary>
     public List<SddGeneratedDocumentationSet> GeneratedDocumentationSets { get; set; } = [];
     /// <summary>Generated-document text keyed by content fingerprint: stored once however many imports carry the same document.</summary>
@@ -186,6 +199,22 @@ public sealed class SddProjectImportRecord
     /// <summary>The staged archive that a failed source part can be retried from, while it is kept (<see cref="SourceStagedUntil"/>).</summary>
     public Guid? SourceStagingId { get; set; }
     public DateTimeOffset? SourceStagedUntil { get; set; }
+    /// <summary>The logical application this package is evidence for (<see cref="SddApplicationContext.Id"/>). Null only in a workspace saved
+    /// before applications existed; <c>ApplicationContexts.Ensure</c> assigns it without changing anything else.</summary>
+    public string? ApplicationId { get; set; }
+}
+
+/// <summary>
+/// One logical application/project of the workspace: a stable id (activity and evidence are keyed by it, never by a name, route or archive
+/// name) and a display name derived from its evidence — the primary application source package's name once one is imported.
+/// </summary>
+public sealed class SddApplicationContext
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>How <see cref="Name"/> was derived: PrimarySource, SharedSource, Package or Manual.</summary>
+    public string NameBasis { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>Immutable manifest of explicit artifact revision references; content remains owned by Revisions.</summary>

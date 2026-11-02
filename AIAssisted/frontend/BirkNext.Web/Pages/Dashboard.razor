@@ -3,6 +3,9 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.Services.ProjectActivity
+@using BirkNext.Web.Services.ProjectImport
+@using BirkNext.ProjectActivity
 @inject IDashboardSnapshotService Snapshot
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject QualityReviewSessionService QualitySession
@@ -71,8 +74,18 @@
             }
             <div class="db-workspace-info">
                 <div class="db-workspace-identity">
-                    <span class="db-workspace-label">@(_workspace.IsImportedProject ? "Imported project" : _workspace.ProjectLoaded ? "Project" : "Workspace")</span>
-                    <span class="db-workspace-project" data-testid="db-workspace-name">@(_workspace.ProjectName ?? _workspace.WorkspaceName)</span>
+                    @if (_workspace.IsImportedProject && _application is { } application)
+                    {
+                        @* The logical application (stable identity), never the package imported last; the documents shown are its primary package's. *@
+                        <span class="db-workspace-label">Target application</span>
+                        <span class="db-workspace-project" data-testid="db-workspace-name" data-application="@application.Id">@application.Name</span>
+                        <span class="db-muted" data-testid="db-workspace-packages">@_applicationPackages imported evidence package@(_applicationPackages == 1 ? "" : "s")@(_workspace.ProjectName is { } shown && shown != application.Name ? $" · documents from {shown}" : "")</span>
+                    }
+                    else
+                    {
+                        <span class="db-workspace-label">@(_workspace.IsImportedProject ? "Imported project" : _workspace.ProjectLoaded ? "Project" : "Workspace")</span>
+                        <span class="db-workspace-project" data-testid="db-workspace-name">@(_workspace.ProjectName ?? _workspace.WorkspaceName)</span>
+                    }
                 </div>
                 @if (_workspace.State == CurrentWorkspaceState.Error)
                 {
@@ -252,28 +265,53 @@
         </section>
     }
 
-    @* ══ Recent activity: operations of this project from the shared operation manager (operation done ≠ review passed) ══ *@
+    @* ══ Current operations: running work of this browser session (transient; it never is project history) ══ *@
+    @if (_currentOperations.Count > 0)
+    {
+        <section class="db-section" aria-labelledby="db-operations-heading" data-testid="db-current-operations">
+            <h2 id="db-operations-heading" class="db-h2">Current operations</h2>
+            <ul class="db-activity-list" aria-live="polite">
+                @foreach (var op in _currentOperations)
+                {
+                    <li class="db-activity" data-testid="db-current-operation">
+                        <span class="db-activity-title">@op.Title</span>
+                        <span class="db-pill">Running</span>
+                        <span class="db-muted">@op.Stage</span>
+                        @if (op.Href.Length > 0) { <a href="@op.Href" class="db-attention-action">Open<span class="visually-hidden"> @op.Title</span></a> }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    @* ══ Recent activity: persistent history of the logical application (imports, completed reviews and runs, meaningful failures) ══ *@
     @if (_workspace is { WorkspaceLoaded: true })
     {
         <section class="db-section" aria-labelledby="db-activity-heading" data-testid="db-recent-activity">
             <h2 id="db-activity-heading" class="db-h2">Recent activity</h2>
-            @if (_activity.Count == 0)
+            @if (_activityItems is not { Count: > 0 } items)
             {
-                <p class="db-muted" data-testid="db-activity-none">No tracked operation has run for this project in this browser session. Operation completion is not a review result.</p>
+                <p class="db-muted" data-testid="db-activity-none"><strong>@ProjectActivityPresentation.EmptyTitle</strong> @ProjectActivityPresentation.EmptyText</p>
+                @if (_activityUnavailable) { <p class="db-muted" role="status" data-testid="db-activity-unavailable">Recent activity could not be read from the backend.</p> }
             }
             else
             {
-                <ul class="db-activity-list">
-                    @foreach (var a in _activity)
+                <ol class="db-activity-list db-timeline" aria-label="Recent activity, newest first">
+                    @foreach (var a in items)
                     {
-                        <li class="db-activity @(a.Failed ? "is-failed" : "")" data-testid="db-activity">
-                            <span class="db-activity-title">@a.Title</span>
-                            <span class="db-pill is-@(a.Failed ? "attention" : a.Status == "Completed" ? "good" : "neutral")">@a.Status</span>
-                            <span class="db-muted">@a.When@(a.Revision is { } rev ? $" · {rev}" : "")@(a.ResultLabel is { } r ? $" · {r}" : "")</span>
-                            @if (a.Href.Length > 0) { <a href="@a.Href" class="db-attention-action">Open</a> }
+                        <li class="db-activity @(a.Status == ProjectActivityStatus.Failed ? "is-failed" : "")" data-testid="db-activity" data-type="@a.Type" data-status="@a.Status" data-package="@a.PackageId">
+                            <time class="db-activity-time" datetime="@a.OccurredAt.ToString("O")" title="@a.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")">@ProjectActivityPresentation.When(a.OccurredAt, DateTimeOffset.UtcNow)</time>
+                            <span class="db-activity-body">
+                                <span class="db-activity-title"><span aria-hidden="true">@ProjectActivityPresentation.Icon(a.Category) </span>@a.Title</span>
+                                @if (a.Summary is { Length: > 0 } summary) { <span class="db-muted db-activity-summary">@summary</span> }
+                                @if (a.Outcome is { Length: > 0 } outcome) { <span class="db-muted">Outcome: @outcome</span> }
+                                @if (a.EnvironmentName is { Length: > 0 } env) { <span class="db-muted">@env</span> }
+                            </span>
+                            <span class="db-pill is-@ProjectActivityPresentation.Tone(a.Status)" data-testid="db-activity-badge">@ProjectActivityPresentation.Badge(a.Status)</span>
+                            @if (a.Route is { Length: > 0 } route) { <a href="@route" class="db-attention-action" data-testid="db-activity-link">@ProjectActivityPresentation.LinkLabel(a)<span class="visually-hidden">: @a.Title</span></a> }
                         </li>
                     }
-                </ul>
+                </ol>
             }
         </section>
     }
@@ -886,6 +924,8 @@
     protected override void OnInitialized()
     {
         CurrentWorkspace.Changed += OnWorkspaceChanged;
+        if (Services.GetService(typeof(ProjectActivityRecorder)) is ProjectActivityRecorder recorder) recorder.Recorded += OnActivityRecorded;
+        if (Services.GetService(typeof(BirkNext.Web.Services.Operations.BackgroundOperationService)) is BirkNext.Web.Services.Operations.BackgroundOperationService ops) ops.Changed += OnOperationsChanged;
     }
 
     protected override async Task OnInitializedAsync()
@@ -905,11 +945,57 @@
     private async Task RefreshWorkspaceAsync()
     {
         _workspace = await CurrentWorkspace.GetAsync();
+        RefreshApplication();
         StateHasChanged();
+        await RefreshActivityAsync();
         await RefreshWorkflowReadinessAsync();
     }
 
-    public void Dispose() => CurrentWorkspace.Changed -= OnWorkspaceChanged;
+    public void Dispose()
+    {
+        CurrentWorkspace.Changed -= OnWorkspaceChanged;
+        if (Services.GetService(typeof(ProjectActivityRecorder)) is ProjectActivityRecorder recorder) recorder.Recorded -= OnActivityRecorded;
+        if (Services.GetService(typeof(BirkNext.Web.Services.Operations.BackgroundOperationService)) is BirkNext.Web.Services.Operations.BackgroundOperationService ops) ops.Changed -= OnOperationsChanged;
+    }
+
+    // ── Logical application + persistent Recent activity ────────────────────────────────────────────
+
+    /// <summary>The logical application of an imported workspace (null for a Sample Project, the manual workspace, or hosts without the repository).</summary>
+    private SddApplicationContext? _application;
+    private int _applicationPackages;
+    private IReadOnlyList<ProjectActivityItem>? _activityItems;
+    private bool _activityUnavailable;
+
+    private void RefreshApplication()
+    {
+        _application = null; _applicationPackages = 0;
+        if (Services.GetService(typeof(WorkspaceArtifactRepository)) is not WorkspaceArtifactRepository repository || !string.IsNullOrWhiteSpace(repository.ProjectName)) return;
+        _application = ApplicationContexts.Current(repository.SddLifecycle);
+        _applicationPackages = ApplicationContexts.Imports(repository.SddLifecycle, _application?.Id).Count;
+    }
+
+    /// <summary>Reads the application's newest activity (by its stable id, newest first, bounded). Never derived from this session's operations.</summary>
+    private async Task RefreshActivityAsync()
+    {
+        _activityUnavailable = false;
+        if (_application is not { } application || Services.GetService(typeof(IProjectActivityApiService)) is not IProjectActivityApiService api) { _activityItems = null; return; }
+        try
+        {
+            var items = await api.ListAsync(application.Id, ActivityLimit);
+            _activityUnavailable = items is null;
+            _activityItems = items ?? _activityItems;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { _activityUnavailable = true; }
+        StateHasChanged();
+    }
+
+    private const int ActivityLimit = 10;
+    private void OnActivityRecorded() => _ = InvokeAsync(RefreshActivityAsync);
+    private void OnOperationsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private IReadOnlyList<CurrentOperationRow> _currentOperations =>
+        Services.GetService(typeof(BirkNext.Web.Services.Operations.BackgroundOperationService)) is BirkNext.Web.Services.Operations.BackgroundOperationService ops
+            ? ProjectActivityPresentation.CurrentOperations(ops.Operations) : [];
 
     private bool Available(WorkspaceArtifactType role) => _workspace?.Has(role) == true;
 
@@ -920,10 +1006,6 @@
     private string _attentionGroup = "";
     private bool _attentionAll;
     private IReadOnlyList<DashboardKpi> _kpis => DashboardQualitySummary.Cards(_readiness, _attention, _reviews);
-    private IReadOnlyList<DashboardActivity> _activity =>
-        Services.GetService(typeof(BirkNext.Web.Services.Operations.BackgroundOperationService)) is BirkNext.Web.Services.Operations.BackgroundOperationService ops
-            ? DashboardQualitySummary.Activity(ops.Operations, _workspace?.ProjectName)
-            : [];
     private DashboardNextStep? _nextStep => _workspace is null ? null : DashboardPresentation.NextStep(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardFoundFact> _found => _workspace is null ? [] : DashboardPresentation.Found(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? [] : DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews);

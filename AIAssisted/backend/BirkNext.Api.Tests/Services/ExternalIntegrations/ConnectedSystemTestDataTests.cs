@@ -36,8 +36,11 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
         try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
-    private sealed class Handler(ExternalProviderType type, Func<IReadOnlyList<ConnectedSystemTestDataRequirement>> requirements) : IExternalProviderHandler
+    private sealed class Handler(ExternalProviderType type, Func<IReadOnlyList<ConnectedSystemTestDataRequirement>> requirements,
+        Func<IReadOnlyDictionary<string, string>>? consumed = null) : IExternalProviderHandler
     {
+        public Task<IReadOnlyDictionary<string, string>> ConsumedTestDataAsync(ExternalIntegration integration, CancellationToken ct) =>
+            Task.FromResult(consumed?.Invoke() ?? new Dictionary<string, string>());
         public ExternalProviderType Type => type;
         public Task<Dictionary<string, string>> CurrentSettingsAsync(ExternalIntegration integration, CancellationToken ct) => Task.FromResult(new Dictionary<string, string>());
         public Task<ExternalIntegrationView> AssessAsync(ExternalIntegration integration, bool detect, CancellationToken ct) => Task.FromResult(new ExternalIntegrationView { Integration = integration });
@@ -61,7 +64,8 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
     private sealed record Bed(ConnectedSystemTestDataService Service, ExternalIntegrationService Integrations, TestDataLifecycleService Lifecycle, TestDataCatalogService Catalog,
         TestDataRegistryStore Registry, AltinnSessionStore Session, AltinnTestingOptions Options);
 
-    private async Task<Bed> CreateAsync(bool withRequirements = true)
+    private async Task<Bed> CreateAsync(bool withRequirements = true, IReadOnlyDictionary<string, string>? settings = null, Func<IReadOnlyDictionary<string, string>>? consumed = null,
+        IReadOnlyList<ExternalIntegration>? existing = null)
     {
         Directory.CreateDirectory(_dir);
         var defaults = new ProtectedTestDataDefaultsStore(Path.Combine(_dir, "test-data"), NullLogger<ProtectedTestDataDefaultsStore>.Instance);
@@ -69,18 +73,19 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
         var registry = new TestDataRegistryStore(Path.Combine(_dir, "test-data"), NullLogger<TestDataRegistryStore>.Instance);
         var session = new AltinnSessionStore(options, TimeProvider.System);
         var catalog = new TestDataCatalog([new AltinnTestDataProvider(options), new RegisteredTestDataProvider(registry)], TimeProvider.System, registry);
-        var lifecycle = new TestDataLifecycleService(catalog, registry, [new AltinnTestDataEditor(session, defaults, options)], [new ConnectedSystemTestDataReferences(_db)], TimeProvider.System);
+        var lifecycle = new TestDataLifecycleService(catalog, registry, [new AltinnTestDataEditor(session, defaults, options)], [new ConnectedSystemTestDataReferences(_db, catalog)], TimeProvider.System);
         var sources = new Sources();
         var catalogService = new TestDataCatalogService(new TestDataSchemaValidationService(catalog, new NoSchemas()), catalog, registry, new TestDataCandidateService(sources, registry),
             sources, TimeProvider.System, lifecycle);
         var integrationCatalog = new Mock<IIntegrationCatalogService>();
-        var handler = new Handler(ExternalProviderType.Other, () => withRequirements ? AltinnTestDataRequirements.For(new Dictionary<string, string>()) : []);
+        var handler = new Handler(ExternalProviderType.Other, () => withRequirements ? AltinnTestDataRequirements.For(settings ?? new Dictionary<string, string>()) : [], consumed);
         var integrations = new ExternalIntegrationService(_db, [handler], integrationCatalog.Object, session, new AltinnEnvironmentSettingsCache(), TimeProvider.System);
         await integrations.PersistAsync(new ExternalIntegration
         {
             Id = SystemId, TargetEnvironmentId = Env, Name = "Skolenærvær – Altinn intake", ProviderType = ExternalProviderType.Other, EnvironmentName = "TT02",
             CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
         }, CancellationToken.None);
+        foreach (var other in existing ?? []) await integrations.PersistAsync(other, CancellationToken.None);
         return new(new ConnectedSystemTestDataService(integrations, catalogService, TimeProvider.System), integrations, lifecycle, catalogService, registry, session, options);
     }
 
@@ -119,12 +124,16 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
     }
 
     [Fact]
-    public async Task Apply_stores_aliases_only_and_consumers_show_the_connected_system()
+    public async Task Apply_stores_stable_asset_ids_never_values_and_consumers_show_the_connected_system()
     {
         var bed = await CreateAsync();
         var (view, problem) = await BindAsync(bed, (AltinnTestDataRequirements.Reporter, SkoleNaervaerTestIdentityDefaults.ReporterAlias), (AltinnTestDataRequirements.Child, SkoleNaervaerTestIdentityDefaults.ChildAlias));
         problem.Should().BeNull();
-        view!.Should().Match<ConnectedSystemTestDataView>(v => v.StatusLabel == "Ready" && v.Readiness.State == SetupReadinessState.Ready && v.Readiness.Reason == "2/2 required assets bound.");
+        view!.Should().Match<ConnectedSystemTestDataView>(v => v.StatusLabel == "Ready" && v.Readiness.State == SetupReadinessState.Ready && v.Readiness.Reason == "2 / 2 required assets resolved.");
+        var stored = (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))!.TestDataBindings!;
+        stored.Single(b => b.RequirementId == AltinnTestDataRequirements.Child).Should().Match<ConnectedSystemTestDataBinding>(b =>
+            b.AssetId == "altinn-local:child:" + SkoleNaervaerTestIdentityDefaults.ChildAlias && b.BoundBy == ConnectedSystemTestDataBindingOrigins.User && b.UpdatedAt != null);
+        Row(view!, AltinnTestDataRequirements.Child).BoundAssetId.Should().Be("altinn-local:child:" + SkoleNaervaerTestIdentityDefaults.ChildAlias);
         var json = (await _db.ExternalIntegrations.SingleAsync(r => r.Id == SystemId)).DocumentJson;
         var reporterValue = bed.Options.UnattendedIdPortenTest.Reporters.Single(r => r.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias).TestIdPersonIdentifier!;
         var childValue = bed.Options.SyntheticChildren.Single(c => c.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias).TestPersonIdentifier!;
@@ -132,7 +141,7 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
 
         var usages = await bed.Lifecycle.UsagesAsync(SkoleNaervaerTestIdentityDefaults.ReporterAlias, CancellationToken.None);
         usages.Should().ContainSingle().Which.Should().Match<TestDataAssetUsage>(u => u.ConsumerType == "Connected system" && u.ConsumerName == "Skolenærvær – Altinn intake"
-            && u.Location == "Reporter identity" && u.EnvironmentId == Env);
+            && u.Location == "Reporter identity" && u.EnvironmentId == Env && u.EnvironmentName == "TT02" && u.AssetId == "altinn-local:reporter:" + SkoleNaervaerTestIdentityDefaults.ReporterAlias);
         var assets = (await bed.Catalog.ViewAsync(CancellationToken.None)).Assets;
         assets.Where(a => a.Alias is SkoleNaervaerTestIdentityDefaults.ReporterAlias or SkoleNaervaerTestIdentityDefaults.ChildAlias).Should().OnlyContain(a => a.Consumers == 1);
     }
@@ -244,6 +253,116 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
         (none.StatusLabel, none.Readiness.State, none.Rows.Count).Should().Be(("Not required", SetupReadinessState.NotApplicable, 0));
     }
 
+    private static readonly Dictionary<string, string> FormContract = new() { ["formDataType"] = "skolenaervaer" };
+
+    private static void RegisterReport(Bed bed, string alias = "valid-report")
+    {
+        bed.Registry.Register(new RegisteredTestDataAsset { Alias = alias, DataType = TestDataDataType.XmlPayload, SemanticRole = TestDataSemanticRoles.ReportXml,
+            AppliesTo = [TestDataContexts.SkolenaervaerReport], RegisteredAt = DateTimeOffset.UtcNow });
+        bed.Catalog.Approve("registered:" + alias).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Ready_needs_every_required_persisted_reference_and_a_missing_report_payload_is_partial()
+    {
+        var bed = await CreateAsync(settings: FormContract);
+        RegisterReport(bed);
+        await BindAsync(bed, (AltinnTestDataRequirements.Reporter, SkoleNaervaerTestIdentityDefaults.ReporterAlias), (AltinnTestDataRequirements.Child, SkoleNaervaerTestIdentityDefaults.ChildAlias));
+        var partial = (await ViewAsync(bed))!;
+        partial.StatusLabel.Should().Be("Partial", "the report payload is only suggested — a suggestion never makes TEST DATA Ready");
+        partial.Readiness.Reason.Should().StartWith("2 / 3 required assets resolved");
+        Row(partial, AltinnTestDataRequirements.ReportPayload).State.Should().Be(ConnectedSystemTestDataState.Suggested);
+        (await bed.Catalog.ViewAsync(CancellationToken.None)).Assets.Single(a => a.Alias == "valid-report").Consumers.Should().Be(0, "a suggestion is not usage");
+
+        await BindAsync(bed, (AltinnTestDataRequirements.ReportPayload, "valid-report"));
+        var ready = (await ViewAsync(bed))!;
+        (ready.StatusLabel, ready.Readiness.Reason).Should().Be(("Ready", "3 / 3 required assets resolved."));
+        var usage = (await bed.Lifecycle.UsagesAsync("valid-report", CancellationToken.None)).Should().ContainSingle().Subject;
+        (usage.ConsumerName, usage.Location, usage.AssetId).Should().Be(("Skolenærvær – Altinn intake", "Valid report payload", "registered:valid-report"));
+        (await bed.Catalog.ViewAsync(CancellationToken.None)).Assets.Single(a => a.Alias == "valid-report").Consumers.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Optional_missing_is_reported_but_never_blocks()
+    {
+        var bed = await CreateAsync();
+        var optional = new ConnectedSystemTestDataRequirement("extra", "Extra", TestDataSemanticRoles.ReportXml, TestDataDataType.XmlPayload, false, [], "Optional");
+        await BindAsync(bed, (AltinnTestDataRequirements.Reporter, SkoleNaervaerTestIdentityDefaults.ReporterAlias), (AltinnTestDataRequirements.Child, SkoleNaervaerTestIdentityDefaults.ChildAlias));
+        var integration = (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))!;
+        var view = ConnectedSystemTestDataMatcher.View(integration, [.. AltinnTestDataRequirements.For(new Dictionary<string, string>()), optional], (await bed.Catalog.ViewAsync(CancellationToken.None)).Assets);
+        (view.StatusLabel, view.Readiness.Reason).Should().Be(("Ready", "2 / 2 required assets resolved · 1 optional not configured."));
+    }
+
+    [Fact]
+    public async Task Legacy_alias_bindings_migrate_to_stable_ids_and_consumed_usage_is_recorded_once_never_re_created_after_clear()
+    {
+        var bed = await CreateAsync(settings: FormContract, consumed: () => new Dictionary<string, string> { [AltinnTestDataRequirements.ReportPayload] = "valid-report" });
+        RegisterReport(bed);
+        var legacy = (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))! with
+        {
+            TestDataBindings = [new(AltinnTestDataRequirements.Child, SkoleNaervaerTestIdentityDefaults.ChildAlias), new(AltinnTestDataRequirements.Reporter, SkoleNaervaerTestIdentityDefaults.ReporterAlias)],
+        };
+        await bed.Integrations.PersistAsync(legacy, CancellationToken.None);
+
+        var view = (await ViewAsync(bed))!;
+        var stored = (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))!;
+        stored.TestDataReferenceVersion.Should().Be(ConnectedSystemTestDataService.ReferenceVersion);
+        stored.TestDataBindings!.Single(b => b.RequirementId == AltinnTestDataRequirements.Child).AssetId.Should().Be("altinn-local:child:" + SkoleNaervaerTestIdentityDefaults.ChildAlias);
+        stored.TestDataBindings!.Single(b => b.RequirementId == AltinnTestDataRequirements.ReportPayload).Should().Match<ConnectedSystemTestDataBinding>(b =>
+            b.AssetId == "registered:valid-report" && b.BoundBy == ConnectedSystemTestDataBindingOrigins.Migration);
+        view.StatusLabel.Should().Be("Ready");
+        (await bed.Catalog.ViewAsync(CancellationToken.None)).Assets.Single(a => a.Alias == "valid-report").Consumers.Should().Be(1, "consumed usage is now a persisted reference");
+
+        await BindAsync(bed, (AltinnTestDataRequirements.ReportPayload, null));
+        await ViewAsync(bed);
+        (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))!.TestDataBindings!.Should().NotContain(b => b.RequirementId == AltinnTestDataRequirements.ReportPayload,
+            "the migration runs once: a binding a person cleared is never re-created");
+    }
+
+    [Fact]
+    public async Task Migration_never_guesses_unconsumed_or_ambiguous_usage()
+    {
+        var bed = await CreateAsync(settings: FormContract, consumed: () => new Dictionary<string, string>());
+        RegisterReport(bed);
+        await ViewAsync(bed);
+        (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))!.TestDataBindings.Should().BeNull("a matching role/Applies to/name is not usage");
+
+        var unknown = await CreateAsync(settings: FormContract, consumed: () => new Dictionary<string, string> { [AltinnTestDataRequirements.ReportPayload] = "does-not-exist" });
+        await unknown.Service.ViewAsync(Env, SystemId, CancellationToken.None);
+        (await unknown.Integrations.GetAsync(Env, SystemId, CancellationToken.None))!.TestDataBindings.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Two_systems_bound_to_one_asset_are_two_consumers_and_one_system_counts_once()
+    {
+        var second = new ExternalIntegration
+        {
+            Id = Env + ":other:second", TargetEnvironmentId = Env, Name = "Second intake", ProviderType = ExternalProviderType.Other, EnvironmentName = "TT02",
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        var bed = await CreateAsync(existing: [second]);
+        await BindAsync(bed, (AltinnTestDataRequirements.Reporter, SkoleNaervaerTestIdentityDefaults.ReporterAlias));
+        (await bed.Service.UpdateAsync(Env, second.Id, new([new(AltinnTestDataRequirements.Reporter, SkoleNaervaerTestIdentityDefaults.ReporterAlias)]), CancellationToken.None)).Problem.Should().BeNull();
+        (await bed.Catalog.ViewAsync(CancellationToken.None)).Assets.Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias).Consumers.Should().Be(2);
+        (await bed.Lifecycle.UsagesAsync(SkoleNaervaerTestIdentityDefaults.ReporterAlias, CancellationToken.None)).Select(u => u.ConsumerName)
+            .Should().BeEquivalentTo(["Skolenærvær – Altinn intake", "Second intake"]);
+    }
+
+    [Fact]
+    public async Task A_binding_whose_id_no_longer_resolves_is_missing_never_rebound_to_a_same_alias_asset()
+    {
+        var bed = await CreateAsync();
+        AddSessionReporter(bed);
+        var integration = (await bed.Integrations.GetAsync(Env, SystemId, CancellationToken.None))! with
+        {
+            TestDataBindings = [new(AltinnTestDataRequirements.Reporter, "reporter-a") { AssetId = "registered:reporter-a" }], TestDataReferenceVersion = ConnectedSystemTestDataService.ReferenceVersion,
+        };
+        await bed.Integrations.PersistAsync(integration, CancellationToken.None);
+        Row((await ViewAsync(bed))!, AltinnTestDataRequirements.Reporter).State.Should().Be(ConnectedSystemTestDataState.MissingReference,
+            "the stored id is authoritative; altinn-local:reporter:reporter-a only shares the alias");
+        (await bed.Lifecycle.UsagesAsync(CancellationToken.None)).Should().ContainSingle(u => u.ConsumerType == "Connected system" && u.Unresolved);
+    }
+
     [Fact]
     public void Scope_matches_the_environment_by_id_name_or_canonical_name_in_parentheses_never_by_partial_text()
     {
@@ -261,7 +380,8 @@ public sealed class ConnectedSystemTestDataTests : IDisposable
         AltinnTestDataRequirements.For(new Dictionary<string, string>()).Select(r => (r.Id, r.SemanticRole, r.Required)).Should().Equal(
             (AltinnTestDataRequirements.Reporter, TestDataSemanticRoles.Reporter, true), (AltinnTestDataRequirements.Child, TestDataSemanticRoles.Child, true));
         AltinnTestDataRequirements.For(new Dictionary<string, string> { ["formDataType"] = "skolenaervaer" }).Last()
-            .Should().Match<ConnectedSystemTestDataRequirement>(r => r.Id == AltinnTestDataRequirements.ReportPayload && !r.Required && r.DataType == TestDataDataType.XmlPayload);
+            .Should().Match<ConnectedSystemTestDataRequirement>(r => r.Id == AltinnTestDataRequirements.ReportPayload && r.Required && r.DataType == TestDataDataType.XmlPayload
+                && r.SemanticRole == TestDataSemanticRoles.ReportXml && r.DisplayName == "Valid report payload");
         JsonSerializer.Serialize(new ExternalIntegration()).Should().NotContain("TestDataBindings", "older documents serialize unchanged until a binding exists");
     }
 }

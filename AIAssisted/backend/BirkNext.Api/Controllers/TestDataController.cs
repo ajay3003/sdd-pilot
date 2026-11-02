@@ -49,8 +49,10 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
         return result.Xml is not null ? Ok(result) : BadRequest(result);
     }
 
+    /// <summary>Approves one version (default: the current one). Invalid XML is refused; a draft version becomes current under the same asset id.</summary>
     [HttpPost("assets/{id}/approve")]
-    public IActionResult Approve(string id) => service.Approve(id) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id });
+    public async Task<IActionResult> Approve(string id, [FromQuery] int? version, CancellationToken ct) =>
+        await service.ApproveAsync(id, version, ct) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id, version });
 
     [HttpPost("assets/{id}/deprecate")]
     public IActionResult Deprecate(string id) => service.Deprecate(id) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id });

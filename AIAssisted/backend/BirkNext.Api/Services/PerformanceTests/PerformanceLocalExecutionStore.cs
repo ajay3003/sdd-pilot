@@ -20,7 +20,10 @@ public sealed class PerformanceLocalExecutionStore
     private readonly object _gate = new();
     private State _state;
 
-    private sealed record State(string? CaBundlePath, string? CaFingerprint, int Certificates, DateTimeOffset? ConfiguredAt, ContainerTlsValidation? Validation);
+    private sealed record State(string? CaBundlePath, string? CaFingerprint, int Certificates, DateTimeOffset? ConfiguredAt, ContainerTlsValidation? Validation,
+        string? RepairMode = null, List<TlsRepairOutcome>? Repairs = null);
+
+    private readonly string _repairDirectory;
 
     public PerformanceLocalExecutionStore(PerformanceTestOptions options, IConfiguration? configuration = null, string? directory = null)
     {
@@ -28,8 +31,72 @@ public sealed class PerformanceLocalExecutionStore
         var dir = directory ?? configuration?.GetValue<string?>("PerformanceTests:LocalExecution:StateDirectory")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext");
         _path = Path.Combine(dir, FileName);
+        _repairDirectory = Path.Combine(dir, "performance-tls-repair");
         _state = Load(_path);
         _options.Container.CaBundleOverridePath = _state.CaBundlePath;
+        _options.Container.TargetCaBundle = ManagedBundleFor;
+    }
+
+    // ── Automatic TLS repair (missing intermediates) ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary><see cref="TlsRepairModes.Automatic"/> unless the tester chose Manual only. No mode disables TLS verification.</summary>
+    public string RepairMode => _state.RepairMode == TlsRepairModes.ManualOnly ? TlsRepairModes.ManualOnly : TlsRepairModes.Automatic;
+
+    public bool SetRepairMode(string? mode)
+    {
+        if (mode is not (TlsRepairModes.Automatic or TlsRepairModes.ManualOnly)) return false;
+        lock (_gate) { _state = _state with { RepairMode = mode }; Save(); }
+        return true;
+    }
+
+    public IReadOnlyList<TlsRepairOutcome> Repairs => _state.Repairs ?? [];
+
+    public TlsRepairOutcome? RepairFor(string host, int port) => Repairs.FirstOrDefault(r => Same(r, host, port));
+
+    private static bool Same(TlsRepairOutcome r, string host, int port) => string.Equals(r.Host, host, StringComparison.OrdinalIgnoreCase) && r.Port == port;
+
+    private string ManagedPath(string host, int port) =>
+        Path.Combine(_repairDirectory, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{host.ToLowerInvariant()}:{port}"))).ToLowerInvariant()[..24] + ".pem");
+
+    /// <summary>
+    /// The managed bundle a target's k6 execution mounts: only for that host:port, only in Automatic mode, only while its repaired intermediate is
+    /// still within its validity period and the file is the one validated (fingerprint). Otherwise null (the effective configured bundle applies).
+    /// </summary>
+    public string? ManagedBundleFor(string targetOrigin)
+    {
+        if (RepairMode != TlsRepairModes.Automatic || !Uri.TryCreate(targetOrigin, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return null;
+        if (RepairFor(uri.Host, uri.Port) is not { State: TlsRepairStates.Applied } repair || repair.IntermediateNotAfter is { } until && until < DateTimeOffset.UtcNow) return null;
+        var path = ManagedPath(uri.Host, uri.Port);
+        return File.Exists(path) && PerformanceCaBundleInspector.Inspect(path) is { Usable: true } ? path : null;
+    }
+
+    /// <summary>Stores a validated repair: the bundle file (container default roots + the approved configured bundle + the validated intermediates —
+    /// public certificates only) and its metadata. Replaces an earlier repair of the same host.</summary>
+    public string SaveRepair(TlsRepairOutcome outcome, string bundlePem)
+    {
+        var path = ManagedPath(outcome.Host, outcome.Port);
+        lock (_gate)
+        {
+            Directory.CreateDirectory(_repairDirectory);
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, bundlePem);
+            File.Move(temp, path, overwrite: true);
+            _state = _state with { Repairs = [.. Repairs.Where(r => !Same(r, outcome.Host, outcome.Port)), outcome] };
+            Save();
+        }
+        return path;
+    }
+
+    /// <summary>Stops using a host's managed bundle (server fixed, revalidation failed, leaf rotated). Its metadata is kept with the given state.</summary>
+    public void RetireRepair(string host, int port, string state, string detail)
+    {
+        lock (_gate)
+        {
+            if (RepairFor(host, port) is not { } existing) return;
+            try { File.Delete(ManagedPath(host, port)); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            _state = _state with { Repairs = [.. Repairs.Where(r => !Same(r, host, port)), existing with { State = state, Detail = detail }] };
+            Save();
+        }
     }
 
     /// <summary>The CA bundle configuration as the container will see it (System Settings first, then the configuration file).</summary>
@@ -74,7 +141,7 @@ public sealed class PerformanceLocalExecutionStore
     public void Record(PerformanceReachability result)
     {
         if (result.State is PerformanceProbeStates.RuntimeUnavailable or PerformanceProbeStates.ImageMissing) return; // never reached the network
-        var bundle = Bundle;
+        var bundle = PerformanceCaBundleInspector.Inspect(_options.Container.CaBundlePathFor(result.TargetOrigin));
         lock (_gate)
         {
             _state = _state with
@@ -102,7 +169,8 @@ public sealed class PerformanceLocalExecutionStore
     {
         var bundle = Bundle;
         var validation = _state.Validation;
-        var current = validation is not null && validation.TrustFingerprint == TrustFingerprint(validation.TargetOrigin, bundle);
+        var current = validation is not null
+            && validation.TrustFingerprint == TrustFingerprint(validation.TargetOrigin, PerformanceCaBundleInspector.Inspect(_options.Container.CaBundlePathFor(validation.TargetOrigin)));
         var (state, detail) = bundle switch
         {
             { Configured: true, Usable: false } => (ContainerTlsTrustStates.ValidationFailed, $"The CA bundle is invalid and is not mounted: {bundle.Detail} TLS verification will not be disabled."),
@@ -111,7 +179,7 @@ public sealed class PerformanceLocalExecutionStore
             _ when validation is { Passed: true } => (ContainerTlsTrustStates.Validated,
                 $"The k6 container reached {validation.TargetOrigin} with {(bundle.Configured ? "the configured CA bundle" : "its default CA store")} and TLS verification on."),
             _ when validation is not null => (ContainerTlsTrustStates.ValidationFailed,
-                $"{PerformanceNetworkStages.Classification(validation.ProbeState)}.{(PerformanceNetworkStages.FailedStage(validation.ProbeState) == "tls" && !bundle.Configured ? " Configure the corporate CA bundle that issued the target certificate." : "")}"),
+                $"{PerformanceNetworkStages.Classification(validation.ProbeState)}.{(validation.Chain is { Remediation.Length: > 0 } chain ? $" {TlsFailureClasses.Label(chain.FailureClass)}." : PerformanceNetworkStages.FailedStage(validation.ProbeState) == "tls" && !bundle.Configured ? " The TLS diagnosis decides the fix (server chain, renewal, or the corporate CA bundle that issued the target certificate)." : "")}"),
             { Usable: true } => (ContainerTlsTrustStates.Configured, "The CA bundle loads and will be mounted read-only. Run a container network check to validate it against the target."),
             _ => (ContainerTlsTrustStates.NotConfigured, "No CA bundle: the container uses its default CA store. A target signed by a corporate CA needs the corporate CA bundle."),
         };
@@ -123,6 +191,7 @@ public sealed class PerformanceLocalExecutionStore
             Certificates = bundle.Certificates, Fingerprint = bundle.Configured && bundle.Usable ? bundle.Fingerprint : null, ConfiguredAt = _state.ConfiguredAt,
             LastValidation = validation, Stages = PerformanceNetworkStages.From(validation), Image = _options.Container.Image, Network = _options.Container.Network,
             ProxyConfigured = !string.IsNullOrWhiteSpace(_options.Container.HttpProxy) || !string.IsNullOrWhiteSpace(_options.Container.HttpsProxy),
+            RepairMode = RepairMode, Repairs = Repairs,
         };
     }
 

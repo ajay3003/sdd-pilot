@@ -152,7 +152,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             EvidenceSourceSide = BirkNext.Integrations.IntegrationSourceSide.Consumer,
             // A report fixture: the child is form data (the form binding's own element path); the reporter is the Altinn actor, never in the XML.
             // A valid fixture created in Test Data is this pack's valid report payload (the journey's "Valid report payload" role).
-            FixtureCapabilities = ["skolenaervaer-report"],
+            FixtureCapabilities = [SkoleNaervaerCanonicalFixtures.ReportCapability],
             FixtureBindings =
             [
                 new("Child", "child", new SkoleNaervaerAltinnForm().Fields.Single(field => field.Key == SkoleNaervaerAltinnForm.ChildIdentifier).Path, "The child the report is about."),
@@ -185,15 +185,16 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new(MuSource, "MU (Meldingsutveksleren)", "The message hub that receives Altinn's webhook and forwards reports.")
         {
             IntegrationRequirementKeys = [ReportIntake], ComponentTokens = ["Meldingsutveksler", "Meldingsutveksleren"], ExpectedArtifact = "MU repository source archive",
-            // M2LB's receiver (MM) has an adapter project named after MU; that archive is the M2LB source, not MU.
-            ExcludedComponentTokens = ["Meldingsutvekslermottak"],
+            // M2LB's receiver (MM) has an adapter project named after MU; that archive is the M2LB source, not MU. MM is named
+            // Meldingsutvekslermottak in earlier and MeldingsutvekslerReceiver in current M2LB sources (as the topology profile knows).
+            ExcludedComponentTokens = ["Meldingsutvekslermottak", "MeldingsutvekslerReceiver"],
             Capabilities = ["Meldingsutveksleren", "Altinn webhook", "Altinn source filter", "Report-intake configuration"], Journeys = [RapportmottakId],
         },
         // "M2LB application": the application source of these components. M2LB infrastructure (IaC) or a shared library (M2LB.Common) is not it.
         new(M2lbSource, "M2LB application", "The downstream Skolenærvær implementation (MM, Skoletjenesten, SkoleAdapter, Utdanning, Skolenærværsrapport).")
         {
             IntegrationRequirementKeys = [EducationCdc, PeriodClosed],
-            ComponentTokens = ["Meldingsutvekslermottak", "Skoletjenesten", "Skole", "SkoleAdapter", "Utdanning", "Skolenaervaersrapport", "Skolenærværsrapport"],
+            ComponentTokens = ["Meldingsutvekslermottak", "MeldingsutvekslerReceiver", "Skoletjenesten", "Skole", "SkoleAdapter", "Utdanning", "Skolenaervaersrapport", "Skolenærværsrapport"],
             ExpectedArtifact = "M2LB repository source archive",
             Capabilities = ["Meldingsutvekslermottak (MM)", "Skoletjenesten", "SkoleAdapter", "Utdanning", "Skolenærværsrapport", "Period closure", "Service Bus", "Event Hub", "Contracts and XSDs"],
             Journeys = [UtdanningsdataId, RapportmottakId, PeriodeavslutningId],

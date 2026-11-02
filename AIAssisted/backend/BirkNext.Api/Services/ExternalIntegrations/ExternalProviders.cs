@@ -195,6 +195,12 @@ public interface IExternalProviderHandler
     /// <summary>Reusable system-level Test Data this provider needs (none by default: a generic API declares none until its runtime asks for them).</summary>
     Task<IReadOnlyList<ConnectedSystemTestDataRequirement>> TestDataRequirementsAsync(ExternalIntegration integration, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ConnectedSystemTestDataRequirement>>([]);
+    /// <summary>
+    /// Test Data the provider's readiness consumed before its requirement was persisted (requirement id → asset alias) — for the one-time reference
+    /// migration only: the asset the readiness actually resolved, never a role/name/"Applies to" match. Empty by default.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> ConsumedTestDataAsync(ExternalIntegration integration, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
 }
 
 /// <summary>
@@ -336,6 +342,11 @@ public sealed class AltinnProviderHandler(AltinnEnvironmentService altinn, Altin
     /// <summary>Altinn intake: Reporter and Child identities (and the report payload fixture when a form contract is declared).</summary>
     public async Task<IReadOnlyList<ConnectedSystemTestDataRequirement>> TestDataRequirementsAsync(ExternalIntegration integration, CancellationToken ct) =>
         AltinnTestDataRequirements.For(await CurrentSettingsAsync(integration, ct));
+
+    /// <summary>The XML report fixture Altinn readiness resolved by contract before the report payload was a persisted binding (Ready only).</summary>
+    public async Task<IReadOnlyDictionary<string, string>> ConsumedTestDataAsync(ExternalIntegration integration, CancellationToken ct) =>
+        await altinn.InferredReportFixtureAsync(integration.TargetEnvironmentId, ct) is { } alias
+            ? new Dictionary<string, string> { [AltinnTestDataRequirements.ReportPayload] = alias } : new Dictionary<string, string>();
 
     public static Dictionary<string, string> ToSettings(AltinnEnvironmentSettings saved)
     {

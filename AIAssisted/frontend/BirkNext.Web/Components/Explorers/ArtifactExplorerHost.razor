@@ -20,6 +20,31 @@
     }
     else
     {
+        @if (ShowSourceBar)
+        {
+            @* Which imported source (or the aggregated Project evidence) every Explorer reads — chosen here, shared by all Explorers, saved with
+               the workspace. An imported package is a source, not "the project"; importing another package never changes this choice. *@
+            <div class="axh-module-bar axh-source-bar" data-testid="artifact-explorer-source-bar">
+                <label class="axh-select-label" for="@($"{_id}-source")">Source</label>
+                <select id="@($"{_id}-source")" class="axh-select" data-testid="artifact-explorer-source-selector" value="@SelectedSource" @onchange="OnSourceChanged"
+                        aria-describedby="@($"{_id}-source-note")">
+                    @foreach (var group in Explorer.Sources.GroupBy(o => o.Group))
+                    {
+                        <optgroup label="@group.Key">
+                            @foreach (var option in group)
+                            {
+                                <option value="@option.Value" selected="@(option.Value == SelectedSource)">@option.Label@(option.ArchiveFileName is { } archive && !string.Equals(archive, option.Label + ".zip", StringComparison.OrdinalIgnoreCase) ? $" ({archive})" : "")</option>
+                            }
+                        </optgroup>
+                    }
+                </select>
+                <span id="@($"{_id}-source-note")" class="axh-module-note" data-testid="artifact-explorer-source-note">@SourceNote</span>
+            </div>
+            @if (Explorer.ExplorerSourceUnavailable)
+            {
+                <p class="axh-evidence-line" role="status" data-testid="artifact-explorer-source-unavailable">The previously selected source is no longer imported in this workspace. Choose a source above; nothing was switched to another import silently.</p>
+            }
+        }
         @if (_state.HasModules && !_state.ModuleRequired && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
         {
             @* A monorepo: every role resolves within one module. The selector says which module this explorer (and every review) reads. *@
@@ -160,7 +185,27 @@
                 @* A workspace exists and this role has no artifact in it: neutral, never a failure. *@
                 <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="RoleUnavailable">
                     <div class="axh-icon" aria-hidden="true">@Icon</div>
-                    <h2 class="axh-title">No @Label artifact was detected in @(_state.ModuleLabel is { } emptyModule ? $"module {emptyModule} of {WorkspaceName}" : WorkspaceName)</h2>
+                    @if (_state.Evidence is not { FromEnvironment: true } && ProjectImportScope.IsImport(_state.ProjectSlug))
+                    {
+                        <h2 class="axh-title">No @Label artifact was detected in the selected source: @(_state.ModuleLabel is { } sourceModule ? $"module {sourceModule} of {WorkspaceName}" : WorkspaceName)</h2>
+                    }
+                    else
+                    {
+                        <h2 class="axh-title">No @Label artifact was detected in @(_state.ModuleLabel is { } emptyModule ? $"module {emptyModule} of {WorkspaceName}" : WorkspaceName)</h2>
+                    }
+                    @if (Explorer.SourcesWith(Role) is { Count: > 0 } elsewhere)
+                    {
+                        @* Never an automatic switch: the tester opens the source that holds the artifact. *@
+                        <div class="axh-alternatives" data-testid="artifact-explorer-alternative-sources">
+                            <p class="axh-text">@(Label) artifacts are available in another imported source: <strong>@string.Join(", ", elsewhere.Select(e => e.Label))</strong>.</p>
+                            <div class="axh-actions">
+                                @foreach (var option in elsewhere.Take(3))
+                                {
+                                    <button type="button" class="btn-primary" data-testid="artifact-explorer-open-source" data-source="@option.Value" @onclick="() => Explorer.SelectSource(option.Value)">Open @option.Label</button>
+                                }
+                            </div>
+                        </div>
+                    }
                     <p class="axh-text">
                         @(Origin == WorkspaceArtifactOrigin.ManualWorkspace
                             ? $"The documents imported into the workspace do not include a {Label} artifact. Every artifact role is optional."
@@ -418,8 +463,27 @@
     protected override async Task OnInitializedAsync()
     {
         Explorer.Changed += OnExplorerChanged;
+        // ?source=<import id> (e.g. "Open specifications in M2LB" from Recommended Workflow): an explicit choice, validated against this workspace.
+        if (Services.GetService(typeof(NavigationManager)) is NavigationManager navigation
+            && Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(navigation.Uri).Query).TryGetValue("source", out var requested)
+            && requested.ToString() is { Length: > 0 } source && Explorer.Sources.Any(o => o.Value == source))
+            Explorer.SelectSource(source);
         await LoadAsync();
     }
+
+    /// <summary>A source choice only matters with several sources, and never over a selected Demo Project (built-in demos stay a separate category).</summary>
+    private bool ShowSourceBar => Explorer.Sources.Count >= 2 && (_state?.ProjectSlug is null || ProjectImportScope.IsImport(_state.ProjectSlug));
+
+    /// <summary>The source the Explorer reads now: the explicit choice, else Project evidence when configured, else the application's documents.</summary>
+    private string? SelectedSource => Explorer.ExplorerSource is { Length: > 0 } explicitSource && !Explorer.ExplorerSourceUnavailable ? explicitSource
+        : _state?.Evidence is { FromEnvironment: true } ? ExplorerSources.ProjectEvidence
+        : ProjectImportScope.ImportIdOf(_state?.ProjectSlug);
+
+    private string SourceNote => SelectedSource == ExplorerSources.ProjectEvidence
+        ? "All Explorers read the project's associated documentation sources together."
+        : $"All Explorers read {Explorer.Sources.Count(o => o.Value != ExplorerSources.ProjectEvidence)} imported sources one at a time; this choice is kept when you navigate or import another package.";
+
+    private void OnSourceChanged(ChangeEventArgs e) => Explorer.SelectSource(e.Value?.ToString());
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

@@ -174,8 +174,8 @@ public sealed class ProjectEvidenceIncrementalTests : BunitContext
 
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-source-row]").Should().HaveCount(2));
         cut.Find("[data-testid=tep-source-total]").TextContent.Should().StartWith("2");
-        cut.Find("[data-testid=tep-source-row][data-import=a] [data-testid=tep-source-binding]").TextContent.Should().Contain("Application source").And.Contain("Contracts and schemas");
-        cut.Find("[data-testid=tep-source-row][data-import=t] [data-testid=tep-source-binding]").TextContent.Should().Be("Available · not bound");
+        cut.Find("[data-testid=tep-source-row][data-import=a] [data-testid=tep-source-binding]").TextContent.Should().Contain("Primary application source").And.Contain("Confirmed for");
+        cut.Find("[data-testid=tep-source-row][data-import=t] [data-testid=tep-source-binding]").TextContent.Should().Contain("Not associated").And.NotContain("bound");
         cut.Find("[data-testid=tep-source-row][data-import=t] [data-testid=tep-source-analysis]").TextContent.Should().Be("Not analyzed");
 
         cut.Find("[data-testid=tep-source-search]").Input("docs-only");
@@ -187,7 +187,7 @@ public sealed class ProjectEvidenceIncrementalTests : BunitContext
 
         var reads = _reads;
         cut.Find("[data-testid=tep-refresh-sources]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-notice]").TextContent.Should().Contain("Sources refreshed: 2 imported. Bindings are unchanged."));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-notice]").TextContent.Should().Contain("Sources refreshed: 2 imported. Roles were re-evaluated; your own choices are unchanged."));
         _reads.Should().Be(reads + 1);
     }
 

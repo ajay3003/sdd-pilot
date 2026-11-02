@@ -90,8 +90,19 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
             _setup[key] = setup;
             _missingAfterRead[key] = Missing(setup);
         }
+        // Deterministic association: strong matches are associated without a manual step (recomputed on every read; explicit choices win).
+        // Only with the backend's classification — an unreachable backend never removes or guesses associations.
+        if (profile is not null && setup is not null
+            && ProjectEvidenceAssociation.Apply(profile, Associations(profile, setup), _time.GetUtcNow()))
+        {
+            await _settings.MaterializeAsync(_js, profile.Id);
+            await _settings.SaveAsync(_js);
+        }
         return Build(profile, setup);
     }
+
+    private IReadOnlyList<PackageAssociation> Associations(FrontendAnalysisProfile? profile, SourceSetupView? setup) =>
+        ProjectEvidenceAssociation.Of(TargetApplications.Of(profile), profile?.Project, _workspace.SddLifecycle, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup);
 
     /// <summary>
     /// The cached setup no longer describes the imported packages: an import names a Source Analysis snapshot the cache does not hold (it was
@@ -121,7 +132,8 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
     }
 
     private ProjectEvidenceView Build(FrontendAnalysisProfile? profile, SourceSetupView? setup) =>
-        ProjectEvidenceResolver.Resolve(profile?.Id, profile?.Name, profile?.Project, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup);
+        ProjectEvidenceResolver.Resolve(profile?.Id, profile?.Name, profile?.Project, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup)
+            with { Associations = Associations(profile, setup), TargetApplication = TargetApplications.Of(profile), Classified = setup is not null };
 
     private ProjectEvidencePackage? Package(string environmentId, string importId)
     {
@@ -168,7 +180,15 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
         profile.Project is { } project && Package(environmentId, importId) is { } package && ProjectEvidenceResolver.Bind(project, roleKey, package, _time.GetUtcNow()));
 
     public Task<bool> UnbindAsync(string environmentId, string roleKey, string importId) => MutateAsync(environmentId, profile =>
-        profile.Project is { } project && ProjectEvidenceResolver.Unbind(project, roleKey, importId));
+    {
+        if (profile.Project is not { } project) return false;
+        // Removing an automatic association is the user's decision: remembered, so the next read does not associate it again.
+        var automatic = project.Evidence.FirstOrDefault(r => r.RoleKey == roleKey)?.Sources.Any(s => s.ImportId == importId && s.BoundBy == ProjectEvidenceAssociation.Detected) == true;
+        if (!ProjectEvidenceResolver.Unbind(project, roleKey, importId)) return false;
+        if (automatic && !project.Declined.Any(d => d.RoleKey == roleKey && d.ImportId == importId))
+            project.Declined.Add(new ProjectEvidenceDecline { RoleKey = roleKey, ImportId = importId, At = _time.GetUtcNow() });
+        return true;
+    });
 
     public Task<bool> SetRequirementAsync(string environmentId, string roleKey, ProjectEvidenceRequirement requirement) => MutateAsync(environmentId, profile =>
     {

@@ -20,7 +20,11 @@
         }
         else
         {
-            @if (_identity is null) { <p class="tai-muted" data-testid="tai-empty">Not configured. Choose the application/system this environment represents.</p> }
+            @if (_identity is null)
+            {
+                @* The target URL and check below say WHERE the application runs; Project evidence needs WHICH application it is. *@
+                <p class="tai-required" role="note" data-testid="tai-empty"><strong>Application not chosen.</strong> The target URL and check below describe where the application runs; choose which application/system it is (for example M2LB) so Project evidence can be associated with it.</p>
+            }
             <div class="tai-picker" data-testid="tai-picker">
                 <label for="tai-search" class="tai-label">Application</label>
                 <input id="tai-search" type="search" class="form-control" placeholder="Search applications" autocomplete="off" data-testid="tai-search"

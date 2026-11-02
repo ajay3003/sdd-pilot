@@ -1290,6 +1290,9 @@
             _tab = "Overview";
             // The Dashboard card reads the session result; it shows outcome and coverage, never a score.
             if (_context is not null) RuntimeReviews.SaveIntegrationQualityResult(_result, _context);
+            // Project activity: the completed run with its own outcome; keyed by run id (reopening a stored run is never a new event).
+            if (Services.GetService(typeof(BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder)) is BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder activity)
+                await activity.RecordAsync(BirkNext.Web.Services.ProjectActivity.ReviewActivity.IntegrationQuality(_result, _profile?.Id, _profile?.Name));
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {

@@ -8,7 +8,7 @@
 {
     <nav class="pcs" aria-label="Project context" data-testid="project-context">
         <span class="pcs-item">
-            <span class="pcs-label">Project</span>
+            <span class="pcs-label">Project evidence</span>
             @if (_view?.IsConfigured == true)
             {
                 <a href="@ProjectEvidenceResolver.ProjectTabHref(_view.EnvironmentId)" data-testid="project-context-project" aria-label="@($"Project {_view.ProjectName}: open Project setup")">@_view.ProjectName</a>

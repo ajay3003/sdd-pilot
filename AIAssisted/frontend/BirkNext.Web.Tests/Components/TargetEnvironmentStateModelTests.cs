@@ -70,7 +70,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
         Chip(cut, "runtime").Should().Be("Not verified", "detection is not runtime verification");
         cut.FindAll("[data-testid=te-state-verification]").Should().BeEmpty();
         cut.FindAll("[data-testid=te-state-trust]").Should().BeEmpty("active execution is an execution gate, not environment health");
-        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Target reachability", "Runtime evidence");
+        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Target URL", "Target reachability", "Runtime evidence");
     }
 
     [Fact]

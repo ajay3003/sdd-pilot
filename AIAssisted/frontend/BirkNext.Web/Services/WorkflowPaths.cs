@@ -198,8 +198,9 @@ public static class WorkflowPaths
 
         if (environment.Project is null)
             steps.Add(new(ProjectStep, identity is null ? "Project evidence" : $"Project evidence for {identity.Name}", false,
-                $"Bind the imported evidence (source, documents, contracts, infrastructure) of {identity?.Name ?? $"the application {name} represents"}.",
-                "Configure Project evidence", ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environment.Id)));
+                identity is null ? $"Choose the Target Application first: imported evidence (source, documents, contracts, infrastructure) is then associated with it automatically."
+                    : $"No imported evidence of {identity.Name} was associated yet. Clear matches are associated automatically; review uncertain sources.",
+                "Review project evidence", ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environment.Id)));
         else if (evidenceOf(environment.Id) is { RequiredReadyAll: false } partial)
             steps.Add(new(ProjectStep, $"Project evidence for {partial.ProjectName}", false,
                 $"{partial.RequiredReady} / {partial.RequiredTotal} required ready. Missing: {string.Join(", ", partial.BlockingLabels)}.",

@@ -157,7 +157,7 @@ public sealed class ProjectImportBackTests : BunitContext
         AssertPreImportView(cut);
         cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("orders-a.zip", "the imported project stays the current project");
         RevealUpload(cut);
-        cut.Find("#pi-choose-heading").TextContent.Should().Be("Import another project");
+        cut.Find("#pi-choose-heading").TextContent.Should().StartWith("Import more evidence for ");
         _activation.Current!.ImportId.Should().Be(record.ImportId, "Back is navigation, not a rollback to the previous project");
         _activation.Current!.SourceSnapshotId.Should().Be(SnapshotA, "the Source Analysis snapshot stays linked");
         _repository.SddLifecycle.Revisions.Should().Contain(r => r.ProjectImportId == record.ImportId, "the imported documents stay");

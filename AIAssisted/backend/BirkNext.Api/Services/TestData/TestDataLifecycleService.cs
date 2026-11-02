@@ -60,11 +60,16 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         var aliases = assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
         var byId = assets.ToDictionary(a => a.Id, a => a.Alias, StringComparer.Ordinal);
         var usages = new List<TestDataAssetUsage>();
-        foreach (var source in _references) usages.AddRange(await source.UsagesAsync(ct));
+        // A consumer that persisted the stable asset id is resolved by it (the alias it recorded may be older); an id that no longer resolves is
+        // unresolved, never matched to an asset that merely has the same alias.
+        foreach (var source in _references)
+            usages.AddRange((await source.UsagesAsync(ct)).Select(u => u.AssetId is { Length: > 0 } id
+                ? byId.TryGetValue(id, out var current) ? u with { Alias = current } : u with { Unresolved = true }
+                : u));
         foreach (var usage in registry.Usages())
             usages.Add(new(byId.GetValueOrDefault(usage.AssetId) ?? AliasOf(usage.AssetId), BindingConsumer, usage.Consumer.Key, usage.Consumer.DisplayName, usage.Usage)
                 { EnvironmentId = usage.EnvironmentId });
-        return [.. usages.Select(u => aliases.Contains(u.Alias) ? u : u with { Unresolved = true })];
+        return [.. usages.Select(u => !u.Unresolved && aliases.Contains(u.Alias) ? u with { AssetId = u.AssetId ?? assets.FirstOrDefault(a => a.Alias == u.Alias)?.Id } : u with { Unresolved = true })];
     }
 
     public async Task<IReadOnlyList<TestDataAssetUsage>> UsagesAsync(string alias, CancellationToken ct) =>
@@ -184,7 +189,8 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
     public async Task<(TestDataDeleteResult Result, int Status)> DeleteAsync(string assetId, bool leaveReferencesUnresolved, CancellationToken ct)
     {
         if (Asset(assetId) is not { } asset) return (new(assetId, AliasOf(assetId), false, "The asset no longer exists in Test Data.", []), 404);
-        if (TestDataOwnerships.WhyNotDeletable(asset.Ownership) is { } why) return (new(asset.Id, asset.Alias, false, why, []), 409);
+        // Protection is enforced here whatever the caller (the UI hides Delete, a direct API call is still refused).
+        if (TestDataOwnerships.WhyNotDeletable(asset.Ownership, asset.ProtectionKind) is { } why) return (new(asset.Id, asset.Alias, false, why, []), 409);
         var usages = await UsagesAsync(asset.Alias, ct);
         if (usages.Count > 0 && !leaveReferencesUnresolved)
             return (new(asset.Id, asset.Alias, false, $"{asset.Alias} is used by {usages.Count} reference{(usages.Count == 1 ? "" : "s")}. Replace them, or confirm deleting and leaving them unresolved.", usages), 409);
@@ -249,11 +255,12 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
     public async Task<TestDataResetPreview> PreviewResetAsync(CancellationToken ct)
     {
         var assets = catalog.Assets();
-        var removable = assets.Where(a => TestDataOwnerships.Deletable(a.Ownership)).ToList();
+        var removable = assets.Where(a => TestDataOwnerships.Deletable(a.Ownership) && !a.IsProtected).ToList();
         var removedAliases = removable.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
         return new TestDataResetPreview
         {
             ProtectedDefaults = [.. assets.Where(a => a.Ownership == TestDataOwnership.ProtectedDefault).Select(a => a.Alias).Order(StringComparer.Ordinal)],
+            ProtectedFixtures = [.. assets.Where(a => a.ProtectionKind == TestDataProtectionKinds.CanonicalFixture).Select(a => a.Alias).Order(StringComparer.Ordinal)],
             ConfigurationAssets = assets.Count(a => a.Ownership == TestDataOwnership.Configuration),
             AssetsToRemove = [.. removable.Select(a => a.Alias).Order(StringComparer.Ordinal)],
             GeneratedFixturesToRemove = removable.Count(a => a.Ownership == TestDataOwnership.Generated),
@@ -262,7 +269,9 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         };
     }
 
-    private int ClearLocal() => registry.ClearAll() + _editors.Sum(e => e.ClearLocal());
+    /// <summary>Removes local Test Data except protected assets (their registry entries, approval and explicit bindings stay; content untouched).</summary>
+    private int ClearLocal() =>
+        registry.ClearAll(catalog.Assets().Where(a => a.IsProtected).Select(a => a.Id).ToHashSet(StringComparer.Ordinal)) + _editors.Sum(e => e.ClearLocal());
 
     /// <summary>
     /// Reset Test Data: removes every registered asset (manual, source-candidate, observed) with its lifecycle, requirements and bindings, and every
@@ -279,6 +288,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         return new(new TestDataResetSummary
         {
             ProtectedDefaultsPreserved = preview.ProtectedDefaults.Count,
+            ProtectedFixturesPreserved = preview.ProtectedFixtures.Count,
             ConfigurationAssetsPreserved = preview.ConfigurationAssets,
             AssetsRemoved = removed + generatedFixturesRemoved,
             GeneratedFixturesRemoved = generatedFixturesRemoved,
@@ -297,6 +307,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         return new TestDataResetSummary
         {
             ProtectedDefaultsPreserved = before.ProtectedDefaults.Count,
+            ProtectedFixturesPreserved = before.ProtectedFixtures.Count,
             ConfigurationAssetsPreserved = before.ConfigurationAssets,
             AssetsRemoved = removed + before.GeneratedFixturesToRemove,
             GeneratedFixturesRemoved = before.GeneratedFixturesToRemove,

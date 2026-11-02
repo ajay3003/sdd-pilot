@@ -198,7 +198,7 @@ public sealed class TestDataAssetLifecycleUiTests : BunitContext
         var cut = Render<TestDataResetPanel>();
 
         cut.Find("[data-testid=tdr-open]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tdr-will-preserve]").TextContent.Should().Contain("2 protected defaults").And.Contain("current values"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tdr-will-preserve]").TextContent.Should().Contain("2 protected assets").And.Contain("current values"));
         cut.Find("[data-testid=tdr-will-remove]").TextContent.Should().Contain("2 assets").And.Contain("0 XML fixtures");
         cut.Find("[data-testid=tdr-will-affect]").TextContent.Should().Contain("1 consumer reference");
         _api.Verify(a => a.ResetAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never, "the preview never resets");
@@ -206,7 +206,7 @@ public sealed class TestDataAssetLifecycleUiTests : BunitContext
         cut.Find("[data-testid=tdr-confirm]").Click();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=tdr-summary]").TextContent.Should().Contain("Test Data reset complete"));
-        cut.Find("[data-testid=tdr-preserved]").TextContent.Should().Be("2 protected defaults preserved");
+        cut.Find("[data-testid=tdr-preserved]").TextContent.Should().Be("2 protected assets preserved (2 protected defaults, 0 protected fixtures)");
         cut.Find("[data-testid=tdr-removed]").TextContent.Should().Be("2 Test Data assets removed");
         cut.Find("[data-testid=tdr-remap]").TextContent.Should().Be("1 consumer reference requires remapping");
     }
@@ -239,5 +239,41 @@ public sealed class TestDataAssetLifecycleUiTests : BunitContext
         TestDataValueVersions.Changed(fixture, [Child(version: 1)]).Should().Equal([("skolenaervaer-child-default", false)]);
         TestDataValueVersions.Changed(fixture, []).Should().Equal([("skolenaervaer-child-default", true)]);
         TestDataValueVersions.Format([Child(version: 2), Observed("a")]).Should().Be("a@v0; skolenaervaer-child-default@v2");
+    }
+
+    [Fact]
+    public void The_canonical_valid_report_is_a_protected_fixture_without_delete_and_reset_keeps_it_in_the_workspace()
+    {
+        var report = new TestDataAssetSummary { Id = "schema-studio:skolenaervaer-valid-report", Alias = "skolenaervaer-valid-report", Kind = TestDataKind.Structured,
+            MediaType = "application/xml", Ownership = TestDataOwnership.Generated, Approval = TestDataApproval.Approved,
+            ProtectionKind = TestDataProtectionKinds.CanonicalFixture, ProtectionReason = "Required baseline data for Skolenærvær." };
+        var userXml = report with { Id = "schema-studio:my-valid-report", Alias = "my-valid-report", ProtectionKind = null, ProtectionReason = null };
+
+        report.ProtectionLabel.Should().Be("Protected fixture");
+        report.Deletable.Should().BeFalse();
+        report.WhyNotDeletable.Should().StartWith("This Test Data asset is protected and cannot be deleted");
+        userXml.IsProtected.Should().BeFalse("approved is not protected");
+        userXml.Deletable.Should().BeTrue();
+        TestDataAssetWorkspace.ResettableFixtures([report, userXml]).Select(a => a.Alias).Should().Equal("my-valid-report");
+
+        var dialog = Dialog(report, TestDataAssetDialog.Mode.Usages);
+        dialog.Find("[data-testid=tda-protected]").TextContent.Should().Be("Protected fixture");
+        dialog.Find("[data-testid=tda-protection]").TextContent.Should().Contain("Canonical Test Pack fixture").And.Contain("Required baseline data for Skolenærvær");
+    }
+
+    [Fact]
+    public void View_usages_names_the_connected_system_requirement_environment_and_status_in_text()
+    {
+        _api.Setup(a => a.ReferencesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<TestDataAssetUsage>?)
+        [
+            new("observed-id-development", "Connected system", "env:altinn", "Altinn — buf/skolenaervaer", "Valid report payload")
+                { AssetId = "registered:observed-id-development", EnvironmentId = "env", EnvironmentName = "Test (TT02)" },
+        ], (string?)null));
+        var cut = Dialog(Observed("observed-id-development", 1), TestDataAssetDialog.Mode.Usages);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tda-usage-consumer]").TextContent.Should().Be("Altinn — buf/skolenaervaer"));
+        cut.Find("[data-testid=tda-usage]").GetAttribute("data-consumer").Should().Be("Connected system");
+        cut.Find("[data-testid=tda-usage-requirement]").TextContent.Should().Be("Requirement: Valid report payload");
+        cut.Find("[data-testid=tda-usage-environment]").TextContent.Should().Be("Environment: Test (TT02)");
+        cut.Find("[data-testid=tda-usage-status]").TextContent.Should().Be("Resolved");
     }
 }

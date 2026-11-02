@@ -118,6 +118,7 @@ public sealed class TlsChainInspectorTests : IDisposable
 
         result.BundleTrusted.Should().BeFalse();
         result.FailedLayer.Should().Be(TlsTrustLayers.ContainerCaBundle);
+        result.FailureClass.Should().Be(TlsFailureClasses.UntrustedPrivateOrCorporateCA, "a complete private chain needs the approved CA bundle");
         result.Guidance.Should().Contain("does not contain the root").And.Contain("PEM");
     }
 
@@ -131,7 +132,11 @@ public sealed class TlsChainInspectorTests : IDisposable
         result.SentByServer.Should().Be(1);
         result.BundleTrusted.Should().BeFalse("like k6, the simulation downloads nothing");
         result.FailedLayer.Should().Be(TlsTrustLayers.ServerChain);
-        result.Guidance.Should().Contain("does not send its intermediate").And.Contain("BirkNext Test Issuing CA");
+        result.Guidance.Should().Contain("does not send that intermediate").And.Contain("BirkNext Test Issuing CA");
+        result.FailureClass.Should().Be(TlsFailureClasses.IncompleteServerChain);
+        result.MissingIssuer.Should().Contain("BirkNext Test Issuing CA");
+        result.Remediation.Should().StartWith("Recommended fix: configure the server", "the server-side fix comes first for an incomplete public/server chain");
+        result.AdvancedRemediation.Should().StartWith("Advanced local workaround");
     }
 
     [Fact]
@@ -143,6 +148,8 @@ public sealed class TlsChainInspectorTests : IDisposable
         result.Expired.Should().BeTrue();
         result.FailedLayer.Should().Be(TlsTrustLayers.TargetCertificate);
         result.Guidance.Should().Contain("expired").And.Contain("cannot fix");
+        result.FailureClass.Should().Be(TlsFailureClasses.ExpiredCertificate);
+        result.AdvancedRemediation.Should().BeNull("no CA bundle fixes an expired certificate");
     }
 
     [Fact]
@@ -152,6 +159,8 @@ public sealed class TlsChainInspectorTests : IDisposable
         var result = await Inspect(Serve(leaf, _intermediate), Bundle(_root));
         result.HostnameMatches.Should().BeFalse();
         result.FailedLayer.Should().Be(TlsTrustLayers.TargetCertificate);
+        result.FailureClass.Should().Be(TlsFailureClasses.HostnameMismatch);
+        result.AdvancedRemediation.Should().BeNull("no CA bundle fixes a wrong host name");
     }
 
     [Fact]

@@ -419,8 +419,8 @@ public sealed class ProjectEvidenceBindingTests
     [Fact]
     public void DocumentsInput_IsNeverNotProvided_WhenEvidenceExists()
     {
-        ProjectInputPresentation.Documents(ImportedWithout(Evidence(true, true, "M2LB-docs.zip"))).StatusLabel.Should().Be("Source unresolved");
-        ProjectInputPresentation.Documents(ImportedWithout(Evidence(false, false, "M2LB-docs.zip"))).StatusLabel.Should().Be("Available in another import");
+        ProjectInputPresentation.Documents(ImportedWithout(Evidence(true, true, "M2LB-docs.zip"))).StatusLabel.Should().Be("Needs review");
+        ProjectInputPresentation.Documents(ImportedWithout(Evidence(false, false, "M2LB-docs.zip"))).StatusLabel.Should().Be("Available in imported evidence");
         var none = ProjectInputPresentation.Documents(ImportedWithout(Evidence(false, false)));
         none.StatusLabel.Should().Be("No supported project documents found");
         none.ActionLabel.Should().Be("Import project documents");
@@ -474,7 +474,7 @@ public sealed class ProjectEvidenceBindingTests
         var readiness = await ReadinessAsync(ImportedWithout(Evidence(true, true, "M2LB-docs.zip")));
 
         readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.BindProjectEvidenceKey);
-        readiness.NextRecommendedAction.Title.Should().Be("Bind project documentation source");
+        readiness.NextRecommendedAction.Title.Should().Be("Review project documentation source");
         readiness.NextRecommendedAction.Route.Should().Contain("focus=documentation");
         readiness.Steps.Should().NotContain(s => s.Title == "Load project artifacts", "BirkNext already holds the documents");
     }

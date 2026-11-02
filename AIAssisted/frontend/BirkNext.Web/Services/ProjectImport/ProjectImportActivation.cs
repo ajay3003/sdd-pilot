@@ -1,3 +1,4 @@
+using BirkNext.Integrations;
 using BirkNext.ProjectImport;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services.Explorers;
@@ -69,7 +70,10 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
 
     /// <param name="makeCurrent">False when the user selected another project while the import ran: the import is recorded with its documents
     /// (history, "Use as current project") and the user's selection stays.</param>
-    public SddProjectImportRecord Activate(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery, ProjectImportCommitResult? commit, bool makeCurrent = true)
+    /// <param name="target">The logical application the package is evidence for: the current one (default) or a new one. The package never
+    /// replaces the application; <see cref="SettleDocuments"/> decides afterwards whose documents are shown.</param>
+    public SddProjectImportRecord Activate(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery, ProjectImportCommitResult? commit, bool makeCurrent = true,
+        ImportTarget target = ImportTarget.CurrentApplication)
     {
         var lifecycle = repository.SddLifecycle;
         // A selected Sample Project is replaced by the imported project (one current project).
@@ -87,6 +91,9 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         record.ArtifactDocumentCount = discovery.ArtifactDocuments.Count;
         ApplySource(record, commit?.Source, preview.Source.Detected, commit?.StagingId, commit?.StagedUntil);
         RecordGeneratedSet(preview.ImportId, commit?.Source, [.. preview.Documents, .. preview.GeneratedArtifactTexts]);
+        var applicationBefore = lifecycle.CurrentApplicationId;
+        ApplicationContexts.Assign(lifecycle, record, target, record.ImportedAt);
+        if (!makeCurrent && applicationBefore is not null) lifecycle.CurrentApplicationId = applicationBefore;
 
         if (makeCurrent) lifecycle.CurrentProjectImportId = preview.ImportId;
         var scope = ProjectImportScope.For(preview.ImportId)!;
@@ -136,6 +143,8 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         // A selected Sample Project is replaced by the imported project (one current project).
         repository.ProjectName = null;
         lifecycle.CurrentProjectImportId = importId;
+        // Showing a package's documents works on that package's application (never moves the package to another application).
+        if (lifecycle.ProjectImports.First(i => i.ImportId == importId).ApplicationId is { } application) lifecycle.CurrentApplicationId = application;
         repository.RefreshSessionArtifacts();
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
@@ -150,6 +159,49 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         repository.RefreshSessionArtifacts();
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
+    }
+
+    /// <summary>The logical application the workspace works on (null before any import).</summary>
+    public SddApplicationContext? CurrentApplication => ApplicationContexts.Current(repository.SddLifecycle);
+
+    /// <summary>
+    /// After an import (and once the backend's source setup classifies its packages): refreshes derived application names and shows the
+    /// application's primary documents — the primary application source's, never a supporting package's just because it was imported last.
+    /// Only when the imported package's application is the current one. Returns true when the shown package changed.
+    /// </summary>
+    public bool SettleDocuments(string importId, SourceSetupView? setup)
+    {
+        var lifecycle = repository.SddLifecycle;
+        var renamed = ApplicationContexts.Reconcile(lifecycle, setup);
+        if (lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is not { ApplicationId: { } application }
+            || lifecycle.CurrentApplicationId != application || lifecycle.CurrentProjectImportId is null || !string.IsNullOrWhiteSpace(repository.ProjectName))
+        {
+            if (renamed) updates?.NotifyMutation();
+            return false;
+        }
+        var shown = ApplicationContexts.DocumentImport(lifecycle, application, setup, lifecycle.CurrentProjectImportId);
+        if (shown is null || shown == lifecycle.CurrentProjectImportId)
+        {
+            if (renamed) updates?.NotifyMutation();
+            return false;
+        }
+        lifecycle.CurrentProjectImportId = shown;
+        repository.RefreshSessionArtifacts();
+        updates?.NotifyMutation();
+        repository.NotifyArtifactsChanged();
+        return true;
+    }
+
+    /// <summary>Works on another logical application: shows its primary documents. No upload, analysis or binding change.</summary>
+    public bool UseApplication(string applicationId, SourceSetupView? setup)
+    {
+        var lifecycle = repository.SddLifecycle;
+        if (ApplicationContexts.Find(lifecycle, applicationId) is null) return false;
+        var newest = ApplicationContexts.Imports(lifecycle, applicationId).LastOrDefault()?.ImportId;
+        if (ApplicationContexts.DocumentImport(lifecycle, applicationId, setup, newest) is not { } shown) return false;
+        UseAsCurrent(shown);
+        lifecycle.CurrentApplicationId = applicationId;
+        return true;
     }
 
     public const int MaxGeneratedDocumentBytes = 512 * 1024;

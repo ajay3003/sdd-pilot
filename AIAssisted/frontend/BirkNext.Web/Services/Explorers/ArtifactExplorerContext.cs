@@ -188,6 +188,21 @@ public interface IArtifactExplorerContext
     /// <summary>Raised when artifacts, selection, authority or the selected project change, and after a reset.</summary>
     event EventHandler? Changed;
 
+    /// <summary>The explicitly chosen Explorer source (import id or <see cref="ExplorerSources.ProjectEvidence"/>), or null for the default.</summary>
+    string? ExplorerSource => null;
+
+    /// <summary>The explicit choice names an import that is no longer recorded in this workspace (the default applies; the user is told).</summary>
+    bool ExplorerSourceUnavailable => false;
+
+    /// <summary>Every source an Explorer can read: Project evidence (when configured) and each imported package, grouped by application.</summary>
+    IReadOnlyList<ExplorerSourceOption> Sources => [];
+
+    /// <summary>Chooses the Explorer source for every Explorer (null = default). Navigation only: nothing is imported, bound or reviewed.</summary>
+    void SelectSource(string? source) { }
+
+    /// <summary>The other imported sources holding at least one artifact of <paramref name="role"/> (for an empty state's "Open …").</summary>
+    IReadOnlyList<ExplorerSourceOption> SourcesWith(WorkspaceArtifactType role) => [];
+
     /// <summary>The workspace scope: the selected Sample Project slug, the current imported project (<c>import:{id}</c>), or null for the manual workspace.</summary>
     string? CurrentScope { get; }
 
@@ -231,6 +246,16 @@ public interface IArtifactExplorerContext
     Task<ArtifactPackInventory> GetPackInventoryAsync(string? pack = null, CancellationToken cancellationToken = default) =>
         Task.FromResult(ArtifactPackInventory.Empty(CurrentScope));
 }
+
+/// <summary>Explorer source values that are not an import id.</summary>
+public static class ExplorerSources
+{
+    /// <summary>The Target Environment's aggregated Project evidence (its documentation sources together).</summary>
+    public const string ProjectEvidence = "project-evidence";
+}
+
+/// <summary>One Explorer source: a value (import id or <see cref="ExplorerSources.ProjectEvidence"/>), a friendly name, its group, its archive.</summary>
+public sealed record ExplorerSourceOption(string Value, string Label, string Group, string? ArchiveFileName);
 
 /// <summary>
 /// The workspace has two kinds of artifacts. A selected Sample Project's documents are found by generic discovery and resolved
@@ -304,8 +329,59 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     /// </summary>
     public string? CurrentScope => _resolver.GetSelectedProject() is { Length: > 0 } slug && !string.IsNullOrWhiteSpace(slug)
         ? slug
+        : ExplicitImport() is { } chosen ? ProjectImportScope.For(chosen)
         : EnvironmentProject() is { } bound ? ProjectImportScope.For(bound.Main.ImportId)
         : ProjectImportScope.For(_workspace.SddLifecycle.CurrentProjectImportId);
+
+    /// <summary>The imported package explicitly chosen as Explorer source, when it is still recorded (never the last import by default).</summary>
+    private string? ExplicitImport() =>
+        _workspace.SddLifecycle.ExplorerSource is { Length: > 0 } source && source != ExplorerSources.ProjectEvidence
+        && _workspace.SddLifecycle.ProjectImports.Any(i => i.ImportId == source) ? source : null;
+
+    public string? ExplorerSource => _workspace.SddLifecycle.ExplorerSource;
+
+    public bool ExplorerSourceUnavailable => _workspace.SddLifecycle.ExplorerSource is { Length: > 0 } source && source != ExplorerSources.ProjectEvidence
+        && _workspace.SddLifecycle.ProjectImports.All(i => i.ImportId != source);
+
+    public IReadOnlyList<ExplorerSourceOption> Sources
+    {
+        get
+        {
+            var lifecycle = _workspace.SddLifecycle;
+            var options = new List<ExplorerSourceOption>();
+            if (EnvironmentProject() is { } bound)
+                options.Add(new(ExplorerSources.ProjectEvidence, $"{bound.Project.ProjectName} — aggregated project evidence", "Project evidence", null));
+            foreach (var record in lifecycle.ProjectImports.OrderBy(i => i.ImportedAt))
+            {
+                var application = ProjectImport.ApplicationContexts.Find(lifecycle, record.ApplicationId)?.Name;
+                options.Add(new(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName,
+                    application is null ? "Imported sources" : $"Imported for {application}", record.ArchiveFileName));
+            }
+            return options;
+        }
+    }
+
+    public void SelectSource(string? source)
+    {
+        var lifecycle = _workspace.SddLifecycle;
+        if (source is { Length: > 0 } s && s != ExplorerSources.ProjectEvidence && lifecycle.ProjectImports.All(i => i.ImportId != s)) return;
+        if (string.Equals(lifecycle.ExplorerSource, source, StringComparison.Ordinal)) return;
+        lifecycle.ExplorerSource = string.IsNullOrWhiteSpace(source) ? null : source;
+        // A different source changes which revisions are the session's artifacts; the change is saved with the workspace like a module focus.
+        if (_workspace is WorkspaceArtifactRepository repository) repository.RefreshSessionArtifacts();
+        _updates?.NotifyMutation();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public IReadOnlyList<ExplorerSourceOption> SourcesWith(WorkspaceArtifactType role)
+    {
+        var lifecycle = _workspace.SddLifecycle;
+        var current = ProjectImportScope.ImportIdOf(CurrentScope);
+        var roleName = role.ToString();
+        var holding = lifecycle.Revisions.Where(r => r.Role == roleName && !string.IsNullOrWhiteSpace(r.Content) && ProjectImportScope.IsImport(r.WorkspaceScope))
+            .Select(r => ProjectImportScope.ImportIdOf(r.WorkspaceScope)).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        return [.. Sources.Where(o => o.Value != ExplorerSources.ProjectEvidence && o.Value != current && holding.Contains(o.Value))];
+    }
 
     /// <summary>One artifact-revision scope the explorers read, with its provenance. Only the primary scope's id format is unprefixed.</summary>
     private sealed record EvidenceScope(string? Scope, ExplorerEvidenceSource? Source, bool Primary, bool ManualOnly);
@@ -316,7 +392,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     /// </summary>
     private IReadOnlyList<EvidenceScope> EvidenceScopes(string? scope)
     {
-        if (!ProjectImportScope.IsImport(scope) || EnvironmentProject() is not { } bound || ProjectImportScope.For(bound.Main.ImportId) != scope)
+        // An explicitly chosen source is read on its own (individual source mode), never aggregated with the Project evidence.
+        if (!ProjectImportScope.IsImport(scope) || ExplicitImport() is not null || EnvironmentProject() is not { } bound || ProjectImportScope.For(bound.Main.ImportId) != scope)
             return [new EvidenceScope(scope, null, true, false)];
         var lifecycle = _workspace.SddLifecycle;
         var documentation = ProjectEvidenceResolver.DocumentationImports(bound.Project, lifecycle);
@@ -345,7 +422,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var unbound = lifecycle.ProjectImports.Where(i => !read.Contains(i.ImportId)
                 && lifecycle.Revisions.Any(r => r.WorkspaceScope == ProjectImportScope.For(i.ImportId) && ProjectEvidencePackages.DocumentRoleOrder.Any(role => r.Role == role.ToString())))
             .Select(i => i.ArchiveFileName).Distinct(StringComparer.Ordinal).ToList();
-        if (EnvironmentProject() is { } bound && ProjectImportScope.For(bound.Main.ImportId) == scope)
+        if (ExplicitImport() is null && EnvironmentProject() is { } bound && ProjectImportScope.For(bound.Main.ImportId) == scope)
         {
             var sources = scopes.Where(s => !s.ManualOnly && s.Source is not null).Select(s => s.Source!).ToList();
             var role = bound.Project.Evidence.FirstOrDefault(r => r.RoleKey == ProjectEvidenceRoles.Documentation);

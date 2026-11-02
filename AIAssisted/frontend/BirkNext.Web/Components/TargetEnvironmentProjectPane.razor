@@ -12,7 +12,7 @@
 <section class="tep" data-testid="tep" aria-labelledby="tep-title">
     <header class="tep-head">
         <h3 id="tep-title" class="tep-title">Project evidence</h3>
-        <p class="tep-lead">Bind imported source, documentation, contracts, infrastructure and supporting evidence to the selected Target Application. <a class="ug-learn-more" href="/user-guide#project-model" data-testid="tep-learn-more">Learn more</a></p>
+        <p class="tep-lead">Imported source, documentation, contracts, infrastructure and supporting evidence are associated with the Target Application automatically when their role is clear. Only uncertain or conflicting sources need your review. <a class="ug-learn-more" href="/user-guide#project-model" data-testid="tep-learn-more">Learn more</a></p>
     </header>
 
     @if (_error is { } error) { <p class="tep-banner tep-banner-error" role="alert" data-testid="tep-error">@error</p> }
@@ -30,14 +30,19 @@
     {
         <dl class="tep-facts" data-testid="tep-facts">
             <div><dt>Target Environment</dt><dd data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</dd></div>
-            <div><dt>Target Application</dt><dd data-testid="tep-target-application">@if (_identity is { } app) { @app.Name } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Not configured</a> }</dd></div>
-            <div><dt>Project evidence</dt><dd data-testid="tep-project">@EvidenceStatus</dd></div>
+            <div><dt>Target Application</dt><dd data-testid="tep-target-application">@if (_identity is { } app) { @app.Name } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Application not chosen</a>@if (TargetUrl is { Length: > 0 } url) { <span class="tep-muted" data-testid="tep-target-url-only"> · URL @url is configured, but the application (for example M2LB) is not chosen</span> } }</dd></div>
+            <div><dt>Project evidence</dt><dd data-testid="tep-project" data-state="@_view.EvidenceState">@EvidenceStatus</dd></div>
             @if (_view.IsConfigured)
             {
-                <div><dt>Evidence bindings</dt><dd data-testid="tep-binding-summary">@_view.Summary</dd></div>
+                <div><dt>Evidence roles</dt><dd data-testid="tep-binding-summary">@_view.Summary</dd></div>
             }
             <div><dt>Imported sources</dt><dd data-testid="tep-source-total">@_view.Packages.Count@(_view.Packages.Count > 0 ? $" · latest import {_view.Packages.Max(p => p.ImportedAt).ToLocalTime():d MMM yyyy HH:mm}" : "")</dd></div>
         </dl>
+
+        @if (_identity is not null && _view.NeedsReviewCount > 0)
+        {
+            <p class="tep-banner" role="status" data-testid="tep-needs-review">@_view.NeedsReviewCount source association@(_view.NeedsReviewCount == 1 ? " requires" : "s require") confirmation. Strong matches were associated automatically.</p>
+        }
 
         @if (CatalogProject is { Length: > 0 } catalogProject)
         {
@@ -52,7 +57,7 @@
         {
             @* Project evidence for the Target Application: its evidence checklist. Saves into the same bindings the advanced table below shows. *@
             <ProjectSetupPanel @key="@($"{EnvironmentId}|{_identity?.Name}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
-                               Packages="_view.Packages" Current="_view.Project" TargetApplication="_identity" Evidence="Evidence!"
+                               Packages="_view.Packages" Current="_view.Project" TargetApplication="_identity" Evidence="Evidence!" TargetUrl="@TargetUrl"
                                OnSaved="SetupSavedAsync" OnCancel="@(_view.IsConfigured ? EventCallback.Factory.Create(this, () => _setup = false) : default)" />
         }
 
@@ -65,7 +70,7 @@
             <div class="tep-project-actions">
                 <button type="button" class="btn btn-primary btn-sm" data-testid="tep-edit-evidence" @onclick="() => OpenSetup(pick: false)">Edit Project evidence</button>
                 <a class="btn btn-secondary btn-sm" href="@TargetApplications.TabHref(EnvironmentId)" data-testid="tep-change-application">Change Target Application</a>
-                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove evidence bindings</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-clear-project" @onclick="ClearAsync">Remove project evidence</button>
             </div>
             @if (_impact.Count > 0)
             {
@@ -93,8 +98,8 @@
                 </section>
             }
 
-            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Evidence bindings</h4>
-            <p class="tep-muted">One row per evidence role: the bound source, its readiness and Change / add. The checklist above and this table use the same bindings.</p>
+            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Evidence roles</h4>
+            <p class="tep-muted">One row per evidence role: its sources (associated automatically or confirmed by you), readiness and Change / add. Associated is not reviewed, tested or ready.</p>
             <div class="tep-table-wrap">
             <table class="tep-table" data-testid="tep-roles">
                 <thead><tr><th scope="col">Role / capability</th><th scope="col">Requirement</th><th scope="col">Selected source</th><th scope="col">Capabilities</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
@@ -136,7 +141,7 @@
                                     </ul>
                                 }</td>
                             <td><span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
-                                @if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">Bound: yes · @(row.IsReady ? "satisfies the role" : "role not fully satisfied")</span> }
+                                @if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">Source associated · @(row.IsReady ? "satisfies the role" : "role not fully satisfied")</span> }
                                 @if (row.PartialDetail is { } partial)
                                 {
                                     @* Concise by default; the full diagnostic on request. *@
@@ -145,7 +150,7 @@
                                         <span class="tep-partial-detail" data-testid="tep-partial-detail">@partial</span>
                                     </details>
                                 }
-                                @if (row.State == EvidenceRoleState.Conflict) { <span class="tep-partial-detail" data-testid="tep-conflict-detail">This role uses one source, but @row.Bound.Count are bound. Remove the one that is not authoritative.</span> }
+                                @if (row.State == EvidenceRoleState.Conflict) { <span class="tep-partial-detail" data-testid="tep-conflict-detail">This role uses one source, but @row.Bound.Count are associated. Remove the one that is not authoritative.</span> }
                             </td>
                             <td>
                                 <button type="button" class="btn btn-sm @(row.IsResolved ? "btn-secondary" : "btn-primary")" data-testid="tep-role-action"
@@ -233,7 +238,7 @@
             </details>
         }
 
-        <p class="tep-muted tep-ownership" data-testid="tep-ownership">This page binds imported evidence to the selected Target Application. Imported packages and Source Analysis snapshots remain independently owned and are never deleted by changing these bindings.</p>
+        <p class="tep-muted tep-ownership" data-testid="tep-ownership">This page associates imported evidence with the selected Target Application. Imported packages and Source Analysis snapshots remain independently owned and are never deleted by changing these associations.</p>
     }
 </section>
 
@@ -244,6 +249,10 @@
 
     private ProjectEvidenceView? _view;
     private TargetApplicationIdentity? _identity;
+
+    /// <summary>The environment's target URL (WHERE), shown so "application not chosen" is never mistaken for "URL not configured".</summary>
+    private string? TargetUrl => (Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.Settings.Profiles
+        .FirstOrDefault(p => p.Id == EnvironmentId)?.TargetUrl is { Length: > 0 } url ? url : null;
 
     /// <summary>Project evidence status: Not configured / Ready / Partial / Needs decision — never "Project not configured" when only evidence is missing.</summary>
     /// <summary>Available sources: the authoritative imported-package inventory, bound or not (rendered whether or not evidence is configured).</summary>
@@ -267,11 +276,11 @@
             {
                 <div class="tep-table-wrap">
                     <table class="tep-table tep-sources-table" data-testid="tep-sources-table">
-                        <thead><tr><th scope="col">Source</th><th scope="col">Type</th><th scope="col">Capabilities</th><th scope="col">Analysis</th><th scope="col">Binding</th></tr></thead>
+                        <thead><tr><th scope="col">Source</th><th scope="col">Type</th><th scope="col">Capabilities</th><th scope="col">Analysis</th><th scope="col">Role</th></tr></thead>
                         <tbody>
                             @foreach (var package in FilteredSources())
                             {
-                                var roles = BoundRoles(package);
+                                var association = _view.Associations.FirstOrDefault(a => a.Package.ImportId == package.ImportId);
                                 <tr data-testid="tep-source-row" data-import="@package.ImportId">
                                     <th scope="row">@package.ArchiveFileName<span class="tep-muted tep-source-meta">imported @package.ImportedAt.ToLocalTime().ToString("d MMM yyyy HH:mm")</span></th>
                                     <td>@package.Classification</td>
@@ -282,8 +291,13 @@
                                                 @foreach (var c in package.Capabilities) { <li class="tep-badge tep-badge-compact" data-testid="tep-source-capability" data-status="@c.Status">@ShortCapability(c.Capability)@(c.Status == PackageCapabilityStatus.Ready ? "" : $" · {c.Status}")</li> }
                                             </ul>
                                         }</td>
-                                    <td data-testid="tep-source-analysis">@AnalysisLabel(package)</td>
-                                    <td data-testid="tep-source-binding">@(roles.Count == 0 ? "Available · not bound" : $"Bound: {string.Join(", ", roles)}")</td>
+                                    <td data-testid="tep-source-analysis">@AnalysisBadges(package)</td>
+                                    <td data-testid="tep-source-binding" data-state="@association?.State">@if (association is { } a)
+                                        {
+                                            <span class="tep-state tep-tone-@a.Tone" data-testid="tep-source-role">@a.StateLabel</span>
+                                            @if (a.State == EvidenceAssociationState.WaitingForTargetApplication && a.Role != PackageEvidenceRole.NotClassified) { <span class="tep-muted tep-source-meta">@ApplicationContexts.RoleLabel(a.Role)</span> }
+                                            <span class="tep-muted tep-source-meta" data-testid="tep-source-role-detail">@a.Detail</span>
+                                        }</td>
                                 </tr>
                             }
                         </tbody>
@@ -293,7 +307,8 @@
         </section>
     };
 
-    private string EvidenceStatus => _view is not { IsConfigured: true } v ? "Not configured"
+    private string EvidenceStatus => _view is not { IsConfigured: true } v ? _view?.EvidenceState ?? "Not assessed"
+        : v.NeedsReviewCount > 0 && !v.RequiredReadyAll ? $"Needs review · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
         : v.RequiredReadyAll ? $"Ready · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
         : v.NeedsDecision > 0 ? $"Needs decision · {v.RequiredReady} / {v.RequiredTotal} required roles ready"
         : $"Partial · {v.RequiredReady} / {v.RequiredTotal} required roles ready{(v.BlockingLabels.Count > 0 ? $" · missing {string.Join(", ", v.BlockingLabels)}" : "")}";
@@ -398,7 +413,7 @@
     };
 
     private Task BindAsync(EvidenceRoleRow row, ProjectEvidencePackage package) =>
-        RunAsync(() => Evidence!.BindAsync(EnvironmentId, row.Role.RoleKey, package.ImportId), $"{package.ArchiveFileName} bound to {row.Role.Label}.");
+        RunAsync(() => Evidence!.BindAsync(EnvironmentId, row.Role.RoleKey, package.ImportId), $"{package.ArchiveFileName} confirmed for {row.Role.Label}.");
 
     private Task UnbindAsync(EvidenceRoleRow row, ProjectEvidencePackage package) =>
         RunAsync(() => Evidence!.UnbindAsync(EnvironmentId, row.Role.RoleKey, package.ImportId), $"{package.ArchiveFileName} removed from {row.Role.Label}. The import is unchanged.");
@@ -427,7 +442,7 @@
 
     private async Task ClearAsync()
     {
-        await RunAsync(() => Evidence!.ClearProjectAsync(EnvironmentId), "Project binding removed. Imports, snapshots and documents are unchanged.");
+        await RunAsync(() => Evidence!.ClearProjectAsync(EnvironmentId), "Project evidence removed (archived; not re-created automatically). Imports, snapshots and documents are unchanged.");
         _impact = [];
     }
 
@@ -440,7 +455,7 @@
             <p class="tep-muted">
                 @(row.State switch
                 {
-                    EvidenceRoleState.Suggested => "One imported package matches. It is not bound until you confirm it.",
+                    EvidenceRoleState.Suggested => "One imported package matches, but its association is not certain. It is used once you confirm it.",
                     EvidenceRoleState.NeedsDecision => $"{row.Candidates.Count(c => !c.Bound)} imported packages match. Choose which one this project uses; the newest is never chosen automatically.",
                     _ when row.Role.Cardinality == ProjectEvidenceCardinality.Multiple => "This role can aggregate several packages.",
                     _ => "This role uses one package.",
@@ -472,7 +487,7 @@
                         }
                         else
                         {
-                            <button type="button" class="btn btn-primary btn-sm" data-testid="tep-bind" @onclick="() => BindAsync(row, p)">@(row.Role.Cardinality == ProjectEvidenceCardinality.Multiple && row.Bound.Count > 0 ? "Add" : "Bind")</button>
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="tep-bind" @onclick="() => BindAsync(row, p)">@(row.Role.Cardinality == ProjectEvidenceCardinality.Multiple && row.Bound.Count > 0 ? "Add" : "Use for this role")</button>
                         }
                     </li>
                 }
@@ -507,14 +522,41 @@
             || p.Classification.Contains(_sourceSearch, StringComparison.OrdinalIgnoreCase)
             || p.Capabilities.Any(c => ProjectEvidencePackages.CapabilityLabel(c.Capability).Contains(_sourceSearch, StringComparison.OrdinalIgnoreCase)));
 
-    /// <summary>The roles a package is bound to in this Target Application's project evidence (several roles for one package are normal).</summary>
-    private IReadOnlyList<string> BoundRoles(ProjectEvidencePackage package) =>
-        _view?.Rows.Where(r => r.Bound.Any(b => b.ImportId == package.ImportId)).Select(r => r.Role.Label).ToList() ?? [];
+    /// <summary>
+    /// Analysis per dimension the package actually contains ([Source: Partial] [Docs: Analyzed] [Infrastructure: Analyzed]) — never an unlabeled
+    /// "Partial · Failed". The snapshot's own status is the application-code analyzer's outcome only, so it is never shown as the package's state.
+    /// </summary>
+    private static RenderFragment AnalysisBadges(ProjectEvidencePackage p) => __builder =>
+    {
+        var dimensions = AnalysisDimensions(p);
+        if (dimensions.Count == 0) { <span class="tep-muted">@(p.SnapshotId is null ? "Not analyzed" : "Nothing analyzable detected")</span> return; }
+        <ul class="tep-badges" aria-label="@($"Analysis of {p.ArchiveFileName}")">
+            @foreach (var (label, status) in dimensions)
+            {
+                var text = status switch { PackageCapabilityStatus.Ready => "Analyzed", PackageCapabilityStatus.Partial => "Partial", _ => "Failed" };
+                var tone = status switch { PackageCapabilityStatus.Ready => "available", PackageCapabilityStatus.Partial => "partial", _ => "rejected" };
+                var meaning = status switch
+                {
+                    PackageCapabilityStatus.Ready => "This dimension was analyzed completely.",
+                    PackageCapabilityStatus.Partial => "Some of this dimension was analyzed; one or more areas were not fully analyzed. Details are in Source Analysis.",
+                    _ => "This analysis dimension could not be completed. Details are in Source Analysis.",
+                };
+                <li class="tep-state tep-tone-@tone" data-testid="tep-analysis-badge" data-dimension="@label" data-status="@text" title="@meaning">@label: @text<span class="visually-hidden"> — @meaning</span></li>
+            }
+        </ul>
+    };
 
-    private static string AnalysisLabel(ProjectEvidencePackage p) => p.SnapshotId is null
-        ? p.DocumentCount > 0 ? "Documents only · no source analysis needed" : "Not analyzed"
-        : p.Capabilities.Any(c => c.Status != PackageCapabilityStatus.Ready) ? $"Partial{(p.SourceAnalysisStatus is { } s ? $" · {s}" : "")}"
-        : p.SourceAnalysisStatus ?? "Analyzed";
+    /// <summary>(Dimension, status) for each capability the package contains: Source, Docs, Contracts, Infrastructure, Generated docs.</summary>
+    internal static IReadOnlyList<(string Label, PackageCapabilityStatus Status)> AnalysisDimensions(ProjectEvidencePackage p) =>
+        [.. p.Capabilities.Select(c => (Label: c.Capability switch
+        {
+            ProjectEvidenceCapability.ApplicationSource or ProjectEvidenceCapability.SupportingSource => "Source",
+            ProjectEvidenceCapability.Documentation => "Docs",
+            ProjectEvidenceCapability.ContractSchema => "Contracts",
+            ProjectEvidenceCapability.Infrastructure => "Infrastructure",
+            ProjectEvidenceCapability.GeneratedDocumentation => "Generated docs",
+            _ => ProjectEvidencePackages.CapabilityLabel(c.Capability),
+        }, c.Status)).DistinctBy(d => d.Label)];
 
     /// <summary>Why a package is not offered for a role — never a silent omission.</summary>
     private static string ExclusionReason(EvidenceRoleRow row, ProjectEvidencePackage p)
@@ -538,7 +580,7 @@
         try
         {
             _view = await Evidence.GetAsync(EnvironmentId, refresh: true);
-            _notice = $"Sources refreshed: {_view.Packages.Count} imported. Bindings are unchanged.";
+            _notice = $"Sources refreshed: {_view.Packages.Count} imported. Roles were re-evaluated; your own choices are unchanged.";
         }
         finally { _refreshing = false; }
     }

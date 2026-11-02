@@ -23,6 +23,15 @@
    every safety rule (production refused, relative paths only, read-only methods, query-only GraphQL, load limits). *@
 <div class="sd-workspace pt-page ptc" data-testid="pt-page" aria-busy="@(_loaded ? "false" : "true")">
     <BirkNext.Web.Components.ProjectContextStrip />
+    @if (_readiness?.Items.FirstOrDefault(i => i.Key == "ca-trust" && i.Status == "Blocked") is { } tlsBlocked)
+    {
+        @* Runtime execution only: designing, editing and reviewing the test stay available. *@
+        <p class="ptc-banner ptc-banner-warning" role="status" data-testid="pt-runtime-blocked">
+            <strong>Runtime execution unavailable for @_draft.EnvironmentName.</strong> @(tlsBlocked.Headline.Replace("Execution blocked — ", "TLS validation failed because the ")).
+            You can continue designing and reviewing the performance test.
+            @if (D.ActionHref(PerformanceReadinessActions.OpenLocalExecutionSetup, _draft.Id.ToString()) is { } tlsHref) { <a href="@tlsHref" data-testid="pt-runtime-blocked-details">View TLS details</a> }
+        </p>
+    }
     <header class="ptc-header">
         <div class="ptc-header-text">
             <h1 class="pt-title">Performance Test Review</h1>
@@ -442,6 +451,10 @@
             if (result.Value is null) { _message = result.Error; return; }
             _reachability = result.Value;
             _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id);
+            // Project activity: one event for a failed manual check or an applied TLS repair (never for every check).
+            if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder)) is BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder activity
+                && BirkNext.Web.Services.ProjectActivity.ReviewActivity.NetworkValidation(result.Value, _profile.Id, _profile.Name) is { } validation)
+                await activity.RecordAsync(validation);
         }
         finally { _checkingNetwork = false; }
     }
@@ -572,6 +585,10 @@
                 StopPolling();
                 _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
                 _message = $"Run {P.Short(latest.RunId)} finished: {P.Label(latest.State)}.";
+                // Project activity: a finished run (meaningful failures included, e.g. TLS trust); keyed by run id.
+                if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder)) is BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder activity
+                    && BirkNext.Web.Services.ProjectActivity.ReviewActivity.PerformanceRun(latest, _profile.Id, _profile.Name) is { } runActivity)
+                    await activity.RecordAsync(runActivity);
             }
         }
         StateHasChanged();

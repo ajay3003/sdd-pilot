@@ -59,17 +59,20 @@
                 @if (readiness == TestDataXmlReadinessState.Ready && current is not null)
                 {
                     <button type="button" class="btn btn-primary btn-sm" data-testid="xf-open-ready" aria-controls="@DetailId(current)" aria-expanded="@(_detailFor == current.Id ? "true" : "false")" @onclick="() => ToggleDetail(current)">@(_detailFor == current.Id ? "Hide fixture" : "Open fixture")</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">@(ChangedRoles(context, current).Count > 0 || TestDataValueVersions.Changed(current, Assets).Count > 0 ? "Regenerate as new draft" : "Create another")</button>
+                    @* Regenerate keeps the fixture's Test Data identity: the result is saved as a new draft version of the same asset; the approved
+                       version stays in use until the draft is approved. "Create another" makes a separate fixture under a new alias. *@
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-regenerate" @onclick="() => Open(current.Alias)">Regenerate XML<span class="visually-hidden"> for @current.Alias (new draft version)</span></button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="() => Open(null)">Create another</button>
                     <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-use-existing" aria-expanded="@(_useExisting ? "true" : "false")" aria-controls="xf-existing" @onclick="() => _useExisting = !_useExisting">Use existing XML fixture</button>
                 }
                 else if (readiness == TestDataXmlReadinessState.NotApproved && current is not null)
                 {
                     <button type="button" class="btn btn-primary btn-sm" data-testid="xf-approve" disabled="@_busy" @onclick="() => ApproveAsync(current.Id)">Approve @current.Alias</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="Open">Create another</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-create" @onclick="() => Open(null)">Create another</button>
                 }
                 else
                 {
-                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-create" @onclick="Open">@(readiness switch
+                    <button type="button" class="btn btn-primary btn-sm" data-testid="xf-create" @onclick="() => Open(current?.Approval == TestDataApproval.Approved ? current.Alias : null)">@(readiness switch
                     {
                         TestDataXmlReadinessState.Outdated => "Revalidate against current XSD",
                         TestDataXmlReadinessState.Invalid => "Create a valid XML fixture",
@@ -307,9 +310,21 @@
                     </fieldset>
                     <fieldset class="xf-step" data-testid="xf-save">
                         <legend>Save to Test Data</legend>
-                        <label>Name <input class="form-control" data-testid="xf-name" @bind="_name" @bind:event="oninput" @bind:after="() => _alias = XmlFixturePresentation.SuggestedAlias(_name ?? string.Empty)" /></label>
-                        <label>Alias <input class="form-control" data-testid="xf-alias" @bind="_alias" @bind:event="oninput" /></label>
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="xf-save-button" disabled="@(_busy || _validation != "Valid" || string.IsNullOrWhiteSpace(_alias))" @onclick="SaveAsync">Save XML fixture</button>
+                        @if (_versionOf is { } versionOf)
+                        {
+                            <div role="radiogroup" aria-label="Save as" class="xf-save-as" data-testid="xf-save-as">
+                                <label><input type="radio" name="xf-save-as" data-testid="xf-save-as-version" checked="@_saveAsVersion" @onchange="() => _saveAsVersion = true" />
+                                    New draft version of <code>@versionOf</code> — keeps its Test Data id; the approved version stays in use until you approve the draft</label>
+                                <label><input type="radio" name="xf-save-as" data-testid="xf-save-as-new" checked="@(!_saveAsVersion)" @onchange="() => _saveAsVersion = false" />
+                                    A separate fixture under a new alias</label>
+                            </div>
+                        }
+                        @if (!AsVersion)
+                        {
+                            <label>Name <input class="form-control" data-testid="xf-name" @bind="_name" @bind:event="oninput" @bind:after="() => _alias = XmlFixturePresentation.SuggestedAlias(_name ?? string.Empty)" /></label>
+                            <label>Alias <input class="form-control" data-testid="xf-alias" @bind="_alias" @bind:event="oninput" /></label>
+                        }
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="xf-save-button" disabled="@(_busy || _validation != "Valid" || !AsVersion && string.IsNullOrWhiteSpace(_alias))" @onclick="SaveAsync">@(AsVersion ? "Save as draft version" : "Save XML fixture")</button>
                         @if (_validation != "Valid") { <span class="xf-muted" data-testid="xf-save-help"> Validate the XML first: only a schema-valid fixture is saved here (negative cases belong in Schema Studio).</span> }
                     </fieldset>
                 }
@@ -337,9 +352,21 @@
                             <strong>@(fixture.Label ?? fixture.Alias)</strong>
                             <span class="xf-muted">XML payload</span>
                             @if (isReady) { <span class="xf-badge xf-badge-ready" data-testid="xf-fixture-ready">Ready for test use</span> }
+                            @if (fixture.ProtectionLabel is { } protection) { <span class="xf-badge" data-testid="xf-fixture-protected">@protection</span> }
                         </div>
+                        @if (fixture.DraftVersion is { } draft)
+                        {
+                            @* The draft never replaces the approved version silently: consumers keep the approved version until this explicit approval,
+                               and an invalid draft cannot be approved (the backend refuses it too). *@
+                            <div class="xf-notice" role="status" data-testid="xf-draft" data-version="@draft">
+                                <strong>Draft update available:</strong> version @draft (@XmlFixturePresentation.DraftValidation(fixture)).
+                                Consumers use approved version @(fixture.Version ?? 1) until the draft is approved.
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-approve-draft" disabled="@(_busy || fixture.DraftValidation is not (null or "Valid"))"
+                                        @onclick="() => ApproveVersionAsync(fixture, draft)">Approve draft version @draft</button>
+                            </div>
+                        }
                         <dl class="xf-fixture-facts">
-                            <div><dt>Approval</dt><dd data-testid="xf-fixture-approval">@(fixture.Approval == TestDataApproval.Approved ? "Approved" : "Not approved")</dd></div>
+                            <div><dt>Approval</dt><dd data-testid="xf-fixture-approval">@(fixture.Approval == TestDataApproval.Approved ? "Approved" : "Not approved")@(fixture.VersionCount > 1 ? $" · version {fixture.Version}" : "")</dd></div>
                             <div><dt>Schema validation</dt><dd data-testid="xf-fixture-validation">@XmlFixturePresentation.SchemaValidation(fixture)</dd></div>
                             <div><dt>Contract</dt><dd>@context.SchemaName</dd></div>
                             @if (fixture.Provenance.FirstOrDefault(p => p.Label == "Test Data roles") is { } roles) { <div><dt>Roles</dt><dd data-testid="xf-fixture-roles">@roles.Value</dd></div> }
@@ -400,7 +427,10 @@
     private string? _xml, _error, _message, _name, _alias, _savedAlias, _environmentId;
     private string _validation = "Not run";
     private List<string> _issues = [];
-    private bool _open, _busy;
+    private bool _open, _busy, _saveAsVersion;
+    /// <summary>The fixture a regeneration started from (its alias): saving then defaults to a new draft version of it.</summary>
+    private string? _versionOf;
+    private bool AsVersion => _versionOf is not null && _saveAsVersion;
 
     protected override async Task OnInitializedAsync()
     {
@@ -554,9 +584,11 @@
         }
     }
 
-    private async Task Open()
+    private async Task Open(string? versionOf)
     {
         _open = true; _error = null; _message = null;
+        _versionOf = versionOf;
+        _saveAsVersion = versionOf is not null;
         _name ??= $"{_context!.PackName.Replace(" Testing", "")} valid report";
         // A regenerated fixture is a new asset: the alias never replaces an existing (possibly approved) fixture.
         _alias = XmlValueMappings.FreeAlias(_alias ?? XmlFixturePresentation.SuggestedAlias(_name), Assets);
@@ -719,15 +751,20 @@
                 Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)), Capabilities: context.FixtureCapabilities,
                 ValueMappings: XmlValueMappings.ProvenanceText(_mappings), ManualChanges: _manualEdit, TestDataValueVersions: ValueVersions(context),
                 SourceSelection: $"{Selection(context).SnapshotReason} · {Selection(context).ContractReason}");
-            // Never overwrite a saved fixture: a regenerated XML is saved as a new draft under a free alias.
-            _alias = XmlValueMappings.FreeAlias(_alias!.Trim(), Assets);
+            // Never overwrite a saved fixture: a regenerated XML is saved as a new draft version of the same asset (same alias and id), or as a
+            // separate fixture under a free alias.
+            var asVersion = AsVersion;
+            if (!asVersion) _alias = XmlValueMappings.FreeAlias(_alias!.Trim(), Assets);
             var saved = store.Save(_package, xsd.File, "Test Data XML fixture", null, _xml, scope, null, facts);
-            store.Register(saved.Id, scope, _alias!.Trim(), "positive", _name?.Trim(), facts);
+            var registered = asVersion ? store.RegisterVersion(saved.Id, scope, _versionOf!, facts) : store.Register(saved.Id, scope, _alias!.Trim(), "positive", _name?.Trim(), facts);
+            if (asVersion) _alias = _versionOf;
             repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(scope), "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
             if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is not IWorkspaceAutoSaveService autoSave || !await autoSave.SaveNowAsync())
             { _error = "The fixture could not be saved durably; it may not survive a reload. Try Save again."; return; }
-            _savedAlias = _alias.Trim();
-            _message = $"Saved XML fixture {_savedAlias} to Test Data (not approved yet). Approve it to use it in runs and preflight.";
+            _savedAlias = _alias!.Trim();
+            _message = asVersion
+                ? $"Saved version {registered.TestData?.Version} of {_savedAlias} as a draft. The approved version stays in use until you approve the draft; consumers keep the same Test Data reference."
+                : $"Saved XML fixture {_savedAlias} to Test Data (not approved yet). Approve it to use it in runs and preflight.";
             _open = false;
             await OnSaved.InvokeAsync(_savedAlias);
         }
@@ -766,6 +803,18 @@
         if (_focusId is not { } id || Services.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is not Microsoft.JSInterop.IJSRuntime js) return;
         _focusId = null;
         try { await js.InvokeVoidAsync("birknextFocusElement", id); } catch (Microsoft.JSInterop.JSException) { }
+    }
+
+    /// <summary>Approves a regenerated draft version: it becomes the current version of the same asset id (no consumer rebinding).</summary>
+    private async Task ApproveVersionAsync(TestDataAssetSummary fixture, int version)
+    {
+        _busy = true;
+        try
+        {
+            _error = await TestDataApiService.Resolve(Services).ApproveVersionAsync(fixture.Id, version);
+            if (_error is null) { _message = $"Version {version} of {fixture.Alias} approved — it is now the current version; consumers use it without rebinding."; await OnSaved.InvokeAsync(fixture.Alias); }
+        }
+        finally { _busy = false; }
     }
 
     private async Task ApproveAsync(string assetId)

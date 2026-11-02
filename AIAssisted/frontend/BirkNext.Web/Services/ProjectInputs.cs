@@ -54,9 +54,9 @@ public static class ProjectInputPresentation
 
     public static ProjectInputs Build(CurrentWorkspaceSnapshot workspace, FrontendAnalysisProfile? environment, ProjectTechnologyCoverage? coverage,
         bool environmentKnown = true) =>
-        new(Documents(workspace), Source(coverage, environmentKnown), Target(environment, environmentKnown));
+        new(Documents(workspace, environment), Source(coverage, environmentKnown), Target(environment, environmentKnown));
 
-    public static ProjectInput Documents(CurrentWorkspaceSnapshot workspace)
+    public static ProjectInput Documents(CurrentWorkspaceSnapshot workspace, FrontendAnalysisProfile? environment = null)
     {
         const string title = "Project documents";
         const string requirement = "Recommended start";
@@ -68,15 +68,20 @@ public static class ProjectInputPresentation
             // Project evidence exists: documents are unresolved, elsewhere, or genuinely absent — never "not provided" for a configured project.
             var href = ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(evidence.EnvironmentId, ProjectEvidence.ProjectEvidenceRoles.Documentation);
             var elsewhere = evidence.UnboundDocumentPackages;
+            // Documentation is associated automatically with the Target Application; only an uncertain source needs review. Never a "Bind" step.
             if (workspace.DocumentationUnresolved)
-                return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Source unresolved",
-                    $"The Project documentation source of {evidence.ProjectName} has not been selected in Target Environment {evidence.EnvironmentName}."
-                    + (elsewhere.Count > 0 ? $" Imported packages with project documents: {string.Join(", ", elsewhere)}." : ""),
-                    "Bind project documentation", href, []);
+                return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs review",
+                    $"No documentation source is associated with {evidence.ProjectName} in Target Environment {evidence.EnvironmentName} yet."
+                    + (elsewhere.Count > 0 ? $" Supported project documentation was found in: {string.Join(", ", elsewhere)}." : ""),
+                    "Review project evidence", href, []);
             if (elsewhere.Count > 0)
-                return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Available in another import",
-                    $"{workspace.ProjectDisplay} has no project documents of its own; {string.Join(", ", elsewhere)} {(elsewhere.Count == 1 ? "holds" : "hold")} supported documents. Bind them as the project's documentation in Target Environment → Project.",
-                    "Bind project documentation", href, []);
+                return evidence.FromEnvironment || ProjectEvidence.TargetApplications.Of(environment) is not null
+                    ? new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Available in imported evidence",
+                        $"Supported project documentation was found in other imported sources: {string.Join(", ", elsewhere)}. They are not associated with {evidence.ProjectName} automatically (imported for another application, or their role needs review).",
+                        "Review project evidence", href, [])
+                    : new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Available in imported evidence",
+                        $"Supported project documentation was found in other imported sources: {string.Join(", ", elsewhere)}. Configure the Target Application so BirkNext can evaluate and use the matching evidence. To inspect them now, choose that source in any Explorer (Source).",
+                        "Configure Target Application", ProjectEvidence.TargetApplications.TabHref(evidence.EnvironmentId), []);
             return new(ProjectInputKind.Documents, ProjectInputStatus.Absent, title, requirement, "No supported project documents found",
                 evidence.FromEnvironment
                     ? $"No supported project documents were found across the {evidence.SourceCount} documentation source{(evidence.SourceCount == 1 ? "" : "s")} bound to {evidence.ProjectName}. Source-based reviews remain available."

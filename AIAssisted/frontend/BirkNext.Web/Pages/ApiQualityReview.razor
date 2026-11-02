@@ -1048,6 +1048,9 @@
                 RuntimeReviews.SaveApiQualityResult(report, context);
                 await History.RecordAsync(JS, context.ActiveProfile.Id, report);
                 _history = History.For(context.ActiveProfile.Id);
+                // Project activity: the completed review with its own outcome (never "passed"); recording never fails the review.
+                if (ServiceProvider.GetService<BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder>() is { } activity)
+                    await activity.RecordAsync(BirkNext.Web.Services.ProjectActivity.ReviewActivity.ApiQuality(report, context.ActiveProfile.Id, context.ActiveProfile.Name));
             }
         }
         catch (Exception ex)

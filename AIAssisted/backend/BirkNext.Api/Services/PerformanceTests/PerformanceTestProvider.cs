@@ -84,6 +84,11 @@ public sealed record PerformanceContainerOptions
     [System.Text.Json.Serialization.JsonIgnore] public string? CaBundleOverridePath { get; set; }
     /// <summary>The bundle the network check and the run both mount.</summary>
     public string? EffectiveCaBundlePath => CaBundleOverridePath ?? CaBundlePath;
+    /// <summary>A BirkNext-managed repaired bundle for one target host (<see cref="PerformanceLocalExecutionStore"/>), or null to use the effective bundle.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public Func<string, string?>? TargetCaBundle { get; set; }
+    /// <summary>The bundle the network check AND the run mount for <paramref name="targetOrigin"/>: a managed repaired bundle for that host when one
+    /// is in effect, else <see cref="EffectiveCaBundlePath"/>. One trust for the probe and the run.</summary>
+    public string? CaBundlePathFor(string targetOrigin) => TargetCaBundle?.Invoke(targetOrigin) ?? EffectiveCaBundlePath;
     public string? HttpProxy { get; init; }
     public string? HttpsProxy { get; init; }
     public string? NoProxy { get; init; }

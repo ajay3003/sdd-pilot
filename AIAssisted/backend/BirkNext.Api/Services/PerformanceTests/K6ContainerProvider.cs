@@ -116,22 +116,44 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
     }
 
     /// <summary>Allow-listed container environment only: never the BirkNext host/API environment.</summary>
-    internal Dictionary<string, string> Environment()
+    internal Dictionary<string, string> Environment() => Environment(C.EffectiveCaBundlePath);
+
+    /// <summary>The container environment for a target: SSL_CERT_FILE names the mounted bundle (the target's managed repaired bundle or the configured one).</summary>
+    internal Dictionary<string, string> Environment(string? caBundle)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal) { ["K6_NO_USAGE_REPORT"] = "true" };
         if (!string.IsNullOrWhiteSpace(C.HttpProxy)) env["HTTP_PROXY"] = C.HttpProxy!;
         if (!string.IsNullOrWhiteSpace(C.HttpsProxy)) env["HTTPS_PROXY"] = C.HttpsProxy!;
         if (!string.IsNullOrWhiteSpace(C.NoProxy)) env["NO_PROXY"] = C.NoProxy!;
-        if (C.EffectiveCaBundlePath is not null) env["SSL_CERT_FILE"] = CaFile;
+        if (caBundle is not null) env["SSL_CERT_FILE"] = CaFile;
         return env;
     }
 
-    private List<ContainerMount> Mounts(string inDir, string outDir)
+    internal List<ContainerMount> Mounts(string inDir, string outDir, string? caBundle)
     {
         var mounts = new List<ContainerMount> { new(inDir, InDir, true), new(outDir, OutDir, false) };
         // The bundle file itself, read-only, at the path SSL_CERT_FILE names (whatever the host file is called).
-        if (C.EffectiveCaBundlePath is { } ca) mounts.Add(new ContainerMount(ca, CaFile, true));
+        if (caBundle is { } ca) mounts.Add(new ContainerMount(ca, CaFile, true));
         return mounts;
+    }
+
+    private readonly Dictionary<string, string> _caStoreByImage = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The k6 image's own default CA store (PEM, public roots only), read from the image itself without network access. Its roots are the only
+    /// roots an automatic repair may chain to, and they stay in a managed bundle (SSL_CERT_FILE replaces the default store). Null when unreadable.
+    /// </summary>
+    public async Task<string?> DefaultCaStorePemAsync(CancellationToken ct = default)
+    {
+        lock (_caStoreByImage) if (_caStoreByImage.TryGetValue(C.Image, out var cached)) return cached;
+        var outcome = await runtime.RunAsync(new ContainerRunSpec
+        {
+            Name = ContainerName(Guid.NewGuid(), "castore"), Image = C.Image, Entrypoint = "/bin/cat", Command = ["/etc/ssl/certs/ca-certificates.crt"], Network = "none",
+            Labels = Labels(null), Timeout = TimeSpan.FromSeconds(60), MaxOutputBytes = 2 * 1024 * 1024, MemoryMegabytes = 128, Cpus = 0.5,
+        }, ct);
+        if (outcome.ExitCode != 0 || !outcome.StandardOutput.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal)) return null;
+        lock (_caStoreByImage) _caStoreByImage[C.Image] = outcome.StandardOutput;
+        return outcome.StandardOutput;
     }
 
     public async Task<PerformanceProviderResult> ExecuteAsync(PerformanceProviderInput input, IProgress<string>? progress, CancellationToken ct)
@@ -154,7 +176,8 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             progress?.Report("Running");
             var outcome = await runtime.RunAsync(new ContainerRunSpec
             {
-                Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", $"{InDir}/test.js"], Mounts = Mounts(inDir, outDir), Environment = Environment(),
+                Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", $"{InDir}/test.js"],
+                Mounts = Mounts(inDir, outDir, C.CaBundlePathFor(input.Definition.TargetOrigin)), Environment = Environment(C.CaBundlePathFor(input.Definition.TargetOrigin)),
                 Labels = Labels(input.RunId), Network = target.Network, HostGateway = target.HostGateway, Timeout = input.Timeout, MaxOutputBytes = options.MaxProviderOutputBytes,
                 MemoryMegabytes = C.MemoryMegabytes, Cpus = C.Cpus,
             }, ct);
@@ -207,7 +230,8 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             await File.WriteAllTextAsync(Path.Combine(inDir, "probe.js"), K6ScriptGenerator.Probe(target.ExecutionOrigin, $"{OutDir}/probe.json"), new UTF8Encoding(false), ct);
             var outcome = await runtime.RunAsync(new ContainerRunSpec
             {
-                Name = ContainerName(id, "probe"), Image = C.Image, Command = ["run", "--no-color", "--quiet", $"{InDir}/probe.js"], Mounts = Mounts(inDir, outDir), Environment = Environment(),
+                Name = ContainerName(id, "probe"), Image = C.Image, Command = ["run", "--no-color", "--quiet", $"{InDir}/probe.js"],
+                Mounts = Mounts(inDir, outDir, C.CaBundlePathFor(definition.TargetOrigin)), Environment = Environment(C.CaBundlePathFor(definition.TargetOrigin)),
                 Labels = Labels(id), Network = target.Network, HostGateway = target.HostGateway, Timeout = TimeSpan.FromSeconds(90), MaxOutputBytes = 16 * 1024, MemoryMegabytes = 256, Cpus = 0.5,
             }, ct);
             var probe = Path.Combine(outDir, "probe.json");

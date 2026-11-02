@@ -189,6 +189,7 @@ builder.Services.AddScoped<TraceabilitySuggestionService>();
 builder.Services.AddScoped<ImpactAnalysisService>();
 builder.Services.AddScoped<SourceChangeImpactService>();
 builder.Services.AddScoped<ImpactAnalysisRunService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ProjectActivity.ProjectActivityService>();
 builder.Services.AddScoped<AIChangeAuditService>();
 builder.Services.AddScoped<SpecDriftDetectionService>();
 builder.Services.AddScoped<CodeTraceabilityService>();
@@ -523,7 +524,12 @@ builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IPerformanc
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(sp => new(sp.GetRequiredService<BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions>(), sp.GetRequiredService<IConfiguration>(),
     System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name is "testhost" or "ReSharperTestRunner" && sp.GetRequiredService<IConfiguration>()["PerformanceTests:LocalExecution:StateDirectory"] is null
         ? System.IO.Path.Combine(System.IO.Path.GetTempPath(), "birknext-test-local-execution", Guid.NewGuid().ToString("N")) : null));
-builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>();
+// AIA CA Issuers fetcher for the automatic missing-intermediate repair: no redirects followed automatically, no cookies/credentials, size/time limited.
+builder.Services.AddHttpClient<BirkNext.Api.Services.PerformanceTests.IAiaCertificateFetcher, BirkNext.Api.Services.PerformanceTests.HttpAiaCertificateFetcher>()
+    .ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.PerformanceTests.HttpAiaCertificateFetcher.Handler);
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>(sp => new BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry(
+    sp.GetServices<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider>(), sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions>(),
+    sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(), sp.GetService<BirkNext.Api.Services.PerformanceTests.IAiaCertificateFetcher>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceScenarioSources>();
 // Validation requests: no redirects followed (a Location header stays extractable), standard TLS validation, decompression for previews.
@@ -627,7 +633,10 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(
 // Test Data registry: registered asset metadata, lifecycle decisions, consumer requirements and usage references (workstation-local JSON, no values).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataRegistryStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.RegisteredTestDataProvider(sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>()));
-builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null, sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>()));
+// Canonical fixtures Test Packs declare (protected by stable asset id once they resolve to exactly one registered fixture).
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerCanonicalFixtures>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null,
+    sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(), sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>()));
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCatalogService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataSchemaSource, BirkNext.Api.Services.TestData.SourceAnalysisTestDataSchemaSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataSchemaValidationService>();
@@ -638,6 +647,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSour
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.CriticalE2E.CriticalE2ETestDataReferences>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataReferenceSource, BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataReferences>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataBindingReader>();
 
 // Altinn app testing (Skolenærvær Rapportmottak): TT02 App API steps executed by the shared journey runner after the tester's own
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.

@@ -94,11 +94,11 @@ public sealed class ProjectImportAnotherTests : BunitContext
         var cut = ImportFirst();
         var label = cut.Find("[data-testid=pi-import-another]");
         label.TagName.Should().Be("LABEL");
-        label.TextContent.Trim().Should().Be("Import another project");
+        label.TextContent.Trim().Should().Be("Import more evidence");
         var input = cut.Find("[data-testid=pi-import-another-file]");
         input.GetAttribute("type").Should().Be("file", "clicking or pressing Enter/Space opens the chooser at once");
         input.GetAttribute("accept").Should().Be(".zip");
-        input.GetAttribute("aria-label").Should().Contain("Import another project");
+        input.GetAttribute("aria-label").Should().Contain("Import more evidence");
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public sealed class ProjectImportAnotherTests : BunitContext
         // With a current project the upload block is collapsed; Import another project reveals it and moves focus to its file chooser.
         page.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
         var another = page.Find("[data-testid=pi-current] [data-testid=pi-current-import-another]");
-        another.TextContent.Trim().Should().Be("Import another project");
+        another.TextContent.Trim().Should().Be("Import more evidence");
         another.GetAttribute("aria-expanded").Should().Be("false");
         another.Click();
         page.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("true");

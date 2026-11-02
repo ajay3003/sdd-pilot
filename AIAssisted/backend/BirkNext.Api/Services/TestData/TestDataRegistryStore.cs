@@ -61,6 +61,22 @@ public sealed class TestDataRegistryStore
         public List<TestDataLifecycleRecord> Lifecycle { get; init; } = [];
         public List<ConsumerTestDataRequirement> Requirements { get; init; } = [];
         public List<TestDataUsageReference> Usages { get; init; } = [];
+        /// <summary>Canonical fixtures protected by stable asset id (never by alias alone). Kept by <see cref="ClearAll"/>.</summary>
+        public List<ProtectedTestDataRecord> Protected { get; init; } = [];
+    }
+
+    public IReadOnlyList<ProtectedTestDataRecord> ProtectedAssets() { lock (_gate) return [.. _registry.Protected]; }
+
+    /// <summary>Records a protection once per canonical key (idempotent: an existing record for the key is kept as is). False when nothing changed.</summary>
+    public bool Protect(ProtectedTestDataRecord record)
+    {
+        lock (_gate)
+        {
+            if (_registry.Protected.Any(p => p.CanonicalKey == record.CanonicalKey)) return false;
+            _registry = _registry with { Protected = [.. _registry.Protected, record] };
+            Write();
+            return true;
+        }
     }
 
     public TestDataRegistryStore(IHostEnvironment environment, ILogger<TestDataRegistryStore> logger)
@@ -201,13 +217,24 @@ public sealed class TestDataRegistryStore
         }
     }
 
-    /// <summary>Maintenance reset: removes every registered asset, lifecycle decision, requirement and usage reference. Returns the assets removed.</summary>
-    public int ClearAll()
+    /// <summary>
+    /// Maintenance reset: removes every registered asset, lifecycle decision, requirement and usage reference — except what belongs to a protected
+    /// asset (<paramref name="keepAssetIds"/>): its lifecycle (approval) and explicit bindings stay, and the protection records always stay.
+    /// Nothing is restored to a seeded value. Returns the assets removed.
+    /// </summary>
+    public int ClearAll(IReadOnlySet<string>? keepAssetIds = null)
     {
         lock (_gate)
         {
-            var removed = _registry.Assets.Count;
-            _registry = new Registry();
+            var keep = keepAssetIds ?? new HashSet<string>(StringComparer.Ordinal);
+            var removed = _registry.Assets.Count(a => !keep.Contains(a.Id));
+            _registry = new Registry
+            {
+                Assets = [.. _registry.Assets.Where(a => keep.Contains(a.Id))],
+                Lifecycle = [.. _registry.Lifecycle.Where(l => keep.Contains(l.AssetId))],
+                Usages = [.. _registry.Usages.Where(u => u.AssetId is { } id && keep.Contains(id))],
+                Protected = _registry.Protected,
+            };
             Write();
             return removed;
         }

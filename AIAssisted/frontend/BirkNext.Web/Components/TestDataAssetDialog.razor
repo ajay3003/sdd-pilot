@@ -9,7 +9,11 @@
 <section class="tda" role="@(Destructive ? "alertdialog" : "dialog")" aria-modal="false" aria-labelledby="@_titleId" aria-describedby="@_descId" data-testid="tda" data-mode="@_mode">
     <h3 id="@_titleId" class="tda-title" tabindex="-1">@Title</h3>
     <p class="tda-asset"><span class="tda-alias" data-testid="tda-alias">@Asset.Alias</span>@if (Asset.Label is { Length: > 0 } label && label != Asset.Alias) { <span class="tda-muted"> · @label</span> }
-        @if (Asset.ProtectedDefault) { <span class="tda-badge" data-testid="tda-protected">Protected default</span> }</p>
+        @if (Asset.ProtectionLabel is { } protection) { <span class="tda-badge" data-testid="tda-protected" data-protection="@Asset.ProtectionKind">@protection</span> }</p>
+    @if (Asset.ProtectionKind == TestDataProtectionKinds.CanonicalFixture && Asset.ProtectionReason is { } protectionReason)
+    {
+        <p class="tda-muted" data-testid="tda-protection"><strong>Protection:</strong> Canonical Test Pack fixture · <strong>Reason:</strong> @protectionReason It survives Maintenance reset with its current content; change it through a new version.</p>
+    }
     <div id="@_descId">
         @if (_loading)
         {
@@ -131,8 +135,12 @@
             {
                 <li data-testid="tda-usage" data-consumer="@usage.ConsumerType">
                     <span class="tda-consumer">@usage.ConsumerType</span>
-                    <span>@usage.ConsumerName · @usage.Location</span>
-                    @if (usage.Unresolved) { <span class="tda-badge tda-badge-attention">Test Data reference missing</span> }
+                    <span data-testid="tda-usage-consumer">@usage.ConsumerName</span>
+                    <span data-testid="tda-usage-requirement"><span class="tda-muted">Requirement:</span> @usage.Location</span>
+                    @if ((usage.EnvironmentName ?? usage.EnvironmentId) is { } environment) { <span data-testid="tda-usage-environment"><span class="tda-muted">Environment:</span> @environment</span> }
+                    @* Status in text, never colour only. *@
+                    @if (usage.Unresolved) { <span class="tda-badge tda-badge-attention" data-testid="tda-usage-status">Test Data reference missing</span> }
+                    else { <span class="tda-badge" data-testid="tda-usage-status">Resolved</span> }
                     @if (TestDataAssetWorkspace.Href(usage) is { } href) { <a href="@href" class="tda-link">@TestDataAssetWorkspace.OpenLabel(usage)<span class="visually-hidden"> @usage.ConsumerName</span></a> }
                 </li>
             }
@@ -153,6 +161,14 @@
             <div><dt>Semantic role</dt><dd data-testid="tda-semantic-role">@TestDataSemanticRoles.Label(view.Asset.SemanticRole)@(view.MetadataEditable ? "" : " · declared by its source")</dd></div>
             <div><dt>Applies to</dt><dd data-testid="tda-applies">@(view.Asset.AppliesTo is { Count: > 0 } contexts ? string.Join(", ", contexts.Select(TestDataContexts.Label)) : "Not specified")</dd></div>
             <div><dt>Scope</dt><dd data-testid="tda-scope">@(view.Asset.Environment ?? "Shared")</dd></div>
+            @if (view.Asset.Version is { } version)
+            {
+                <div><dt>Current version</dt><dd data-testid="tda-version">Version @version@(view.Asset.Approval == TestDataApproval.Approved ? " · approved" : " · not approved")@(view.Asset.VersionCreatedAt is { } at ? $" · generated {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "")</dd></div>
+                @if (view.Asset.DraftVersion is { } draft) { <div><dt>Draft update</dt><dd data-testid="tda-draft">Version @draft (@XmlFixturePresentation.DraftValidation(view.Asset)) — consumers keep version @version until it is approved (Test Data → XML fixtures)</dd></div> }
+            }
+            @if (view.Asset.Schema is { } schema) { <div><dt>Schema</dt><dd class="tda-mono" data-testid="tda-schema">@schema.SchemaPath@(view.Asset.SchemaCheck is { } check ? $" · {check.Detail}" : "")</dd></div> }
+            @if (view.Asset.Provenance.FirstOrDefault(p => p.Label == "Value mappings") is { } generatedFrom) { <div><dt>Generated from</dt><dd data-testid="tda-generated-from">@generatedFrom.Value</dd></div> }
+            @if (view.Asset.Staleness is { } stale) { <div><dt>Staleness</dt><dd data-testid="tda-staleness">@stale</dd></div> }
             <div><dt>Owner</dt><dd data-testid="tda-owner">@TestDataOwnerships.Label(view.Asset.Ownership)@(view.Asset.ValueModified ? " · Modified" : "")</dd></div>
             <div><dt>Usage</dt><dd data-testid="tda-usage-summary">@TestDataAssetWorkspace.UsedBy(usageCount)</dd></div>
         </dl>
@@ -321,6 +337,7 @@
         try
         {
             var references = Usages.Count;
+            if (Asset.IsProtected) { _error = Asset.WhyNotDeletable ?? "This Test Data asset is protected and cannot be deleted."; return; }
             if (Asset.Ownership == TestDataOwnership.Generated)
             {
                 // Generated fixtures live in the workspace's saved XML: removed there (the saved document goes with the registration).
@@ -384,6 +401,13 @@
             if (result is not { Replaced: true }) { _error = error ?? result?.Message; return; }
             var xml = TestDataAssetWorkspace.ReplaceXmlMappings(Repository, Asset.Alias, replacement.Alias);
             if (xml > 0 && !await PersistAsync()) { _error = "The XML mappings were re-pointed but could not be saved; the original was kept."; return; }
+            // A protected asset is never removed by Replace: its references move, the asset itself stays.
+            if (Asset.IsProtected)
+            {
+                var moved = result.ReferencesUpdated + xml;
+                await OnClose.InvokeAsync($"{moved} reference{(moved == 1 ? "" : "s")} now use {replacement.Alias}; {Asset.Alias} is protected and was kept.");
+                return;
+            }
             var (deleted, deleteError) = Asset.Ownership == TestDataOwnership.Generated ? (null, null) : await api.DeleteAsync(Asset.Id, leaveReferencesUnresolved: false);
             if (Asset.Ownership != TestDataOwnership.Generated && deleted is not { Deleted: true }) { _error = $"References now use {replacement.Alias}, but the original was not deleted: {deleteError ?? deleted?.Message}"; return; }
             if (Asset.Ownership == TestDataOwnership.Generated)

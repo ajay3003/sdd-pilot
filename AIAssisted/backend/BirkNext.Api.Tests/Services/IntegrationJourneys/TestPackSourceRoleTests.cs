@@ -1,3 +1,4 @@
+using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.Integrations.SourceDiscovery;
 using BirkNext.Api.Services.IntegrationJourneys;
 using BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
@@ -647,5 +648,36 @@ public sealed class TestPackSourceRoleTests
         merged.Candidates[1].Sources.Should().Equal(app.Provenance, infra.Provenance);
         merged.Candidates[1].Sources[1].CorroboratingOnly.Should().BeTrue();
         merged.SourceSnapshotId.Should().Be(app.Snapshot.Id, "the primary context stays first");
+    }
+
+    // ── Real archives (runs only where the developer's testdata exists): M2LB + M2LB.Common in either import order ─────────────────────
+
+    private static string? Testdata(string name)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+            if (File.Exists(Path.Combine(dir.FullName, "testdata", name))) return Path.Combine(dir.FullName, "testdata", name);
+        return null;
+    }
+
+    [Fact]
+    [Trait("Category", "EnvironmentDependent")]
+    public async Task RealM2lbAndCommon_M2lbIsTheApplicationSource_CommonNever_MuStaysMissing_InEitherOrder()
+    {
+        if (Testdata("M2LB.zip") is not { } m2lbPath || Testdata("M2LB.Common.zip") is not { } commonPath) return;
+        IqrSourceSnapshot Analyze(string path, DateTimeOffset at) =>
+            IqrSourceAnalyzer.Analyze("m2lb", IqrSourceArchiveReader.Read(Path.GetFileName(path), File.ReadAllBytes(path)).Workspace!, at) with { AnalyzedAt = at };
+        var now = DateTimeOffset.UtcNow;
+        foreach (var commonFirst in new[] { true, false })
+        {
+            await using var harness = new IntegrationJourneyHarness();
+            var common = Imported(Analyze(commonPath, commonFirst ? now.AddMinutes(-5) : now), "import-common");
+            var m2lb = Imported(Analyze(m2lbPath, commonFirst ? now : now.AddMinutes(-5)), "import-m2lb");
+            harness.Sources.Snapshots.AddRange([common, m2lb]);
+            var sources = (await harness.Service(Pack(harness)).SourceSetupAsync("", default)).Packs.Single().Sources;
+            var application = sources.Single(item => item.Role.Key == "m2lb");
+            application.State.Should().NotBe(TestPackSourceState.Missing, $"M2LB.zip holds SkoleService/SkoleAdapter (common first: {commonFirst})");
+            application.Candidates.Select(c => c.ArchiveFileName).Should().Equal(["M2LB.zip"], "M2LB.Common is a shared library, never the application source");
+            sources.Single(item => item.Role.Key == "mu").Candidates.Should().BeEmpty("M2LB's MeldingsutvekslerReceiver is MM (part of M2LB), not MU");
+        }
     }
 }

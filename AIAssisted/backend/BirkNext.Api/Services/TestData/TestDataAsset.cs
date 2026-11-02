@@ -58,6 +58,10 @@ public sealed record TestDataAsset
     public bool Deprecated { get; init; }
     /// <summary>Who owns the asset, declared by its provider (never inferred from the alias). Decides Delete and Maintenance reset.</summary>
     public TestDataOwnership Ownership { get; init; }
+    /// <summary>Persisted protection (<see cref="TestDataProtectionKinds"/>), applied by the catalog from the Test Data registry; never inferred from the alias.</summary>
+    public string? ProtectionKind { get; init; }
+    public string? ProtectionReason { get; init; }
+    public bool IsProtected => Ownership == TestDataOwnership.ProtectedDefault || ProtectionKind is not null;
     /// <summary>Safe change marker of the value (incremented on edit/restore), never derived from the value. 0 = as supplied.</summary>
     public int ValueVersion { get; init; }
     public DateTimeOffset? ValueUpdatedAt { get; init; }
@@ -71,6 +75,16 @@ public sealed record TestDataAsset
     public List<string> AppliesTo { get; init; } = [];
     /// <summary>Role and contexts are declared by the source and cannot be edited in Test Data.</summary>
     public bool MetadataFixed { get; init; }
+    /// <summary>A versioned payload: this asset's version number (1-based). Every version shares <see cref="Id"/> and <see cref="Alias"/>.</summary>
+    public int? Version { get; init; }
+    /// <summary>Every version the source holds, oldest first (each a complete asset), when there is more than one. The catalog resolves the current
+    /// version — the approved one, else the latest — so consumers bound to <see cref="Id"/> follow approval without rebinding.</summary>
+    public IReadOnlyList<TestDataAsset>? Versions { get; init; }
+    /// <summary>Set by the catalog: a newer version than the current approved one exists and is not approved yet.</summary>
+    public TestDataAsset? Draft { get; init; }
+    public DateTimeOffset? VersionCreatedAt { get; init; }
+    /// <summary>The validation result recorded when the version was generated (the exact XSD it was generated from), e.g. "Valid".</summary>
+    public string? RecordedValidation { get; init; }
 }
 
 /// <summary>A data set: role → asset alias bindings chosen together for one purpose.</summary>

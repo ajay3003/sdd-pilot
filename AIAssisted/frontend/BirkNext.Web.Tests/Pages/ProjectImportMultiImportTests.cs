@@ -182,8 +182,8 @@ public sealed class ProjectImportMultiImportTests : BunitContext
 
         Services.GetRequiredService<NavigationManager>().NavigateTo(ProjectImportPresentation.ImportSourceHref);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-choose]"));
-        cut.Find("#pi-choose-heading").TextContent.Should().Be("Import another project");
-        cut.Find("[data-testid=pi-choose-keeps]").TextContent.Should().Contain("orders-a stays the current project until the new import succeeds").And.Contain("Imported projects remain available in history.");
+        cut.Find("#pi-choose-heading").TextContent.Should().StartWith("Import more evidence for ");
+        cut.Find("[data-testid=pi-choose-keeps]").TextContent.Should().Contain("orders-a stays the current import until the new import succeeds").And.Contain("Imported packages remain available in history.");
         JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file");
 
         cut.Find("[data-testid=pi-choose-cancel]").Click();

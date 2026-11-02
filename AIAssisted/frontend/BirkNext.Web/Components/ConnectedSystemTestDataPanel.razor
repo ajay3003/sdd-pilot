@@ -3,7 +3,7 @@
 @using BirkNext.Web.Services
 @inject IServiceProvider Services
 
-@* Connected System → Test Data: the provider's requirements, what is bound (an alias — never a value), and deterministic suggestions from Test
+@* Connected System → Test Data: the provider's requirements, what is bound (a stable asset id — never a value), and deterministic suggestions from Test
    Data metadata. A single strong match is preselected for "Apply selected" but nothing is saved until applied; ambiguity needs a choice; an
    existing binding always wins. Credentials stay with Authentication: a Reporter identity says WHO signs in, never how. *@
 <section class="cstd" aria-labelledby="@_titleId" data-testid="cstd" data-status="@View?.StatusLabel">
@@ -43,7 +43,8 @@
                     <p class="cstd-muted">@r.Requirement.Description</p>
                     @if (r.State is ConnectedSystemTestDataState.Bound or ConnectedSystemTestDataState.NeedsReview)
                     {
-                        <p data-testid="cstd-bound"><code>@r.BoundAlias</code>@(r.BoundLabel is { } label ? $" · {label}" : "") <span class="cstd-muted">· @r.Detail</span></p>
+                        <p data-testid="cstd-bound" data-asset-id="@r.BoundAssetId"><code>@r.BoundAlias</code>@(r.BoundLabel is { } label ? $" · {label}" : "") <span class="cstd-muted">· @r.Detail · @ConnectedSystemTestDataBindingOrigins.Label(r.BoundBy)</span></p>
+                        @if (r.DraftNote is { } draft) { <p class="cstd-muted" data-testid="cstd-draft">@draft</p> }
                     }
                     else if (r.State == ConnectedSystemTestDataState.Suggested && !changing)
                     {
@@ -93,14 +94,14 @@
                         {
                             <a class="btn btn-link btn-sm" href="@CreateHref(r.Requirement)" data-testid="cstd-create">Create Test Data<span class="visually-hidden"> for @r.Requirement.DisplayName</span></a>
                         }
-                        <a class="btn btn-link btn-sm" href="/test-data" data-testid="cstd-open">Open Test Data</a>
+                        <a class="btn btn-link btn-sm" href="@(r.BoundAlias is { } boundAlias ? $"/test-data?asset={Uri.EscapeDataString(boundAlias)}" : "/test-data")" data-testid="cstd-open">@(r.BoundAlias is null ? "Open Test Data" : "Review Test Data")<span class="visually-hidden"> for @r.Requirement.DisplayName</span></a>
                     </p>
                 </li>
             }
         </ul>
         <div class="cstd-apply">
             <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || _checked.Count == 0)" @onclick="ApplyAsync" data-testid="cstd-apply">Apply selected (@_checked.Count)</button>
-            <span class="cstd-muted">Suggestions are preselected but saved only when you apply. A binding stores a reference to the Test Data asset — never its value; editing the asset's value later needs no rebinding. Credentials stay with Authentication.</span>
+            <span class="cstd-muted">Suggestions are preselected but saved only when you apply, and only applied bindings count as Test Data usage. A binding stores the Test Data asset's stable id — never its value; editing the value or approving a new payload version needs no rebinding. Credentials stay with Authentication.</span>
         </div>
     }
 </section>

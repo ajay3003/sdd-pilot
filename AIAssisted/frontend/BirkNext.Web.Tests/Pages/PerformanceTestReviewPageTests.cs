@@ -748,6 +748,24 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     };
 
     [Fact]
+    public void AnIncompleteServerChain_BlocksRuntimeExecutionOnly_TheReviewStaysUsableForDesign()
+    {
+        var blocked = CaMissing() with
+        {
+            Label = "Container TLS trust", Status = "Blocked", Headline = "Execution blocked — target certificate chain is incomplete",
+            Detail = "Execution blocked — target certificate chain is incomplete. Recommended fix: configure the server, reverse proxy, ingress, gateway or load balancer to serve the complete certificate chain.",
+        };
+        Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["x"], Items = [blocked] });
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-runtime-blocked]").TextContent.Should()
+            .Contain("Runtime execution unavailable for").And.Contain("target certificate chain is incomplete").And.Contain("continue designing and reviewing"));
+        cut.Find("[data-testid=pt-runtime-blocked-details]").GetAttribute("href").Should().Contain("focus=container-tls-trust");
+        cut.FindAll("[data-testid=pt-tabs] button, [data-testid=pt-tabs] a").Should().NotBeEmpty("designing the test is never blocked by the target's TLS");
+        Tab(cut, "scenario");
+        cut.FindAll("[data-testid=pt-run-start]").Should().BeEmpty("only runtime execution is blocked");
+    }
+
+    [Fact]
     public void OneBlocker_IsNamedAtTheTop_AndOverviewOffersItsAction()
     {
         Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["x"], Items = [NetworkBlocker(), new("baseline", "Baseline", PerformanceReadinessState.Optional, "none", false) { Category = "Optional" }] });

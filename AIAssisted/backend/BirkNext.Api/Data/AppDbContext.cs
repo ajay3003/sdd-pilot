@@ -54,6 +54,7 @@ public class AppDbContext : DbContext
     public DbSet<SecurityClassificationEvidenceRecord> SecurityClassificationEvidence => Set<SecurityClassificationEvidenceRecord>();
     public DbSet<SecurityExpectationDiscoveryRecord> SecurityExpectationDiscoveries => Set<SecurityExpectationDiscoveryRecord>();
     public DbSet<AzureEnvironmentSnapshotRecord> AzureEnvironmentSnapshots => Set<AzureEnvironmentSnapshotRecord>();
+    public DbSet<ProjectActivityRecord> ProjectActivity => Set<ProjectActivityRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +87,31 @@ public class AppDbContext : DbContext
             entity.Property(r => r.CreatedAt).HasColumnName("created_at");
             entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.ProjectId, r.ProjectImportId, r.CreatedAt });
+        });
+        modelBuilder.Entity<ProjectActivityRecord>(entity =>
+        {
+            entity.ToTable("project_activity");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.ProjectContextId).HasColumnName("project_context_id").HasMaxLength(128).IsRequired();
+            entity.Property(r => r.ProjectName).HasColumnName("project_name").HasMaxLength(200);
+            entity.Property(r => r.ActivityType).HasColumnName("activity_type").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.Status).HasColumnName("status").HasMaxLength(32).IsRequired();
+            entity.Property(r => r.SourceModule).HasColumnName("source_module").HasMaxLength(100).IsRequired();
+            entity.Property(r => r.Title).HasColumnName("title").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Summary).HasColumnName("summary").HasMaxLength(1000);
+            entity.Property(r => r.Outcome).HasColumnName("outcome").HasMaxLength(200);
+            entity.Property(r => r.RelatedEntityType).HasColumnName("related_entity_type").HasMaxLength(64);
+            entity.Property(r => r.RelatedEntityId).HasColumnName("related_entity_id").HasMaxLength(200);
+            entity.Property(r => r.PackageId).HasColumnName("package_id").HasMaxLength(128);
+            entity.Property(r => r.PackageName).HasColumnName("package_name").HasMaxLength(300);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
+            entity.Property(r => r.EnvironmentName).HasColumnName("environment_name").HasMaxLength(200);
+            entity.Property(r => r.Route).HasColumnName("route").HasMaxLength(500);
+            entity.Property(r => r.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.OccurredAt).HasColumnName("occurred_at");
+            entity.HasIndex(r => new { r.ProjectContextId, r.IdempotencyKey }).IsUnique();
+            entity.HasIndex(r => new { r.ProjectContextId, r.OccurredAt });
         });
         modelBuilder.Entity<AzureEnvironmentSnapshotRecord>(entity => {
             entity.ToTable("azure_environment_snapshots");

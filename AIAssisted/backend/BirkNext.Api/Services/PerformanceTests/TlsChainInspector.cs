@@ -16,8 +16,15 @@ namespace BirkNext.Api.Services.PerformanceTests;
 /// </summary>
 public static class TlsChainInspector
 {
+    /// <summary>The public certificates the server presented (DER): the leaf and what it sent besides. Filled for the automatic repair.</summary>
+    public sealed class Capture
+    {
+        public byte[]? Leaf { get; set; }
+        public List<byte[]> Sent { get; } = [];
+    }
+
     public static async Task<TlsChainDiagnostics> InspectAsync(Uri origin, X509Certificate2Collection? bundle, TimeSpan timeout, CancellationToken ct = default,
-        Func<DateTimeOffset>? now = null, string? connectHost = null)
+        Func<DateTimeOffset>? now = null, string? connectHost = null, Capture? capture = null)
     {
         var at = now?.Invoke() ?? DateTimeOffset.UtcNow;
         if (!string.Equals(origin.Scheme, "https", StringComparison.OrdinalIgnoreCase))
@@ -64,6 +71,11 @@ public static class TlsChainInspector
         try
         {
             if (leaf is null) return new() { Detail = "The target presented no certificate.", CheckedAt = at };
+            if (capture is not null)
+            {
+                capture.Leaf = leaf.RawData;
+                capture.Sent.AddRange(sent.Where(c => c.Thumbprint != leaf.Thumbprint).Select(c => c.RawData));
+            }
             if (built.Count == 0) built.Add(new X509Certificate2(leaf));
             var presented = built.Select(c => Info(c)).ToList();
             var expired = presented.Any(c => c.ExpiredAt(at));
@@ -102,9 +114,12 @@ public static class TlsChainInspector
                     : $"The configured CA bundle does not complete the chain: {string.Join(", ", chain.ChainStatus.Select(s => s.Status).Distinct())}.";
             }
 
-            var (layer, guidance) = Classify(origin.Host, presented, expired, hostnameMatches, hostTrusted, bundleTrusted, missingIntermediate, rootName, SelfSigned(top) ? Info(top).Sha256 : null, leaf);
+            var (layer, failureClass, remediation, advanced) = Classify(origin.Host, presented, expired, hostnameMatches, hostTrusted, bundleTrusted, missingIntermediate,
+                rootName, SelfSigned(top) ? Info(top).Sha256 : null, leaf, at);
+            var guidance = advanced is null ? remediation : $"{remediation} {advanced}";
             return new TlsChainDiagnostics
             {
+                FailureClass = failureClass, Remediation = remediation, AdvancedRemediation = advanced, MissingIssuer = missingIntermediate ? leaf.Issuer : null,
                 Reached = true, Certificates = presented, SentByServer = 1 + sentIntermediates.Count, HostnameMatches = hostnameMatches, Expired = expired,
                 HostTrusted = hostTrusted, HostDetail = hostDetail, BundleTrusted = bundleTrusted, BundleDetail = bundleDetail, MissingIntermediate = missingIntermediate,
                 FailedLayer = layer, Guidance = guidance, CheckedAt = at,
@@ -118,22 +133,38 @@ public static class TlsChainInspector
         }
     }
 
-    private static (string Layer, string Guidance) Classify(string host, IReadOnlyList<TlsCertificateInfo> presented, bool expired, bool hostnameMatches, bool hostTrusted,
-        bool? bundleTrusted, bool missingIntermediate, string root, string? rootSha256, X509Certificate2 leaf)
+    /// <summary>
+    /// The failing layer, the deterministic failure class and failure-specific remediation: the recommended fix first, a local CA bundle only as an
+    /// advanced alternative where one can help at all (never for an expired or wrong-host certificate; secondary for an incomplete server chain).
+    /// </summary>
+    private static (string Layer, string Class, string Remediation, string? Advanced) Classify(string host, IReadOnlyList<TlsCertificateInfo> presented, bool expired,
+        bool hostnameMatches, bool hostTrusted, bool? bundleTrusted, bool missingIntermediate, string root, string? rootSha256, X509Certificate2 leaf, DateTimeOffset at)
     {
         if (expired)
-            return (TlsTrustLayers.TargetCertificate, $"A certificate presented by {host} is expired or not yet valid ({string.Join("; ", presented.Where(c => c.ExpiredAt(DateTimeOffset.UtcNow)).Select(c => $"{c.Subject}: valid {c.NotBefore:yyyy-MM-dd}–{c.NotAfter:yyyy-MM-dd}"))}). The target must renew it; a CA bundle cannot fix this.");
+            return (TlsTrustLayers.TargetCertificate, TlsFailureClasses.ExpiredCertificate,
+                $"Renew or replace the certificate of {host}: a certificate it presents is expired or not yet valid ({string.Join("; ", presented.Where(c => c.ExpiredAt(at)).Select(c => $"{c.Subject}: valid {c.NotBefore:yyyy-MM-dd}–{c.NotAfter:yyyy-MM-dd}"))}). A CA bundle cannot fix this.", null);
         if (!hostnameMatches)
-            return (TlsTrustLayers.TargetCertificate, $"The certificate ({presented[0].Subject}) is not issued for {host}. Use the host name the certificate names, or have the target fixed; a CA bundle cannot fix this.");
+            return (TlsTrustLayers.TargetCertificate, TlsFailureClasses.HostnameMismatch,
+                $"The certificate ({presented[0].Subject}) is not issued for {host}. Correct the target URL to a host name the certificate names, or have the certificate's subject alternative names fixed. A CA bundle cannot fix this.", null);
+        if (SelfSigned(leaf))
+            return (TlsTrustLayers.TargetCertificate, TlsFailureClasses.UntrustedRoot,
+                $"{host} presents a self-signed certificate. Use a certificate issued by a trusted CA. It is never trusted automatically.",
+                $"Advanced: only if your organization approves this certificate's CA, configure it as the corporate/private CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}).");
         if (missingIntermediate && bundleTrusted != true)
-            return (TlsTrustLayers.ServerChain, $"The server does not send its intermediate certificate (issuer “{leaf.Issuer}”). Windows downloads it automatically; the k6 container does not. Add that intermediate (and its root) to the CA bundle as PEM, or have the server send the full chain.");
+            return (TlsTrustLayers.ServerChain, TlsFailureClasses.IncompleteServerChain,
+                $"Recommended fix: configure the server, reverse proxy, ingress, gateway or load balancer for {host} to serve the complete certificate chain (the leaf plus the intermediate “{leaf.Issuer}”). The server does not send that intermediate; Windows downloads it automatically, the k6 container does not. A complete server chain works consistently for containers, CI agents and other non-Windows clients. After the server is fixed, run the network validation again.",
+                "Advanced local workaround: BirkNext can repair this automatically for local k6 execution (System Settings → Performance Test Engines → TLS trust), or the intermediate can be added to a CA bundle. Neither fixes the server.");
         if (bundleTrusted == true)
-            return (TlsTrustLayers.Unknown, "The configured CA bundle would trust the chain the host sees. If the container still fails, it sees a different certificate — typically an HTTPS-inspection proxy between the Podman machine and the target: export that proxy's CA certificate and add it to the bundle.");
+            return (TlsTrustLayers.Unknown, TlsFailureClasses.Other,
+                "The configured CA bundle would trust the chain the host sees. If the container still fails, it sees a different certificate — typically an HTTPS-inspection proxy between the Podman machine and the target: export that proxy's CA certificate and add it to the bundle.", null);
         if (bundleTrusted == false)
-            return (TlsTrustLayers.ContainerCaBundle, $"The configured CA bundle does not contain the root “{root}”{(rootSha256 is null ? "" : $" (SHA-256 {rootSha256})")}. Add that CA certificate (PEM, public certificate only) to the bundle, save, and run the container network check again.");
+            return (TlsTrustLayers.ContainerCaBundle, TlsFailureClasses.UntrustedPrivateOrCorporateCA,
+                $"Configure the approved corporate/private CA: the configured CA bundle does not contain the root “{root}”{(rootSha256 is null ? "" : $" (SHA-256 {rootSha256})")}. Add that CA certificate (PEM, public certificate only) to the bundle, save, and run the container network check again.", null);
         return hostTrusted
-            ? (TlsTrustLayers.ContainerDefaultStore, $"Windows trusts this chain through the root “{root}”, which the container's default CA store does not contain (typically an organization CA or an HTTPS-inspection CA). Export that root certificate as PEM and configure it as the CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}).")
-            : (TlsTrustLayers.ContainerDefaultStore, $"Neither Windows nor the container trusts the root “{root}”. Obtain the approved CA certificate from your administrators and configure it as the CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}); TLS verification is never disabled.");
+            ? (TlsTrustLayers.ContainerDefaultStore, TlsFailureClasses.UntrustedPrivateOrCorporateCA,
+                $"Configure the approved corporate/private CA bundle for the k6 container: Windows trusts this chain through the root “{root}”, which the container's default CA store does not contain (typically an organization CA or an HTTPS-inspection CA). Export that root certificate as PEM and configure it as the CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}).", null)
+            : (TlsTrustLayers.ContainerDefaultStore, TlsFailureClasses.UntrustedRoot,
+                $"Neither Windows nor the container trusts the root “{root}”. Obtain the approved CA certificate from your administrators and configure it as the CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}); TLS verification is never disabled.", null);
     }
 
     private static bool SelfSigned(X509Certificate2 c) => c.SubjectName.RawData.SequenceEqual(c.IssuerName.RawData);

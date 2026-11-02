@@ -1,12 +1,7 @@
-using BirkNext.Web.Services.Operations;
-
 namespace BirkNext.Web.Services;
 
 /// <summary>One Quality Summary card: a value only when evidence states it (else Not assessed / Not verified), why, and where to look.</summary>
 public sealed record DashboardKpi(string Key, string Label, string Value, string Detail, string Href, DashboardStatus Status);
-
-/// <summary>One recent operation of the current project: what ran, its operation status, and whether a result was produced.</summary>
-public sealed record DashboardActivity(Guid Id, string Title, string Status, string When, string? Revision, string? ResultLabel, string Href, bool Failed);
 
 /// <summary>
 /// SDD Quality &amp; Readiness summary. Re-presents what <see cref="DashboardPresentation"/> already derives from the current workspace,
@@ -69,21 +64,6 @@ public static class DashboardQualitySummary
 
     public static IReadOnlyList<string> Groups(IReadOnlyList<DashboardAttentionItem> attention) =>
         [.. attention.Where(a => !a.Informational).Select(a => Group(a.Key)).Distinct()];
-
-    /// <summary>
-    /// The newest operations of the selected project — matched by its name as the operation recorded it, plus the project-independent upload
-    /// check — so another project's (or a delivery project's) operations never appear. Operation status is not a review result.
-    /// </summary>
-    public static IReadOnlyList<DashboardActivity> Activity(IEnumerable<OperationSnapshot> operations, string? projectName, int take = 5) =>
-        [.. operations.Where(o => o.Context.ProjectKey == "project-import:upload"
-                || projectName is { Length: > 0 } && string.Equals(o.Context.ProjectLabel, projectName, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(o => o.CompletedAt ?? o.StartedAt).Take(take)
-            .Select(o => new DashboardActivity(o.Id, o.Title, o.Status switch
-            {
-                OperationStatus.Completed => "Completed", OperationStatus.Failed => "Failed", OperationStatus.Cancelled => "Cancelled",
-                OperationStatus.Queued => "Queued", _ => "Running",
-            }, (o.CompletedAt ?? o.StartedAt).ToLocalTime().ToString("d MMM HH:mm"), o.Context.Revision, o.ResultLabel,
-            o.ResultRoute ?? o.DetailsRoute, o.Status == OperationStatus.Failed))];
 
     private static string S(int n) => n == 1 ? "" : "s";
 }

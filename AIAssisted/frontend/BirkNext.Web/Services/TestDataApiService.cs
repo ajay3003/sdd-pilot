@@ -18,6 +18,8 @@ public interface ITestDataApiService
     Task<(TestDataConsumerView? View, string? Error)> ConsumersAsync(CancellationToken ct = default) => Task.FromResult<(TestDataConsumerView?, string?)>((null, Unavailable));
     Task<(string? AssetId, string? Error)> RegisterAsync(TestDataRegistrationRequest request, CancellationToken ct = default) => Task.FromResult<(string?, string?)>((null, Unavailable));
     Task<string?> ApproveAsync(string assetId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
+    /// <summary>Approves one version of a versioned payload (a regenerated draft). Refused for XML that is invalid against its XSD.</summary>
+    Task<string?> ApproveVersionAsync(string assetId, int version, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
     Task<string?> DeprecateAsync(string assetId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
     Task<(ConsumerTestDataRequirement? Requirement, string? Error)> AddRequirementAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) =>
         Task.FromResult<(ConsumerTestDataRequirement?, string?)>((null, Unavailable));
@@ -121,6 +123,9 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
 
     public async Task<string?> ApproveAsync(string assetId, CancellationToken ct = default) =>
         (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/approve", new { }, ct)).Error;
+
+    public async Task<string?> ApproveVersionAsync(string assetId, int version, CancellationToken ct = default) =>
+        (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/approve?version={version}", new { }, ct)).Error;
 
     public async Task<string?> DeprecateAsync(string assetId, CancellationToken ct = default) =>
         (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/deprecate", new { }, ct)).Error;

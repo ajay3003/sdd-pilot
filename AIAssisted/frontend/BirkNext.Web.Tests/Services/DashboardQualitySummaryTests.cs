@@ -66,20 +66,4 @@ public sealed class DashboardQualitySummaryTests
         DashboardQualitySummary.Cards(Rows, items, new DashboardReviewFacts()).Single(c => c.Key == "attention").Value.Should().Be("5", "informational notes are not counted");
     }
 
-    [Fact]
-    public void Activity_BelongsToTheSelectedProject_AndSaysOperationStatusOnly()
-    {
-        var t = new DateTimeOffset(2026, 10, 30, 9, 0, 0, TimeSpan.Zero);
-        OperationSnapshot[] ops =
-        [
-            new() { Id = Guid.NewGuid(), Title = "Importing M2LB", Context = new("M2LB", "imp-1"), Status = OperationStatus.Completed, StartedAt = t, CompletedAt = t.AddMinutes(1), ResultRoute = "/" },
-            new() { Id = Guid.NewGuid(), Title = "Importing Orders", Context = new("Orders", "imp-2"), Status = OperationStatus.Failed, StartedAt = t.AddMinutes(2) },
-            new() { Id = Guid.NewGuid(), Title = "Generating report", Context = new("Delivery M2LB", Guid.NewGuid().ToString()), Status = OperationStatus.Completed, StartedAt = t },
-        ];
-        var activity = DashboardQualitySummary.Activity(ops, "M2LB");
-        activity.Should().ContainSingle().Which.Title.Should().Be("Importing M2LB");
-        activity[0].Status.Should().Be("Completed");
-        DashboardQualitySummary.Activity(ops, "Orders").Single().Failed.Should().BeTrue();
-        DashboardQualitySummary.Activity(ops, null).Should().BeEmpty("without a selected project nothing is attributed to it");
-    }
 }

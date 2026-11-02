@@ -102,7 +102,7 @@ public static class PerformanceTestReviewDashboard
     /// <summary>"Local execution prerequisite" for setup blockers; otherwise the backend category.</summary>
     public static string BlockerCategory(PerformanceReadinessItem item) => IsLocalExecutionPrerequisite(item) ? "Local execution prerequisite" : item.Category is { Length: > 0 } c ? c : "Definition";
 
-    public const string TlsSafetyNote = "TLS verification remains enabled and must not be bypassed. Configure the trusted corporate CA bundle rather than bypassing certificate validation.";
+    public const string TlsSafetyNote = "TLS verification remains enabled and must not be bypassed. Follow the fix for the TLS failure cause (server chain first, renewal, or an approved corporate CA bundle) — never a certificate-validation bypass.";
 
     /// <summary>The blocker in a few words (backend summary; older backends: the label).</summary>
     public static string Summary(PerformanceReadinessItem item) => item.Summary.Length > 0 ? item.Summary : item.Label.ToLowerInvariant();

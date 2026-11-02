@@ -29,7 +29,28 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
     public string? Detail => "Only saved XML that was registered for reuse appears here; drafts, generated previews and mutations stay in Schema Studio. Values are treated as sensitive and never shown.";
     public bool Configured => Registered().Any();
 
-    public IReadOnlyList<TestDataAsset> Assets() => [.. Registered().Select(Asset)];
+    /// <summary>
+    /// One asset per registered payload. Saved XML registered as a new version of an alias (same project scope, distinct version numbers) is one
+    /// asset with all its versions — one stable id, content evolving through versions; the catalog decides which version is current. The same
+    /// alias in different scopes, or without distinct versions, stays separate (the catalog then disables the ambiguous alias).
+    /// </summary>
+    public IReadOnlyList<TestDataAsset> Assets()
+    {
+        var result = new List<TestDataAsset>();
+        foreach (var group in Registered().GroupBy(e => e.Xml.TestData!.Alias.Trim(), StringComparer.Ordinal))
+        {
+            var entries = group.ToList();
+            if (entries.Count == 1 || entries.Select(e => e.Scope).Distinct(StringComparer.Ordinal).Count() > 1
+                || entries.Select(e => e.Xml.TestData!.Version ?? 1).Distinct().Count() != entries.Count)
+            {
+                result.AddRange(entries.Select(Asset));
+                continue;
+            }
+            var versions = entries.OrderBy(e => e.Xml.TestData!.Version ?? 1).Select(Asset).ToList();
+            result.Add(versions[^1] with { Versions = versions });
+        }
+        return result;
+    }
 
     private IEnumerable<(SavedXml Xml, string? Scope)> Registered()
     {
@@ -86,6 +107,7 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
             Schema = new TestDataSchemaReference(xml.Provenance?.SelectedContractPath ?? xml.FileName, xml.Provenance?.SourceSnapshotId,
                 xml.Provenance?.ContractFingerprint, registration.Facts?.RootElement, xml.FileName),
             Provenance = provenance,
+            Version = registration.Version ?? 1, VersionCreatedAt = registration.RegisteredAt, RecordedValidation = registration.Facts?.ValidationStatus,
         };
     }
 
@@ -97,7 +119,7 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
     private sealed record Document(int Version, List<SavedXml>? Items);
     private sealed record SavedXml(Guid Id, string FileName, string ProfileName, string Xml, string? ProjectScope, Provenance? Provenance, Registration? TestData);
     private sealed record Provenance(Guid? SourceSnapshotId, string? SelectedContractPath, string? ContractFingerprint);
-    private sealed record Registration(string Alias, string? Label, string Intent, bool Approved, DateTimeOffset RegisteredAt, Facts? Facts);
+    private sealed record Registration(string Alias, string? Label, string Intent, bool Approved, DateTimeOffset RegisteredAt, Facts? Facts, int? Version = null);
     private sealed record Facts(string ExpectedResult, string ValidationStatus, string? Mutation, string? TargetRule, string? Path, string? ProfileId,
         string? ProfileVersion, string? GeneratorVersion, string? RootElement, string? EnvironmentId, string? Contract = null, string? TestDataBindings = null,
         IReadOnlyList<string>? Capabilities = null, string? ValueMappings = null, bool? ManualChanges = null, string? SourceSelection = null,

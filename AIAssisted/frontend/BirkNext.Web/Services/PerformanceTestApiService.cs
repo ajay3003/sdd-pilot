@@ -29,6 +29,9 @@ public interface IPerformanceTestApiService
         Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail("Not available."));
     Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> RemoveCaBundleAsync(CancellationToken ct = default) =>
         Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail("Not available."));
+    /// <summary>TLS trust → automatic missing-intermediate repair: Automatic or ManualOnly (never a mode that disables verification).</summary>
+    Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> SetTlsRepairModeAsync(string mode, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail("Not available."));
     Task<PerformanceApiResult<PerformanceProviderStatus>> PrepareProviderAsync(string providerId, CancellationToken ct = default) =>
         Task.FromResult(PerformanceApiResult<PerformanceProviderStatus>.Fail("Unavailable."));
     /// <summary>Approved Resource Stability targets of the environment (configured by the administrator) with provider status.</summary>
@@ -124,6 +127,17 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
         try
         {
             using var response = await http.PutAsJsonAsync($"{Base}/local-execution/ca-bundle", new ContainerCaBundleRequest(path), Json, ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceLocalExecutionStatus>.Ok((await response.Content.ReadFromJsonAsync<PerformanceLocalExecutionStatus>(Json, ct))!)
+                : PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
+
+    public async Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> SetTlsRepairModeAsync(string mode, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PutAsJsonAsync($"{Base}/local-execution/tls-repair-mode", new ContainerTlsRepairModeRequest(mode), Json, ct);
             return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceLocalExecutionStatus>.Ok((await response.Content.ReadFromJsonAsync<PerformanceLocalExecutionStatus>(Json, ct))!)
                 : PerformanceApiResult<PerformanceLocalExecutionStatus>.Fail(await Message(response, ct));
         }

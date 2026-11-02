@@ -49,6 +49,13 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
             };
             return Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Ok(Local));
         }
+        public List<string> Modes { get; } = [];
+        public Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> SetTlsRepairModeAsync(string mode, CancellationToken ct = default)
+        {
+            Modes.Add(mode);
+            Local = Local! with { RepairMode = mode };
+            return Task.FromResult(PerformanceApiResult<PerformanceLocalExecutionStatus>.Ok(Local));
+        }
         public Task<PerformanceApiResult<PerformanceLocalExecutionStatus>> RemoveCaBundleAsync(CancellationToken ct = default)
         {
             Removed++;
@@ -395,5 +402,72 @@ public sealed class PerformanceTestEnginesDashboardTests : BunitContext
         P.SafeReturn("https://evil.example/performance-test-review").Should().BeNull();
         P.SafeReturn("//evil.example").Should().BeNull();
         P.SafeReturn("performance-test-review?tab=readiness").Should().Be("performance-test-review?tab=readiness");
+    }
+
+    private static (ContainerTlsValidation Validation, TlsChainDiagnostics Chain) IncompleteChain()
+    {
+        var chain = new TlsChainDiagnostics
+        {
+            Reached = true, FailedLayer = TlsTrustLayers.ServerChain, FailureClass = TlsFailureClasses.IncompleteServerChain, MissingIntermediate = true, MissingIssuer = "CN=Example Issuing CA 2",
+            Remediation = "Recommended fix: configure the server, reverse proxy, ingress, gateway or load balancer for m2lbdev.bufetat.no to serve the complete certificate chain.",
+            AdvancedRemediation = "Advanced local workaround: BirkNext can repair this automatically for local k6 execution.",
+            Certificates = [new("CN=m2lbdev.bufetat.no", "CN=Example Issuing CA 2", DateTimeOffset.UtcNow.AddDays(-10), DateTimeOffset.UtcNow.AddDays(100), "aa11", false, false)],
+            SentByServer = 1, HostTrusted = true, HostDetail = "Windows trusts this chain.", CheckedAt = DateTimeOffset.UtcNow,
+        };
+        return (new ContainerTlsValidation { TargetOrigin = "https://m2lbdev.bufetat.no", ProbeState = PerformanceProbeStates.TlsTrustFailure, ErrorCode = 1310, CheckedAt = DateTimeOffset.UtcNow, Chain = chain }, chain);
+    }
+
+    [Fact]
+    public void An_incomplete_server_chain_blocks_runtime_only_and_puts_the_server_fix_before_the_advanced_ca_bundle()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        var (failed, _) = IncompleteChain();
+        _api.Local = new PerformanceLocalExecutionStatus { TrustState = ContainerTlsTrustStates.ValidationFailed, TrustDetail = "TLS trust failed.", LastValidation = failed, Stages = PerformanceNetworkStages.From(failed) };
+        var cut = RenderPage();
+
+        cut.Find("[data-testid=pte-provider]").GetAttribute("data-availability").Should().Be(nameof(ProviderAvailability.Available), "a target's TLS chain is not an engine failure: k6 stays Ready");
+        cut.Find("[data-testid=pte-runtime-blocked]").TextContent.Should().Contain("Execution blocked — target certificate chain is incomplete").And.Contain("continue designing");
+        cut.Find("[data-testid=pte-ca-chain-cause]").TextContent.Should().Contain("Incomplete server certificate chain");
+        var markup = cut.Markup;
+        markup.IndexOf("pte-ca-remediation", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("pte-ca-advanced-title", StringComparison.Ordinal),
+            "problem, recommended server fix and revalidation come before the advanced local CA bundle");
+        cut.Find("[data-testid=pte-ca-chain-guidance]").TextContent.Should().StartWith("Recommended fix: configure the server");
+        cut.Find("[data-testid=pte-ca-advanced-context]").TextContent.Should().Contain("approved corporate/private CA");
+        cut.Find("[data-testid=pte-ca-stage][data-stage=tls]").GetAttribute("data-state").Should().Be("Failed");
+        cut.Find("[data-testid=pte-ca-stage][data-stage=http]").GetAttribute("data-state").Should().Be("Not reached");
+        cut.Find("[data-testid=pte-copy-remediation]").Click();
+        JSInterop.VerifyInvoke("navigator.clipboard.writeText").Arguments.Single().Should().BeOfType<string>().Which.Should()
+            .Contain("m2lbdev.bufetat.no").And.Contain("CN=Example Issuing CA 2").And.Contain("complete chain").And.NotContain("PRIVATE KEY");
+    }
+
+    [Fact]
+    public void An_applied_repair_says_local_repair_never_server_fixed_and_the_mode_is_switchable_but_never_to_no_verification()
+    {
+        _api.Providers = [K6()];
+        _api.Resources = Resources();
+        _api.Local = new PerformanceLocalExecutionStatus
+        {
+            TrustState = ContainerTlsTrustStates.Validated, Stages = PerformanceNetworkStages.From(null), RepairMode = TlsRepairModes.Automatic,
+            Repairs = [new TlsRepairOutcome { State = TlsRepairStates.Applied, Host = "m2lbdev.bufetat.no", Port = 443, IntermediateSubject = "CN=Example Issuing CA 2", RootSubject = "CN=Example Root",
+                Detail = "Local k6 trust repair applied.", SourceUri = "http://aia.example/ca2.cer", Checks = ["signature verified"] }],
+        };
+        var cut = RenderPage();
+        cut.Find("[data-testid=pte-repair-host]").TextContent.Should().Contain("Automatic repair applied").And.Contain("m2lbdev.bufetat.no");
+        cut.Find("[data-testid=pte-repair-warning]").TextContent.Should().Contain("Server certificate chain is still incomplete");
+        cut.Markup.Should().NotContain("fixed on server");
+        cut.FindAll("[data-testid=pte-repair-mode] input").Select(i => i.GetAttribute("value")).Should().Equal(TlsRepairModes.Automatic, TlsRepairModes.ManualOnly);
+        cut.Find("[data-testid=pte-repair-manual]").Change(TlsRepairModes.ManualOnly);
+        _api.Modes.Should().Equal(TlsRepairModes.ManualOnly);
+    }
+
+    [Fact]
+    public void Copied_certificate_details_hold_public_facts_only()
+    {
+        var (failed, _) = IncompleteChain();
+        var details = PerformanceTlsPresentation.CertificateDetails(failed with { TargetOrigin = "https://m2lbdev.bufetat.no/path?token=secret" });
+        details.Should().Contain("Host: m2lbdev.bufetat.no").And.Contain("Missing intermediate: CN=Example Issuing CA 2").And.Contain("Incomplete server certificate chain");
+        details.Should().NotContain("token").And.NotContain("secret").And.NotContain("PRIVATE");
+        PerformanceTlsPresentation.RemediationSummary(failed with { Chain = failed.Chain! with { FailureClass = TlsFailureClasses.ExpiredCertificate } }).Should().BeNull();
     }
 }

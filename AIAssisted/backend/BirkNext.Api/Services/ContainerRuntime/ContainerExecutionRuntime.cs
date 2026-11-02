@@ -18,6 +18,8 @@ public sealed record ContainerRunSpec
     public string Name { get; init; } = "";
     public string Image { get; init; } = "";
     public IReadOnlyList<string> Command { get; init; } = [];
+    /// <summary>An absolute in-container executable replacing the image entrypoint (e.g. reading the image's own CA store); null = the image's.</summary>
+    public string? Entrypoint { get; init; }
     public IReadOnlyList<ContainerMount> Mounts { get; init; } = [];
     public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>();
     public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>();
@@ -176,6 +178,11 @@ public sealed partial class PodmanContainerExecutionRuntime(IProcessRunner runne
         {
             if (!ContainerArgumentRules.IsEnvironment(key, value)) throw new ArgumentException($"Invalid environment variable {key}.", nameof(spec));
             args.Add("--env"); args.Add($"{key}={value}");
+        }
+        if (spec.Entrypoint is { } entrypoint)
+        {
+            if (!ContainerArgumentRules.IsContainerPath(entrypoint)) throw new ArgumentException("Invalid entrypoint.", nameof(spec));
+            args.Add("--entrypoint"); args.Add(entrypoint);
         }
         args.Add(spec.Image);
         args.AddRange(spec.Command);

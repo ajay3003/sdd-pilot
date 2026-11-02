@@ -168,6 +168,10 @@ public sealed class TestDataSchemaValidationService(TestDataCatalog catalog, ITe
         return detail with { Asset = await CheckAsync(detail.Asset, asset, ct) };
     }
 
+    /// <summary>The shared XSD check of one asset (or one version of it) against its exact declared schema; null when it declares none.</summary>
+    public async Task<TestDataSchemaCheck?> CheckAsync(TestDataAsset asset, CancellationToken ct) =>
+        asset.Schema is null ? null : TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema, ct));
+
     private async Task<TestDataAssetSummary> CheckAsync(TestDataAssetSummary summary, TestDataAsset asset, CancellationToken ct)
     {
         if (asset.Schema is null) return summary;

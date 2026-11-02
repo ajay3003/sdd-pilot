@@ -440,3 +440,7 @@
 .ptc-req-head, .ptc-req-state, .ptc-req-actions { margin: 0; display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; }
 .ptc-req-mapped { color: #166534; }
 @media (prefers-color-scheme: dark) { .ptc-req-mapped { color: #86efac; } }
+
+/* Runtime execution blocked (TLS): compact, text + border so it is not colour-only; design work stays available. */
+.ptc-banner { margin: 0 0 .75rem; padding: .5rem .75rem; border: 1px solid #fcd34d; border-left-width: 4px; border-radius: 6px; background: #fffbeb; color: #78350f; font-size: .9rem; }
+.ptc-banner a { margin-left: .4rem; font-weight: 600; color: #1d4ed8; }

@@ -12,12 +12,30 @@ namespace BirkNext.Integrations;
 public sealed record ConnectedSystemTestDataRequirement(string Id, string DisplayName, string SemanticRole, TestDataDataType DataType, bool Required,
     IReadOnlyList<string> Contexts, string Description);
 
-/// <summary>An explicit binding: requirement → Test Data alias. <see cref="ContextMatched"/> records whether the asset's "Applies to" named this
-/// system when it was bound, so a later metadata change is reported (Needs review) instead of silently unbinding.</summary>
+/// <summary>
+/// A persisted binding: requirement → Test Data asset. <see cref="AssetId"/> is the authoritative, stable reference (a payload keeps its id across
+/// versions, so a newly approved version is used without rebinding); <see cref="AssetAlias"/> is the alias at bind time, kept for display and for
+/// bindings saved before asset ids were recorded (migrated to an id once, deterministically). <see cref="ContextMatched"/> records whether the
+/// asset's "Applies to" named this system when it was bound, so a later metadata change is reported (Needs review) instead of silently unbinding.
+/// </summary>
 public sealed record ConnectedSystemTestDataBinding(string RequirementId, string AssetAlias)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AssetId { get; init; }
     public DateTimeOffset BoundAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? UpdatedAt { get; init; }
     public bool ContextMatched { get; init; }
+    /// <summary>How the binding was made (<see cref="ConnectedSystemTestDataBindingOrigins"/>); null = chosen by a person before origins were recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? BoundBy { get; init; }
+}
+
+public static class ConnectedSystemTestDataBindingOrigins
+{
+    /// <summary>Applied or changed by a person in Connected Systems → Test Data.</summary>
+    public const string User = "User";
+    /// <summary>Recorded once by the binding migration: the asset the provider's readiness already consumed, now persisted (never a suggestion).</summary>
+    public const string Migration = "Migration";
+
+    public static string Label(string? origin) => origin == Migration ? "Recorded from existing readiness" : "Chosen by you";
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -35,6 +53,11 @@ public sealed record ConnectedSystemTestDataRow(ConnectedSystemTestDataRequireme
 {
     public string? BoundLabel { get; init; }
     public string? BoundScope { get; init; }
+    /// <summary>The stable asset id the binding resolves to (null when unbound or the reference is missing).</summary>
+    public string? BoundAssetId { get; init; }
+    public string? BoundBy { get; init; }
+    /// <summary>A newer version of the bound payload exists but is not approved yet: the binding keeps using the approved version.</summary>
+    public string? DraftNote { get; init; }
 }
 
 public sealed record ConnectedSystemTestDataView(string IntegrationId, string IntegrationName, IReadOnlyList<ConnectedSystemTestDataRow> Rows, SetupReadinessItem Readiness, string StatusLabel);
@@ -95,8 +118,9 @@ public static class ConnectedSystemTestDataMatcher
 
     /// <summary>
     /// One requirement's state. Precedence: explicit saved binding &gt; single strong match &gt; the source's single default among several strong
-    /// matches (Test Pack/provider default) &gt; weak candidates (choose) &gt; unresolved. A binding whose asset is gone is a missing reference —
-    /// the replacement is suggested, never applied.
+    /// matches (Test Pack/provider default) &gt; weak candidates (choose) &gt; unresolved. A binding resolves by its stable asset id (by alias only
+    /// for a legacy binding without one); a binding whose asset is gone is a missing reference — never re-pointed to a similarly named asset; the
+    /// replacement is suggested, never applied.
     /// </summary>
     public static ConnectedSystemTestDataRow Evaluate(ConnectedSystemTestDataRequirement r, ConnectedSystemTestDataBinding? binding, IReadOnlyList<TestDataAssetSummary> assets,
         string? environmentId, string? environmentName)
@@ -108,11 +132,12 @@ public static class ConnectedSystemTestDataMatcher
         var defaultOfSeveral = strong.Count > 1 && strong.Count(c => c.IsDefault) == 1 ? strong.Single(c => c.IsDefault).Alias : null;
         if (binding is not null)
         {
-            if (assets.FirstOrDefault(a => a.Alias == binding.AssetAlias) is not { } bound)
+            if (Resolve(binding, assets) is not { } bound)
                 return new(r, ConnectedSystemTestDataState.MissingReference, binding.AssetAlias, suggestion ?? defaultOfSeveral, candidates,
                     $"Previously bound Test Data ({binding.AssetAlias}) no longer exists.{(suggestion is null ? "" : " Suggested replacement available.")}");
             var row = new ConnectedSystemTestDataRow(r, ConnectedSystemTestDataState.Bound, bound.Alias, null, candidates, $"{TestDataSemanticRoles.Label(bound.SemanticRole)} · {Scope(bound)}")
-                { BoundLabel = bound.Label, BoundScope = Scope(bound) };
+                { BoundLabel = bound.Label, BoundScope = Scope(bound), BoundAssetId = bound.Id, BoundBy = binding.BoundBy,
+                  DraftNote = bound.DraftVersion is { } draft ? $"Draft update available (version {draft}); this system keeps using approved version {bound.Version ?? 1} until it is approved." : null };
             string? problem = bound.SemanticRole is { } role && role != r.SemanticRole ? $"its role is now {TestDataSemanticRoles.Label(role)}, not {TestDataSemanticRoles.Label(r.SemanticRole)}"
                 : !TypeCompatible(bound, r) ? $"it is {TestDataDataTypes.Label(bound.DataType ?? TestDataDataTypes.Of(bound))}, not {TestDataDataTypes.Label(r.DataType)}"
                 : !ScopeCompatible(bound, environmentId, environmentName) ? $"it is scoped to {bound.Environment}"
@@ -129,18 +154,29 @@ public static class ConnectedSystemTestDataMatcher
             r.Required ? $"No compatible {TestDataSemanticRoles.Label(r.SemanticRole)} Test Data found." : "Optional · not configured.");
     }
 
+    /// <summary>The bound asset: by its stable id; by alias only for a legacy binding that has no id yet. Never a similarly named asset.</summary>
+    public static TestDataAssetSummary? Resolve(ConnectedSystemTestDataBinding binding, IReadOnlyList<TestDataAssetSummary> assets) =>
+        binding.AssetId is { Length: > 0 } id ? assets.FirstOrDefault(a => a.Id == id) : assets.FirstOrDefault(a => a.Alias == binding.AssetAlias);
+
+    /// <summary>
+    /// TEST DATA readiness from persisted references only: Ready when every required requirement resolves to a valid bound asset; a suggestion,
+    /// a role match or a name match never counts. Optional requirements never block, and are reported ("1 optional not configured").
+    /// </summary>
     public static ConnectedSystemTestDataView View(ExternalIntegration integration, IReadOnlyList<ConnectedSystemTestDataRequirement> requirements, IReadOnlyList<TestDataAssetSummary> assets)
     {
         var rows = requirements.Select(r => Evaluate(r, integration.TestDataBindings?.FirstOrDefault(b => b.RequirementId == r.Id), assets, integration.TargetEnvironmentId, integration.EnvironmentName)).ToList();
         var required = rows.Where(r => r.Requirement.Required).ToList();
         var ready = required.Count(r => r.State == ConnectedSystemTestDataState.Bound);
+        var optional = rows.Where(r => !r.Requirement.Required).ToList();
+        var optionalMissing = optional.Count(r => r.State != ConnectedSystemTestDataState.Bound);
+        var optionalNote = optionalMissing == 0 ? "" : $" · {optionalMissing} optional not configured";
         var review = rows.Any(r => r.State == ConnectedSystemTestDataState.NeedsReview);
         var (state, label, reason) = requirements.Count == 0 ? (SetupReadinessState.NotApplicable, "Not required", "This system declares no Test Data requirements.")
             : review ? (SetupReadinessState.Partial, "Needs review", string.Join(" ", rows.Where(r => r.State == ConnectedSystemTestDataState.NeedsReview).Select(r => r.Detail)))
-            : ready == required.Count ? (SetupReadinessState.Ready, "Ready", $"{ready}/{required.Count} required assets bound.")
+            : ready == required.Count ? (SetupReadinessState.Ready, "Ready", $"{ready} / {required.Count} required assets resolved{optionalNote}.")
             : ready == 0 && rows.All(r => r.State is not ConnectedSystemTestDataState.Suggested) ? (SetupReadinessState.Partial, "Missing",
                 string.Join(" · ", required.Where(r => r.State != ConnectedSystemTestDataState.Bound).Select(r => $"{r.Requirement.DisplayName}: {StateLabel(r.State)}")))
-            : (SetupReadinessState.Partial, "Partial", $"{ready}/{required.Count} required assets bound · " + string.Join(" · ", required.Where(r => r.State != ConnectedSystemTestDataState.Bound).Select(r => $"{r.Requirement.DisplayName}: {StateLabel(r.State)}")));
+            : (SetupReadinessState.Partial, "Partial", $"{ready} / {required.Count} required assets resolved · " + string.Join(" · ", required.Where(r => r.State != ConnectedSystemTestDataState.Bound).Select(r => $"{r.Requirement.DisplayName}: {StateLabel(r.State)}")));
         return new(integration.Id, integration.Name, rows, new("test-data", "Test Data", state, reason), label);
     }
 

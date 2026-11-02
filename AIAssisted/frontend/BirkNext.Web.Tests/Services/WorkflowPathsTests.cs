@@ -69,7 +69,7 @@ public sealed class WorkflowPathsTests
     {
         var setup = WorkflowPaths.RuntimeSetup([Env()], "dev", NoEvidence);
 
-        setup.First(s => !s.Met).ActionLabel.Should().Be("Configure Project evidence");
+        setup.First(s => !s.Met).ActionLabel.Should().Be("Review project evidence");
         setup.First(s => !s.Met).Label.Should().Be("Project evidence for M2LB");
         setup.First(s => !s.Met).Route.Should().Contain("tab=project").And.Contain("profile=dev");
     }

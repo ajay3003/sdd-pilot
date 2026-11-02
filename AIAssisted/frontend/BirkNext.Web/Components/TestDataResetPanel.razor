@@ -8,13 +8,14 @@
 <section class="tdr" aria-labelledby="tdr-heading" data-testid="tdr">
     <h3 id="tdr-heading" class="tdr-title">Reset Test Data</h3>
     <p class="tdr-muted">Removes local Test Data only: registered, source-candidate and observed assets, session identities and generated XML fixtures.
-        Protected defaults and their current values are kept; Source Analysis, projects and consumers are not touched.</p>
+        Protected defaults and canonical fixtures are preserved with their current values and content — reset never restores factory values and never
+        regenerates a fixture. Source Analysis, projects and consumers are not touched.</p>
     @if (_result is { } result)
     {
         <div role="status" data-testid="tdr-summary">
             <p><strong>Test Data reset complete</strong></p>
             <ul class="tdr-list">
-                <li data-testid="tdr-preserved">@Count(result.Summary.ProtectedDefaultsPreserved, "protected default") preserved</li>
+                <li data-testid="tdr-preserved">@Count(result.Summary.ProtectedDefaultsPreserved + result.Summary.ProtectedFixturesPreserved, "protected asset") preserved (@Count(result.Summary.ProtectedDefaultsPreserved, "protected default"), @Count(result.Summary.ProtectedFixturesPreserved, "protected fixture"))</li>
                 <li data-testid="tdr-removed">@Count(result.Summary.AssetsRemoved, "Test Data asset") removed</li>
                 <li data-testid="tdr-fixtures">@Count(result.Summary.GeneratedFixturesRemoved, "generated fixture") removed</li>
                 <li data-testid="tdr-remap">@Count(result.ReferencesRequiringRemapping.Count + _xmlUnresolved, "consumer reference") @((result.ReferencesRequiringRemapping.Count + _xmlUnresolved) == 1 ? "requires" : "require") remapping</li>
@@ -33,7 +34,7 @@
         <div class="tdr-preview" role="alertdialog" aria-modal="false" aria-labelledby="tdr-preview-heading" data-testid="tdr-preview">
             <h4 id="tdr-preview-heading" tabindex="-1">Reset Test Data?</h4>
             <dl class="tdr-facts">
-                <div><dt>Will preserve</dt><dd data-testid="tdr-will-preserve">@Count(preview.ProtectedDefaults.Count, "protected default") (@string.Join(", ", preview.ProtectedDefaults)) with their current values@(preview.ConfigurationAssets > 0 ? $"; {Count(preview.ConfigurationAssets, "configuration-owned asset")}" : "")</dd></div>
+                <div><dt>Will preserve</dt><dd data-testid="tdr-will-preserve">@Count(preview.ProtectedDefaults.Count + preview.ProtectedFixtures.Count, "protected asset") (@string.Join(", ", preview.ProtectedDefaults.Concat(preview.ProtectedFixtures))) with their current values and content@(preview.ConfigurationAssets > 0 ? $"; {Count(preview.ConfigurationAssets, "configuration-owned asset")}" : "")</dd></div>
                 <div><dt>Will remove</dt><dd data-testid="tdr-will-remove">@Count(preview.AssetsToRemove.Count - preview.GeneratedFixturesToRemove, "asset") · @Count(preview.GeneratedFixturesToRemove, "XML fixture")</dd></div>
                 <div><dt>Will affect</dt><dd data-testid="tdr-will-affect">@Count(preview.AffectedReferences.Count + _xmlAffected, "consumer reference") (left unresolved, never deleted)</dd></div>
             </dl>
@@ -78,7 +79,8 @@
             (_preview, _error) = await api.ResetPreviewAsync();
             var (catalog, _) = await api.CatalogAsync();
             var assets = catalog?.Assets ?? [];
-            _generated = [.. assets.Where(a => a.Ownership == TestDataOwnership.Generated)];
+            // Protected (canonical) fixtures stay in the workspace: only non-protected generated fixtures are removed.
+            _generated = TestDataAssetWorkspace.ResettableFixtures(assets);
             var removed = (_preview?.AssetsToRemove ?? []).ToHashSet(StringComparer.Ordinal);
             _xmlAffected = TestDataAssetWorkspace.XmlUsages(Repository, assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal)).Count(u => removed.Contains(u.Alias));
         }

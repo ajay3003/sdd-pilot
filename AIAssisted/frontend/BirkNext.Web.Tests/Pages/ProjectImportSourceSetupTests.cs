@@ -151,8 +151,8 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         hub.QuerySelector("[data-testid=pi-previous-open-source]")!.GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}");
         hub.QuerySelector("[data-testid=pi-previous-open-source]")!.TextContent.Should().Be("Open Source Analysis");
         hub.QuerySelector("[data-testid=pi-previous-open-source]")!.GetAttribute("aria-label").Should().Be("Open Tiltak 2 - hub (1) in Source Analysis");
-        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Set as current project");
-        hub.QuerySelector("[data-testid=pi-previous-use]")!.GetAttribute("aria-label").Should().Be("Set Tiltak 2 - hub (1) as current project");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Show this package");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.GetAttribute("aria-label").Should().Be("Show Tiltak 2 - hub (1)'s documents");
         // Compact by default: role, analysis, binding count and date; provenance (archive, fingerprint, snapshot, origin) only behind Details.
         hub.QuerySelector("[data-testid=pi-previous-role]")!.TextContent.Should().Be("Message hub");
         hub.QuerySelector("[data-testid=pi-previous-analysis]").Should().NotBeNull();
@@ -162,7 +162,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         details.QuerySelector("[data-testid=pi-previous-archive]").Should().NotBeNull("the archive name is provenance");
         details.QuerySelector("code").Should().NotBeNull("the fingerprint is behind Details");
         details.QuerySelector("[data-testid=pi-previous-source]")!.TextContent.Should().StartWith("Snapshot ");
-        cut.Find("#pi-previous-heading").TextContent.Should().Be("Previously imported projects and sources");
+        cut.Find("#pi-previous-heading").TextContent.Should().Be("Previously imported packages and sources");
 
         var docs = rows.Single(r => r.TextContent.Contains("docs-only.zip"));
         docs.QuerySelector("[data-testid=pi-previous-logical]")!.TextContent.Should().Be("None", "a document-only import never satisfies a source requirement");
@@ -484,7 +484,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         var cut = RenderPage();
         var card = cut.Find("[data-testid=pi-current-card]");
 
-        card.QuerySelector("[data-testid=pi-current-success]")!.TextContent.Should().Contain("Project imported successfully", "a failed code analysis is never a failed import");
+        card.QuerySelector("[data-testid=pi-current-success]")!.TextContent.Should().Contain("imported successfully", "a failed code analysis is never a failed import");
         card.QuerySelector("[data-testid=pi-current-source-status]")!.TextContent.Should().Be("Partial · no application code");
         card.QuerySelector("[data-testid=pi-current-source-areas]")!.TextContent.Should().Contain("Infrastructure as Code, Configuration complete").And.Contain("no supported application code");
         card.QuerySelector("[data-testid=pi-current-analysis-details]")!.GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}", "details reuse Source Analysis");

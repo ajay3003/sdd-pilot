@@ -53,7 +53,23 @@ public sealed class AltinnEnvironmentTests
             trusted.Setup(t => t.Resolve(It.IsAny<string>(), out reason)).Returns(() => Trusted);
             return new AltinnEnvironmentService(Store, Flows, Policy, Kit.Contracts(Flows), catalog.Object, trusted.Object, Kit.Factory, Packs,
                 WithTestData ? new BirkNext.Api.Services.TestData.TestDataCatalog([new AltinnTestDataProvider(Kit.Options), new BirkNext.Api.Services.TestData.SchemaStudioTestDataProvider(() => SavedXml)]) : null,
-                WithTestData ? new RealXsd() : null);
+                WithTestData ? new RealXsd() : null, WithBindings ? new BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataBindingReader(Db) : null);
+        }
+
+        /// <summary>Read the Connected System's persisted report payload binding (production wiring) instead of the contract lookup.</summary>
+        public bool WithBindings { get; set; }
+
+        public async Task BindReportPayloadAsync(string? assetId, string alias = "skolenaervaer-valid-report")
+        {
+            var integration = new BirkNext.Integrations.ExternalIntegration
+            {
+                Id = Env + BirkNext.Api.Services.ExternalIntegrations.ExternalIntegrationService.AltinnSuffix, TargetEnvironmentId = Env, Name = "Altinn — buf/skolenaervaer",
+                ProviderType = BirkNext.Integrations.ExternalProviderType.Altinn,
+                TestDataBindings = [new(BirkNext.Api.Services.ExternalIntegrations.AltinnTestDataRequirements.ReportPayload, alias) { AssetId = assetId }],
+            };
+            Db.ExternalIntegrations.Add(new BirkNext.Api.Models.ExternalIntegrationRecord { Id = integration.Id, EnvironmentId = Env,
+                DocumentJson = System.Text.Json.JsonSerializer.Serialize(integration, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)), UpdatedAt = DateTimeOffset.UtcNow });
+            await Db.SaveChangesAsync();
         }
 
         public Task<AltinnEnvironmentView> View(bool detect = false) => Service().ViewAsync(Env, detect, CancellationToken.None);
@@ -88,6 +104,34 @@ public sealed class AltinnEnvironmentTests
         view.AutomatedBlockers.Should().Contain(b => b.Contains("XML fixture"), "automated submission needs the payload too");
         view.Summary.Select(i => i.Key).Should().StartWith(["app", "identities", "testdata", "reporter-access", "integration-auth", "authentication"],
             "authentication is per hop: reporter access, the integration's own authentication, then BirkNext execution credentials");
+    }
+
+    [Fact]
+    public async Task Test_data_is_ready_only_through_the_persisted_report_payload_binding_never_a_contract_lookup()
+    {
+        var bed = new Bed { WithTestData = true, WithBindings = true };
+        ManualReady(bed);
+        bed.SavedXml.Add(Fixture());
+
+        var suggested = (await bed.View()).Summary.Single(i => i.Key == "testdata");
+        suggested.Should().Match<AltinnReadinessItem>(i => i.State == AltinnReadinessState.Partial && i.Reason.Contains("matches the contract but is not bound"));
+        (await bed.Service().InferredReportFixtureAsync(Env, CancellationToken.None)).Should().Be("skolenaervaer-valid-report", "what the old lookup consumed — for the one-time migration");
+
+        await bed.BindReportPayloadAsync("schema-studio:skolenaervaer-valid-report");
+        var view = await bed.View();
+        view.Summary.Single(i => i.Key == "testdata").Should().Match<AltinnReadinessItem>(i => i.State == AltinnReadinessState.Ready && i.Reason.Contains("bound as the report payload"));
+        view.ManualReadiness.State.Should().Be(AltinnReadinessState.Ready, view.ManualReadiness.Reason);
+    }
+
+    [Fact]
+    public async Task A_bound_report_payload_that_no_longer_exists_is_missing_and_never_replaced_by_another_contract_fixture()
+    {
+        var bed = new Bed { WithTestData = true, WithBindings = true };
+        ManualReady(bed);
+        bed.SavedXml.Add(Fixture());
+        await bed.BindReportPayloadAsync("schema-studio:removed-report", "removed-report");
+        (await bed.View()).Summary.Single(i => i.Key == "testdata").Should().Match<AltinnReadinessItem>(i =>
+            i.State == AltinnReadinessState.Blocked && i.Reason.Contains("bound fixture removed-report no longer exists"));
     }
 
     [Fact]

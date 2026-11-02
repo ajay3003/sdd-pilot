@@ -939,7 +939,12 @@
 .db-activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
 .db-activity { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: .5rem; align-items: center; font-size: .88rem; }
 .db-activity-title { font-weight: 600; overflow-wrap: anywhere; }
+/* Recent activity timeline: time · title + one-line summary · badge · link (compact rows, no cards). */
+.db-timeline .db-activity { grid-template-columns: 4.5rem minmax(0, 1fr) auto auto; align-items: start; padding: .35rem 0; border-bottom: 1px solid var(--clr-border-subtle, #e5e7eb); }
+.db-activity-time { font-variant-numeric: tabular-nums; color: var(--clr-text-muted); font-size: .82rem; padding-top: .1rem; }
+.db-activity-body { display: grid; gap: .1rem; min-width: 0; }
+.db-activity-summary { overflow-wrap: anywhere; }
 .db-more { margin-top: 1rem; border-top: 1px solid var(--clr-border-subtle, #e5e7eb); padding-top: .5rem; }
 .db-more-summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }
 .db-more-summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
-@media (max-width: 640px) { .db-activity { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .db-activity, .db-timeline .db-activity { grid-template-columns: 1fr; } }

@@ -70,4 +70,33 @@ public sealed class SchemaXmlTestDataRegistrationTests
         var forged = store.SnapshotJson("import:a").Replace("\"alias\":\"report-a\"", "\"alias\":\"../Report A\"");
         Assert.Throws<InvalidDataException>(() => new SchemaGeneratedXmlStore().RestoreJson(forged));
     }
+
+    [Fact]
+    public void A_regenerated_xml_becomes_the_next_version_of_the_same_alias_and_invalid_xml_never_does()
+    {
+        var (store, saved) = Saved();
+        store.Register(saved.Id, "import:a", "report-a", SchemaXmlTestDataRegistration.Positive, "Report A", Valid);
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["contracts/root.xsd"] = Xsd }, "saved");
+        var regenerated = store.Save(package, "contracts/root.xsd", "Test Data XML fixture", null, "<Root>v2</Root>", "import:a");
+
+        Assert.Throws<InvalidDataException>(() => store.RegisterVersion(regenerated.Id, "import:a", "report-a", Invalid));
+        Assert.Throws<InvalidDataException>(() => store.RegisterVersion(regenerated.Id, "import:a", "unknown-alias", Valid));
+
+        var version = store.RegisterVersion(regenerated.Id, "import:a", "report-a", Valid).TestData!;
+        Assert.Equal(("report-a", 2, false, "Report A"), (version.Alias, version.Version, version.Approved, version.Label));
+        var reopened = new SchemaGeneratedXmlStore();
+        reopened.RestoreJson(store.SnapshotJson("import:a"));
+        Assert.Equal(2, reopened.Documents.Count(d => d.TestData?.Alias == "report-a"));
+        Assert.Equal("<Root>synthetic</Root>", reopened.Documents.Single(d => d.TestData!.Version is null).Xml);
+    }
+
+    [Fact]
+    public void A_full_workspace_drops_unregistered_xml_never_a_registered_fixture_version()
+    {
+        var (store, saved) = Saved();
+        store.Register(saved.Id, "import:a", "report-a", SchemaXmlTestDataRegistration.Positive, facts: Valid);
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["contracts/root.xsd"] = Xsd }, "saved");
+        for (var i = 0; i < SchemaGeneratedXmlStore.MaxDocuments + 3; i++) store.Save(package, "contracts/root.xsd", "Manual XML", null, $"<Root>{i}</Root>", "import:a");
+        Assert.Contains(store.Documents, d => d.Id == saved.Id);
+    }
 }

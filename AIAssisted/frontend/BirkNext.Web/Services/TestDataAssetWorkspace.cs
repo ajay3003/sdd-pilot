@@ -39,6 +39,10 @@ public static class TestDataAssetWorkspace
     /// Removes the saved XML of generated fixtures registered under the given aliases (all project scopes) from the workspace artifact. Unregistered
     /// saved XML and fixtures of other aliases stay. Returns how many were removed; the caller persists the workspace.
     /// </summary>
+    /// <summary>The generated fixtures Reset Test Data removes from the workspace: never a protected (canonical) fixture.</summary>
+    public static IReadOnlyList<TestDataAssetSummary> ResettableFixtures(IEnumerable<TestDataAssetSummary> assets) =>
+        [.. assets.Where(a => a.Ownership == TestDataOwnership.Generated && !a.IsProtected)];
+
     public static int RemoveGeneratedFixtures(IWorkspaceArtifactRepository? repository, SchemaGeneratedXmlStore? store, IReadOnlySet<string> aliases)
     {
         if (repository is null || store is null || aliases.Count == 0 || repository.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml) is not { } existing) return 0;

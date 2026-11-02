@@ -1,6 +1,8 @@
 using BirkNext.Integrations;
+using BirkNext.ProjectActivity;
 using BirkNext.ProjectImport;
 using BirkNext.Web.Services.Operations;
+using BirkNext.Web.Services.ProjectActivity;
 
 namespace BirkNext.Web.Services.ProjectImport;
 
@@ -19,7 +21,8 @@ public enum ProjectImportPhase { Choose, Validating, Classifying, Preview, Impor
 /// </summary>
 public sealed class ProjectImportSession(IProjectImportApiService api, ProjectImportActivation activation, WorkspaceArtifactRepository repository,
     ProjectApplicabilityState applicability, IWorkspaceAutoSaveService autoSave, BackgroundOperationService operations,
-    Microsoft.Extensions.Logging.ILogger<ProjectImportSession>? logger = null, BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService? evidence = null)
+    Microsoft.Extensions.Logging.ILogger<ProjectImportSession>? logger = null, BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService? evidence = null,
+    IIntegrationJourneysApiService? journeys = null, ProjectActivityRecorder? activity = null)
 {
     public const string Route = "project-import";
     public const long MaxUploadBytes = 50L * 1024 * 1024;
@@ -42,6 +45,11 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     /// <summary>Changes on every reset or failure: the page re-creates its file input, so choosing the very same ZIP again fires a change.</summary>
     public int InputGeneration { get; set; }
     public bool ShowUpload { get; set; }
+    /// <summary>Which logical application the next import is evidence for: the current one ("Import more evidence", default) or a new one
+    /// ("Import another application"). Chosen by the tester before choosing the ZIP; reset to the default after each import.</summary>
+    public ImportTarget Target { get; set; } = ImportTarget.CurrentApplication;
+    /// <summary>The import's one-line activity summary ("Supporting/shared source · 4 documents · Source Analysis Partial · 3 items need attention").</summary>
+    public ImportActivitySummary? ResultSummary { get; private set; }
     /// <summary>Set when the import finished after the user had selected another project: the import is recorded, the selection is kept.</summary>
     public string? KeptSelectionNote { get; set; }
     /// <summary>The page showed the result. Reopening Import Project after that shows the upload view again (the import is the current project
@@ -197,6 +205,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         {
             // Nothing is activated without a commit result: the workspace never holds half an import.
             Restore(error);
+            await RecordFailureAsync(preview, error);
             if (Phase == ProjectImportPhase.Choose) return OperationOutcome.Failure(error?.Message ?? "The import failed.", canRetry: false);
             return OperationOutcome.Failure(error?.Message ?? "The import failed.");
         }
@@ -213,7 +222,13 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             Notify();
             // The import belongs to its own project. If the user selected another project while it ran, it is recorded but not made current.
             var keepSelection = SelectionKey() != selectionAtStart;
-            activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection);
+            var target = Target;
+            var record = activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection, target: target);
+            // The package's role needs the backend's classification of its snapshot: read once, then show the application's primary
+            // documents (a supporting package imported last never replaces them) and refresh the application's name.
+            var setup = await ReadSetupAsync();
+            activation.SettleDocuments(record.ImportId, setup);
+            ResultSummary = ImportActivitySummary.Of(repository.SddLifecycle, record, setup, DateTimeOffset.UtcNow);
             KeptSelectionNote = keepSelection
                 ? $"“{preview.ProjectName}” was imported. You selected another project while it ran, so that selection was kept — use “Use as current project” to switch."
                 : null;
@@ -223,6 +238,10 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             if (commit.Source.SnapshotId is not null) await applicability.RefreshAsync();
             // Project Evidence (every Target Environment) re-reads its sources: the new package is selectable at once, bindings unchanged.
             evidence?.Invalidate();
+            Target = ImportTarget.CurrentApplication;
+            // Activity only for an import whose workspace update was saved: never "Imported X" for an import that may not survive a reload.
+            if (!SaveWarning && activity is not null && ResultSummary is { } summary)
+                await activity.RecordAsync(summary.Request(record, commit.Provenance.ImportedAt));
             Failure = null;
             ResultSeen = false;
             Phase = ProjectImportPhase.Result;
@@ -238,6 +257,29 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             Notify();
             return OperationOutcome.Failure(Failure.Message);
         }
+    }
+
+    /// <summary>The backend's source setup (packs + classified snapshots); null when it cannot be read (nothing is guessed then).</summary>
+    private async Task<SourceSetupView?> ReadSetupAsync()
+    {
+        if (journeys is null) return null;
+        try { return (await journeys.SourceSetupAsync(null)).Value; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
+    }
+
+    /// <summary>
+    /// "Import failed" activity: only for an import that actually started into an existing application (not a cancellation, not a validation
+    /// error of the preview, never for a brand-new application that does not exist yet). One event per import attempt.
+    /// </summary>
+    private async Task RecordFailureAsync(ProjectImportPreview preview, SourceUploadFailure? error)
+    {
+        if (activity?.CurrentContextId is null || Target != ImportTarget.CurrentApplication || error?.Code == "IMPORT_CANCELLED" || OperationId is not { } attempt) return;
+        await activity.RecordAsync(new ProjectActivityRecordRequest
+        {
+            Type = ProjectActivityType.ImportFailed, Status = ProjectActivityStatus.Failed, SourceModule = "Import Project",
+            Title = $"Import failed: {preview.Archive.FileName}", Summary = error?.Message, PackageId = preview.ImportId, PackageName = preview.ProjectName,
+            RelatedEntityType = "ImportAttempt", RelatedEntityId = attempt.ToString("N"), Route = Route, IdempotencyKey = $"import-failed:{attempt:N}",
+        });
     }
 
     private void Restore(SourceUploadFailure? error)
@@ -259,7 +301,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     {
         if (Phase is ProjectImportPhase.Importing) return;
         Preview = null; Discovery = null; Commit = null; Failure = null; SaveWarning = false; Duplicate = null; ImportAgain = false; KeptSelectionNote = null;
-        Progress = null; FileName = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; StartedAt = null; ResultSeen = false;
+        ResultSummary = null; Progress = null; FileName = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; StartedAt = null; ResultSeen = false;
         InputGeneration++;
         Phase = ProjectImportPhase.Choose;
         Notify();

@@ -105,4 +105,26 @@ public sealed class ConnectedSystemTestDataPanelTests : BunitContext
         Row(cut, "reporter").QuerySelector("[data-testid=cstd-detail]")!.TextContent.Should().Be("Previously bound Test Data (reporter-custom) no longer exists. Suggested replacement available.");
         cut.Find("[data-testid=cstd-apply-check]").HasAttribute("checked").Should().BeFalse("a replacement is never applied automatically");
     }
+
+    [Fact]
+    public void A_bound_requirement_shows_its_asset_id_how_it_was_bound_and_a_pending_draft()
+    {
+        var report = new ConnectedSystemTestDataRequirement("report-payload", "Valid report payload", TestDataSemanticRoles.ReportXml, TestDataDataType.XmlPayload, true,
+            [TestDataContexts.SkolenaervaerReport], "The approved XML report fixture.");
+        var fixture = new TestDataAssetSummary
+        {
+            Id = "schema-studio:skolenaervaer-valid-report", Alias = "skolenaervaer-valid-report", Kind = TestDataKind.Structured, MediaType = "application/xml",
+            Approval = TestDataApproval.Approved, Status = TestDataAssetStatus.Approved, DataType = TestDataDataType.XmlPayload, SemanticRole = TestDataSemanticRoles.ReportXml,
+            AppliesTo = [TestDataContexts.SkolenaervaerReport], Version = 1, DraftVersion = 2,
+        };
+        var view = ConnectedSystemTestDataMatcher.View(System([new("report-payload", "skolenaervaer-valid-report")
+            { AssetId = fixture.Id, BoundBy = ConnectedSystemTestDataBindingOrigins.Migration }]), [report], [fixture]);
+        var cut = Render(view);
+        var bound = Row(cut, "report-payload").QuerySelector("[data-testid=cstd-bound]")!;
+        bound.GetAttribute("data-asset-id").Should().Be(fixture.Id);
+        bound.TextContent.Should().Contain("Recorded from existing readiness");
+        Row(cut, "report-payload").QuerySelector("[data-testid=cstd-draft]")!.TextContent.Should().Contain("keeps using approved version 1");
+        Row(cut, "report-payload").QuerySelector("[data-testid=cstd-open]")!.GetAttribute("href").Should().Be("/test-data?asset=skolenaervaer-valid-report");
+        cut.Find("[data-testid=cstd-reason]").TextContent.Should().Be("1 / 1 required assets resolved.");
+    }
 }

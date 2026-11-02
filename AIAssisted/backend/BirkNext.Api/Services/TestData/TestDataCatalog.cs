@@ -9,8 +9,11 @@ namespace BirkNext.Api.Services.TestData;
 /// an alias offered by more than one asset is disabled until it is unique, never picked arbitrarily. Summaries respect sensitivity — a
 /// sensitive value never leaves this class except through <see cref="Reveal"/>, which execution code uses transiently.
 /// </summary>
-public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, TimeProvider? clock = null, TestDataRegistryStore? registry = null)
+public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, TimeProvider? clock = null, TestDataRegistryStore? registry = null,
+    IEnumerable<ITestDataCanonicalFixtures>? canonical = null)
 {
+    private readonly IReadOnlyList<TestDataCanonicalFixture> _canonical = [.. (canonical ?? []).SelectMany(c => c.Fixtures)];
+    private readonly IReadOnlyList<TestDataFixtureMetadata> _metadata = [.. (canonical ?? []).SelectMany(c => c.Metadata)];
     private const int PreviewLimit = 16 * 1024;
     private readonly IReadOnlyList<ITestDataProvider> _providers = [.. providers];
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
@@ -18,7 +21,19 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
     public IReadOnlyList<ITestDataProvider> Providers => _providers;
 
     /// <summary>Every asset, with an alias configured more than once disabled (no arbitrary pick).</summary>
-    public IReadOnlyList<TestDataAsset> Assets() => Unique([.. _providers.SelectMany(provider => provider.Assets().Select(asset => Overlay(asset with { SourceId = provider.Id })))]);
+    public IReadOnlyList<TestDataAsset> Assets() =>
+        Protect(Unique([.. _providers.SelectMany(provider => provider.Assets().Select(asset => Overlay(asset with { SourceId = provider.Id })))]));
+
+    /// <summary>Declared fixture metadata, then persisted protection — the one path for <see cref="Assets"/> and <see cref="View"/>.</summary>
+    private IReadOnlyList<TestDataAsset> Protect(IReadOnlyList<TestDataAsset> unique)
+    {
+        var assets = unique.Select(a => TestDataProtection.Describe(a, _metadata)).ToList();
+        if (registry is null) return [.. assets.Select(a => TestDataProtection.Apply(a, []))];
+        // Canonical fixtures resolve once to a stable asset id (idempotent; existing installations migrate here); protection is read from the record.
+        if (_canonical.Count > 0) TestDataProtection.Ensure(registry, _canonical, assets, _clock.GetUtcNow());
+        var recorded = registry.ProtectedAssets();
+        return [.. assets.Select(a => TestDataProtection.Apply(a, recorded))];
+    }
 
     public TestDataRegistryStore? Registry => registry;
 
@@ -28,6 +43,7 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
     /// </summary>
     private TestDataAsset Overlay(TestDataAsset asset)
     {
+        asset = CurrentVersion(asset);
         if (registry?.Lifecycle(asset.Id) is not { } decision) return asset;
         var approved = decision.ApprovedFingerprint is { } fingerprint && fingerprint == ApprovalFingerprint(asset);
         return asset with
@@ -38,6 +54,26 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
             Deprecated = decision.Deprecated,
         };
     }
+
+    /// <summary>
+    /// The current version of a versioned payload: the highest version that is approved (by the recorded approval fingerprint, or a registration
+    /// approved before approval moved to Test Data), else the latest. A newer unapproved version is the draft — consumers keep using the approved
+    /// version until the draft is approved, through the same stable id. Approved content is never replaced by a draft.
+    /// </summary>
+    private TestDataAsset CurrentVersion(TestDataAsset asset)
+    {
+        if (asset.Versions is not { Count: > 1 } versions) return asset;
+        var approvedFingerprint = registry?.Lifecycle(asset.Id)?.ApprovedFingerprint;
+        var approved = versions.LastOrDefault(v => approvedFingerprint is not null && ApprovalFingerprint(v) == approvedFingerprint)
+            ?? versions.LastOrDefault(v => v.Approval == TestDataApproval.Approved);
+        var latest = versions[^1];
+        if (approved is null || ReferenceEquals(approved, latest) || approved.Version >= latest.Version) return latest with { Versions = versions };
+        return approved with { Versions = versions, Draft = latest };
+    }
+
+    /// <summary>A specific version of an asset (null = the current one).</summary>
+    public TestDataAsset? VersionOf(TestDataAsset asset, int? version) =>
+        version is not { } number || asset.Version == number && asset.Versions is null ? asset : asset.Versions?.FirstOrDefault(v => v.Version == number);
 
     /// <summary>The version an approval is given for: the value's fingerprint when the backend holds one, else the asset's metadata and structure.</summary>
     public static string ApprovalFingerprint(TestDataAsset asset) => TestDataCatalogRules.Fingerprint(asset.Value is { } value
@@ -83,7 +119,7 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
                     Problem: (string?)$"This source could not be read ({ex.GetType().Name}). Other sources are unaffected.");
             }
         }).ToList();
-        var assets = Unique([.. reads.SelectMany(read => read.Assets)]);
+        var assets = Protect(Unique([.. reads.SelectMany(read => read.Assets)]));
         var sets = reads.SelectMany(read => read.Sets).ToList();
         return new(
             [.. assets.Select(Summary).OrderBy(asset => asset.Source, StringComparer.Ordinal).ThenBy(asset => asset.Alias, StringComparer.Ordinal)],
@@ -142,9 +178,11 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
             Tags = asset.Tags.Count > 0 ? [.. asset.Tags] : null,
             CandidateId = asset.CandidateId,
             Reviewable = true,
-            Ownership = asset.Ownership,
+            Ownership = asset.Ownership, ProtectionKind = asset.ProtectionKind, ProtectionReason = asset.ProtectionReason,
             SemanticRole = asset.SemanticRole, AppliesTo = asset.AppliesTo.Count > 0 ? [.. asset.AppliesTo] : null, MetadataFixed = asset.MetadataFixed,
             ValueVersion = asset.ValueVersion, ValueUpdatedAt = asset.ValueUpdatedAt, ValueModified = asset.ValueModified, ValueEditable = asset.ValueEditable,
+            Version = asset.Version, VersionCount = asset.Versions?.Count ?? (asset.Version is null ? 0 : 1), VersionCreatedAt = asset.VersionCreatedAt,
+            DraftVersion = asset.Draft?.Version, DraftValidation = asset.Draft?.RecordedValidation, DraftCreatedAt = asset.Draft?.VersionCreatedAt,
         };
     }
 }

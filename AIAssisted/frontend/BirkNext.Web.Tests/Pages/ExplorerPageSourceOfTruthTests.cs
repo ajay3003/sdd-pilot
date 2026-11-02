@@ -327,7 +327,7 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
         {
             var empty = cut.Find("[data-testid='artifact-explorer-empty']");
             empty.GetAttribute("data-state").Should().Be("RoleUnavailable");
-            empty.QuerySelector("h2")!.TextContent.Should().Be("No Constitution artifact was detected in shop");
+            empty.QuerySelector("h2")!.TextContent.Should().Be("No Constitution artifact was detected in the selected source: shop");
             cut.Find("[data-testid='artifact-explorer-review-artifacts']").GetAttribute("href").Should().Be("project-import");
             empty.QuerySelectorAll("a[href='demo-projects']").Should().BeEmpty();
             cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import constitution only");

@@ -33,6 +33,16 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         return Ok(localExecution.Status());
     }
 
+    /// <summary>TLS trust: Automatic (retrieve and validate a missing intermediate against an already trusted root) or ManualOnly. No mode disables
+    /// TLS verification; there is no "trust all" setting.</summary>
+    [HttpPut("local-execution/tls-repair-mode")]
+    public ActionResult<PerformanceLocalExecutionStatus> SetTlsRepairMode([FromBody] ContainerTlsRepairModeRequest request)
+    {
+        if (localExecution is null) return NotFound();
+        if (!localExecution.SetRepairMode(request?.Mode)) return UnprocessableEntity(new { message = $"Mode must be {TlsRepairModes.Automatic} or {TlsRepairModes.ManualOnly}." });
+        return Ok(localExecution.Status());
+    }
+
     /// <summary>Removes the CA bundle chosen in System Settings; the file on disk is not touched.</summary>
     [HttpDelete("local-execution/ca-bundle")]
     public ActionResult<PerformanceLocalExecutionStatus> RemoveCaBundle()

@@ -22,6 +22,9 @@ public sealed record SchemaXmlTestDataRegistration(string Alias, string? Label, 
     public const string NegativeTest = "negative-test";
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SchemaXmlRegistrationFacts? Facts { get; init; }
+    /// <summary>The version of the registered payload (null = 1): a regenerated XML is registered as the next version of the same alias, so the
+    /// Test Data asset keeps its stable id; the approved version stays current until the new version is approved in Test Data.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? Version { get; init; }
 }
 
 /// <summary>
@@ -72,7 +75,10 @@ public sealed class SchemaGeneratedXmlStore
         var saved = new SavedSchemaXml(Guid.NewGuid(), package.Fingerprint, provenance, fileName,
             profileName.Trim(), profileId, seed, xml, DateTimeOffset.UtcNow, scope, null, generation);
         var previous = _documents.ToArray();
-        if (_documents.Count >= MaxDocuments) _documents.Remove(_documents.OrderBy(item => item.SavedAt).First());
+        // A full workspace drops its oldest unregistered XML — never a registered fixture version (approved content is never silently lost).
+        if (_documents.Count >= MaxDocuments)
+            _documents.Remove(_documents.Where(item => item.TestData is null).OrderBy(item => item.SavedAt).FirstOrDefault()
+                ?? throw new InvalidDataException($"The workspace already holds {MaxDocuments} registered XML fixture versions. Remove an unused fixture in Test Data first."));
         _documents.Add(saved);
         try { EnsureSize(); }
         catch { _documents.Clear(); _documents.AddRange(previous); throw; }
@@ -103,6 +109,33 @@ public sealed class SchemaGeneratedXmlStore
         var registered = _documents[index] with
         {
             TestData = new(alias, string.IsNullOrWhiteSpace(label) ? null : label.Trim(), intent, false, DateTimeOffset.UtcNow) { Facts = facts },
+        };
+        _documents[index] = registered;
+        return registered;
+    }
+
+    /// <summary>
+    /// Registers a saved (regenerated) document as the next version of an already registered positive fixture: same alias, so the same Test Data
+    /// asset id; a draft until it is approved in Test Data, while the approved version stays current. Only XML that passed validation against
+    /// the selected XSD can become a version — invalid XML never replaces a positive fixture.
+    /// </summary>
+    public SavedSchemaXml RegisterVersion(Guid id, string? projectScope, string alias, SchemaXmlRegistrationFacts facts, string? label = null)
+    {
+        var scope = NormalizeScope(projectScope);
+        var index = _documents.FindIndex(item => item.Id == id && item.ProjectScope == scope);
+        if (index < 0) throw new InvalidDataException("Only saved XML can be registered as a version. Save the XML first.");
+        alias = (alias ?? "").Trim();
+        var existing = _documents.Where(item => item.Id != id && item.ProjectScope == scope && string.Equals(item.TestData?.Alias, alias, StringComparison.Ordinal)).ToList();
+        if (existing.Count == 0) throw new InvalidDataException($"{alias} is not a registered fixture in this workspace; register the XML as a new fixture instead.");
+        if (existing.Any(item => item.TestData!.Intent != SchemaXmlTestDataRegistration.Positive))
+            throw new InvalidDataException($"{alias} is a negative-test fixture; only a positive fixture gets new versions.");
+        if (facts.ValidationStatus != SchemaXmlRegistrationFacts.Valid)
+            throw new InvalidDataException("Validation failed: the regenerated XML is not valid against the selected XSD, so it cannot become a version of the fixture.");
+        var latest = existing.OrderByDescending(item => item.TestData!.Version ?? 1).First().TestData!;
+        var registered = _documents[index] with
+        {
+            TestData = new(alias, string.IsNullOrWhiteSpace(label) ? latest.Label : label.Trim(), SchemaXmlTestDataRegistration.Positive, false, DateTimeOffset.UtcNow)
+                { Facts = facts, Version = existing.Max(item => item.TestData!.Version ?? 1) + 1 },
         };
         _documents[index] = registered;
         return registered;

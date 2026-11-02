@@ -146,8 +146,17 @@ public sealed record TestDataAssetSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Reviewable { get; init; }
     /// <summary>Who owns the asset (declared by its provider). Decides whether Delete and Maintenance reset may remove it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public TestDataOwnership Ownership { get; init; }
-    [JsonIgnore] public bool Deletable => TestDataOwnerships.Deletable(Ownership);
+    [JsonIgnore] public bool Deletable => TestDataOwnerships.Deletable(Ownership) && ProtectionKind is null;
     [JsonIgnore] public bool ProtectedDefault => Ownership == TestDataOwnership.ProtectedDefault;
+    /// <summary>Persisted protection (<see cref="TestDataProtectionKinds"/>): a protected asset is never deleted and survives Maintenance reset with
+    /// its current content. Protection is not approval, and protected content still evolves through its normal version/draft flow.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ProtectionKind { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ProtectionReason { get; init; }
+    [JsonIgnore] public bool IsProtected => ProtectedDefault || ProtectionKind is not null;
+    /// <summary>"Protected default" (a seeded scalar default) or "Protected fixture" (a canonical payload fixture).</summary>
+    [JsonIgnore] public string? ProtectionLabel => ProtectionKind == TestDataProtectionKinds.CanonicalFixture ? "Protected fixture" : ProtectedDefault ? "Protected default" : null;
+    /// <summary>Why the asset cannot be deleted in Test Data, or null when it can (ownership and protection, never the alias).</summary>
+    [JsonIgnore] public string? WhyNotDeletable => TestDataOwnerships.WhyNotDeletable(Ownership, ProtectionKind);
     /// <summary>Safe change marker of the value (incremented on each edit/restore; never derived from the value). Generated fixtures record it per
     /// mapped alias so a later value change is detected without storing or hashing the value.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int ValueVersion { get; init; }
@@ -162,6 +171,21 @@ public sealed record TestDataAssetSummary
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? AppliesTo { get; init; }
     /// <summary>The role cannot be changed in Test Data (declared by a protected default's source).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool MetadataFixed { get; init; }
+
+    // ── Payload versions (one alias, one stable id; content evolves through versions) ───────────────────────────────────────────
+    /// <summary>The version this summary describes: the current approved version, else the latest. Null for unversioned assets.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? Version { get; init; }
+    /// <summary>How many versions exist (current approved + older + a draft), when the source versions its content.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int VersionCount { get; init; }
+    /// <summary>A newer, not yet approved version (a regenerated draft). Consumers keep using <see cref="Version"/> until it is approved.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? DraftVersion { get; init; }
+    /// <summary>The draft's local XSD validation result at generation ("Valid" / "Invalid"), when recorded.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? DraftValidation { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? DraftCreatedAt { get; init; }
+    /// <summary>When the described version was generated/registered.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? VersionCreatedAt { get; init; }
+    /// <summary>"Regeneration recommended: …" — an input the payload was generated from changed since (a mapped asset's value). Never rewritten.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Staleness { get; init; }
 }
 
 /// <summary>

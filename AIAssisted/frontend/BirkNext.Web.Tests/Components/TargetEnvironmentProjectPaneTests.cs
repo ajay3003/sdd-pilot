@@ -93,6 +93,24 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
     private static AngleSharp.Dom.IElement Item(IRenderedComponent<TargetEnvironmentProjectPane> cut, string role, string import) =>
         cut.Find($"[data-testid=psp-role][data-role={role}] [data-testid=psp-item][data-import={import}]");
 
+    /// <summary>The reported case: the Target Application tab has a URL and a target check ("Target URL: Configured"), but no application was
+    /// chosen. The Project tab says exactly that — never a bare "Not configured" that contradicts the configured URL.</summary>
+    [Fact]
+    public void AConfiguredTargetUrlWithoutAChosenApplication_IsNamedAsSuch_WithTheOneActionThatFixesIt()
+    {
+        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        var cut = RenderPane(withApplication: false);
+
+        cut.Find("[data-testid=tep-target-application]").TextContent.Should().StartWith("Application not chosen");
+        cut.Find("[data-testid=tep-target-url-only]").TextContent.Should().Contain("https://m2lbdev.bufetat.no is configured, but the application (for example M2LB) is not chosen");
+        cut.Find("[data-testid=psp-url-configured]").TextContent.Should().Contain("The target URL (https://m2lbdev.bufetat.no) is configured, but no application is chosen yet");
+        cut.Find("[data-testid=psp-configure-target-application]").TextContent.Should().StartWith("Choose application");
+        cut.Find("[data-testid=psp-configure-target-application]").GetAttribute("href").Should().Contain("tab=target");
+
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-empty]").TextContent.Should().StartWith("Application not chosen.").And.Contain("target URL"));
+    }
+
     [Fact]
     public void NoTargetApplication_ProjectShowsThePrerequisite_NoProjectSearch_NoManualProject()
     {
@@ -104,8 +122,12 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.FindAll("[data-testid=psp-create-manual]").Should().BeEmpty();
         cut.FindAll("[data-testid=psp-checklist]").Should().BeEmpty("no package checklist before the application is known");
         cut.FindAll("[data-testid=tep-roles]").Should().BeEmpty();
-        cut.Find("[data-testid=tep-target-application]").TextContent.Should().Be("Not configured");
-        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid=tep-target-application]").TextContent.Should().StartWith("Application not chosen");
+        cut.Find("[data-testid=tep-project]").TextContent.Should().Be("Waiting for Target Application");
+        // Imported evidence stays visible with detected roles and labelled analysis badges; nothing says bound / not bound.
+        cut.FindAll("[data-testid=tep-source-role]").Should().NotBeEmpty().And.OnlyContain(r => r.TextContent == "Detected");
+        cut.FindAll("[data-testid=tep-analysis-badge]").Should().OnlyContain(b => b.TextContent.Contains(':'), "every analysis status names its dimension");
+        cut.Find("[data-testid=tep-sources-table]").TextContent.Should().NotContain("not bound").And.NotContain("Partial · Partial").And.NotContain("Partial · Failed");
     }
 
     [Fact]
@@ -154,7 +176,7 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.ApplicationSource).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Infrastructure).GetAttribute("data-state").Should().Be("Ready");
-        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Evidence bindings", "the checklist and the table show the same bindings");
+        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Evidence roles", "the checklist and the table show the same associations");
         _js.Json.Should().Contain("\"importId\":\"b\"").And.NotContain("FR-001", "only references are stored");
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull("configuring the environment's project never changes the current project");
         _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "no package is created or copied");
@@ -273,7 +295,7 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         var infra = cut.Find("[data-testid=tep-role][data-role=infrastructure]");
         infra.QuerySelectorAll("[data-testid=tep-bound-source]").Length.Should().Be(3, "two visible, the rest behind View all");
         infra.QuerySelector("[data-testid=tep-more-sources] summary")!.TextContent.Should().Contain("+1 more").And.Contain("View all");
-        infra.QuerySelectorAll("[data-testid=tep-binding-origin]").Select(o => o.TextContent).Should().OnlyContain(o => o == "Bound manually");
+        infra.QuerySelectorAll("[data-testid=tep-binding-origin]").Select(o => o.TextContent).Should().OnlyContain(o => o == "Confirmed by you");
         infra.QuerySelectorAll("[data-testid=tep-role-capability]").Select(b => b.TextContent).Should().Equal("Infrastructure");
 
         // Remove one supporting source: only that reference goes.

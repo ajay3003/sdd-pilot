@@ -237,6 +237,9 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.Baselines ??= [];
             SddLifecycle.ExplorerSelections ??= [];
             SddLifecycle.ProjectImports ??= [];
+            SddLifecycle.Applications ??= [];
+            // A workspace saved before logical applications existed: its imports join one application (nothing else changes).
+            ProjectImport.ApplicationContexts.Ensure(SddLifecycle, DateTimeOffset.UtcNow);
             SddLifecycle.GeneratedDocumentationSets ??= [];
             SddLifecycle.GeneratedDocumentContents ??= [];
             SddLifecycle.DocumentationDriftComparisons ??= [];

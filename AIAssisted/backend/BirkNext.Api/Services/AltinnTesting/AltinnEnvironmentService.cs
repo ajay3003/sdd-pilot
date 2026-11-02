@@ -20,7 +20,7 @@ namespace BirkNext.Api.Services.AltinnTesting;
 public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore store, IIntegrationMessageFlowStore messageFlows, AltinnTestingPolicy policy,
     AltinnAppContractService contracts, IIntegrationCatalogService catalog, ITrustedExecutionEnvironmentRegistry trusted, IHttpClientFactory http,
     IEnumerable<IIntegrationJourneyPack>? packs = null, BirkNext.Api.Services.TestData.TestDataCatalog? testData = null,
-    BirkNext.Api.Services.TestData.ITestDataSchemaSource? schemas = null)
+    BirkNext.Api.Services.TestData.ITestDataSchemaSource? schemas = null, BirkNext.Api.Services.ExternalIntegrations.ConnectedSystemTestDataBindingReader? bindings = null)
 {
     public const string FormDataTypeKey = "Application.FormDataType";
     public const string ContentTypeKey = "Payload.ContentType";
@@ -191,7 +191,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         var formDataType = fields.FirstOrDefault(field => field.Key == "form-data-type");
         // The payload is looked up by the form's contract identifier, applied or only suggested (a lookup, not configuration); the contract card's
         // "identifier known" still requires an applied value.
-        var xml = await XmlFixtureAsync(formDataType?.Value, ct);
+        var xml = await XmlFixtureAsync(environmentId, formDataType?.Value, ct);
         var integrationField = fields.FirstOrDefault(field => field.Key == "integration");
         var selectedIntegration = integrationField?.Value is { } selectedId && Satisfied(integrationField) ? integrations.FirstOrDefault(item => item.Id == selectedId) : null;
         var view = Assess(environmentId, saved, fields, identities, config, contract, targetBlock, approved is not null, clientProblem, xml, selectedIntegration);
@@ -220,25 +220,62 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         return values.Count == 1 ? facts[0] : null;
     }
 
+    /// <summary>The report payload as Altinn readiness sees it: the shared XML readiness state of the fixture, and whether that fixture is the
+    /// Connected System's persisted "report payload" binding (only a bound fixture makes Test data Ready).</summary>
+    public sealed record XmlPayloadState(BirkNext.TestData.TestDataXmlReadinessState State, string? Alias, bool Bound, bool ReferenceMissing = false);
+
     /// <summary>
-    /// The report payload in canonical Test Data: approved positive XML fixtures for the form's contract, judged by the shared rule
-    /// (<see cref="BirkNext.TestData.TestDataXmlReadiness"/>) — the same one Test Data, Setup Library preflight and Skolenærvær use. Null when Test
-    /// Data is not available in this host (then payload readiness is not part of the assessment) or the contract identifier is unknown.
+    /// The report payload: the fixture persisted as this environment's Altinn "report payload" Test Data binding (by stable asset id, current
+    /// approved version), judged by the shared rule (<see cref="BirkNext.TestData.TestDataXmlReadiness"/>). Without a binding, approved fixtures
+    /// for the form's contract are only a suggestion — never Ready, never a consumer. A bound fixture that no longer exists is Missing, never
+    /// replaced by another fixture for the same contract. Null when Test Data is not available or the contract identifier is unknown. Hosts
+    /// without the binding store (unit tests) keep the contract lookup as before.
     /// </summary>
-    private async Task<(BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)?> XmlFixtureAsync(string? contract, CancellationToken ct)
+    private async Task<XmlPayloadState?> XmlFixtureAsync(string environmentId, string? contract, CancellationToken ct)
+    {
+        if (testData is null || string.IsNullOrWhiteSpace(contract)) return null;
+        if (bindings is null) return await ContractFixtureAsync(contract, ct) is { } legacy ? new(legacy.State, legacy.Alias, true) : null;
+        var binding = await bindings.BindingAsync(environmentId + BirkNext.Api.Services.ExternalIntegrations.ExternalIntegrationService.AltinnSuffix, BirkNext.Api.Services.ExternalIntegrations.AltinnTestDataRequirements.ReportPayload, ct);
+        if (binding is null)
+            return await ContractFixtureAsync(contract, ct) is { } suggested ? new(suggested.State, suggested.Alias, false) : null;
+        var bound = binding.AssetId is { Length: > 0 } id ? testData.Assets().FirstOrDefault(a => a.Id == id) : testData.Assets().FirstOrDefault(a => a.Alias == binding.AssetAlias);
+        if (bound is null) return new(BirkNext.TestData.TestDataXmlReadinessState.Missing, binding.AssetAlias, true, ReferenceMissing: true);
+        var (state, _) = BirkNext.TestData.TestDataXmlReadiness.Evaluate([await FactsAsync(bound, ct)]);
+        return new(state, bound.Alias, true);
+    }
+
+    /// <summary>The fixture Altinn readiness resolved by contract alone (the pre-binding behaviour) when it was Ready — for the one-time reference
+    /// migration that persists it as the report payload binding. Null otherwise (nothing ready, ambiguous, or no contract identifier).</summary>
+    public async Task<string?> InferredReportFixtureAsync(string environmentId, CancellationToken ct)
+    {
+        // The contract identifier exactly as the readiness view resolves it (applied, detected from the contract, or suggested).
+        var contract = (await ViewAsync(environmentId, false, ct)).Fields.FirstOrDefault(field => field.Key == "form-data-type")?.Value;
+        return await ContractFixtureAsync(contract, ct) is { State: BirkNext.TestData.TestDataXmlReadinessState.Ready, Alias: { } alias } ? alias : null;
+    }
+
+    private async Task<BirkNext.TestData.TestDataXmlFixtureFacts> FactsAsync(BirkNext.Api.Services.TestData.TestDataAsset asset, CancellationToken ct)
+    {
+        var check = asset.Approval == BirkNext.TestData.TestDataApproval.Approved && schemas is not null
+            ? BirkNext.Api.Services.TestData.TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct)) : null;
+        return new(asset.Alias, asset.Approval == BirkNext.TestData.TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId);
+    }
+
+    /// <summary>Approved positive XML fixtures for the form's contract (a contract lookup — a suggestion, not a binding).</summary>
+    private async Task<(BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)?> ContractFixtureAsync(string? contract, CancellationToken ct)
     {
         if (testData is null || string.IsNullOrWhiteSpace(contract)) return null;
         var fixtures = testData.Assets().Where(asset => BirkNext.TestData.TestDataXmlReadiness.IsFixtureFor(asset.MediaType, asset.Schema, asset.Capabilities, contract)).ToList();
         var facts = new List<BirkNext.TestData.TestDataXmlFixtureFacts>();
-        foreach (var asset in fixtures)
-        {
-            var check = asset.Approval == BirkNext.TestData.TestDataApproval.Approved && schemas is not null
-                ? BirkNext.Api.Services.TestData.TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct)) : null;
-            facts.Add(new(asset.Alias, asset.Approval == BirkNext.TestData.TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId));
-        }
+        foreach (var asset in fixtures) facts.Add(await FactsAsync(asset, ct));
         var (state, fixture) = BirkNext.TestData.TestDataXmlReadiness.Evaluate(facts);
         return (state, fixture?.Alias);
     }
+
+    private static string PayloadProblem(XmlPayloadState payload) =>
+        payload.ReferenceMissing ? $"bound fixture {payload.Alias} no longer exists in Test Data — choose another in Connected Systems → Test Data"
+        : !payload.Bound && payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready ? $"{payload.Alias} matches the contract but is not bound — apply it as the report payload in Connected Systems → Test Data"
+        : !payload.Bound && payload.State == BirkNext.TestData.TestDataXmlReadinessState.Missing ? "missing"
+        : $"{XmlProblem(payload.State)}{(payload.Alias is { } alias ? $" ({alias})" : "")}{(payload.Bound ? "" : " · not bound")}";
 
     private static string XmlProblem(BirkNext.TestData.TestDataXmlReadinessState state) => state switch
     {
@@ -270,7 +307,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
 
     private AltinnEnvironmentView Assess(string environmentId, AltinnEnvironmentSettings saved, List<AltinnSettingField> fields, IReadOnlyList<AltinnIdentitySummary> identities,
         AltinnTestConfiguration config, AltinnAppContractView contract, string? targetBlock, bool appApproved, string? clientProblem,
-        (BirkNext.TestData.TestDataXmlReadinessState State, string? Alias)? xml = null, IntegrationDefinition? integration = null)
+        XmlPayloadState? xml = null, IntegrationDefinition? integration = null)
     {
         AltinnSettingField F(string key) => fields.First(field => field.Key == key);
         var environmentValue = F("environment");
@@ -294,8 +331,8 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         if (!reporter) { manualGaps.Add("Reporter: missing"); manualMissing.Add("Reporter"); }
         if (!child) { manualGaps.Add("Synthetic child: missing"); manualMissing.Add("Child"); }
         // The report payload: identities are who is involved, the XML fixture is what is submitted — manual submission needs both.
-        var xmlReady = xml is null || xml.Value.State == BirkNext.TestData.TestDataXmlReadinessState.Ready;
-        if (!xmlReady) { manualGaps.Add($"XML fixture: {XmlProblem(xml!.Value.State)}"); manualMissing.Add("XML fixture"); }
+        var xmlReady = xml is null || xml.State == BirkNext.TestData.TestDataXmlReadinessState.Ready && xml.Bound;
+        if (!xmlReady) { manualGaps.Add($"XML fixture: {PayloadProblem(xml!)}"); manualMissing.Add("XML fixture"); }
         var contractNote = contract.Complete ? "Contract evidence is complete." : "Contract evidence is still incomplete.";
         // Manual preparation needs the reporter's browser sign-in requirement to be known (it is performed interactively), never BirkNext's
         // unattended credentials and never the integration's own authentication; MU delivery is stated as not verified.
@@ -336,10 +373,13 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
                 $"Who is involved: reporter {(reporter ? confirmedReporter ? "configured · profile confirmed" : "configured · profile not confirmed" : "missing")} · child {(child ? "configured" : "missing")}"),
         };
         if (xml is { } payload)
-            summary.Add(new("testdata", "Test data", payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready ? AltinnReadinessState.Ready
-                : payload.State == BirkNext.TestData.TestDataXmlReadinessState.Missing ? AltinnReadinessState.Blocked : AltinnReadinessState.Partial,
-                payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready ? $"What is submitted: XML fixture {payload.Alias} · valid against its XSD (schema-valid is not business-valid)"
-                    : $"What is submitted: XML fixture {XmlProblem(payload.State)}{(payload.Alias is { } alias ? $" ({alias})" : "")} · owner: Test Data"));
+        {
+            var ready = payload.State == BirkNext.TestData.TestDataXmlReadinessState.Ready && payload.Bound;
+            summary.Add(new("testdata", "Test data", ready ? AltinnReadinessState.Ready
+                : payload.State == BirkNext.TestData.TestDataXmlReadinessState.Missing && (payload.Bound || payload.Alias is null) ? AltinnReadinessState.Blocked : AltinnReadinessState.Partial,
+                ready ? $"What is submitted: XML fixture {payload.Alias} (bound as the report payload) · valid against its XSD (schema-valid is not business-valid)"
+                    : $"What is submitted: XML fixture {PayloadProblem(payload)} · owner: Test Data"));
+        }
         var interactions = AltinnInteractionAuthentication.Build(production, saved.BrowserAuthentication, integration,
             F("integration").DisplayValue, authState);
         summary.AddRange(AltinnInteractionAuthentication.Summary(interactions, authState));

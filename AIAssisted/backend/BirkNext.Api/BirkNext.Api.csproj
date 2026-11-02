@@ -80,6 +80,7 @@
     <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
     <Compile Include="../../shared/ProjectImportContracts.cs" Link="Models/ProjectImportContracts.cs" />
+    <Compile Include="../../shared/ProjectActivityContracts.cs" Link="Models/ProjectActivityContracts.cs" />
     <Compile Include="../../shared/DeliveryReportingContracts.cs" Link="Models/DeliveryReportingContracts.cs" />
     <Compile Include="../../shared/BrowserAuthenticationContracts.cs" Link="Models/BrowserAuthenticationContracts.cs" />
     <Compile Include="../../shared/ProjectCompatibilityContracts.cs" Link="Models/ProjectCompatibilityContracts.cs" />

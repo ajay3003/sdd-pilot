@@ -45,10 +45,10 @@ public sealed record EvidenceRoleRow(
     public static string OriginLabel(ProjectEvidenceSourceReference source) => source.BoundBy switch
     {
         "ProjectSelection" => "Bound from Project setup",
-        "User" => "Bound manually",
+        "User" => "Confirmed by you",
         "TestPack" => "Suggested by Test Pack",
         "Iqr" => "Confirmed by IQR",
-        "Detected" => "Detected from imported evidence",
+        "Detected" => "Associated automatically",
         var other => $"Bound by {other}",
     };
 
@@ -103,6 +103,22 @@ public sealed record ProjectEvidenceView(
 {
     public bool IsConfigured => Project is not null;
     public bool MainAvailable => Main is not null;
+    /// <summary>Every imported package's association with the Target Application (deterministic role; Needs review when uncertain).</summary>
+    public IReadOnlyList<PackageAssociation> Associations { get; init; } = [];
+    /// <summary>The environment's Target Application (null: application-level evidence assessment waits for it).</summary>
+    public TargetApplicationIdentity? TargetApplication { get; init; }
+    /// <summary>The backend's Source Analysis classification was available for this view.</summary>
+    public bool Classified { get; init; }
+    public int NeedsReviewCount => Associations.Count(a => a.State == EvidenceAssociationState.NeedsReview);
+
+    /// <summary>
+    /// Project evidence as a derived state, never "configured" when nothing was configured: Waiting for Target Application; Needs review
+    /// (an uncertain source or a conflict); Ready / Partial from the required roles; No evidence yet. Associated is not reviewed or ready.
+    /// </summary>
+    public string EvidenceState => TargetApplication is null ? "Waiting for Target Application"
+        : Conflicts > 0 || NeedsDecision > 0 || NeedsReviewCount > 0 && !RequiredReadyAll ? "Needs review"
+        : !IsConfigured ? "No evidence yet"
+        : RequiredReadyAll ? "Ready" : "Partial";
     public string ProjectName => Project?.ProjectName ?? "";
 
     public int RequiredTotal => Rows.Count(r => r.IsRequired) + TestPackRows.Count(r => r.IsRequired);

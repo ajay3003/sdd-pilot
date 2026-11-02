@@ -256,6 +256,16 @@ public sealed record TestDataXmlBindResult(string? Xml, IReadOnlyList<string> Pr
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestDataOwnership { Unknown, ProtectedDefault, Configuration, SessionEntered, Registered, Generated }
 
+/// <summary>Persisted protection kinds. Protected ≠ approved: approval says an asset/version may be used; protection says it is baseline data that
+/// Delete and Maintenance reset never remove (its current content is kept — reset never restores factory values).</summary>
+public static class TestDataProtectionKinds
+{
+    /// <summary>A system-seeded default value (provider ownership <see cref="TestDataOwnership.ProtectedDefault"/>).</summary>
+    public const string ProtectedDefault = "ProtectedDefault";
+    /// <summary>A canonical payload fixture a Test Pack declares (stable asset id recorded in the Test Data registry).</summary>
+    public const string CanonicalFixture = "CanonicalFixture";
+}
+
 public static class TestDataOwnerships
 {
     /// <summary>Local Test Data that Delete may remove and Maintenance reset removes.</summary>
@@ -269,6 +279,13 @@ public static class TestDataOwnerships
         TestDataOwnership.Registered => "Registered in Test Data",
         TestDataOwnership.Generated => "Generated fixture",
         _ => "Unknown owner",
+    };
+
+    /// <summary>Why an asset with persisted protection (<see cref="TestDataProtectionKinds"/>) cannot be deleted, else as for its ownership.</summary>
+    public static string? WhyNotDeletable(TestDataOwnership ownership, string? protectionKind) => protectionKind switch
+    {
+        TestDataProtectionKinds.CanonicalFixture => "This Test Data asset is protected and cannot be deleted: it is a canonical Test Pack fixture that survives Maintenance reset. Change it through a new version.",
+        _ => WhyNotDeletable(ownership),
     };
 
     /// <summary>Why an asset cannot be deleted in Test Data, or null when it can.</summary>
@@ -287,7 +304,11 @@ public static class TestDataOwnerships
 /// </summary>
 public sealed record TestDataAssetUsage(string Alias, string ConsumerType, string ConsumerId, string ConsumerName, string Location)
 {
+    /// <summary>The stable asset id the consumer persisted, when it records one (authoritative over <see cref="Alias"/>).</summary>
+    public string? AssetId { get; init; }
     public string? EnvironmentId { get; init; }
+    /// <summary>A safe environment display name (no secrets), when the consumer knows it.</summary>
+    public string? EnvironmentName { get; init; }
     /// <summary>The alias no longer resolves to any asset in the catalog: the consumer shows "Test Data reference missing".</summary>
     public bool Unresolved { get; init; }
 }
@@ -304,6 +325,8 @@ public sealed record TestDataReplaceResult(bool Replaced, string Message, int Re
 public sealed record TestDataResetSummary
 {
     public int ProtectedDefaultsPreserved { get; init; }
+    /// <summary>Canonical protected fixtures kept with their current content, approval and explicit bindings.</summary>
+    public int ProtectedFixturesPreserved { get; init; }
     public int ConfigurationAssetsPreserved { get; init; }
     public int AssetsRemoved { get; init; }
     public int GeneratedFixturesRemoved { get; init; }
@@ -350,6 +373,8 @@ public sealed record TestDataEditResult(bool Updated, string Message, bool Value
 public sealed record TestDataResetPreview
 {
     public IReadOnlyList<string> ProtectedDefaults { get; init; } = [];
+    /// <summary>Canonical protected fixtures (aliases) the reset keeps.</summary>
+    public IReadOnlyList<string> ProtectedFixtures { get; init; } = [];
     public int ConfigurationAssets { get; init; }
     public IReadOnlyList<string> AssetsToRemove { get; init; } = [];
     public int GeneratedFixturesToRemove { get; init; }
