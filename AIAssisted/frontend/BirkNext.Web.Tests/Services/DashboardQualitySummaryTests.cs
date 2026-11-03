@@ -24,7 +24,7 @@ public sealed class DashboardQualitySummaryTests
     public void AvailableEvidence_IsNotReviewed_AndUnrunReviewsAreNotAssessed()
     {
         var cards = DashboardQualitySummary.Cards(Rows, [], new DashboardReviewFacts());
-        Card(cards, "evidence").Value.Should().Be("2 of 4 document types");
+        Card(cards, "evidence").Value.Should().Be("2 of 4 core document types");
         Card(cards, "evidence").Detail.Should().Contain("1 partial").And.Contain("presence only, not reviewed");
         Card(cards, "specification").Value.Should().Be("Not assessed");
         Card(cards, "traceability").Value.Should().Be("Not assessed");

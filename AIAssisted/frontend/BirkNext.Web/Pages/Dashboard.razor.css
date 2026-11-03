@@ -948,3 +948,59 @@
 .db-more-summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }
 .db-more-summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
 @media (max-width: 640px) { .db-activity, .db-timeline .db-activity { grid-template-columns: 1fr; } }
+
+/* ══ SDD Quality & Readiness: hero facts, charts, packages, activity timeline ══ */
+.sdd-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 1rem; margin-top: .9rem; padding-top: .9rem; border-top: 1px solid rgba(15, 23, 42, .08); align-items: start; }
+.sdd-hero-state { display: grid; gap: .35rem; justify-items: start; }
+.sdd-hero-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--clr-text-muted); }
+.sdd-hero-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin: 0; }
+.sdd-hero-facts > div { background: rgba(255, 255, 255, .75); border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .45rem .6rem; min-width: 0; }
+.sdd-hero-facts > div.is-attention { border-color: #fca5a5; background: #fef2f2; }
+.sdd-hero-facts > div.is-setup { border-color: #fcd34d; background: #fffbeb; }
+.sdd-hero-facts dt { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); }
+.sdd-hero-facts dd { margin: .1rem 0 0; font-size: 1.15rem; font-weight: 700; color: var(--clr-text-heading); font-variant-numeric: tabular-nums; }
+.sdd-hero-facts .sdd-hero-wide { grid-column: 1 / -1; }
+.sdd-hero-facts .sdd-hero-wide dd { font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 960px) { .sdd-hero { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .sdd-hero-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.sdd-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1.25rem; }
+@media (max-width: 760px) { .sdd-charts { grid-template-columns: 1fr; } }
+
+.db-pill.is-partial { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+.sdd-package-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.sdd-package { display: grid; grid-template-columns: minmax(10rem, 1.2fr) minmax(0, 2fr) minmax(8rem, 1fr) auto; gap: .6rem; align-items: center; padding: .5rem .75rem;
+    border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); font-size: .85rem; }
+.sdd-package[data-resolve="true"] { border-left: 3px solid var(--clr-warning); }
+.sdd-package-name { font-weight: 600; color: var(--clr-text-heading); overflow-wrap: anywhere; }
+.sdd-package-roles { display: flex; flex-wrap: wrap; gap: .3rem; }
+.sdd-role { font-size: .74rem; padding: .1rem .45rem; border-radius: 999px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; }
+@media (max-width: 760px) { .sdd-package { grid-template-columns: 1fr; gap: .3rem; justify-items: start; } }
+
+/* Timeline: a coloured icon container per event KIND (import, system, review done, needs review, failed, info); the badge carries the status. */
+.sdd-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.sdd-event { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto; gap: .65rem; align-items: start; padding: .55rem .25rem; border-bottom: 1px solid var(--clr-border); }
+.sdd-event:last-child { border-bottom: 0; }
+.sdd-event-icon { width: 2rem; height: 2rem; border-radius: .5rem; display: grid; place-items: center; font-size: .9rem; font-weight: 700; }
+.sdd-event.is-import .sdd-event-icon { background: #dbeafe; color: #1d4ed8; }
+.sdd-event.is-system .sdd-event-icon { background: #ede9fe; color: #6d28d9; }
+.sdd-event.is-reviewdone .sdd-event-icon { background: #dcfce7; color: #15803d; }
+.sdd-event.is-needsreview .sdd-event-icon { background: #fef3c7; color: #b45309; }
+.sdd-event.is-failed .sdd-event-icon { background: #fee2e2; color: #b91c1c; }
+.sdd-event.is-info .sdd-event-icon { background: #f1f5f9; color: #475569; }
+.sdd-event-body { display: grid; gap: .15rem; min-width: 0; }
+.sdd-event-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; }
+.sdd-event-title { font-weight: 600; color: var(--clr-text-heading); font-size: .88rem; overflow-wrap: anywhere; }
+.sdd-event-time { font-size: .75rem; color: var(--clr-text-muted); font-variant-numeric: tabular-nums; }
+.sdd-event-summary { font-size: .8rem; overflow-wrap: anywhere; }
+.sdd-badge { font-size: .72rem; font-weight: 600; padding: .12rem .5rem; border-radius: 999px; border: 1px solid #e2e8f0; background: #f8fafc; color: #334155; white-space: nowrap; }
+.sdd-badge.is-import { background: #eff6ff; color: #1e3a8a; border-color: #bfdbfe; }
+.sdd-badge.is-system { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+.sdd-badge.is-done { background: #f0fdf4; color: #14532d; border-color: #bbf7d0; }
+.sdd-badge.is-needs-review { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+.sdd-badge.is-failed { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+.sdd-event-link { white-space: nowrap; }
+@media (max-width: 640px) {
+    .sdd-event { grid-template-columns: 2rem minmax(0, 1fr); }
+    .sdd-event .sdd-badge, .sdd-event .sdd-event-link { grid-column: 2; justify-self: start; }
+}

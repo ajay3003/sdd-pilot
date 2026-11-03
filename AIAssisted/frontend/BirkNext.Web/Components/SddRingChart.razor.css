@@ -1,0 +1,23 @@
+/* Dashboard ring chart: ring + legend side by side, stacked on narrow screens. */
+.src { margin: 0; display: grid; gap: .6rem; min-width: 0; }
+.src-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); }
+.src-body { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.src-ring { width: 7.5rem; height: 7.5rem; flex-shrink: 0; }
+.src-track { fill: none; stroke: rgba(100, 116, 139, .15); stroke-width: 12; }
+.src-seg { fill: none; stroke-width: 12; stroke-linecap: butt; transition: stroke-width .15s; }
+.src-seg:hover { stroke-width: 15; }
+.src-total { font-size: 1.15rem; font-weight: 700; text-anchor: middle; fill: var(--clr-text-heading); }
+.src-unit { font-size: .55rem; text-anchor: middle; fill: var(--clr-text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.src-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .84rem; flex: 1 1 9rem; min-width: 0; }
+.src-legend-item { display: grid; grid-template-columns: .75rem 1fr auto; align-items: center; gap: .45rem; color: var(--clr-text-body); }
+.src-legend-item.is-zero { color: var(--clr-text-muted); }
+.src-swatch { width: .7rem; height: .7rem; border-radius: 3px; }
+.src-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.src-empty, .src-note { margin: 0; font-size: .8rem; color: var(--clr-text-muted); }
+
+/* Tones: state, not severity alone (the legend always names the state). */
+.src-seg.is-ready { stroke: var(--clr-success); }      .src-swatch.is-ready { background: var(--clr-success); }
+.src-seg.is-partial { stroke: var(--clr-warning); }    .src-swatch.is-partial { background: var(--clr-warning); }
+.src-seg.is-missing { stroke: var(--clr-danger); }     .src-swatch.is-missing { background: var(--clr-danger); }
+.src-seg.is-info { stroke: var(--clr-info); }          .src-swatch.is-info { background: var(--clr-info); }
+.src-seg.is-neutral { stroke: #94a3b8; }               .src-swatch.is-neutral { background: #94a3b8; }

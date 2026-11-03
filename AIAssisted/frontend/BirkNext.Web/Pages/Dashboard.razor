@@ -112,8 +112,68 @@
                 }
                 <span data-testid="db-save-status" title="Save status. A workspace is loaded whether or not it is saved.">@_workspace.SaveStatusLabel</span>
             </div>
+            @if (_workspace.WorkspaceLoaded && _workspace.State == CurrentWorkspaceState.Loaded)
+            {
+                var hero = _hero;
+                <div class="sdd-hero" data-testid="sdd-hero" data-status="@hero.Status">
+                    <div class="sdd-hero-state">
+                        <span class="sdd-hero-label">Overall readiness</span>
+                        <span class="db-pill is-@DashboardPresentation.Tone(hero.Status)" data-testid="sdd-hero-readiness"><span aria-hidden="true">@DashboardPresentation.Icon(hero.Status) </span>@hero.Readiness</span>
+                        <span class="db-muted" data-testid="sdd-hero-detail">@hero.Detail</span>
+                    </div>
+                    <dl class="sdd-hero-facts">
+                        <div data-testid="sdd-hero-blockers" class="@(hero.Blockers > 0 ? "is-attention" : "")"><dt>Blockers</dt><dd>@hero.Blockers</dd></div>
+                        <div data-testid="sdd-hero-review-items" class="@(hero.ReviewItems > 0 ? "is-setup" : "")"><dt>Review items</dt><dd>@hero.ReviewItems</dd></div>
+                        <div data-testid="sdd-hero-available"><dt>Reviews ready to run</dt><dd>@hero.AvailableReviews</dd></div>
+                        <div data-testid="sdd-hero-completed"><dt>Reviews completed</dt><dd>@hero.CompletedReviews</dd></div>
+                        <div data-testid="sdd-hero-last" class="sdd-hero-wide"><dt>Last assessment</dt><dd>@hero.LastAssessment</dd></div>
+                    </dl>
+                </div>
+            }
         }
     </section>
+
+    @* ══ Recommended next action: the workflow's canonical next step (only unresolved work), directly under the hero ══ *@
+    @if (_nextStep is { } next)
+    {
+        <section class="db-next-step" aria-labelledby="db-next-heading" data-testid="db-next-step" data-key="@next.Key">
+            <h2 id="db-next-heading" class="db-next-eyebrow">Next recommended action</h2>
+            <p class="db-next-title" data-testid="db-next-title">@next.Title</p>
+            <p class="db-next-reason" data-testid="db-next-reason"><span class="db-next-k">Why:</span> @next.Reason</p>
+            <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
+            <div class="db-next-actions">
+                <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
+                <a href="getting-started" class="db-btn-link" data-testid="db-open-workflow">Open Recommended Workflow</a>
+            </div>
+            @if (next.Then.Count > 0)
+            {
+                <div class="db-next-then" data-testid="db-next-then">
+                    <span class="db-next-k">Then:</span>
+                    <ol>
+                        @foreach (var step in next.Then)
+                        {
+                            <li>@step</li>
+                        }
+                    </ol>
+                </div>
+            }
+        </section>
+    }
+    else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
+    {
+        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step">
+            <p class="db-workspace-message" role="status">Working out the recommended next step…</p>
+        </section>
+    }
+
+    @* ══ Charts: evidence readiness (Review availability rows) and review execution (review navigator capabilities) ══ *@
+    @if (_workspace is { WorkspaceLoaded: true, State: CurrentWorkspaceState.Loaded } && _workflowReadiness is not null)
+    {
+        <section class="sdd-charts" aria-label="Readiness charts" data-testid="sdd-charts">
+            <div class="db-panel"><SddRingChart Chart="@_evidenceChart" TestId="sdd-evidence-chart" Unit="inputs" /></div>
+            <div class="db-panel"><SddRingChart Chart="@_reviewChart" TestId="sdd-review-chart" Unit="reviews" /></div>
+        </section>
+    }
 
     @* ══ 2 · Quality summary: re-presented shared results, no score. Only when the project's documents could be read. ══ *@
     @if (_workspace is { WorkspaceLoaded: true, State: CurrentWorkspaceState.Loaded } && !(_workspace.ProjectLoaded && !_workspace.ProjectInCatalog))
@@ -144,7 +204,7 @@
                 <p class="db-muted" data-testid="db-inventory-note">Inventory only — presence does not mean reviewed or verified.</p>
                 @if (_found.Count == 0)
                 {
-                    <p class="db-muted">No project documents were found.</p>
+                    <p class="db-muted" data-testid="db-found-none">No SDD project documents detected.</p>
                 }
                 else
                 {
@@ -230,6 +290,26 @@
             </section>
         </div>
 
+        @* Imported evidence packages: every role a package provides, what its document count means, and its association. Never "import again". *@
+        @if (_packages.Count > 0)
+        {
+            <section class="db-section" aria-labelledby="db-packages-heading" data-testid="sdd-packages">
+                <h2 id="db-packages-heading" class="db-h2">Imported evidence packages <span class="db-muted">(@_packages.Count)</span></h2>
+                <p class="db-section-lead">Already imported — roles come from what each package contains. Document counts are SDD documents (specifications, plans, tasks, data models, constitutions, research) included from that package.</p>
+                <ul class="sdd-package-list">
+                    @foreach (var pkg in _packages)
+                    {
+                        <li class="sdd-package" data-testid="sdd-package" data-import="@pkg.ImportId" data-resolve="@(pkg.NeedsResolution ? "true" : "false")">
+                            <span class="sdd-package-name">@pkg.Name</span>
+                            <span class="sdd-package-roles">@foreach (var role in pkg.Roles) { <span class="sdd-role" data-testid="sdd-package-role">@role</span> }</span>
+                            <span class="db-muted" data-testid="sdd-package-documents">@pkg.Documents</span>
+                            <span class="db-pill is-@pkg.Tone" title="@pkg.Detail" data-testid="sdd-package-association">@pkg.Association</span>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
         @* Available next reviews: not problems — optional reviews, applicable reviews, runtime reviews waiting for setup. *@
         @if (_nextReviews.Count > 0)
         {
@@ -296,58 +376,40 @@
             }
             else
             {
-                <ol class="db-activity-list db-timeline" aria-label="Recent activity, newest first">
-                    @foreach (var a in items)
+                var rows = _activityAll ? SddDashboard.AllRows(items, DateTimeOffset.UtcNow) : SddDashboard.Timeline(items, DateTimeOffset.UtcNow);
+                <ol class="sdd-timeline" aria-label="Recent activity, newest first">
+                    @foreach (var row in rows)
                     {
-                        <li class="db-activity @(a.Status == ProjectActivityStatus.Failed ? "is-failed" : "")" data-testid="db-activity" data-type="@a.Type" data-status="@a.Status" data-package="@a.PackageId">
-                            <time class="db-activity-time" datetime="@a.OccurredAt.ToString("O")" title="@a.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")">@ProjectActivityPresentation.When(a.OccurredAt, DateTimeOffset.UtcNow)</time>
-                            <span class="db-activity-body">
-                                <span class="db-activity-title"><span aria-hidden="true">@ProjectActivityPresentation.Icon(a.Category) </span>@a.Title</span>
-                                @if (a.Summary is { Length: > 0 } summary) { <span class="db-muted db-activity-summary">@summary</span> }
-                                @if (a.Outcome is { Length: > 0 } outcome) { <span class="db-muted">Outcome: @outcome</span> }
-                                @if (a.EnvironmentName is { Length: > 0 } env) { <span class="db-muted">@env</span> }
-                            </span>
-                            <span class="db-pill is-@ProjectActivityPresentation.Tone(a.Status)" data-testid="db-activity-badge">@ProjectActivityPresentation.Badge(a.Status)</span>
-                            @if (a.Route is { Length: > 0 } route) { <a href="@route" class="db-attention-action" data-testid="db-activity-link">@ProjectActivityPresentation.LinkLabel(a)<span class="visually-hidden">: @a.Title</span></a> }
+                        <li class="sdd-event is-@row.Kind.ToString().ToLowerInvariant()" data-testid="db-activity" data-kind="@row.Kind" data-group="@(row.IsGroup ? row.Members.Count : 0)">
+                            <span class="sdd-event-icon" aria-hidden="true">@row.Icon</span>
+                            <div class="sdd-event-body">
+                                <div class="sdd-event-head">
+                                    <span class="sdd-event-title" data-testid="db-activity-title">@row.Title</span>
+                                    <time class="sdd-event-time" datetime="@row.At.ToString("O")" title="@row.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm")">@ProjectActivityPresentation.When(row.At, DateTimeOffset.UtcNow)</time>
+                                </div>
+                                @if (row.Summary is { Length: > 0 } summary) { <span class="db-muted sdd-event-summary" data-testid="db-activity-summary">@summary</span> }
+                                @if (row.Environment is { Length: > 0 } env) { <span class="db-muted">@env</span> }
+                                @if (row.IsGroup)
+                                {
+                                    <details class="db-details" data-testid="db-activity-members">
+                                        <summary>Show @row.Members.Count packages</summary>
+                                        <ul class="db-detail-list">@foreach (var m in row.Members) { <li>@m.Title@(m.Summary is { Length: > 0 } ms ? $" — {ms}" : "")</li> }</ul>
+                                    </details>
+                                }
+                            </div>
+                            <span class="sdd-badge is-@row.BadgeTone" data-testid="db-activity-badge">@row.Badge</span>
+                            @if (row.Route is { Length: > 0 } route) { <a href="@route" class="db-attention-action sdd-event-link" data-testid="db-activity-link">@row.LinkLabel<span class="visually-hidden">: @row.Title</span></a> }
                         </li>
                     }
                 </ol>
+                @if (SddDashboard.AllRows(items, DateTimeOffset.UtcNow).Count > SddDashboard.ActivityLimit)
+                {
+                    <button type="button" class="db-btn-link" data-testid="db-activity-all" @onclick="() => _activityAll = !_activityAll">@(_activityAll ? "Show recent activity only" : "View all activity")</button>
+                }
             }
         </section>
     }
 
-    @* ══ 2 · Recommended next step ══════════════════════════════════════════════ *@
-    @if (_nextStep is { } next)
-    {
-        <section class="db-next-step" aria-labelledby="db-next-heading" data-testid="db-next-step" data-key="@next.Key">
-            <h2 id="db-next-heading" class="db-next-eyebrow">Next recommended action</h2>
-            <p class="db-next-title" data-testid="db-next-title">@next.Title</p>
-            <p class="db-next-reason" data-testid="db-next-reason"><span class="db-next-k">Why:</span> @next.Reason</p>
-            <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
-            <div class="db-next-actions">
-                <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
-                <a href="getting-started" class="db-btn-link" data-testid="db-open-workflow">Open Recommended Workflow</a>
-            </div>
-            @if (next.Then.Count > 0)
-            {
-                <div class="db-next-then" data-testid="db-next-then">
-                    <span class="db-next-k">Then:</span>
-                    <ol>
-                        @foreach (var step in next.Then)
-                        {
-                            <li>@step</li>
-                        }
-                    </ol>
-                </div>
-            }
-        </section>
-    }
-    else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
-    {
-        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step">
-            <p class="db-workspace-message" role="status">Working out the recommended next step…</p>
-        </section>
-    }
 
     @* ══ Detailed analysis: the full assessment, artifacts, release evidence, risks and tools — collapsed so the summary stays short ══ *@
     <details class="db-more" data-testid="db-detailed-analysis">
@@ -532,96 +594,7 @@
     <section class="db-section db-zone-start" aria-labelledby="db-advanced-heading" data-testid="db-advanced">
         <h2 id="db-advanced-heading" class="db-h2">Analysis details</h2>
         <details class="db-advanced">
-            <summary>Show results by analysis, recent activity and all tools</summary>
-    @* ── Recent Activity ────────────────────────────────────────────────────── *@
-    <section class="db-section">
-        <SectionHeader Title="Recent Activity" />
-        <div class="db-timeline">
-            @{
-                bool anyActivity = false;
-
-                if (Snapshot.AuditReport is not null)
-                {
-                    anyActivity = true;
-                    <div class="db-tl-entry">
-                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
-                        <div class="db-tl-body">
-                            <span class="db-tl-action">Document Quality Review — QA Auditor completed</span>
-                            <span class="db-tl-meta">@Snapshot.AuditReport.Health.TotalFindings finding@(Snapshot.AuditReport.Health.TotalFindings != 1 ? "s" : "")</span>
-                        </div>
-                    </div>
-                }
-
-                if (Snapshot.DeliveryReport is not null)
-                {
-                    anyActivity = true;
-                    <div class="db-tl-entry">
-                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
-                        <div class="db-tl-body">
-                            <span class="db-tl-action">Document Quality Review — Delivery Readiness completed</span>
-                            <span class="db-tl-meta">@Snapshot.DeliveryReport.Health.OverallReadinessScore.ToString("0")% overall readiness</span>
-                        </div>
-                    </div>
-                }
-
-                if (Snapshot.TraceabilityReport is not null)
-                {
-                    anyActivity = true;
-                    <div class="db-tl-entry">
-                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
-                        <div class="db-tl-body">
-                            <span class="db-tl-action">Requirements Traceability completed</span>
-                            <span class="db-tl-meta">@($"{Snapshot.TraceabilityReport.AssessedTransitionCount} of {Snapshot.TraceabilityReport.Transitions.Count} transitions assessed")</span>
-                        </div>
-                    </div>
-                }
-
-                if (Snapshot.ComplianceReport is not null)
-                {
-                    anyActivity = true;
-                    <div class="db-tl-entry">
-                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
-                        <div class="db-tl-body">
-                            <span class="db-tl-action">Document Quality Review — Constitution Compliance completed</span>
-                            <span class="db-tl-meta">@Snapshot.ComplianceReport.Coverage.CompliancePercentage.ToString("0")% compliant</span>
-                        </div>
-                    </div>
-                }
-
-                if (Snapshot.ReadinessReport is not null)
-                {
-                    anyActivity = true;
-                    <div class="db-tl-entry">
-                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
-                        <div class="db-tl-body">
-                            <span class="db-tl-action">Document Quality Review — QA Readiness completed</span>
-                            <span class="db-tl-meta">@Snapshot.ReadinessReport.OverallScore.ToString("0")% overall</span>
-                        </div>
-                    </div>
-                }
-
-                if (_perfReport is not null)
-                {
-                    anyActivity = true;
-                    <div class="db-tl-entry">
-                        <span class="db-tl-dot db-tl-dot-perf" aria-hidden="true"></span>
-                        <div class="db-tl-body">
-                            <span class="db-tl-action">Performance Review completed</span>
-                            <span class="db-tl-meta">@_perfReport.Assets.Count assets · @FormatBytes(_perfReport.Health.TotalTransferBytes) transfer</span>
-                        </div>
-                    </div>
-                }
-
-                if (!anyActivity)
-                {
-                    <div class="db-tl-empty">
-                        No analyses have been run this session.
-                    </div>
-                }
-            }
-        </div>
-    </section>
-
+            <summary>Show results by analysis and all tools</summary>
     @* ── Analysis Summary ───────────────────────────────────────────────────── *@
     <section class="db-section">
         <SectionHeader Title="Analysis Summary" Description="Run each analysis to populate" />
@@ -989,7 +962,9 @@
         StateHasChanged();
     }
 
-    private const int ActivityLimit = 10;
+    /// <summary>Enough events to group and to show "View all activity"; the timeline shows <see cref="SddDashboard.ActivityLimit"/> rows by default.</summary>
+    private const int ActivityLimit = 30;
+    private bool _activityAll;
     private void OnActivityRecorded() => _ = InvokeAsync(RefreshActivityAsync);
     private void OnOperationsChanged() => _ = InvokeAsync(StateHasChanged);
 
@@ -1008,7 +983,15 @@
     private IReadOnlyList<DashboardKpi> _kpis => DashboardQualitySummary.Cards(_readiness, _attention, _reviews);
     private DashboardNextStep? _nextStep => _workspace is null ? null : DashboardPresentation.NextStep(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardFoundFact> _found => _workspace is null ? [] : DashboardPresentation.Found(_workspace, _workflowReadiness);
-    private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? [] : DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews);
+    private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? []
+        : [.. DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews), .. SddDashboard.AssociationAttention(_associations) is { } resolve ? [resolve] : Array.Empty<DashboardAttentionItem>()];
+
+    /// <summary>Project Evidence associations of the imported packages: the cached view the workflow readiness just read (no extra backend call).</summary>
+    private IReadOnlyList<BirkNext.Web.Services.ProjectEvidence.PackageAssociation> _associations = [];
+    private IReadOnlyList<SddPackageRow> _packages => _application is null ? [] : SddDashboard.Packages(_associations);
+    private SddChart _evidenceChart => SddDashboard.EvidenceReadiness(_readiness);
+    private SddChart _reviewChart => SddDashboard.ReviewExecution(_workflowReadiness?.Capabilities ?? []);
+    private SddHero _hero => SddDashboard.Hero(_readiness, _attention, _reviewChart, _activityItems, DateTimeOffset.UtcNow);
     private IReadOnlyList<DashboardAttentionItem> _nextReviews => _workspace is null ? [] : DashboardPresentation.AvailableNextReviews(_workspace, _workflowReadiness, _reviews);
     private IReadOnlyList<DashboardReadinessRow> _readiness => _workspace is null ? [] : DashboardPresentation.ReviewReadiness(_workspace, _workflowReadiness, _reviews);
     private IReadOnlyList<DashboardHealthArea> _health => DashboardPresentation.Health(_workspace, _workflowReadiness, _reviews);
@@ -1093,6 +1076,11 @@
         try
         {
             _workflowReadiness = await WorkflowReadiness.GetReadinessAsync();
+            if (Services.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) is BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService evidence)
+            {
+                try { _associations = evidence.Peek().Associations; }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { _associations = []; }
+            }
             StateHasChanged();
         }
         catch (Exception ex)
@@ -1173,7 +1161,6 @@
             : Snapshot.ReadinessReport?.OverallScore ?? 0;
 
     private bool _deliveryHasData => Snapshot.DeliveryReport is not null;
-    private double _deliveryScore => Snapshot.DeliveryReport?.Health.OverallReadinessScore ?? 0;
 
     // ── Overall health ────────────────────────────────────────────────────────
 
@@ -1183,29 +1170,6 @@
         Available(WorkspaceArtifactType.Specification) && (QualitySession.Report is not { AssessedPacks: 0 }),
         Snapshot.AuditReport?.HasSpecification, Snapshot.ReadinessReport?.HasSpecification);
 
-    /// <summary>
-    /// The dashboard quality areas: (assessed?, score). Not-assessed areas lower coverage, never quality. Requirements Traceability is
-    /// explicit-reference evidence, not a quality score: absence of an explicit reference never lowers quality or marks the project at risk.
-    /// </summary>
-    private IReadOnlyList<(bool Assessed, double Score)> _qualityAreas =>
-    [
-        (Snapshot.ComplianceReport is not null, _complianceScore),
-        (_qaAssessed, _qaScore),
-        (Snapshot.DeliveryReport is not null, _deliveryScore),
-        (_securityReport?.Health.Score is not null, _securityReport?.Health.Score ?? 0),
-        (_perfReport?.ReadinessReport is { HasData: true, OverallScore: not null }, _perfReport?.ReadinessReport?.OverallScore ?? 0),
-    ];
-
-    /// <summary>Quality among assessed areas only (the denominator is the assessed count). There is no global score over unassessed areas.</summary>
-    private DashboardQualityAggregate.Result _quality => DashboardQualityAggregate.Compute(_qualityAreas);
-
-    private double _overallScore => _quality.Quality ?? 0;
-
-    private bool _hasAnyScore => _quality.Quality is not null;
-
-    private string _assessmentCoverageLabel => _quality.CoverageLabel;
-
-    private string _overallScoreLabel => "Quality status for assessed areas only: " + (_overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk");
 
     // ── Top risks ─────────────────────────────────────────────────────────────
 

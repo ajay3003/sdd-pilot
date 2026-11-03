@@ -1,0 +1,49 @@
+@* A multi-segment ring with a legend (hand SVG, like the Delivery Overview donut). The legend names every state and its count, so the chart
+   is never colour-only; each segment has a native tooltip; an empty chart says so instead of drawing a grey ring. *@
+<figure class="src" data-testid="@TestId" aria-labelledby="@($"{TestId}-title")">
+    <figcaption id="@($"{TestId}-title")" class="src-title">@Chart.Title</figcaption>
+    @if (Chart.Total == 0)
+    {
+        <p class="src-empty" data-testid="@($"{TestId}-empty")">@Chart.EmptyText</p>
+    }
+    else
+    {
+        <div class="src-body">
+            <svg class="src-ring" viewBox="0 0 100 100" role="img" aria-label="@($"{Chart.Title}: {Chart.Summary}")">
+                <circle cx="50" cy="50" r="40" class="src-track" />
+                @{ var offset = 0.0; }
+                @foreach (var slice in Chart.Slices.Where(s => s.Count > 0))
+                {
+                    var length = Circumference * slice.Count / Chart.Total;
+                    <circle cx="50" cy="50" r="40" class="src-seg is-@slice.Tone" data-key="@slice.Key"
+                            stroke-dasharray="@($"{F(length)} {F(Circumference - length)}")" stroke-dashoffset="@F(-offset)" transform="rotate(-90 50 50)">
+                        <title>@slice.Label: @slice.Count</title>
+                    </circle>
+                    offset += length;
+                }
+                <text x="50" y="49" class="src-total">@Chart.Total</text>
+                <text x="50" y="62" class="src-unit">@Unit</text>
+            </svg>
+            <ul class="src-legend">
+                @foreach (var slice in Chart.Slices)
+                {
+                    <li class="src-legend-item @(slice.Count == 0 ? "is-zero" : "")" data-testid="@($"{TestId}-slice")" data-key="@slice.Key" title="@slice.Description">
+                        <span class="src-swatch is-@slice.Tone" aria-hidden="true"></span>
+                        <span class="src-label">@slice.Label</span>
+                        <span class="src-count">@slice.Count</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+    @if (Chart.ExcludedNote is { } note) { <p class="src-note" data-testid="@($"{TestId}-excluded")">@note</p> }
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public SddChart Chart { get; set; } = default!;
+    [Parameter] public string TestId { get; set; } = "sdd-chart";
+    [Parameter] public string Unit { get; set; } = "items";
+
+    private const double Circumference = 2 * Math.PI * 40;
+    private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+}

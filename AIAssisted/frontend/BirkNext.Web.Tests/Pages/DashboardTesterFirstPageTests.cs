@@ -61,7 +61,8 @@ public class DashboardTesterFirstPageTests : BunitContext
         // collapsed detailed analysis (SDD Quality & Readiness layout).
         var markup = cut.Markup;
         markup.IndexOf("db-quality-summary", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-found", StringComparison.Ordinal));
-        markup.IndexOf("db-review-readiness", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-next-step", StringComparison.Ordinal));
+        markup.IndexOf("db-workspace-panel", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-next-step", StringComparison.Ordinal), "the recommended next action sits right under the hero");
+        markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-review-readiness", StringComparison.Ordinal));
         markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-detailed-analysis", StringComparison.Ordinal));
         cut.FindAll("[data-testid=db-kpi]").Select(k => k.GetAttribute("data-key")).Should().Equal("evidence", "specification", "traceability", "readiness", "qa", "attention");
         cut.Find("[data-testid=db-kpi][data-key=specification] [data-testid=db-kpi-value]").TextContent.Should().Be("Not assessed", "nothing was reviewed after the import");

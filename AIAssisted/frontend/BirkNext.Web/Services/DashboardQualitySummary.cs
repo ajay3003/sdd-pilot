@@ -24,7 +24,7 @@ public static class DashboardQualitySummary
         var open = attention.Count(a => !a.Informational);
         return
         [
-            new("evidence", "SDD evidence", roles.Count == 0 ? "No project" : $"{available} of {roles.Count} document types",
+            new("evidence", "SDD evidence", roles.Count == 0 ? "No project" : $"{available} of {roles.Count} core document types",
                 roles.Count == 0 ? "Import a project to see its evidence." : $"{(partial > 0 ? $"{partial} partial · " : "")}{(missingRequired > 0 ? $"{missingRequired} required missing · " : "")}presence only, not reviewed",
                 ProjectEvidenceHref, roles.Count == 0 ? DashboardStatus.NeedsSetup : missingRequired > 0 ? DashboardStatus.NeedsSetup : partial > 0 ? DashboardStatus.Partial : DashboardStatus.Available),
             r.DocumentReview == AnalysisSessionStatus.Completed
