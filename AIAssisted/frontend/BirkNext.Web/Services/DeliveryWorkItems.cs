@@ -30,16 +30,7 @@ public static class DeliveryWorkItems
     public static string GroupId(string featureKey, DeliveryTaskRelationship kind, string key) => $"g:{featureKey}|{kind}|{key}";
 
     /// <summary>The badge name of a relationship — the same words in the legend, the tree, the list and the detail panel.</summary>
-    public static string RelationshipLabel(DeliveryTaskRelationship kind) => kind switch
-    {
-        DeliveryTaskRelationship.ExplicitStory => "User Story",
-        DeliveryTaskRelationship.StoryPhase => "Story phase",
-        DeliveryTaskRelationship.FunctionalGroup => "Functional group",
-        DeliveryTaskRelationship.ScenarioGroup => "Scenario group",
-        DeliveryTaskRelationship.SharedFoundational => "Shared & Foundational",
-        DeliveryTaskRelationship.RemovedStoryReference => "Removed story reference",
-        _ => "Unresolved reference",
-    };
+    public static string RelationshipLabel(DeliveryTaskRelationship kind) => BirkNext.Interpretation.WorkItemInterpreter.Label(kind);
 
     public static string ConfidenceLabel(DeliveryMappingConfidence confidence) => confidence switch
     {

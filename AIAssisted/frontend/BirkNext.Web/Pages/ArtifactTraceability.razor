@@ -1073,6 +1073,12 @@
                 <span class="at-rule-id">@gap.ItemId</span>
                 <span class="at-obs-category" data-testid="at-observation-category">@TraceabilityLabels.Category(gap)</span>
                 <span class="at-status-badge at-status-@TraceabilityLabels.Tone(gap)" data-testid="at-observation-state">@TraceabilityLabels.Significance(gap)</span>
+                @if (gap.WorkItem is { } workItem)
+                {
+                    @* The work-item classification is a type, not a status: the same words and rule Delivery shows. *@
+                    <MetaBadge Kind="BadgeKind.Type" Text="@BirkNext.Interpretation.WorkItemInterpreter.Label(workItem.Relationship)"
+                               Title="@($"{BirkNext.Interpretation.WorkItemInterpreter.Explanation(workItem.Relationship)} Rule {workItem.RuleId}.")" TestId="at-observation-work-item" />
+                }
             </div>
             @if (!string.IsNullOrEmpty(gap.ItemTitle))
             {

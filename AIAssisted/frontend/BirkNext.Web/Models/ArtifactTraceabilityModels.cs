@@ -193,6 +193,8 @@ public sealed class TraceabilityGap
     public TraceabilityObservationCategory? Category { get; init; }
     /// <summary>Provenance of a policy-required trace ("Required by: …").</summary>
     public string? RequiredBy    { get; init; }
+    /// <summary>A task gap's work-item classification from the shared interpretation engine (the same rule Delivery applies), with its rule id.</summary>
+    public BirkNext.Interpretation.WorkItemInterpretation? WorkItem { get; init; }
 }
 
 // ── Matrix ───────────────────────────────────────────────────────────────────

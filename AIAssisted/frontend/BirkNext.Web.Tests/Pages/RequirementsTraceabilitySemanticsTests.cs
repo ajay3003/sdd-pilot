@@ -3,6 +3,8 @@ using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using BirkNext.Web.Services.Explorers;
 using BirkNext.Web.Tests.Services;
+using BirkNext.DeliveryReporting;
+using BirkNext.Interpretation;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -167,6 +169,28 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
         TraceabilityLabels.Category(ambiguous).Should().Be("Ambiguous reference");
         TraceabilityLabels.Significance(ambiguous).Should().Be("Review required");
         TraceabilityLabels.Tone(ambiguous).Should().Be("warning");
+    }
+
+    [Fact]
+    public void Task_story_references_use_the_shared_work_item_interpretation()
+    {
+        const string spec = "# Feature Specification: Access\n\n## User Scenarios\n\n### User Story 1 - Child search (Priority: P1)\n\nSearch.\n\n" +
+            "### User Story 2 - Export (Removed)\n\nGone.\n\n## Requirements\n\n- **FR-001**: The system MUST support child search.\n";
+        const string tasks = "# Tasks\n\n## Phase 1: Setup\n\n- [ ] T001 Create solution\n\n## Phase 2: User Story 1\n\n- [ ] T002 [US1] Implement search for FR-001\n" +
+            "- [ ] T003 [US2] Implement export\n- [ ] T004 [US6] Implement audit\n";
+        var report = Analyze(spec: spec, tasksText: tasks);
+
+        var setup = report.Gaps.Single(g => g.ItemId == "T001" && g.Status == TraceabilityStatus.Orphaned);
+        setup.WorkItem!.Relationship.Should().Be(DeliveryTaskRelationship.SharedFoundational);
+        setup.Description.Should().Contain("shared & foundational work");
+        TraceabilityLabels.Significance(setup).Should().Be("Informational");
+
+        var removed = report.Gaps.Single(g => g.ItemId == "T003" && g.Category == TraceabilityObservationCategory.BrokenReference);
+        removed.WorkItem!.RuleId.Should().Be(WorkItemInterpreter.RemovedRule);
+        var unresolved = report.Gaps.Single(g => g.ItemId == "T004" && g.Category == TraceabilityObservationCategory.BrokenReference);
+        unresolved.WorkItem!.RuleId.Should().Be(WorkItemInterpreter.UnresolvedRule);
+        unresolved.Description.Should().Contain("never re-pointed");
+        report.Gaps.Should().NotContain(g => g.ItemId == "T002" && g.WorkItem != null && g.WorkItem.NeedsReview);
     }
 
     [Fact]

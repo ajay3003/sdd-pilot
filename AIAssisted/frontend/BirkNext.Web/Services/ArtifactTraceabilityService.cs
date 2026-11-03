@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BirkNext.Interpretation;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -61,8 +62,11 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             : new TraceabilityCoverageStats();
 
         // Gaps (sorted by severity desc)
-        var gaps = BuildGaps(constToSpec, specToPlan, planToTask, orphanTasks, policy)
+        // Work-item interpretation comes from the shared engine (Delivery applies the same rules), never a second matcher here.
+        var workItems = spec is not null && tasks is not null ? InterpretTasks(allTaskNodes, spec) : [];
+        var gaps = BuildGaps(constToSpec, specToPlan, planToTask, orphanTasks, policy, workItems)
             .Concat(spec is not null && tasks is not null ? BuildReferenceIssues(allTaskNodes, reviewContext, spec) : [])
+            .Concat(BuildStoryReferenceIssues(allTaskNodes, workItems))
             .GroupBy(g => (g.GapIn, g.ItemId, g.Status, TraceabilityLabels.CategoryOf(g), g.Description))
             .Select(group => group.First())
             .OrderBy(g => g.Severity)
@@ -363,7 +367,8 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         List<ChainCoverage> specToPlan,
         List<ChainCoverage> planToTask,
         List<TaskNode> orphanTasks,
-        TraceabilityPolicy policy)
+        TraceabilityPolicy policy,
+        IReadOnlyDictionary<TaskNode, WorkItemInterpretation> workItems)
     {
         var gaps = new List<TraceabilityGap>();
 
@@ -435,7 +440,10 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = t.TaskId ?? t.Title,
                 ItemTitle   = t.ShortTitle ?? t.Title,
                 Status      = TraceabilityStatus.Orphaned,
-                Description = $"Task {t.TaskId ?? t.Title} has no explicit Requirement/Success Criterion reference. Use Task Alignment Review to determine whether a direct requirement link is expected.",
+                WorkItem    = workItems.GetValueOrDefault(t),
+                Description = workItems.GetValueOrDefault(t) is { Relationship: BirkNext.DeliveryReporting.DeliveryTaskRelationship.SharedFoundational }
+                    ? $"Task {t.TaskId ?? t.Title} is shared & foundational work (setup, foundational, polish) not owned by one story; no direct Requirement/Success Criterion reference is expected unless a policy requires it (Task Alignment Review can confirm)."
+                    : $"Task {t.TaskId ?? t.Title} has no explicit Requirement/Success Criterion reference. Use Task Alignment Review to determine whether a direct requirement link is expected.",
                 Severity    = policy.RequireTaskReferences ? GapSeverity.Medium : GapSeverity.Informational,
                 PolicyRequired = policy.RequireTaskReferences,
                 Category    = Category(policy.RequireTaskReferences),
@@ -489,6 +497,24 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         }
         return issues;
     }
+
+    /// <summary>Each task's work-item classification against the selected Specification's stories (shared <see cref="WorkItemInterpreter"/>).</summary>
+    private static Dictionary<TaskNode, WorkItemInterpretation> InterpretTasks(List<TaskNode> tasks, SpecTree spec)
+    {
+        var storyNodes = FlattenSpec(spec.Roots).Where(n => n.NodeType == SpecNodeType.UserStory).ToList();
+        // Removed markers are read from the story headings themselves (SpecTree keeps no raw Markdown).
+        var feature = SpecStoryHeadings.Feature(storyNodes.Select(n => (n.Title, n.SpecItemId)), string.Join("\n", storyNodes.Select(n => "### " + n.Title)));
+        return tasks.Where(t => t.TaskId is not null).ToDictionary(t => t, t => WorkItemInterpreter.Classify(new InterpretedTask(t.UserStoryTag, t.PhaseTitle), feature));
+    }
+
+    /// <summary>A story reference a person must resolve: it names a story the Specification marks removed, or one it does not define. Never re-pointed.</summary>
+    private static IEnumerable<TraceabilityGap> BuildStoryReferenceIssues(List<TaskNode> tasks, IReadOnlyDictionary<TaskNode, WorkItemInterpretation> workItems) =>
+        tasks.Where(t => workItems.TryGetValue(t, out var w) && w.NeedsReview).Select(t => new TraceabilityGap
+        {
+            GapIn = ArtifactType.Task, ItemId = t.TaskId ?? t.Title, ItemTitle = t.ShortTitle ?? t.Title, Status = TraceabilityStatus.Covered,
+            Description = workItems[t].Note, WorkItem = workItems[t],
+            Severity = GapSeverity.Medium, Category = TraceabilityObservationCategory.BrokenReference,
+        });
 
     // ── Matrix ────────────────────────────────────────────────────────────────
 
