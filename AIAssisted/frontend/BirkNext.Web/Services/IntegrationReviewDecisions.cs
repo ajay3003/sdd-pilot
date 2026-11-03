@@ -97,7 +97,7 @@ public static class IntegrationReviewDecisions
         var decision = limitations.Count == 0 ? ReviewDecision.Ready : ReviewDecision.ReadyWithLimitations;
         var title = decision == ReviewDecision.Ready ? "Ready" : !runtime ? StaticTitle : "Ready with limitations";
         var discovered = r.Subjects.Count(s => s.Origin == IntegrationRecordOrigin.Discovered);
-        var detail = discovered == 0 ? r.Headline : $"{r.Headline} {discovered} of {r.Subjects.Count} integration{(r.Subjects.Count == 1 ? " is" : "s are")} discovered from evidence — no catalog entry needed.";
+        var detail = discovered == 0 ? r.Headline : $"{r.Headline.TrimEnd('.')}. {discovered} of {r.Subjects.Count} integration{(r.Subjects.Count == 1 ? " is" : "s are")} discovered from evidence — no catalog entry needed.";
         return new(decision, title, detail, r.Subjects.Count, contract, runtime ? "Verified (runtime evidence available)" : "Not verified", active, limitations, []);
     }
 

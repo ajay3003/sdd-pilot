@@ -564,6 +564,8 @@ public sealed record IntegrationDomainReadinessRow(IntegrationReviewDomain Domai
 public sealed record IntegrationSystemScope
 {
     public string SystemName { get; init; } = "";
+    /// <summary>Discovered from evidence (no catalog entry): its consumer mappings come from Integration Topology, not from a person or an audited source.</summary>
+    public bool Discovered { get; init; }
     public string? PlatformId { get; init; }
     public string? PlatformName { get; init; }
     public IntegrationKind Kind { get; init; }

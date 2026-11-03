@@ -49,6 +49,8 @@ public sealed class IntegrationReviewEvidenceTests
         candidate.Relationship.Should().Be("Resolved");
         var effective = set.Effective(Empty);
         effective.Integrations.Should().ContainSingle(i => i.Id == candidate.IntegrationId && i.Enabled && i.Origin == IntegrationRecordOrigin.Discovered && i.Producer == "Portal");
+        effective.Integrations.Single().Consumer.MappingState.Should().Be(ConsumerMappingState.Confirmed, "a Resolved relationship establishes the consumer");
+        effective.Integrations.Single().Consumer.MappingEvidence.Should().Be("Integration Topology · Resolved");
         // Deterministic: the same evidence gives the same id.
         IntegrationReviewEvidence.Compose(Empty, topology, null, [], null, null).Candidates.Single().IntegrationId.Should().Be(candidate.IntegrationId);
     }
@@ -67,6 +69,23 @@ public sealed class IntegrationReviewEvidenceTests
         candidate.Kind.Should().Be(IntegrationKind.EventHub);
         candidate.Relationship.Should().Be("Strongly supported", "the chain is as strong as its weakest hop");
         candidate.State.Should().Be(IntegrationCandidateState.Reviewed);
+        IntegrationReviewEvidence.Compose(Empty, topology, null, [], null, null).Discovered.Single().Consumer.MappingState
+            .Should().Be(ConsumerMappingState.Suggested, "Strongly supported suggests the consumer; it does not establish it");
+    }
+
+    [Fact]
+    public void Flows_between_the_same_two_ends_are_told_apart_by_their_topic()
+    {
+        var topology = Topology([Component("demo", "Demo"), Component("mu", "MU"), Component("q1", "ping_pong", TopologyComponentKind.Resource), Component("q2", "tiltak", TopologyComponentKind.Resource)],
+            [Connection("demo", "q1", TopologyRelationshipState.Resolved, TopologyInterfaceType.Messaging, "Service Bus"), Connection("q1", "mu", TopologyRelationshipState.Resolved, TopologyInterfaceType.Messaging, "Service Bus"),
+             Connection("demo", "q2", TopologyRelationshipState.Resolved, TopologyInterfaceType.Messaging, "Service Bus"), Connection("q2", "mu", TopologyRelationshipState.Resolved, TopologyInterfaceType.Messaging, "Service Bus")]);
+
+        var set = IntegrationReviewEvidence.Compose(Empty, topology, null, [], null, null);
+        set.Candidates.Select(c => c.DisplayName).Should().Equal(["Demo → MU · ping_pong", "Demo → MU · tiltak"]);
+        var system = IntegrationReviewEngine.Systems(Empty, set.Discovered).Should().ContainSingle("the topics of one producer → consumer pair are one system").Subject;
+        system.SystemName.Should().Be("Demo → MU");
+        system.Discovered.Should().BeTrue();
+        system.ConsumersConfirmed.Should().Be(2);
     }
 
     [Fact]
@@ -106,6 +125,30 @@ public sealed class IntegrationReviewEvidenceTests
     }
 
     [Fact]
+    public void A_source_flow_naming_a_catalog_end_by_its_abbreviation_supports_that_entry_instead_of_duplicating_it()
+    {
+        var catalog = Empty with
+        {
+            Integrations =
+            [
+                new IntegrationDefinition { Id = "cat-1", EnvironmentId = Env, DisplayName = "Altinn report intake", Kind = IntegrationKind.HttpApi, Producer = "Altinn",
+                    Consumer = new IntegrationConsumer { DisplayName = "Meldingsutveksleren (MU)" } },
+            ],
+        };
+        var topology = Topology([Component("altinn", "Altinn", TopologyComponentKind.External), Component("mufull", "Meldingsutveksleren (MU)"), Component("mu", "MU")],
+            [Connection("altinn", "mufull", TopologyRelationshipState.Resolved, TopologyInterfaceType.ExternalApplication, catalogId: "cat-1"),
+             Connection("altinn", "mu", TopologyRelationshipState.Resolved, TopologyInterfaceType.ExternalApplication),
+             Connection("mu", "altinn", TopologyRelationshipState.StronglySupported, TopologyInterfaceType.ExternalApplication)]);
+
+        var set = IntegrationReviewEvidence.Compose(catalog, topology, null, [], null, null);
+
+        set.Candidates.Should().HaveCount(2, "Altinn → MU is the catalog entry; the reverse direction is its own integration");
+        set.Candidates.Single(c => c.IntegrationId == "cat-1").Sources.Should().Equal([IntegrationEvidenceFamily.IntegrationCatalog, IntegrationEvidenceFamily.IntegrationTopology]);
+        set.Candidates.Should().ContainSingle(c => c.DisplayName == "MU → Altinn" && c.State == IntegrationCandidateState.Reviewed);
+        set.Families.Single(f => f.Family == IntegrationEvidenceFamily.IntegrationTopology).Detail.Should().Be("3 connections · 1 discovered integration reviewed");
+    }
+
+    [Fact]
     public void A_registered_connected_system_is_reviewed_or_joins_the_flow_that_reaches_it()
     {
         var alone = IntegrationReviewEvidence.Compose(Empty, Topology([], []), null, [Altinn()], null, "Skolenærvær DEV");
@@ -114,6 +157,7 @@ public sealed class IntegrationReviewEvidenceTests
         system.DisplayName.Should().Be("Skolenærvær DEV → Altinn – buf/skolenaervaer");
         system.Kind.Should().Be(IntegrationKind.HttpApi);
         system.Sources.Should().Equal([IntegrationEvidenceFamily.ConnectedSystems]);
+        alone.Discovered.Single().Consumer.MappingState.Should().Be(ConsumerMappingState.Confirmed, "the system was registered for this environment");
 
         var topology = Topology([Component("portal", "Portal"), Component("altinn", "Altinn 3", TopologyComponentKind.External)],
             [Connection("portal", "altinn", TopologyRelationshipState.Resolved, TopologyInterfaceType.ExternalApplication)]);

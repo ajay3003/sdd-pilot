@@ -240,8 +240,12 @@ public sealed class IntegrationReviewEngine(
             reasons.Add($"Runtime evidence sources: configured ({sourcesConfigured} of {sourcesTotal}). Azure runtime: not configured — {AzureDisabledReason} This is not an integration misconfiguration.");
         foreach (var system in systems.Where(s => s.Topics > 1 || s.Kind == IntegrationKind.EventHub))
         {
-            if (system.ConsumersConfirmed > 0) reasons.Add($"{system.ConsumersConfirmed} confirmed consumer mapping{(system.ConsumersConfirmed == 1 ? "" : "s")} in {system.SystemName}.");
-            if (system.ConsumersSuggested > 0) reasons.Add($"{system.ConsumersSuggested} consumer mapping{(system.ConsumersSuggested == 1 ? "" : "s")} suggested by the audited source and not confirmed for this environment.");
+            if (system.ConsumersConfirmed > 0) reasons.Add(system.Discovered
+                ? $"{system.SystemName}: {system.ConsumersConfirmed} consumer mapping{(system.ConsumersConfirmed == 1 ? "" : "s")} established by Integration Topology."
+                : $"{system.ConsumersConfirmed} confirmed consumer mapping{(system.ConsumersConfirmed == 1 ? "" : "s")} in {system.SystemName}.");
+            if (system.ConsumersSuggested > 0) reasons.Add(system.Discovered
+                ? $"{system.SystemName}: {system.ConsumersSuggested} consumer mapping{(system.ConsumersSuggested == 1 ? "" : "s")} suggested by Integration Topology (Strongly supported) — not established for this environment."
+                : $"{system.ConsumersSuggested} consumer mapping{(system.ConsumersSuggested == 1 ? "" : "s")} suggested by the audited source and not confirmed for this environment.");
             if (system.ConsumersNeedingConfirmation > 0) reasons.Add($"{system.ConsumersNeedingConfirmation} consumer mapping{(system.ConsumersNeedingConfirmation == 1 ? "" : "s")} need confirmation.");
             if (system.ConsumerGroupsUnknown > 0) reasons.Add($"Consumer group not configured for {system.ConsumerGroupsUnknown} topic{(system.ConsumerGroupsUnknown == 1 ? "" : "s")} — only checkpoint/lag checks are affected.");
             if (system.ConsumerGroupsAssumed > 0) reasons.Add($"Consumer group {system.ExpectedConsumerGroup} is a configured assumption for {system.ConsumerGroupsAssumed} topic{(system.ConsumerGroupsAssumed == 1 ? "" : "s")} — checkpoints are read for it, but it needs confirmation and yields no verdict.");
@@ -268,7 +272,7 @@ public sealed class IntegrationReviewEngine(
                 var kind = g.First().Kind;
                 return new IntegrationSystemScope
                 {
-                    SystemName = g.First().SystemName ?? g.First().DisplayName, PlatformId = platform?.Id, PlatformName = platform?.Name, Kind = kind,
+                    SystemName = g.First().SystemName ?? g.First().DisplayName, Discovered = g.First().Origin == IntegrationRecordOrigin.Discovered, PlatformId = platform?.Id, PlatformName = platform?.Name, Kind = kind,
                     Topics = g.Count(), Enabled = g.Count(i => i.Enabled),
                     ConsumersConfirmed = g.Count(i => i.Consumer.MappingState == ConsumerMappingState.Confirmed),
                     ConsumersSuggested = g.Count(i => i.Consumer.MappingState == ConsumerMappingState.Suggested),

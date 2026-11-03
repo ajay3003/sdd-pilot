@@ -113,13 +113,28 @@ public static class IntegrationReviewEvidence
             else if (fromResource && !toResource && !connections.Any(i => i.ConsumerComponentId == c.ProducerComponentId && !resources.Contains(i.ProducerComponentId)))
                 flows.Add(("", Name(c.ConsumerComponentId), Name(c.ProducerComponentId), c.Type, c.Protocol, Weaker(c.Relationship, TopologyRelationshipState.Candidate)));
         }
-        foreach (var f in flows.DistinctBy(f => (f.Producer, f.Consumer, f.Address)).OrderBy(f => f.Producer, StringComparer.Ordinal).ThenBy(f => f.Consumer, StringComparer.Ordinal))
+        var catalogCount = candidates.Count;
+        var distinct = flows.DistinctBy(f => (f.Producer, f.Consumer, f.Address)).ToList();
+        // Several flows between the same two ends (one per topic or queue) are told apart by their address.
+        var shared = distinct.GroupBy(f => (f.Producer, f.Consumer)).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var mapping = new Dictionary<string, (ConsumerMappingState State, string Evidence)>(StringComparer.Ordinal);
+        foreach (var f in distinct.OrderBy(f => f.Producer, StringComparer.Ordinal).ThenBy(f => f.Consumer, StringComparer.Ordinal).ThenBy(f => f.Address, StringComparer.Ordinal))
         {
-            if (candidates.Count >= MaxCandidates) break;
             var kind = KindOf(f.Type, f.Protocol);
+            // The same flow under another name for one of its ends ("MU" from source vs "Meldingsutveksleren (MU)" in the catalog) is the
+            // catalog integration, seen again: it supports that entry (or stays out with a disabled one) instead of being reviewed twice.
+            var stated = candidates.FindIndex(0, catalogCount, c => c.Kind == kind && SameEnd(c.Producer, f.Producer) && SameEnd(c.Consumer, f.Consumer));
+            if (stated >= 0)
+            {
+                if (!candidates[stated].Sources.Contains(IntegrationEvidenceFamily.IntegrationTopology))
+                    candidates[stated] = candidates[stated] with { Sources = [.. candidates[stated].Sources, IntegrationEvidenceFamily.IntegrationTopology] };
+                continue;
+            }
+            if (candidates.Count >= MaxCandidates) break;
             var bothEnds = f.Producer.Length > 0 && f.Consumer.Length > 0;
             var reviewed = bothEnds && Established.Contains(f.Relationship);
-            var display = $"{(f.Producer.Length > 0 ? f.Producer : "Unknown producer")} → {(f.Consumer.Length > 0 ? f.Consumer : "Unknown consumer")}";
+            var display = $"{(f.Producer.Length > 0 ? f.Producer : "Unknown producer")} → {(f.Consumer.Length > 0 ? f.Consumer : "Unknown consumer")}"
+                + (shared.Contains((f.Producer, f.Consumer)) && !string.IsNullOrWhiteSpace(f.Address) ? $" · {f.Address}" : "");
             var candidate = new IntegrationReviewCandidate(DiscoveredPrefix + Slug($"{f.Producer}|{f.Consumer}|{f.Address}"), display, kind, IntegrationRecordOrigin.Discovered,
                 reviewed ? IntegrationCandidateState.Reviewed : IntegrationCandidateState.NeedsConfirmation)
             {
@@ -130,6 +145,10 @@ public static class IntegrationReviewEvidence
                     : $"Discovered in Integration Topology ({RelationshipLabel(f.Relationship)}) — the evidence does not establish the producer/consumer yet; not reviewed",
             };
             candidates.Add(candidate);
+            // The consumer of a reviewed flow is what the topology evidence established: Resolved/Observed establish its identity, Strongly
+            // supported only suggests it. Never a person's confirmation — the source says where it came from.
+            if (reviewed) mapping[candidate.IntegrationId] = (f.Relationship >= TopologyRelationshipState.Resolved ? ConsumerMappingState.Confirmed : ConsumerMappingState.Suggested,
+                $"Integration Topology · {RelationshipLabel(f.Relationship)}");
         }
 
         // ── Connected Systems: a registered system is an explicit statement that this environment integrates with it ──────────────────────
@@ -149,14 +168,20 @@ public static class IntegrationReviewEvidence
                 Producer = caller, Consumer = system.Name, Sources = [IntegrationEvidenceFamily.ConnectedSystems],
                 Reason = "Registered under Connected Systems — reviewed without a catalog entry",
             });
+            mapping[candidates[^1].IntegrationId] = (ConsumerMappingState.Confirmed, "Connected Systems · registered for this environment");
         }
 
         foreach (var c in candidates.Where(c => c.Origin == IntegrationRecordOrigin.Discovered && c.State == IntegrationCandidateState.Reviewed))
             discovered.Add(new IntegrationDefinition
             {
-                Id = c.IntegrationId, EnvironmentId = catalog.EnvironmentId, DisplayName = c.DisplayName, Kind = c.Kind, Enabled = true, SystemName = "Discovered from evidence",
+                Id = c.IntegrationId, EnvironmentId = catalog.EnvironmentId, DisplayName = c.DisplayName, Kind = c.Kind, Enabled = true,
+                // One system per producer → consumer pair (its topics are that system's topics), never one "discovered" bucket.
+                SystemName = $"{c.Producer ?? "Unknown producer"} → {c.Consumer ?? "Unknown consumer"}",
                 SourceSystem = c.Producer, DestinationSystem = c.Consumer, Producer = c.Producer, EndpointOrTopic = c.EndpointOrTopic,
-                Consumer = new IntegrationConsumer { DisplayName = c.Consumer ?? "" }, Origin = IntegrationRecordOrigin.Discovered,
+                Consumer = mapping.TryGetValue(c.IntegrationId, out var m)
+                    ? new IntegrationConsumer { DisplayName = c.Consumer ?? "", MappingState = m.State, MappingSource = "Discovered from evidence", MappingEvidence = m.Evidence }
+                    : new IntegrationConsumer { DisplayName = c.Consumer ?? "" },
+                Origin = IntegrationRecordOrigin.Discovered,
             });
 
         var families = new List<IntegrationEvidenceFamilyStatus>
@@ -168,8 +193,7 @@ public static class IntegrationReviewEvidence
             topologyError is not null ? new(IntegrationEvidenceFamily.IntegrationTopology, IntegrationEvidenceFamilyState.Failed, 0, topologyError)
                 : topology is null ? new(IntegrationEvidenceFamily.IntegrationTopology, IntegrationEvidenceFamilyState.NotConfigured, 0, "Integration Topology is not available in this instance")
                 : connections.Count == 0 ? new(IntegrationEvidenceFamily.IntegrationTopology, IntegrationEvidenceFamilyState.None, 0, "No connection is established by the current sources") { CapturedAt = topology.GeneratedAt }
-                : new(IntegrationEvidenceFamily.IntegrationTopology, IntegrationEvidenceFamilyState.Available, connections.Count,
-                    $"{connections.Count} connection{(connections.Count == 1 ? "" : "s")} · {connections.Count(c => Established.Contains(c.Relationship))} established") { CapturedAt = topology.GeneratedAt },
+                : new(IntegrationEvidenceFamily.IntegrationTopology, IntegrationEvidenceFamilyState.Available, connections.Count, TopologyDetail(connections.Count, candidates)) { CapturedAt = topology.GeneratedAt },
             connectedError is not null ? new(IntegrationEvidenceFamily.ConnectedSystems, IntegrationEvidenceFamilyState.Failed, 0, connectedError)
                 : connectedSystems is null ? new(IntegrationEvidenceFamily.ConnectedSystems, IntegrationEvidenceFamilyState.NotConfigured, 0, "Connected Systems are not available in this instance")
                 : connectedSystems.Count(s => s.Enabled) == 0 ? new(IntegrationEvidenceFamily.ConnectedSystems, IntegrationEvidenceFamilyState.None, 0, "No Connected System is registered")
@@ -177,6 +201,35 @@ public static class IntegrationReviewEvidence
                     string.Join(", ", connectedSystems.Where(s => s.Enabled).Select(s => s.Name))),
         };
         return new(discovered, candidates, families);
+    }
+
+    /// <summary>What the topology contributed, in integrations (a connection count alone reads as "all established" while a resource hop
+    /// with one unknown side still needs confirmation).</summary>
+    private static string TopologyDetail(int connections, IReadOnlyList<IntegrationReviewCandidate> candidates)
+    {
+        var discovered = candidates.Where(c => c.Origin == IntegrationRecordOrigin.Discovered && c.Sources.Contains(IntegrationEvidenceFamily.IntegrationTopology)).ToList();
+        var reviewed = discovered.Count(c => c.State == IntegrationCandidateState.Reviewed);
+        var confirm = discovered.Count - reviewed;
+        return $"{connections} connection{(connections == 1 ? "" : "s")} · {reviewed} discovered integration{(reviewed == 1 ? "" : "s")} reviewed"
+            + (confirm > 0 ? $" · {confirm} need{(confirm == 1 ? "s" : "")} confirmation" : "");
+    }
+
+    /// <summary>Two names for the same end: equal, or one is the abbreviation the other states in brackets ("MU" ↔ "Meldingsutveksleren (MU)").</summary>
+    private static bool SameEnd(string? a, string? b)
+    {
+        static IEnumerable<string> Names(string name)
+        {
+            yield return name.Trim();
+            var open = name.LastIndexOf('(');
+            var close = name.LastIndexOf(')');
+            if (open > 0 && close > open + 1)
+            {
+                yield return name[(open + 1)..close].Trim();
+                yield return name[..open].Trim();
+            }
+        }
+        return !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
+            && Names(a).Any(x => x.Length > 0 && Names(b).Any(y => string.Equals(x, y, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>A candidate the Connected System already describes: one of its ends is the system (by name or by provider name).</summary>

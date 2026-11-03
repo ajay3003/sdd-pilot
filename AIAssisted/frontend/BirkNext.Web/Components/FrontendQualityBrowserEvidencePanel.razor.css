@@ -11,6 +11,7 @@
 .fbe-badge-live { background: var(--clr-success-bg-light, #e7f6ec); border-color: var(--clr-success, #1a7f37); }
 .fbe-summary { margin: 0.25rem 0; font-size: 0.875rem; }
 .fbe-scope { border: 1px solid var(--clr-border, #d0d5dd); border-radius: 6px; padding: 0.4rem 0.75rem 0.5rem; margin: 0.5rem 0; display: grid; gap: 0.25rem; font-size: 0.875rem; }
-.fbe-scope legend { font-weight: 600; padding: 0 0.25rem; }
+/* Bootstrap floats legends full width at ~1.5rem; here it is a field label, smaller than the card heading. */
+.fbe-scope legend { float: none; width: auto; margin: 0; font-size: inherit; font-weight: 600; padding: 0 0.25rem; }
 .fbe-scope label { display: flex; gap: 0.5rem; align-items: baseline; overflow-wrap: anywhere; }
 .fbe-detail > summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; }
