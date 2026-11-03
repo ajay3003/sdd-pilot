@@ -250,7 +250,8 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.ApplicationSource).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Documentation).GetAttribute("data-state").Should().Be("Ready");
         rows.Single(r => r.GetAttribute("data-role") == ProjectEvidenceRoles.Infrastructure).GetAttribute("data-state").Should().Be("Ready");
-        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().Be("Evidence summary", "the checklist and the table show the same associations");
+        cut.Find("[data-testid=tep-advanced-title]").TextContent.Should().StartWith("Required evidence", "the checklist and the role cards show the same associations");
+        cut.Find("[data-testid=tep-decision]").GetAttribute("data-decision").Should().Be("Ready");
         _js.Json.Should().Contain("\"importId\":\"b\"").And.NotContain("FR-001", "only references are stored");
         _repository.SddLifecycle.CurrentProjectImportId.Should().BeNull("configuring the environment's project never changes the current project");
         _repository.SddLifecycle.ProjectImports.Should().HaveCount(3, "no package is created or copied");
@@ -363,7 +364,8 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=tep-problems]"));
         cut.Find("[data-testid=tep-problems]").TextContent.Should().Contain("Needs attention").And.Contain("1 required role missing");
         cut.Find("[data-testid=tep-dimension][data-key=required]").TextContent.Should().Contain("Needs attention").And.Contain("1 / 2 bound · 1 ready");
-        cut.Find("[data-testid=tep-role][data-role=application-source] [data-testid=tep-binding-origin]").TextContent.Should().Be("Bound from Project setup");
+        var origin = cut.Find("[data-testid=tep-role][data-role=application-source] [data-testid=tep-binding-origin]");
+        (origin.TextContent.StartsWith("Confirmed", StringComparison.Ordinal), origin.GetAttribute("data-origin")).Should().Be((true, "Bound from Project setup"), "an explicit badge; the full origin stays available");
 
         cut.Find("[data-testid=tep-role][data-role=infrastructure] [data-testid=tep-role-action]").Click();
         for (var i = 0; i < 3; i++) cut.FindAll("[data-testid=tep-bind]")[0].Click();
@@ -371,7 +373,7 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         var infra = cut.Find("[data-testid=tep-role][data-role=infrastructure]");
         infra.QuerySelectorAll("[data-testid=tep-bound-source]").Length.Should().Be(3, "two visible, the rest behind View all");
         infra.QuerySelector("[data-testid=tep-more-sources] summary")!.TextContent.Should().Contain("+1 more").And.Contain("View all");
-        infra.QuerySelectorAll("[data-testid=tep-binding-origin]").Select(o => o.TextContent).Should().OnlyContain(o => o == "Confirmed by you");
+        infra.QuerySelectorAll("[data-testid=tep-binding-origin]").Select(o => o.GetAttribute("data-origin")).Should().OnlyContain(o => o == "Confirmed by you");
         infra.QuerySelectorAll("[data-testid=tep-role-capability]").Select(b => b.TextContent).Should().Equal("Infrastructure");
 
         // Remove one supporting source: only that reference goes.

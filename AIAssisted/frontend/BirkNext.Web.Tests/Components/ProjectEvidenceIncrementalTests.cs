@@ -199,18 +199,21 @@ public sealed class ProjectEvidenceIncrementalTests : BunitContext
         TargetApplications.Set(Profile("dev"), new TargetApplicationIdentity { Name = "M2LB", ImportId = "a", SetAt = DateTimeOffset.UtcNow }, DateTimeOffset.UtcNow);
         var view = await _service.GetAsync("dev");
         var cut = Render<TargetEnvironmentProjectPane>(p => p.Add(x => x.EnvironmentId, "dev"));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-readiness]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-decision]"));
 
         var required = view.Rows.Where(r => r.IsRequired).ToList();
-        cut.Find("[data-testid=tep-readiness-ready] strong").TextContent.Should().Be(required.Count(r => r.IsReady).ToString());
-        cut.Find("[data-testid=tep-readiness-partial] strong").TextContent.Should().Be(required.Count(r => r.State == EvidenceRoleState.Partial).ToString());
-        cut.Find("[data-testid=tep-readiness-missing] strong").TextContent.Should().Be(required.Count(r => !r.IsResolved).ToString());
+        cut.Find("[data-testid=tep-binding-summary]").TextContent.Should().Be($"{required.Count(r => r.IsResolved)} / {required.Count} bound");
+        cut.Find("[data-testid=tep-card][data-key=required]").TextContent.Should().Contain($"{required.Count(r => r.IsReady)} ready");
         cut.FindAll("[data-testid=tep-role]").Count(r => r.GetAttribute("data-state") is "Ready").Should().Be(view.Rows.Count(r => r.IsReady));
 
-        // One headline from the same counts; bound is never shown as ready; diagnostics collapsed; requirements before sources before advanced.
-        cut.Find("[data-testid=tep-readiness-headline]").TextContent.Should().Contain($"Evidence readiness: {view.ReadinessHeadline}");
-        cut.Find("[data-testid=tep-readiness-explanation]").TextContent.Should().Be(view.ReadinessExplanation);
-        if (view.RequiredReadyAll) view.ReadinessHeadline.Should().Be("Ready"); else view.ReadinessHeadline.Should().NotBe("Ready");
+        // One decision from the same counts; bound is never shown as ready; diagnostics collapsed; requirements before sources before advanced.
+        var decision = ProjectEvidencePresentation.Decision(view);
+        cut.Find("[data-testid=tep-decision]").GetAttribute("data-decision").Should().Be(decision.Label);
+        cut.Find("[data-testid=tep-decision-explanation]").TextContent.Should().Be(decision.Explanation);
+        if (view.RequiredReadyAll) decision.Label.Should().Be("Ready"); else decision.Label.Should().NotBe("Ready");
+        cut.Find("[data-testid=tep-sources]").HasAttribute("open").Should().BeFalse("available imported sources are collapsed once evidence is configured");
+        cut.Find("[data-testid=tep-sources] > summary").TextContent.Should().StartWith($"Available imported sources ({view.Packages.Count})");
+        cut.FindAll("[data-testid=tep-optional]").Should().OnlyContain(d => !d.HasAttribute("open"), "optional supporting evidence is toned down and collapsed");
         cut.FindAll("[data-testid=tep-partial-detail]").Should().OnlyContain(d => d.ParentElement!.TagName == "DETAILS" && !d.ParentElement.HasAttribute("open"));
         var markup = cut.Markup;
         markup.IndexOf("data-testid=\"tep-roles\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"tep-sources\"", StringComparison.Ordinal));

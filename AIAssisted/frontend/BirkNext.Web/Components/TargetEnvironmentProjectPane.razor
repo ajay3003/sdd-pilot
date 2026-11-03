@@ -28,17 +28,36 @@
     }
     else
     {
-        <dl class="tep-facts" data-testid="tep-facts">
-            <div><dt>Target Environment</dt><dd data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</dd></div>
-            <div><dt>Target Application</dt><dd data-testid="tep-target-application">@if (_identity is { } app) { @app.Name <span class="tep-muted" data-testid="tep-application-provenance"> · @TargetApplicationInference.Provenance(app)</span> } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Application not chosen</a>@if (TargetUrl is { Length: > 0 } url) { <span class="tep-muted" data-testid="tep-target-url-only"> · URL @url is configured, but the application (for example M2LB) is not chosen</span> } }</dd></div>
-            <div><dt>Project evidence</dt><dd data-testid="tep-project" data-state="@_view.EvidenceState">@EvidenceStatus</dd></div>
-            @if (_view.IsConfigured)
+        var decision = ProjectEvidencePresentation.Decision(_view);
+        @* One explicit decision first, then the facts it rests on. Partial coverage is a limitation, not a decision: Needs review counts only
+           what a person must decide. *@
+        <p class="tep-decision tep-tone-@decision.Tone" data-testid="tep-decision" data-decision="@decision.Label"><strong>Project Evidence — @decision.Label:</strong>
+            <span data-testid="tep-decision-explanation">@decision.Explanation</span></p>
+        <p class="tep-muted tep-context" data-testid="tep-context">@(_identity is { } contextApp ? $"{contextApp.Name} · " : "")<span data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</span></p>
+        <ul class="tep-summary" data-testid="tep-summary" aria-label="Project evidence summary">
+            @foreach (var card in ProjectEvidencePresentation.Cards(_view, _identity, _identity is { } a ? TargetApplicationInference.Provenance(a) : null))
             {
-                <div><dt>Evidence roles</dt><dd data-testid="tep-binding-summary">@_view.Summary</dd></div>
+                <li class="tep-summary-card tep-tone-@card.Tone" data-testid="tep-card" data-key="@card.Key">
+                    <span class="tep-card-label">@card.Label</span>
+                    @switch (card.Key)
+                    {
+                        case "application":
+                            <strong class="tep-card-value" data-testid="tep-target-application">@if (_identity is { } app) { @app.Name } else { <a href="@TargetApplications.TabHref(EnvironmentId)">Application not chosen</a> }</strong>
+                            @if (_identity is not null) { <span class="tep-card-detail" data-testid="tep-application-provenance">@card.Detail</span> }
+                            else if (TargetUrl is { Length: > 0 } url) { <span class="tep-card-detail" data-testid="tep-target-url-only">URL @url is configured, but the application (for example M2LB) is not chosen</span> }
+                            break;
+                        case "project":
+                            <strong class="tep-card-value" data-testid="tep-project" data-state="@_view.EvidenceState">@card.Value</strong>
+                            @if (card.Detail is { } why) { <span class="tep-card-detail" data-testid="tep-project-detail">@why</span> }
+                            break;
+                        default:
+                            <strong class="tep-card-value" data-testid="@(card.Key switch { "required" => "tep-binding-summary", "optional" => "tep-optional-summary", _ => "tep-needs-review-count" })">@card.Value</strong>
+                            @if (card.Detail is { } detail) { <span class="tep-card-detail">@detail</span> }
+                            break;
+                    }
+                </li>
             }
-            <div><dt>Imported sources</dt><dd data-testid="tep-source-total">@_view.Packages.Count@(_view.Packages.Count > 0 ? $" · latest import {_view.Packages.Max(p => p.ImportedAt).ToLocalTime():d MMM yyyy HH:mm}" : "")</dd></div>
-            <div><dt>Needs review</dt><dd data-testid="tep-needs-review-count">@ReviewItems.Count</dd></div>
-        </dl>
+        </ul>
 
         @if (_identity is not null && ReviewItems.Count > 0)
         {
@@ -93,17 +112,9 @@
                 <ul class="tep-impact" data-testid="tep-impact">@foreach (var line in _impact) { <li>@line</li> }</ul>
             }
 
-            <p class="tep-headline" data-testid="tep-readiness-headline"><strong>Evidence readiness: @_view.ReadinessHeadline</strong> <span class="tep-muted" data-testid="tep-readiness-explanation">@_view.ReadinessExplanation</span></p>
-            @* Readiness summary: the same rows as the table below (bound ≠ ready; Partial counts as bound, never as ready). *@
-            <ul class="tep-readiness" aria-label="Evidence readiness" data-testid="tep-readiness">
-                <li data-testid="tep-readiness-ready"><strong>@_view.RequiredReady</strong> required ready</li>
-                <li data-testid="tep-readiness-partial"><strong>@_view.RequiredPartial</strong> required partial</li>
-                <li data-testid="tep-readiness-missing"><strong>@(_view.RequiredTotal - _view.RequiredResolved)</strong> required missing</li>
-                <li data-testid="tep-readiness-optional"><strong>@_view.OptionalAvailable / @_view.OptionalTotal</strong> optional available</li>
-            </ul>
-
-            @if (_view.Problems.Count > 0)
+            @if (_view.Problems.Count > 0 && (_view.RequiredMissing > 0 || _view.Conflicts > 0 || _view.NeedsDecision > 0))
             {
+                @* Only what blocks or needs a decision: partial coverage is already stated by the decision line and on its role. *@
                 <section class="tep-problems" role="status" aria-labelledby="tep-problems-h" data-testid="tep-problems">
                     <h4 id="tep-problems-h" class="tep-subtitle">Needs attention</h4>
                     <ul>@foreach (var problem in _view.Problems) { <li data-testid="tep-problem">@problem</li> }</ul>
@@ -114,64 +125,22 @@
                 </section>
             }
 
-            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Evidence summary</h4>
-            <p class="tep-muted">One row per evidence role: its sources, how they were associated, and whether the evidence is ready. Associated is not the same as ready.</p>
-            <div class="tep-table-wrap">
-            <table class="tep-table" data-testid="tep-roles">
-                <thead><tr><th scope="col">Role</th><th scope="col">Requirement</th><th scope="col">Sources</th><th scope="col">Capabilities</th><th scope="col">Association · Readiness</th><th scope="col">Action</th></tr></thead>
-                <tbody>
-                    @foreach (var row in _view.Rows)
-                    {
-                        var open = _openRole == row.Role.RoleKey;
-                        <tr id="@($"tep-role-{row.Role.RoleKey}")" tabindex="-1" data-testid="tep-role" data-role="@row.Role.RoleKey" data-state="@row.State" class="@(open ? "tep-row-open" : "")">
-                            <th scope="row">
-                                @row.Role.Label
-                                <span class="tep-required-by" data-testid="tep-required-by">Required by: @row.Role.RequiredBy</span>
-                            </th>
-                            <td><span class="tep-badge" data-testid="tep-requirement-label">@(row.IsRequired ? "Required" : "Optional")</span></td>
-                            <td data-testid="tep-selected">
-                                @if (row.Bound.Count == 0 && row.UnavailableSources.Count == 0) { <span>—</span> }
-                                @if (row.Bound.Count > 1) { <div class="tep-source-count" data-testid="tep-source-count">@row.Bound.Count sources</div> }
-                                @foreach (var bound in row.Bound.Take(2)) { @BoundSource(row, bound) }
-                                @if (row.Bound.Count > 2)
-                                {
-                                    <details class="tep-more" data-testid="tep-more-sources">
-                                        <summary>+@(row.Bound.Count - 2) more<span class="visually-hidden"> sources for @row.Role.Label</span> · View all</summary>
-                                        @foreach (var bound in row.Bound.Skip(2)) { @BoundSource(row, bound) }
-                                    </details>
-                                }
-                                @foreach (var missing in row.UnavailableSources) { <div class="tep-muted">@missing.ArchiveFileName (not in this workspace)</div> }
-                            </td>
-                            <td>@if (row.Bound.Count == 0) { <span>—</span> }
-                                else
-                                {
-                                    <ul class="tep-badges" aria-label="@($"Capabilities of the sources bound to {row.Role.Label}")">
-                                        @foreach (var c in row.Bound.SelectMany(b => b.Capabilities).Select(c => c.Capability).Distinct()) { <li class="tep-badge tep-badge-compact" data-testid="tep-role-capability">@ShortCapability(c)</li> }
-                                    </ul>
-                                }</td>
-                            <td>@if (row.IsBound) { <span class="tep-muted tep-bound-flag" data-testid="tep-bound-flag">@AssociationLabel(row)</span> }
-                                <span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
-                                @if (row.PartialDetail is { } partial)
-                                {
-                                    @* Association and readiness are separate facts: the reason a role is not ready is shown, not hidden. *@
-                                    <span class="tep-partial-detail" data-testid="tep-partial-detail">Reason: @partial</span>
-                                }
-                                @if (row.State == EvidenceRoleState.Conflict) { <span class="tep-partial-detail" data-testid="tep-conflict-detail">This role uses one source, but @row.Bound.Count are associated. Remove the one that is not authoritative.</span> }
-                            </td>
-                            <td>
-                                <button type="button" class="btn btn-sm @(row.IsResolved ? "btn-secondary" : "btn-primary")" data-testid="tep-role-action"
-                                        aria-expanded="@(open ? "true" : "false")" aria-controls="@($"tep-picker-{row.Role.RoleKey}")"
-                                        @onclick="() => Toggle(row.Role.RoleKey)">@(row.IsResolved ? row.Role.Cardinality == ProjectEvidenceCardinality.Multiple ? "Change / add" : "Change" : row.State == EvidenceRoleState.Suggested ? "Review suggestion" : "Select source")</button>
-                            </td>
-                        </tr>
-                        @if (open)
-                        {
-                            <tr class="tep-picker-row"><td colspan="6">@Picker(row)</td></tr>
-                        }
-                    }
-                </tbody>
-            </table>
-            </div>
+            var required = _view.Rows.Where(r => r.IsRequired).ToList(); var optional = _view.Rows.Where(r => !r.IsRequired).ToList();
+            <h4 class="tep-subtitle" data-testid="tep-advanced-title">Required evidence <span class="tep-muted">@_view.RequiredBound / @_view.RequiredTotal bound</span></h4>
+            <ul class="tep-roles" data-testid="tep-roles" aria-label="Required evidence roles">
+                @foreach (var row in required) { @RoleCard(row) }
+                @if (required.Count == 0) { <li class="tep-muted" data-testid="tep-roles-none">No required evidence role.</li> }
+            </ul>
+            @if (optional.Count > 0)
+            {
+                <details class="tep-optional" data-testid="tep-optional" open="@(optional.Any(r => r.Role.RoleKey == _openRole))">
+                    <summary>Optional supporting evidence (@optional.Count) · @optional.Count(r => r.IsResolved) available</summary>
+                    <p class="tep-muted">Optional evidence enriches reviews and never blocks.</p>
+                    <ul class="tep-roles tep-roles-optional" data-testid="tep-optional-roles" aria-label="Optional evidence roles">
+                        @foreach (var row in optional) { @RoleCard(row) }
+                    </ul>
+                </details>
+            }
 
             @SourcesSection
 
@@ -285,9 +254,9 @@
     {
     @* Available Sources: every imported package of this workspace (the authoritative inventory: Import Project records + their Source
            Analysis snapshots), whether bound or not — imported is not bound, bound is not ready. *@
-        <section class="tep-sources" aria-labelledby="tep-sources-h" data-testid="tep-sources">
+        <details class="tep-sources" data-testid="tep-sources" open="@(!_view!.IsConfigured)">
+            <summary class="tep-sources-summary">Available imported sources (<span data-testid="tep-source-total">@_view.Packages.Count</span>)@(_view.Packages.Count > 0 ? $" · latest import {_view.Packages.Max(p => p.ImportedAt).ToLocalTime():d MMM yyyy HH:mm}" : "")</summary>
             <div class="tep-sources-head">
-                <h4 id="tep-sources-h" class="tep-subtitle">Available sources</h4>
                 <label class="visually-hidden" for="tep-source-search">Search sources</label>
                 <input id="tep-source-search" type="search" class="form-control form-control-sm tep-source-search" data-testid="tep-source-search" placeholder="Search sources…"
                        value="@_sourceSearch" @oninput="e => _sourceSearch = e.Value?.ToString()" />
@@ -329,7 +298,7 @@
                     </table>
                 </div>
             }
-        </section>
+        </details>
     };
 
     private string EvidenceStatus => _view is not { IsConfigured: true } v ? _view?.EvidenceState ?? "Not assessed"
@@ -430,11 +399,61 @@
         _ => ProjectEvidencePackages.CapabilityLabel(capability),
     };
 
+    /// <summary>One evidence role, status first: state, logical role, requirement, its source(s) with provenance badges, capabilities, a short
+    /// reason (full diagnostic behind "View reason") and one context-specific action.</summary>
+    private RenderFragment RoleCard(EvidenceRoleRow row) => __builder =>
+    {
+        var open = _openRole == row.Role.RoleKey;
+        <li id="@($"tep-role-{row.Role.RoleKey}")" tabindex="-1" class="tep-role-card @(open ? "tep-row-open" : "") @(row.IsRequired ? "" : "tep-role-optional")" data-testid="tep-role" data-role="@row.Role.RoleKey" data-state="@row.State">
+            <div class="tep-role-head">
+                <span class="tep-state tep-tone-@row.Tone" data-testid="tep-state">@row.StatusLabel</span>
+                <strong class="tep-role-title">@row.Role.Label</strong>
+                <span class="tep-badge" data-testid="tep-requirement-label">@row.RequirementLabel</span>
+                <button type="button" class="btn btn-sm tep-role-btn @(row.IsResolved ? "btn-secondary" : "btn-primary")" data-testid="tep-role-action"
+                        aria-expanded="@(open ? "true" : "false")" aria-controls="@($"tep-picker-{row.Role.RoleKey}")"
+                        @onclick="() => Toggle(row.Role.RoleKey)">@ProjectEvidencePresentation.Action(row)<span class="visually-hidden"> for @row.Role.Label</span></button>
+            </div>
+            <div class="tep-role-body" data-testid="tep-selected">
+                @if (row.Bound.Count > 1) { <span class="tep-source-count" data-testid="tep-source-count">@row.Bound.Count sources</span> }
+                @foreach (var bound in row.Bound.Take(2)) { @BoundSource(row, bound) }
+                @if (row.Bound.Count > 2)
+                {
+                    <details class="tep-more" data-testid="tep-more-sources">
+                        <summary>+@(row.Bound.Count - 2) more<span class="visually-hidden"> sources for @row.Role.Label</span> · View all</summary>
+                        @foreach (var bound in row.Bound.Skip(2)) { @BoundSource(row, bound) }
+                    </details>
+                }
+                @foreach (var missing in row.UnavailableSources) { <div class="tep-muted">@missing.ArchiveFileName (not in this workspace)</div> }
+                @if (row.Bound.Count > 0)
+                {
+                    <div class="tep-role-capabilities">Capabilities:
+                        <ul class="tep-badges" aria-label="@($"Capabilities of the sources bound to {row.Role.Label}")">
+                            @foreach (var c in row.Bound.SelectMany(b => b.Capabilities).Select(c => c.Capability).Distinct()) { <li class="tep-badge tep-badge-compact" data-testid="tep-role-capability">@ShortCapability(c)</li> }
+                        </ul></div>
+                }
+                @if (row.State != EvidenceRoleState.Ready)
+                {
+                    <p class="tep-role-reason" data-testid="tep-role-reason">@ProjectEvidencePresentation.ShortReason(row)</p>
+                    @if (ProjectEvidencePresentation.FullReason(row) is { } full)
+                    {
+                        <details class="tep-reason-more" data-testid="tep-view-reason"><summary>View reason<span class="visually-hidden"> for @row.Role.Label</span></summary><span class="tep-partial-detail" data-testid="@(row.State == EvidenceRoleState.Conflict ? "tep-conflict-detail" : "tep-partial-detail")">@full</span></details>
+                    }
+                }
+                <span class="tep-required-by" data-testid="tep-required-by">Used by: @row.Role.RequiredBy</span>
+            </div>
+            @if (open) { @Picker(row) }
+        </li>
+    };
+
     private RenderFragment BoundSource(EvidenceRoleRow row, ProjectEvidencePackage bound) => __builder =>
     {
         var reference = row.Role.Sources.FirstOrDefault(s => s.ImportId == bound.ImportId) ?? row.Role.Sources.FirstOrDefault(s => s.ArchiveSha256 == bound.ArchiveSha256);
-        <div class="tep-bound" data-testid="tep-bound-source">@bound.ArchiveFileName
-            @if (reference is not null) { <span class="tep-origin" data-testid="tep-binding-origin">@EvidenceRoleRow.OriginLabel(reference)</span> }</div>
+        <div class="tep-bound" data-testid="tep-bound-source"><span class="tep-muted">Source:</span> @bound.ArchiveFileName
+            @if (reference is not null)
+            {
+                var badge = ProjectEvidencePresentation.Provenance(reference);
+                <span class="tep-state tep-tone-@badge.Tone tep-origin" data-testid="tep-binding-origin" data-origin="@badge.Origin" title="@badge.Origin">@badge.Label<span class="visually-hidden"> (@badge.Origin)</span></span>
+            }</div>
     };
 
     private Task BindAsync(EvidenceRoleRow row, ProjectEvidencePackage package) =>
@@ -539,14 +558,6 @@
     /// <summary>The logical project whose package catalog is shown: this environment's Target Application (else its Project evidence name).</summary>
     /// <summary>Sources that need a human decision (ambiguous role, possibly another component, conflict) — never "Partial" coverage.</summary>
     private IReadOnlyList<PackageAssociation> ReviewItems => _view?.Associations.Where(a => a.State == EvidenceAssociationState.NeedsReview).ToList() ?? [];
-
-    /// <summary>"Associated automatically", "Confirmed by you" or both for a multi-source role.</summary>
-    private static string AssociationLabel(EvidenceRoleRow row)
-    {
-        var sources = row.Role.Sources.Where(s => row.Bound.Any(b => b.ImportId == s.ImportId)).ToList();
-        var detected = sources.Count(s => s.BoundBy == ProjectEvidenceAssociation.Detected);
-        return detected == sources.Count ? "Associated automatically" : detected == 0 ? "Confirmed by you" : "Associated automatically · confirmed by you";
-    }
 
     private async Task IgnoreAsync(string importId)
     {
