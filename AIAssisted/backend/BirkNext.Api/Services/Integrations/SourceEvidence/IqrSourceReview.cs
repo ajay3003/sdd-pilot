@@ -21,7 +21,7 @@ public static class IqrSourceReview
 
     public static IntegrationReviewReadiness Augment(IntegrationReviewReadiness readiness, IReadOnlyList<IqrSourceSnapshot> snapshots) => readiness with
     {
-        SourceSnapshots = snapshots.ToList(),
+        SourceSnapshots = [.. snapshots.Select(IqrSourceSnapshotSummary.From)],
         Domains = readiness.Domains.Select(d => EvidenceCount(d.Domain, snapshots) == 0 ? d : d with
         {
             Readiness = d.Readiness == IntegrationDomainReadiness.NotAssessable ? IntegrationDomainReadiness.Partial : d.Readiness,

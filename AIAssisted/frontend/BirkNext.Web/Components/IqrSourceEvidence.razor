@@ -1,0 +1,55 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IIntegrationCatalogApiService Api
+
+@* The bound snapshot as readiness carries it — a summary — with its full evidence fetched by id only when a person opens it. A Source
+   Analysis snapshot is megabytes; readiness never carries it. *@
+<section class="source-evidence" aria-label="Source analysis evidence" data-testid="iqr-source-evidence" data-snapshot="@Summary.Id">
+    <p data-testid="iqr-source-evidence-summary"><strong>@Summary.Archive.FileName</strong> — @Summary.Status · analyzed @Summary.AnalyzedAt.ToString("u")
+        <span class="iqr-muted">· @Summary.Projects project@(Summary.Projects == 1 ? "" : "s") · @Summary.Rules rule@(Summary.Rules == 1 ? "" : "s") · @Summary.Tests developer test@(Summary.Tests == 1 ? "" : "s")@(Summary.LimitationCount > 0 ? $" · {Summary.LimitationCount} limitation{(Summary.LimitationCount == 1 ? "" : "s")}" : "")</span></p>
+    @if (_snapshot is { } snapshot)
+    {
+        <button type="button" class="btn btn-link btn-sm" @onclick="() => _snapshot = null" data-testid="iqr-source-evidence-hide">Hide source evidence</button>
+        <IqrSourceDetails Snapshot="snapshot" />
+    }
+    else
+    {
+        <button type="button" class="btn btn-link btn-sm" @onclick="OpenAsync" disabled="@_loading" aria-busy="@(_loading ? "true" : "false")" data-testid="iqr-source-evidence-open">@(_loading ? "Loading source evidence…" : "View source evidence")</button>
+        @if (_error is not null) { <p class="iqr-muted" role="status" data-testid="iqr-source-evidence-error">@_error</p> }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IqrSourceSnapshotSummary Summary { get; set; } = new();
+    private IqrSourceSnapshot? _snapshot;
+    private Guid _loadedFor;
+    private bool _loading;
+    private string? _error;
+
+    protected override void OnParametersSet()
+    {
+        if (_loadedFor == Summary.Id) return;
+        _loadedFor = Summary.Id;
+        _snapshot = null;
+        _error = null;
+    }
+
+    private async Task OpenAsync()
+    {
+        var id = Summary.Id;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var snapshot = await Api.GetSourceSnapshotAsync(id);
+            if (id != Summary.Id) return; // another snapshot was selected meanwhile
+            _snapshot = snapshot;
+            if (snapshot is null) _error = "This source snapshot is no longer stored.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _error = BackendRequestClassifier.FromException("Source evidence", ex).UserMessage;
+        }
+        finally { _loading = false; }
+    }
+}

@@ -49,6 +49,8 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
 public interface IIntegrationCatalogApiService
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+    /// <summary>One Source Analysis snapshot with its full evidence, or null when it is no longer stored. Readiness carries only summaries.</summary>
+    Task<IqrSourceSnapshot?> GetSourceSnapshotAsync(Guid snapshotId, CancellationToken ct = default) => Task.FromResult<IqrSourceSnapshot?>(null);
     /// <summary>The canonical Integration Quality Review source-evidence bindings of an environment (one snapshot per integration).</summary>
     Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IntegrationEvidenceBinding>>([]);
     /// <summary>Binds (or with a null snapshot, unbinds) one integration's source evidence. Returns the binding or the backend's reason.</summary>
@@ -174,6 +176,14 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         try { return await http.GetFromJsonAsync<BirkNext.SourceDomains.SourceInfrastructureSuggestion>($"api/source-analysis/infrastructure-suggestions?{Env(environmentId)}&kind={kind}{Q("field", field)}{Q("targetEnvironment", targetEnvironment)}{Q("parent", parent)}", Json, ct); }
         catch (HttpRequestException) { return null; }
     }
+    public async Task<IqrSourceSnapshot?> GetSourceSnapshotAsync(Guid snapshotId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync($"api/source-analysis/{snapshotId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>(Json, ct);
+    }
+
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
 
     public async Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) =>

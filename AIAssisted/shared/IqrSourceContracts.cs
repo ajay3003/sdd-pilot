@@ -76,6 +76,43 @@ public sealed record IqrSourceSnapshot
     public BirkNext.TestCoverage.TestBehaviorSourceEvidence? TestBehaviorEvidence { get; init; }
 }
 
+/// <summary>
+/// A Source Analysis snapshot as a readiness snapshot carries it: identity, provenance, freshness, status and counts. Readiness carries
+/// references and summaries, never evidence blobs — a full <see cref="IqrSourceSnapshot"/> is megabytes and is fetched by id only when a
+/// person opens its evidence (GET api/source-analysis/{id}).
+/// </summary>
+public sealed record IqrSourceSnapshotSummary
+{
+    public const int MaxLimitations = 5;
+    public Guid Id { get; init; }
+    public string IntegrationId { get; init; } = "";
+    public SourceArchive Archive { get; init; } = new("", "", 0);
+    public string Commit { get; init; } = "Unknown";
+    public string? Branch { get; init; }
+    public string? Repository { get; init; }
+    public int AnalyzerVersion { get; init; } = 1;
+    public DateTimeOffset AnalyzedAt { get; init; }
+    public SourceAnalysisStatus Status { get; init; }
+    public int Projects { get; init; }
+    public int Configurations { get; init; }
+    public int Rules { get; init; }
+    public int Tests { get; init; }
+    public int Dataflows { get; init; }
+    public bool HasIntegrationPath { get; init; }
+    public string DeploymentCorrelation { get; init; } = "";
+    public int LimitationCount { get; init; }
+    /// <summary>The first <see cref="MaxLimitations"/> limitations; <see cref="LimitationCount"/> says how many there are.</summary>
+    public List<string> Limitations { get; init; } = [];
+
+    public static IqrSourceSnapshotSummary From(IqrSourceSnapshot s) => new()
+    {
+        Id = s.Id, IntegrationId = s.IntegrationId, Archive = s.Archive, Commit = s.Commit, Branch = s.Branch, Repository = s.Repository?.DisplayName,
+        AnalyzerVersion = s.AnalyzerVersion, AnalyzedAt = s.AnalyzedAt, Status = s.Status, Projects = s.Projects.Count, Configurations = s.Configurations.Count,
+        Rules = s.Rules.Count, Tests = s.Tests.Count, Dataflows = s.Dataflows.Count, HasIntegrationPath = s.IntegrationPath is not null,
+        DeploymentCorrelation = s.DeploymentCorrelation, LimitationCount = s.Limitations.Count, Limitations = [.. s.Limitations.Take(MaxLimitations)],
+    };
+}
+
 public sealed record SourceTargetIndex
 {
     public Guid SnapshotId { get; init; }

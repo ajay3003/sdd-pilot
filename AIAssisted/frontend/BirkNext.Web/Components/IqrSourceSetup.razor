@@ -21,14 +21,15 @@
             <SourceSnapshotSelector @ref="_selector" State="state" Prefix="iqr" Busy="_busy" Label="Source snapshot for this integration" OnPrimaryChanged="PrimaryChangedAsync" />
             <ReviewSourceScopePanel State="state" Prefix="iqr" Busy="_busy" SupportsRelated="false" EvidenceLabel="Integration source evidence" OnChangeSnapshot="FocusAsync" />
         </SourceEvidencePrerequisite>
-        @if (state.PrimaryId is { } id && Snapshots.FirstOrDefault(s => s.Id == id) is { } selected) { <IqrSourceDetails Snapshot="selected" /> }
+        @if (state.PrimaryId is { } id && Snapshots.FirstOrDefault(s => s.Id == id) is { } selected) { <IqrSourceEvidence Summary="selected" /> }
     }
 </section>
 
 @code {
     [Parameter] public string EnvironmentId { get; set; } = "";
     [Parameter] public IReadOnlyList<IntegrationDefinition> Integrations { get; set; } = [];
-    [Parameter] public IReadOnlyList<IqrSourceSnapshot> Snapshots { get; set; } = [];
+    /// <summary>Summaries only (readiness never carries evidence); the selected one's evidence is fetched when opened.</summary>
+    [Parameter] public IReadOnlyList<IqrSourceSnapshotSummary> Snapshots { get; set; } = [];
     [Parameter] public List<IqrSourceSelection> Selections { get; set; } = [];
     [Parameter] public EventCallback Analyzed { get; set; }
     [Parameter] public EventCallback<bool> BusyChanged { get; set; }

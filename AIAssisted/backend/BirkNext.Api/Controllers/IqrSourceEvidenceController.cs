@@ -113,6 +113,11 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshot>>> List([FromQuery] string? environmentId, CancellationToken ct) =>
         Ok(await store.ListAsync(environmentId ?? "", ct));
 
+    /// <summary>One Source Analysis snapshot with its full evidence — fetched when a person opens it; readiness only carries its summary.</summary>
+    [HttpGet("{snapshotId:guid}")]
+    public async Task<ActionResult<IqrSourceSnapshot>> Get(Guid snapshotId, CancellationToken ct) =>
+        await store.FindSourceAnalysisAsync(snapshotId, ct) is { } snapshot ? Ok(snapshot) : NotFound();
+
     [HttpPost("snapshots")]
     [RequestSizeLimit(SourceArchiveUpload.RequestLimit)]
     [RequestFormLimits(MultipartBodyLengthLimit = SourceArchiveUpload.RequestLimit)]

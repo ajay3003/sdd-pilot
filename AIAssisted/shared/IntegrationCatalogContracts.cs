@@ -587,7 +587,9 @@ public sealed record IntegrationSystemScope
 /// <summary>Pre-run: what is configured, what can be reviewed, what cannot. Never a result.</summary>
 public sealed record IntegrationReviewReadiness
 {
-    public List<IqrSourceSnapshot> SourceSnapshots { get; init; } = [];
+    /// <summary>The bound snapshots, summarized. Readiness carries references and summaries, never evidence blobs; the evidence they yield for
+    /// an integration is already in <see cref="SourceScopes"/>, Domains and the subjects' facts.</summary>
+    public List<IqrSourceSnapshotSummary> SourceSnapshots { get; init; } = [];
     /// <summary>The integration this readiness is scoped to (Domains, Systems, Reasons and source evidence are for it alone), or null for the
     /// explicit environment-wide mode. <see cref="Subjects"/> always lists every enabled integration so one can be selected.</summary>
     public string? ScopeIntegrationId { get; init; }
@@ -595,7 +597,7 @@ public sealed record IntegrationReviewReadiness
     public List<IntegrationSourceEvidenceScope> SourceScopes { get; init; } = [];
     /// <summary>Every stored Source Analysis snapshot (newest first) a person may choose to bind — availability only, never evidence for an
     /// integration. <see cref="SourceSnapshots"/> holds the integration-specific (correlated) evidence of the bound snapshots.</summary>
-    public List<IqrSourceSnapshot> AvailableSourceSnapshots { get; init; } = [];
+    public List<IqrSourceSnapshotSummary> AvailableSourceSnapshots { get; init; } = [];
     public string EnvironmentId { get; init; } = "";
     public List<IntegrationSystemScope> Systems { get; init; } = [];
     public int ConfiguredIntegrations { get; init; }

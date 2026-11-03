@@ -75,7 +75,7 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         {
             Headline = "Cannot run", ConfiguredIntegrations = configured,
             Systems = [.. Enumerable.Range(0, systems).Select(i => new IntegrationSystemScope { SystemName = $"S{i}" })],
-            AvailableSourceSnapshots = [.. Enumerable.Range(0, snapshots).Select(_ => new IqrSourceSnapshot())],
+            AvailableSourceSnapshots = [.. Enumerable.Range(0, snapshots).Select(_ => IqrSourceSnapshotSummary.From(new IqrSourceSnapshot()))],
         };
         var cut = Open();
         cut.Find("[data-testid=iqr-zero-integrations]").GetAttribute("data-condition").Should().Be(condition);

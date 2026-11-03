@@ -109,7 +109,7 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
         readiness = scim is null ? readiness : readiness with { Scim = [.. await scim.ReadinessAsync(configured, ct)] };
         // Source evidence: each in-scope integration's own canonical binding, correlated with that integration — never every stored snapshot.
         var (snapshots, scopes) = await BoundEvidenceAsync(environmentId, [.. configured.Integrations.Where(item => item.Enabled)], ct);
-        readiness = readiness with { SourceScopes = scopes, AvailableSourceSnapshots = source is { SourceAnalysisEnabled: true } ? [.. await source.ListAsync(environmentId, ct)] : [] };
+        readiness = readiness with { SourceScopes = scopes, AvailableSourceSnapshots = source is { SourceAnalysisEnabled: true } ? [.. (await source.ListAsync(environmentId, ct)).Select(IqrSourceSnapshotSummary.From)] : [] };
         readiness = snapshots.Count == 0 ? readiness with { SourceSnapshots = [] } : SourceEvidence.IqrSourceReview.Augment(readiness, snapshots);
         var stored = await contracts.LoadAsync(environmentId, ct);
         return readiness with { Evidence = [.. Families(readiness, composed, stored.Count)], EvaluatedAt = DateTimeOffset.UtcNow };

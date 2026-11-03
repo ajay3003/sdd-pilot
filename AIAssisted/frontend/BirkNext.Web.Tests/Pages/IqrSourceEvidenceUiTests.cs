@@ -43,7 +43,7 @@ public sealed class IqrSourceEvidenceUiTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         var selections = new List<IqrSourceSelection>();
         var cut = Render<IqrSourceSetup>(p => p.Add(c => c.EnvironmentId, "dev").Add(c => c.Integrations, new List<IntegrationDefinition> { new() { Id = "person", DisplayName = "Person Adapter", Enabled = true } })
-            .Add(c => c.Snapshots, new List<IqrSourceSnapshot> { snapshot }).Add(c => c.Selections, selections));
+            .Add(c => c.Snapshots, new List<IqrSourceSnapshotSummary> { IqrSourceSnapshotSummary.From(snapshot) }).Add(c => c.Selections, selections));
         cut.Find("#iqr-source-integration").Change("person");
         cut.Find("[data-testid=iqr-current-snapshot]").TextContent.Should().Contain("M2LB").And.Contain("aaaaaaaa…");
         selections.Should().BeEmpty("the current snapshot is only offered");
@@ -54,6 +54,37 @@ public sealed class IqrSourceEvidenceUiTests : BunitContext
         cut.Markup.Should().NotContain("Upload source archive");
         cut.Find("[data-testid=iqr-primary]").Change("");
         selections.Should().BeEmpty();
+    }
+
+    [Fact] public void TheBoundSnapshotIsASummaryAndItsEvidenceIsFetchedOnlyWhenOpened()
+    {
+        var api = new Mock<IIntegrationCatalogApiService>();
+        var snapshot = Snapshot();
+        api.Setup(a => a.GetSourceSnapshotAsync(snapshot.Id, It.IsAny<CancellationToken>())).ReturnsAsync(snapshot);
+        Services.AddSingleton(api.Object);
+
+        var cut = Render<IqrSourceEvidence>(p => p.Add(c => c.Summary, IqrSourceSnapshotSummary.From(snapshot)));
+
+        cut.Find("[data-testid=iqr-source-evidence-summary]").TextContent.Should().Contain("M2LB-fixture.zip").And.Contain("1 rule").And.Contain("1 developer test").And.Contain("3 limitations");
+        cut.FindAll("[data-testid=iqr-source-details]").Should().BeEmpty("the evidence is not loaded up front");
+        api.Verify(a => a.GetSourceSnapshotAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        cut.Find("[data-testid=iqr-source-evidence-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=iqr-source-details]").TextContent.Should().Contain("PersonPK"));
+        api.Verify(a => a.GetSourceSnapshotAsync(snapshot.Id, It.IsAny<CancellationToken>()), Times.Once);
+
+        cut.Find("[data-testid=iqr-source-evidence-hide]").Click();
+        cut.FindAll("[data-testid=iqr-source-details]").Should().BeEmpty();
+    }
+
+    [Fact] public void A_snapshot_no_longer_stored_is_stated_never_shown_as_empty_evidence()
+    {
+        var api = new Mock<IIntegrationCatalogApiService>();
+        api.Setup(a => a.GetSourceSnapshotAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((IqrSourceSnapshot?)null);
+        Services.AddSingleton(api.Object);
+        var cut = Render<IqrSourceEvidence>(p => p.Add(c => c.Summary, IqrSourceSnapshotSummary.From(Snapshot())));
+        cut.Find("[data-testid=iqr-source-evidence-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=iqr-source-evidence-error]").TextContent.Should().Contain("no longer stored"));
     }
 
     [Fact] public void SetupWithoutSnapshotsPointsToSourceAnalysisAndLeavesRuntimeAlone()
