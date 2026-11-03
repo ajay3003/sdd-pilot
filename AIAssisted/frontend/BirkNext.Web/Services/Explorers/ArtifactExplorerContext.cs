@@ -232,6 +232,18 @@ public interface IArtifactExplorerContext
     /// <summary>Views a feature pack of the module (default: the focused module). Navigation only; nothing becomes authoritative.</summary>
     Task SelectPackAsync(string? pack, string? module = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
+    /// <summary>
+    /// The roles that have at least one artifact in the current scope. Answered from the lifecycle manifest (no document bodies are loaded)
+    /// for an imported project; otherwise from the explorers' own resolution.
+    /// </summary>
+    async Task<IReadOnlySet<WorkspaceArtifactType>> GetRolePresenceAsync(CancellationToken cancellationToken = default)
+    {
+        var present = new HashSet<WorkspaceArtifactType>();
+        foreach (var role in SampleArtifactClassifier.RoleOrder)
+            if ((await GetStateAsync(role, cancellationToken)).Artifacts.Count > 0) present.Add(role);
+        return present;
+    }
+
     /// <summary>Every candidate of every role, grouped by module, with each module's selection.</summary>
     Task<ArtifactModuleOverview> GetModuleOverviewAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(ArtifactModuleOverview.Empty(CurrentScope));
@@ -297,8 +309,10 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         ISampleProjectArtifactDiscovery discovery,
         IWorkspaceUpdateCoordinator? updates = null,
         IWorkspaceStateManager? stateManager = null,
-        IFrontendAnalysisSettingsService? environments = null)
+        IFrontendAnalysisSettingsService? environments = null,
+        IWorkspaceDocumentHydration? documents = null)
     {
+        _documents = documents;
         _workspace = workspace;
         _resolver = resolver;
         _discovery = discovery;
@@ -314,6 +328,27 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     }
 
     private readonly IFrontendAnalysisSettingsService? _environments;
+    private readonly IWorkspaceDocumentHydration? _documents;
+
+    public async Task<IReadOnlySet<WorkspaceArtifactType>> GetRolePresenceAsync(CancellationToken cancellationToken = default)
+    {
+        var scope = CurrentScope;
+        var present = new HashSet<WorkspaceArtifactType>();
+        if (_documents is not { IsDeferred: true } || !ProjectImportScope.IsImport(scope))
+        {
+            var model = await LoadScopeAsync(cancellationToken);
+            foreach (var role in SampleArtifactClassifier.RoleOrder)
+                if (StateOf(role, null, model, false).Artifacts.Count > 0) present.Add(role);
+            return present;
+        }
+        // Same revisions the explorers list (the scope's evidence scopes, imported documents only where bound), by their manifest: a revision whose
+        // body is not loaded yet still holds a document. Nothing is loaded to answer.
+        foreach (var evidence in EvidenceScopes(scope))
+            foreach (var revision in _workspace.SddLifecycle.Revisions.Where(r => r.WorkspaceScope == evidence.Scope && r.HasDocument
+                         && (!evidence.ManualOnly || r.Origin != ProjectImportOrigin)))
+                if (Enum.TryParse<WorkspaceArtifactType>(revision.Role, out var role) && SampleArtifactClassifier.RoleOrder.Contains(role)) present.Add(role);
+        return present;
+    }
 
     /// <summary>The active Target Environment's Project, when its main import is recorded in this workspace; otherwise null (legacy fallback).</summary>
     private (FrontendAnalysisProfile Profile, EnvironmentProject Project, SddProjectImportRecord Main)? EnvironmentProject()
@@ -757,6 +792,11 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var paths = new List<string?>();
         string? projectName = null;
         IReadOnlyDictionary<WorkspaceArtifactType, List<ScopeEntry>> NoRoles() => SampleArtifactClassifier.RoleOrder.ToDictionary(r => r, _ => new List<ScopeEntry>());
+
+        // Documents restored from the bootstrap manifest are read from their bodies: load them first. A failed load is an error, never "no documents".
+        if (_documents is { IsDeferred: true } && !await _documents.EnsureAsync(cancellationToken))
+            return new ScopeModel(scope, null, NoRoles(), chosen, [], ExplorerArtifactStatus.Error,
+                $"The project documents could not be loaded: {_documents.Error ?? "unknown error"} They are still stored; retry to load them.");
 
         if (ProjectImportScope.IsImport(scope))
         {

@@ -72,8 +72,9 @@ public sealed class ProjectApplicabilityState : IDisposable
         FrontendAnalysisProfile? profile = null;
         ProjectTechnologyCoverage? coverage = null;
         BackendRequestError? loadError = null;
-        // Artifact roles come from the current workspace (Sample Project documents and imported artifacts alike), not session copies.
-        var current = await workspace.GetAsync();
+        // Artifact roles come from the current workspace (Sample Project documents and imported artifacts alike), not session copies. Presence
+        // only: navigation never loads the documents' bodies.
+        var present = await workspace.GetRolePresenceAsync();
         try
         {
             // Without an active Target Environment (e.g. right after a local data reset) the context carries an empty placeholder profile:
@@ -93,7 +94,7 @@ public sealed class ProjectApplicabilityState : IDisposable
         Coverage = coverage;
         LoadError = loadError;
         Reviews = ApplicabilityEvaluator.EvaluateAll(TechnologyCoveragePresentation.Input(Coverage, Profile,
-            current.Has(WorkspaceArtifactType.Specification), current.Has(WorkspaceArtifactType.Plan) || current.Has(WorkspaceArtifactType.Constitution)));
+            present.Contains(WorkspaceArtifactType.Specification), present.Contains(WorkspaceArtifactType.Plan) || present.Contains(WorkspaceArtifactType.Constitution)));
         Loaded = true;
         Changed?.Invoke();
     }

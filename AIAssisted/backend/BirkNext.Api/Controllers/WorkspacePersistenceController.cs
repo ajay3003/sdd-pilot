@@ -38,7 +38,7 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             var result = await _service.SaveCurrentAsync(request?.Name, request?.Artifacts ?? new(), request?.SddLifecycleJson);
-            var dto = MapWorkspaceToDto(result);
+            var dto = MapWorkspaceToDto(result, lifecycle: false);
             return Ok(dto);
         }
         catch (Exception ex)
@@ -59,7 +59,7 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             var result = await _service.SaveAsAsync(request.Name, request.Artifacts ?? new(), request.SddLifecycleJson);
-            var dto = MapWorkspaceToDto(result);
+            var dto = MapWorkspaceToDto(result, lifecycle: false);
             return Ok(dto);
         }
         catch (Exception ex)
@@ -90,6 +90,39 @@ public class WorkspacePersistenceController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// The workspace as application start restores it: identity, artifacts and the lifecycle without document bodies. The full workspace stays
+    /// available from load/{id}; the bodies from documents/{id}.
+    /// </summary>
+    [HttpGet("bootstrap/{workspaceId}")]
+    public async Task<ActionResult<WorkspaceBootstrapDto>> Bootstrap(Guid workspaceId)
+    {
+        var result = await _service.LoadAsync(workspaceId);
+        if (result == null) return NotFound(new { error = "Workspace not found" });
+        var full = MapWorkspaceToDto(result);
+        var documents = WorkspaceLifecycleDocuments.Documents(result.SddLifecycleJson);
+        var dto = new WorkspaceBootstrapDto
+        {
+            Id = full.Id, UserId = full.UserId, Name = full.Name, ProjectName = full.ProjectName, Description = full.Description, CreatedAt = full.CreatedAt,
+            UpdatedAt = full.UpdatedAt, LastOpenedAt = full.LastOpenedAt, Version = full.Version, ParserVersion = full.ParserVersion,
+            ReviewContextVersion = full.ReviewContextVersion, ArtifactSetHash = full.ArtifactSetHash, AutoSaved = full.AutoSaved, Favorite = full.Favorite,
+            Artifacts = full.Artifacts,
+            SddLifecycleJson = WorkspaceLifecycleDocuments.Manifest(result.SddLifecycleJson),
+            DocumentsDeferred = documents.Revisions.Count + documents.GeneratedDocuments.Count > 0,
+            DeferredDocuments = documents.Revisions.Count + documents.GeneratedDocuments.Count,
+            DeferredDocumentCharacters = documents.Revisions.Values.Sum(c => (long)c.Length) + documents.GeneratedDocuments.Values.Sum(c => (long)c.Length),
+        };
+        return Ok(dto);
+    }
+
+    /// <summary>The document bodies of a saved workspace's lifecycle (revision content by id, generated documents by fingerprint).</summary>
+    [HttpGet("documents/{workspaceId}")]
+    public async Task<ActionResult<WorkspaceDocumentsDto>> Documents(Guid workspaceId)
+    {
+        var result = await _service.LoadAsync(workspaceId);
+        return result == null ? NotFound(new { error = "Workspace not found" }) : Ok(WorkspaceLifecycleDocuments.Documents(result.SddLifecycleJson));
+    }
+
     [HttpGet("list")]
     public async Task<ActionResult<List<SavedWorkspaceDto>>> List()
     {
@@ -103,7 +136,8 @@ public class WorkspacePersistenceController : ControllerBase
             {
                 _logger.LogInformation($"DIAG: [Controller]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}");
             }
-            var dtos = result.Select(MapWorkspaceToDto).ToList();
+            // A list is summaries: no lifecycle and no artifact bodies (load/{id} and bootstrap/{id} return one workspace's state).
+            var dtos = result.Select(w => MapWorkspaceToDto(w, lifecycle: false, artifactContent: false)).ToList();
             _logger.LogInformation($"DIAG: [Controller] List returning {dtos.Count} DTOs");
             return Ok(dtos);
         }
@@ -206,7 +240,7 @@ public class WorkspacePersistenceController : ControllerBase
             var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.ProjectName, request?.Artifacts ?? new(), request?.SddLifecycleJson);
             _logger.LogInformation("  ResponseArtifacts={Count}", result.Artifacts.Count);
 
-            var dto = MapWorkspaceToDto(result);
+            var dto = MapWorkspaceToDto(result, lifecycle: false);
             return Ok(dto);
         }
         catch (Exception ex)
@@ -316,7 +350,9 @@ public class WorkspacePersistenceController : ControllerBase
         public string? Json { get; set; }
     }
 
-    private SavedWorkspaceDto MapWorkspaceToDto(SavedWorkspace workspace)
+    /// <param name="lifecycle">False for write responses and lists: the caller already holds (or does not need) the lifecycle.</param>
+    /// <param name="artifactContent">False for lists: artifacts are listed, their bodies are not.</param>
+    private SavedWorkspaceDto MapWorkspaceToDto(SavedWorkspace workspace, bool lifecycle = true, bool artifactContent = true)
     {
         return new SavedWorkspaceDto
         {
@@ -333,7 +369,7 @@ public class WorkspacePersistenceController : ControllerBase
             ReviewContextVersion = workspace.ReviewContextVersion,
             ArtifactSetHash = workspace.ArtifactSetHash,
             AutoSaved = workspace.AutoSaved,
-            SddLifecycleJson = workspace.SddLifecycleJson,
+            SddLifecycleJson = lifecycle ? workspace.SddLifecycleJson : null,
             Favorite = workspace.Favorite,
             Artifacts = workspace.Artifacts
                 .Select(a => new SavedWorkspaceArtifactResponseDto
@@ -341,7 +377,7 @@ public class WorkspacePersistenceController : ControllerBase
                     ArtifactType = a.ArtifactType.ToString(),
                     FileName = a.FileName,
                     OriginalPath = a.OriginalPath,
-                    Content = a.Content,
+                    Content = artifactContent ? a.Content : "",
                     ContentHash = a.ContentHash,
                     Encoding = a.Encoding,
                     ParseVersion = a.ParseVersion

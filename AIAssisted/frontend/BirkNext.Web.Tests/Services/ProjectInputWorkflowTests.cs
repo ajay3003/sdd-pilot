@@ -48,7 +48,7 @@ public sealed class ProjectInputWorkflowTests
     private void NoSourceYet() => _coverage = new ProjectTechnologyCoverage { EnvironmentId = _environment!.Id };
 
     private readonly Mock<IFrontendAnalysisSettingsService> _settings = new();
-    private readonly Mock<ICurrentWorkspaceProjection> _projection = new();
+    private readonly Mock<ICurrentWorkspaceProjection> _projection = new() { CallBase = true };
 
     private Task<WorkflowReadiness> ReadinessAsync(FeatureVisibilityService? features = null) => Create(features).Service.GetReadinessAsync();
 

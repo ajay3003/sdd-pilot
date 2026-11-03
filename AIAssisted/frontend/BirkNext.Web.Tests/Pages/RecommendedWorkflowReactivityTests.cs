@@ -45,7 +45,7 @@ public sealed class RecommendedWorkflowReactivityTests : BunitContext
         Services.AddScoped<SourceAnalysisSnapshotState>();
         Services.AddSingleton(_workflowApi.Object);
         Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
-        Services.AddSingleton(Mock.Of<IWorkspacePersistenceApiService>());
+        Services.AddSingleton(new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
         var autoSave = new Mock<IWorkspaceAutoSaveService>();
         autoSave.Setup(a => a.StartMonitoringAsync()).Returns(Task.CompletedTask);

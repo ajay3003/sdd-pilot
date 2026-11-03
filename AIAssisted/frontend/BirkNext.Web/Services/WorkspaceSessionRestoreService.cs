@@ -189,6 +189,8 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
             // contains it, so the UI can show an explicit "unavailable" state instead of silently picking another project.
             _artifactRepository.ProjectName = string.IsNullOrWhiteSpace(workspace.ProjectName) ? null : workspace.ProjectName;
             _artifactRepository.RestoreSddLifecycle(workspace.SddLifecycleJson);
+            // A bootstrap manifest: the document bodies stay on the server until something reads them (IWorkspaceDocumentHydration).
+            if (workspace.DocumentsDeferred && _artifactRepository is WorkspaceArtifactRepository repository) repository.MarkDocumentsDeferred(workspace.Id);
             if (hasProjectIdentity)
                 _logger.LogInformation("Sample Project selection restored: {ProjectSlug}", workspace.ProjectName);
 

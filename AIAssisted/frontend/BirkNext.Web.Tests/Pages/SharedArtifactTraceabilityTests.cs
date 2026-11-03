@@ -151,7 +151,7 @@ public sealed class SharedArtifactTraceabilityTests : BunitContext
     private sealed class Fixture : IDisposable
     {
         private readonly Mock<IWorkspaceSessionRestoreService> _restore = new();
-        private readonly Mock<IWorkspacePersistenceApiService> _persistence = new();
+        private readonly Mock<IWorkspacePersistenceApiService> _persistence = new() { CallBase = true };
         public WorkspaceArtifactRepository Workspace { get; } = new();
         public MockSampleProjectDocumentResolver Samples { get; } = new();
         public ArtifactExplorerContext ArtifactContext { get; }

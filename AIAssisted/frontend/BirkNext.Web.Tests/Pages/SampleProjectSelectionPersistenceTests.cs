@@ -28,7 +28,7 @@ public sealed class SampleProjectSelectionPersistenceTests : BunitContext
 {
     private readonly WorkspaceArtifactRepository _workspace = new();
     private readonly SampleProjectsHttpHandler _catalog = new();
-    private readonly Mock<IWorkspacePersistenceApiService> _persistenceApi = new();
+    private readonly Mock<IWorkspacePersistenceApiService> _persistenceApi = new() { CallBase = true };
     private readonly Mock<IWorkspaceAutoSaveService> _autoSave = new();
     private readonly Mock<IReviewContextProvider> _reviewContext = new();
     private readonly WorkspaceStateManager _stateManager = new();
@@ -276,7 +276,7 @@ public sealed class SampleProjectSelectionPersistenceTests : BunitContext
     public async Task AutoSave_ThrottledChange_IsSavedWhenTheWindowOpens()
     {
         var saveTimes = new List<DateTime>();
-        var persistence = new Mock<IWorkspacePersistenceApiService>();
+        var persistence = new Mock<IWorkspacePersistenceApiService> { CallBase = true };
         persistence.Setup(x => x.AutoSaveAsync(It.IsAny<string?>())).ReturnsAsync(() => { lock (saveTimes) saveTimes.Add(DateTime.UtcNow); return new SavedWorkspaceDto { Id = Guid.NewGuid(), Name = "Auto" }; });
         var repo = new WorkspaceArtifactRepository();
         var service = new WorkspaceAutoSaveService(repo, persistence.Object, Mock.Of<IWorkspaceSessionRestoreService>(), new WorkspaceUpdateCoordinator(), NullLogger<WorkspaceAutoSaveService>.Instance, autoSaveIntervalMs: 30, autoSaveThrottleMs: 400);

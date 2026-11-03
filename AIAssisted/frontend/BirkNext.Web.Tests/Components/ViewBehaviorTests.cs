@@ -1783,8 +1783,8 @@ public class ViewBehaviorTests : BunitContext
         autoSave.Setup(service => service.StopMonitoringAsync()).Returns(Task.CompletedTask);
 
         Services.AddSingleton(readinessService.Object);
-        Services.AddSingleton(Mock.Of<ICurrentWorkspaceProjection>());
-        Services.AddSingleton(Mock.Of<IWorkspacePersistenceApiService>());
+        Services.AddSingleton(new Mock<ICurrentWorkspaceProjection> { CallBase = true }.Object);
+        Services.AddSingleton(new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
         Services.AddSingleton(autoSave.Object);
         Services.AddSingleton(Mock.Of<IRecommendedWorkflowApiService>());

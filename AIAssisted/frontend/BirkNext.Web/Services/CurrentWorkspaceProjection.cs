@@ -270,7 +270,24 @@ public interface ICurrentWorkspaceProjection
 
     /// <summary>Raised after the workspace changed. Consumers read <see cref="GetAsync"/> again.</summary>
     event Action? Changed;
+
+    /// <summary>The roles the current workspace holds an artifact of (navigation applicability). Never loads deferred document bodies.</summary>
+    async Task<IReadOnlySet<WorkspaceArtifactType>> GetRolePresenceAsync()
+    {
+        var current = await GetAsync();
+        return CurrentWorkspaceSnapshot.WorkflowRoles.Where(current.Has).ToHashSet();
+    }
+
+    /// <summary>Which workspace and project this is (a cache key for pages that read no documents). Never loads deferred document bodies.</summary>
+    async Task<CurrentWorkspaceIdentity> GetIdentityAsync()
+    {
+        var current = await GetAsync();
+        return new(current.WorkspaceId, current.ProjectSlug, current.Version);
+    }
 }
+
+/// <summary>The current workspace's identity without its documents.</summary>
+public sealed record CurrentWorkspaceIdentity(Guid? WorkspaceId, string? ProjectSlug, long Version);
 
 public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, IDisposable
 {
@@ -290,14 +307,48 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         IArtifactExplorerContext artifacts,
         IWorkspaceSessionRestoreService restore,
         IWorkspacePersistenceApiService persistence,
-        ILogger<CurrentWorkspaceProjection> logger)
+        ILogger<CurrentWorkspaceProjection> logger,
+        IWorkspaceDocumentHydration? documents = null)
     {
+        _documents = documents;
         _artifacts = artifacts;
         _restore = restore;
         _persistence = persistence;
         _logger = logger;
         // The explorer context relays every repository change: artifacts, selection, project selection, resume/clear and reset.
         _artifacts.Changed += OnArtifactsChanged;
+    }
+
+    private readonly IWorkspaceDocumentHydration? _documents;
+
+    public async Task<IReadOnlySet<WorkspaceArtifactType>> GetRolePresenceAsync()
+    {
+        if (_documents is { IsDeferred: true })
+        {
+            var present = await _artifacts.GetRolePresenceAsync();
+            return CurrentWorkspaceSnapshot.WorkflowRoles.Where(present.Contains).ToHashSet();
+        }
+        var current = await GetAsync();
+        return CurrentWorkspaceSnapshot.WorkflowRoles.Where(current.Has).ToHashSet();
+    }
+
+    public async Task<CurrentWorkspaceIdentity> GetIdentityAsync()
+    {
+        if (_documents is not { IsDeferred: true })
+        {
+            var current = await GetAsync();
+            return new(current.WorkspaceId, current.ProjectSlug, current.Version);
+        }
+        // The same identity the snapshot carries, from the restored workspace and the backend's current workspace — without the documents.
+        long version;
+        lock (_gate) version = _version;
+        var scope = _artifacts.CurrentScope;
+        var metadata = await _restore.GetCurrentWorkspaceMetadataAsync();
+        if (metadata is not null && !SameProject(metadata.ProjectName, scope)) metadata = null;
+        Guid? workspaceId = metadata?.WorkspaceId;
+        if (workspaceId is null && await _persistence.GetCurrentStateAsync() is { CurrentWorkspaceId: { } persisted } state && SameProject(state.ProjectName, scope))
+            workspaceId = persisted;
+        return new(workspaceId, scope, version);
     }
 
     public Task<CurrentWorkspaceSnapshot> GetAsync()

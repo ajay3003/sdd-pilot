@@ -29,7 +29,7 @@ public sealed class TraceabilityPageTests : BunitContext
             .ReturnsAsync((WorkspaceArtifactType role, CancellationToken _) => new ArtifactExplorerState(role, ExplorerArtifactStatus.Empty,
                 null, null, []));
         Services.AddSingleton(artifactContext.Object);
-        var projection = new Mock<ICurrentWorkspaceProjection>();
+        var projection = new Mock<ICurrentWorkspaceProjection> { CallBase = true };
         projection.Setup(x => x.GetAsync()).Returns(() => Task.FromResult(_snapshot));
         projection.SetupGet(x => x.Current).Returns(() => _snapshot);
         Services.AddSingleton<ICurrentWorkspaceProjection>(projection.Object);

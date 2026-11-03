@@ -33,6 +33,14 @@ public interface IWorkspacePersistenceApiService
     Task<SavedWorkspaceDto?> SaveCurrentAsync(string? name = null);
     Task<SavedWorkspaceDto?> SaveAsAsync(string name);
     Task<SavedWorkspaceDto?> LoadAsync(Guid workspaceId);
+
+    /// <summary>The workspace as application start restores it: identity, artifacts and the lifecycle without document bodies
+    /// (<see cref="SavedWorkspaceDto.DocumentsDeferred"/>). Hosts without the endpoint return the full workspace.</summary>
+    Task<SavedWorkspaceDto?> LoadBootstrapAsync(Guid workspaceId) => LoadAsync(workspaceId);
+
+    /// <summary>The document bodies of a saved workspace's lifecycle, or null when the workspace is not stored. Throws when the request fails,
+    /// so a failure is never read as "no documents".</summary>
+    Task<WorkspaceDocumentsDto?> LoadDocumentsAsync(Guid workspaceId, CancellationToken cancellationToken = default) => Task.FromResult<WorkspaceDocumentsDto?>(null);
     Task<List<SavedWorkspaceDto>> ListAsync();
     Task<SavedWorkspaceDto?> RenameAsync(Guid workspaceId, string newName);
     Task<SavedWorkspaceDto?> DuplicateAsync(Guid workspaceId, string newName);
@@ -70,6 +78,17 @@ public class SavedWorkspaceDto
     public string? SddLifecycleJson { get; set; }
     public bool Favorite { get; set; }
     public List<SavedWorkspaceArtifactDto> Artifacts { get; set; } = new();
+    /// <summary>Bootstrap only: the lifecycle is a manifest — its document bodies are fetched with <see cref="IWorkspacePersistenceApiService.LoadDocumentsAsync"/>.</summary>
+    public bool DocumentsDeferred { get; set; }
+    public int DeferredDocuments { get; set; }
+    public long DeferredDocumentCharacters { get; set; }
+}
+
+/// <summary>The document bodies of a saved workspace's lifecycle: revision content by revision id, captured generated documents by fingerprint.</summary>
+public sealed class WorkspaceDocumentsDto
+{
+    public Dictionary<Guid, string> Revisions { get; set; } = [];
+    public Dictionary<string, string> GeneratedDocuments { get; set; } = [];
 }
 
 public class SavedWorkspaceArtifactDto
@@ -191,6 +210,27 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             _logger.LogError(ex, "Error loading workspace {WorkspaceId}", workspaceId);
             return null;
         }
+    }
+
+    public async Task<SavedWorkspaceDto?> LoadBootstrapAsync(Guid workspaceId)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<SavedWorkspaceDto>($"api/workspace-persistence/bootstrap/{workspaceId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading workspace {WorkspaceId}", workspaceId);
+            return null;
+        }
+    }
+
+    public async Task<WorkspaceDocumentsDto?> LoadDocumentsAsync(Guid workspaceId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.GetAsync($"api/workspace-persistence/documents/{workspaceId}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<WorkspaceDocumentsDto>(cancellationToken: cancellationToken);
     }
 
     public async Task<List<SavedWorkspaceDto>> ListAsync()

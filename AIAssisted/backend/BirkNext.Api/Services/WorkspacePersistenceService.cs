@@ -73,8 +73,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             }
         }
 
+        // A client that has not loaded the document bodies sends a manifest: bodies come from the stored lifecycle, never lost.
         if (sddLifecycleJson is not null)
-            workspace.SddLifecycleJson = sddLifecycleJson;
+            workspace.SddLifecycleJson = WorkspaceLifecycleDocuments.FillMissing(sddLifecycleJson, workspace.SddLifecycleJson);
 
         workspace.UpdatedAt = DateTimeOffset.UtcNow;
         workspace.AutoSaved = false;
@@ -104,6 +105,13 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new ArgumentException("Workspace name cannot be empty", nameof(name));
+        }
+
+        // Saving the current workspace under a new name from a client that has not loaded its document bodies: they come from the current one.
+        if (sddLifecycleJson is not null && (_currentWorkspaceId ?? await ResolvePersistedCurrentWorkspaceIdAsync()) is { } currentId)
+        {
+            var stored = await _db.SavedWorkspaces.AsNoTracking().Where(w => w.Id == currentId && !w.IsDeleted).Select(w => w.SddLifecycleJson).FirstOrDefaultAsync();
+            sddLifecycleJson = WorkspaceLifecycleDocuments.FillMissing(sddLifecycleJson, stored);
         }
 
         var workspace = new SavedWorkspace
@@ -385,7 +393,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             current.ProjectName = projectName.Trim();
         }
         if (sddLifecycleJson is not null)
-            current.SddLifecycleJson = sddLifecycleJson;
+            current.SddLifecycleJson = WorkspaceLifecycleDocuments.FillMissing(sddLifecycleJson, current.SddLifecycleJson);
 
         // Update artifacts if provided
         if (artifacts != null && artifacts.Any())

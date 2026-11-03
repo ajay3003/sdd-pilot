@@ -24,7 +24,7 @@ namespace BirkNext.Web.Tests.Pages;
 public sealed class SampleProjectRestartRestorationTests : BunitContext
 {
     private readonly WorkspaceArtifactRepository _workspace = new();
-    private readonly Mock<IWorkspacePersistenceApiService> _persistenceApi = new();
+    private readonly Mock<IWorkspacePersistenceApiService> _persistenceApi = new() { CallBase = true };
     private readonly Mock<IWorkspaceSessionRestoreService> _restoreService = new();
     private readonly Mock<IWorkspaceAutoSaveService> _autoSave = new();
 
@@ -46,6 +46,47 @@ public sealed class SampleProjectRestartRestorationTests : BunitContext
         Services.AddSingleton(new FeatureVisibilityService());
         Services.AddSingleton(new AdminApiService(new HttpClient()));
         Services.AddSingleton(NullLogger<MainLayout>.Instance);
+    }
+
+    /// <summary>
+    /// Start-up restores from the bootstrap (identity + lifecycle manifest): the shell is usable at once, and a page that reads documents is
+    /// held inside it until the document bodies arrive — it never renders from a manifest as if the project had no documents.
+    /// </summary>
+    [Fact]
+    public void MainLayout_StartsFromTheBootstrap_AndHoldsADocumentPageUntilItsDocumentsLoad()
+    {
+        var id = Guid.NewGuid();
+        var revision = Guid.NewGuid();
+        Services.AddSingleton(_workspace);
+        Services.AddSingleton<IWorkspaceDocumentHydration>(sp => new WorkspaceDocumentHydration(_workspace, sp, NullLogger<WorkspaceDocumentHydration>.Instance));
+        _persistenceApi.Setup(x => x.GetCurrentStateAsync()).ReturnsAsync(new CurrentWorkspaceStateDto { CurrentWorkspaceId = id, Status = "AutoSaved" });
+        _persistenceApi.Setup(x => x.LoadBootstrapAsync(id)).ReturnsAsync(new SavedWorkspaceDto
+        {
+            Id = id, Name = "Imported", DocumentsDeferred = true,
+            Artifacts = [new SavedWorkspaceArtifactDto { ArtifactType = nameof(WorkspaceArtifactKind.Specification), FileName = "spec.md", Content = "# Spec" }],
+        });
+        _restoreService.Setup(x => x.RestoreWorkspaceAsync(It.IsAny<SavedWorkspaceDto>())).Callback<SavedWorkspaceDto>(ws =>
+        {
+            _workspace.RestoreSddLifecycle(System.Text.Json.JsonSerializer.Serialize(new SddLifecycleState
+            {
+                Revisions = [new SddArtifactRevision { RevisionId = revision, Role = "Specification", FileName = "spec.md", Fingerprint = "fp", ContentLength = 6 }],
+            }));
+            if (ws.DocumentsDeferred) _workspace.MarkDocumentsDeferred(ws.Id);
+        }).Returns(Task.CompletedTask);
+        var documents = new TaskCompletionSource<WorkspaceDocumentsDto?>();
+        _persistenceApi.Setup(x => x.LoadDocumentsAsync(id, It.IsAny<CancellationToken>())).Returns(documents.Task);
+
+        var cut = Render<MainLayout>(p => p
+            .Add(l => l.Body, (Microsoft.AspNetCore.Components.RenderFragment)(b => b.AddMarkupContent(0, "<p id='dashboard-body'>dashboard</p>")))
+            .AddCascadingValue(new Microsoft.AspNetCore.Components.RouteData(typeof(BirkNext.Web.Pages.Dashboard), new Dictionary<string, object?>())));
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=workspace-documents-loading]"));
+        cut.FindAll("#dashboard-body").Should().BeEmpty("a page that reads documents waits for them inside the usable shell");
+        _persistenceApi.Verify(x => x.LoadAsync(It.IsAny<Guid>()), Times.Never, "start-up never downloads the full workspace");
+
+        documents.SetResult(new WorkspaceDocumentsDto { Revisions = { [revision] = "# Spec" } });
+        cut.WaitForAssertion(() => cut.Find("#dashboard-body"));
+        _workspace.SddLifecycle.Revisions.Single().Content.Should().Be("# Spec");
     }
 
     [Fact]

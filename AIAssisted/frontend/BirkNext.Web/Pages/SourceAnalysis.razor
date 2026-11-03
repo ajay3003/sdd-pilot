@@ -1,4 +1,5 @@
 @page "/source-analysis"
+@attribute [BirkNext.Web.Services.WorkspaceDocumentsNotRead]
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
@@ -530,7 +531,8 @@
     {
         var context = await ContextFactory.GetActiveContextAsync();
         _profile = context.ActiveProfileOrNull;
-        var workspace = await CurrentWorkspace.GetAsync();
+        // Identity only: Source Analysis reads no workspace documents.
+        var workspace = await CurrentWorkspace.GetIdentityAsync();
         _snapshotKey = new(_profile?.Id ?? "", workspace.WorkspaceId, workspace.ProjectSlug, workspace.Version);
         await Load();
         _loaded = true;

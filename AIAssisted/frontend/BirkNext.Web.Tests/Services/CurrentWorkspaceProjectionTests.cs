@@ -16,7 +16,7 @@ public sealed class CurrentWorkspaceProjectionTests
     private readonly WorkspaceArtifactRepository _repository = new();
     private readonly MockSampleProjectDocumentResolver _samples = new();
     private readonly Mock<IWorkspaceSessionRestoreService> _restore = new();
-    private readonly Mock<IWorkspacePersistenceApiService> _persistence = new();
+    private readonly Mock<IWorkspacePersistenceApiService> _persistence = new() { CallBase = true };
     private readonly ArtifactExplorerContext _explorers;
     private readonly CurrentWorkspaceProjection _projection;
 

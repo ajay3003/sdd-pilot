@@ -1,0 +1,65 @@
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@implements IDisposable
+
+@* A page reads the workspace's documents unless it declares it does not ([WorkspaceDocumentsNotRead]). Before such a page renders, the bodies a
+   bootstrap manifest deferred are loaded — inside the shell, which is already usable. A failure is shown as such (never "no documents"). *@
+@if (Pending)
+{
+    <section class="workspace-documents-gate" data-testid="workspace-documents-gate" data-state="@_hydration!.State">
+        @if (_hydration.State == WorkspaceDocumentsState.Failed)
+        {
+            <h1>Project documents could not be loaded</h1>
+            <p role="alert" data-testid="workspace-documents-error">@_hydration.Error The documents are still stored; nothing was removed.</p>
+            <button type="button" class="btn btn-primary" @onclick="RetryAsync" data-testid="workspace-documents-retry">Retry</button>
+        }
+        else
+        {
+            <p role="status" aria-busy="true" data-testid="workspace-documents-loading">Loading project documents…</p>
+        }
+    </section>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>The routed page; null outside routing (rendered as-is).</summary>
+    [Parameter] public Type? PageType { get; set; }
+
+    private IWorkspaceDocumentHydration? _hydration;
+
+    private bool Reads => PageType is not null && !Attribute.IsDefined(PageType, typeof(WorkspaceDocumentsNotReadAttribute));
+    private bool Pending => _hydration is { IsDeferred: true } && Reads;
+
+    protected override void OnInitialized()
+    {
+        _hydration = Services.GetService<IWorkspaceDocumentHydration>();
+        if (_hydration is not null) _hydration.Changed += OnChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Pending && _hydration!.State == WorkspaceDocumentsState.Deferred) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_hydration is null) return;
+        await _hydration.EnsureAsync();
+        StateHasChanged();
+    }
+
+    private async Task RetryAsync()
+    {
+        if (_hydration is null) return;
+        await _hydration.RetryAsync();
+        StateHasChanged();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() { if (_hydration is not null) _hydration.Changed -= OnChanged; }
+}

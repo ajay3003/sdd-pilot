@@ -78,8 +78,8 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
         var autoSave = new Mock<IWorkspaceAutoSaveService>();
         autoSave.Setup(a => a.StartMonitoringAsync()).Returns(Task.CompletedTask);
         Services.AddSingleton(service.Object);
-        Services.AddSingleton(Mock.Of<ICurrentWorkspaceProjection>());
-        Services.AddSingleton(Mock.Of<IWorkspacePersistenceApiService>());
+        Services.AddSingleton(new Mock<ICurrentWorkspaceProjection> { CallBase = true }.Object);
+        Services.AddSingleton(new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
         Services.AddSingleton(autoSave.Object);
         Services.AddSingleton(_api.Object);

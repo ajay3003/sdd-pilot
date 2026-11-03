@@ -138,6 +138,8 @@ builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequired
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceUpdateCoordinator, WorkspaceUpdateCoordinator>();
 builder.Services.AddSingleton<IReviewContextProvider, ReviewContextProvider>();
+// Document bodies of a workspace restored from its bootstrap manifest, loaded when a page reads documents.
+builder.Services.AddSingleton<IWorkspaceDocumentHydration, WorkspaceDocumentHydration>();
 builder.Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
 builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
@@ -251,7 +253,8 @@ builder.Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerC
         sp.GetRequiredService<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(),
         sp.GetRequiredService<IWorkspaceUpdateCoordinator>(),
         sp.GetRequiredService<IWorkspaceStateManager>(),
-        sp.GetRequiredService<IFrontendAnalysisSettingsService>()));
+        sp.GetRequiredService<IFrontendAnalysisSettingsService>(),
+        sp.GetRequiredService<IWorkspaceDocumentHydration>()));
 // Target Environment → Project: the project's evidence bindings (references to imports/snapshots), reused by explorers, workflow and reviews.
 builder.Services.AddScoped<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService, BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceService>();
 builder.Services.AddScoped<BirkNext.Web.Services.ProjectEvidence.PackageCatalogService>();

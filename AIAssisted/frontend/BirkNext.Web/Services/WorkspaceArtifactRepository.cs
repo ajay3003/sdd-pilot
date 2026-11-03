@@ -213,6 +213,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
         ProjectName = null;
         _artifacts.Clear();
         SddLifecycle = new();
+        DeferredDocumentsWorkspaceId = null;
         NotifyArtifactsChanged();
     }
 
@@ -250,11 +251,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             // that was current before (the last imported package), so they are re-derived from this import's revisions, never captured into it.
             if (ProjectImportScope.IsImport(SessionScope))
             {
-                var scope = SessionScope;
                 foreach (var role in _artifacts.Keys.Where(t => !IsSessionOnly(t)).ToList()) _artifacts.Remove(role);
-                foreach (var current in SddLifecycle.Revisions.Where(x => x.WorkspaceScope == scope && x.IsCurrentSelection && !string.IsNullOrWhiteSpace(x.Content)))
-                    if (Enum.TryParse<WorkspaceArtifactType>(current.Role, out var role) && !IsSessionOnly(role))
-                        _artifacts[role] = new WorkspaceArtifact(current.Content, current.CapturedAt.UtcDateTime, current.FileName, current.SourceReference);
+                DeriveImportSessionArtifacts();
                 return;
             }
             foreach (var (type, artifact) in GetAllArtifacts().ToList())
@@ -267,7 +265,43 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
         }
     }
 
-    public void ResetSddLifecycle() => SddLifecycle = new();
+    private void DeriveImportSessionArtifacts()
+    {
+        var scope = SessionScope;
+        foreach (var current in SddLifecycle.Revisions.Where(x => x.WorkspaceScope == scope && x.IsCurrentSelection && !string.IsNullOrWhiteSpace(x.Content)))
+            if (Enum.TryParse<WorkspaceArtifactType>(current.Role, out var role) && !IsSessionOnly(role))
+                _artifacts[role] = new WorkspaceArtifact(current.Content, current.CapturedAt.UtcDateTime, current.FileName, current.SourceReference);
+    }
+
+    public void ResetSddLifecycle()
+    {
+        SddLifecycle = new();
+        DeferredDocumentsWorkspaceId = null;
+    }
+
+    /// <summary>
+    /// The saved workspace whose document bodies this session's lifecycle does not hold yet (it was restored from the bootstrap manifest), or
+    /// null when every body is loaded. Readers of document content load them first (<see cref="IWorkspaceDocumentHydration"/>).
+    /// </summary>
+    public Guid? DeferredDocumentsWorkspaceId { get; private set; }
+
+    public void MarkDocumentsDeferred(Guid workspaceId) => DeferredDocumentsWorkspaceId = workspaceId;
+
+    /// <summary>
+    /// Completes the lifecycle with its document bodies: a revision without content takes its body; a body is never replaced (a revision added
+    /// in this session already holds its own). Generated documents fill in the same way. The import scope's session artifacts follow.
+    /// </summary>
+    public void ApplyDocuments(WorkspaceDocumentsDto documents)
+    {
+        foreach (var revision in SddLifecycle.Revisions)
+        {
+            if (string.IsNullOrEmpty(revision.Content) && documents.Revisions.TryGetValue(revision.RevisionId, out var content)) revision.Content = content;
+            revision.ContentLength = 0;
+        }
+        foreach (var (fingerprint, content) in documents.GeneratedDocuments) SddLifecycle.GeneratedDocumentContents.TryAdd(fingerprint, content);
+        if (ProjectImportScope.IsImport(SessionScope)) DeriveImportSessionArtifacts();
+        DeferredDocumentsWorkspaceId = null;
+    }
 
     /// <summary>Schema Studio stores are session-only JSON (never document revisions of a project scope).</summary>
     private static bool IsSessionOnly(WorkspaceArtifactType type) => type is WorkspaceArtifactType.SchemaStudio or WorkspaceArtifactType.SchemaStudioPackages

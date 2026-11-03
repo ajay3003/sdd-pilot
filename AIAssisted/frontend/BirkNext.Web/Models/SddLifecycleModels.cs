@@ -327,6 +327,15 @@ public sealed class SddArtifactRevision
     public string FileName { get; set; } = "";
     public string? SourceReference { get; set; }
     public string Content { get; set; } = "";
+    /// <summary>
+    /// Set only while <see cref="Content"/> is not loaded (a workspace restored from its bootstrap manifest): the body's length, so the document
+    /// counts as present before its body arrives. Never written back.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int ContentLength { get; set; }
+    /// <summary>The revision holds a document: its body, or (before the body is loaded) a non-empty body's length.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasDocument => !string.IsNullOrWhiteSpace(Content) || ContentLength > 0;
     public string Fingerprint { get; set; } = "";
     public int Revision { get; set; }
     public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;

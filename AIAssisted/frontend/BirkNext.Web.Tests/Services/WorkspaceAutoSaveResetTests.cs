@@ -10,7 +10,7 @@ public sealed class WorkspaceAutoSaveResetTests
     [Fact]
     public async Task PausedAutoSaveDoesNotPersistPendingOrNewChanges()
     {
-        var persistence = new Mock<IWorkspacePersistenceApiService>();
+        var persistence = new Mock<IWorkspacePersistenceApiService> { CallBase = true };
         persistence.Setup(x => x.AutoSaveAsync(It.IsAny<string?>()))
             .ReturnsAsync(new SavedWorkspaceDto { Id = Guid.NewGuid(), Name = "stale" });
         var workspace = new WorkspaceArtifactRepository();

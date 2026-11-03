@@ -42,6 +42,18 @@ public class SavedWorkspaceDto
     public List<SavedWorkspaceArtifactResponseDto> Artifacts { get; set; } = new();
 }
 
+/// <summary>
+/// What application start needs to restore a workspace: its identity, its artifacts and its SDD lifecycle as a manifest (every record, no
+/// document bodies). The bodies are fetched from the documents endpoint when a page reads documents.
+/// </summary>
+public sealed class WorkspaceBootstrapDto : SavedWorkspaceDto
+{
+    /// <summary>True when the lifecycle's document bodies were left out (GET documents/{id} returns them).</summary>
+    public bool DocumentsDeferred { get; set; }
+    public int DeferredDocuments { get; set; }
+    public long DeferredDocumentCharacters { get; set; }
+}
+
 public class WorkspaceStateDto
 {
     public Guid? CurrentWorkspaceId { get; set; }

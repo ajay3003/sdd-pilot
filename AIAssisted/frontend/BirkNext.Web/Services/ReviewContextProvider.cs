@@ -54,8 +54,10 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
         IPlanAnalysisService planService,
         IDataModelAnalysisService dataModelService,
         ILogger<ReviewContextProvider> logger,
-        BirkNext.Web.Services.Explorers.IArtifactExplorerContext? artifactContext = null)
+        BirkNext.Web.Services.Explorers.IArtifactExplorerContext? artifactContext = null,
+        IWorkspaceDocumentHydration? documents = null)
     {
+        _documents = documents;
         _artifacts = artifacts;
         _updates = updates;
         _constitutionService = constitutionService;
@@ -73,8 +75,13 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
 
     public ReviewContext? GetCurrent() => _current;
 
+    private readonly IWorkspaceDocumentHydration? _documents;
+
     public async Task RebuildAsync()
     {
+        // Built from document bodies only: while they are deferred a rebuild would read nothing (and must not load them at start-up).
+        // Loading the bodies rebuilds it.
+        if (_documents is { IsDeferred: true }) return;
         if (_isRebuilding)
         {
             _logger.LogWarning("ReviewContext rebuild already in progress, skipping");

@@ -32,7 +32,7 @@ internal static class WorkspaceSnapshots
     /// <summary>A projection that always returns <paramref name="snapshot"/>.</summary>
     public static Mock<ICurrentWorkspaceProjection> Projection(CurrentWorkspaceSnapshot snapshot)
     {
-        var projection = new Mock<ICurrentWorkspaceProjection>();
+        var projection = new Mock<ICurrentWorkspaceProjection> { CallBase = true };
         projection.Setup(p => p.GetAsync()).ReturnsAsync(snapshot);
         projection.SetupGet(p => p.Current).Returns(snapshot);
         return projection;

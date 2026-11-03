@@ -24,7 +24,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     private readonly MutableCoverageApi _api = new();
-    private readonly Mock<ICurrentWorkspaceProjection> _workspace = new();
+    private readonly Mock<ICurrentWorkspaceProjection> _workspace = new() { CallBase = true };
     private CurrentWorkspaceSnapshot _snapshot = CurrentWorkspaceSnapshot.None();
     private FrontendAnalysisProfile? _profile = new() { Id = "env", Name = "Env" };
 

@@ -301,7 +301,7 @@ public class DashboardPageTests : BunitContext
         services.AddSingleton<ISampleProjectDocumentResolver>(resolver);
         services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(explorers);
         services.AddSingleton<ICurrentWorkspaceProjection>(new CurrentWorkspaceProjection(
-            explorers, Mock.Of<IWorkspaceSessionRestoreService>(), Mock.Of<IWorkspacePersistenceApiService>(),
+            explorers, Mock.Of<IWorkspaceSessionRestoreService>(), new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<CurrentWorkspaceProjection>.Instance));
     }
 
