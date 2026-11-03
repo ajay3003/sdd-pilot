@@ -1,0 +1,37 @@
+@using BirkNext.Web.Models
+@* The staged-progress list of a ReviewAssessment (API Quality Review readiness, Source Analysis loading): one row per real operation with its
+   state glyph and text. The state is in words as well as the glyph, so it is never colour-only. *@
+<ol class="rsl" data-testid="@TestId">
+    @foreach (var s in Stages)
+    {
+        <li class="rsl-stage rsl-stage-@s.State.ToString().ToLowerInvariant()" data-testid="@StageTestId" data-stage="@s.Key" data-state="@s.State">
+            <span class="rsl-glyph @(s.State == ReviewStageState.Running ? "is-running" : "")" aria-hidden="true">@Glyph(s.State)</span> @s.Label · @Text(s, RunningText)
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ReviewStage> Stages { get; set; } = [];
+    [Parameter] public string TestId { get; set; } = "review-stages";
+    [Parameter] public string StageTestId { get; set; } = "review-stage";
+    /// <summary>What a running stage says ("loading…" by default).</summary>
+    [Parameter] public string RunningText { get; set; } = "loading…";
+
+    public static string Glyph(ReviewStageState state) => state switch
+    {
+        ReviewStageState.Done => "✓",
+        ReviewStageState.Running => "⟳",
+        ReviewStageState.Failed => "!",
+        ReviewStageState.Skipped => "–",
+        _ => "○",
+    };
+
+    public static string Text(ReviewStage s, string running = "loading…") => s.State switch
+    {
+        ReviewStageState.Done => s.Detail is { } d ? $"done · {d}" : "done",
+        ReviewStageState.Running => running,
+        ReviewStageState.Failed => s.Detail is { } f && f != "could not be assessed" ? $"failed · {f}" : "could not be assessed",
+        ReviewStageState.Skipped => s.Detail is { } d ? $"skipped · {d}" : "skipped",
+        _ => "pending",
+    };
+}

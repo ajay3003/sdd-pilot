@@ -1,0 +1,7 @@
+.rsl { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.15rem; font-size: 0.875rem; }
+.rsl-stage-pending, .rsl-stage-skipped { color: var(--clr-text-muted); }
+.rsl-stage-failed { color: var(--clr-warning); }
+.rsl-glyph { display: inline-block; width: 1rem; text-align: center; }
+.rsl-glyph.is-running { animation: rsl-spin 1s linear infinite; }
+@keyframes rsl-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rsl-glyph.is-running { animation: none; } }

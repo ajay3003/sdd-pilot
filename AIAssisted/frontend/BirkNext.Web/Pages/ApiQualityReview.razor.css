@@ -783,9 +783,6 @@
 /* Readiness assessment: neutral (never red) while evidence loads; a retrieval failure is amber "could not be assessed", not a blocker. */
 .aqr-readiness-assessing { border-left-color: var(--clr-border); background: var(--clr-surface); }
 .aqr-readiness-failed, .aqr-readiness-needsreview { border-left-color: var(--clr-warning); background: var(--clr-warning-bg-light); }
-.aqr-assessment-stages { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.15rem; font-size: 0.875rem; }
-.aqr-assessment-stage-pending, .aqr-assessment-stage-skipped { color: var(--clr-text-muted); }
-.aqr-assessment-stage-failed { color: var(--clr-warning); }
 .aqr-decision-evidence, .aqr-decision-refresh { margin: 0.25rem 0 0; font-size: 0.875rem; }
 .aqr-decision-evidence-label { font-weight: 600; color: var(--clr-text-heading); }
 .aqr-link-button { background: none; border: 0; padding: 0; color: var(--clr-primary); text-decoration: underline; cursor: pointer; font: inherit; }

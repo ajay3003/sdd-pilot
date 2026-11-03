@@ -1022,24 +1022,6 @@
     private void Log(ReviewAssessment a, string message) =>
         (ServiceProvider.GetService(typeof(ILogger<ApiQualityReview>)) as ILogger)?.LogInformation("API Quality Review readiness (generation {Generation}): {Message}", a.Generation, message);
 
-    private static string StageGlyph(ReviewStageState state) => state switch
-    {
-        ReviewStageState.Done => "✓",
-        ReviewStageState.Running => "⟳",
-        ReviewStageState.Failed => "!",
-        ReviewStageState.Skipped => "–",
-        _ => "○",
-    };
-
-    private static string StageText(ReviewStage s) => s.State switch
-    {
-        ReviewStageState.Done => s.Detail is { } d ? $"done · {d}" : "done",
-        ReviewStageState.Running => "loading…",
-        ReviewStageState.Failed => "could not be assessed",
-        ReviewStageState.Skipped => s.Detail is { } d ? $"skipped · {d}" : "skipped",
-        _ => "pending",
-    };
-
     /// <summary>Before the first evaluated snapshot: staged, announced progress (never red), or "Readiness could not be fully assessed" with Retry.</summary>
     private RenderFragment AssessingPanel() => __builder =>
     {
@@ -1062,14 +1044,7 @@
                 }
                 @if (a is not null)
                 {
-                    <ol class="aqr-assessment-stages" data-testid="aqr-assessment-stages">
-                        @foreach (var s in a.Stages)
-                        {
-                            <li class="aqr-assessment-stage aqr-assessment-stage-@s.State.ToString().ToLowerInvariant()" data-testid="aqr-assessment-stage" data-stage="@s.Key" data-state="@s.State">
-                                <span aria-hidden="true">@StageGlyph(s.State)</span> @s.Label · @StageText(s)
-                            </li>
-                        }
-                    </ol>
+                    <ReviewStageList Stages="a.Stages" TestId="aqr-assessment-stages" StageTestId="aqr-assessment-stage" />
                 }
             </div>
         </section>
