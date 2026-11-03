@@ -52,6 +52,17 @@ public sealed class ProtectedTestDataDefaultsStore
         }
     }
 
+    /// <summary>"Reset everything" only: forgets every stored edit (the file is deleted), so the product defaults apply after restarts too.</summary>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _values = [];
+            try { if (File.Exists(_path)) File.Delete(_path); }
+            catch (IOException ex) { _logger.LogWarning(ex, "Protected Test Data defaults file could not be deleted"); }
+        }
+    }
+
     private List<ProtectedDefaultValue>? Read()
     {
         try { return File.Exists(_path) ? JsonSerializer.Deserialize<List<ProtectedDefaultValue>>(File.ReadAllText(_path), Json) : null; }

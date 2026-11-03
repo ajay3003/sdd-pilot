@@ -54,6 +54,25 @@ public sealed class AltinnTestDataEditor(AltinnSessionStore identities, Protecte
         return count;
     }
 
+    public int ResetProtectedToProduct()
+    {
+        var reset = 0;
+        foreach (var reporter in options.UnattendedIdPortenTest.Reporters.Where(r => r.BuiltIn))
+        {
+            if (SkoleNaervaerTestIdentityDefaults.Seed(AltinnTestDataProvider.Reporter, reporter.Alias) is not { } seed) continue;
+            if (reporter.TestIdPersonIdentifier != seed || reporter.Label != SkoleNaervaerTestIdentityDefaults.ReporterLabel || reporter.ValueVersion != 0) reset++;
+            (reporter.TestIdPersonIdentifier, reporter.Label, reporter.ValueVersion, reporter.ValueUpdatedAt, reporter.ValueModified) = (seed, SkoleNaervaerTestIdentityDefaults.ReporterLabel, 0, null, false);
+        }
+        foreach (var child in options.SyntheticChildren.Where(c => c.BuiltIn))
+        {
+            if (SkoleNaervaerTestIdentityDefaults.Seed(AltinnTestDataProvider.Child, child.Alias) is not { } seed) continue;
+            if (child.TestPersonIdentifier != seed || child.Label != SkoleNaervaerTestIdentityDefaults.ChildLabel || child.ValueVersion != 0) reset++;
+            (child.TestPersonIdentifier, child.Label, child.ValueVersion, child.ValueUpdatedAt, child.ValueModified) = (seed, SkoleNaervaerTestIdentityDefaults.ChildLabel, 0, null, false);
+        }
+        defaults.Clear();
+        return reset;
+    }
+
     /// <summary>Only built-in identities are persisted (session identities stay memory-only, as they always were).</summary>
     private void Persist(string role, string alias, bool restored)
     {

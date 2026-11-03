@@ -23,6 +23,11 @@ public interface ITestDataAssetEditor
     bool Remove(TestDataAsset asset);
     /// <summary>Reset Test Data: removes every deletable asset this editor owns (protected and configured ones stay). Returns how many.</summary>
     int ClearLocal();
+    /// <summary>
+    /// "Reset everything" only: every protected default this editor owns returns to its product state (value, label, version) and its stored
+    /// edits are deleted — unlike "Restore default value", which restores the value only. Returns how many differed from the product state.
+    /// </summary>
+    int ResetProtectedToProduct() => 0;
 }
 
 /// <summary>A consumer that references Test Data aliases (performance scenarios, release flows …): where, and how to re-point them.</summary>
@@ -304,11 +309,8 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
     /// </summary>
     public async Task<TestDataResetSummary> CompleteFullResetIncludingProtectedAsync(TestDataResetPreview before, CancellationToken ct)
     {
-        var now = time.GetUtcNow();
         var defaults = catalog.Assets().Where(a => a.Ownership == TestDataOwnership.ProtectedDefault).ToList();
-        var reset = 0;
-        foreach (var asset in defaults)
-            if (EditorOf(asset) is { } editor && editor.CanRestoreDefault(asset) && editor.RestoreDefault(asset, now, out var changed) is null && changed) reset++;
+        var reset = _editors.Sum(e => e.ResetProtectedToProduct());
         var fixtures = canonical?.ClearAllForFullReset() ?? 0;
         var removed = registry.ClearAll() + _editors.Sum(e => e.ClearLocal());
         var unresolved = (await UsagesAsync(ct)).Count(u => u.Unresolved);

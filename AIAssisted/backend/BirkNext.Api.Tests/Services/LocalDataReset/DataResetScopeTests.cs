@@ -58,7 +58,8 @@ public sealed class DataResetScopeTests : IDisposable
         h.Store.Add(Fixture(), new SkoleNaervaerCanonicalFixtures().Fixtures, DateTimeOffset.UtcNow);
         var child = h.Catalog.Assets().Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias);
         var seed = ChildValue(h);
-        await h.Lifecycle.EditAsync(child.Id, new TestDataEditRequest(null, "12345678901"), default); // an edit may be rejected by validation; the product-value check below is what matters
+        (await h.Lifecycle.EditAsync(child.Id, new TestDataEditRequest("Edited child", null), default)).Result.Updated.Should().BeTrue();
+        File.Exists(Path.Combine(_dir, "test-data", "protected-defaults.json")).Should().BeTrue("the edit is stored as an overlay");
         var preview = await h.Lifecycle.PreviewResetAsync(default);
 
         var summary = await h.Lifecycle.CompleteFullResetIncludingProtectedAsync(preview, default);
@@ -66,6 +67,9 @@ public sealed class DataResetScopeTests : IDisposable
         h.Store.Versions().Should().BeEmpty("the canonical fixture is genuinely removed");
         h.Catalog.Assets().Should().NotContain(a => a.Alias == SkoleNaervaerCanonicalFixtures.ValidReportAlias);
         ChildValue(h).Should().Be(seed, "the product default value applies again");
+        h.Catalog.Assets().Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias).Label.Should().Be(SkoleNaervaerTestIdentityDefaults.ChildLabel, "the label returns to the product label too");
+        File.Exists(Path.Combine(_dir, "test-data", "protected-defaults.json")).Should().BeFalse("stored edits are deleted, so a restart does not bring them back");
+        summary.ProtectedDefaultsResetToProduct.Should().Be(1);
         summary.ProtectedFixturesRemoved.Should().Be(1);
         summary.SystemDefaultsRecreated.Should().Contain([SkoleNaervaerTestIdentityDefaults.ChildAlias, SkoleNaervaerTestIdentityDefaults.ReporterAlias]);
         summary.ProtectedDefaultsPreserved.Should().Be(0);
