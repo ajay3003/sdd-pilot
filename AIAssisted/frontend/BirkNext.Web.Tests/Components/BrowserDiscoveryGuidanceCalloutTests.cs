@@ -61,7 +61,7 @@ public sealed class BrowserDiscoveryGuidanceCalloutTests : BunitContext
         var runtime = new BrowserCompanionRuntime(api.Object, Discovery, Services.GetRequiredService<IJSRuntime>());
         _runtimes.Add(runtime);
         await runtime.FollowAsync(_profile);
-        return Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        return Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
     }
 
     private static string Text(IRenderedComponent<BrowserDiscoveryTab> cut, string id) =>

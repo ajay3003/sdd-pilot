@@ -51,7 +51,7 @@ public sealed class BrowserDiscoveryFinalPolishTests : BunitContext
         var api = new Api { Status = new() { ProfileId = "dev", State = state, ApprovedOrigins = [Origin], Live = new() { ProfileId = "dev", ExtensionConnected = state == BrowserCompanionState.Connected } } };
         var runtime = new BrowserCompanionRuntime(api, Discovery, Services.GetRequiredService<IJSRuntime>());
         await runtime.FollowAsync(_profile);
-        return (Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)), runtime);
+        return (Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded(), runtime);
     }
 
     private static string Text(IRenderedComponent<BrowserDiscoveryTab> cut, string testId) => cut.Find($"[data-testid={testId}]").TextContent.Trim();

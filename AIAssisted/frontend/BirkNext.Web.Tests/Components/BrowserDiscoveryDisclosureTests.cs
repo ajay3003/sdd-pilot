@@ -19,7 +19,7 @@ public sealed class BrowserDiscoveryDisclosureTests : BunitContext
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
     }
     private BrowserCompanionRuntime Runtime(Api api) => new(api, Services.GetRequiredService<IEndpointDiscoveryService>(), Services.GetRequiredService<IJSRuntime>());
-    private IRenderedComponent<BrowserDiscoveryTab> Open(BrowserCompanionRuntime runtime) => Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+    private IRenderedComponent<BrowserDiscoveryTab> Open(BrowserCompanionRuntime runtime) => Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
     private static void AssertExpanded(IRenderedComponent<BrowserDiscoveryTab> cut, bool expanded)
     {
         Assert.Equal(expanded ? "true" : "false", cut.Find(Toggle).GetAttribute("aria-expanded"));

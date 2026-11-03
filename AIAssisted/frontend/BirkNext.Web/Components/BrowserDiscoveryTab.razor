@@ -9,7 +9,21 @@
     Frontend Quality Review interprets that evidence. Nothing here assesses, scores or judges:
     WCAG areas group observed evidence by principle and are never a conformance result.
 *@
-<section class="bd" data-testid="browser-discovery" aria-label="Browser discovery">
+<section class="bd" data-testid="browser-discovery" aria-label="Browser discovery" data-loaded="@(_evidenceReady && _liveReady ? "true" : "false")" aria-busy="@(_evidenceReady && _liveReady ? "false" : "true")">
+    @if (!_evidenceReady)
+    {
+        @* The tab is active at once; stored evidence and the live session load after the first paint (navigation never waits for data). *@
+        <div class="bd-loading" role="status" aria-live="polite" data-testid="bd-loading">
+            <p class="bd-loading-title"><span class="bd-spinner" aria-hidden="true"></span>@(_stillLoading ? "Still loading browser evidence…" : "Loading browser evidence…")</p>
+            <ul class="bd-loading-list">
+                <li class="bd-skeleton">Loading captured pages</li>
+                <li class="bd-skeleton">Loading live session state</li>
+                <li class="bd-skeleton">Loading historical evidence</li>
+            </ul>
+        </div>
+    }
+    else
+    {
     <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.BrowserDiscovery" Profile="Profile" />
 
     @* One notice for the companion situation, or none. A connected companion with no page open is not a warning. *@
@@ -40,7 +54,15 @@
     }
 
     @* Two questions, never one row: what is live in the browser right now, and what we captured before. *@
-    @if (BrowserDiscoveryLive.IsCompact(Situation))
+    @if (!_liveReady)
+    {
+        <div class="bd-overview bd-overview-live" data-testid="browser-discovery-live" aria-label="Live browser session">
+            <span class="bd-ov-group">Live session</span>
+            <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
+            <div class="bd-ov-item" role="status"><span class="bd-ov-label">Status</span><span class="bd-ov-value bd-ov-muted" data-testid="bd-live-loading">@(_stillLoading ? "Still loading live session state…" : "Loading live session state…")</span></div>
+        </div>
+    }
+    else if (BrowserDiscoveryLive.IsCompact(Situation))
     {
         @*
             Nothing is connected, so every live fact would read None / Not available. One status and one sentence say
@@ -533,6 +555,7 @@
                                    ShowPairAction="@(!BrowserDiscoveryStates.ShowsPairAction(DiscoveryState))" />
         </ReviewDisclosure>
     }
+    }
 </section>
 
 @code {
@@ -559,7 +582,19 @@
     }
 
     private EndpointDiscoverySnapshot Snapshot => Discovery.GetSnapshot(Profile?.Id ?? "");
-    private IReadOnlyList<BrowserPageRow> Rows => BrowserDiscoveryPresentation.Rows(Snapshot);
+    /// <summary>Built once per snapshot version, not on every read: a render reads Rows many times and each build walks every page.</summary>
+    private IReadOnlyList<BrowserPageRow> Rows
+    {
+        get
+        {
+            var snapshot = Snapshot;
+            var version = EndpointDiscoveryService.Version(snapshot);
+            if (!ReferenceEquals(_rows.Snapshot, snapshot) || _rows.Version != version)
+                _rows = (snapshot, version, BrowserDiscoveryPresentation.Rows(snapshot));
+            return _rows.Rows;
+        }
+    }
+    private (EndpointDiscoverySnapshot? Snapshot, string Version, IReadOnlyList<BrowserPageRow> Rows) _rows = (null, "", []);
     private DateTimeOffset? LastEvidence => BrowserDiscoveryPresentation.LastEvidenceAt(Snapshot);
 
     private BrowserCompanionStatus Status => Runtime?.For(Profile?.Id) ?? new();
@@ -595,8 +630,22 @@
     // companion runtime itself rather than depending on the card below it re-rendering.
     private BrowserCompanionRuntime? _subscribed;
 
+    // Loading: the tab paints first (skeleton), then stored evidence (summary), then the live session. Never blocks navigation.
+    private bool _evidenceReady, _liveReady, _stillLoading;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
     protected override async Task OnParametersSetAsync()
     {
+        if (!_evidenceReady)
+        {
+            _ = FlagStillLoadingAsync();
+            await Task.Yield(); // first paint: the loading state, in the same frame as the tab switch
+            try { await Discovery.LoadAsync(JS); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
+            if (Profile is not null) Discovery.ConfigureTarget(Profile);
+            _evidenceReady = true;
+            StateHasChanged();
+            await Task.Yield(); // paint the stored-evidence summary before the live status request
+        }
         var profileId = Profile?.Id;
         if (_setupProfileId != profileId)
         {
@@ -610,11 +659,20 @@
             if (_subscribed is not null) _subscribed.Changed += OnRuntimeChanged;
         }
         if (Runtime is not null && Profile is not null) await Runtime.FollowAsync(Profile);
+        _liveReady = true;
         if (_setupProfileId == profileId)
             _browserCompanionSetupExpanded ??= Situation == BrowserCompanionSituation.PairedNotConnected;
     }
 
     private void OnRuntimeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task FlagStillLoadingAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (_evidenceReady && _liveReady) return;
+        _stillLoading = true;
+        await InvokeAsync(StateHasChanged);
+    }
 
     public void Dispose() { if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged; }
 
@@ -675,7 +733,18 @@
     private string _filterArea = "";
     private string _filterState = "non-neutral";
 
-    private BrowserEvidenceInventory Inventory => BrowserDiscoveryPresentation.Inventory(Snapshot);
+    private BrowserEvidenceInventory Inventory
+    {
+        get
+        {
+            var snapshot = Snapshot;
+            var version = EndpointDiscoveryService.Version(snapshot);
+            if (_inventory.Value is null || !ReferenceEquals(_inventory.Snapshot, snapshot) || _inventory.Version != version)
+                _inventory = (snapshot, version, BrowserDiscoveryPresentation.Inventory(snapshot));
+            return _inventory.Value!;
+        }
+    }
+    private (EndpointDiscoverySnapshot? Snapshot, string Version, BrowserEvidenceInventory? Value) _inventory;
 
     private (string Key, string Label, int Count)[] EvidenceTypes =>
     [

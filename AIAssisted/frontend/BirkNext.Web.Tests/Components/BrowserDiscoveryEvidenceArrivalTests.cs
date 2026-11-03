@@ -74,7 +74,7 @@ public sealed class BrowserDiscoveryEvidenceArrivalTests : BunitContext
 
         await using var runtime = new BrowserCompanionRuntime(api.Object, Discovery, Services.GetRequiredService<IJSRuntime>());
         await runtime.FollowAsync(_profile);
-        var cut = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        var cut = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
 
         // Before: connected, the page is known, and none of that is evidence.
         Text(cut, "bd-session").Should().Be("Connected");

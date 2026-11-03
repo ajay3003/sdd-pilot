@@ -62,7 +62,7 @@ public sealed class BrowserQualityArchitectureUITests : BunitContext
             BrowserEvidence = new() { CapturedAt = DateTimeOffset.UtcNow, Accessibility = new() { Checks = [new() { CheckId = "a11y-page-title", Outcome = "Pass", Tested = 1 }] } } });
         var profile = new FrontendAnalysisProfile { Id = "dev", TargetUrl = "https://m2lbdev.bufetat.no" };
         // Browser Discovery keeps presenting the stored evidence even though no session is connected.
-        var discoveryTab = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, profile));
+        var discoveryTab = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, profile)).Loaded();
         Assert.Equal("1", discoveryTab.Find("[data-testid=bd-pages-count]").TextContent);
         Assert.Equal("Not connected", discoveryTab.Find("[data-testid=bd-session]").TextContent);
         // The assessment surface reads the same stored evidence without implying a live session.

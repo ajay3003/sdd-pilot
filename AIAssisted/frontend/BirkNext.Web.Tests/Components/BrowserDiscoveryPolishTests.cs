@@ -81,7 +81,7 @@ public sealed class BrowserDiscoveryPolishTests : BunitContext
         if (status is not null) api.Status = status;
         var runtime = new BrowserCompanionRuntime(api, Discovery, Services.GetRequiredService<IJSRuntime>());
         await runtime.FollowAsync(_profile);
-        var cut = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        var cut = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
         return (cut, runtime, api);
     }
 

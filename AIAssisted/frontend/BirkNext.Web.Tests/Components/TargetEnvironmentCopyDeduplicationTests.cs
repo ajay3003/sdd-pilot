@@ -52,7 +52,7 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
         var runtime = new BrowserCompanionRuntime(api.Object, Discovery, Services.GetRequiredService<IJSRuntime>());
         _runtimes.Add(runtime);
         await runtime.FollowAsync(_profile);
-        return Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        return Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
     }
 
     // Runtimes poll in the background; the bUnit context disposes the render tree, and each runtime is stopped

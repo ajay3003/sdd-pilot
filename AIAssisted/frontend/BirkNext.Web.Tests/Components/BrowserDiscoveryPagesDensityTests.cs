@@ -132,7 +132,7 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         });
         var runtime = new BrowserCompanionRuntime(api.Object, Discovery, Services.GetRequiredService<IJSRuntime>());
         _runtimes.Add(runtime);
-        var cut = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        var cut = Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
         cut.Find("[data-testid=browser-discovery-nav-pages]").Click();
         return cut;
     }

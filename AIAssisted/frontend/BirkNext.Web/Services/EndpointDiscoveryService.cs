@@ -42,13 +42,31 @@ public interface IEndpointDiscoveryService
 /// </summary>
 public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 {
+    /// <summary>
+    /// Points the stored evidence at the environment's approved origins. Reclassification and assessment walk every page, endpoint and finding, so
+    /// they run only when the origins differ from those the snapshot was last classified against — not on every visit or re-render (that
+    /// synchronous pass froze the Browser Discovery tab for seconds with a large store). Merges keep a snapshot classified and assessed themselves.
+    /// </summary>
     public void ConfigureTarget(FrontendAnalysisProfile profile)
     {
         var snapshot = GetSnapshot(profile.Id);
-        snapshot.ApplicationOrigins = BrowserCompanionScope.ApprovedOrigins(profile).ToList();
+        var origins = BrowserCompanionScope.ApprovedOrigins(profile).ToList();
+        if (_classifiedFor.TryGetValue(profile.Id, out var done) && ReferenceEquals(done.Snapshot, snapshot) && done.Version == Version(snapshot)
+            && done.Origins.SequenceEqual(origins, StringComparer.Ordinal)) return;
+        snapshot.ApplicationOrigins = origins;
         EndpointDiscoveryMerge.Reclassify(snapshot);
         BrowserQualityAssessmentService.Assess(snapshot);
+        _classifiedFor[profile.Id] = (snapshot, Version(snapshot), origins);
     }
+
+    /// <summary>Per environment: the snapshot instance, its version and the origins it was last reclassified and assessed against.</summary>
+    private readonly Dictionary<string, (EndpointDiscoverySnapshot Snapshot, string Version, List<string> Origins)> _classifiedFor = new(StringComparer.Ordinal);
+
+    /// <summary>A cheap change marker (one pass over pages, no evidence walk): a snapshot changed outside the merge paths (which assess themselves)
+    /// is classified again, and presentation built from it is rebuilt.</summary>
+    public static string Version(EndpointDiscoverySnapshot s) =>
+        $"{s.UpdatedAt.UtcTicks}|{s.Pages.Count}|{s.Shared.Count}|{s.Pages.Sum(p => p.Endpoints.Count)}|{s.Pages.Count(p => p.BrowserEvidence is not null)}"
+        + $"|{s.Pages.Select(p => p.BrowserEvidence?.CapturedAt.UtcTicks ?? 0).DefaultIfEmpty().Max()}|{s.Pages.Select(p => p.BrowserEvidence?.SnapshotSequence ?? 0).Sum()}";
     public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateWcagAsync(js, profileId, s =>
     {
         BrowserQualityAssessmentService.SelectProfile(s, settings);
@@ -93,7 +111,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 
     private Task? _loadTask;
 
-    public void ResetForLocalDataReset() { _byProfile = new(StringComparer.Ordinal); _loadTask = null; }
+    public void ResetForLocalDataReset() { _byProfile = new(StringComparer.Ordinal); _loadTask = null; _classifiedFor.Clear(); }
     public Task LoadAsync(IJSRuntime js) => _loadTask ??= LoadCoreAsync(js);
     private async Task LoadCoreAsync(IJSRuntime js)
     {
@@ -116,6 +134,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
                     }
                     EndpointDiscoveryMerge.Reclassify(snapshot);
                     BrowserQualityAssessmentService.Assess(snapshot);
+                    _classifiedFor[id] = (snapshot, Version(snapshot), [.. snapshot.ApplicationOrigins]);
                 }
             }
         }

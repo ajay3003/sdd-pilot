@@ -73,7 +73,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     });
 
     private IRenderedComponent<BrowserDiscoveryTab> Open(BrowserCompanionRuntime? runtime = null) =>
-        Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
 
     private static void Nav(IRenderedComponent<BrowserDiscoveryTab> cut, string key) =>
         cut.Find($"[data-testid=browser-discovery-nav-{key}]").Click();

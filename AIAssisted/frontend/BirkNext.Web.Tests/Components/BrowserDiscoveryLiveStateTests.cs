@@ -76,7 +76,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
     {
         var runtime = new BrowserCompanionRuntime(new StubRuntime(status));
         await runtime.FollowAsync(_profile);
-        return Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime));
+        return Render<BrowserDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.Runtime, runtime)).Loaded();
     }
 
     private static string Text(IRenderedComponent<BrowserDiscoveryTab> cut, string testId) =>
