@@ -191,6 +191,7 @@ builder.Services.AddScoped<TraceabilitySuggestionService>();
 builder.Services.AddScoped<ImpactAnalysisService>();
 builder.Services.AddScoped<SourceChangeImpactService>();
 builder.Services.AddScoped<ImpactAnalysisRunService>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.SnapshotReferenceIndex>();
 builder.Services.AddScoped<BirkNext.Api.Services.ProjectActivity.ProjectActivityService>();
 // Endpoint Discovery history: runs + observed operations per Target Environment and host (persisted; never traffic content).
 builder.Services.AddScoped<BirkNext.Api.Services.LocalHttpsProxy.EndpointObservationHistoryService>();
