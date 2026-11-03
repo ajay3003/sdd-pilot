@@ -14,14 +14,22 @@ public sealed record ImportActivitySummary(string ApplicationId, string Applicat
 {
     public string RoleLabel => ApplicationContexts.RoleLabel(Role);
 
-    /// <summary>"Supporting/shared source · 4 documents · Source Analysis Partial · 3 items need attention".</summary>
+    /// <summary>
+    /// "Supporting/shared source · 4 SDD documents · Source Analysis Partial". Only the package's own facts: application-wide setup items
+    /// (<see cref="Attention"/>) belong to the application, not to every package, and a role that never carries SDD documents (infrastructure,
+    /// contracts, supporting source) does not report their absence.
+    /// </summary>
     public string Line
     {
         get
         {
-            var parts = new List<string> { RoleLabel, Documents == 0 ? "no project documents" : $"{Documents} document{(Documents == 1 ? "" : "s")}" };
-            if (AnalysisStatus is { } status) parts.Add($"Source Analysis {status}");
-            if (Attention > 0) parts.Add($"{Attention} item{(Attention == 1 ? "" : "s")} need{(Attention == 1 ? "s" : "")} attention");
+            var parts = new List<string> { RoleLabel };
+            if (Documents > 0) parts.Add($"{Documents} SDD document{(Documents == 1 ? "" : "s")}");
+            else if (Role is PackageEvidenceRole.PrimaryApplicationSource or PackageEvidenceRole.RelatedApplicationSource or PackageEvidenceRole.Documentation)
+                parts.Add("No SDD project documents detected");
+            // "Partial · no application code": an infrastructure, contracts or supporting package never claims application code.
+            if (AnalysisStatus is { } status)
+                parts.Add($"Source Analysis {(Role is PackageEvidenceRole.PrimaryApplicationSource or PackageEvidenceRole.RelatedApplicationSource ? status : status.Replace(" · no application code", ""))}");
             return string.Join(" · ", parts);
         }
     }
@@ -44,7 +52,8 @@ public sealed record ImportActivitySummary(string ApplicationId, string Applicat
     public ProjectActivityRecordRequest Request(SddProjectImportRecord record, DateTimeOffset committedAt) => new()
     {
         ProjectContextId = ApplicationId, ProjectName = ApplicationName, Type = ProjectActivityType.ImportCompleted,
-        Status = Attention > 0 ? ProjectActivityStatus.Attention : ProjectActivityStatus.Imported, SourceModule = "Import Project",
+        // Attention only for the package's own problem (its source analysis was not created or failed), never for application-wide setup.
+        Status = AnalysisStatus is "Not created" || AnalysisStatus?.StartsWith("Failed", StringComparison.Ordinal) == true ? ProjectActivityStatus.Attention : ProjectActivityStatus.Imported, SourceModule = "Import Project",
         Title = $"Imported {PackageName}", Summary = Line, PackageId = record.ImportId, PackageName = PackageName,
         RelatedEntityType = "ImportedPackage", RelatedEntityId = record.ImportId, Route = ProjectImportSession.Route,
         IdempotencyKey = $"import:{record.ImportId}:{committedAt.UtcTicks}",
