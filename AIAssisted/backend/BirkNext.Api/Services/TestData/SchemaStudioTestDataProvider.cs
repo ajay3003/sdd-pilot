@@ -12,7 +12,9 @@ namespace BirkNext.Api.Services.TestData;
 /// so the shared XSD validator checks it like any other XML asset. Schema Studio never approves: a registration is reviewed and approved in
 /// Test Data (registrations made before that rule keep their recorded approval). Schema-valid is never business-valid.
 /// </summary>
-public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<string>> savedXmlDocuments) : ITestDataProvider
+/// <remarks>A canonical fixture (a Test Pack's declared baseline payload) is read from the backend <see cref="CanonicalFixtureStore"/> instead: its
+/// alias is then never taken from a workspace artifact, so a leftover workspace copy cannot become a second asset or a conflicting version.</remarks>
+public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<string>> savedXmlDocuments, Func<string?>? canonicalDocument = null) : ITestDataProvider
 {
     public const string ProviderId = "schema-studio";
     public const string NegativeTest = "negative-test";
@@ -54,14 +56,22 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
 
     private IEnumerable<(SavedXml Xml, string? Scope)> Registered()
     {
+        var canonical = Parse(canonicalDocument?.Invoke()).ToList();
+        var held = canonical.Select(item => item.TestData!.Alias.Trim()).ToHashSet(StringComparer.Ordinal);
+        foreach (var item in canonical) yield return (item with { Canonical = true }, null);
         foreach (var content in savedXmlDocuments())
-        {
-            Document? document;
-            try { document = JsonSerializer.Deserialize<Document>(content, Json); }
-            catch (JsonException) { continue; } // an unreadable workspace document is not test data
-            foreach (var item in document?.Items ?? [])
-                if (item.TestData is { Alias.Length: > 0 } && !string.IsNullOrEmpty(item.Xml)) yield return (item, item.ProjectScope);
-        }
+            foreach (var item in Parse(content))
+                if (!held.Contains(item.TestData!.Alias.Trim())) yield return (item, item.ProjectScope);
+    }
+
+    private static IEnumerable<SavedXml> Parse(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) yield break;
+        Document? document;
+        try { document = JsonSerializer.Deserialize<Document>(content, Json); }
+        catch (JsonException) { yield break; } // an unreadable document is not test data
+        foreach (var item in document?.Items ?? [])
+            if (item.TestData is { Alias.Length: > 0 } && !string.IsNullOrEmpty(item.Xml)) yield return item;
     }
 
     private TestDataAsset Asset((SavedXml Xml, string? Scope) entry)
@@ -71,7 +81,7 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
         var alias = registration.Alias.Trim();
         var negative = string.Equals(registration.Intent, NegativeTest, StringComparison.Ordinal);
         var problem = !AliasPattern().IsMatch(alias) ? "The alias must be lowercase letters, digits and hyphens (at most 64)." : null;
-        var provenance = new List<TestDataFact> { new("Saved in", "Schema Studio (saved XML)"), new("Schema file", xml.FileName) };
+        var provenance = new List<TestDataFact> { new("Saved in", xml.Canonical ? "Test Data (canonical fixture store)" : "Schema Studio (saved XML)"), new("Schema file", xml.FileName) };
         if (xml.Provenance?.SourceSnapshotId is { } snapshot) provenance.Add(new("Source snapshot", snapshot.ToString("D")));
         if (xml.Provenance?.ContractFingerprint is { Length: > 0 } fingerprint) provenance.Add(new("Schema fingerprint", fingerprint[..Math.Min(12, fingerprint.Length)]));
         provenance.Add(new("Generation profile", xml.ProfileName));
@@ -117,7 +127,10 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
             .Distinct(StringComparer.Ordinal).Take(8);
 
     private sealed record Document(int Version, List<SavedXml>? Items);
-    private sealed record SavedXml(Guid Id, string FileName, string ProfileName, string Xml, string? ProjectScope, Provenance? Provenance, Registration? TestData);
+    private sealed record SavedXml(Guid Id, string FileName, string ProfileName, string Xml, string? ProjectScope, Provenance? Provenance, Registration? TestData)
+    {
+        [System.Text.Json.Serialization.JsonIgnore] public bool Canonical { get; init; }
+    }
     private sealed record Provenance(Guid? SourceSnapshotId, string? SelectedContractPath, string? ContractFingerprint);
     private sealed record Registration(string Alias, string? Label, string Intent, bool Approved, DateTimeOffset RegisteredAt, Facts? Facts, int? Version = null);
     private sealed record Facts(string ExpectedResult, string ValidationStatus, string? Mutation, string? TargetRule, string? Path, string? ProfileId,

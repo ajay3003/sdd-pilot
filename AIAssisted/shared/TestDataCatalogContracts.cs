@@ -227,6 +227,11 @@ public static class TestDataCatalogRules
     {
         null => (TestDataUsageStatus.NeedsReview, "The asset no longer exists in the catalog."),
         { Status: TestDataAssetStatus.Deprecated } => (TestDataUsageStatus.NeedsReview, "The asset is deprecated."),
+        // Approved, yet not usable as is: say why (never "approval missing" for an approved asset).
+        { Status: not TestDataAssetStatus.Approved, Approval: TestDataApproval.Approved } => (TestDataUsageStatus.NeedsReview,
+            asset.SchemaCheck?.Status == TestDataSchemaStatus.SchemaUnavailable ? "Used · approved, but its XSD is not available to validate against."
+            : asset.SchemaCheck?.Status == TestDataSchemaStatus.Invalid ? "Used · approved, but it is invalid against its XSD."
+            : "Used · approved, but it needs review."),
         { Status: not TestDataAssetStatus.Approved } => (TestDataUsageStatus.NeedsReview, "Used · approval missing."),
         _ when usage.AssetFingerprint is not null && Version(asset) is { } current && usage.AssetFingerprint != current
             => (TestDataUsageStatus.NeedsReview, "The asset changed after it was bound."),

@@ -31,6 +31,13 @@
                 <div data-testid="xf-role" data-role="@binding.Role"><dt>@binding.Role</dt><dd>@(chosen is null ? "Missing — choose in Session test identities" : $"{chosen.Label ?? chosen.Alias} ({chosen.Alias})")@if (binding.ElementPath is null) { <span class="xf-muted" data-testid="xf-role-submission"> · Used for submission; not part of the XML payload.</span> }</dd></div>
             }
             <div><dt>Contract / XSD</dt><dd data-testid="xf-contract">@context.SchemaName</dd></div>
+            @if (current is not null)
+            {
+                <div><dt>Fixture</dt><dd data-testid="xf-current-alias">@current.Alias@(current.Version is { } v ? $" · v{v}" : "")</dd></div>
+                @if (current.ProtectionLabel is { } protection) { <div><dt>Protection</dt><dd data-testid="xf-current-protection">@protection@(current.ProtectionReason is { } why ? $" — {why}" : "")</dd></div> }
+                <div><dt>Validation</dt><dd data-testid="xf-current-validation">@XmlFixturePresentation.SchemaValidation(current)</dd></div>
+                <div><dt>Consumers</dt><dd data-testid="xf-current-consumers">@(current.Consumers > 0 ? $"Used by {current.Consumers}" : "Not bound by a consumer yet")</dd></div>
+            }
             <div><dt>XML fixture</dt><dd><span class="xf-badge xf-badge-@(readiness == TestDataXmlReadinessState.Ready ? "ready" : "attention")" data-testid="xf-readiness" data-state="@readiness">@readinessText</span></dd></div>
         </dl>
 
@@ -76,6 +83,9 @@
                     {
                         TestDataXmlReadinessState.Outdated => "Revalidate against current XSD",
                         TestDataXmlReadinessState.Invalid => "Create a valid XML fixture",
+                        _ when context.CanonicalFixtureAlias is not null && !HasCanonical(context) => "Create missing XML fixture",
+                        // The canonical fixture exists (approved): the action makes a new draft version of it, never another fixture.
+                        _ when current?.Approval == TestDataApproval.Approved && current.Alias == context.CanonicalFixtureAlias => "Regenerate XML (new draft version)",
                         _ => "Create XML fixture",
                     })</button>
                 }
@@ -432,6 +442,10 @@
     private string? _versionOf;
     private bool AsVersion => _versionOf is not null && _saveAsVersion;
 
+    /// <summary>The context's canonical fixture exists in Test Data (any version, approved or not).</summary>
+    private bool HasCanonical(IntegrationTemplateView context) =>
+        context.CanonicalFixtureAlias is { } alias && Assets.Any(a => string.Equals(a.Alias, alias, StringComparison.Ordinal));
+
     protected override async Task OnInitializedAsync()
     {
         if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
@@ -590,8 +604,11 @@
         _versionOf = versionOf;
         _saveAsVersion = versionOf is not null;
         _name ??= $"{_context!.PackName.Replace(" Testing", "")} valid report";
-        // A regenerated fixture is a new asset: the alias never replaces an existing (possibly approved) fixture.
-        _alias = XmlValueMappings.FreeAlias(_alias ?? XmlFixturePresentation.SuggestedAlias(_name), Assets);
+        // A missing canonical fixture is created under its canonical alias (one asset, one id). Otherwise a new fixture never replaces an existing
+        // (possibly approved) one: it gets a free alias.
+        _alias = versionOf is null && _context.CanonicalFixtureAlias is { } canonical && !HasCanonical(_context)
+            ? canonical
+            : XmlValueMappings.FreeAlias(_alias ?? XmlFixturePresentation.SuggestedAlias(_name), Assets);
         if (_mappings.Count == 0)
         {
             _mappings = [.. XmlValueMappings.Suggested(_context, b => Chosen(b)?.Alias)];
@@ -751,6 +768,25 @@
                 Contract: context.SchemaName, TestDataBindings: XmlFixturePresentation.BindingsText(context, Aliases(context)), Capabilities: context.FixtureCapabilities,
                 ValueMappings: XmlValueMappings.ProvenanceText(_mappings), ManualChanges: _manualEdit, TestDataValueVersions: ValueVersions(context),
                 SourceSelection: $"{Selection(context).SnapshotReason} · {Selection(context).ContractReason}");
+            // A canonical fixture (the pack's protected baseline) is kept by Test Data in the backend, never in this workspace: created or
+            // regenerated, it is the next version of the one asset; the backend assigns the version and approval stays separate.
+            if (context.CanonicalFixtureAlias is { } canonical && string.Equals(AsVersion ? _versionOf : _alias?.Trim(), canonical, StringComparison.Ordinal))
+            {
+                if (Services.GetService(typeof(ITestDataApiService)) is not ITestDataApiService api) { _error = "Fixtures cannot be saved in this host."; return; }
+                var builder = new SchemaGeneratedXmlStore();
+                var item = builder.Save(_package, xsd.File, "Test Data XML fixture", null, _xml, scope, null, facts);
+                var entry = builder.Register(item.Id, scope, canonical, "positive", _name?.Trim(), facts);
+                var (version, refusal) = await api.SaveCanonicalFixtureAsync(System.Text.Json.JsonSerializer.Serialize(entry, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+                if (version is null) { _error = $"The fixture could not be saved: {refusal}"; return; }
+                _alias = canonical;
+                _savedAlias = canonical;
+                _message = version == 1
+                    ? $"Saved {canonical} (version 1) as the canonical XML fixture — protected and kept by Test Data. Approve it to use it in runs and preflight."
+                    : $"Saved version {version} of {canonical} as a draft. The approved version stays in use until you approve the draft; consumers keep the same Test Data reference.";
+                _open = false;
+                await OnSaved.InvokeAsync(_savedAlias);
+                return;
+            }
             // Never overwrite a saved fixture: a regenerated XML is saved as a new draft version of the same asset (same alias and id), or as a
             // separate fixture under a free alias.
             var asVersion = AsVersion;

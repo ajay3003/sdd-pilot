@@ -517,4 +517,76 @@ public sealed class XmlFixturePanelTests : BunitContext
         panel.WaitForElement("[data-testid=xf-approve-draft]").HasAttribute("disabled").Should().BeTrue();
         panel.Find("[data-testid=xf-draft]").TextContent.Should().Contain("cannot be approved");
     }
+
+    // ---- canonical fixture (kept by Test Data in the backend; protected; one asset) ----
+
+    private static IntegrationTemplateView Canonical(params IntegrationTemplateSchemaCandidate[] xsds) => Context(xsds) with
+    {
+        FixtureCapabilities = ["skolenaervaer-report"], CanonicalFixtureAlias = "skolenaervaer-valid-report",
+    };
+
+    [Fact]
+    public void A_missing_canonical_fixture_is_offered_as_create_missing_and_saved_to_test_data_not_the_workspace()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        Services.AddSingleton<IWorkspaceArtifactRepository>(repository);
+        Services.AddSingleton(new BirkNext.Web.Services.SchemaStudio.SchemaGeneratedXmlStore());
+        Setup(Canonical(Xsd()));
+        var saved = new List<string>();
+        var testData = Mock.Get(Services.GetRequiredService<ITestDataApiService>());
+        testData.Setup(t => t.SaveCanonicalFixtureAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string json, CancellationToken _) => { saved.Add(json); return ((int?)1, (string?)null); });
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, Defaults));
+
+        panel.WaitForElement("[data-testid=xf-create]").TextContent.Should().Be("Create missing XML fixture");
+        panel.Find("[data-testid=xf-create]").Click();
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForElement("[data-testid=xf-xml]");
+        panel.Find("[data-testid=xf-alias]").GetAttribute("value").Should().Be("skolenaervaer-valid-report");
+        panel.Find("[data-testid=xf-validate]").Click();
+        panel.Find("[data-testid=xf-save-button]").Click();
+
+        panel.WaitForAssertion(() => saved.Should().ContainSingle());
+        var item = System.Text.Json.Nodes.JsonNode.Parse(saved[0])!;
+        ((string)item["testData"]!["alias"]!).Should().Be("skolenaervaer-valid-report");
+        ((string)item["testData"]!["intent"]!).Should().Be("positive");
+        item["testData"]!["facts"]!["capabilities"]!.AsArray().Select(c => (string)c!).Should().Contain("skolenaervaer-report");
+        ((string)item["testData"]!["facts"]!["validationStatus"]!).Should().Be("Valid");
+        repository.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml).Should().BeNull("a canonical fixture never lives in a browser workspace");
+        panel.Markup.Should().NotContain("04061076692");
+    }
+
+    [Fact]
+    public void A_present_canonical_fixture_is_shown_from_the_catalog_asset_with_protection_validation_and_consumers()
+    {
+        Setup(Canonical(Xsd()));
+        var fixture = Fixture(TestDataApproval.Approved, TestDataSchemaStatus.Validated) with
+        {
+            Id = "schema-studio:skolenaervaer-valid-report", Alias = "skolenaervaer-valid-report", Version = 2, Consumers = 1,
+            ProtectionKind = TestDataProtectionKinds.CanonicalFixture, ProtectionReason = "Required baseline data for Skolenærvær.",
+        };
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, [.. Defaults, fixture]));
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-current-alias]").TextContent.Should().Be("skolenaervaer-valid-report · v2"));
+        panel.Find("[data-testid=xf-readiness]").GetAttribute("data-state").Should().Be(nameof(TestDataXmlReadinessState.Ready));
+        panel.Find("[data-testid=xf-current-protection]").TextContent.Should().Contain("Protected fixture").And.Contain("Required baseline data");
+        panel.Find("[data-testid=xf-current-validation]").TextContent.Should().NotBeEmpty();
+        panel.Find("[data-testid=xf-current-consumers]").TextContent.Should().Be("Used by 1");
+        panel.FindAll("[data-testid=xf-primary-actions] button").Select(b => b.TextContent).Should().NotContain(t => t.Contains("Create missing"))
+            .And.Contain(t => t.StartsWith("Regenerate XML"));
+    }
+
+    [Fact]
+    public void An_existing_canonical_fixture_whose_xsd_cannot_be_checked_is_regenerated_never_created_again()
+    {
+        Setup(Canonical(Xsd()));
+        var fixture = Fixture(TestDataApproval.Approved, TestDataSchemaStatus.SchemaUnavailable) with
+        {
+            Id = "schema-studio:skolenaervaer-valid-report", Alias = "skolenaervaer-valid-report", ProtectionKind = TestDataProtectionKinds.CanonicalFixture,
+        };
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, [.. Defaults, fixture]));
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-create]").TextContent.Should().Be("Regenerate XML (new draft version)"));
+        panel.FindAll("[data-testid=xf-primary-actions] button").Select(b => b.TextContent).Should().NotContain(t => t.Contains("Create"));
+    }
 }

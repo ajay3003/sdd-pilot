@@ -146,7 +146,15 @@
                         <li class="td-requirement" data-testid="td-requirement" data-status="@r.Status" data-consumer="@r.Consumer.Key">
                             <div class="td-requirement-head">
                                 <strong>@P.Consumer(r.Consumer)</strong> <span class="td-note">· @r.Consumer.ConsumerType</span>
-                                <span class="td-pill td-pill-@(r.Status == TestDataRequirementStatus.Resolved ? "ready" : "attention")" data-testid="td-requirement-status">@(r.Status == TestDataRequirementStatus.NeedsReview ? "Needs review" : r.Status.ToString())</span>
+                                @* An optional need that nothing provides is not an open request: it reads as optional, never as a missing requirement. *@
+                                @if (!r.Required && r.Status == TestDataRequirementStatus.Missing)
+                                {
+                                    <span class="td-pill td-pill-neutral" data-testid="td-requirement-status" data-optional="true">Optional · not provided</span>
+                                }
+                                else
+                                {
+                                    <span class="td-pill td-pill-@(r.Status == TestDataRequirementStatus.Resolved ? "ready" : "attention")" data-testid="td-requirement-status">@(r.Status == TestDataRequirementStatus.NeedsReview ? "Needs review" : r.Status.ToString())</span>
+                                }
                             </div>
                             <p class="td-note">Needs @TestDataDataTypes.Label(r.RequestedDataType) for @r.Usage@(r.RequestedFields.Count > 0 ? $" ({string.Join(", ", r.RequestedFields)})" : "") · @(r.Required ? "required" : "optional") · @TestDataCatalogRules.ScopeLabel(r.EnvironmentId)@(r.BoundAssetId is { } bound ? $" · bound to {bound}" : "")</p>
                             <button type="button" class="btn-secondary btn-small" data-testid="td-requirement-find" aria-expanded="@(_matchesFor == r.Id ? "true" : "false")" @onclick="() => FindMatchesAsync(requirement)">@(_matchesFor == r.Id ? "Hide matches" : "Find matching Test Data")</button>

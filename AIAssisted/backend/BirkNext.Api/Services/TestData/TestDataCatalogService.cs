@@ -10,11 +10,14 @@ namespace BirkNext.Api.Services.TestData;
 /// returns a value: approval, matching and binding work on ids, fingerprints and metadata.
 /// </summary>
 public sealed class TestDataCatalogService(TestDataSchemaValidationService validation, TestDataCatalog catalog, TestDataRegistryStore registry,
-    TestDataCandidateService candidates, IReviewSourceEvidenceProvider sources, TimeProvider time, TestDataLifecycleService? lifecycle = null)
+    TestDataCandidateService candidates, IReviewSourceEvidenceProvider sources, TimeProvider time, TestDataLifecycleService? lifecycle = null,
+    IEnumerable<ITestDataConsumerDeclarations>? consumers = null, CanonicalFixtureStore? canonicalFixtures = null, IEnumerable<ITestDataCanonicalFixtures>? canonical = null)
 {
     /// <summary>The page view: summaries enriched with consumer counts and contract status (drift against the latest snapshot of the repository).</summary>
     public async Task<TestDataCatalogView> ViewAsync(CancellationToken ct)
     {
+        // What declared consumers consume is persisted before usage is counted (requirements once; deterministic bindings by stable asset id).
+        if (consumers is not null) TestDataConsumerBindings.Ensure(registry, catalog, consumers, time.GetUtcNow());
         var view = await validation.ViewAsync(ct);
         var usages = registry.Usages();
         // "Used by N": every active consumer reference (performance scenarios, Critical E2E flows, Connected System bindings by asset id, explicit
@@ -251,4 +254,14 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
     }
 
     public bool Unbind(string id) => registry.Unbind(id);
+
+    /// <summary>
+    /// Stores a validated, positive XML fixture under its canonical alias in the backend canonical fixture store, as the next (unapproved) version
+    /// of that one asset. Approval stays the separate Test Data decision; an approved version is never rewritten.
+    /// </summary>
+    public (int? Version, string? Error) SaveCanonicalFixture(System.Text.Json.Nodes.JsonObject item)
+    {
+        if (canonicalFixtures is null) return (null, "Canonical fixtures cannot be stored in this host.");
+        return canonicalFixtures.Add(item, [.. (canonical ?? []).SelectMany(c => c.Fixtures)], time.GetUtcNow());
+    }
 }

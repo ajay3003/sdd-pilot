@@ -37,6 +37,11 @@ public interface ITestDataApiService
     Task<(string? Xml, IReadOnlyList<string> Problems)> BindXmlFixtureAsync(TestDataXmlBindRequest request, CancellationToken ct = default) =>
         Task.FromResult<(string?, IReadOnlyList<string>)>((null, [Unavailable]));
 
+    /// <summary>Stores a validated canonical fixture (one saved-XML item) as the next version of its one asset in the backend canonical fixture
+    /// store (POST api/test-data/canonical-fixtures). Returns the stored version or the backend's refusal.</summary>
+    Task<(int? Version, string? Error)> SaveCanonicalFixtureAsync(string itemJson, CancellationToken ct = default) =>
+        Task.FromResult<(int?, string?)>((null, Unavailable));
+
     // Asset lifecycle: references, Edit, Restore default value, Delete, Replace references, Reset Test Data. Results carry the backend's own
     // outcome (also for a refusal), so a dialog can show exactly why — for example the references an in-use asset still has.
     Task<(IReadOnlyList<TestDataAssetUsage>? References, string? Error)> ReferencesAsync(CancellationToken ct = default) =>
@@ -119,6 +124,12 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
         }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
         { return (null, [BackendRequestClassifier.FromException(Title, e, "POST api/test-data/xml-fixtures/bind", ct).UserMessage]); }
+    }
+
+    public async Task<(int? Version, string? Error)> SaveCanonicalFixtureAsync(string itemJson, CancellationToken ct = default)
+    {
+        var (body, error) = await PostAsync("api/test-data/canonical-fixtures", System.Text.Json.Nodes.JsonNode.Parse(itemJson)!, ct);
+        return error is not null ? (null, error) : (body is { } b && b.TryGetProperty("version", out var v) && v.TryGetInt32(out var n) ? n : null, null);
     }
 
     public async Task<string?> ApproveAsync(string assetId, CancellationToken ct = default) =>

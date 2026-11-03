@@ -661,6 +661,9 @@ public sealed record IntegrationTemplateDefinition(string Key, string DisplayNam
     public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
     /// <summary>Test Data capabilities a valid fixture for <see cref="SchemaName"/> satisfies (e.g. the pack's payload role), recorded when it is saved.</summary>
     public IReadOnlyList<string> FixtureCapabilities { get; init; } = [];
+    /// <summary>The alias of the pack's canonical (protected, baseline) valid fixture for this contract, kept by Test Data itself; null when the
+    /// pack declares none. Creating or regenerating it stores a version of that one asset — never a new alias.</summary>
+    public string? CanonicalFixtureAlias { get; init; }
     /// <summary>The pack integration requirement the template fulfils (also how an existing record is recognized as already configured).</summary>
     public string? RequirementKey { get; init; }
     public string? SystemName { get; init; }
@@ -747,6 +750,9 @@ public sealed record IntegrationTemplateView(string Key, string DisplayName, str
     public IReadOnlyList<TestDataFixtureBinding> FixtureBindings { get; init; } = [];
     /// <summary>Test Data capabilities a valid fixture for <see cref="SchemaName"/> satisfies (e.g. the pack's payload role), recorded when it is saved.</summary>
     public IReadOnlyList<string> FixtureCapabilities { get; init; } = [];
+    /// <summary>The alias of the pack's canonical (protected, baseline) valid fixture for this contract, kept by Test Data itself; null when the
+    /// pack declares none. Creating or regenerating it stores a version of that one asset — never a new alias.</summary>
+    public string? CanonicalFixtureAlias { get; init; }
     /// <summary>The integration requirement's producer → consumer ("Altinn → MU"), from the pack definition.</summary>
     public string? Flow { get; init; }
 }

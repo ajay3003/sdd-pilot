@@ -58,6 +58,7 @@ public static class IntegrationTemplates
             OtherSchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName, Matching(pack, requirement, context), matches: false),
             FixtureBindings = template.FixtureBindings,
             FixtureCapabilities = template.FixtureCapabilities,
+            CanonicalFixtureAlias = template.CanonicalFixtureAlias,
             Flow = requirement is null ? null : $"{requirement.Producer} → {requirement.Consumer}",
         };
     }

@@ -23,13 +23,14 @@ public sealed class TestDataTesterViewTests : BunitContext
     private const string RawChild = "04061076692";
 
     private TestDataCatalogView _catalog = new([], [], []);
+    private TestDataConsumerView _consumerView = new([], [], new TestDataOverview(3, 0, 0, 0, 0, 0, 0, 0, 0));
 
     public TestDataTesterViewTests()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         var api = new Mock<ITestDataApiService>();
         api.Setup(a => a.CatalogAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => (_catalog, (string?)null));
-        api.Setup(a => a.ConsumersAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new TestDataConsumerView([], [], new TestDataOverview(3, 0, 0, 0, 0, 0, 0, 0, 0)), (string?)null));
+        api.Setup(a => a.ConsumersAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => (_consumerView, (string?)null));
         Services.AddSingleton(api.Object);
         var journeys = new Mock<IIntegrationJourneysApiService>();
         journeys.Setup(j => j.IntegrationTemplatesAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
@@ -165,6 +166,29 @@ public sealed class TestDataTesterViewTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=xf-readiness]").TextContent.Should().Be(readiness));
         cut.Find("[data-testid=xf-create]").TextContent.Should().Be(action);
         cut.FindAll("[data-testid=xf-fixture-ready]").Should().BeEmpty();
+    }
+
+    // ── persisted consumer usage and requested Test Data ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Requirements_a_consumer_persisted_show_resolved_needs_and_an_optional_unprovided_payload_is_not_an_open_request()
+    {
+        var consumer = new TestDataConsumer { ConsumerType = "Test Pack integration", ConsumerId = "skolenaervaer-report-intake", DisplayName = "Skolenærvær – Altinn report intake", Parent = "Skolenærvær Testing" };
+        _catalog = new([.. Identities().Select(i => i with { Consumers = 1 })], [], []);
+        _consumerView = new(
+        [
+            new() { Id = "declared:skolenaervaer-report-intake:child", Consumer = consumer, Usage = "Child · XML child field", Required = true, Status = TestDataRequirementStatus.Resolved, BoundAssetId = "altinn-local:child:skolenaervaer-child-default" },
+            new() { Id = "declared:skolenaervaer-report-intake:reporter", Consumer = consumer, Usage = "Reporter · submitting Altinn actor (not in the XML)", Required = true, Status = TestDataRequirementStatus.Resolved },
+            new() { Id = "declared:skolenaervaer-report-intake:report-payload", Consumer = consumer, Usage = "Valid report payload · XML", Required = false, RequestedDataType = TestDataDataType.XmlPayload, Status = TestDataRequirementStatus.Missing },
+        ], [], new TestDataOverview(2, 0, 0, 0, 1, 2, 2, 0, 0));
+
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=td-requirement]").Should().HaveCount(3));
+
+        page.FindAll("[data-testid=td-requested-none]").Should().BeEmpty();
+        var statuses = page.FindAll("[data-testid=td-requirement-status]").Select(s => (s.TextContent.Trim(), s.GetAttribute("data-optional"))).ToList();
+        statuses.Should().Equal(("Resolved", null), ("Resolved", null), ("Optional · not provided", "true"));
+        page.FindAll("[data-testid=td-used-count]").Select(c => c.TextContent).Should().OnlyContain(t => t != "Unused", "the defaults are used by a consumer that persisted them");
     }
 
     // ── page order and collapsed sections ──────────────────────────────────────────────────────────────────────────────────

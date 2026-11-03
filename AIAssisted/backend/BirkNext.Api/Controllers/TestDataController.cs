@@ -49,6 +49,18 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
         return result.Xml is not null ? Ok(result) : BadRequest(result);
     }
 
+    /// <summary>
+    /// Test Data → Create (missing) XML fixture / Regenerate for a canonical fixture: stores the validated XML as the next version of the one
+    /// canonical asset (same alias, same id) in the backend canonical fixture store — never in a browser workspace. 409 when it is not canonical
+    /// or not valid; approval is separate.
+    /// </summary>
+    [HttpPost("canonical-fixtures")]
+    public ActionResult SaveCanonicalFixture([FromBody] System.Text.Json.Nodes.JsonObject item)
+    {
+        var (version, error) = service.SaveCanonicalFixture(item);
+        return version is { } stored ? Ok(new { version = stored }) : Conflict(new { message = error });
+    }
+
     /// <summary>Approves one version (default: the current one). Invalid XML is refused; a draft version becomes current under the same asset id.</summary>
     [HttpPost("assets/{id}/approve")]
     public async Task<IActionResult> Approve(string id, [FromQuery] int? version, CancellationToken ct) =>

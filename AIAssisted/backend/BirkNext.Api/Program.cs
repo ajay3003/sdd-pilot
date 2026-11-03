@@ -627,18 +627,33 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(
     sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.TestData.TestDataOptions.Section).Get<BirkNext.Api.Services.TestData.TestDataOptions>()
         ?? new BirkNext.Api.Services.TestData.TestDataOptions(), sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider, BirkNext.Api.Services.AltinnTesting.AltinnTestDataProvider>();
-// Schema Studio fixtures explicitly registered for reuse, read from the saved-XML workspace artifacts (read-only, per call).
-builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.SchemaStudioTestDataProvider(() =>
+// Canonical payload fixtures (a Test Pack's declared baseline XML) are kept by Test Data itself, outside workspaces and the database.
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.CanonicalFixtureStore>();
+// Schema Studio fixtures explicitly registered for reuse, read from the saved-XML workspace artifacts (read-only, per call); canonical fixtures from
+// the canonical store (one still found only in a workspace artifact is adopted into it, deterministically, once).
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp =>
 {
-    using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
-    return scope.ServiceProvider.GetRequiredService<AppDbContext>().SavedWorkspaceArtifacts.AsNoTracking()
-        .Where(artifact => artifact.ArtifactType == BirkNext.Api.Models.ArtifactType.SchemaStudioGeneratedXml).Select(artifact => artifact.Content).ToList();
-}));
+    IReadOnlyList<string> Workspace()
+    {
+        using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+        return scope.ServiceProvider.GetRequiredService<AppDbContext>().SavedWorkspaceArtifacts.AsNoTracking()
+            .Where(artifact => artifact.ArtifactType == BirkNext.Api.Models.ArtifactType.SchemaStudioGeneratedXml).Select(artifact => artifact.Content).ToList();
+    }
+    var canonical = sp.GetRequiredService<BirkNext.Api.Services.TestData.CanonicalFixtureStore>();
+    var fixtures = sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>().SelectMany(f => f.Fixtures).ToList();
+    return new BirkNext.Api.Services.TestData.SchemaStudioTestDataProvider(Workspace, () =>
+    {
+        canonical.Adopt(Workspace(), fixtures);
+        return canonical.Document();
+    });
+});
 // Test Data registry: registered asset metadata, lifecycle decisions, consumer requirements and usage references (workstation-local JSON, no values).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataRegistryStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.RegisteredTestDataProvider(sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>()));
 // Canonical fixtures Test Packs declare (protected by stable asset id once they resolve to exactly one registered fixture).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerCanonicalFixtures>();
+// Consumers that declare the Test Data they consume: their requirements and deterministic bindings are persisted (usage by stable asset id).
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataConsumerDeclarations, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerTestDataConsumers>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null,
     sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(), sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>()));
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCatalogService>();

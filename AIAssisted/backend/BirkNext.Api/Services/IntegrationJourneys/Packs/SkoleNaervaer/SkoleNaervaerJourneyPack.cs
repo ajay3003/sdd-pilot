@@ -153,6 +153,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             // A report fixture: the child is form data (the form binding's own element path); the reporter is the Altinn actor, never in the XML.
             // A valid fixture created in Test Data is this pack's valid report payload (the journey's "Valid report payload" role).
             FixtureCapabilities = [SkoleNaervaerCanonicalFixtures.ReportCapability],
+            CanonicalFixtureAlias = SkoleNaervaerCanonicalFixtures.ValidReportAlias,
             FixtureBindings =
             [
                 new("Child", "child", new SkoleNaervaerAltinnForm().Fields.Single(field => field.Key == SkoleNaervaerAltinnForm.ChildIdentifier).Path, "The child the report is about."),
