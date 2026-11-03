@@ -226,8 +226,10 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         api.Verify(a => a.AnalyzeSourceSnapshotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "opening Observability never re-analyzes");
 
         cut.Find("[data-testid=source-snapshot]").Change(snapshots[1].Id.ToString());
+        // The selected snapshot's evidence loads asynchronously (staged loading): wait for the new snapshot, never the previous one's content.
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sa-quality-observability]"));
         cut.Find("[data-testid=sa-quality-observability]").Click();
-        cut.Find("[data-testid=observability-missing]").TextContent.Should().Contain("predates observability analysis");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=observability-missing]").TextContent.Should().Contain("predates observability analysis"));
         cut.Find("[data-testid=area-overview]").Click();
         var missing = cut.Find("[data-testid=sa-area-card][data-key=observability]");
         missing.GetAttribute("data-state").Should().Be(nameof(SourceEvidenceState.NotAssessed));

@@ -467,6 +467,11 @@ public sealed record PerformanceRunStartResult(PerformanceTestRun? Run, List<str
 public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes, PerformanceTestOptions options, PerformanceTestProviderRegistry providers,
     ILogger<PerformanceTestExecutionService> logger, TimeProvider? clock = null, Resources.ResourceObservationRegistry? resources = null)
 {
+    /// <summary>The source snapshot a definition's scenario was derived from: its steps' source, else the scenario's contract snapshot; null for a
+    /// hand-written scenario. Run provenance — never the newest workspace snapshot at run time.</summary>
+    public static Guid? ProvenanceSnapshot(PerformanceTestDefinition definition) =>
+        definition.Scenario.Steps.Select(step => step.Source?.SnapshotId).FirstOrDefault(id => id is not null) ?? definition.Scenario.ContractSnapshotId;
+
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly ConcurrentDictionary<Guid, Task> _tasks = new();
 
@@ -660,9 +665,9 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
             return new(null, [], "A performance test is already running for this environment. Wait for it to finish or cancel it.");
 
         var now = _clock.GetUtcNow();
-        Guid? sourceSnapshot = null;
-        try { sourceSnapshot = (await scope.ServiceProvider.GetRequiredService<Integrations.SourceEvidence.IqrSourceStore>().ListSourceAnalysisAsync(1, ct)).FirstOrDefault()?.Id; }
-        catch (InvalidOperationException) { }
+        // Provenance is the source snapshot the scenario was derived from (its steps' source, else the scenario's contract snapshot), so a run
+        // stays reproducible — never "whichever snapshot is newest in the workspace at run time". Hand-written scenarios have none.
+        var sourceSnapshot = ProvenanceSnapshot(definition);
         var run = new PerformanceTestRun
         {
             EnvironmentId = environmentId, ProjectId = definition.ProjectId, DefinitionId = definition.Id, DefinitionVersion = definition.Version,

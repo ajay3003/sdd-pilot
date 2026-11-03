@@ -130,18 +130,24 @@ public static class ProjectEvidencePackages
             snapshot?.InfrastructureFormats ?? [], snapshot?.ConfigurationEnvironments ?? [], snapshot?.Status);
     }
 
+    /// <summary>
+    /// The package's primary classification, from the one role precedence every module uses (<see cref="ApplicationContexts.RoleOf"/>: application >
+    /// supporting > infrastructure > documentation > generated documentation > contracts). Documents carried by a source or infrastructure package
+    /// are named alongside ("+ documents"), never instead of its primary role.
+    /// </summary>
     internal static string ClassificationOf(ProjectEvidencePackage p)
     {
-        var app = p.Has(ProjectEvidenceCapability.ApplicationSource);
         var docs = p.Has(ProjectEvidenceCapability.Documentation);
-        if (app && docs) return "Source + documents";
-        if (app) return "Application source";
-        if (p.Has(ProjectEvidenceCapability.SupportingSource)) return docs ? "Supporting source + documents" : "Supporting/shared source";
-        if (docs) return "Documentation source";
-        if (p.Has(ProjectEvidenceCapability.Infrastructure)) return "Infrastructure source";
-        if (p.Has(ProjectEvidenceCapability.ContractSchema)) return "Contract/schema source";
-        if (p.Has(ProjectEvidenceCapability.GeneratedDocumentation)) return "Generated documentation";
-        return "Unknown";
+        return ApplicationContexts.RoleOf(p) switch
+        {
+            PackageEvidenceRole.PrimaryApplicationSource or PackageEvidenceRole.RelatedApplicationSource => docs ? "Source + documents" : "Application source",
+            PackageEvidenceRole.SupportingSource => docs ? "Supporting source + documents" : "Supporting/shared source",
+            PackageEvidenceRole.Infrastructure => docs ? "Infrastructure source + documents" : "Infrastructure source",
+            PackageEvidenceRole.Documentation => "Documentation source",
+            PackageEvidenceRole.GeneratedDocumentation => "Generated documentation",
+            PackageEvidenceRole.Contracts => "Contract/schema source",
+            _ => "Unknown",
+        };
     }
 
     internal static string ReasonOf(ProjectEvidencePackage p)
