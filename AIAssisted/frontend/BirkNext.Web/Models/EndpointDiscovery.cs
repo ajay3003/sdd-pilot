@@ -22,6 +22,8 @@ public sealed class EndpointDiscoverySnapshot
     /// <summary>Endpoints that could not be safely correlated to one page (background poll, shared config, telemetry, global auth).</summary>
     [JsonPropertyName("shared")] public List<ObservedNetworkEndpoint> Shared { get; set; } = [];
     [JsonPropertyName("updatedAt")] public DateTimeOffset UpdatedAt { get; set; }
+    /// <summary>Every page the paired browser visited (origin + route), kept independently of evidence: a visit observed is not a page evidenced.</summary>
+    [JsonPropertyName("pageVisits")] public List<PageVisitRecord> PageVisits { get; set; } = [];
 }
 
 public sealed class BrowserQualityState
@@ -29,6 +31,21 @@ public sealed class BrowserQualityState
     public WcagAssessment? Assessment { get; set; }
     public string? EvidenceRevision { get; set; }
     public int EvaluationCount { get; set; }
+}
+
+/// <summary>
+/// A page visit recorded from Browser Companion live page registration, upserted by origin + route within the environment's snapshot. Visits are
+/// counted per companion session (keyed by its pairing time) so re-reading the same session never double-counts.
+/// </summary>
+public sealed class PageVisitRecord
+{
+    [JsonPropertyName("origin")] public string Origin { get; set; } = "";
+    [JsonPropertyName("path")] public string Path { get; set; } = "";
+    [JsonPropertyName("firstVisitedAt")] public DateTimeOffset FirstVisitedAt { get; set; }
+    [JsonPropertyName("lastVisitedAt")] public DateTimeOffset LastVisitedAt { get; set; }
+    [JsonPropertyName("visitsBySession")] public Dictionary<string, int> VisitsBySession { get; set; } = new(StringComparer.Ordinal);
+    [JsonIgnore] public int VisitCount => VisitsBySession.Values.Sum();
+    [JsonIgnore] public string Identity => $"{Origin}{Path}";
 }
 
 /// <summary>One analyzed application page and the endpoints it was observed to communicate with. Relationship-oriented: an endpoint used by two pages is a separate row under each page, so deleting one page never removes the other page's evidence.</summary>

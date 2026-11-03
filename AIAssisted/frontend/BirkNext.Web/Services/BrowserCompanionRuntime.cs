@@ -77,6 +77,10 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
     public BrowserCompanionStatus For(string? profileId) =>
         profileId is not null && _profileId == profileId ? Status : new BrowserCompanionStatus { ProfileId = profileId, Message = "Browser Companion not paired." };
 
+    /// <summary>A status request for this environment has completed (answered or failed): its live state is known, not still loading.</summary>
+    public bool HasStatusFor(string? profileId) => profileId is not null && _statusFor == profileId && _profileId == profileId;
+    private string? _statusFor;
+
     /// <summary>True only when the status request got no HTTP response (a transport failure).</summary>
     public bool BackendUnavailable => _backendUnavailable;
 
@@ -140,7 +144,11 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
             var status = await api.StatusAsync(profileId);
             if (generation != _generation) return;
             if (discovery is not null && js is not null && status.ProfileId == profileId)
+            {
                 await discovery.MergeBrowserEvidenceAsync(js, profileId, status.Pages);
+                // Every visited page is kept, captured or not; navigating on moves a page from Live now to Historical without a revisit.
+                await discovery.MergePageVisitsAsync(js, profileId, status.PageVisits, status.PairedAt is { } paired ? paired.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture) : "session");
+            }
             if (generation != _generation) return;
             Status = status;
             _backendUnavailable = false;
@@ -153,6 +161,7 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
             _backendUnavailable = StatusError.IsTransportFailure;
             Status = new BrowserCompanionStatus { ProfileId = profileId, State = BrowserCompanionState.NotPaired, Message = StatusError.UserMessage };
         }
+        _statusFor = profileId;
         Changed?.Invoke();
     }
 
@@ -167,6 +176,7 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
         ++_generation;
         _poll?.Cancel(); _poll?.Dispose(); _poll = null;
         _profileId = null;
+        _statusFor = null;
         Status = new();
         Busy = false;
     }

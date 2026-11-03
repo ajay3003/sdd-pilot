@@ -193,15 +193,13 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
         """);
 
         cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Browser Discovery").Click();
+        // Browser Discovery loads after its first paint and renders on its own (not through this page): wait on the tab itself.
+        cut.FindComponent<BirkNext.Web.Components.BrowserDiscoveryTab>().Loaded();
         cut.FindAll("[data-testid=browser-discovery]").Should().ContainSingle("evidence collection is not a review engine");
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=browser-companion-panel]").Should().ContainSingle());
+        cut.FindAll("[data-testid=browser-companion-panel]").Should().ContainSingle();
 
-        // Browser Discovery loads after its first paint; a click can race its queued live-status render, so it is retried until it lands.
-        cut.WaitForAssertion(() =>
-        {
-            cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Endpoint Discovery").Click();
-            cut.FindAll("[data-testid=endpoint-discovery]").Should().ContainSingle("network evidence is not a review engine");
-        });
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Endpoint Discovery").Click();
+        cut.FindAll("[data-testid=endpoint-discovery]").Should().ContainSingle("network evidence is not a review engine");
     }
 
     // ── 14. One restore action, scoped to engine configuration ───────────────

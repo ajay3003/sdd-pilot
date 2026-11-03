@@ -176,7 +176,14 @@ public sealed record BrowserPageRow(
     BrowserEvidenceState Dom,
     BrowserEvidenceState Performance,
     DateTimeOffset? LastSeen,
-    string Source);
+    string Source)
+{
+    /// <summary>Browser evidence was captured for this page; false = a visit was observed, evidence is pending (observed ≠ evidenced).</summary>
+    public bool EvidenceCaptured { get; init; } = true;
+    /// <summary>Recorded visits (0 when only evidence is known, e.g. from before visit history existed).</summary>
+    public int Visits { get; init; }
+    public DateTimeOffset? FirstVisited { get; init; }
+}
 
 /// <summary>
 /// Normalized, page-level presentation of Browser Companion evidence for Browser Discovery.
@@ -289,25 +296,49 @@ public static class BrowserDiscoveryPresentation
     // ── Overview ─────────────────────────────────────────────────────────────
 
     /// <summary>One row per page that actually carries browser evidence. Pages known only from network traffic are not browser evidence.</summary>
-    public static IReadOnlyList<BrowserPageRow> Rows(EndpointDiscoverySnapshot? snapshot) =>
-        (snapshot?.Pages ?? [])
-            .Where(p => p.BrowserEvidence is not null)
-            .OrderByDescending(p => p.BrowserEvidence!.CapturedAt)
-            .ThenBy(p => p.Identity, StringComparer.Ordinal)
-            .Select(p => new BrowserPageRow(
-                p.Identity,
-                p.PagePath.Length == 0 ? "/" : p.PagePath,
-                Areas(p.BrowserEvidence!.Accessibility),
-                p.BrowserEvidence.Dom is null ? BrowserEvidenceState.Unavailable : BrowserEvidenceState.Available,
-                HasPerformanceEvidence(p.BrowserEvidence.Performance) ? BrowserEvidenceState.Available : BrowserEvidenceState.Unavailable,
-                p.BrowserEvidence.CapturedAt,
-                Source))
-            .ToList();
+    public const string VisitSource = "Visit observed";
 
-    public static int PagesWithEvidence(EndpointDiscoverySnapshot? snapshot) => Rows(snapshot).Count;
+    /// <summary>
+    /// Every page of the environment's browser history: pages with captured evidence, and pages whose visit was observed but whose evidence is
+    /// still pending. One row per origin + route, newest first.
+    /// </summary>
+    public static IReadOnlyList<BrowserPageRow> Rows(EndpointDiscoverySnapshot? snapshot)
+    {
+        var visits = (snapshot?.PageVisits ?? []).ToDictionary(v => v.Identity, StringComparer.OrdinalIgnoreCase);
+        var evidenced = (snapshot?.Pages ?? [])
+            .Where(p => p.BrowserEvidence is not null)
+            .Select(p =>
+            {
+                var visit = visits.GetValueOrDefault(p.Identity);
+                return new BrowserPageRow(
+                    p.Identity,
+                    p.PagePath.Length == 0 ? "/" : p.PagePath,
+                    Areas(p.BrowserEvidence!.Accessibility),
+                    p.BrowserEvidence.Dom is null ? BrowserEvidenceState.Unavailable : BrowserEvidenceState.Available,
+                    HasPerformanceEvidence(p.BrowserEvidence.Performance) ? BrowserEvidenceState.Available : BrowserEvidenceState.Unavailable,
+                    visit is not null && visit.LastVisitedAt > p.BrowserEvidence.CapturedAt ? visit.LastVisitedAt : p.BrowserEvidence.CapturedAt,
+                    Source) { Visits = visit?.VisitCount ?? 0, FirstVisited = visit?.FirstVisitedAt };
+            }).ToList();
+        var known = evidenced.Select(r => r.Identity).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visitedOnly = visits.Values.Where(v => !known.Contains(v.Identity)).Select(v => new BrowserPageRow(
+            v.Identity, v.Path.Length == 0 ? "/" : v.Path, [], BrowserEvidenceState.Unavailable, BrowserEvidenceState.Unavailable, v.LastVisitedAt, VisitSource)
+            { EvidenceCaptured = false, Visits = v.VisitCount, FirstVisited = v.FirstVisitedAt });
+        return [.. evidenced.Concat(visitedOnly).OrderByDescending(r => r.LastSeen).ThenBy(r => r.Identity, StringComparer.Ordinal)];
+    }
+
+    /// <summary>"/admin/operations · Visited · DOM pending": what is known about a visited page, dimension by dimension.</summary>
+    public static IReadOnlyList<(string Label, bool Captured)> EvidenceDimensions(BrowserPageRow row) =>
+    [
+        ("Page visited", true),
+        ("DOM", row.Dom == BrowserEvidenceState.Available),
+        ("Accessibility", row.WcagAreas.Count > 0),
+        ("Performance", row.Performance == BrowserEvidenceState.Available),
+    ];
+
+    public static int PagesWithEvidence(EndpointDiscoverySnapshot? snapshot) => Rows(snapshot).Count(r => r.EvidenceCaptured);
 
     public static int PagesWith(EndpointDiscoverySnapshot? snapshot, Func<BrowserPageRow, bool> predicate) =>
-        Rows(snapshot).Count(predicate);
+        Rows(snapshot).Where(r => r.EvidenceCaptured).Count(predicate);
 
     public static DateTimeOffset? LastEvidenceAt(EndpointDiscoverySnapshot? snapshot) =>
         (snapshot?.Pages ?? []).Where(p => p.BrowserEvidence is not null)
@@ -853,15 +884,19 @@ public static class BrowserDiscoveryLive
     /// discovery snapshot (fuller, survives re-pairing) and the session's own summary (covers a snapshot that has not
     /// been merged yet) — so every surface that reports captured evidence reports the same numbers.
     /// </summary>
-    public static BrowserEvidenceTotals Totals(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot)
+    public static BrowserEvidenceTotals Totals(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot) =>
+        Totals(status, snapshot, BrowserDiscoveryPresentation.Rows(snapshot));
+
+    /// <param name="rows">The snapshot's rows when the caller already holds them (they are built once, not once per count).</param>
+    public static BrowserEvidenceTotals Totals(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot, IReadOnlyList<BrowserPageRow> rows)
     {
-        var rows = BrowserDiscoveryPresentation.Rows(snapshot);
+        var evidenced = rows.Where(r => r.EvidenceCaptured).ToList();
         var summary = status?.Evidence ?? BrowserCompanionEvidenceSummary.Empty;
         return new(
-            Math.Max(rows.Count, summary.PagesWithEvidence),
-            Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Dom == BrowserEvidenceState.Available), summary.DomEvidencePageCount),
-            Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.WcagAreas.Count > 0), summary.AccessibilityEvidencePageCount),
-            Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Performance == BrowserEvidenceState.Available), summary.PerformanceEvidencePageCount),
+            Math.Max(evidenced.Count, summary.PagesWithEvidence),
+            Math.Max(evidenced.Count(r => r.Dom == BrowserEvidenceState.Available), summary.DomEvidencePageCount),
+            Math.Max(evidenced.Count(r => r.WcagAreas.Count > 0), summary.AccessibilityEvidencePageCount),
+            Math.Max(evidenced.Count(r => r.Performance == BrowserEvidenceState.Available), summary.PerformanceEvidencePageCount),
             BrowserDiscoveryPresentation.LastEvidenceAt(snapshot) ?? summary.LastEvidenceAt);
     }
 
@@ -878,9 +913,9 @@ public static class BrowserDiscoveryLive
     };
 
     /// <summary>Historical facts. Every label says "evidence", because every one of them is about the past.</summary>
-    public static IReadOnlyList<BrowserDiscoveryFact> EvidenceFacts(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot)
+    public static IReadOnlyList<BrowserDiscoveryFact> EvidenceFacts(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot, IReadOnlyList<BrowserPageRow>? rows = null)
     {
-        var totals = Totals(status, snapshot);
+        var totals = Totals(status, snapshot, rows ?? BrowserDiscoveryPresentation.Rows(snapshot));
         return
         [
             new("Pages with evidence", totals.Pages.ToString(), "bd-pages-count"),
@@ -921,9 +956,9 @@ public static class BrowserDiscoveryLive
     };
 
     /// <summary>Live pages that have produced no evidence yet — real, current, and invisible to an evidence-only list.</summary>
-    public static IReadOnlyList<BrowserCompanionLivePage> LiveWithoutEvidence(BrowserCompanionLiveSession? live, EndpointDiscoverySnapshot? snapshot)
+    public static IReadOnlyList<BrowserCompanionLivePage> LiveWithoutEvidence(BrowserCompanionLiveSession? live, EndpointDiscoverySnapshot? snapshot, IReadOnlyList<BrowserPageRow>? rows = null)
     {
-        var known = BrowserDiscoveryPresentation.Rows(snapshot).Select(r => r.Identity).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var known = (rows ?? BrowserDiscoveryPresentation.Rows(snapshot)).Select(r => r.Identity).ToHashSet(StringComparer.OrdinalIgnoreCase);
         return live?.LivePages.Where(p => !known.Contains(p.Identity)).ToList() ?? [];
     }
 }

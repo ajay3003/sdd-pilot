@@ -24,6 +24,8 @@ public interface IEndpointDiscoveryService
     Task<bool> MergeObservedAsync(IJSRuntime js, string profileId, IReadOnlyList<ObservedNetworkEndpoint> observed);
     /// <summary>Folds Browser Companion page evidence into the same per-page snapshot (one PageAnalysis per page identity for proxy and browser evidence alike) and persists. Returns true when anything changed.</summary>
     Task<bool> MergeBrowserEvidenceAsync(IJSRuntime js, string profileId, IReadOnlyList<BrowserPageEvidence> pages);
+    /// <summary>Persists every page the paired browser visited (origin + route, per session), whether or not evidence was captured for it.</summary>
+    Task<bool> MergePageVisitsAsync(IJSRuntime js, string profileId, IReadOnlyList<BrowserPageVisit> visits, string sessionKey) => Task.FromResult(false);
     Task DeletePageAsync(IJSRuntime js, string profileId, string pageIdentity);
     /// <summary>
     /// Refresh analysis for exactly one existing page: keep the page entry and identity, start a new analysis generation, reset its current
@@ -66,7 +68,8 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     /// is classified again, and presentation built from it is rebuilt.</summary>
     public static string Version(EndpointDiscoverySnapshot s) =>
         $"{s.UpdatedAt.UtcTicks}|{s.Pages.Count}|{s.Shared.Count}|{s.Pages.Sum(p => p.Endpoints.Count)}|{s.Pages.Count(p => p.BrowserEvidence is not null)}"
-        + $"|{s.Pages.Select(p => p.BrowserEvidence?.CapturedAt.UtcTicks ?? 0).DefaultIfEmpty().Max()}|{s.Pages.Select(p => p.BrowserEvidence?.SnapshotSequence ?? 0).Sum()}";
+        + $"|{s.Pages.Select(p => p.BrowserEvidence?.CapturedAt.UtcTicks ?? 0).DefaultIfEmpty().Max()}|{s.Pages.Select(p => p.BrowserEvidence?.SnapshotSequence ?? 0).Sum()}"
+        + $"|{s.PageVisits.Count}|{s.PageVisits.Select(v => v.LastVisitedAt.UtcTicks).DefaultIfEmpty().Max()}|{s.PageVisits.Sum(v => v.VisitCount)}";
     public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateWcagAsync(js, profileId, s =>
     {
         BrowserQualityAssessmentService.SelectProfile(s, settings);
@@ -171,8 +174,18 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         return true;
     }
 
+    public async Task<bool> MergePageVisitsAsync(IJSRuntime js, string profileId, IReadOnlyList<BrowserPageVisit> visits, string sessionKey)
+    {
+        if (visits.Count == 0) return false;
+        var snapshot = _byProfile.TryGetValue(profileId, out var existing) ? existing : new EndpointDiscoverySnapshot();
+        if (!EndpointDiscoveryMerge.MergePageVisits(snapshot, visits, sessionKey, DateTimeOffset.UtcNow)) return false;
+        _byProfile[profileId] = snapshot;
+        await PersistAsync(js);
+        return true;
+    }
+
     public Task DeletePageAsync(IJSRuntime js, string profileId, string pageIdentity) => MutateAsync(js, profileId, s =>
-        s.Pages.RemoveAll(p => p.Identity == pageIdentity) > 0);
+        s.Pages.RemoveAll(p => p.Identity == pageIdentity) + s.PageVisits.RemoveAll(v => v.Identity == pageIdentity) > 0);
 
     public Task RefreshPageAsync(IJSRuntime js, string profileId, string pageIdentity) => MutateAsync(js, profileId, s =>
     {
@@ -191,6 +204,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     {
         var had = s.Pages.Count > 0 || s.Shared.Count > 0 || s.ExcludedPageHistory.Count > 0;
         s.ExcludedPageHistory.Clear();
+        s.PageVisits.Clear();
         s.Pages.Clear();
         s.Shared.Clear();
         return had;
@@ -342,6 +356,35 @@ public static class EndpointDiscoveryMerge
     /// is one PageAnalysis, never two. Respects the refresh boundary through the evidence's VisitStartedAt: a visit that started before
     /// "Refresh analysis" never repopulates the refreshed page. Other pages are untouched.
     /// </summary>
+    /// <summary>The most visited pages kept per environment (oldest last visit dropped first).</summary>
+    public const int MaxPageVisits = 200;
+
+    /// <summary>
+    /// Upserts visited pages by origin + route: first/last visit widen, the visit count of this companion session is replaced (the backend's count
+    /// is cumulative per session). Application pages of approved origins only — the same rule as evidence. Idempotent.
+    /// </summary>
+    public static bool MergePageVisits(EndpointDiscoverySnapshot snapshot, IReadOnlyList<BrowserPageVisit> visits, string sessionKey, DateTimeOffset now)
+    {
+        var changed = false;
+        foreach (var visit in visits)
+        {
+            if (string.IsNullOrWhiteSpace(visit.Origin) || string.IsNullOrWhiteSpace(visit.Route) || visit.VisitCount <= 0
+                || !NetworkEvidencePolicy.IsApplicationPage(visit.Route) || !ApplicationPagePolicy.IsApplicationOrigin(visit.Origin, snapshot.ApplicationOrigins)) continue;
+            var record = snapshot.PageVisits.FirstOrDefault(v => string.Equals(v.Identity, visit.Identity, StringComparison.OrdinalIgnoreCase));
+            if (record is null)
+            {
+                snapshot.PageVisits.Add(record = new PageVisitRecord { Origin = visit.Origin, Path = visit.Route, FirstVisitedAt = visit.FirstSeenAt, LastVisitedAt = visit.LastSeenAt });
+                changed = true;
+            }
+            if (visit.FirstSeenAt < record.FirstVisitedAt) { record.FirstVisitedAt = visit.FirstSeenAt; changed = true; }
+            if (visit.LastSeenAt > record.LastVisitedAt) { record.LastVisitedAt = visit.LastSeenAt; changed = true; }
+            if (record.VisitsBySession.GetValueOrDefault(sessionKey) < visit.VisitCount) { record.VisitsBySession[sessionKey] = visit.VisitCount; changed = true; }
+        }
+        while (snapshot.PageVisits.Count > MaxPageVisits) { snapshot.PageVisits.Remove(snapshot.PageVisits.MinBy(v => v.LastVisitedAt)!); changed = true; }
+        if (changed) snapshot.UpdatedAt = now;
+        return changed;
+    }
+
     public static bool MergeBrowserEvidence(EndpointDiscoverySnapshot snapshot, IReadOnlyList<BrowserPageEvidence> pages, DateTimeOffset now)
     {
         var changed = false;

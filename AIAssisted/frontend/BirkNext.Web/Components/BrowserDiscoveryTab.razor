@@ -27,14 +27,14 @@
     <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.BrowserDiscovery" Profile="Profile" />
 
     @* One notice for the companion situation, or none. A connected companion with no page open is not a warning. *@
-    @if (BrowserCompanionSituations.Alert(Situation, Rows.Count, Status.OriginPermissionRequired ? Status.ApprovedOrigins : null) is { } alert)
+    @if (BrowserCompanionSituations.Alert(Situation, EvidencedCount, Status.OriginPermissionRequired ? Status.ApprovedOrigins : null) is { } alert)
     {
         <div class="bd-alert bd-alert-@alert.Tone" role="status" data-testid="bd-companion-alert">
             <span class="bd-alert-icon bd-icon-@alert.Icon" aria-hidden="true"></span>
             <div class="bd-alert-body">
                 <h3 class="bd-alert-title" data-testid="bd-companion-alert-title">@alert.Title</h3>
                 <p class="bd-alert-text">@alert.Body</p>
-                @if (BrowserCompanionSituations.HistoryReassurance(Rows.Count) is { Length: > 0 } kept)
+                @if (BrowserCompanionSituations.HistoryReassurance(EvidencedCount) is { Length: > 0 } kept)
                 {
                     @* Live evidence is gone; captured evidence is not. Saying so stops the warning reading as data loss. *@
                     <p class="bd-alert-note" data-testid="bd-companion-alert-history">@kept</p>
@@ -104,7 +104,7 @@
 
     <div class="bd-overview bd-overview-evidence" data-testid="browser-discovery-summary" aria-label="Captured evidence">
         <span class="bd-ov-group">Historical evidence</span>
-        @foreach (var fact in BrowserDiscoveryLive.EvidenceFacts(Status, Snapshot))
+        @foreach (var fact in BrowserDiscoveryLive.EvidenceFacts(Status, Snapshot, Rows))
         {
             <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>
         }
@@ -158,17 +158,17 @@
                                         <button type="button" class="bd-routelink" data-testid="browser-discovery-open-page" @onclick="() => OpenPage(row.Identity)">@row.Route</button>
                                     </th>
                                     @* A page with evidence is not a page that is open. *@
-                                    <td data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.EffectiveLive))</td>
+                                    <td data-testid="browser-discovery-page-liveness">@LiveLabel(row)</td>
                                     @* Presence of evidence, never what it says. WCAG-area mapping is evidence metadata
                                        and lives in Evidence → Accessibility, where it is useful rather than decorative. *@
-                                    <td>@StateBadge(row.Dom)</td>
-                                    <td data-testid="browser-discovery-page-accessibility">@StateBadge(row.WcagAreas.Count > 0 ? BrowserEvidenceState.Available : BrowserEvidenceState.Unavailable)</td>
-                                    <td>@StateBadge(row.Performance)</td>
+                                    <td>@Dimension(row, row.Dom)</td>
+                                    <td data-testid="browser-discovery-page-accessibility">@Dimension(row, row.WcagAreas.Count > 0 ? BrowserEvidenceState.Available : BrowserEvidenceState.Unavailable)</td>
+                                    <td>@Dimension(row, row.Performance)</td>
                                     <td class="bd-mono">@(row.LastSeen is { } seen ? Time(seen) : "—")</td>
                                     <td><span class="bd-source">@row.Source</span></td>
                                 </tr>
                             }
-                            @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot))
+                            @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot, Rows))
                             {
                                 <tr data-testid="browser-discovery-page-row">
                                     <th scope="row" class="bd-mono bd-route">@live.Route</th>
@@ -201,11 +201,11 @@
                             aria-current="@(SelectedRow?.Identity == row.Identity ? "true" : null)"
                             data-testid="browser-discovery-page-link" @onclick="() => _selected = row.Identity">
                         <span class="bd-pagetitle">@row.Route</span>
-                        <span class="bd-pagesub">@(row.LastSeen is { } s ? Time(s) : "—")</span>
-                        <span class="bd-pageliveness" data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.EffectiveLive))</span>
+                        <span class="bd-pagesub">@(row.LastSeen is { } s ? Time(s) : "—")@if (!row.EvidenceCaptured) { <span data-testid="browser-discovery-page-pending"> · Visited · evidence pending</span> }</span>
+                        <span class="bd-pageliveness" data-testid="browser-discovery-page-liveness">@LiveLabel(row)</span>
                     </button>
                 }
-                @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot))
+                @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot, Rows))
                 {
                     <button type="button" class="bd-pagelink" disabled data-testid="browser-discovery-page-link">
                         <span class="bd-pagetitle">@live.Route</span>
@@ -283,6 +283,30 @@
                            aria-label="Open Frontend Quality Review to interpret this page's browser evidence">@BrowserDiscoveryPresentation.HandoffAction</a>
                     </div>
 
+                }
+                else if (SelectedRow is { EvidenceCaptured: false } visited)
+                {
+                    @* Visit observed ≠ fully evidenced: the visit is kept and said so, dimension by dimension. *@
+                    <div class="bd-page-head">
+                        <h4 class="bd-page-title bd-mono" data-testid="browser-discovery-selected-page">@visited.Route</h4>
+                        <span class="bd-pageliveness" data-testid="browser-discovery-selected-liveness">@(BrowserDiscoveryLive.Liveness(visited, Status?.EffectiveLive) == BrowserPageLiveness.LiveNow ? "Live now" : "Historical page")</span>
+                    </div>
+                    <ul class="bd-visit-dims" data-testid="browser-discovery-visit-dimensions">
+                        @foreach (var (label, captured) in BrowserDiscoveryPresentation.EvidenceDimensions(visited))
+                        {
+                            <li data-captured="@(captured ? "true" : "false")"><span aria-hidden="true">@(captured ? "✓" : "○")</span> @label @(captured ? (label == "Page visited" ? "" : "captured") : "pending")</li>
+                        }
+                    </ul>
+                    <dl class="bd-items" data-testid="browser-discovery-visit-facts">
+                        <div><dt>First visited</dt><dd class="bd-mono">@(visited.FirstVisited is { } first ? Time(first) : "—")</dd></div>
+                        <div><dt>Last visited</dt><dd class="bd-mono">@(visited.LastSeen is { } last ? Time(last) : "—")</dd></div>
+                        <div><dt>Visits</dt><dd class="bd-mono">@visited.Visits</dd></div>
+                        @if (Snapshot.Pages.FirstOrDefault(p => string.Equals(p.Identity, visited.Identity, StringComparison.OrdinalIgnoreCase)) is { Endpoints.Count: > 0 } network)
+                        {
+                            <div><dt>Endpoint Discovery</dt><dd data-testid="browser-discovery-visit-requests">@network.Endpoints.Sum(e => Math.Max(1, e.Count)) API requests observed during this page context (supporting evidence)</dd></div>
+                        }
+                    </dl>
+                    <p class="bd-empty-help" data-testid="browser-discovery-visit-help">The visit was observed, but the Browser Companion has not captured this page's DOM, accessibility or performance evidence yet. Revisiting the page while it is open captures it.</p>
                 }
                 else
                 {
@@ -631,7 +655,9 @@
     private BrowserCompanionRuntime? _subscribed;
 
     // Loading: the tab paints first (skeleton), then stored evidence (summary), then the live session. Never blocks navigation.
-    private bool _evidenceReady, _liveReady, _stillLoading;
+    private bool _evidenceReady, _followed, _stillLoading;
+    /// <summary>The live session state is known: a status for this environment has been read (another surface may have started following it).</summary>
+    private bool _liveReady => _followed && (Runtime is null || Profile is null || Runtime.HasStatusFor(Profile.Id));
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
     protected override async Task OnParametersSetAsync()
@@ -639,12 +665,12 @@
         if (!_evidenceReady)
         {
             _ = FlagStillLoadingAsync();
-            await Task.Yield(); // first paint: the loading state, in the same frame as the tab switch
+            await YieldToBrowser(); // first paint: the loading state, in the same frame as the tab switch
             try { await Discovery.LoadAsync(JS); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
             if (Profile is not null) Discovery.ConfigureTarget(Profile);
             _evidenceReady = true;
             StateHasChanged();
-            await Task.Yield(); // paint the stored-evidence summary before the live status request
+            await YieldToBrowser(); // paint the stored-evidence summary before the live status request
         }
         var profileId = Profile?.Id;
         if (_setupProfileId != profileId)
@@ -659,12 +685,16 @@
             if (_subscribed is not null) _subscribed.Changed += OnRuntimeChanged;
         }
         if (Runtime is not null && Profile is not null) await Runtime.FollowAsync(Profile);
-        _liveReady = true;
+        _followed = true;
         if (_setupProfileId == profileId)
             _browserCompanionSetupExpanded ??= Situation == BrowserCompanionSituation.PairedNotConnected;
     }
 
     private void OnRuntimeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Lets the browser paint before the next step. Only a browser has a frame to paint; elsewhere (prerendering, component tests) the
+    /// load continues in the same flow.</summary>
+    private static Task YieldToBrowser() => OperatingSystem.IsBrowser() ? Task.Delay(1) : Task.CompletedTask;
 
     private async Task FlagStillLoadingAsync()
     {
@@ -684,7 +714,10 @@
     /// Browser Companion card all read from it, so one situation cannot be described three different ways.
     /// </summary>
     private BrowserDiscoveryState DiscoveryState =>
-        BrowserDiscoveryStates.Of(Status.State, Rows.Count > 0, BrowserDiscoveryStates.OnApprovedPage(Status));
+        BrowserDiscoveryStates.Of(Status.State, EvidencedCount > 0, BrowserDiscoveryStates.OnApprovedPage(Status));
+
+    /// <summary>Pages with captured evidence; visited-only pages are history, not evidence.</summary>
+    private int EvidencedCount => Rows.Count(r => r.EvidenceCaptured);
 
     private string EmptyEvidenceHelp => BrowserDiscoveryStates.Explanation(DiscoveryState);
 
@@ -879,6 +912,18 @@
         _evidence = "dom";
         _view = "evidence";
     }
+
+    /// <summary>A visited page whose evidence is not captured yet says Pending — not Not captured, which would read as a finished capture.</summary>
+    /// <summary>Live now, or historical: a visited page without evidence is a historical page, never "historical evidence".</summary>
+    private string LiveLabel(BrowserPageRow row) => BrowserDiscoveryLive.Liveness(row, Status?.EffectiveLive) is var liveness && liveness == BrowserPageLiveness.LiveNow
+        ? BrowserDiscoveryLive.LivenessLabel(liveness) + (row.EvidenceCaptured ? "" : " · evidence pending")
+        : row.EvidenceCaptured ? BrowserDiscoveryLive.LivenessLabel(liveness) : "Historical page · visit observed";
+
+    private RenderFragment Dimension(BrowserPageRow row, BrowserEvidenceState state) => __builder =>
+    {
+        if (!row.EvidenceCaptured) { <span class="bd-state bd-state-unavailable" data-testid="browser-discovery-dimension-pending">Pending</span> }
+        else { @StateBadge(state) }
+    };
 
     private RenderFragment StateBadge(BrowserEvidenceState state) => __builder =>
     {

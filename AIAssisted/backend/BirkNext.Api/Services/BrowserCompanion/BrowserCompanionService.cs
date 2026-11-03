@@ -90,6 +90,8 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         public string? CurrentPagePath => CurrentPage?.Route;
         public int RejectedMessages { get; set; }
         public Dictionary<string, BrowserPageEvidence> Pages { get; } = new(StringComparer.Ordinal);
+        /// <summary>Pages visited in this session by origin + route, written by live page registration (never by evidence).</summary>
+        public Dictionary<string, BrowserPageVisit> Visits { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, PendingCommand> Commands { get; } = new(StringComparer.Ordinal);
         public DateTimeOffset AbsoluteExpiry => PairedAt + BrowserCompanionLimits.SessionAbsoluteLifetime;
         public bool Expired(DateTimeOffset now) => now > AbsoluteExpiry || now - LastSeenAt > BrowserCompanionLimits.SessionIdleLifetime;
@@ -282,6 +284,7 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
                     CurrentPageOrigin = connected ? session.CurrentPageOrigin : null, CurrentPagePath = connected ? session.CurrentPagePath : null,
                     PagesWithEvidence = session.Pages.Count, RejectedMessages = session.RejectedMessages,
                     Pages = session.Pages.Values.OrderByDescending(p => p.CapturedAt).ToList(),
+                    PageVisits = PageVisits(session, connected),
                     Live = LiveSession(session, connected, now),
                     Evidence = EvidenceSummary(session),
                     Message = connected ? "Browser Companion connected."
@@ -382,6 +385,10 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
             if (pageId.Length == 0 || instance.Length == 0) continue;
             seen.Add(pageId);
             var route = BrowserCompanionEvidenceSanitizer.NormalizePath(page.Route);
+            var known = session.LivePages.TryGetValue(pageId, out var before) ? before : null;
+            // A tab arriving at a route (opened, reloaded or SPA-navigated) is a visit; a heartbeat on the same route only refreshes it. The visit
+            // is kept when the tab moves on, so every page navigated through is in the history without being revisited.
+            RecordVisit(session, origin, route, now, arrived: known is null || known.Route != route || known.ContentScriptInstanceId != instance);
             // A new instance on the same tab is a reload: it replaces the page rather than adding one.
             session.LivePages[pageId] = session.LivePages.TryGetValue(pageId, out var existing) && existing.ContentScriptInstanceId == instance
                 ? existing with { Route = route, LastSeenAt = now }
@@ -395,6 +402,33 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         if (seen.Count > 0) session.LastContentScriptSeenAt = now;
         ExpireLivePages(session, now);
     }
+
+    private static void RecordVisit(Session session, string origin, string route, DateTimeOffset now, bool arrived)
+    {
+        var key = $"{origin}{route}";
+        if (session.Visits.TryGetValue(key, out var visit))
+        {
+            session.Visits[key] = visit with { LastSeenAt = now, VisitCount = visit.VisitCount + (arrived ? 1 : 0) };
+            return;
+        }
+        if (session.Visits.Count >= BrowserCompanionLimits.MaxPagesPerEnvironment)
+            session.Visits.Remove(session.Visits.Values.OrderBy(v => v.LastSeenAt).First().Identity);
+        session.Visits[key] = new BrowserPageVisit { Origin = origin, Route = route, FirstSeenAt = now, LastSeenAt = now, VisitCount = 1 };
+    }
+
+    /// <summary>Visited pages with their live state and which evidence dimensions were captured for the same origin + route.</summary>
+    private static List<BrowserPageVisit> PageVisits(Session session, bool connected) =>
+    [
+        .. session.Visits.Values.OrderByDescending(v => v.LastSeenAt).Select(v =>
+        {
+            var evidence = session.Pages.GetValueOrDefault(v.Identity);
+            return v with
+            {
+                Live = connected && session.LivePages.Values.Any(p => string.Equals(p.Origin, v.Origin, StringComparison.OrdinalIgnoreCase) && p.Route == v.Route),
+                DomCaptured = evidence?.Dom is not null, AccessibilityCaptured = evidence?.Accessibility is not null, PerformanceCaptured = evidence?.Performance is not null,
+            };
+        }),
+    ];
 
     private static void ExpireLivePages(Session session, DateTimeOffset now)
     {

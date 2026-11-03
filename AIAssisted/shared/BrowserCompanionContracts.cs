@@ -147,6 +147,8 @@ public sealed record BrowserCompanionStatusRequest(string ProfileId);
 public sealed record BrowserCompanionStatus
 {
     public BrowserCompanionState State { get; init; } = BrowserCompanionState.NotPaired;
+    /// <summary>Every page visited in this session, newest first — including pages whose evidence is not (yet) captured.</summary>
+    public List<BrowserPageVisit> PageVisits { get; init; } = [];
     public string? ProfileId { get; init; }
     public string? EnvironmentName { get; init; }
     /// <summary>Present only while pairing is pending, so the UI can show it to the user.</summary>
@@ -543,6 +545,26 @@ public static class BrowserCompanionLimits
 /// another; the page does not stop existing in between, and a model that conflated the two made the browser appear to
 /// vanish mid-navigation.
 /// </summary>
+/// <summary>
+/// A page (origin + route) the paired browser visited during this session, recorded from live page registration the moment a tab opens it or
+/// navigates to it — independent of evidence. Visited is not evidenced: the evidence flags say which dimensions were actually captured.
+/// </summary>
+public sealed record BrowserPageVisit
+{
+    public string Origin { get; init; } = "";
+    public string Route { get; init; } = "";
+    public DateTimeOffset FirstSeenAt { get; init; }
+    public DateTimeOffset LastSeenAt { get; init; }
+    /// <summary>How many times a tab arrived at this route in this session (a heartbeat on the same route is not a new visit).</summary>
+    public int VisitCount { get; init; }
+    /// <summary>Open in a tab right now (only while the companion is connected).</summary>
+    public bool Live { get; init; }
+    public bool DomCaptured { get; init; }
+    public bool AccessibilityCaptured { get; init; }
+    public bool PerformanceCaptured { get; init; }
+    public string Identity => $"{Origin}{Route}";
+}
+
 public sealed record BrowserCompanionLivePage
 {
     /// <summary>

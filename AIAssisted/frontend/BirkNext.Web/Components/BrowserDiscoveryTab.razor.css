@@ -264,3 +264,7 @@
 @keyframes bd-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @keyframes bd-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .bd-skeleton, .bd-spinner { animation: none; } }
+
+/* A visited page whose evidence is pending: each dimension says what is known. */
+.bd-visit-dims { list-style: none; margin: .25rem 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem .9rem; font-size: .9rem; }
+.bd-visit-dims li[data-captured="false"] { color: var(--clr-text-muted, #64748b); }
