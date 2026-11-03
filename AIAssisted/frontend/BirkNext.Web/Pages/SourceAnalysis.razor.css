@@ -88,3 +88,24 @@ a.sa-file-button:focus-visible { outline: 2px solid var(--clr-link, #2563eb); ou
 .sa-status-guide { display: grid; gap: .25rem; }
 .sa-status-guide p { margin: 0; }
 .sa-attention-area { font-weight: 600; min-width: 7.5rem; }
+
+/* Coverage dimensions and the one status taxonomy (badges share tones with the Overview cards). */
+.sa-coverage-dimensions { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .84rem; }
+.sa-coverage-dimensions li { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; overflow-wrap: anywhere; }
+.sa-coverage-label { font-weight: 600; color: var(--clr-text-heading); min-width: 9rem; }
+.sa-state-badge { font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; border: 1px solid #e2e8f0; background: #f8fafc; color: #334155; white-space: nowrap; }
+.sa-state-badge.is-established { background: #f0fdf4; color: #14532d; border-color: #bbf7d0; }
+.sa-state-badge.is-info { background: #eff6ff; color: #1e3a8a; border-color: #bfdbfe; }
+.sa-state-badge.is-limited { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+.sa-state-badge.is-conflict { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+
+/* Staged loading: real stages, a spinner that respects reduced motion, and a skeleton of the area cards. */
+.sa-loading { display: grid; gap: .5rem; }
+.sa-loading-title { margin: 0; font-weight: 600; color: var(--clr-text-heading); }
+.sa-loading-spinner { display: inline-block; animation: sa-spin 1s linear infinite; margin-right: .35rem; }
+@keyframes sa-spin { to { transform: rotate(360deg); } }
+.sa-skeleton { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin-top: .4rem; }
+.sa-skeleton-card { height: 6.5rem; border-radius: var(--radius-md); background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: sa-shimmer 1.4s ease-in-out infinite; }
+@keyframes sa-shimmer { to { background-position: -200% 0; } }
+@media (max-width: 640px) { .sa-skeleton { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .sa-loading-spinner, .sa-skeleton-card { animation: none; } }

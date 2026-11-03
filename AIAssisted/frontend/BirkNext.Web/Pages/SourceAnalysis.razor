@@ -1,4 +1,5 @@
 @page "/source-analysis"
+@implements IDisposable
 @attribute [BirkNext.Web.Services.WorkspaceDocumentsNotRead]
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
@@ -32,7 +33,7 @@
     @if (!_loaded)
     {
         <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
-        <p class="sa-muted" role="status">Loading source snapshots…</p>
+        @LoadingPanel(null)
     }
     else
     {
@@ -48,19 +49,13 @@
             <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
             <ReviewDisclosure Text="How to read statuses" CollapseText="Hide status guide" TestId="sa-status-legend" Class="disclosure-inline">
                 <div class="sa-muted sa-status-guide" data-testid="sa-status-guide">
-                    <p>Source Analysis describes evidence in the selected source snapshot.</p>
-                    <p><strong>Not found in source</strong> means no supporting evidence was detected here. It does not prove the capability is absent at runtime.</p>
-                    <p><strong>Partial</strong> means useful evidence was produced, but analysis coverage is incomplete — not a failure.</p>
-                    <p><strong>Inferred</strong> means a relationship or value was derived indirectly and is not direct source proof.</p>
+                    <p>Source Analysis describes evidence in the selected source snapshot. Detected, resolved, limited by source and needs review are kept apart; runtime is never verified here.</p>
                     <p data-testid="sa-runtime-dependent">Runtime and deployment state are not assessed here. Runtime-dependent evidence is @(_profile is null ? "not available here — select a Target Environment for runtime reviews" : "available to runtime reviews, never to Source Analysis").</p>
                 </div>
                 <dl class="sa-legend" data-testid="sa-status-legend-list">
-                    @foreach (var (dimension, examples) in StatusLegend)
+                    @foreach (var state in SourceEvidenceStates.Legend)
                     {
-                        <div data-dimension="@dimension">
-                            <dt>@SourceStatusPresentation.DimensionLabel(dimension)</dt>
-                            <dd>@foreach (var example in examples) { <SourceStatusBadge Dimension="dimension" Label="@example" /> } <span>@SourceStatusPresentation.DimensionHelp(dimension)</span></dd>
-                        </div>
+                        <div data-state="@state"><dt><span class="sa-state-badge is-@SourceEvidenceStates.Tone(state)">@SourceEvidenceStates.Label(state)</span></dt><dd>@SourceEvidenceStates.Meaning(state)</dd></div>
                     }
                 </dl>
             </ReviewDisclosure>
@@ -82,16 +77,14 @@
             @if (selected is not null)
             {
                 var coverage = SourceAnalysisReview.Coverage(selected);
-                <div class="sa-coverage" data-testid="sa-coverage" data-status="@coverage.Status">
-                    <p class="sa-coverage-head"><span class="sa-muted">Analysis coverage</span>
-                        <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@coverage.Status" HiddenPrefix="Analysis coverage: " TestId="sa-current-evidence" /></p>
-                    @if (coverage.Status != "Complete")
-                    {
-                        <ul class="sa-coverage-reasons" aria-label="Why the analysis coverage is @coverage.Status.ToLowerInvariant()" data-testid="sa-coverage-reasons">
-                            @foreach (var reason in coverage.Reasons) { <li data-testid="sa-coverage-reason">@reason</li> }
-                        </ul>
-                        <p class="sa-muted">Partial is not an analysis failure: every area below shows the evidence that was produced.</p>
-                    }
+                <div class="sa-coverage" data-testid="sa-coverage">
+                    <p class="sa-coverage-head"><span class="sa-muted">Analysis coverage</span></p>
+                    <ul class="sa-coverage-dimensions" aria-label="Analysis coverage by dimension" data-testid="sa-coverage-reasons">
+                        @foreach (var d in SourceAnalysisDashboard.Coverage(selected))
+                        {
+                            <li data-testid="sa-coverage-dimension" data-key="@d.Key" data-state="@d.State"><span class="sa-coverage-label">@d.Label</span> <span class="sa-state-badge is-@SourceEvidenceStates.Tone(d.State)" title="@SourceEvidenceStates.Meaning(d.State)">@SourceEvidenceStates.Label(d.State)</span> <span class="sa-muted">@d.Text</span></li>
+                        }
+                    </ul>
                     @if (coverage.Limitations.Count > 0)
                     {
                         <ReviewDisclosure Text="@($"View limitations ({coverage.Limitations.Count})")" CollapseText="Hide limitations" TestId="sa-coverage-limitations" Class="disclosure-small">
@@ -186,7 +179,7 @@
                     <button type="button" class="btn-primary" data-testid="sa-detail-retry" @onclick="RetryDetailAsync">Retry</button>
                 </section>
             }
-            else { @LoadingAnalysis }
+            else { @LoadingPanel(selectedSummary) }
         }
         else if (selected is null)
         {
@@ -253,44 +246,13 @@
             </nav>
             @if (_area == SourceAnalysisAreas.Overview)
             {
-                var reviewAreas = SourceAnalysisReview.ReviewAreas(selected);
-                var limitations = SourceAnalysisReview.Limitations(selected);
-                <section class="sa-card sa-summary" aria-labelledby="sa-current-heading" data-testid="sa-overview-summary">
-                    <h2 id="sa-current-heading" tabindex="-1">Analysis summary</h2>
-                    <ul class="sa-summary-rows" data-testid="sa-summary-rows">
-                        @foreach (var row in SourceAnalysisReview.CoreRows(selected)) { @SummaryRow(row) }
-                    </ul>
-                    <h3 class="sa-summary-subheading">Quality evidence</h3>
-                    <ul class="sa-summary-rows sa-summary-rows-compact" data-testid="sa-evidence-rows">
-                        @foreach (var row in SourceAnalysisReview.EvidenceRows(selected)) { @SummaryRow(row) }
-                    </ul>
-                </section>
-                <section class="sa-card sa-attention" aria-labelledby="sa-attention-heading" data-testid="sa-attention">
-                    <h2 id="sa-attention-heading">Review needed <span class="sa-count" data-testid="sa-attention-count">@SourceAnalysisReview.Plural(reviewAreas.Count, "area", "areas")</span></h2>
-                    @if (reviewAreas.Count == 0) { <p class="sa-muted" data-testid="sa-attention-none">Nothing in this snapshot needs review.</p> }
-                    else
-                    {
-                        <p class="sa-muted" data-testid="sa-attention-note">Evidence worth a look, per area. These are analyzer results of different kinds — unresolved source relationships, declarations to interpret, classification gaps and heuristic parses — not application defects, so they are not added together.</p>
-                        <ul class="sa-attention-list">
-                            @foreach (var (areaTitle, items) in reviewAreas)
-                            {
-                                @foreach (var item in items)
-                                {
-                                    <li data-testid="sa-attention-item" data-key="@item.Key" data-area="@areaTitle"><span class="sa-attention-area">@areaTitle</span> <span>@item.Text</span> <a href="@ReviewHref(item.Area, item.Domain)" @onclick="() => OpenReview(item.Area, item.Domain, item.View)" @onclick:preventDefault>Review<span class="visually-hidden">@(" " + areaTitle + ": " + item.Text)</span></a></li>
-                                }
-                            }
-                        </ul>
-                        <p class="sa-muted">Review opens the area; nothing is confirmed or accepted automatically.</p>
-                    }
-                    <div class="sa-actions" data-testid="sa-overview-actions">
-                        <button type="button" class="btn-primary" data-testid="sa-review-architecture" @onclick="() => OpenReview(SourceAnalysisAreas.Architecture, null, null)">Review architecture</button>
-                        <button type="button" class="btn-secondary" data-testid="sa-review-data" @onclick="() => OpenReview(SourceAnalysisAreas.Data, null, null)">Review data</button>
-                        <button type="button" class="btn-secondary" data-testid="sa-review-observability" @onclick='() => OpenReview(SourceAnalysisAreas.Quality, "Observability", null)'>Review observability</button>
-                    </div>
-                    <ReviewDisclosure Text="@($"Analyzer limitations ({limitations})")" CollapseText="Hide analyzer limitations" TestId="sa-analyzer-limitations" Class="disclosure-small">
-                        <p class="sa-muted">What the analyzers could not interpret with certainty. Limitations of source analysis — not application defects. Each area lists its own under Analyzer details.</p>
-                    </ReviewDisclosure>
-                </section>
+                <SourceAnalysisOverviewPanel Snapshot="selected" InfrastructureElsewhere="SourceAnalysisDashboard.InfrastructureElsewhere(selected, _associations)"
+                                             OnOpen="@(t => OpenReview(t.Area, t.Domain, null))" />
+                <div class="sa-actions" data-testid="sa-overview-actions" data-associations="@_associations.Count" data-infrastructure-packages="@_associations.Count(a => a.Package.Has(BirkNext.Web.Models.ProjectEvidenceCapability.Infrastructure))">
+                    <button type="button" class="btn-primary" data-testid="sa-review-architecture" @onclick="() => OpenReview(SourceAnalysisAreas.Architecture, null, null)">Open architecture</button>
+                    <button type="button" class="btn-secondary" data-testid="sa-review-data" @onclick="() => OpenReview(SourceAnalysisAreas.Data, null, null)">Open data model</button>
+                    <button type="button" class="btn-secondary" data-testid="sa-review-observability" @onclick='() => OpenReview(SourceAnalysisAreas.Quality, "Observability", null)'>Open quality evidence</button>
+                </div>
                 @if (selected.EvidenceDomains is { } evidence)
                 {
                     var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);
@@ -497,23 +459,81 @@
 
     private Task<IqrSourceSnapshot?> FetchDetail(Guid id) => Api.GetSourceSnapshotAsync(id);
 
+    // ── Staged loading (the API Quality Review pattern): one ReviewAssessment per load, a newer one cancels the older, results of an
+    //    outdated generation are dropped, and a slow stage says what it waits for. Stages are the real requests, never invented phases. ──
+    private ReviewAssessment? _loading;
+    private int _loadGeneration;
+    private bool _loadSlow;
+    private static readonly TimeSpan SlowLoad = TimeSpan.FromSeconds(4);
+
+    private ReviewAssessment BeginLoad(params (string Key, string Label)[] stages)
+    {
+        _loading?.Cancel();
+        var a = new ReviewAssessment(++_loadGeneration, stages);
+        _loading = a;
+        _loadSlow = false;
+        _ = WatchSlowLoadAsync(a);
+        return a;
+    }
+
+    private async Task WatchSlowLoadAsync(ReviewAssessment a)
+    {
+        try { await Task.Delay(SlowLoad, a.Token); }
+        catch (OperationCanceledException) { return; }
+        catch (ObjectDisposedException) { return; }
+        if (!a.IsCurrent(_loadGeneration) || a.Waiting is null) return;
+        _loadSlow = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private RenderFragment LoadingPanel(IqrSourceSnapshotSummary? summary) => __builder =>
+    {
+        var a = _loading;
+        var title = _loadSlow && a?.Waiting is { } waiting ? $"Still loading… waiting for: {waiting.Label}"
+            : summary is null ? "Loading source snapshots…" : $"Loading analysis of {summary.Archive.FileName}…";
+        <section class="sa-card sa-loading" role="status" aria-live="polite" aria-busy="true" data-testid="@(summary is null ? "sa-list-loading" : "sa-detail-loading")" data-snapshot="@summary?.Id">
+            <p class="sa-loading-title"><span class="sa-loading-spinner" aria-hidden="true">⟳</span> @title</p>
+            @if (a is not null) { <ReviewStageList Stages="a.Stages" TestId="sa-loading-stages" StageTestId="sa-loading-stage" /> }
+            <div class="sa-skeleton" aria-hidden="true">
+                @for (var i = 0; i < 6; i++) { <span class="sa-skeleton-card"></span> }
+            </div>
+        </section>
+    };
+
+    /// <summary>Project Evidence associations (cached view; refreshed once per visit) — only to point at infrastructure in associated packages.</summary>
+    private IReadOnlyList<BirkNext.Web.Services.ProjectEvidence.PackageAssociation> _associations = [];
+
+    private async Task LoadAssociationsAsync()
+    {
+        if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) is not BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService evidence) return;
+        try { _associations = evidence.Peek(_profile?.Id).Associations; } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        try { _associations = (await evidence.GetAsync(_profile?.Id)).Associations; } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        StateHasChanged();
+    }
+
+    public void Dispose() => _loading?.Dispose();
+
     private async Task LoadSelectedDetailAsync()
     {
         _detailError = null;
         if (!Guid.TryParse(_selected, out var id) || _snapshots.All(s => s.Id != id)) { _detail = null; return; }
         if (_detail?.Id == id) return;
         _detail = null;
+        var name = _snapshots.First(s => s.Id == id).Archive.FileName;
+        var a = BeginLoad(("detail", $"Analysis of {name}"));
         StateHasChanged();
         try
         {
-            var detail = await SnapshotState.GetDetailAsync(id, FetchDetail);
-            if (_selected != id.ToString()) return; // another snapshot was chosen meanwhile
+            var detail = await a.StageAsync("detail", ct => SnapshotState.GetDetailAsync(id, i => Api.GetSourceSnapshotAsync(i, ct)), StateHasChanged,
+                d => d is null ? "no longer stored" : $"{d.Archive.FilesAnalyzed} files");
+            if (!a.IsCurrent(_loadGeneration) || _selected != id.ToString()) return; // another snapshot was chosen meanwhile
             _detail = detail;
             if (detail is null) _detailError = "This source snapshot is no longer stored. Choose another snapshot or reload the list.";
         }
+        catch (OperationCanceledException) when (a.Cancelled) { /* superseded by a newer selection: its own load reports */ }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            if (_selected == id.ToString()) _detailError = BackendRequestClassifier.FromException("Source analysis", ex).UserMessage;
+            if (a.IsCurrent(_loadGeneration) && _selected == id.ToString()) _detailError = BackendRequestClassifier.FromException("Source analysis", ex).UserMessage;
         }
     }
 
@@ -655,8 +675,19 @@
         // Identity only: Source Analysis reads no workspace documents.
         var workspace = await CurrentWorkspace.GetIdentityAsync();
         _snapshotKey = new(_profile?.Id ?? "", workspace.WorkspaceId, workspace.ProjectSlug, workspace.Version);
-        await Load();
+        var list = BeginLoad(("snapshots", "Stored source snapshots"));
+        try
+        {
+            await list.StageAsync("snapshots", async _ =>
+            {
+                await Load();
+                if (_error?.Code == "SOURCE_SNAPSHOT_LIST_FAILED") throw new HttpRequestException(_error.Message);
+                return _snapshots.Count;
+            }, StateHasChanged, n => SourceAnalysisReview.Plural(n, "snapshot", "snapshots"));
+        }
+        catch (HttpRequestException) { /* shown by the list error card */ }
         _loaded = true;
+        _ = LoadAssociationsAsync();
         await LoadSelectedDetailAsync();
     }
     private async Task Load()

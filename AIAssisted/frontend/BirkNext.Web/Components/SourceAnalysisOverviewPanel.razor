@@ -1,0 +1,122 @@
+@using BirkNext.Integrations
+@* Source Analysis → Overview: area cards (state from the one taxonomy, 2–5 defined metrics, detected/resolved/limited/review kept apart), a
+   resolution chart, actionable review items only, limitations grouped by cause, and metric definitions. Everything from the stored snapshot. *@
+@{
+    var areas = SourceAnalysisDashboard.Areas(Snapshot, InfrastructureElsewhere);
+    var kpis = SourceAnalysisDashboard.Kpis(Snapshot, areas);
+    var review = SourceAnalysisDashboard.Review(areas);
+    var resolved = areas.Where(a => a.Resolution is { Detected: > 0 }).ToList();
+}
+<section class="sao" aria-labelledby="sa-current-heading" data-testid="sa-overview-summary">
+    <h2 id="sa-current-heading" class="sao-visually-hidden" tabindex="-1">Analysis summary</h2>
+    <ul class="sao-kpis" data-testid="sa-kpis">
+        @foreach (var k in kpis)
+        {
+            <li class="sao-kpi" data-testid="sa-kpi" data-key="@k.Key"><span class="sao-kpi-label">@k.Label</span><span class="sao-kpi-value">@k.Value</span><span class="sao-kpi-detail">@k.Detail</span></li>
+        }
+    </ul>
+
+    <ul class="sao-areas" data-testid="sa-area-cards">
+        @foreach (var a in areas)
+        {
+            <li class="sao-card" data-testid="sa-area-card" data-key="@a.Key" data-state="@a.State">
+                <div class="sao-card-head">
+                    <span class="sao-icon" aria-hidden="true">@a.Icon</span>
+                    <h3 class="sao-card-title">@a.Title</h3>
+                    <span class="sao-badge is-@SourceEvidenceStates.Tone(a.State)" title="@SourceEvidenceStates.Meaning(a.State)" data-testid="sa-area-state">@SourceEvidenceStates.Label(a.State)</span>
+                </div>
+                <p class="sao-note" data-testid="sa-area-note">@a.StateNote</p>
+                @if (a.Metrics.Count > 0)
+                {
+                    <dl class="sao-metrics">
+                        @foreach (var m in a.Metrics.Take(5))
+                        {
+                            <div title="@m.Definition" data-testid="sa-area-metric" data-metric="@m.Key"><dt>@m.Label</dt><dd>@(m.Value?.ToString() ?? "Not assessed")</dd></div>
+                        }
+                    </dl>
+                }
+                <p class="sao-facts">
+                    @if (a.ReviewCount > 0) { <span class="sao-fact is-review" data-testid="sa-area-review">@a.ReviewCount to review</span> }
+                    @if (a.LimitationCount > 0) { <span class="sao-fact" data-testid="sa-area-limited">@a.LimitationCount limited by source</span> }
+                </p>
+                @if (a.RelatedPackages.Count > 0)
+                {
+                    <p class="sao-related" data-testid="sa-area-related">In associated packages:
+                        @foreach (var p in a.RelatedPackages) { <a href="@p.Href" class="sao-related-link" data-testid="sa-related-package">@p.Name</a> }
+                    </p>
+                }
+                <a href="@a.Href" class="sao-action" data-testid="@($"sa-open-{a.Key}")" @onclick="() => Open(a.Key)" @onclick:preventDefault="OnOpen.HasDelegate">@a.ActionLabel<span class="visually-hidden"> (@a.Title)</span></a>
+            </li>
+        }
+    </ul>
+
+    @if (resolved.Count > 0)
+    {
+        <figure class="sa-card sao-chart" data-testid="sa-resolution-chart" aria-labelledby="sa-resolution-title">
+            <figcaption id="sa-resolution-title" class="sao-chart-title">Resolution by area <span class="sao-muted">— each bar in its own unit; bars are not added together</span></figcaption>
+            <ul class="sao-bars">
+                @foreach (var a in resolved)
+                {
+                    var r = a.Resolution!;
+                    <li data-testid="sa-resolution-row" data-key="@a.Key">
+                        <span class="sao-bar-label">@a.Title <span class="sao-muted">· @r.Detected @r.Unit</span></span>
+                        <span class="sao-bar" role="img" aria-label="@($"{a.Title}: {r.Resolved} resolved, {r.Limited} limited by source, {r.Review} needing review, of {r.Detected} {r.Unit}")">
+                            <span class="sao-seg is-resolved" style="width:@Pct(r.Resolved, r.Detected)" title="Resolved: @r.Resolved"></span><span class="sao-seg is-limited" style="width:@Pct(r.Limited, r.Detected)" title="Limited by source: @r.Limited"></span><span class="sao-seg is-review" style="width:@Pct(r.Review, r.Detected)" title="Needs review: @r.Review"></span>
+                        </span>
+                        <span class="sao-bar-values">@r.Resolved / @r.Limited / @r.Review</span>
+                    </li>
+                }
+            </ul>
+            <p class="sao-legend"><span class="sao-swatch is-resolved"></span> Resolved <span class="sao-swatch is-limited"></span> Limited by source <span class="sao-swatch is-review"></span> Needs review</p>
+        </figure>
+    }
+
+    <section class="sa-card sa-attention" aria-labelledby="sa-attention-heading" data-testid="sa-attention">
+        <h2 id="sa-attention-heading">Needs review <span class="sa-count" data-testid="sa-attention-count">@SourceAnalysisReview.Plural(review.Count, "area", "areas")</span></h2>
+        @if (review.Count == 0) { <p class="sa-muted" data-testid="sa-attention-none">No decision is pending in this snapshot. Limitations below are analyzer limits, not tasks.</p> }
+        else
+        {
+            <p class="sa-muted" data-testid="sa-attention-note">Only decisions a person must make: conflicts, confirmations and findings. Unresolved or unclassified items are limitations of what source states, listed separately.</p>
+            <ul class="sa-attention-list">
+                @foreach (var item in review)
+                {
+                    <li data-testid="sa-attention-item" data-key="@item.Key" data-area="@item.Area"><span class="sa-attention-area">@item.Area</span> <span>@item.Text</span> <a href="@item.Href" @onclick="() => Open(item.Key)" @onclick:preventDefault="OnOpen.HasDelegate">Review<span class="visually-hidden">@(" " + item.Area + ": " + item.Text)</span></a></li>
+                }
+            </ul>
+        }
+    </section>
+
+    <ReviewDisclosure Text="@($"Limitations by cause ({areas.Sum(a => a.LimitationCount)})")" CollapseText="Hide limitations" TestId="sa-analyzer-limitations" Class="disclosure-small">
+        <p class="sa-muted">What source could not settle, grouped by cause per area. Not application defects and not decisions — counts of different areas are never added into one task list.</p>
+        <ul class="sa-list" data-testid="sa-limitation-groups">
+            @foreach (var a in areas.Where(x => x.Limitations.Count > 0))
+            {
+                @foreach (var g in a.Limitations) { <li data-testid="sa-limitation-group" data-area="@a.Key"><strong>@a.Title</strong> · @g.Cause: @g.Count <span class="sao-muted">— @g.Meaning</span></li> }
+            }
+        </ul>
+    </ReviewDisclosure>
+    <ReviewDisclosure Text="Metric definitions" CollapseText="Hide metric definitions" TestId="sa-metric-definitions" Class="disclosure-small">
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Metric definitions">
+            <table class="sao-definitions">
+                <thead><tr><th scope="col">Area</th><th scope="col">Metric</th><th scope="col">Counts</th><th scope="col">Definition</th></tr></thead>
+                <tbody>
+                    @foreach (var a in areas)
+                    {
+                        @foreach (var m in a.Metrics) { <tr data-testid="sa-metric-definition"><td>@a.Title</td><th scope="row">@m.Label</th><td>@(m.Occurrences ? "Occurrences" : "Unique items")</td><td>@m.Definition</td></tr> }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </ReviewDisclosure>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = default!;
+    [Parameter] public IReadOnlyList<SourceRelatedPackage> InfrastructureElsewhere { get; set; } = [];
+    /// <summary>Opens an area in place (the page keeps the selected snapshot and focus); without it, links navigate by their href.</summary>
+    [Parameter] public EventCallback<(string Area, string? Domain)> OnOpen { get; set; }
+
+    private Task Open(string key) => OnOpen.HasDelegate ? OnOpen.InvokeAsync(SourceAnalysisDashboard.Target(key)) : Task.CompletedTask;
+
+    private static string Pct(int part, int total) => total == 0 ? "0%" : (100.0 * part / total).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+}

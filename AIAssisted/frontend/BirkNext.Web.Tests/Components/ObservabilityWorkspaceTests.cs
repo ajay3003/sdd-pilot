@@ -215,10 +215,10 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         Services.AddSingleton<IReportExportService, ReportExportService>();
         var cut = Render<SourceAnalysis>();
 
-        var row = cut.Find("[data-testid=sa-summary-row][data-key=observability]");
-        row.GetAttribute("data-status").Should().Be("Partial");
-        row.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().Be("4 evidence items need review", "Partial always says why, from the snapshot's own findings");
-        cut.FindAll("[data-testid=sa-attention-item]").Should().Contain(i => i.TextContent.Contains("4 evidence items need review"));
+        var row = cut.Find("[data-testid=sa-area-card][data-key=observability]");
+        row.GetAttribute("data-state").Should().Be(nameof(SourceEvidenceState.NeedsReview));
+        row.QuerySelector("[data-testid=sa-area-review]")!.TextContent.Should().Be("4 to review", "from the snapshot's own findings");
+        cut.FindAll("[data-testid=sa-attention-item]").Should().Contain(i => i.TextContent.Contains("4 observability findings to review"));
         cut.Find("[data-testid=sa-open-observability]").Click();
         cut.Find("[data-testid=area-qualityevidence]").GetAttribute("aria-current").Should().Be("page");
         cut.Find("[data-testid=sa-quality-observability]").GetAttribute("aria-current").Should().Be("true");
@@ -229,9 +229,9 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         cut.Find("[data-testid=sa-quality-observability]").Click();
         cut.Find("[data-testid=observability-missing]").TextContent.Should().Contain("predates observability analysis");
         cut.Find("[data-testid=area-overview]").Click();
-        var missing = cut.Find("[data-testid=sa-summary-row][data-key=observability]");
-        missing.GetAttribute("data-status").Should().Be("Not assessed");
-        missing.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().Contain("predates observability analysis", "no counts and no fake zero");
+        var missing = cut.Find("[data-testid=sa-area-card][data-key=observability]");
+        missing.GetAttribute("data-state").Should().Be(nameof(SourceEvidenceState.NotAssessed));
+        missing.QuerySelector("[data-testid=sa-area-note]")!.TextContent.Should().Contain("predates observability analysis", "no counts and no fake zero");
         cut.Find("[data-testid=source-snapshot]").Change(id.ToString());
         cut.Find("[data-testid=area-qualityevidence]").Click();
         cut.Find("[data-testid=sa-quality-observability]").Click();

@@ -110,7 +110,8 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         context.TextContent.Should().Contain(SourceAnalysisOverview.SafetyNote);
         cut.Markup.Split(SourceDomainText.SourceBoundary).Length.Should().Be(1, "the generic per-page banner is gone from the Overview");
         cut.Find("[data-testid=sa-status-legend-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        cut.FindAll("[data-testid=sa-status-legend-list] > div").Select(d => d.GetAttribute("data-dimension")).Should().Equal("Confidence", "Completeness", "Resolution", "ReviewAction", "Runtime", "ParserSupport");
+        cut.FindAll("[data-testid=sa-status-legend-list] > div").Select(d => d.GetAttribute("data-state")).Should().Equal(SourceEvidenceStates.Legend.Select(s => s.ToString()), "one taxonomy, each state with its meaning");
+        cut.Find("[data-testid=sa-status-legend-list]").TextContent.Should().NotContain("Partial", "no generic Partial");
     }
 
     [Fact]
@@ -141,18 +142,18 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     {
         var cut = Page();
         var snapshot = _snapshots[0];
-        cut.FindAll("[data-testid=sa-summary-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("architecture", "data", "observability");
-        cut.FindAll("[data-testid=sa-evidence-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("configuration", "cicd", "contracts", "infrastructure");
-        foreach (var row in cut.FindAll("[data-testid=sa-summary-row][data-status=Partial]"))
-            row.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().NotBeNullOrWhiteSpace("a Partial status always carries its reason");
-        cut.Find("[data-testid=sa-summary-row][data-key=observability] [data-testid=sa-summary-reason]").TextContent
-            .Should().Be(SourceAnalysisReview.EvidenceNeedsReview(SourceObservabilityPresentation.NeedsReview(snapshot.Observability!)));
-        cut.Find("[data-testid=sa-attention-count]").TextContent.Should().Be(SourceAnalysisReview.Plural(SourceAnalysisReview.ReviewAreas(snapshot).Count, "area", "areas"), "areas are counted; item counts of different kinds are never summed");
+        var areas = SourceAnalysisDashboard.Areas(snapshot);
+        cut.FindAll("[data-testid=sa-area-card]").Select(r => r.GetAttribute("data-key")).Should().Equal(areas.Select(a => a.Key));
+        foreach (var card in cut.FindAll("[data-testid=sa-area-card]"))
+            card.QuerySelector("[data-testid=sa-area-note]")!.TextContent.Should().NotBeNullOrWhiteSpace("every state carries its note");
+        cut.Find("[data-testid=sa-area-card][data-key=observability] [data-testid=sa-area-review]").TextContent
+            .Should().Be($"{SourceObservabilityPresentation.NeedsReview(snapshot.Observability!)} to review");
+        cut.Find("[data-testid=sa-attention-count]").TextContent.Should().Be(SourceAnalysisReview.Plural(SourceAnalysisDashboard.Review(areas).Count, "area", "areas"), "areas are counted; item counts of different kinds are never summed");
         cut.Find("[data-testid=sa-analyzer-limitations-toggle]").GetAttribute("aria-expanded").Should().Be("false", "analyzer limitations are separate and collapsed");
         cut.Find("[data-testid=sa-cross-domain-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false", "cross-source relationships are one disclosure away");
         cut.Find("[data-testid=sa-cross-domain]").TextContent.Should().Contain("Cross-source relationships");
         cut.Find("[data-testid=sa-generated-docs]");
-        cut.FindAll("[data-testid=sa-overview-actions] .btn-primary").Should().ContainSingle().Which.TextContent.Should().Be("Review architecture");
+        cut.FindAll("[data-testid=sa-overview-actions] .btn-primary").Should().ContainSingle().Which.TextContent.Should().Be("Open architecture");
     }
 
     // ── Second-level navigation and actions ─────────────────────────────────────────────────────────────────────────────
@@ -443,7 +444,7 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     public void Status_badges_use_the_dimension_that_matches_the_backend_concept()
     {
         var cut = Page();
-        cut.Find("[data-testid=sa-summary-row][data-key=architecture] [data-testid=sa-summary-status]").GetAttribute("data-dimension").Should().Be("Completeness");
+        Enum.TryParse<SourceEvidenceState>(cut.Find("[data-testid=sa-area-card][data-key=architecture]").GetAttribute("data-state"), out _).Should().BeTrue("area cards use the one taxonomy");
         cut.Find("[data-testid=sa-cross-domain-links-toggle]").Click();
         cut.FindAll("[data-testid=sa-cross-domain-link] .sa-status").Should().OnlyContain(b => b.GetAttribute("data-dimension") == "Confidence");
         OpenDomain(cut, "observability");

@@ -139,13 +139,11 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     public void Overview_shows_four_compact_quality_evidence_rows_after_the_three_core_rows()
     {
         var cut = Page(Snapshot(Evidence()));
-        cut.FindAll("[data-testid=sa-summary-rows] > li").Select(r => r.GetAttribute("data-key")).Should().Equal("architecture", "data", "observability");
-        var rows = cut.FindAll("[data-testid=sa-evidence-rows] > li");
-        rows.Select(r => r.GetAttribute("data-key")).Should().Equal("configuration", "cicd", "contracts", "infrastructure");
-        rows.Select(r => r.GetAttribute("data-status")).Should().Equal("Complete", "Partial", "Partial", "Partial");
-        cut.Find("[data-testid=sa-evidence-rows] [data-key=infrastructure] .sa-summary-detail").TextContent.Should().Be("3 resources");
-        cut.Find("[data-testid=sa-evidence-rows] [data-key=cicd] .sa-summary-detail").TextContent.Should().Be("1 pipeline", "templates are counted separately");
-        rows.Where(r => r.GetAttribute("data-status") != "Complete").Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-summary-reason]") != null, "every Partial shows its reason");
+        cut.FindAll("[data-testid=sa-area-card]").Select(r => r.GetAttribute("data-key")).Should().StartWith(["architecture", "data", "observability", "configuration", "cicd", "contracts"]);
+        cut.FindAll("[data-testid=sa-area-card]").Should().NotContain(r => r.GetAttribute("data-state") == "Partial" || r.GetAttribute("data-state") == "Complete", "no generic Partial/Complete");
+        cut.Find("[data-testid=sa-area-card][data-key=infrastructure] [data-metric=resources] dd").TextContent.Should().Be("3");
+        cut.Find("[data-testid=sa-area-card][data-key=cicd] [data-metric=pipelines] dd").TextContent.Should().Be("1", "templates are counted separately");
+        cut.FindAll("[data-testid=sa-area-card]").Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-area-note]") != null, "every state shows its note");
         cut.Find("[data-testid=sa-target-context]").TextContent.Should().Contain("Source only", "the source-only mode is stated once, at the top");
         cut.Find("[data-testid=sa-overview-summary]").TextContent.Should().NotContain(SourceDomainText.SourceBoundary, "the generic banner is not repeated per section");
     }
@@ -165,10 +163,10 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     public void Historical_snapshots_show_not_analyzed_rows_and_an_explicit_note_in_each_area()
     {
         var cut = Page(Snapshot(null));
-        var rows = cut.FindAll("[data-testid=sa-evidence-rows] > li");
-        rows.Should().HaveCount(4).And.OnlyContain(r => r.GetAttribute("data-status") == "Not assessed");
-        rows.Should().OnlyContain(r => r.QuerySelector(".sa-summary-detail") == null, "a not-analyzed domain has no counts");
-        rows.Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Contains("predates the source-evidence domains"));
+        var rows = cut.FindAll("[data-testid=sa-area-card]").Where(r => r.GetAttribute("data-key") is "configuration" or "cicd" or "contracts" or "infrastructure").ToList();
+        rows.Should().HaveCount(4).And.OnlyContain(r => r.GetAttribute("data-state") == nameof(SourceEvidenceState.NotAssessed));
+        rows.Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-area-metric]") == null, "a not-analyzed domain has no counts");
+        rows.Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-area-note]")!.TextContent.Contains("predates the source-evidence domains"));
         cut.Find("[data-testid=area-qualityevidence]").Click();
         cut.Find("[data-testid=sa-quality-infrastructure]").Click();
         cut.Find("[data-testid=evidence-missing]").TextContent.Should().Contain("predates the source-evidence domains");

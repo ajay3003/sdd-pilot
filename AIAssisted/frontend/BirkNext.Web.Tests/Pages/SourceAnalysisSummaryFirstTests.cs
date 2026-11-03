@@ -134,4 +134,28 @@ public sealed class SourceAnalysisSummaryFirstTests : BunitContext
         Fetches(_snapshots[2].Id).Should().Be(0, "other candidates are listed by summary and fetched only when chosen");
         cut.FindAll("[data-testid=arch-previous] option").Should().HaveCount(2);
     }
+
+    [Fact]
+    public void Loading_names_the_snapshot_shows_the_real_stage_and_a_superseded_load_never_overwrites_the_newer_choice()
+    {
+        var first = new TaskCompletionSource<IqrSourceSnapshot?>();
+        CancellationToken firstToken = default;
+        _api.Setup(a => a.GetSourceSnapshotAsync(_snapshots[0].Id, It.IsAny<CancellationToken>())).Returns((Guid _, CancellationToken ct) => { firstToken = ct; return first.Task; });
+        _api.Setup(a => a.GetSourceSnapshotAsync(_snapshots[2].Id, It.IsAny<CancellationToken>())).ReturnsAsync(_snapshots[2]);
+
+        var cut = Render<SourceAnalysis>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sa-detail-loading]").TextContent.Should().Contain("Loading analysis of shop-api.zip"));
+        cut.Find("[data-testid=sa-detail-loading]").GetAttribute("data-snapshot").Should().Be(_snapshots[0].Id.ToString());
+        cut.Find("[data-testid=sa-loading-stage]").GetAttribute("data-state").Should().Be("Running");
+        cut.Find("[data-testid=sa-loading-stage]").TextContent.Should().Contain("Analysis of shop-api.zip");
+
+        cut.Find("[data-testid=source-snapshot]").Change(_snapshots[2].Id.ToString());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("infra.zip"));
+        firstToken.IsCancellationRequested.Should().BeTrue("choosing another snapshot cancels the earlier request");
+        first.SetResult(_snapshots[0]);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sa-overview-summary]"));
+        cut.Find("[data-testid=sa-current]").GetAttribute("data-snapshot").Should().Be(_snapshots[2].Id.ToString(), "a late answer for the earlier snapshot never replaces the newer choice");
+        cut.FindAll("[data-testid=sa-detail-loading]").Should().BeEmpty("no stuck spinner");
+    }
 }

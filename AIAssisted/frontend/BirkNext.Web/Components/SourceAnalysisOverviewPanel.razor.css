@@ -1,0 +1,46 @@
+.sao { display: grid; gap: 1rem; }
+.sao-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sao-muted { color: var(--clr-text-muted); font-weight: 400; }
+.sao-kpis { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; }
+.sao-kpi { display: grid; gap: .15rem; padding: .65rem .8rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); min-width: 0; }
+.sao-kpi-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); }
+.sao-kpi-value { font-size: 1.3rem; font-weight: 700; color: var(--clr-text-heading); font-variant-numeric: tabular-nums; }
+.sao-kpi-detail { font-size: .78rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+@media (max-width: 900px) { .sao-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.sao-areas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+@media (max-width: 1100px) { .sao-areas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .sao-areas { grid-template-columns: 1fr; } }
+.sao-card { display: flex; flex-direction: column; gap: .45rem; padding: .8rem .9rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); min-width: 0; }
+.sao-card-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.sao-icon { width: 1.75rem; height: 1.75rem; border-radius: .45rem; display: grid; place-items: center; background: #eef2ff; color: #3730a3; font-size: .9rem; flex-shrink: 0; }
+.sao-card-title { margin: 0; font-size: .95rem; flex: 1 1 auto; }
+.sao-badge { font-size: .72rem; font-weight: 600; padding: .12rem .5rem; border-radius: 999px; border: 1px solid #e2e8f0; background: #f8fafc; color: #334155; white-space: nowrap; }
+.sao-badge.is-established { background: #f0fdf4; color: #14532d; border-color: #bbf7d0; }
+.sao-badge.is-info { background: #eff6ff; color: #1e3a8a; border-color: #bfdbfe; }
+.sao-badge.is-limited { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+.sao-badge.is-conflict { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+.sao-note { margin: 0; font-size: .8rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.sao-metrics { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: .35rem .75rem; }
+.sao-metrics dt { font-size: .7rem; color: var(--clr-text-muted); }
+.sao-metrics dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--clr-text-heading); }
+.sao-facts { margin: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.sao-fact { font-size: .74rem; padding: .1rem .45rem; border-radius: 999px; background: #f1f5f9; color: #334155; }
+.sao-fact.is-review { background: #fffbeb; color: #92400e; }
+.sao-related { margin: 0; font-size: .8rem; display: flex; flex-wrap: wrap; gap: .3rem .6rem; }
+.sao-action { margin-top: auto; font-size: .85rem; font-weight: 600; }
+
+.sao-chart { margin: 0; display: grid; gap: .5rem; }
+.sao-chart-title { font-weight: 700; color: var(--clr-text-heading); }
+.sao-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.sao-bars li { display: grid; grid-template-columns: minmax(9rem, 14rem) 1fr auto; gap: .6rem; align-items: center; font-size: .84rem; }
+.sao-bar { display: flex; height: .65rem; border-radius: 999px; overflow: hidden; background: rgba(100, 116, 139, .15); min-width: 4rem; }
+.sao-seg { display: block; height: 100%; }
+.sao-seg.is-resolved, .sao-swatch.is-resolved { background: var(--clr-success); }
+.sao-seg.is-limited, .sao-swatch.is-limited { background: var(--clr-warning); }
+.sao-seg.is-review, .sao-swatch.is-review { background: var(--clr-danger); }
+.sao-bar-values { font-variant-numeric: tabular-nums; color: var(--clr-text-muted); }
+.sao-legend { margin: 0; font-size: .78rem; color: var(--clr-text-muted); display: flex; flex-wrap: wrap; gap: .3rem .8rem; align-items: center; }
+.sao-swatch { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; vertical-align: middle; }
+@media (max-width: 640px) { .sao-bars li { grid-template-columns: 1fr; gap: .2rem; } }
+.sao-definitions { font-size: .8rem; }
