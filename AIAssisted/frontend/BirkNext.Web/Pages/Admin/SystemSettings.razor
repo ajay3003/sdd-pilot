@@ -15,7 +15,6 @@
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService AnalysisSessions
 @inject IExtractionSessionService ExtractionSession
-@inject ApplicationRuntimeResetService RuntimeReset
 @inject IFrontendAnalysisSettingsService FrontendAnalysisSettingsStore
 @inject IArtifactParserService MarkdownEngine
 @inject IReviewContextValidator ReviewContextValidator
@@ -1393,8 +1392,7 @@ else if (_settings is not null)
             {
                 <DiagnosticPageRenderer
                     Title="Maintenance"
-                    Description="System maintenance and reset controls."
-                    Message="@_resetResultMessage"
+                    Description="Manage local BirkNext data."
                     HasRun="true"
                     ShowRunArea="false"
                     OverallStatus="@MaintenanceDiagnosticSummary.OverallStatus"
@@ -1405,23 +1403,7 @@ else if (_settings is not null)
                         <div class="danger-zone-header">
                             <span class="danger-zone-label">Danger Zone</span>
                         </div>
-                        <div class="danger-zone-action">
-                            <div class="danger-zone-description">
-                                <strong>Reset Local Data</strong>
-                                <p data-testid="reset-scope">Removes all local project and workspace data: workspaces and SDD artifacts, Source Analysis snapshots and evidence, Target Environments (back to generic defaults), integration catalogs and applied templates such as M2LB, review and test results, performance definitions and history, Critical E2E flows, local Test Data (registered, observed and source-candidate assets, session identities, generated XML fixtures), and the browser's cached project state. This operation cannot be undone.</p>
-                                <p data-testid="reset-preserved">Preserved: installation and provider settings (feature visibility, logging, k6/Podman, Azure/AI providers), the database schema, the Sample Project catalog, protected Test Data defaults with their current values, and files outside BirkNext. Uploaded source archives are not stored on disk.</p>
-                                @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
-                                {
-                                    <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
-                                }
-                            </div>
-                            <button class="btn-danger-outline"
-                                    disabled="@(!_settings.Maintenance.ResetAllowed || _isResetting || _isEditMode)"
-                                    @onclick="OpenResetModal" data-testid="reset-open">
-                                Reset Local Data
-                            </button>
-                        </div>
-                        <TestDataResetPanel Disabled="@(_isResetting || _isEditMode)" />
+                        <DataResetPanel Allowed="@_settings.Maintenance.ResetAllowed" NotAllowedReason="@_settings.Maintenance.ResetNotAllowedReason" Disabled="@_isEditMode" />
                     </div>
                     </ChildContent>
                 </DiagnosticPageRenderer>
@@ -1431,32 +1413,6 @@ else if (_settings is not null)
     </div>
 }
 
-@if (_showResetModal)
-{
-    <div class="modal-backdrop" @onclick="CancelReset" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div class="modal-panel" @onclick:stopPropagation="true">
-            <h2 id="modal-title" class="modal-title">Reset Local Data</h2>
-            <div class="notification notification-warning">
-                All local project, workspace, analysis, review and test evidence data will be permanently deleted, Target Environments return to generic defaults, and this browser's project state is cleared. Installation and provider settings, the schema and files outside BirkNext are preserved. Close other BirkNext tabs: their unsaved project state will be discarded. This action cannot be undone.
-            </div>
-            <p class="modal-body-text">Type <strong>RESET</strong> in the box below to confirm.</p>
-            <input class="modal-confirm-input"
-                   type="text"
-                   placeholder="Type RESET here"
-                   @bind="_resetConfirmText"
-                   @bind:event="oninput"
-                   disabled="@_isResetting"
-                   autofocus />
-            <div class="modal-actions">
-                <SecondaryButton OnClick="CancelReset" Disabled="@_isResetting">Cancel</SecondaryButton>
-                <DangerButton OnClick="ExecuteResetAsync"
-                              Disabled="@(_resetConfirmText != "RESET" || _isResetting)">
-                    @(_isResetting ? "Resetting..." : "Reset local data")
-                </DangerButton>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
     private SystemSettingsDto?      _settings;
@@ -1475,12 +1431,6 @@ else if (_settings is not null)
     private bool                    _editShowDiagnostics = true;
     private Dictionary<string, bool> _editFqe = new();
 
-    // Reset modal
-    private bool    _showResetModal;
-    private string  _resetConfirmText = "";
-    private bool    _isResetting;
-    private string? _resetResultMessage;
-    private bool    _resetSuccess;
 
     private bool _copiedDiag;
     private bool _projectCompatibilityRunning;
@@ -1961,10 +1911,10 @@ else if (_settings is not null)
 
     private IReadOnlyList<SettingsSectionDto> MaintenanceDiagnosticSections =>
     [
-        DiagnosticSection("Maintenance", "System maintenance and reset controls",
+        DiagnosticSection("Maintenance", "Reset capability and database mode",
         [
-            DiagnosticItem("Database Reset", _settings?.Maintenance.ResetAllowed == true ? "Allowed" : "Not allowed", _settings?.Maintenance.ResetAllowed == true ? SystemSettingsStatus.Pass : string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) || _settings?.Maintenance.DatabaseMode is "Unknown" or "Unverified" ? SystemSettingsStatus.Warning : SystemSettingsStatus.Info, _settings?.Maintenance.ResetAllowed == true ? "Local reset is enabled and restricted to a local database." : _settings?.Maintenance.ResetNotAllowedReason ?? "Reset availability could not be determined.", ""),
-            DiagnosticItem("Database Mode", OrUnavailable(_settings?.Maintenance.DatabaseMode), string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) || _settings?.Maintenance.DatabaseMode is "Unknown" or "Unverified" ? SystemSettingsStatus.Warning : SystemSettingsStatus.Pass, "Configured maintenance database mode and host classification.", "")
+            DiagnosticItem("Reset capability", _settings?.Maintenance.ResetAllowed == true ? "Allowed" : "Not allowed", _settings?.Maintenance.ResetAllowed == true ? SystemSettingsStatus.Pass : string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) || _settings?.Maintenance.DatabaseMode is "Unknown" or "Unverified" ? SystemSettingsStatus.Warning : SystemSettingsStatus.Info, _settings?.Maintenance.ResetAllowed == true ? "Local reset is enabled and restricted to a local database." : _settings?.Maintenance.ResetNotAllowedReason ?? "Reset availability could not be determined.", ""),
+            DiagnosticItem("Database mode", OrUnavailable(_settings?.Maintenance.DatabaseMode), string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) || _settings?.Maintenance.DatabaseMode is "Unknown" or "Unverified" ? SystemSettingsStatus.Warning : SystemSettingsStatus.Pass, "Configured maintenance database mode and host classification.", "")
         ])
     ];
 
@@ -3080,48 +3030,6 @@ else if (_settings is not null)
         StateHasChanged();
     }
 
-    private void OpenResetModal()
-    {
-        _resetConfirmText   = "";
-        _resetResultMessage = null;
-        _showResetModal     = true;
-    }
-
-    private void CancelReset()
-    {
-        if (_isResetting) return;
-        _showResetModal   = false;
-        _resetConfirmText = "";
-    }
-
-    private async Task ExecuteResetAsync()
-    {
-        if (_resetConfirmText != "RESET" || _isResetting) return;
-        _isResetting = true;
-        await RuntimeReset.PauseAutoSaveForResetAsync();
-        try
-        {
-            var result = await AdminApi.ResetLocalDataAsync();
-            _resetSuccess       = result?.Success == true;
-            _resetResultMessage = result?.Message ?? "Reset failed.";
-            if (_resetSuccess && result is not null)
-            {
-                // The backend committed the reset: adopt its epoch first, so nothing this tab still holds can be saved again,
-                // then clear every frontend store (see ApplicationRuntimeResetService) and land on the clean Dashboard.
-                (ServiceProvider.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch)?.Observe(result.ResetEpoch);
-                await RuntimeReset.ClearFrontendRuntimeStateAsync();
-                var warned = result.Warnings.Count > 0 || RuntimeReset.LastWarnings.Count > 0;
-                Navigation.NavigateTo(warned ? "dashboard?reset=warnings" : "dashboard?reset=done");
-            }
-        }
-        finally
-        {
-            RuntimeReset.ResumeAutoSaveAfterReset();
-            _isResetting      = false;
-            _showResetModal   = false;
-            _resetConfirmText = "";
-        }
-    }
 
     // â”€â”€ Documentation Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

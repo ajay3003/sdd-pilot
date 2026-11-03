@@ -1,0 +1,220 @@
+@using BirkNext.Maintenance
+@inject AdminApiService AdminApi
+@inject NavigationManager Navigation
+@inject IServiceProvider Services
+
+@* Maintenance → one destructive entry point. "Reset data…" opens a dialog with three explicit scopes and no default: the backend plan (what is
+   removed, what is preserved, cheap counts) is shown before anything is deleted, and the confirmation follows the scope's severity — typed
+   RESET EVERYTHING for the only scope that overrides Test Data protection. Results are per domain; nothing is reported as reset unless the
+   backend says so. *@
+<div class="drp" data-testid="data-reset">
+    <div class="drp-intro">
+        <p class="drp-lead">Manage local BirkNext data.</p>
+        <p class="drp-muted" data-testid="reset-summary">Remove all local data, all except protected Test Data, or only Delivery Management data. Installation settings, the database schema and external systems are never affected.</p>
+        @if (!Allowed && !string.IsNullOrWhiteSpace(NotAllowedReason)) { <p class="drp-reason" data-testid="reset-not-allowed">@NotAllowedReason</p> }
+    </div>
+    <button type="button" class="drp-open" data-testid="reset-open" disabled="@(!Allowed || Disabled || _busy)" @onclick="Open">Reset data…</button>
+    @if (_lastDelivery is { } done)
+    {
+        <p class="drp-done" role="status" data-testid="reset-delivery-done">@done.Message</p>
+    }
+</div>
+
+@if (_open)
+{
+    <div class="modal-backdrop" @onclick="Close" role="presentation">
+        <div class="modal-panel drp-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="drp-title" data-testid="reset-dialog">
+            <h2 id="drp-title" class="modal-title">Reset data</h2>
+            @if (_result is { } result)
+            {
+                <div class="drp-result" data-status="@result.Status" role="@(result.Status is "Completed" ? "status" : "alert")" data-testid="reset-result">
+                    <p class="drp-result-title">@ResultTitle(result)</p>
+                    <p class="drp-muted">@result.Message</p>
+                    @if (result.Domains.Count > 0)
+                    {
+                        <ul class="drp-domains" data-testid="reset-domains">
+                            @foreach (var d in result.Domains)
+                            {
+                                <li data-status="@d.Status"><span class="drp-domain-status">@d.Status</span> @d.Domain@(d.Detail is { Length: > 0 } ? $" · {d.Detail}" : "")</li>
+                            }
+                        </ul>
+                    }
+                    @foreach (var w in result.Warnings) { <p class="drp-warning">@w</p> }
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" data-testid="reset-close" @onclick="Close">Close</button>
+                </div>
+            }
+            else
+            {
+                <fieldset class="drp-scopes" disabled="@_busy">
+                    <legend class="drp-muted">Choose what to reset. Nothing is selected until you choose.</legend>
+                    @foreach (var scope in Scopes)
+                    {
+                        <label class="drp-scope" data-severity="@scope.Severity" data-selected="@(_mode == scope.Mode)" data-testid="@($"reset-scope-{scope.Mode}")">
+                            <input type="radio" name="drp-scope" checked="@(_mode == scope.Mode)" @onchange="() => SelectAsync(scope.Mode)" />
+                            <span class="drp-scope-text">
+                                <strong><span class="drp-icon" aria-hidden="true">@(scope.Severity == "critical" ? "⛔" : "⚠")</span> @scope.Title</strong>
+                                <span class="drp-muted">@scope.Hint</span>
+                            </span>
+                        </label>
+                    }
+                </fieldset>
+
+                @if (_mode is { } mode)
+                {
+                    @if (_loadingPlan)
+                    {
+                        <p class="drp-muted" data-testid="reset-plan-loading">Loading what this reset affects…</p>
+                    }
+                    else if (_plan is null)
+                    {
+                        <p class="drp-error" role="alert" data-testid="reset-plan-error">The reset plan could not be loaded. Check that the backend is running; nothing was reset.</p>
+                    }
+                    else
+                    {
+                        var plan = _plan;
+                        <div class="drp-plan" data-severity="@SeverityOf(mode)" data-testid="reset-plan">
+                            <p class="drp-plan-summary">@plan.Summary</p>
+                            <div class="drp-columns">
+                                <div>
+                                    <h3 class="drp-h">Removed</h3>
+                                    <ul class="drp-list" data-testid="reset-removed">@foreach (var r in plan.Removed) { <li>@r</li> }</ul>
+                                </div>
+                                <div>
+                                    <h3 class="drp-h">Preserved</h3>
+                                    <ul class="drp-list" data-testid="reset-preserved">@foreach (var p in plan.Preserved) { <li>@p</li> }</ul>
+                                </div>
+                            </div>
+                            @if (plan.Counts.Count > 0)
+                            {
+                                <p class="drp-counts" data-testid="reset-counts">@string.Join(" · ", plan.Counts.Select(c => $"{c.Key}: {c.Value}"))</p>
+                            }
+                            @foreach (var note in plan.Notes) { <p class="drp-note" data-testid="reset-note">@note</p> }
+                            @if (!plan.Allowed) { <p class="drp-error" role="alert" data-testid="reset-plan-refused">@plan.NotAllowedReason</p> }
+                        </div>
+
+                        @if (plan.ConfirmationPhrase is { } phrase)
+                        {
+                            <label class="modal-body-text" for="drp-confirm">Type <strong>@phrase</strong> to confirm.</label>
+                            <input id="drp-confirm" class="modal-confirm-input" type="text" autocomplete="off" placeholder="@phrase" data-testid="reset-confirm-text"
+                                   @bind="_typed" @bind:event="oninput" disabled="@_busy" />
+                        }
+                        else
+                        {
+                            <label class="drp-ack">
+                                <input type="checkbox" data-testid="reset-confirm-ack" checked="@_acknowledged" @onchange="e => _acknowledged = e.Value is true" disabled="@_busy" />
+                                I understand this permanently removes the data listed above.
+                            </label>
+                        }
+                    }
+                }
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" data-testid="reset-cancel" disabled="@_busy" @onclick="Close">Cancel</button>
+                    <button type="button" class="btn-danger" data-testid="reset-run" disabled="@(!CanRun)" @onclick="RunAsync">@(_busy ? "Resetting…" : RunLabel)</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Allowed { get; set; }
+    [Parameter] public string? NotAllowedReason { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private sealed record Scope(DataResetMode Mode, string Title, string Hint, string Severity);
+
+    private static readonly Scope[] Scopes =
+    [
+        new(DataResetMode.FullIncludingProtected, "Reset everything", "All resettable local data, including protected Test Data and canonical fixtures.", "critical"),
+        new(DataResetMode.FullPreserveProtected, "Reset everything except protected data", "All project, workspace and review data. Protected Test Data keeps its current values.", "high"),
+        new(DataResetMode.DeliveryManagement, "Reset Delivery Management only", "Delivery Overview and Delivery Reports data, including saved report history.", "moderate"),
+    ];
+
+    private bool _open, _busy, _loadingPlan, _acknowledged;
+    private DataResetMode? _mode;
+    private DataResetPlan? _plan;
+    private string _typed = "";
+    private DataResetResult? _result, _lastDelivery;
+
+    private static string SeverityOf(DataResetMode mode) => Scopes.Single(s => s.Mode == mode).Severity;
+
+    private bool CanRun => !_busy && _mode is not null && _plan is { Allowed: true } plan && plan.Mode == _mode
+        && (plan.ConfirmationPhrase is { } phrase ? string.Equals(_typed, phrase, StringComparison.Ordinal) : _acknowledged);
+
+    private string RunLabel => _mode switch
+    {
+        DataResetMode.FullIncludingProtected => "Reset everything",
+        DataResetMode.FullPreserveProtected => "Reset all except protected",
+        DataResetMode.DeliveryManagement => "Reset Delivery Management",
+        _ => "Reset",
+    };
+
+    private static string ResultTitle(DataResetResult r) => r.Status switch
+    {
+        "Completed" => "Reset completed",
+        "PartiallyCompleted" => "Reset partially completed",
+        "Blocked" => "Reset blocked",
+        "Refused" => "Reset not allowed",
+        _ => "Reset failed",
+    };
+
+    private void Open()
+    {
+        (_open, _mode, _plan, _typed, _acknowledged, _result, _lastDelivery) = (true, null, null, "", false, null, null);
+    }
+
+    private void Close()
+    {
+        if (_busy) return;
+        _open = false;
+    }
+
+    private async Task SelectAsync(DataResetMode mode)
+    {
+        (_mode, _plan, _typed, _acknowledged, _loadingPlan) = (mode, null, "", false, true);
+        try
+        {
+            var plan = await AdminApi.GetDataResetPlanAsync(mode);
+            if (_mode == mode) _plan = plan; // a later choice wins
+        }
+        finally { if (_mode == mode) _loadingPlan = false; }
+    }
+
+    private async Task RunAsync()
+    {
+        if (!CanRun || _mode is not { } mode || _plan is not { } plan) return;
+        _busy = true;
+        var full = mode != DataResetMode.DeliveryManagement;
+        var runtime = Services.GetService(typeof(ApplicationRuntimeResetService)) as ApplicationRuntimeResetService;
+        if (full && runtime is not null) await runtime.PauseAutoSaveForResetAsync();
+        try
+        {
+            var result = await AdminApi.ResetDataAsync(mode, plan.ConfirmationPhrase ?? "CONFIRM");
+            if (full && result.Status is "Completed" or "PartiallyCompleted")
+            {
+                // The backend committed the reset: adopt its epoch first, so nothing this tab still holds can be saved again, then clear every
+                // frontend store and land on the clean Dashboard.
+                (Services.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch)?.Observe(result.ResetEpoch);
+                if (runtime is not null) await runtime.ClearFrontendRuntimeStateAsync();
+                var warned = result.Status != "Completed" || (runtime?.LastWarnings.Count ?? 0) > 0;
+                Navigation.NavigateTo(warned ? "dashboard?reset=warnings" : "dashboard?reset=done");
+                return;
+            }
+            if (mode == DataResetMode.DeliveryManagement && result.Success)
+            {
+                // Only Delivery Management state is invalidated: staged previews in this tab; the Delivery pages reload from the backend.
+                (Services.GetService(typeof(DeliveryReportingSession)) as DeliveryReportingSession)?.ClearAll();
+                _lastDelivery = result;
+            }
+            _result = result;
+        }
+        finally
+        {
+            if (full) runtime?.ResumeAutoSaveAfterReset();
+            _busy = false;
+        }
+    }
+}

@@ -442,6 +442,14 @@
             </ReviewDisclosure>
         </section>
 
+        @* Advanced: a Test Data-only reset belongs to Test Data (System Settings → Maintenance owns the whole-application reset scopes). *@
+        <section class="td-card" aria-labelledby="td-advanced-heading" data-testid="td-advanced-reset">
+            <h2 id="td-advanced-heading">Advanced reset options</h2>
+            <ReviewDisclosure Text="Reset Test Data only" CollapseText="Hide Test Data reset" TestId="td-advanced-reset-disclosure" Class="disclosure-inline">
+                <TestDataResetPanel />
+            </ReviewDisclosure>
+        </section>
+
         @* 8 · Technical documentation: the metadata inventory (no values) for maintainers, never in the tester's default view. *@
         <section class="td-card" aria-labelledby="td-docs-heading" data-testid="td-docs">
             <h2 id="td-docs-heading">Technical documentation</h2>

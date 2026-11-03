@@ -98,6 +98,28 @@ public class AdminApiService
         }
     }
 
+    /// <summary>What a reset scope removes and preserves (with cheap counts), shown before anything is deleted. Null when unreachable.</summary>
+    public virtual async Task<BirkNext.Maintenance.DataResetPlan?> GetDataResetPlanAsync(BirkNext.Maintenance.DataResetMode mode)
+    {
+        try { return await _client.GetFromJsonAsync<BirkNext.Maintenance.DataResetPlan>($"api/admin/data-reset/plan?mode={mode}"); }
+        catch { return null; }
+    }
+
+    /// <summary>Runs one confirmed reset scope. Refused (400), blocked (409) and failed (500) resets come back with their status, never as success.</summary>
+    public virtual async Task<BirkNext.Maintenance.DataResetResult> ResetDataAsync(BirkNext.Maintenance.DataResetMode mode, string confirmation)
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/data-reset", new BirkNext.Maintenance.DataResetRequest(mode, confirmation));
+            return await response.Content.ReadFromJsonAsync<BirkNext.Maintenance.DataResetResult>()
+                ?? new() { Mode = mode, Status = "Failed", Message = $"Reset failed (HTTP {(int)response.StatusCode})." };
+        }
+        catch (Exception ex)
+        {
+            return new() { Mode = mode, Status = "Failed", Message = $"Reset request failed: {ex.Message}. Nothing is reported as reset." };
+        }
+    }
+
     /// <summary>Local data reset with the structured backend result (epoch, warnings, cleared/preserved domains). Null when unreachable.</summary>
     public async Task<ResetResponseDto?> ResetLocalDataAsync()
     {

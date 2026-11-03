@@ -32,6 +32,13 @@ public sealed class DeliveryReportingSession(TimeProvider? clock = null)
         }
     }
 
+    /// <summary>After a Delivery Management (or full) reset: every staged preview is gone on the backend, so none is offered again.</summary>
+    public void ClearAll()
+    {
+        lock (_pending) _pending.Clear();
+        Changed?.Invoke();
+    }
+
     public void Clear(Guid projectId, Guid? stagingId = null)
     {
         lock (_pending)

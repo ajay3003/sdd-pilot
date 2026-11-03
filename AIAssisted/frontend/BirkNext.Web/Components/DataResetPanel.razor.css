@@ -1,0 +1,55 @@
+/* Maintenance → Reset data…: one entry point, three scopes with severity, the backend plan, confirmation and per-domain result. */
+.drp { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: .875rem; background: var(--clr-surface-white); }
+.drp-intro { flex: 1 1 18rem; min-width: 0; }
+.drp-lead { margin: 0 0 .25rem; font-size: .875rem; font-weight: 600; color: var(--clr-text-heading); }
+.drp-muted { margin: 0; color: var(--clr-text-muted); font-size: .8rem; line-height: 1.5; }
+.drp-reason { margin: .375rem 0 0; color: var(--clr-warning); font-size: .8rem; }
+.drp-done { flex-basis: 100%; margin: 0; font-size: .8rem; color: var(--clr-text-body); }
+.drp-open { flex-shrink: 0; padding: .45rem .9rem; font: inherit; font-size: .8rem; font-weight: 600; color: var(--clr-danger); background: transparent;
+    border: 1px solid var(--clr-danger-border); border-radius: var(--radius-md); cursor: pointer; }
+.drp-open:hover:not(:disabled) { background: var(--clr-danger-bg); border-color: var(--clr-danger); }
+.drp-open:disabled { opacity: .5; cursor: not-allowed; }
+
+/* The dialog is wider than the generic modal: removed and preserved sit side by side, and it scrolls within the viewport. */
+.drp-modal { max-width: 46rem; max-height: calc(100vh - 2rem); overflow-y: auto; display: grid; gap: .75rem; padding: 1.25rem 1.5rem; }
+.drp-modal .modal-title { margin: 0; }
+.drp-scopes { border: 0; padding: 0; margin: 0; display: grid; gap: .5rem; min-width: 0; }
+.drp-scopes legend { padding: 0; margin-bottom: .5rem; }
+.drp-scope { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-left-width: 4px; border-radius: var(--radius-md); cursor: pointer; }
+.drp-scope input { margin-top: .2rem; flex-shrink: 0; }
+.drp-scope-text { display: grid; gap: .15rem; min-width: 0; }
+.drp-scope strong { font-size: .875rem; color: var(--clr-text-heading); }
+.drp-scope[data-severity="critical"] { border-left-color: var(--clr-danger); }
+.drp-scope[data-severity="high"], .drp-scope[data-severity="moderate"] { border-left-color: var(--clr-warning); }
+.drp-scope[data-selected="True"][data-severity="critical"] { background: var(--clr-danger-bg-light); border-color: var(--clr-danger); }
+.drp-scope[data-selected="True"]:not([data-severity="critical"]) { background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
+.drp-icon { font-size: .8rem; }
+
+.drp-plan { display: grid; gap: .5rem; padding: .75rem; border-radius: var(--radius-md); border: 1px solid var(--clr-warning-border); background: var(--clr-warning-bg-light); }
+.drp-plan[data-severity="critical"] { border-color: var(--clr-danger-border); background: var(--clr-danger-bg-light); }
+.drp-plan-summary { margin: 0; font-size: .85rem; font-weight: 600; color: var(--clr-text-heading); }
+.drp-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
+.drp-h { margin: 0 0 .25rem; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); }
+.drp-list { margin: 0; padding-left: 1.1rem; font-size: .8rem; color: var(--clr-text-body); display: grid; gap: .2rem; overflow-wrap: anywhere; }
+.drp-counts, .drp-note { margin: 0; font-size: .78rem; color: var(--clr-text-body); }
+.drp-ack { display: flex; gap: .5rem; align-items: flex-start; font-size: .85rem; color: var(--clr-text-body); }
+.drp-ack input { margin-top: .2rem; }
+.drp-modal .modal-confirm-input { margin-bottom: 0; }
+.drp-modal .modal-body-text { margin: 0; display: block; }
+.drp-modal .modal-actions { flex-wrap: wrap; }
+.drp-error { margin: 0; color: var(--clr-danger); font-size: .82rem; }
+
+.drp-result { display: grid; gap: .4rem; padding: .75rem; border-radius: var(--radius-md); border: 1px solid var(--clr-danger-border); background: var(--clr-danger-bg-light); }
+.drp-result[data-status="Completed"] { border-color: var(--clr-border); background: var(--clr-surface-white); }
+.drp-result[data-status="PartiallyCompleted"], .drp-result[data-status="Blocked"] { border-color: var(--clr-warning-border); background: var(--clr-warning-bg-light); }
+.drp-result-title { margin: 0; font-weight: 700; color: var(--clr-text-heading); }
+.drp-domains { margin: 0; padding-left: 1.1rem; font-size: .8rem; display: grid; gap: .2rem; }
+.drp-domain-status { font-weight: 600; }
+.drp-domains li[data-status="Failed"] .drp-domain-status { color: var(--clr-danger); }
+.drp-warning { margin: 0; font-size: .8rem; color: var(--clr-warning); }
+
+@media (max-width: 480px) {
+    .drp-modal { padding: 1rem; }
+    .drp-open { width: 100%; }
+    .drp-modal .modal-actions > button { flex: 1 1 auto; }
+}

@@ -84,6 +84,7 @@ public sealed class ApplicationRuntimeResetService
         _runtimeReviews.ClearAll();
         Get<TaskAlignmentSessionService>()?.Clear();
         Get<IntegrationMappingEvidenceSession>()?.Clear();
+        Get<DeliveryReportingSession>()?.ClearAll();
         await _extractionSession.ClearAsync();
 
         // Per-environment stores: in memory first, then their localStorage keys.

@@ -44,6 +44,8 @@ public sealed record DataResetResult
     public bool Success => Status == "Completed";
     public string Message { get; init; } = "";
     public DateTimeOffset? ResetAt { get; init; }
+    /// <summary>The backend reset epoch after a full reset (0 for Delivery Management only, which never invalidates other tabs' project state).</summary>
+    public int ResetEpoch { get; init; }
     public int DeletedRows { get; init; }
     public List<DataResetDomainResult> Domains { get; init; } = [];
     public List<string> Warnings { get; init; } = [];

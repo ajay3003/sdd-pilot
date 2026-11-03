@@ -106,7 +106,7 @@ public sealed class DataResetService(ILocalDatabaseReset guard, LocalDataResetCo
             {
                 Mode = request.Mode,
                 Status = result.Status switch { "Completed" => "Completed", "CompletedWithWarnings" => "PartiallyCompleted", var other => other },
-                Message = result.Message, ResetAt = result.ResetAt, DeletedRows = result.DeletedRows, Domains = result.Domains, Warnings = result.Warnings,
+                Message = result.Message, ResetAt = result.ResetAt, ResetEpoch = result.ResetEpoch, DeletedRows = result.DeletedRows, Domains = result.Domains, Warnings = result.Warnings,
                 SystemDefaultsRecreated = result.TestData?.SystemDefaultsRecreated ?? [],
             };
         }
