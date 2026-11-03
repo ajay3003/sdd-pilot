@@ -1,4 +1,6 @@
 @page "/delivery-reporting"
+@* Delivery data is read from the Delivery Reporting API only, never from workspace documents: no wait for document bodies. *@
+@attribute [BirkNext.Web.Services.WorkspaceDocumentsNotRead]
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
 @using BirkNext.Web.Shared.Components.Common
@@ -18,8 +20,9 @@
 <div class="sd-workspace dlr-page" data-testid="dlr-page" aria-busy="@(_loaded ? "false" : "true")">
     <header class="dlr-header">
         <div>
-            <h1 class="dlr-title">@(_report is null ? "Delivery Reporting" : $"{_report.ProjectName} — Weekly Delivery Report")</h1>
-            <p class="dlr-lead">What changed in your features and user stories this week: progress, scope changes, attention items and potential focus, compared between two imported snapshots.</p>
+            @* "Weekly" only when the comparison genuinely covers a reporting week; a same-day or ad-hoc comparison is a change report. *@
+            <h1 class="dlr-title" data-testid="dlr-title">@(_report is null ? "Delivery Reporting" : $"{_report.ProjectName} — {(_report.Kind == DeliveryReportKind.Weekly ? "Weekly Delivery Report" : "Delivery Change Report")}")</h1>
+            <p class="dlr-lead">What changed in your features and user stories between two imported snapshots: progress, scope changes, attention items and potential focus.</p>
         </div>
         <div class="dlr-header-actions">
             <label class="dlr-field dlr-project-field">

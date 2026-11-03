@@ -182,7 +182,7 @@ public sealed class DeliveryWorkspaceTests : BunitContext
         Column(Legacy).Should().Be(nameof(DeliveryBoardColumn.RemovedFromScope));
         Column(Dashboard).Should().Be(nameof(DeliveryBoardColumn.RequiresReview), "an unresolved story reference needs review");
         Column(DevMode).Should().Be(nameof(DeliveryBoardColumn.Unchanged));
-        cut.Find("[data-testid=dws-board-note]").TextContent.Should().Contain("not workflow states");
+        cut.Find("[data-testid=dws-board-note]").TextContent.Should().Contain("not workflow statuses");
         cut.Markup.Should().NotContain("Ready for test");
     }
 
@@ -198,5 +198,51 @@ public sealed class DeliveryWorkspaceTests : BunitContext
         var removed = Render(DeliveryWorkItems.FeatureId(Legacy));
         removed.Find("[data-testid=dws-removed]").TextContent.Should().Contain("baseline only").And.Contain("not a defect");
         removed.Find("[data-testid=dws-feature-progress]").TextContent.Should().Be("3/3 tasks checked");
+    }
+    /// <summary>Report v4: tasks hang under requirement-model groups — never a "Tasks without a user story" bucket — with explained badges.</summary>
+    [Fact]
+    public void Report_v4_groups_replace_the_unassigned_bucket_with_explained_badges()
+    {
+        const string Auth = "autorisasjonservice::001-auth";
+        var shared = new DeliveryWorkGroupRow("shared", DeliveryTaskRelationship.SharedFoundational, "Shared & Foundational Tasks")
+            { Explanation = "Setup, foundational, polish and cross-cutting work not owned by one story.", Provenance = "tasks.md phases", TaskTotal = 1, TaskCompleted = 1 };
+        var functional = new DeliveryWorkGroupRow("US1", DeliveryTaskRelationship.FunctionalGroup, "US1 — Functional group")
+            { Explanation = "Derived from stable [USn] references in tasks.md.", Provenance = "[US1] tags in tasks.md", Confidence = DeliveryMappingConfidence.GroupLevel, TaskTotal = 1 };
+        var report = new WeeklyDeliveryReport
+        {
+            ProjectName = "M2LB", Current = new() { SourceFileName = "M2LB-language.zip" }, Baseline = new() { SourceFileName = "M2LB -main.zip" },
+            Stories =
+            [
+                new()
+                {
+                    FeatureKey = Auth, Title = "Autorisasjon", Module = "AutorisasjonService", CurrentTaskTotal = 2, CurrentTaskCompleted = 1,
+                    Evidence = new() { TasksPath = "AutorisasjonService/specs/001-auth/tasks.md" },
+                    Hierarchy = new()
+                    {
+                        Captured = true, RequirementModel = "Functional groups", Groups = [functional, shared],
+                        Tasks =
+                        [
+                            new("T001", "T001", "Create the solution", true, DeliveryTaskChange.Unchanged) { Relationship = DeliveryTaskRelationship.SharedFoundational, GroupKey = "shared", MappingConfidence = DeliveryMappingConfidence.None, RelationshipNote = "No story tag, in phase \"Setup\"." },
+                            new("T011", "T011", "Validate the token", false, DeliveryTaskChange.Unchanged) { Relationship = DeliveryTaskRelationship.FunctionalGroup, GroupKey = "US1", MappingConfidence = DeliveryMappingConfidence.GroupLevel, RelationshipNote = "Derived from [US1] references in tasks.md." },
+                        ],
+                    },
+                },
+            ],
+        };
+        var cut = Render<DeliveryWorkspace>(p => p.Add(x => x.Report, report).Add(x => x.SelectedId, DeliveryWorkItems.TaskId(Auth, "T011")));
+
+        cut.FindAll("[data-testid=dws-unassigned]").Should().BeEmpty("v4 reports group every task");
+        var badges = cut.FindAll("[data-testid=dws-badge]");
+        badges.Select(b => b.GetAttribute("data-kind")).Should().BeEquivalentTo(["FunctionalGroup", "SharedFoundational"]);
+        badges.First(b => b.GetAttribute("data-kind") == "FunctionalGroup").GetAttribute("title").Should().Contain("Derived from stable [USn]").And.Contain("Source: [US1] tags in tasks.md").And.Contain("Mapping: Group-level");
+        cut.Find("[data-testid=dws-task-relationship]").TextContent.Should().Be("Functional group · Group-level");
+        cut.Find("[data-testid=dws-detail-parent]").TextContent.Should().Contain("US1 · Functional group", "the id column carries the key; the title does not repeat it");
+        cut.Find("[data-testid=dws-legend]").HasAttribute("open").Should().BeFalse("the legend is available but collapsed");
+        cut.FindAll("[data-testid=dws-legend] dt").Select(d => d.TextContent).Should().Contain(["Functional group", "Shared & Foundational", "Unresolved reference"]);
+
+        cut.Render(p => p.Add(x => x.SelectedId, DeliveryWorkItems.FeatureId(Auth)));
+        cut.Find("[data-testid=dws-feature-model]").TextContent.Should().Be("Functional groups");
+        cut.Find("[data-testid=dws-feature-groups]").TextContent.Should().Be("Functional group 1 · Shared & Foundational 1");
+        cut.FindAll("[data-testid=dws-feature-unassigned]").Should().BeEmpty();
     }
 }

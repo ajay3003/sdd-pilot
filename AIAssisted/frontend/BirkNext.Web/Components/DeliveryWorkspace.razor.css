@@ -53,3 +53,18 @@
     .dws-split { grid-template-columns: 1fr; }
     .dws-detail, .dws-master { position: static; max-height: none; }
 }
+
+/* Relationship badges (text + tooltip; never colour alone) and the collapsed legend. */
+.dws-badge { font-size: 0.7rem; padding: 0.05rem 0.45rem; border-radius: 999px; border: 1px solid var(--clr-border); white-space: nowrap; background: var(--clr-surface-subtle, #f1f5f9); color: var(--clr-text, #1e293b); }
+.dws-badge-derived { border-color: #7c3aed; color: #5b21b6; background: rgba(124, 58, 237, .08); }
+.dws-badge-shared { border-color: #64748b; color: #334155; }
+.dws-badge-review { border-color: #b45309; color: #92400e; background: rgba(217, 119, 6, .1); }
+.dws-legend { margin: 0 0 0.5rem; font-size: 0.85rem; }
+.dws-legend > summary { cursor: pointer; font-weight: 600; }
+.dws-legend-list { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 0.75rem; margin: 0.5rem 0 0; }
+.dws-legend-list > div { display: contents; }
+.dws-legend-list dd { margin: 0; color: var(--clr-text-muted, #475569); }
+@media (prefers-color-scheme: dark) {
+    .dws-badge-derived { color: #c4b5fd; } .dws-badge-shared { color: #cbd5e1; } .dws-badge-review { color: #fcd34d; }
+}
+@media (max-width: 640px) { .dws-legend-list { grid-template-columns: 1fr; } }

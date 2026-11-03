@@ -1,4 +1,6 @@
 @page "/delivery-overview"
+@* Delivery data is read from the Delivery Reporting API only, never from workspace documents: no wait for document bodies. *@
+@attribute [BirkNext.Web.Services.WorkspaceDocumentsNotRead]
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation

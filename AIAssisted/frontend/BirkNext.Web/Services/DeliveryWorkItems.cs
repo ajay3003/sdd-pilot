@@ -2,7 +2,9 @@ using BirkNext.DeliveryReporting;
 
 namespace BirkNext.Web.Services;
 
-public enum DeliveryWorkItemType { Feature, Story, Task }
+/// <summary>Group = a requirement-model group that is not a formal User Story: functional group, scenario group, shared &amp; foundational work, a story
+/// phase, removed-story or unresolved references (report v4).</summary>
+public enum DeliveryWorkItemType { Feature, Story, Task, Group }
 
 /// <summary>Board columns: evidence-based change groups only — no invented workflow state ("Ready for test") imitating a tracker.</summary>
 public enum DeliveryBoardColumn { NewThisPeriod, ChangedThisPeriod, Unchanged, RemovedFromScope, RequiresReview }
@@ -17,6 +19,7 @@ public sealed record DeliveryWorkItem(
 {
     public DeliveryUserStoryRow? Story { get; init; }
     public DeliveryTaskRow? Task { get; init; }
+    public DeliveryWorkGroupRow? Group { get; init; }
 }
 
 public static class DeliveryWorkItems
@@ -24,6 +27,40 @@ public static class DeliveryWorkItems
     public static string FeatureId(string featureKey) => $"f:{featureKey}";
     public static string StoryId(string featureKey, string storyKey) => $"s:{featureKey}|{storyKey}";
     public static string TaskId(string featureKey, string taskKey) => $"t:{featureKey}|{taskKey}";
+    public static string GroupId(string featureKey, DeliveryTaskRelationship kind, string key) => $"g:{featureKey}|{kind}|{key}";
+
+    /// <summary>The badge name of a relationship — the same words in the legend, the tree, the list and the detail panel.</summary>
+    public static string RelationshipLabel(DeliveryTaskRelationship kind) => kind switch
+    {
+        DeliveryTaskRelationship.ExplicitStory => "User Story",
+        DeliveryTaskRelationship.StoryPhase => "Story phase",
+        DeliveryTaskRelationship.FunctionalGroup => "Functional group",
+        DeliveryTaskRelationship.ScenarioGroup => "Scenario group",
+        DeliveryTaskRelationship.SharedFoundational => "Shared & Foundational",
+        DeliveryTaskRelationship.RemovedStoryReference => "Removed story reference",
+        _ => "Unresolved reference",
+    };
+
+    public static string ConfidenceLabel(DeliveryMappingConfidence confidence) => confidence switch
+    {
+        DeliveryMappingConfidence.Explicit => "Explicit reference",
+        DeliveryMappingConfidence.PhaseTitle => "Linked by phase title",
+        DeliveryMappingConfidence.GroupLevel => "Group-level",
+        _ => "Not linked",
+    };
+
+    /// <summary>The legend: every work-item type and relationship, with why BirkNext shows it.</summary>
+    public static readonly IReadOnlyList<(string Name, string Meaning)> Legend =
+    [
+        ("User Story", "Explicit story defined in spec.md; tasks reference it with [USn]."),
+        ("Scenario", "Specification written as scenarios instead of user stories."),
+        ("Functional group", "Derived from stable [USn] task groupings when spec.md defines no matching User Story."),
+        ("Scenario group", "Tasks grouped by [USn] in a scenario-based specification; linked to a scenario only with phase-title evidence."),
+        ("Story phase", "Untagged tasks inside a tasks.md phase titled for a story."),
+        ("Shared & Foundational", "Setup, foundational, polish and cross-cutting work not owned by one story — normal, not a defect."),
+        ("Removed story reference", "Tasks still reference a story the specification marks removed — needs review."),
+        ("Unresolved reference", "Tasks reference a story the specification does not define — needs review."),
+    ];
 
     /// <summary>"004-settings-devmode" from "frontend::004-settings-devmode".</summary>
     public static string FeatureSourceId(string featureKey) => featureKey.Contains("::", StringComparison.Ordinal) ? featureKey[(featureKey.IndexOf("::", StringComparison.Ordinal) + 2)..] : featureKey;
@@ -42,10 +79,21 @@ public static class DeliveryWorkItems
                 items.Add(new(StoryId(f.FeatureKey, s.Key), DeliveryWorkItemType.Story, s.Key, s.Title, f.Module, f.FeatureKey, fid, s.Key, s.PhaseKeys.FirstOrDefault(),
                     DeliveryReportingText.Change(s.Change), s.Change != DeliveryItemChange.Unchanged && !f.NewFeature && !f.RemovedFeature,
                     s.TaskTotal == 0 ? "No linked tasks" : $"{s.TaskCompleted}/{s.TaskTotal}", f) { Story = s });
+            foreach (var g in h.Groups.Where(g => g.Kind != DeliveryTaskRelationship.ExplicitStory))
+                // The id column carries the group key (US1); the title says what the group is without repeating it.
+                items.Add(new(GroupId(f.FeatureKey, g.Kind, g.Key), DeliveryWorkItemType.Group, g.Kind == DeliveryTaskRelationship.SharedFoundational ? "" : g.Key,
+                    g.Title.StartsWith(g.Key + " — ", StringComparison.Ordinal) ? g.Title[(g.Key.Length + 3)..] : g.Title,
+                    f.Module, f.FeatureKey, fid, null, null, "", g.NeedsReview, $"{g.TaskCompleted}/{g.TaskTotal}", f) { Group = g });
             foreach (var t in h.Tasks)
+            {
+                // A task hangs under its group: its User Story only through an explicit reference, otherwise its requirement-model group (report v4).
+                var grouped = t.Relationship is { } r && r != DeliveryTaskRelationship.ExplicitStory && h.Groups.Any(g => g.Kind == r && g.Key == (t.GroupKey ?? r.ToString()));
                 items.Add(new(TaskId(f.FeatureKey, t.Key), DeliveryWorkItemType.Task, t.TaskId ?? t.Key, t.Text, f.Module, f.FeatureKey,
-                    t.UserStoryKey is { } sk ? StoryId(f.FeatureKey, sk) : fid, t.UserStoryKey, t.PhaseKey, DeliveryReportingText.TaskChange(t.Change),
-                    t.UnresolvedStoryReference is not null || t.Change is DeliveryTaskChange.Reopened, t.Completed ? "Checked" : "Unchecked", f) { Task = t });
+                    grouped ? GroupId(f.FeatureKey, t.Relationship!.Value, t.GroupKey ?? t.Relationship.Value.ToString()) : t.UserStoryKey is { } sk ? StoryId(f.FeatureKey, sk) : fid,
+                    grouped ? null : t.UserStoryKey, t.PhaseKey, DeliveryReportingText.TaskChange(t.Change),
+                    t.UnresolvedStoryReference is not null || t.Relationship is DeliveryTaskRelationship.RemovedStoryReference || t.Change is DeliveryTaskChange.Reopened,
+                    t.Completed ? "Checked" : "Unchecked", f) { Task = t });
+            }
         }
         return items;
     }
