@@ -137,6 +137,7 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
             WarningsCount = snapshot.Warnings.Count, FeatureCount = snapshot.Features.Count,
             TaskCount = snapshot.Features.Sum(f => f.TaskTotal), CompletedTaskCount = snapshot.Features.Sum(f => f.TaskCompleted),
             ModulesJson = JsonSerializer.Serialize(snapshot.Modules, Json), WarningsJson = JsonSerializer.Serialize(snapshot.Warnings, Json),
+            ParserVersion = DeliverySnapshotParser.ParserVersion,
         };
         db.ReportSources.Add(source);
         db.Snapshots.Add(record);
@@ -168,6 +169,7 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
             {
                 Id = Guid.NewGuid(), SnapshotId = record.Id, FeatureSnapshotId = featureRecord.Id, StoryKey = st.Key, Title = st.Title, Description = st.Description,
                 Priority = st.Priority, PhaseKeysJson = JsonSerializer.Serialize(st.PhaseKeys, Json), Position = st.Position, SourceLine = st.Line,
+                Kind = st.Kind, Removed = st.Removed,
             }));
             db.AcceptanceCriterionSnapshots.AddRange(feature.Criteria.Select(c => new DeliveryAcceptanceCriterionSnapshotRecord
             {

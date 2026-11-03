@@ -148,7 +148,7 @@ public sealed class DeliveryTraceabilityTests
         report.Metrics.Single(m => m.Key == "inventory-checked").Value.Should().Be(7);
         report.Metrics.Single(m => m.Key == "quality-scope-review").Group.Should().Be(DeliveryMetricGroups.Quality);
         report.Metrics.Single(m => m.Key == "tasks-completed").Group.Should().Be(DeliveryMetricGroups.Period);
-        report.Version.Should().Be(3);
+        report.Version.Should().Be(WeeklyDeliveryReport.CurrentVersion);
         report.ParserVersion.Should().Be(DeliverySnapshotParser.ParserVersion);
 
         var reopened = Build(Content(Parse([.. Feature("001-a", 4, 3)]), Monday), Content(Parse([.. Feature("001-a", 3, 2)]), Friday));

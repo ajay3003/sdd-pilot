@@ -28,6 +28,10 @@ public sealed record ParsedDeliveryPhase(string Key, string Title, int Position)
 /// <summary>An explicit user story section of spec.md ("User Story 2 - … (Priority: P1)"). Priority only when the heading declares it.</summary>
 public sealed record ParsedDeliveryStory(string Key, string Title, string? Description, string? Priority, int Position, int Line)
 {
+    /// <summary>"UserStory" (User Story N, key USn) or "Scenario" (Scenario N, key Sn).</summary>
+    public string Kind { get; init; } = DeliveryWorkItemRelationships.UserStoryKind;
+    /// <summary>The specification marks the story removed: a struck-through heading or an explicit trailing "Removed" marker.</summary>
+    public bool Removed { get; init; }
     /// <summary>Phases with explicit evidence for this story: a phase titled "… User Story N …", or a phase holding tasks tagged [USN].</summary>
     public List<string> PhaseKeys { get; init; } = [];
 }
@@ -103,8 +107,14 @@ public sealed record DeliverySnapshotParseResult(ParsedDeliverySnapshot? Snapsho
 /// </summary>
 public static class DeliverySnapshotParser
 {
-    /// <summary>3: Norwegian headings (Brukerhistorie / Prioritet / Fase), functional requirements and [P] markers stored.</summary>
-    public const int ParserVersion = 3;
+    /// <summary>3: Norwegian headings (Brukerhistorie / Prioritet / Fase), functional requirements and [P] markers stored.
+    /// 4: scenario-based specifications (Scenario N → Sn), removed stories, and safe source text decoding (see <see cref="SourceTextDecoder"/>).</summary>
+    public const int ParserVersion = 4;
+    private static readonly Regex ScenarioHeadingRe = new(@"^\s*Scenario\s+(\d+)\s*(?:[-–—:]\s*)?(.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // Removed = structure, never a word in the title ("User Deactivated When Removed from Entra" is not removed): a struck-through story heading,
+    // or a separate trailing marker after the title ("— Removed 2026-10-27", "(Removed)", "[Fjernet]").
+    private static readonly Regex RemovedStrikeRe = new(@"^#{2,6}\s+~~\s*(?:User\s+Story|Brukerhistorie)\s+(\d+)\b\s*(?:[-–—:]\s*)?(.*?)~~", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex RemovedMarkerRe = new(@"^#{2,6}\s+(?:User\s+Story|Brukerhistorie)\s+(\d+)\b\s*(?:[-–—:]\s*)?(.*?)(?:\s+[-–—]\s*|\s*[\[(])(?:Removed|Fjernet|Withdrawn|Utgått)\b[^\])]*[\])]?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex CheckboxRe = new(@"^\s*[-*+]\s+\[([ xX])\]", RegexOptions.Compiled);
     private static readonly Regex StatusLineRe = new(@"^\s*(?:[-*]\s+)?\*{0,2}(?:Delivery\s+)?Status\*{0,2}\s*:\s*\*{0,2}\s*(.+?)\s*\*{0,2}\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ClarificationRe = new(@"\[NEEDS CLARIFICATION", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -153,6 +163,12 @@ public static class DeliverySnapshotParser
         foreach (var doc in docs.Where(d => System.IO.Path.GetFileName(d.Path).Equals("tasks.md", StringComparison.OrdinalIgnoreCase)))
             if (ArtifactModules.StrongRoot(doc.Path) is null || ArtifactModules.FeatureOf(doc.Path, roots) is null)
                 warnings.Add(new("TASKS_UNMAPPED", "Task file cannot be mapped to a feature folder; its tasks are not counted.", doc.Path));
+        // Source text quality (never a delivery result): legacy-encoded documents are decoded safely; documents whose valid text already
+        // contains mojibake are shown as written and reported, never rewritten.
+        foreach (var e in (workspace.TextEncodings ?? []).Where(e => e.Path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)))
+            warnings.Add(e.SuspectedMojibake
+                ? new("ENCODING_SUSPECT_SOURCE", "The document already contains garbled characters (e.g. \"Ã¸\" for \"ø\", \"â€”\" for \"—\") in the source itself. It is shown as written, not repaired.", Strip(e.Path))
+                : new("ENCODING_LEGACY_DECODED", "The document is not valid UTF-8; it was decoded as Windows-1252 so Norwegian letters (æ ø å) display correctly.", Strip(e.Path)));
 
         var features = new List<ParsedDeliveryFeature>();
         var position = 0;
@@ -272,6 +288,7 @@ public static class DeliverySnapshotParser
                     .DistinctBy(r => r.Key, StringComparer.Ordinal).ToList();
                 stories = nodes.Count(n => n.NodeType == SpecNodeType.UserStory);
                 (parsedStories, criteria) = Hierarchy(tree.Roots, s.Content);
+                parsedStories = RemovedStories(parsedStories, s.Content);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -312,7 +329,9 @@ public static class DeliverySnapshotParser
         var phases = parsedTasks.Where(x => x.PhaseKey is not null).GroupBy(x => x.PhaseKey!).Select((g, i) => new ParsedDeliveryPhase(g.Key, Truncate(g.First().Phase!, 400), i)).ToList();
         var storyKeys = parsedStories.Select(st => st.Key).ToHashSet(StringComparer.Ordinal);
         parsedTasks = [.. parsedTasks.Select(x => StoryKey(x.UserStory) is { } sk && storyKeys.Contains(sk) ? x with { UserStoryKey = sk } : x)];
-        foreach (var unknown in parsedTasks.Where(x => x.UserStory is not null && x.UserStoryKey is null && parsedStories.Count > 0).Select(x => x.UserStory!).Distinct(StringComparer.Ordinal))
+        // Only a reference into a User Story specification can be unknown: a scenario-based spec or a feature without stories groups tasks instead.
+        foreach (var unknown in parsedTasks.Where(x => x.UserStory is not null && x.UserStoryKey is null && parsedStories.Any(st => st.Kind == DeliveryWorkItemRelationships.UserStoryKind))
+                     .Select(x => x.UserStory!).Distinct(StringComparer.Ordinal))
             warnings.Add(new("TASK_STORY_UNKNOWN", $"Tasks of \"{title}\" reference [{unknown}], which is not a user story in its specification; they stay feature-level.", tasks?.Path));
         parsedStories = [.. parsedStories.Select(st => st with
         {
@@ -364,14 +383,18 @@ public static class DeliverySnapshotParser
                 {
                     var heading = Collapse(StripMarkdown(node.Title));
                     var match = StoryHeadingRe.Match(heading);
-                    var key = match.Success ? $"US{int.Parse(match.Groups[1].Value)}" : StoryKey(node.SpecItemId) ?? "story:" + Hash(heading.ToLowerInvariant())[..10];
+                    var scenario = match.Success ? null : ScenarioHeadingRe.Match(heading) is { Success: true } sm ? sm : null;
+                    var key = match.Success ? $"US{int.Parse(match.Groups[1].Value)}" : scenario is not null ? $"S{int.Parse(scenario.Groups[1].Value)}"
+                        : StoryKey(node.SpecItemId) ?? "story:" + Hash(heading.ToLowerInvariant())[..10];
                     if (stories.All(s => s.Key != key))
                     {
-                        var title = match.Success && match.Groups[2].Value.Trim().Length > 0 ? match.Groups[2].Value.Trim() : heading;
+                        var title = match.Success && match.Groups[2].Value.Trim().Length > 0 ? match.Groups[2].Value.Trim()
+                            : scenario is not null && scenario.Groups[2].Value.Trim().Length > 0 ? scenario.Groups[2].Value.Trim() : heading;
                         var description = string.Join(" ", (node.FullContent ?? "").Replace("\r\n", "\n").Split('\n').TakeWhile(l => !DescriptionStopRe.IsMatch(l))
                             .Select(l => StripMarkdown(l).Trim()).Where(l => l.Length > 0));
                         stories.Add(new(key, Truncate(title, 300), description.Length == 0 ? null : Truncate(Collapse(description), 1500),
-                            match.Success && match.Groups[3].Success ? match.Groups[3].Value.ToUpperInvariant() : null, stories.Count, LineOf(node.Title)));
+                            match.Success && match.Groups[3].Success ? match.Groups[3].Value.ToUpperInvariant() : null, stories.Count, LineOf(node.Title))
+                            { Kind = scenario is not null ? DeliveryWorkItemRelationships.ScenarioKind : DeliveryWorkItemRelationships.UserStoryKind });
                     }
                     current = key;
                 }
@@ -390,6 +413,30 @@ public static class DeliverySnapshotParser
         Walk(roots, null);
         return (stories, criteria);
     }
+
+    /// <summary>
+    /// Stories the specification marks removed, read from the raw headings (the structured parse may not recognise a struck-through heading as a
+    /// story at all). A parsed story is flagged; a removed story the parse missed is added, flagged, so references to it are classified as
+    /// "references removed story" instead of unresolved.
+    /// </summary>
+    private static List<ParsedDeliveryStory> RemovedStories(List<ParsedDeliveryStory> stories, string content)
+    {
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var result = stories.ToList();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var m = RemovedStrikeRe.Match(lines[i]) is { Success: true } strike ? strike : RemovedMarkerRe.Match(lines[i]);
+            if (!m.Success) continue;
+            var key = $"US{int.Parse(m.Groups[1].Value)}";
+            var index = result.FindIndex(s => s.Key == key);
+            var title = Truncate(Collapse(StripMarkdown(PriorityTailRe.Replace(m.Groups[2].Value, ""))).Trim(), 300);
+            if (index >= 0) result[index] = result[index] with { Removed = true };
+            else result.Add(new ParsedDeliveryStory(key, title.Length == 0 ? key : title, null, null, result.Count, i + 1) { Removed = true });
+        }
+        return result;
+    }
+
+    private static readonly Regex PriorityTailRe = new(@"\(\s*(?:Priority|Prioritet)\s*:[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>A recognized "Status: …" line in the first lines of a feature document. Unknown values (Draft, In progress) are ignored, because
     /// only explicit delivery statuses add information beyond task checkboxes.</summary>

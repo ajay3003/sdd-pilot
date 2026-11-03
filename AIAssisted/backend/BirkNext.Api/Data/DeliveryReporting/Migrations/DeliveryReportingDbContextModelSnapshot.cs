@@ -636,6 +636,10 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("parse_status");
 
+                    b.Property<int?>("ParserVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("parser_version");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
@@ -815,6 +819,11 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("feature_snapshot_id");
 
+                    b.Property<string>("Kind")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
                     b.Property<string>("PhaseKeysJson")
                         .IsRequired()
                         .HasColumnType("text")
@@ -828,6 +837,12 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("priority");
+
+                    b.Property<bool>("Removed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("removed");
 
                     b.Property<Guid>("SnapshotId")
                         .HasColumnType("uuid")

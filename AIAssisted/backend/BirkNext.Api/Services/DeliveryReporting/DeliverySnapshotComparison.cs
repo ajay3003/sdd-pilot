@@ -20,7 +20,12 @@ public sealed record DeliveryContentRequirement(string Key, string Text);
 
 public sealed record DeliveryContentPhase(string Key, string Title, int Position);
 
-public sealed record DeliveryContentStory(string Key, string Title, string? Description, string? Priority, List<string> PhaseKeys, int Position, int Line);
+public sealed record DeliveryContentStory(string Key, string Title, string? Description, string? Priority, List<string> PhaseKeys, int Position, int Line)
+{
+    /// <summary>"UserStory" or "Scenario".</summary>
+    public string Kind { get; init; } = DeliveryWorkItemRelationships.UserStoryKind;
+    public bool Removed { get; init; }
+}
 
 public sealed record DeliveryContentCriterion(string Key, string Text, string? StoryKey, int Position);
 
@@ -119,8 +124,10 @@ public static class DeliverySnapshotComparison
         foreach (var warning in current.Warnings.Where(w => w.Code == "TASKS_UNMAPPED"))
             attention.Add(new(DeliveryAttentionKind.UnmappedArtifact, DeliveryAttentionSeverity.Review, "Task file outside a feature",
                 "A tasks.md file is not inside a feature folder, so its tasks are not counted in any story."));
-        foreach (var warning in current.Warnings.Where(w => w.Code == "TASK_STORY_UNKNOWN"))
-            attention.Add(new(DeliveryAttentionKind.BrokenTraceability, DeliveryAttentionSeverity.Review, "Task references an unknown user story", warning.Message));
+        // Story references are judged by the shared classifier (HierarchyAttention), not by import-time warnings: snapshots imported under older
+        // rules stored "unknown story" warnings for scenario-based specifications too.
+        foreach (var warning in current.Warnings.Where(w => w.Code == "ENCODING_SUSPECT_SOURCE"))
+            attention.Add(new(DeliveryAttentionKind.SourceEncoding, DeliveryAttentionSeverity.Review, warning.Path ?? "Source document", warning.Message));
         foreach (var warning in current.Warnings.Where(w => w.Code == "DUPLICATE_FEATURE_ID"))
             attention.Add(new(DeliveryAttentionKind.AmbiguousFeatureIdentity, DeliveryAttentionSeverity.Review, "Duplicate feature number", warning.Message));
 
@@ -288,7 +295,11 @@ public static class DeliverySnapshotComparison
     {
         var side = c ?? b!;
         if (!side.HierarchyCaptured || b is not null && c is not null && !b.HierarchyCaptured)
-            return new DeliveryFeatureHierarchy { Captured = false, Tasks = TaskRows(b, c), HasTaskList = side.TasksPath is not null };
+        {
+            var plain = TaskRows(b, c);
+            return new DeliveryFeatureHierarchy { Captured = false, Tasks = plain, HasTaskList = side.TasksPath is not null,
+                Groups = DeliveryWorkItemRelationships.Groups(side, plain), RequirementModel = DeliveryWorkItemRelationships.RequirementModel(side) };
+        }
         var tasks = TaskRows(b, c);
         var criteria = CriterionRows(b?.Criteria ?? [], c?.Criteria ?? [], b is null, c is null);
         var storyKeys = (c?.Stories ?? []).Select(s => s.Key).Concat((b?.Stories ?? []).Select(s => s.Key)).Distinct(StringComparer.Ordinal).ToList();
@@ -307,6 +318,7 @@ public static class DeliverySnapshotComparison
             if (c is null) change = DeliveryItemChange.Unchanged;
             return new DeliveryUserStoryRow(key, s.Title, change)
             {
+                Kind = s.Kind, Removed = s.Removed,
                 Description = s.Description, Priority = s.Priority, PhaseKeys = [.. s.PhaseKeys], Criteria = own, TaskTotal = storyTasks.Count, TaskCompleted = storyTasks.Count(t => t.Completed),
                 TextChanged = textChanged, CriteriaChanged = criteriaChanged, SourceLine = s.Line,
             };
@@ -331,6 +343,7 @@ public static class DeliverySnapshotComparison
         return new DeliveryFeatureHierarchy
         {
             Captured = true, Phases = phases, Stories = stories, FeatureCriteria = [.. criteria.Where(x => x.StoryKey is null)], Tasks = tasks,
+            Groups = DeliveryWorkItemRelationships.Groups(side, tasks), RequirementModel = DeliveryWorkItemRelationships.RequirementModel(side),
             FunctionalRequirements = RequirementRows(b, c), HasTaskList = side.TasksPath is not null,
             CriteriaBaseline = b?.Criteria.Count ?? 0, CriteriaCurrent = c?.Criteria.Count ?? 0,
             CriteriaAdded = pair ? criteria.Count(x => x.Change == DeliveryItemChange.Added) : 0, CriteriaChanged = criteria.Count(x => x.Change == DeliveryItemChange.Changed),
@@ -358,23 +371,29 @@ public static class DeliverySnapshotComparison
     private static List<DeliveryTaskRow> TaskRows(DeliveryContentFeature? b, DeliveryContentFeature? c)
     {
         var baselineState = b?.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First().Completed, StringComparer.Ordinal);
-        DeliveryTaskRow Row(DeliveryContentTask t, DeliveryTaskChange change) =>
-            new(t.Key, t.TaskId, t.Text, t.Completed, change)
+        DeliveryTaskRow Row(DeliveryContentTask t, DeliveryTaskChange change, DeliveryContentFeature owner) =>
+            Classified(new(t.Key, t.TaskId, t.Text, t.Completed, change)
             {
                 PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath, Parallel = t.Parallel,
                 // An explicit [USn] that names no story stays visible as written ("Parent story unresolved") — never re-pointed.
                 UnresolvedStoryReference = t.UserStoryKey is null && t.StoryReference is { Length: > 0 } raw ? raw : null,
                 BaselineCompleted = b is not null && c is not null && baselineState!.TryGetValue(t.Key, out var was) ? was : null,
-            };
-        if (c is null) return [.. b!.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged))];
-        if (b is null) return [.. c.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged))];
+            }, DeliveryWorkItemRelationships.Classify(t, owner));
+        static DeliveryTaskRow Classified(DeliveryTaskRow row, DeliveryTaskClassification k) => row with
+        {
+            Relationship = k.Relationship, GroupKey = k.GroupKey, MappingConfidence = k.Confidence, RelationshipNote = k.Note,
+            // "Parent story unresolved" now only for genuinely unresolved references (not functional or scenario groups).
+            UnresolvedStoryReference = k.Relationship == DeliveryTaskRelationship.UnresolvedReference ? row.UnresolvedStoryReference : null,
+        };
+        if (c is null) return [.. b!.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged, b))];
+        if (b is null) return [.. c.Tasks.Select(t => Row(t, DeliveryTaskChange.Unchanged, c))];
         var baseTasks = b.Tasks.GroupBy(t => t.Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var curKeys = c.Tasks.Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
         var rows = c.Tasks.Select(t => Row(t, !baseTasks.TryGetValue(t.Key, out var bt) ? DeliveryTaskChange.New
             : !bt.Completed && t.Completed ? DeliveryTaskChange.CompletedThisPeriod
             : bt.Completed && !t.Completed ? DeliveryTaskChange.Reopened
-            : bt.Text != t.Text ? DeliveryTaskChange.TextChanged : DeliveryTaskChange.Unchanged)).ToList();
-        rows.AddRange(b.Tasks.Where(t => !curKeys.Contains(t.Key)).Select(t => Row(t, DeliveryTaskChange.Removed)));
+            : bt.Text != t.Text ? DeliveryTaskChange.TextChanged : DeliveryTaskChange.Unchanged, c)).ToList();
+        rows.AddRange(b.Tasks.Where(t => !curKeys.Contains(t.Key)).Select(t => Row(t, DeliveryTaskChange.Removed, b)));
         return rows;
     }
 
@@ -404,9 +423,17 @@ public static class DeliverySnapshotComparison
     /// <summary>Broken or missing traceability in the current snapshot (quality problems, not change events).</summary>
     private static void HierarchyAttention(DeliveryContentFeature c, DeliveryFeatureHierarchy h, List<DeliveryAttentionItem> attention)
     {
+        // Removed-story and unresolved references (never shared/foundational work, functional or scenario groups).
+        foreach (var g in h.Tasks.Where(t => t.Change != DeliveryTaskChange.Removed && t.Relationship is DeliveryTaskRelationship.RemovedStoryReference or DeliveryTaskRelationship.UnresolvedReference)
+                     .GroupBy(t => (t.Relationship!.Value, t.GroupKey)))
+        {
+            var removed = g.Key.Value == DeliveryTaskRelationship.RemovedStoryReference;
+            attention.Add(new(removed ? DeliveryAttentionKind.RemovedStoryReference : DeliveryAttentionKind.BrokenTraceability, DeliveryAttentionSeverity.Review, c.Title,
+                $"{g.Count()} task{(g.Count() == 1 ? "" : "s")}: {g.First().RelationshipNote}", c.Key));
+        }
         // Story task coverage is expected only when the feature's tasks use story tags at all.
         if (c.Tasks.Any(t => t.UserStoryKey is not null))
-            foreach (var story in h.Stories.Where(s => s.Change != DeliveryItemChange.Removed && s.TaskTotal == 0))
+            foreach (var story in h.Stories.Where(s => s.Change != DeliveryItemChange.Removed && s.TaskTotal == 0 && !s.Removed && s.Kind != DeliveryWorkItemRelationships.ScenarioKind))
                 attention.Add(new(DeliveryAttentionKind.BrokenTraceability, DeliveryAttentionSeverity.Review, c.Title,
                     $"{story.Key} \"{story.Title}\" has no traceable tasks, while other stories of this feature do.", c.Key));
     }

@@ -30,7 +30,6 @@ public static class WeeklyReportBuilder
         var hierarchies = stories.Select(s => s.Hierarchy).OfType<DeliveryFeatureHierarchy>().Where(h => h.Captured).ToList();
         var paired = stories.Where(s => !s.NewFeature && !s.RemovedFeature && s.Hierarchy is { Captured: true }).Select(s => s.Hierarchy!).ToList();
         const string Inventory = DeliveryMetricGroups.Inventory, Quality = DeliveryMetricGroups.Quality;
-        var allTasks = hierarchies.SelectMany(h => h.Tasks).ToList();
         var metrics = new List<DeliveryReportMetric>
         {
             new("features-changed", "Features changed", stories.Count(s => s.Changed), "Features with any change between baseline and current"),
@@ -51,17 +50,31 @@ public static class WeeklyReportBuilder
         }
         // Current inventory: the current snapshot's totals — never a period delta.
         metrics.Add(new("inventory-features", "Features", current.Features.Count) { Group = Inventory });
-        if (hierarchies.Count > 0) metrics.Add(new("inventory-stories", "User stories", stories.Where(s => !s.RemovedFeature).Sum(s => s.Hierarchy?.Stories.Count(x => x.Change != DeliveryItemChange.Removed) ?? 0)) { Group = Inventory });
+        var liveStories = stories.Where(s => !s.RemovedFeature).SelectMany(s => s.Hierarchy?.Stories ?? []).Where(x => x.Change != DeliveryItemChange.Removed && !x.Removed).ToList();
+        if (hierarchies.Count > 0) metrics.Add(new("inventory-stories", "User stories", liveStories.Count(x => x.Kind != DeliveryWorkItemRelationships.ScenarioKind), "User Stories defined in spec.md (scenarios and removed stories excluded)") { Group = Inventory });
+        if (liveStories.Any(x => x.Kind == DeliveryWorkItemRelationships.ScenarioKind))
+            metrics.Add(new("inventory-scenarios", "Scenarios", liveStories.Count(x => x.Kind == DeliveryWorkItemRelationships.ScenarioKind), "Scenario headings of scenario-based specifications") { Group = Inventory });
         metrics.Add(new("inventory-tasks", "Tasks", current.Features.Sum(f => f.TaskTotal)) { Group = Inventory });
         metrics.Add(new("inventory-checked", "Checked tasks", current.Features.Sum(f => f.TaskCompleted)) { Group = Inventory });
         metrics.Add(new("inventory-unchecked", "Unchecked tasks", current.Features.Sum(f => f.TaskTotal - f.TaskCompleted)) { Group = Inventory });
         metrics.Add(new("inventory-no-tasks", "Features with no task data", current.Features.Count(f => f.TasksPath is null), "No tasks.md: progress cannot be derived from tasks") { Group = Inventory });
         // Quality and review: signals about the evidence, never delivery status.
         metrics.Add(new("quality-scope-review", "Scope changes to review", comparison.ScopeChanges.Count, "Added, removed or missing features to confirm — not defects") { Group = Quality });
-        metrics.Add(new("quality-traceability", "Traceability gaps", comparison.Attention.Count(a => DeliveryAttentionCategories.Of(a.Kind) == DeliveryAttentionCategory.DataQuality),
-            "Missing task files, unknown story references, ambiguous identities, unmapped documents") { Group = Quality });
-        metrics.Add(new("quality-unassigned-tasks", "Tasks without a user story", allTasks.Count(t => t.Change != DeliveryTaskChange.Removed && t.UserStoryKey is null),
-            "Tasks with no explicit [USn] reference (kept under their feature and phase)") { Group = Quality });
+        metrics.Add(new("quality-traceability", "Traceability and source issues", comparison.Attention.Count(a => DeliveryAttentionCategories.Of(a.Kind) == DeliveryAttentionCategory.DataQuality),
+            "Unresolved or removed story references, task files outside features, ambiguous identities, suspected source encoding damage") { Group = Quality });
+        // Every current task in exactly one relationship (one shared classifier). Shared & foundational work is normal Spec-Kit structure, not a gap.
+        var currentTasks = stories.Where(s => !s.RemovedFeature).SelectMany(s => s.Hierarchy?.Tasks ?? []).Where(t => t.Change != DeliveryTaskChange.Removed).ToList();
+        int Rel(DeliveryTaskRelationship r) => currentTasks.Count(t => t.Relationship == r);
+        metrics.Add(new("tasks-explicit-story", "Tasks linked to a user story", Rel(DeliveryTaskRelationship.ExplicitStory), "[USn] references a User Story defined in spec.md") { Group = Inventory });
+        if (Rel(DeliveryTaskRelationship.StoryPhase) > 0)
+            metrics.Add(new("tasks-story-phase", "Tasks in a story phase (no tag)", Rel(DeliveryTaskRelationship.StoryPhase), "No [USn] tag, inside a phase titled for a story") { Group = Inventory });
+        metrics.Add(new("tasks-shared", "Shared & foundational tasks", Rel(DeliveryTaskRelationship.SharedFoundational), "Setup, foundational, polish and cross-cutting work not owned by one story — normal structure, not a defect") { Group = Inventory });
+        if (Rel(DeliveryTaskRelationship.FunctionalGroup) > 0)
+            metrics.Add(new("tasks-functional-group", "Tasks in functional groups", Rel(DeliveryTaskRelationship.FunctionalGroup), "[USn] groups in features without spec.md user stories — derived from tasks.md") { Group = Inventory });
+        if (Rel(DeliveryTaskRelationship.ScenarioGroup) > 0)
+            metrics.Add(new("tasks-scenario-group", "Tasks in scenario groups", Rel(DeliveryTaskRelationship.ScenarioGroup), "[USn] groups in scenario-based specifications") { Group = Inventory });
+        metrics.Add(new("quality-removed-story-references", "Tasks referencing a removed story", Rel(DeliveryTaskRelationship.RemovedStoryReference), "The specification marks the referenced story removed — review scope") { Group = Quality });
+        metrics.Add(new("quality-unresolved-references", "Unresolved story references", Rel(DeliveryTaskRelationship.UnresolvedReference), "[USn] names no story in spec.md — shown as written, never re-pointed") { Group = Quality });
         if (direction is { State: not DeliveryDirectionState.Chronological })
             metrics.Add(new("quality-direction", "Snapshot direction warnings", 1, direction.State.ToString()) { Group = Quality });
         if (explicitEvidence)
@@ -160,8 +173,9 @@ public static class WeeklyReportBuilder
     }
 
     /// <summary>2: report kind, comparison warnings, unconfirmed removals under incomplete coverage. 3: period coverage, direction review,
-    /// grouped metrics (period / inventory / quality), functional requirements and task markers in the hierarchy.</summary>
-    public const int CalculationVersion = 3;
+    /// grouped metrics (period / inventory / quality), functional requirements and task markers in the hierarchy.
+    /// 4: every task classified once by <see cref="DeliveryWorkItemRelationships"/>; "Tasks without a user story" replaced by relationship counts.</summary>
+    public const int CalculationVersion = 4;
 
     /// <summary>
     /// Weekly only when the baseline is on or before the start of the current snapshot's ISO week and at most seven days before it, so the

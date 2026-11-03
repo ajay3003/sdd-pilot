@@ -33,6 +33,8 @@ public sealed class DeliveryReportSourceRecord
 public sealed class DeliverySnapshotRecord
 {
     public Guid Id { get; set; }
+    /// <summary>Parser version at import (null: imported before v4).</summary>
+    public int? ParserVersion { get; set; }
     public Guid ProjectId { get; set; }
     public Guid ReportSourceId { get; set; }
     public string Label { get; set; } = "";
@@ -118,6 +120,9 @@ public sealed class DeliveryPhaseSnapshotRecord
 public sealed class DeliveryUserStorySnapshotRecord
 {
     public Guid Id { get; set; }
+    /// <summary>"UserStory" or "Scenario"; null in rows imported before parser v4 (derived from the title on read).</summary>
+    public string? Kind { get; set; }
+    public bool Removed { get; set; }
     public Guid SnapshotId { get; set; }
     public Guid FeatureSnapshotId { get; set; }
     public string StoryKey { get; set; } = "";

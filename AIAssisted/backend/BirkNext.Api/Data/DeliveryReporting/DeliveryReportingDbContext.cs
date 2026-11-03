@@ -78,6 +78,7 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.ProjectId).HasColumnName("project_id");
             e.Property(x => x.ReportSourceId).HasColumnName("report_source_id");
             e.Property(x => x.Label).HasColumnName("label").HasMaxLength(200);
+            e.Property(x => x.ParserVersion).HasColumnName("parser_version");
             e.Property(x => x.EffectiveAt).HasColumnName("effective_at");
             e.Property(x => x.ImportedAt).HasColumnName("imported_at");
             e.Property(x => x.Role).HasColumnName("role").HasMaxLength(20);
@@ -182,6 +183,8 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.HasOne<DeliveryFeatureSnapshotRecord>().WithMany().HasForeignKey(x => x.FeatureSnapshotId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.SnapshotId);
             e.HasIndex(x => new { x.FeatureSnapshotId, x.StoryKey }).IsUnique();
+            e.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(20);
+            e.Property(x => x.Removed).HasColumnName("removed").HasDefaultValue(false);
         });
 
         modelBuilder.Entity<DeliveryAcceptanceCriterionSnapshotRecord>(e =>

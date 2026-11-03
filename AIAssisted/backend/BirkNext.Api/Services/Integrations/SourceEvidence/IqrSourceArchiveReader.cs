@@ -50,7 +50,8 @@ public static class IqrSourceArchiveReader
     public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
         List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null,
         List<SourceFile>? DocumentFiles = null, List<ArchiveDocumentSkip>? SkippedDocuments = null, long EntryCount = 0,
-        List<RawDocumentFile>? RawDocumentFiles = null, List<SourceFile>? DocumentationCandidates = null, IReadOnlyDictionary<string, DateTimeOffset>? EntryModified = null);
+        List<RawDocumentFile>? RawDocumentFiles = null, List<SourceFile>? DocumentationCandidates = null, IReadOnlyDictionary<string, DateTimeOffset>? EntryModified = null,
+        List<SourceTextEncoding>? TextEncodings = null);
 
     public const int MaxDocumentationCandidates = 2_000;
     public const long MaxDocumentationBytes = 24L * 1024 * 1024;
@@ -123,6 +124,8 @@ public static class IqrSourceArchiveReader
         var evidenceFiles = new List<SourceFile>();
         var allPaths = new List<string>();
         var documentFiles = new List<SourceFile>();
+        // Entries not plain UTF-8: decoded as Windows-1252, or valid UTF-8 already holding mojibake (kept as written, reported).
+        var textEncodings = new List<SourceTextEncoding>();
         var rawDocumentFiles = captureRawDocuments ? new List<RawDocumentFile>() : null;
         var skippedDocuments = new List<ArchiveDocumentSkip>();
         var documentationCandidates = new List<SourceFile>();
@@ -154,9 +157,9 @@ public static class IqrSourceArchiveReader
                 }
                 if (buffer.Length != entry.Length) return (null, null, Reject("ARCHIVE_INVALID_ZIP", "Invalid or incomplete ZIP archive.", path, entryCount: entryCount));
                 var rawBytes = captureRawDocuments ? buffer.ToArray() : null;
-                buffer.Position = 0;
-                using var textReader = new StreamReader(buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-                return (textReader.ReadToEnd(), rawBytes, null);
+                var (text, encoding, suspect) = SourceTextDecoder.Decode(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
+                if (encoding != SourceTextDecoder.Utf8 || suspect) textEncodings.Add(new(path, encoding, suspect));
+                return (text, rawBytes, null);
             }
             foreach (var entry in zip.Entries)
             {
@@ -281,7 +284,7 @@ public static class IqrSourceArchiveReader
         if (documentationCandidatesSkipped > 0)
             limitations.Add($"{documentationCandidatesSkipped:N0} documentation file(s) were not read for generated-documentation evidence (size, binary content or the {MaxDocumentationCandidates:N0}-file limit).");
         return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
-            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles, documentationCandidates, entryModified), null);
+            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles, documentationCandidates, entryModified, textEncodings), null);
     }
 
     private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);

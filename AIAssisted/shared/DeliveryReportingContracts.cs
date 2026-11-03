@@ -77,6 +77,10 @@ public enum DeliveryAttentionKind
 {
     Blocked, NeedsClarification, SpecificationWithoutTasks, TasksDisappeared, TaskCompletionWentBackwards, AcceptanceCriteriaChanged,
     FeatureRemoved, AmbiguousFeatureIdentity, UnmappedArtifact, BrokenTraceability,
+    /// <summary>Tasks reference a story the specification marks removed.</summary>
+    RemovedStoryReference,
+    /// <summary>A source document already contains encoding damage (shown as written, never repaired).</summary>
+    SourceEncoding,
 }
 
 /// <summary>Blocker = explicit blocked evidence only. Review = worth a look; never a blocker.</summary>
@@ -138,7 +142,9 @@ public static class DeliveryReportingText
         DeliveryAttentionKind.FeatureRemoved => "Feature removed",
         DeliveryAttentionKind.AmbiguousFeatureIdentity => "Ambiguous feature identity",
         DeliveryAttentionKind.UnmappedArtifact => "Unmapped task file",
-        DeliveryAttentionKind.BrokenTraceability => "Broken traceability",
+        DeliveryAttentionKind.BrokenTraceability => "Unresolved story reference",
+        DeliveryAttentionKind.RemovedStoryReference => "References removed story",
+        DeliveryAttentionKind.SourceEncoding => "Source text encoding",
         _ => kind.ToString(),
     };
 
@@ -385,7 +391,7 @@ public static class DeliveryAttentionCategories
     {
         DeliveryAttentionKind.TasksDisappeared or DeliveryAttentionKind.AcceptanceCriteriaChanged or DeliveryAttentionKind.FeatureRemoved => DeliveryAttentionCategory.ScopeChange,
         DeliveryAttentionKind.SpecificationWithoutTasks or DeliveryAttentionKind.AmbiguousFeatureIdentity or DeliveryAttentionKind.UnmappedArtifact
-            or DeliveryAttentionKind.BrokenTraceability => DeliveryAttentionCategory.DataQuality,
+            or DeliveryAttentionKind.BrokenTraceability or DeliveryAttentionKind.RemovedStoryReference or DeliveryAttentionKind.SourceEncoding => DeliveryAttentionCategory.DataQuality,
         _ => DeliveryAttentionCategory.DeliverySignal,
     };
 
@@ -463,8 +469,61 @@ public sealed record DeliveryCriterionRow(string Key, string Text, DeliveryItemC
     public string? StoryKey { get; init; }
 }
 
+/// <summary>
+/// How a task relates to the requirement model of its feature. Only <see cref="ExplicitStory"/> is a formal User Story link; the others say
+/// exactly what the source supports. Shared &amp; foundational work and functional/scenario groups are normal structures, not traceability defects;
+/// only <see cref="RemovedStoryReference"/> and <see cref="UnresolvedReference"/> need review.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryTaskRelationship
+{
+    /// <summary>[USn] names a User Story defined in spec.md.</summary>
+    ExplicitStory,
+    /// <summary>No tag, but the task sits in a tasks.md phase titled for a story ("Phase 3: User Story 1 …").</summary>
+    StoryPhase,
+    /// <summary>[USn] groups tasks, but the feature has no spec.md user stories (or no spec.md): a functional group derived from tasks.md.</summary>
+    FunctionalGroup,
+    /// <summary>[USn] groups tasks in a feature whose spec.md is written as scenarios, not user stories.</summary>
+    ScenarioGroup,
+    /// <summary>No story tag outside story phases (setup, foundational, polish, cross-cutting): not owned by one story.</summary>
+    SharedFoundational,
+    /// <summary>[USn] names a story the specification explicitly marks removed.</summary>
+    RemovedStoryReference,
+    /// <summary>[USn] names no story of the specification, or is not a single story reference.</summary>
+    UnresolvedReference,
+}
+
+/// <summary>How firmly a task is linked to its group: an explicit tag, a phase title naming it, group-level only, or not at all.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryMappingConfidence { Explicit, PhaseTitle, GroupLevel, None }
+
+/// <summary>
+/// One requirement-model group of a feature with its tasks: a User Story, a functional group, a scenario group, shared &amp; foundational work, removed
+/// story references or unresolved references. Explanation and provenance say why BirkNext created it.
+/// </summary>
+public sealed record DeliveryWorkGroupRow(string Key, DeliveryTaskRelationship Kind, string Title)
+{
+    public string Explanation { get; init; } = "";
+    /// <summary>Where the grouping comes from ("tasks.md [US1] tags", "spec.md User Story 2").</summary>
+    public string Provenance { get; init; } = "";
+    public DeliveryMappingConfidence Confidence { get; init; }
+    /// <summary>The story or scenario this group is linked to, when the source supports it.</summary>
+    public string? LinkedKey { get; init; }
+    public int TaskTotal { get; init; }
+    public int TaskCompleted { get; init; }
+    /// <summary>Removed or unresolved references: a person should look at them.</summary>
+    public bool NeedsReview { get; init; }
+}
+
 public sealed record DeliveryTaskRow(string Key, string? TaskId, string Text, bool Completed, DeliveryTaskChange Change)
 {
+    /// <summary>The task's relationship to the requirement model (report v4; null in reports frozen before it).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryTaskRelationship? Relationship { get; init; }
+    /// <summary>The group the task belongs to (US1, S4, shared); null for shared work.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? GroupKey { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryMappingConfidence? MappingConfidence { get; init; }
+    /// <summary>Why the task has this relationship, in plain language.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RelationshipNote { get; init; }
     public string? PhaseKey { get; init; }
     /// <summary>Only an explicit [USn] reference to an existing story; null = feature-level.</summary>
     public string? UserStoryKey { get; init; }
@@ -482,6 +541,10 @@ public sealed record DeliveryRequirementRow(string Key, string Text, DeliveryIte
 
 public sealed record DeliveryUserStoryRow(string Key, string Title, DeliveryItemChange Change)
 {
+    /// <summary>"UserStory" or "Scenario" — a scenario-based specification is never presented as User Stories.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Kind { get; init; }
+    /// <summary>The specification marks this story removed (struck-through heading or an explicit "Removed" marker).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Removed { get; init; }
     public string? Description { get; init; }
     /// <summary>Only when the heading declares it ("Priority: P1"); never invented.</summary>
     public string? Priority { get; init; }
@@ -519,6 +582,10 @@ public sealed record DeliveryFeatureHierarchy
     public List<DeliveryTaskRow> Tasks { get; init; } = [];
     /// <summary>Functional requirements (feature-level). Empty in reports frozen before v3.</summary>
     public List<DeliveryRequirementRow> FunctionalRequirements { get; init; } = [];
+    /// <summary>The feature's requirement-model groups with their tasks (report v4). Empty in older reports.</summary>
+    public List<DeliveryWorkGroupRow> Groups { get; init; } = [];
+    /// <summary>"User stories", "Scenarios", "Functional groups", "No specification" or "No task list" (report v4).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RequirementModel { get; init; }
     /// <summary>False when the feature has no tasks.md: progress cannot be derived from tasks (never "0/0").</summary>
     public bool HasTaskList { get; init; } = true;
     public int CriteriaBaseline { get; init; }
@@ -550,7 +617,9 @@ public sealed record WeeklyDeliveryReport
 {
     /// <summary>2: feature hierarchy (phases, user stories, acceptance criteria, task changes), scope changes, inventory metrics. v1 reports keep
     /// rendering as they were frozen.</summary>
-    public const int CurrentVersion = 3;
+    /// <summary>4: task relationships (explicit story / story phase / functional group / scenario group / shared &amp; foundational / removed /
+    /// unresolved) and requirement-model groups.</summary>
+    public const int CurrentVersion = 4;
     public int Version { get; init; } = CurrentVersion;
     public Guid ReportId { get; init; }
     public Guid ProjectId { get; init; }

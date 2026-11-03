@@ -95,7 +95,7 @@ internal static class DeliveryReportingFixtures
             Tasks = f.Tasks.Select(t => new DeliveryContentTask(t.TaskKey, t.Text, t.Completed) { TaskId = t.TaskId, PhaseKey = t.PhaseKey, UserStoryKey = t.UserStoryKey, SourcePath = t.SourcePath, StoryReference = t.UserStory, Parallel = t.Parallel }).ToList(),
             Requirements = [.. f.Requirements.Select(r => new DeliveryContentRequirement(r.Key, r.Text))],
             HierarchyCaptured = true, Phases = [.. f.Phases.Select(p => new DeliveryContentPhase(p.Key, p.Title, p.Position))],
-            Stories = [.. f.Stories.Select(s => new DeliveryContentStory(s.Key, s.Title, s.Description, s.Priority, s.PhaseKeys, s.Position, s.Line))],
+            Stories = [.. f.Stories.Select(s => new DeliveryContentStory(s.Key, s.Title, s.Description, s.Priority, s.PhaseKeys, s.Position, s.Line) { Kind = s.Kind, Removed = s.Removed })],
             Criteria = [.. f.Criteria.Select(c => new DeliveryContentCriterion(c.Key, c.Text, c.StoryKey, c.Position))],
         }).ToList(),
         SourceFiles = parsed.Artifacts.Where(a => a.Kind == "Source")

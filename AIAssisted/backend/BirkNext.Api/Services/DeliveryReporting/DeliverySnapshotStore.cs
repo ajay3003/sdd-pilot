@@ -157,7 +157,12 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
             .GroupBy(p => p.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.Select(p => new DeliveryContentPhase(p.PhaseKey, p.Title, p.Position)).ToList());
         var stories = (await db.UserStorySnapshots.AsNoTracking().Where(s => s.SnapshotId == snapshotId).OrderBy(s => s.Position).ToListAsync(ct))
             .GroupBy(s => s.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.Select(s => new DeliveryContentStory(s.StoryKey, s.Title, s.Description, s.Priority,
-                JsonSerializer.Deserialize<List<string>>(s.PhaseKeysJson, Json) ?? [], s.Position, s.SourceLine)).ToList());
+                JsonSerializer.Deserialize<List<string>>(s.PhaseKeysJson, Json) ?? [], s.Position, s.SourceLine)
+                {
+                    // Rows imported before parser v4 have no kind: a "Scenario N" heading was stored under a title-hash key.
+                    Kind = s.Kind ?? (LegacyScenarioRe.IsMatch(s.Title) ? DeliveryWorkItemRelationships.ScenarioKind : DeliveryWorkItemRelationships.UserStoryKind),
+                    Removed = s.Removed,
+                }).ToList());
         var criteria = (await db.AcceptanceCriterionSnapshots.AsNoTracking().Where(a => a.SnapshotId == snapshotId).OrderBy(a => a.Position).ToListAsync(ct))
             .GroupBy(a => a.FeatureSnapshotId).ToDictionary(g => g.Key, g => g.Select(a => new DeliveryContentCriterion(a.CriterionKey, a.Text, a.StoryKey, a.Position)).ToList());
         return new DeliverySnapshotContent
@@ -180,6 +185,8 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
             SourceFiles = sources.GroupBy(s => s.Path, StringComparer.Ordinal).ToDictionary(g => g.Key, g => (g.First().Module, g.First().Fingerprint), StringComparer.Ordinal),
         };
     }
+
+    private static readonly System.Text.RegularExpressions.Regex LegacyScenarioRe = new(@"^\s*Scenario\s+\d+\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     private sealed record SourceMetadata(DeliveryAzureDevOpsSource? AzureDevOps);
     private sealed record RequirementJson(string Key, string Text);
