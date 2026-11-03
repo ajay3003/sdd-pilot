@@ -36,6 +36,9 @@ public sealed class DeliveryImportStagingStore(TimeProvider clock)
 
     public void Remove(Guid id) => _items.TryRemove(id, out _);
 
+    /// <summary>Drops every staged (not committed) import: part of the Delivery Management reset.</summary>
+    public void Clear() => _items.Clear();
+
     private void Sweep()
     {
         var now = clock.GetUtcNow();

@@ -512,6 +512,13 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         }
     }
 
+    /// <summary>The reset guard every scope uses (policy, Local database, non-production host); null when a reset may run.</summary>
+    public string? ResetRefusal()
+    {
+        if (!_config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true)) return "Reset is disabled by local administrator policy.";
+        return IsSafeLocalResetEnvironment(_config["DatabaseSettings:Mode"] ?? "Unknown") ? null : "Reset is available only for a Local database on a non-production backend.";
+    }
+
     private bool IsSafeLocalResetEnvironment(string databaseMode)
     {
         if (!(_env.IsDevelopment() || _env.IsEnvironment("Local") || _env.IsEnvironment("Test"))

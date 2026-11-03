@@ -90,6 +90,29 @@ public class AdminController : ControllerBase
         return result.Success ? Ok(response) : result.Status == "Blocked" ? Conflict(response) : BadRequest(response);
     }
 
+    /// <summary>The reviewable impact of one reset scope (read-only). Nothing is deleted.</summary>
+    [HttpGet("data-reset/plan")]
+    public async Task<IActionResult> DataResetPlan([FromQuery] BirkNext.Maintenance.DataResetMode mode, CancellationToken ct)
+    {
+        if (!_adminService.IsEnabled) return NotFound();
+        return Ok(await HttpContext.RequestServices.GetRequiredService<BirkNext.Api.Services.LocalDataReset.DataResetService>().PlanAsync(mode, ct));
+    }
+
+    /// <summary>Runs one explicitly confirmed reset scope. Refused, blocked and failed resets never report success.</summary>
+    [HttpPost("data-reset")]
+    public async Task<IActionResult> DataReset([FromBody] BirkNext.Maintenance.DataResetRequest request, CancellationToken ct)
+    {
+        if (!_adminService.IsEnabled) return NotFound();
+        var result = await HttpContext.RequestServices.GetRequiredService<BirkNext.Api.Services.LocalDataReset.DataResetService>().ResetAsync(request, ct);
+        return result.Status switch
+        {
+            "Completed" or "PartiallyCompleted" => Ok(result),
+            "Blocked" => Conflict(result),
+            "Refused" => BadRequest(result),
+            _ => StatusCode(500, result),
+        };
+    }
+
     [HttpPost("environment-diagnostics")]
     public async Task<IActionResult> RunEnvironmentDiagnostics()
     {

@@ -134,6 +134,22 @@ public sealed class CanonicalFixtureStore
         }
     }
 
+    /// <summary>
+    /// Removes every stored canonical fixture — only for the explicitly confirmed "Reset everything" scope. Ordinary deletes stay refused (409) and
+    /// every other reset keeps the store. Returns the number of stored versions removed.
+    /// </summary>
+    public int ClearAllForFullReset()
+    {
+        lock (_gate)
+        {
+            var count = _items.Count;
+            _items = [];
+            if (File.Exists(_path)) File.Delete(_path);
+            _logger.LogWarning("Canonical fixture store cleared by a full reset ({Count} stored version(s))", count);
+            return count;
+        }
+    }
+
     private void Write()
     {
         var temp = _path + ".tmp";

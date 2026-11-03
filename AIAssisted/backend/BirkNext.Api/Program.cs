@@ -134,6 +134,8 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<BirkNext.Api.Services.LocalDataReset.ILocalDatabaseReset>(sp => sp.GetRequiredService<AdminService>());
 builder.Services.AddSingleton<BirkNext.Api.Services.LocalDataReset.LocalDataResetState>();
 builder.Services.AddScoped<BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator>();
+builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingDataReset>();
+builder.Services.AddScoped<BirkNext.Api.Services.LocalDataReset.DataResetService>();
 builder.Services.AddScoped<ISystemSettingsStatusEngine, SystemSettingsStatusEngine>();
 builder.Services.AddScoped<IGeneralPageService, GeneralPageService>();
 builder.Services.AddScoped<IConfigurationHealthPageService, ConfigurationHealthPageService>();

@@ -28,6 +28,9 @@ namespace BirkNext.Api.Services.LocalDataReset;
 public interface ILocalDatabaseReset
 {
     Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync();
+
+    /// <summary>Why no reset may run here (policy, non-local database, production host), or null when it may. Every reset scope checks it.</summary>
+    string? ResetRefusal() => null;
 }
 
 public sealed class LocalDataResetState
@@ -102,6 +105,8 @@ public sealed record LocalDataResetResult
     public List<string> Warnings { get; init; } = [];
     /// <summary>What the reset did to Test Data (protected defaults preserved with their current values; everything local removed).</summary>
     public BirkNext.TestData.TestDataResetSummary? TestData { get; init; }
+    /// <summary>Per domain outcome after the database: "Removed" or "Failed".</summary>
+    public List<BirkNext.Maintenance.DataResetDomainResult> Domains { get; init; } = [];
 }
 
 /// <summary>
@@ -127,6 +132,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "BirkNext-owned authenticated browser sessions, the running local HTTPS proxy session (and the dedicated browser it opened), Browser Companion pairings, captured API credentials, temporary security-classification test contexts",
         "Diagnostic, reachability and review caches",
         "Project Import archives staged for commit (memory and staging directory)",
+        "Delivery Management: reporting projects, delivery snapshots, comparisons and saved Delivery Reports (report history)",
     ];
 
     public static readonly IReadOnlyList<string> Preserved =
@@ -141,7 +147,11 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Protected Test Data defaults (skolenaervaer-reporter-default, skolenaervaer-child-default) with their current, possibly edited, values; Test Data supplied by backend configuration",
     ];
 
-    public async Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default)
+    public Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default) => ResetAsync(includeProtected: false, ct);
+
+    /// <param name="includeProtected">True only for the explicitly confirmed "Reset everything" scope: protected Test Data defaults return to their
+    /// product values and canonical fixtures are deleted. Otherwise protected Test Data survives with its current values.</param>
+    public async Task<LocalDataResetResult> ResetAsync(bool includeProtected, CancellationToken ct = default)
     {
         if (!await Gate.WaitAsync(0, ct)) return new() { Status = "Blocked", Message = "A local data reset is already in progress." };
         try
@@ -158,6 +168,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
 
             var warnings = new List<string>();
+            var domains = new List<BirkNext.Maintenance.DataResetDomainResult> { new("Application database", "Removed", $"{deleted} records") };
             var epoch = state.Epoch;
             try { epoch = state.Advance(at ?? DateTimeOffset.UtcNow, floors, identityFloors); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -181,8 +192,16 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             await Step(warnings, "Test Data assets", async () =>
             {
                 if (services.GetService<TestDataLifecycleService>() is { } lifecycle)
-                    testData = await lifecycle.CompleteFullResetAsync(testDataBefore ?? new TestDataResetPreview(), ct);
-            });
+                    testData = includeProtected
+                        ? await lifecycle.CompleteFullResetIncludingProtectedAsync(testDataBefore ?? new TestDataResetPreview(), ct)
+                        : await lifecycle.CompleteFullResetAsync(testDataBefore ?? new TestDataResetPreview(), ct);
+            }, domains, "Test Data");
+            // Delivery Management keeps its own schema (and DbContext): the application database transaction never covered it.
+            await Step(warnings, "Delivery Management data", async () =>
+            {
+                using var scope = services.CreateScope();
+                if (scope.ServiceProvider.GetService<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingDataReset>() is { } delivery) await delivery.ResetAsync(ct);
+            }, domains, "Delivery Management");
 
             logger.LogWarning("Local data reset {Epoch} completed: {Deleted} database rows, {Warnings} warning(s)", epoch, deleted, warnings.Count);
             return new()
@@ -193,7 +212,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                     : $"Local data reset completed with {warnings.Count} warning(s). The database was cleared ({deleted} records).")
                     + (testData is { } td ? $" Test Data: {td.ProtectedDefaultsPreserved} protected default(s) preserved with their current values, {td.AssetsRemoved} asset(s) removed ({td.GeneratedFixturesRemoved} generated fixture(s))." : ""),
                 ResetAt = at, ResetEpoch = epoch, DatabaseCleared = true, DeletedRows = deleted, BackendStateCleared = warnings.Count == 0,
-                ClearedDomains = [.. Cleared], PreservedDomains = [.. Preserved], Warnings = warnings, TestData = testData,
+                ClearedDomains = [.. Cleared], PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal)) : Preserved)],
+                Warnings = warnings, TestData = testData, Domains = domains,
             };
         }
         finally { Gate.Release(); }
@@ -224,13 +244,18 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         }
     }
 
-    private async Task Step(List<string> warnings, string what, Func<Task> action)
+    private async Task Step(List<string> warnings, string what, Func<Task> action, List<BirkNext.Maintenance.DataResetDomainResult>? domains = null, string? domain = null)
     {
-        try { await action(); }
+        try
+        {
+            await action();
+            if (domains is not null && domain is not null) domains.Add(new(domain, "Removed"));
+        }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Local data reset: {What} could not be cleared", what);
             warnings.Add($"The {what} could not be cleared; they no longer refer to any stored project.");
+            if (domains is not null && domain is not null) domains.Add(new(domain, "Failed", $"{what} could not be cleared ({ex.GetType().Name})."));
         }
     }
 }

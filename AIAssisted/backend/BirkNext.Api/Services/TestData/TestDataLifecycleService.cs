@@ -40,7 +40,7 @@ public interface ITestDataReferenceSource
 /// (each consumer shows its own missing state) unless the tester chose Replace references, which only accepts a compatible approved asset.
 /// </summary>
 public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRegistryStore registry, IEnumerable<ITestDataAssetEditor> editors,
-    IEnumerable<ITestDataReferenceSource> references, TimeProvider time)
+    IEnumerable<ITestDataReferenceSource> references, TimeProvider time, CanonicalFixtureStore? canonical = null)
 {
     public const string BindingConsumer = "Consumer binding";
     private readonly IReadOnlyList<ITestDataAssetEditor> _editors = [.. editors];
@@ -294,6 +294,31 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
             GeneratedFixturesRemoved = generatedFixturesRemoved,
             ReferencesRequiringRemapping = unresolved.Count,
         }, unresolved);
+    }
+
+    /// <summary>
+    /// The Test Data part of "Reset everything" (the only path that overrides protection, after explicit typed confirmation): protected defaults get
+    /// their product values back (their edits, approvals and bindings are removed), canonical fixtures are deleted, and every other asset goes as in
+    /// the ordinary full reset. Ordinary deletes of protected assets remain refused. The product defaults exist again afterwards and are reported as
+    /// recreated system defaults, never as preserved data.
+    /// </summary>
+    public async Task<TestDataResetSummary> CompleteFullResetIncludingProtectedAsync(TestDataResetPreview before, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var defaults = catalog.Assets().Where(a => a.Ownership == TestDataOwnership.ProtectedDefault).ToList();
+        var reset = 0;
+        foreach (var asset in defaults)
+            if (EditorOf(asset) is { } editor && editor.CanRestoreDefault(asset) && editor.RestoreDefault(asset, now, out var changed) is null && changed) reset++;
+        var fixtures = canonical?.ClearAllForFullReset() ?? 0;
+        var removed = registry.ClearAll() + _editors.Sum(e => e.ClearLocal());
+        var unresolved = (await UsagesAsync(ct)).Count(u => u.Unresolved);
+        return new TestDataResetSummary
+        {
+            ProtectedDefaultsPreserved = 0, ProtectedFixturesPreserved = 0, ConfigurationAssetsPreserved = before.ConfigurationAssets,
+            AssetsRemoved = removed + before.GeneratedFixturesToRemove + fixtures, GeneratedFixturesRemoved = before.GeneratedFixturesToRemove,
+            ReferencesRemovedWithConsumers = before.AffectedReferences.Count, ReferencesRequiringRemapping = unresolved,
+            ProtectedFixturesRemoved = fixtures, ProtectedDefaultsResetToProduct = reset, SystemDefaultsRecreated = [.. defaults.Select(a => a.Alias).Order(StringComparer.Ordinal)],
+        };
     }
 
     /// <summary>
