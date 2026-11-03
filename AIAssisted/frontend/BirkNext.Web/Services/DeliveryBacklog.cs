@@ -75,17 +75,18 @@ public static class DeliveryBacklog
         BacklogStatus.ChecklistComplete => "Task checklist complete",
         BacklogStatus.ImplementationVerified => "Implementation verified",
         BacklogStatus.QaVerified => "QA verified",
-        BacklogStatus.Accepted => "Accepted",
+        // "Status: Done" in a document is a stated status, not a recorded acceptance decision.
+        BacklogStatus.Accepted => "Stated done",
         BacklogStatus.Blocked => "Blocked",
         BacklogStatus.NeedsClarification => "Needs clarification",
-        _ => "Unknown",
+        _ => "Not assessed",
     };
 
     /// <summary>From a frozen weekly report: its current snapshot's features (removed ones listed apart, never as backlog items).</summary>
     public static DeliveryBacklogView FromReport(WeeklyDeliveryReport report) => new(
         new("report", report.Current.Label, report.Current.EffectiveAt, report.Current.SourceType, report.Current.AzureDevOps, report.Baseline.Label, report.ReportId, report.WeekLabel),
         [.. report.Stories.Where(s => !s.RemovedFeature).Select(s => new BacklogItem(s.FeatureKey, s.Title, s.Module, Status(s.CurrentStatus), Detail(s.CurrentStatus),
-            s.Hierarchy?.Stories.Count(u => u.Change != DeliveryItemChange.Removed) ?? 0,
+            s.Hierarchy?.Stories.Count(u => u.Change != DeliveryItemChange.Removed && !u.Removed && u.Kind != "Scenario") ?? 0,
             s.Hierarchy is { } h ? h.CriteriaCurrent : 0,
             s.CurrentTaskCompleted, s.CurrentTaskTotal, s.Hierarchy?.Phases.Count(p => p.Change != DeliveryItemChange.Removed) ?? 0, s.Movement)
             { Attention = s.Attention.Count, HasSpecification = s.Evidence.SpecPath is not null })

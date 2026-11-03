@@ -133,12 +133,13 @@ public sealed class DeliveryOperationsTests : BunitContext
         var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
-        page.FindAll("[data-testid=do-tile]").Select(t => t.GetAttribute("data-status")).Should().Equal("Planned", "InProgress", "ChecklistComplete", "ImplementationVerified", "QaVerified", "Accepted", "Blocked");
-        page.Find("[data-testid=do-tile][data-status=InProgress] .do-tile-count").TextContent.Should().Be("2");
-        page.Find("[data-testid=do-tile][data-status=QaVerified] .do-tile-count").TextContent.Should().Be("–");
-        page.Find("[data-testid=do-tile][data-status=ImplementationVerified] .do-tile-count").TextContent.Should().Be("–");
-        page.Find("[data-testid=do-verified-note]").TextContent.Should().Contain("never verified because its tasks are checked");
-        page.Find("[data-testid=do-source]").TextContent.Should().Contain("From report 2026-W44").And.Contain("baseline “Monday”");
+        // Only statuses the source supports are charted; verification is a quality state ("Not recorded" / "Not assessed"), never a 0 or a tile.
+        page.FindAll("[data-testid=dd-status-bar]").Select(t => t.GetAttribute("data-key")).Should().Equal("InProgress");
+        page.Find("[data-testid=dd-status-bar][data-key=InProgress] .dd-bar-value").TextContent.Should().Be("2");
+        page.FindAll("[data-testid=dd-quality-row]").Single(q => q.GetAttribute("data-key") == "qa").TextContent.Should().Contain("Not assessed");
+        page.FindAll("[data-testid=dd-quality-row]").Single(q => q.GetAttribute("data-key") == "implementation").TextContent.Should().Contain("Not recorded");
+        page.Find("[data-testid=do-source]").TextContent.Should().Contain("From report 2026-W44");
+        page.Find("[data-testid=dd-header]").TextContent.Should().Contain("Monday", "the baseline is named in the comparison context");
         page.Find("[data-testid=do-provenance]").TextContent.Should().Be("ZIP import");
         page.Find("[data-testid=do-open-report]").GetAttribute("href").Should().Contain($"project={DeliveryReportingPageTests.ProjectId}").And.Contain("tab=stories");
 

@@ -134,10 +134,13 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
     public void Overview_ReadinessSeparatesChecklistFromVerification_AndFeaturesOpenInTheExplorer()
     {
         var page = Overview();
-        var dims = page.FindAll("[data-testid=do-readiness-dim]").ToDictionary(d => d.GetAttribute("data-key")!, d => d.TextContent);
-        dims["checklist"].Should().Contain("checked").And.Contain("not delivery progress");
-        dims["implementation"].Should().Contain("Not available");
-        dims["qa"].Should().Contain("Not available");
+        page.Find("[data-testid=dd-checklist-note]").TextContent.Should().Contain("checkbox state in tasks.md").And.Contain("not QA verification, acceptance or deployment");
+        var quality = page.FindAll("[data-testid=dd-quality-row]").ToDictionary(d => d.GetAttribute("data-key")!, d => d.QuerySelector("[data-testid=dd-quality-state]")!.TextContent);
+        quality["implementation"].Should().Be("Not recorded", "checked tasks are not implementation verification");
+        quality["qa"].Should().Be("Not assessed", "no QA evidence is linked — never 0%");
+        quality["acceptance"].Should().Be("Not recorded");
+        page.FindAll("[data-testid=dd-kpi]").Select(k => k.GetAttribute("data-key")).Should().Contain(["checklist", "open", "in-progress", "review", "blocked"]);
+        page.Markup.Should().NotContain("On track").And.NotContain("Health score");
         page.FindAll("[data-testid=do-item]").Should().OnlyContain(r => !r.TextContent.Contains("Implemented"));
 
         page.FindAll("[data-testid=do-feature-open]").First().Click();
@@ -156,17 +159,14 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
     }
 
     [Fact]
-    public void Overview_FiltersSearchAndSorts()
+    public void Overview_FiltersSearch_AndOrdersByPriority()
     {
         var page = Overview();
         page.FindAll("[data-testid=do-item]").Should().HaveCount(2);
         page.Find("[data-testid=do-search]").Input("case");
         page.FindAll("[data-testid=do-item]").Should().ContainSingle().Which.TextContent.Should().Contain("Case overview");
         page.Find("[data-testid=do-search]").Input("");
-        page.FindAll("[data-testid=do-sort]").Single(s => s.GetAttribute("data-key") == "title").Click();
-        page.FindAll("[data-testid=do-item] th").Select(t => t.TextContent.Trim()).Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
-        page.FindAll("[data-testid=do-sort]").Single(s => s.GetAttribute("data-key") == "title").Click();
-        page.FindAll("[data-testid=do-item] th").Select(t => t.TextContent.Trim()).Should().BeInDescendingOrder(StringComparer.OrdinalIgnoreCase);
-        page.Find("[data-testid=do-count]").TextContent.Should().Be("2 of 2 features shown");
+        page.Find("[data-testid=do-count]").TextContent.Should().StartWith("2 of 2 features shown").And.Contain("blocked, needs review, new and changed first");
+        page.FindAll("[data-testid=do-change]").Select(c => c.TextContent).Should().BeSubsetOf(["NEW", "CHANGED", "UNCHANGED", "REMOVED", "NEEDS CONFIRMATION"]);
     }
 }

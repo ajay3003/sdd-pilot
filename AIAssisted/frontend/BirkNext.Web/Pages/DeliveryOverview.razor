@@ -52,52 +52,107 @@
         else
         {
             var view = _view;
-            <p class="do-source" data-testid="do-source">
-                @(view.Source.Kind == "report" ? $"From report {view.Source.WeekLabel}" : "From the newest snapshot (no report yet)") ·
-                current snapshot “@view.Source.SnapshotLabel” of @P.Day(view.Source.EffectiveAt) · <span data-testid="do-provenance">@DeliveryBacklog.Provenance(view.Source)</span>
-                @if (view.Source.BaselineLabel is { } baseline) { <span> · compared with baseline “@baseline”</span> }
-            </p>
-
-            <section class="do-readiness" aria-labelledby="do-readiness-h" data-testid="do-readiness">
-                <h2 class="do-h2" id="do-readiness-h">Delivery readiness</h2>
-                <ul class="do-readiness-list">
-                    @foreach (var d in DeliveryBacklog.Readiness(view.Items))
-                    {
-                        <li class="do-dim @(d.Available ? "" : "do-dim-na")" data-testid="do-readiness-dim" data-key="@d.Key">
-                            <span class="do-dim-label">@d.Label</span>
-                            <span class="do-dim-value">@d.Value</span>
-                            <span class="do-muted do-dim-detail">@d.Detail</span>
-                        </li>
-                    }
-                </ul>
+            var header = DeliveryDashboard.Header(view, _report, _projects.FirstOrDefault(p => p.Id == _projectId)?.Name ?? "");
+            <section class="dd-header" data-testid="dd-header" aria-label="Comparison context">
+                <h2 class="dd-title">@header.Title</h2>
+                <dl class="dd-context">
+                    <div><dt>Current snapshot</dt><dd data-testid="dd-current-label">@header.CurrentLabel</dd></div>
+                    @if (header.BaselineLabel is { } baseline) { <div><dt>Baseline</dt><dd>@baseline</dd></div> }
+                    <div><dt>Coverage</dt><dd data-testid="dd-coverage">@header.Coverage</dd></div>
+                </dl>
+                <p class="dd-badges">
+                    @if (header.SameDay) { <span class="dd-badge dd-tone-review" data-testid="dd-same-day"><span aria-hidden="true">◷ </span>Same-day comparison</span> }
+                    @if (header.OrderUnconfirmed) { <span class="dd-badge dd-tone-review" data-testid="dd-order" title="Both snapshots have the same effective date; which one is later cannot be confirmed from dates.">Order not confirmable from dates</span> }
+                </p>
+                <p class="do-muted do-source" data-testid="do-source">
+                    @(view.Source.Kind == "report" ? $"From report {view.Source.WeekLabel}" : "From the newest snapshot (no report yet)") ·
+                    current snapshot “@view.Source.SnapshotLabel” of @P.Day(view.Source.EffectiveAt) · <span data-testid="do-provenance">@DeliveryBacklog.Provenance(view.Source)</span>
+                </p>
             </section>
 
-            <ul class="do-tiles" aria-label="Features by delivery status">
-                @foreach (var status in DeliveryBacklog.Columns)
+            <h3 class="dd-h" id="dd-current-h">Current delivery state</h3>
+            <ul class="dd-kpis" aria-labelledby="dd-current-h" data-testid="dd-current">
+                @foreach (var k in DeliveryDashboard.Current(view))
                 {
-                    var s = status;
-                    var notAvailable = DeliveryBacklog.NotFromSnapshots(status);
-                    <li class="do-tile do-tile-@status.ToString().ToLowerInvariant() @(_status == status.ToString() ? "do-tile-on" : "")" data-testid="do-tile" data-status="@status">
-                        @if (notAvailable)
-                        {
-                            <span class="do-tile-count">–</span>
-                            <span class="do-tile-label">@DeliveryBacklog.Label(status)</span>
-                            <span class="do-tile-note" data-testid="do-verified-note">@DeliveryBacklog.VerifiedNotAvailable</span>
-                        }
-                        else
-                        {
-                            <button type="button" class="do-tile-button" aria-pressed="@(_status == status.ToString() ? "true" : "false")" data-testid="do-tile-filter" @onclick="() => ToggleStatus(s)">
-                                <span class="do-tile-count">@view.Count(status)</span>
-                                <span class="do-tile-label">@DeliveryBacklog.Label(status)</span>
-                            </button>
-                        }
+                    <li class="dd-kpi dd-tone-@DeliveryDashboard.ToneClass(k.Tone)" data-testid="dd-kpi" data-key="@k.Key" title="@k.Info">
+                        <span class="dd-kpi-value">@k.Value</span>
+                        <span class="dd-kpi-label">@k.Label@if (k.Info is { } info) { <span class="dd-info" aria-label="@info" tabindex="0">ⓘ</span> }</span>
+                        <span class="dd-kpi-detail">@k.Detail</span>
                     </li>
                 }
-                @if (view.Count(BacklogStatus.NeedsClarification) is > 0 and var unclear)
-                {
-                    <li class="do-tile" data-testid="do-tile" data-status="NeedsClarification"><span class="do-tile-count">@unclear</span><span class="do-tile-label">Needs clarification</span></li>
-                }
             </ul>
+
+            <div class="dd-grid">
+                @{ var total = view.Items.Sum(i => i.TasksTotal); var done = view.Items.Sum(i => i.TasksCompleted); }
+                <section class="dd-card" aria-labelledby="dd-checklist-h" data-testid="dd-checklist">
+                    <h3 class="dd-card-h" id="dd-checklist-h">Task checklist</h3>
+                    @if (total == 0) { <p class="do-muted">No tasks.md checkboxes in this snapshot.</p> }
+                    else
+                    {
+                        <div class="dd-donut-wrap">
+                            <svg class="dd-donut" viewBox="0 0 100 100" role="img" aria-label="@($"{done} of {total} tasks checked, {total - done} open")">
+                                <title>@DeliveryDashboard.ChecklistInfo</title>
+                                <circle cx="50" cy="50" r="40" class="dd-donut-track" />
+                                <circle cx="50" cy="50" r="40" class="dd-donut-value" stroke-dasharray="@($"{251.33 * done / total:0.##} 251.33")" transform="rotate(-90 50 50)" />
+                                <text x="50" y="54" text-anchor="middle" class="dd-donut-text">@(100 * done / total)%</text>
+                            </svg>
+                            <ul class="dd-legend">
+                                <li><span class="dd-swatch dd-tone-progress" aria-hidden="true"></span>@done checked</li>
+                                <li><span class="dd-swatch dd-tone-neutral" aria-hidden="true"></span>@(total - done) open</li>
+                            </ul>
+                        </div>
+                        <p class="do-muted dd-note" data-testid="dd-checklist-note">@DeliveryDashboard.ChecklistInfo</p>
+                    }
+                </section>
+                <section class="dd-card" aria-labelledby="dd-status-h" data-testid="dd-status">
+                    <h3 class="dd-card-h" id="dd-status-h">Features by checklist state</h3>
+                    @Bars(DeliveryDashboard.FeatureStatus(view), "dd-status-bar")
+                    <p class="do-muted dd-note">Statuses come from task checkboxes and explicit status lines only — no workflow state is inferred.</p>
+                </section>
+            </div>
+
+            @if (_report is not null)
+            {
+                <h3 class="dd-h" id="dd-change-h">Change this period <span class="do-muted">compared with the baseline</span></h3>
+                <div class="dd-grid">
+                    <section class="dd-card" aria-label="Feature changes" data-testid="dd-change-features"><h3 class="dd-card-h">Features</h3>@Bars(DeliveryDashboard.FeatureChanges(_report), "dd-change-bar")</section>
+                    <section class="dd-card" aria-label="Task changes" data-testid="dd-change-tasks"><h3 class="dd-card-h">Tasks</h3>@Bars(DeliveryDashboard.TaskChanges(_report), "dd-change-bar")</section>
+                </div>
+            }
+
+            <div class="dd-grid">
+                <section class="dd-card" aria-labelledby="dd-quality-h" data-testid="dd-quality">
+                    <h3 class="dd-card-h" id="dd-quality-h">Quality &amp; readiness</h3>
+                    <ul class="dd-quality">
+                        @foreach (var q in DeliveryDashboard.Quality(view))
+                        {
+                            <li data-testid="dd-quality-row" data-key="@q.Key" title="@q.Detail">
+                                <span class="dd-q-label">@q.Label</span>
+                                <span class="dd-q-track" aria-hidden="true">@if (q.Filled is { } f && q.Of is > 0 and var of) { <span class="dd-q-fill dd-tone-@DeliveryDashboard.ToneClass(q.Tone)" style="width:@(100 * f / of)%"></span> }</span>
+                                <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(q.Tone)" data-testid="dd-quality-state">@q.State</span>
+                                <span class="dd-q-detail do-muted">@q.Detail</span>
+                            </li>
+                        }
+                    </ul>
+                </section>
+                <section class="dd-card" aria-labelledby="dd-attention-h" data-testid="dd-attention">
+                    <h3 class="dd-card-h" id="dd-attention-h">Needs attention</h3>
+                    @if (_report is null) { <p class="do-muted">Generate a report to see scope changes and traceability issues.</p> }
+                    else if (DeliveryDashboard.Attention(_report) is { Count: 0 }) { <p class="do-muted" data-testid="dd-attention-none">No attention items. Shared &amp; foundational tasks are normal and never listed here.</p> }
+                    else
+                    {
+                        @foreach (var g in DeliveryDashboard.Attention(_report))
+                        {
+                            <details class="dd-att-group" data-testid="dd-attention-group" data-category="@g.Category">
+                                <summary><strong>@g.Label</strong> <span class="dd-badge dd-tone-@(g.Items.Any(i => i.Severity == DeliveryAttentionSeverity.Blocker) ? "blocker" : "review")">@g.Items.Count</span></summary>
+                                <ul class="dd-att-list">@foreach (var a in g.Items.Take(20)) { <li><strong>@a.Title</strong> — @a.Detail</li> }</ul>
+                                @if (g.Items.Count > 20) { <p class="do-muted">+@(g.Items.Count - 20) more in the report</p> }
+                            </details>
+                        }
+                    }
+                </section>
+            </div>
+            <p class="do-muted dd-trend" data-testid="dd-trend">Trend available after more delivery snapshots — a baseline and a current snapshot are two points, not a trend.</p>
 
             <div class="do-toolbar" role="group" aria-label="Filter features">
                 <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" placeholder="Feature or module" /></label>
@@ -109,9 +164,9 @@
                             @foreach (var m in view.Items.Select(i => i.Module).Distinct().Order(StringComparer.OrdinalIgnoreCase)) { <option value="@m">@(m.Length == 0 ? "Project" : m)</option> }
                         </select></label>
                 }
-                <label class="do-field"><span>Status</span>
+                <label class="do-field"><span>State</span>
                     <select data-testid="do-filter" @bind="_status">
-                        <option value="@AllFilter">All statuses</option>
+                        <option value="@AllFilter">All states</option>
                         @foreach (var st in Enum.GetValues<BacklogStatus>().Where(x => !DeliveryBacklog.NotFromSnapshots(x))) { <option value="@st">@DeliveryBacklog.Label(st)</option> }
                     </select></label>
                 <label class="do-field"><span>Attention</span>
@@ -122,47 +177,34 @@
                     </select></label>
             </div>
 
-            var items = Filtered(view);
-            <p class="do-muted" role="status" data-testid="do-count">@items.Count of @view.Items.Count features shown</p>
-            <div class="do-table-wrap">
-                <table class="do-table" data-testid="do-backlog">
-                    <caption class="visually-hidden">Backlog features</caption>
-                    <thead>
-                        <tr>
-                            @foreach (var (key, label) in SortColumns)
-                            {
-                                var k = key;
-                                <th scope="col" aria-sort="@(_sort == key ? (_descending ? "descending" : "ascending") : "none")">
-                                    <button type="button" class="do-sort" data-testid="do-sort" data-key="@key" @onclick="() => SortBy(k)">@label@(_sort == key ? (_descending ? " ▼" : " ▲") : "")</button>
-                                </th>
-                            }
-                            <th scope="col">Stories / criteria</th><th scope="col">This period</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in items)
-                        {
-                            var key = item.FeatureKey;
-                            <tr data-testid="do-item" data-status="@item.Status">
-                                <th scope="row">
-                                    @if (_report is not null)
-                                    {
-                                        <button type="button" class="do-feature" data-testid="do-feature-open" @onclick="() => OpenFeature(key)">@item.Title</button>
-                                    }
-                                    else { @item.Title }
-                                    @if (item.Attention > 0) { <span class="do-attention" data-testid="do-attention-count"> · @item.Attention attention</span> }
-                                </th>
-                                <td>@(item.Module.Length == 0 ? "Project" : item.Module)</td>
-                                <td><span class="do-badge do-badge-@item.Status.ToString().ToLowerInvariant()">@DeliveryBacklog.Label(item.Status)</span><br /><span class="do-muted">@item.StatusDetail</span></td>
-                                <td data-testid="do-tasks">@(item.TasksTotal == 0 ? "No tasks" : $"{item.TasksCompleted} / {item.TasksTotal} checked · {item.OpenTasks} open")@(item.Phases > 0 ? $" · {item.Phases} phase{(item.Phases == 1 ? "" : "s")}" : "")</td>
-                                <td>@(view.Source.Kind == "report" ? $"{item.Stories} / {item.Criteria}" : "–")</td>
-                                <td>@(item.Movement is { } m ? DeliveryReportingText.Movement(m) : "–")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            @if (items.Count == 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
+            var keys = Filtered(view).Select(i => i.FeatureKey).ToHashSet(StringComparer.Ordinal);
+            var rows = DeliveryDashboard.Rows(view, _report).Where(r => keys.Contains(r.Item.FeatureKey)).ToList();
+            <p class="do-muted" role="status" data-testid="do-count">@rows.Count of @view.Items.Count features shown · blocked, needs review, new and changed first</p>
+            <ul class="dd-features" data-testid="do-backlog" aria-label="Features">
+                @foreach (var r in rows)
+                {
+                    var item = r.Item;
+                    var key = item.FeatureKey;
+                    var pct = item.TasksTotal == 0 ? 0 : 100 * item.TasksCompleted / item.TasksTotal;
+                    <li data-testid="do-item" data-status="@item.Status">
+                        <button type="button" class="dd-feature" data-testid="do-feature-open" disabled="@(_report is null)" @onclick="() => OpenFeature(key)">
+                            <span class="dd-f-title"><strong>@item.Title</strong><span class="dd-f-id">@DeliveryWorkItems.FeatureSourceId(key) · @(item.Module.Length == 0 ? "Project" : item.Module)</span></span>
+                            <span class="dd-f-progress" title="Task checklist only">
+                                @if (item.TasksTotal == 0) { <span class="do-muted">No tasks</span> }
+                                else
+                                {
+                                    <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill" style="width:@(pct)%"></span></span>
+                                    <span data-testid="do-tasks">@item.TasksCompleted / @item.TasksTotal · @(pct)% · @item.OpenTasks open</span>
+                                }
+                            </span>
+                            <span class="dd-f-model" data-testid="do-model">@r.RequirementModel</span>
+                            <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(r.ChangeTone)" data-testid="do-change">@r.Change</span>
+                            <span class="dd-f-attention" data-testid="do-attention-cell">@if (item.Attention > 0) { <span class="dd-badge dd-tone-review" data-testid="do-attention-count">@item.Attention issue@(item.Attention == 1 ? "" : "s")</span> } else { <span class="do-muted">No issues</span> }</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+            @if (rows.Count == 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
             @if (view.RemovedFeatures.Count > 0)
             {
                 <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
@@ -180,7 +222,6 @@
 
 @code {
     private const string AllFilter = "all";
-    private static readonly (string Key, string Label)[] SortColumns = [("title", "Feature"), ("module", "Module"), ("status", "Status"), ("tasks", "Tasks")];
     [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
     [SupplyParameterFromQuery(Name = "feature")] public string? FeatureQuery { get; set; }
 
@@ -190,8 +231,7 @@
     private Guid? _projectId;
     private DeliveryBacklogView? _view;
     private WeeklyDeliveryReport? _report;
-    private string _status = AllFilter, _module = "", _search = "", _attention = AllFilter, _sort = "module";
-    private bool _descending;
+    private string _status = AllFilter, _module = "", _search = "", _attention = AllFilter;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -234,23 +274,27 @@
         if (_search.Length > 0) items = items.Where(i => i.Title.Contains(_search, StringComparison.OrdinalIgnoreCase) || i.Module.Contains(_search, StringComparison.OrdinalIgnoreCase));
         if (_attention == "attention") items = items.Where(i => i.Attention > 0);
         else if (_attention == "open") items = items.Where(i => i.OpenTasks > 0);
-        items = _sort switch
-        {
-            "title" => items.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
-            "status" => items.OrderBy(i => Array.IndexOf(Enum.GetValues<BacklogStatus>(), i.Status)).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
-            "tasks" => items.OrderBy(i => i.OpenTasks).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
-            _ => items.OrderBy(i => i.Module, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
-        };
+        // Order is the dashboard priority (DeliveryDashboard.Rows): blocked, needs review, new, changed, in progress, then the rest.
         var list = items.ToList();
-        if (_descending) list.Reverse();
         return list;
     }
 
-    private void SortBy(string key)
+
+    /// <summary>Horizontal bars of one unit (features or tasks), each with a label, count and its meaning as tooltip; scaled within the group.</summary>
+    private static RenderFragment Bars(IReadOnlyList<DeliveryBar> bars, string testId) => __builder =>
     {
-        _descending = _sort == key && !_descending;
-        _sort = key;
-    }
+        var max = Math.Max(1, bars.Select(b => Math.Abs(b.Value)).DefaultIfEmpty(1).Max());
+        <ul class="dd-bars">
+            @foreach (var b in bars)
+            {
+                <li data-testid="@testId" data-key="@b.Key" title="@b.Info">
+                    <span class="dd-bar-label">@b.Label</span>
+                    <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill dd-tone-@DeliveryDashboard.ToneClass(b.Tone)" style="width:@(100 * Math.Abs(b.Value) / max)%"></span></span>
+                    <span class="dd-bar-value">@(b.Value > 0 && b.Key == "net-checked" ? "+" : "")@b.Value</span>
+                </li>
+            }
+        </ul>
+    };
 
     private void ToggleStatus(BacklogStatus status) => _status = _status == status.ToString() ? AllFilter : status.ToString();
 
