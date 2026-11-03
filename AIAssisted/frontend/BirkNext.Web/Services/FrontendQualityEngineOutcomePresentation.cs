@@ -185,6 +185,8 @@ public static class FrontendQualityEngineOutcomePresentation
         "Cancelled" => "cancelled",
         "Disabled" or "Not selected" or "Not applicable" => "inactive",
         "Unsupported" => "unsupported",
+        // Not assessed is not Blocked (see StateLabel): neutral, never the red blocked style.
+        "Not assessed" => "inactive",
         _ => "blocked",
     };
 

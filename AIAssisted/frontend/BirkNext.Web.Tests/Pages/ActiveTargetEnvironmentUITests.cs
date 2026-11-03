@@ -157,4 +157,36 @@ public sealed class ActiveTargetEnvironmentUITests : BunitContext
         page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review")).Click();
         page.WaitForAssertion(() => execution!.ActiveProfile.Id.Should().Be("qa"));
     }
+
+    [Fact]
+    public async Task A_run_where_no_engine_assessed_anything_is_never_recorded_as_a_completed_review()
+    {
+        await Register("dev");
+        _orchestrator.Setup(o => o.RunAsync(It.IsAny<string>(), It.IsAny<FrontendAnalysisContext>(), It.IsAny<FrontendQualityEngineExecutionSnapshot?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, FrontendAnalysisContext context, FrontendQualityEngineExecutionSnapshot? _, CancellationToken _) =>
+                new FrontendQualityReviewOrchestrationResult(QualityReport: new() { TargetUrl = context.TargetUrl, GeneratedAt = DateTime.UtcNow }, PreflightBlocked: true));
+        var page = Render<FrontendQualityReview>();
+
+        await page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review")).ClickAsync(new());
+
+        var session = Services.GetRequiredService<RuntimeReviewSessionService>().QualityReview;
+        page.WaitForAssertion(() => session.Status.Should().Be(RuntimeReviewStatus.Failed, "nothing assessed is not a completed review with no findings"));
+        session.HasResult.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_unexpected_run_error_releases_the_busy_state_and_records_failed()
+    {
+        await Register("dev");
+        _orchestrator.Setup(o => o.RunAsync(It.IsAny<string>(), It.IsAny<FrontendAnalysisContext>(), It.IsAny<FrontendQualityEngineExecutionSnapshot?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("engine host crashed"));
+        var page = Render<FrontendQualityReview>();
+
+        await page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review")).ClickAsync(new());
+
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-run-error]").TextContent.Should().Contain("engine host crashed").And.Contain("Review stopped"));
+        page.FindAll("[data-testid=fqr-run-not-started]").Should().BeEmpty("the review did start");
+        Services.GetRequiredService<RuntimeReviewSessionService>().QualityReview.Status.Should().Be(RuntimeReviewStatus.Failed);
+        page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review")).HasAttribute("disabled").Should().BeFalse("no stuck spinner");
+    }
 }

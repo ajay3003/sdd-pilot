@@ -35,6 +35,14 @@
     {
         var landing = BuildLanding();
 
+        @if (_runError is { } runError)
+        {
+            <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="alert" data-testid="fqr-run-error">
+                <span aria-hidden="true">⚠</span>
+                <strong>Review stopped</strong> — @runError No result was recorded for this run.
+                <button type="button" class="btn-secondary fqr-banner-dismiss" @onclick="() => _runError = null" aria-label="Dismiss">Dismiss</button>
+            </div>
+        }
         @if (_runNotStartedReason is { } notStarted)
         {
             <div class="wsr-banner wsr-banner-error wsr-banner-standalone fqr-run-not-started" role="alert" data-testid="fqr-run-not-started">
@@ -1533,9 +1541,32 @@
         await ResolveTargetAccess();
     }
 
+    /// <summary>
+    /// One run, never a stuck spinner: whatever the run throws, the busy state is released, a run still marked Running is recorded as
+    /// Failed, and the reason is shown.
+    /// </summary>
     private async Task RunReview()
     {
         if (_running) return;
+        _runError = null;
+        try { await RunReviewCoreAsync(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _runError = $"The review stopped unexpectedly: {ex.Message}.";
+            if (RuntimeReviews.QualityReview.Status == RuntimeReviewStatus.Running && _context is not null)
+                RuntimeReviews.MarkQualityFailed(_context, ex.Message);
+        }
+        finally
+        {
+            _running = false;
+            StateHasChanged();
+        }
+    }
+
+    private string? _runError;
+
+    private async Task RunReviewCoreAsync()
+    {
         _running     = true;
         // Resolve again at execution time; UI selection never participates. Preserve
         // this page's engine choices only when the target identity is unchanged.
@@ -1682,7 +1713,12 @@
         _running = false;
         _openedHistoryEntry = null;
         _tab = FrontendQualityResultTab.Summary;
-        RuntimeReviews.SaveQualityResult(_report, _context);
+        // Nothing assessed (every engine blocked or not run): the page shows what happened per engine, but the session never records it as a
+        // completed review — "no findings" would read as healthy on the Dashboard.
+        if (orchestration.PreflightBlocked)
+            RuntimeReviews.MarkQualityFailed(_context, orchestration.PreflightBlockReason ?? "No enabled engine could assess the target; nothing was reviewed.");
+        else
+            RuntimeReviews.SaveQualityResult(_report, _context);
         if (_history is not null && _context is not null) await _history.AddAsync(_context.ActiveProfile.Id, completedReport);
         ClearFilters();
         ClearIssueFilters();
