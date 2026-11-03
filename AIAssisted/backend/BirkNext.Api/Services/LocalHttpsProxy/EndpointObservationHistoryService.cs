@@ -181,6 +181,19 @@ public sealed class EndpointObservationHistoryService(AppDbContext db, TimeProvi
     private static EndpointDiscoveryRunSummary Summary(EndpointDiscoveryRunRecord r) =>
         new(r.Id, r.EnvironmentId, r.Host, r.StartedAt, r.CompletedAt, r.Status, r.ObservedCount, r.NewCount, r.ObservedAgainCount, r.NotSeenCount);
 
+    /// <summary>The observations of a proxy capture still running for this environment (null when none runs). Endpoint Discovery history and
+    /// Performance Test readiness both merge it, so a step created from Live Discovery is never "not in history" in one place and observed in another.</summary>
+    public static async Task<IReadOnlyList<ObservedNetworkEndpoint>?> LiveCaptureAsync(ILocalHttpsProxyService proxy, string environmentId)
+    {
+        var runtime = await proxy.GetRuntimeAsync();
+        return runtime.ProfileId == environmentId && runtime.State is not (LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Failed or LocalHttpsProxyState.Stale or LocalHttpsProxyState.NotStarted)
+            && runtime.RuntimeId is not null ? runtime.ObservedNetworkEndpoints : null;
+    }
+
+    /// <summary>The current view: persisted history plus the capture still running for the environment.</summary>
+    public async Task<EndpointObservationHistoryView> CurrentViewAsync(ILocalHttpsProxyService? proxy, string environmentId, string host, CancellationToken ct) =>
+        await ViewAsync(environmentId, host, proxy is null ? null : await LiveCaptureAsync(proxy, environmentId), ct);
+
     public static string? HostOf(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri.Host.ToLowerInvariant() : null;
 }
 

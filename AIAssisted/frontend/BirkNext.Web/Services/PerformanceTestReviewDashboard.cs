@@ -138,8 +138,9 @@ public static class PerformanceTestReviewDashboard
     /// <summary>Actionable title of a container network check result (structured state; the raw detail stays secondary).</summary>
     public static string ProbeTitle(string state) => state switch
     {
-        PerformanceProbeStates.Reachable => "Container reachable",
-        PerformanceProbeStates.AuthChallenge => "Container reachable · authentication requested",
+        // The base target answered the k6 container: never a claim that a scenario endpoint was verified.
+        PerformanceProbeStates.Reachable => "Target reachable",
+        PerformanceProbeStates.AuthChallenge => "Target reachable · authentication requested",
         PerformanceProbeStates.DnsFailure => "DNS lookup failed from the k6 container",
         PerformanceProbeStates.Timeout => "Connection from the k6 container timed out",
         PerformanceProbeStates.ConnectionRefused => "Connection refused",
@@ -199,6 +200,10 @@ public static class PerformanceTestReviewDashboard
         "Missing" => new("Missing", "!", PtTone.Attention),
         "Invalid" => new("Invalid", "!", PtTone.Attention),
         "Not checked" => new("Not checked", "!", PtTone.Attention),
+        // Endpoint evidence (informational): the step card's own vocabulary.
+        "Observed" => new("Observed", "✓", PtTone.Ready),
+        "Newer observation available" => new("Newer observation available", "!", PtTone.Attention),
+        "Not in history" => new("Not in Endpoint Discovery history", "○", PtTone.Neutral),
         "Stale" => new("Stale · check again", "!", PtTone.Attention),
         _ => Check(item.State),
     };

@@ -108,7 +108,7 @@ public sealed class RuntimeAuthenticationFrontendTests : BunitContext
     public void WithoutTheBackend_TheStateIsReportedUnavailable_NotGuessed()
     {
         var cut = Render<RuntimeAuthenticationSelector>(p => p.Add(x => x.OperationKey, RuntimeAuthenticationCatalog.ApiAuthenticatedChecks).Add(x => x.Profile, Profile("dev")));
-        cut.Find("[data-testid=rta-offline]").TextContent.Should().Contain("unavailable");
+        cut.Find("[data-testid=rta-offline]").TextContent.Should().Contain("could not be loaded").And.NotContain("not reachable", "a missing state is not proof that the backend is down");
         cut.FindAll("[data-testid=rta-effective]").Should().BeEmpty();
     }
 

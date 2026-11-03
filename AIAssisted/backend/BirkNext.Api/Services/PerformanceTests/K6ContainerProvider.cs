@@ -315,8 +315,9 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             return envelope with { State = PerformanceProbeStates.ProxyFailure, HttpStatus = status, Detail = "The configured proxy refused the request from the k6 container (HTTP 407: proxy authentication required)." };
         if (status == 401)
             return envelope with { State = PerformanceProbeStates.AuthChallenge, Reachable = true, HttpStatus = status,
-                Detail = $"The k6 container reached {envelope.ExecutionOrigin}; it answered HTTP 401 (authentication required). The network path works; an unauthenticated scenario may need authentication." };
-        if (status is > 0) return envelope with { State = PerformanceProbeStates.Reachable, Reachable = true, HttpStatus = status, Detail = $"The k6 container reached {envelope.ExecutionOrigin} (HTTP {status})." };
+                Detail = $"Base target {envelope.ExecutionOrigin} returned HTTP 401 (authentication required) to the k6 container. The network path works; scenario endpoints are not verified by this check." };
+        if (status is > 0) return envelope with { State = PerformanceProbeStates.Reachable, Reachable = true, HttpStatus = status,
+            Detail = $"Base target {envelope.ExecutionOrigin} returned HTTP {status} to the k6 container. Scenario endpoints are not verified by this check." };
         var result = code switch
         {
             1050 or 1211 => envelope with { State = PerformanceProbeStates.Timeout, Detail = $"The request from the k6 container to {envelope.ExecutionOrigin} timed out (VPN/private route not available to containers?)." },

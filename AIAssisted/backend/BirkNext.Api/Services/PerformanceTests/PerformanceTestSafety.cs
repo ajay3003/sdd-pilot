@@ -84,10 +84,10 @@ public static partial class PerformanceTestSafety
         if (EnvironmentBlock(d.EnvironmentType) is { } env) issues.Add(new(PerformanceReadinessState.UnsafeEnvironment, "environment", env));
         var (_, originError) = Origin(d.TargetOrigin, d.EnvironmentType, options);
         if (originError is not null) issues.Add(new(PerformanceReadinessState.UnsafeEnvironment, "target", originError));
-        // Steps inherit the definition default, override it or use none: the block applies when any executed step is authenticated.
-        if (d.Scenario.Steps.Any(s => !s.Disabled && PerformanceScenarioRuntime.EffectiveAuthentication(d, s) is not null) || d.Scenario.Steps.Count == 0 && d.AuthenticationReference is not null)
-            issues.Add(new(PerformanceReadinessState.NeedsAuthentication, "authentication",
-                "Authenticated performance tests need a non-interactive, approved test credential; BirkNext does not yet issue one for load tests (interactive or MFA logins are never simulated). Use an unauthenticated test endpoint or run this test outside BirkNext."));
+        // Configured ≠ executable: the same rule as the step card (Execution: Blocked — authentication). Steps inherit the definition default,
+        // override it or use none; the block applies when any executed step uses an authentication k6 cannot execute.
+        if (PerformanceScenarioRuntime.ExecutionCredentialBlocked(d))
+            issues.Add(new(PerformanceReadinessState.NeedsAuthentication, "authentication", PerformanceScenarioRuntime.NoExecutionCredential));
         // Observed/declared authentication with nothing configured: a default None is not a confirmation that running unauthenticated is intended.
         foreach (var r in PerformanceScenarioRuntime.AuthenticationRequirements(d, observedAuthentication).Where(r => r.Blocking))
             issues.Add(new(PerformanceReadinessState.NeedsAuthentication, "authentication",

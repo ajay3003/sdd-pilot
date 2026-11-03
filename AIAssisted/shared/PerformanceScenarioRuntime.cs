@@ -31,6 +31,27 @@ public sealed record RuntimeValueRow(RuntimeParameter Parameter, ScenarioDataMap
 
 public sealed record StepReadiness(StepStatus Status, IReadOnlyList<string> Reasons);
 
+/// <summary>State of one status dimension of a step (Definition, Runtime values, Execution).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum StepDimensionState { Ready, NeedsConfiguration, Blocked, NotApplicable }
+
+public sealed record StepDimension(StepDimensionState State, string Text);
+
+/// <summary>
+/// The authentication a step is configured with, against what k6 can actually execute. Configured ≠ executable: a Target Environment
+/// authentication is an attended (interactive browser) sign-in; k6 needs a non-interactive credential, which BirkNext does not issue.
+/// </summary>
+public sealed record StepExecutionCredential(string Reference, string Source, bool Interactive, bool PerformanceCompatible, string Problem);
+
+/// <summary>A step's three separate statuses: what it is (Definition), where its values come from (Runtime values) and whether k6 can run it
+/// (Execution). A step can be fully configured and still not executable.</summary>
+public sealed record StepDimensions(StepDimension Definition, StepDimension RuntimeValues, StepDimension Execution, StepExecutionCredential? Credential)
+{
+    /// <summary>Definition and runtime values are ready, but execution is blocked: "Configured · execution blocked", never a green Ready.</summary>
+    public bool ConfiguredButExecutionBlocked => Definition.State == StepDimensionState.Ready && RuntimeValues.State is StepDimensionState.Ready or StepDimensionState.NotApplicable
+        && Execution.State == StepDimensionState.Blocked;
+}
+
 /// <summary>NotRequired: no authentication observed or declared. Configured: a configuration is referenced. Missing: required, nothing configured
 /// (a default None never counts). IntentionallyUnauthenticated: an explicit, still-valid override. OverrideOutdated: the override no longer matches.</summary>
 public enum StepAuthenticationState { NotRequired, Configured, Missing, IntentionallyUnauthenticated, OverrideOutdated }
@@ -263,6 +284,33 @@ public static partial class PerformanceScenarioRuntime
         _ => d.AuthenticationReference,
     };
 
+    // ── Execution credential (the one rule: step card, scenario summary, Readiness tab and backend start) ──────────────────────────────────
+
+    /// <summary>The only authentication reference a scenario can choose today: the Target Environment's own (attended) authentication.</summary>
+    public const string TargetEnvironmentAuthentication = "target-environment";
+
+    /// <summary>Why a configured authentication cannot run in k6 (Readiness wording; the step uses <see cref="ExecutionCredentialMissing"/>).</summary>
+    public const string NoExecutionCredential =
+        "Target Environment authentication is configured for attended/browser use, but no approved non-interactive credential is available to k6. " +
+        "Interactive or MFA sign-ins are never simulated. Use an unauthenticated test endpoint or run this test outside BirkNext.";
+
+    public const string ExecutionCredentialMissing =
+        "Target Environment authentication is configured, but no non-interactive credential is available for performance execution.";
+
+    /// <summary>Display name of an authentication reference (never a token).</summary>
+    public static string AuthenticationSourceName(string reference) =>
+        reference == TargetEnvironmentAuthentication ? "Target Environment" : reference;
+
+    /// <summary>The configured authentication of an executed step and whether k6 can execute it; null when the step runs without authentication.
+    /// No reference is executable by k6 today: a configured authentication is never reported as runnable.</summary>
+    public static StepExecutionCredential? ExecutionCredential(PerformanceTestDefinition d, HttpPerformanceStep s) =>
+        s.Disabled || EffectiveAuthentication(d, s) is not { } reference ? null
+            : new(reference, AuthenticationSourceName(reference), Interactive: reference == TargetEnvironmentAuthentication, PerformanceCompatible: false, ExecutionCredentialMissing);
+
+    /// <summary>True when an executed step (or, with no steps, the default) uses an authentication k6 cannot execute.</summary>
+    public static bool ExecutionCredentialBlocked(PerformanceTestDefinition d) =>
+        d.Scenario.Steps.Any(s => ExecutionCredential(d, s) is { PerformanceCompatible: false }) || d.Scenario.Steps.Count == 0 && d.AuthenticationReference is not null;
+
     // ── Authentication readiness (the one evaluator: candidate, step, scenario summary, Readiness tab, Run, backend start) ─────────────────────
     // A requirement comes from evidence: authentication observed by Endpoint Discovery (on the step when it was created, or in the persisted
     // observation history now) or declared by the contract. It is satisfied by a configured authentication, or by an explicit, still-valid
@@ -317,8 +365,8 @@ public static partial class PerformanceScenarioRuntime
     public static string AuthenticationLabel(PerformanceTestDefinition d, HttpPerformanceStep s) => s.Authentication switch
     {
         StepAuthenticationMode.None => "None",
-        StepAuthenticationMode.Override => s.AuthenticationReference is null ? "Override · not chosen" : $"Override · {s.AuthenticationReference}",
-        _ => d.AuthenticationReference is null ? "Inherit scenario default (None)" : $"Inherit scenario default ({d.AuthenticationReference})",
+        StepAuthenticationMode.Override => s.AuthenticationReference is null ? "Override · not chosen" : $"Override · {AuthenticationSourceName(s.AuthenticationReference)} authentication",
+        _ => d.AuthenticationReference is null ? "Inherit scenario default (None)" : $"Inherit scenario default ({AuthenticationSourceName(d.AuthenticationReference)} authentication)",
     };
 
     private static string Step(int index) => $"Step {index + 1}";
@@ -428,6 +476,36 @@ public static partial class PerformanceScenarioRuntime
         if (AuthenticationRequirements(d, observedAuthentication).FirstOrDefault(r => r.Index == index) is { State: StepAuthenticationState.Missing or StepAuthenticationState.OverrideOutdated } auth)
             open.Add($"{Step(index)}: authentication required — {AuthenticationRequirementProblem(auth)}");
         return open.Count > 0 ? new(StepStatus.NeedsConfiguration, open) : new(StepStatus.Ready, []);
+    }
+
+    /// <summary>
+    /// The step's Definition / Runtime values / Execution statuses, from the same rules as <see cref="Readiness"/> (which stays the one primary
+    /// configuration status). Execution is blocked by a configured authentication k6 cannot execute, and needs configuration while an
+    /// authentication requirement is unmet.
+    /// </summary>
+    public static StepDimensions Dimensions(PerformanceTestDefinition d, int index, IReadOnlySet<string>? knownAliases = null, IReadOnlySet<string>? observedAuthentication = null)
+    {
+        var s = d.Scenario.Steps[index];
+        var readiness = Readiness(d, index, knownAliases, observedAuthentication);
+        if (readiness.Status == StepStatus.Disabled)
+        {
+            var off = new StepDimension(StepDimensionState.NotApplicable, "Disabled");
+            return new(off, off, off, null);
+        }
+        var credential = ExecutionCredential(d, s);
+        var definition = readiness.Status == StepStatus.Blocked ? new StepDimension(StepDimensionState.Blocked, readiness.Reasons[0]) : new StepDimension(StepDimensionState.Ready, "Ready");
+        var rows = Rows(d.Scenario, index, knownAliases);
+        var unresolved = rows.Count(r => !r.Resolved);
+        var sources = string.Join(", ", rows.Where(r => r.Mapping is not null).Select(r => r.SourceLabel).Distinct(StringComparer.Ordinal));
+        var values = rows.Count == 0 ? new StepDimension(StepDimensionState.NotApplicable, "No dynamic parameters")
+            : unresolved > 0 ? new StepDimension(StepDimensionState.NeedsConfiguration, $"{unresolved} of {rows.Count} unresolved")
+            : new StepDimension(StepDimensionState.Ready, sources.Length > 0 ? $"Ready — {sources}" : "Ready");
+        var requirement = AuthenticationRequirements(d, observedAuthentication).FirstOrDefault(r => r.Index == index);
+        var execution = credential is { PerformanceCompatible: false } ? new StepDimension(StepDimensionState.Blocked, "Blocked — authentication")
+            : s.Authentication == StepAuthenticationMode.Override && s.AuthenticationReference is null ? new StepDimension(StepDimensionState.NeedsConfiguration, "Authentication override has no configuration")
+            : requirement is { State: StepAuthenticationState.Missing or StepAuthenticationState.OverrideOutdated } ? new StepDimension(StepDimensionState.NeedsConfiguration, "Authentication required")
+            : new StepDimension(StepDimensionState.Ready, "Ready");
+        return new(definition, values, execution, credential);
     }
 
     public static string StatusLabel(StepStatus status) => status switch

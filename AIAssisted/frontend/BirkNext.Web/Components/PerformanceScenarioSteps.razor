@@ -27,7 +27,15 @@
                     </select>
                     <span class="pss-hint" id="pss-auth-help">Steps inherit it unless they override it. A reference only — no token is copied.</span></dd></div>
             <div><dt>Steps</dt><dd data-testid="pss-steps-count">@Definition.Scenario.Steps.Count@(Definition.Scenario.Steps.Count(s => s.Disabled && !DD.IsDraft(s)) is > 0 and var off ? $" · {off} disabled" : "")@if (Definition.Scenario.Steps.Count(DD.IsDraft) is > 0 and var drafts) { <span class="pss-warn" data-testid="pss-drafts-count"> · @drafts discovered · review required</span> }</dd></div>
-            <div><dt>Readiness</dt><dd><span class="pss-status pss-status-@Tone(readiness.Status)" data-testid="pss-readiness" data-status="@readiness.Status">@R.StatusLabel(readiness.Status)</span></dd></div>
+            @if (readiness.Status == StepStatus.Ready && R.ExecutionCredentialBlocked(Definition))
+            {
+                <div><dt>Readiness</dt><dd><span class="pss-status pss-status-blocked" data-testid="pss-readiness" data-status="ExecutionBlocked">Configured · execution blocked</span>
+                    <span class="pss-hint" data-testid="pss-readiness-reason">@R.ExecutionCredentialMissing</span></dd></div>
+            }
+            else
+            {
+                <div><dt>Readiness</dt><dd><span class="pss-status pss-status-@Tone(readiness.Status)" data-testid="pss-readiness" data-status="@readiness.Status">@R.StatusLabel(readiness.Status)</span></dd></div>
+            }
             @if (values.Total > 0)
             {
                 <div><dt>Runtime values</dt><dd data-testid="pss-values-summary">@values.Resolved/@values.Total resolved · Test Data @values.TestDataAssets asset@(values.TestDataAssets == 1 ? "" : "s") used</dd></div>
@@ -94,9 +102,14 @@
     [Parameter] public IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> Observations { get; set; } = [];
     /// <summary>Operation identities persisted Endpoint Discovery observed with authentication: the same requirement source the backend reads.</summary>
     [Parameter] public IReadOnlySet<string>? ObservedAuthentication { get; set; }
+    /// <summary>The Endpoint Discovery history view (persisted + a capture still running) — the same view backend readiness evaluates, so a step's
+    /// endpoint evidence reads the same on the step and in Readiness.</summary>
+    [Parameter] public BirkNext.LocalHttpsProxy.EndpointObservationHistoryView? History { get; set; }
+    /// <summary>The Target Environment's sign-in method (e.g. "Microsoft Entra ID"), shown beside a configured authentication; null when unknown.</summary>
+    [Parameter] public string? AuthenticationMethod { get; set; }
 
     /// <summary>Approved authentication configurations a scenario may reference (references only; credentials stay with their owner).</summary>
-    public static readonly (string Key, string Label)[] AuthOptions = [("target-environment", "Target Environment authentication (approved configuration)")];
+    public static readonly (string Key, string Label)[] AuthOptions = [(R.TargetEnvironmentAuthentication, "Target Environment authentication")];
 
     private const string Up = "up", Down = "down", Get = "GET", Post = "POST", JsonType = "application/json";
 
@@ -121,6 +134,14 @@
         _focus = null;
         try { await JS.InvokeVoidAsync("birknextFocusElement", target); } catch (JSException) { } catch (InvalidOperationException) { }
     }
+
+    private static string Glyph(StepDimensionState state) => state switch
+    {
+        StepDimensionState.Ready => "✓",
+        StepDimensionState.Blocked => "✕",
+        StepDimensionState.NeedsConfiguration => "!",
+        _ => "○",
+    };
 
     private static string Tone(StepStatus status) => status switch
     {
@@ -338,12 +359,15 @@
     private RenderFragment StepCard(int index, HttpPerformanceStep s) => __builder =>
     {
         var status = R.Readiness(Definition, index, KnownAliases, ObservedAuthentication);
+        var dims = R.Dimensions(Definition, index, KnownAliases, ObservedAuthentication);
+        // Configured ≠ executable: definition and values ready, but k6 has no credential for the configured authentication.
+        var executionBlocked = !DD.IsDraft(s) && status.Status == StepStatus.Ready && dims.ConfiguredButExecutionBlocked;
         var open = Expanded(s);
         var rows = R.Rows(Definition.Scenario, index, KnownAliases);
         var bodyId = $"pt-step-body-{s.Id}";
         @* Native dragover cancellation enables drop without dispatching every pointer movement through Blazor. *@
-        <li @key="s.Id" class="pt-step pss-step pss-tone-@(DD.IsDraft(s) ? "discovered" : Tone(status.Status)) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
-            data-testid="pt-step" data-step-id="@s.Id" data-status="@status.Status" data-disabled="@(s.Disabled ? "true" : "false")" aria-labelledby="@($"pt-step-h-{index + 1}")"
+        <li @key="s.Id" class="pt-step pss-step pss-tone-@(DD.IsDraft(s) ? "discovered" : executionBlocked ? "blocked" : Tone(status.Status)) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
+            data-testid="pt-step" data-step-id="@s.Id" data-status="@(executionBlocked ? "ExecutionBlocked" : status.Status.ToString())" data-disabled="@(s.Disabled ? "true" : "false")" aria-labelledby="@($"pt-step-h-{index + 1}")"
             ondragover="event.preventDefault()" @ondragenter="() => _dropBefore = s.Id" @ondrop="() => DropBefore(s.Id)" @ondrop:stopPropagation>
             <div class="pss-step-head">
                 <span class="pss-handle" draggable="true" title="Drag to reorder" aria-hidden="true" data-testid="pt-step-drag"
@@ -352,6 +376,10 @@
                 @if (DD.IsDraft(s))
                 {
                     <span class="pss-status pss-status-discovered" data-testid="pt-step-status" data-status="Discovered">@DD.Label</span>
+                }
+                else if (executionBlocked)
+                {
+                    <span class="pss-status pss-status-blocked" data-testid="pt-step-status" data-status="ExecutionBlocked">Configured · execution blocked</span>
                 }
                 else
                 {
@@ -378,13 +406,36 @@
             @if (!open)
             {
                 @if (status.Reasons.Count > 0 && status.Status != StepStatus.Disabled) { <p class="pss-hint" data-testid="pt-step-collapsed-reason">@status.Reasons[0]@(status.Reasons.Count > 1 ? $" (+{status.Reasons.Count - 1} more)" : "")</p> }
+                else if (executionBlocked) { <p class="pss-hint" data-testid="pt-step-collapsed-reason">Execution blocked — unattended authentication required</p> }
             }
             else
             {
                 <div id="@bodyId" class="pss-step-body">
                     <dl class="pss-step-summary">
-                        <div><dt>Runtime values</dt><dd data-testid="pt-step-values-summary">@(rows.Count == 0 ? "No dynamic parameters" : string.Join(" · ", rows.Select(r => $"{r.Parameter.Variable} → {(r.Mapping is null ? "not configured" : $"{r.SourceLabel} · {r.ValueText}")}")))</dd></div>
-                        <div><dt>Authentication</dt><dd data-testid="pt-step-auth-summary">@R.AuthenticationLabel(Definition, s)</dd></div>
+                        <div><dt>Definition</dt><dd data-testid="pt-step-dim-definition" data-state="@dims.Definition.State"><span aria-hidden="true">@Glyph(dims.Definition.State) </span>@dims.Definition.Text</dd></div>
+                        <div><dt>Runtime values</dt><dd><span data-testid="pt-step-dim-values" data-state="@dims.RuntimeValues.State"><span aria-hidden="true">@Glyph(dims.RuntimeValues.State) </span>@dims.RuntimeValues.Text</span>
+                            <span class="pss-hint" data-testid="pt-step-values-summary">@(rows.Count == 0 ? "No dynamic parameters" : string.Join(" · ", rows.Select(r => $"{r.Parameter.Variable} → {(r.Mapping is null ? "not configured" : $"{r.SourceLabel} · {r.ValueText}")}")))</span></dd></div>
+                        @if (DD.Observed(s) && History is { } history)
+                        {
+                            var operation = history.Operations.FirstOrDefault(o => o.Identity == R.ObservationIdentity(s));
+                            var evidence = PerformanceEndpointEvidence.Of(s, operation, history.LatestRun, DateTimeOffset.UtcNow);
+                            <div><dt>Endpoint evidence</dt><dd data-testid="pt-step-endpoint-evidence" data-state="@evidence.State">
+                                <span aria-hidden="true">@(evidence.State switch { PerformanceEndpointEvidenceState.Current => "✓ ", PerformanceEndpointEvidenceState.NewerAvailable => "! ", _ => "○ " })</span>@PerformanceEndpointEvidence.Summary(evidence, operation?.ObservationCount)
+                                @if (PerformanceEndpointEvidence.Comparison(evidence) is { Length: > 0 } comparison) { <span class="pss-hint" data-testid="pt-step-endpoint-comparison">@comparison</span> }</dd></div>
+                        }
+                        <div><dt>Authentication</dt><dd><span data-testid="pt-step-auth-summary">@R.AuthenticationLabel(Definition, s)</span>
+                            @if (dims.Credential is { } credential)
+                            {
+                                <dl class="pss-auth-facts" data-testid="pt-step-auth-facts">
+                                    <div><dt>Source</dt><dd data-testid="pt-step-auth-source">@credential.Source</dd></div>
+                                    @if (AuthenticationMethod is { Length: > 0 } method) { <div><dt>Method</dt><dd data-testid="pt-step-auth-method">@method</dd></div> }
+                                    <div><dt>Interactive (attended)</dt><dd data-testid="pt-step-auth-interactive">@(credential.Interactive ? "Yes" : "No")</dd></div>
+                                    <div><dt>Performance execution compatible</dt><dd data-testid="pt-step-auth-compatible">@(credential.PerformanceCompatible ? "Yes" : "No")</dd></div>
+                                    <div><dt>Execution credential</dt><dd data-testid="pt-step-auth-credential" data-state="@(credential.PerformanceCompatible ? "Available" : "Missing")">@(credential.PerformanceCompatible ? "✓ Available" : "✕ Missing")</dd></div>
+                                </dl>
+                            }</dd></div>
+                        <div><dt>Execution</dt><dd data-testid="pt-step-dim-execution" data-state="@dims.Execution.State"><span aria-hidden="true">@Glyph(dims.Execution.State) </span>@dims.Execution.Text
+                            @if (dims.Credential is { PerformanceCompatible: false } blockedBy) { <span class="pss-hint" data-testid="pt-step-execution-reason">Execution blocked — unattended authentication required. @blockedBy.Problem</span> }</dd></div>
                         @if (DD.Observed(s))
                         {
                             <div><dt><label for="@($"pt-step-tracking-{s.Id}")">Observation</label></dt>

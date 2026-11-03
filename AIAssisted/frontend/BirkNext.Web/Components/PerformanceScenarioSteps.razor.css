@@ -46,6 +46,9 @@
 .pss-step-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: .3rem 1rem; margin: 0; font-size: .88rem; }
 .pss-step-summary dt { color: var(--clr-text-muted, #475569); font-size: .78rem; }
 .pss-step-summary dd { margin: 0; overflow-wrap: anywhere; }
+.pss-step-summary .pss-hint { display: block; }
+.pss-auth-facts { display: grid; grid-template-columns: max-content 1fr; gap: .1rem .6rem; margin: .25rem 0 0; }
+.pss-auth-facts > div { display: contents; }
 .pss-actions { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; margin: 0; }
 .pss-danger { color: #b91c1c; }
 .btn-small { padding: .2rem .55rem; font-size: .82rem; }

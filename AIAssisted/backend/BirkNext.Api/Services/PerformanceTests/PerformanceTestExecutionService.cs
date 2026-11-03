@@ -292,7 +292,8 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         {
             using var scope = scopes.CreateScope();
             if (scope.ServiceProvider.GetService<LocalHttpsProxy.EndpointObservationHistoryService>() is not { } history) return (null, null);
-            view = await history.ViewAsync(d.EnvironmentId, host, null, ct);
+            // The same view Endpoint Discovery and the Scenario tab show: persisted history plus a capture still running for this environment.
+            view = await history.CurrentViewAsync(scope.ServiceProvider.GetService<LocalHttpsProxy.ILocalHttpsProxyService>(), d.EnvironmentId, host, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -304,15 +305,23 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         var byIdentity = view.Operations.ToDictionary(o => o.Identity, StringComparer.Ordinal);
         var discovered = d.Scenario.Steps.Where(s => !s.Disabled && s.Source is { Origin: ScenarioOperationOrigin.Observed } or { Evidence: ScenarioEvidence.DeclaredAndObserved or ScenarioEvidence.ObservedOnly }).ToList();
         if (discovered.Count == 0) return (observedAuth, null);
-        var states = discovered.Select(s => PerformanceEndpointEvidence.Of(s, byIdentity.GetValueOrDefault(PerformanceScenarioRuntime.ObservationIdentity(s)), view.LatestRun, DateTimeOffset.UtcNow)).ToList();
-        var newer = states.Count(e => e.State == PerformanceEndpointEvidenceState.NewerAvailable);
-        var missing = states.Count(e => e.State == PerformanceEndpointEvidenceState.NotInHistory);
-        var detail = string.Join(" · ", states.GroupBy(e => e.State).Select(g => $"{g.Count()} {PerformanceEndpointEvidence.Label(g.Key).ToLowerInvariant()}"))
-            + (view.LatestRun is { } latest ? $" — latest Endpoint Discovery {latest.CompletedAt ?? latest.StartedAt:yyyy-MM-dd HH:mm} UTC." : ".")
+        var states = discovered.Select(s => (Step: s, Info: PerformanceEndpointEvidence.Of(s, byIdentity.GetValueOrDefault(PerformanceScenarioRuntime.ObservationIdentity(s)), view.LatestRun, DateTimeOffset.UtcNow))).ToList();
+        var newer = states.Count(e => e.Info.State == PerformanceEndpointEvidenceState.NewerAvailable);
+        var missing = states.Count(e => e.Info.State == PerformanceEndpointEvidenceState.NotInHistory);
+        // Per step, in the step card's own words (one shared summary): "Observed 3× · last observed 09:36 UTC · Follow latest observation".
+        var detail = string.Join(" ", states.Select(e =>
+            {
+                var line = PerformanceEndpointEvidence.Summary(e.Info, byIdentity.GetValueOrDefault(e.Info.Identity)?.ObservationCount, PerformanceDiscoveryDrafts.TrackingLabel(PerformanceDiscoveryDrafts.Tracking(e.Step)));
+                var comparison = PerformanceEndpointEvidence.Comparison(e.Info);
+                return $"{(states.Count > 1 ? $"{e.Step.Name}: " : "")}{line}.{(comparison.Length > 0 ? $" {comparison}." : "")}";
+            }))
             + (newer > 0 ? " Review latest values before running; reviewed values are never overwritten silently." : "")
             + (missing > 0 ? " A step not in the history keeps its reviewed values (it is not removed)." : "");
         return (observedAuth, new PerformanceReadinessItem("endpoint-evidence", "Endpoint evidence", newer + missing > 0 ? PerformanceReadinessState.Optional : PerformanceReadinessState.Ready, detail, false)
-            { Category = PerformanceReadinessCategories.Definition, Summary = "endpoint evidence", Action = newer > 0 ? PerformanceReadinessActions.EditScenario : null });
+        {
+            Category = PerformanceReadinessCategories.Definition, Summary = "endpoint evidence", Action = newer > 0 ? PerformanceReadinessActions.EditScenario : null,
+            Status = newer > 0 ? "Newer observation available" : missing > 0 ? "Not in history" : "Observed",
+        });
     }
 
     private async Task ScenarioEvidenceItemsAsync(PerformanceTestDefinition d, List<PerformanceReadinessItem> items, CancellationToken ct)
@@ -340,7 +349,8 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
     /// <summary>The container network item. Host reachability never counts: only a check made from the load-generator container does.</summary>
     internal static PerformanceReadinessItem NetworkItem(bool checkable, PerformanceReachability? reach, bool fresh, bool sameConfiguration)
     {
-        const string Label = "Container network", Summary = "container network", Category = PerformanceReadinessCategories.Reachability;
+        // Target reachability: the base target answered the k6 container. It never verifies a scenario endpoint (or its authentication).
+        const string Label = "Target reachability", Summary = "target reachability", Category = PerformanceReadinessCategories.Reachability;
         if (!checkable)
             return new("network", Label, PerformanceReadinessState.Optional, "Checked once the provider is available.", false) { Category = Category, Summary = Summary };
         if (reach is null || !fresh || !sameConfiguration)
@@ -355,7 +365,8 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
                 Status = reach is null ? "Not checked" : "Stale",
             };
         if (reach.Reachable)
-            return new("network", Label, PerformanceReadinessState.Ready, $"{reach.Detail} Checked {reach.CheckedAt.ToUniversalTime():HH:mm} UTC.", false)
+            return new("network", Label, PerformanceReadinessState.Ready,
+                $"{(reach.HttpStatus is { } httpStatus ? $"Base target returned HTTP {httpStatus} to the k6 container." : reach.Detail)} Scenario endpoints are not verified by this check. Checked {reach.CheckedAt.ToUniversalTime():HH:mm} UTC.", false)
                 { Category = Category, Summary = Summary, Status = reach.State, Technical = reach.HttpStatus is { } h ? $"{reach.State} · HTTP {h}" : reach.State };
         // A TLS trust failure is reported by the Corporate CA trust item (an execution-setup blocker owned by local configuration), not as a network fault.
         var tlsTrust = PerformanceProbeStates.IsTlsTrust(reach);

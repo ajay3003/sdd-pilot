@@ -219,11 +219,56 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.Find("[data-testid=pt-step-auth-summary]").TextContent.Should().Be("Inherit scenario default (None)");
         cut.Find("[data-testid=pss-default-auth]").Change("target-environment");
         _d.AuthenticationReference.Should().Be("target-environment");
-        cut.Find("[data-testid=pt-step-auth-summary]").TextContent.Should().Be("Inherit scenario default (target-environment)");
+        cut.Find("[data-testid=pt-step-auth-summary]").TextContent.Should().Be("Inherit scenario default (Target Environment authentication)");
         cut.Find("[data-testid=pt-step-auth]").Change("none");
         _d.Scenario.Steps[0].Authentication.Should().Be(StepAuthenticationMode.None);
         cut.Find("[data-testid=pt-step-auth-summary]").TextContent.Should().Be("None");
         System.Text.Json.JsonSerializer.Serialize(_d).Should().NotContainAny("Bearer ", "token");
+    }
+
+    [Fact]
+    public void A_step_with_configured_Target_Environment_authentication_is_configured_but_execution_blocked_never_green_ready()
+    {
+        var cut = Render(Step("list", "/api/users"));
+        cut.Find("[data-testid=pss-default-auth]").Change(PerformanceScenarioRuntime.TargetEnvironmentAuthentication);
+
+        cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Configured · execution blocked");
+        cut.Find("[data-testid=pt-step]").GetAttribute("data-status").Should().Be("ExecutionBlocked");
+        cut.Find("[data-testid=pss-readiness]").TextContent.Should().Be("Configured · execution blocked", "the scenario summary applies the same rule");
+        cut.Find("[data-testid=pt-step-dim-definition]").GetAttribute("data-state").Should().Be("Ready");
+        cut.Find("[data-testid=pt-step-dim-values]").GetAttribute("data-state").Should().Be("NotApplicable");
+        cut.Find("[data-testid=pt-step-dim-execution]").TextContent.Should().Contain("Blocked — authentication").And.Contain("Execution blocked — unattended authentication required");
+        cut.Find("[data-testid=pt-step-auth-source]").TextContent.Should().Be("Target Environment");
+        cut.Find("[data-testid=pt-step-auth-interactive]").TextContent.Should().Be("Yes");
+        cut.Find("[data-testid=pt-step-auth-compatible]").TextContent.Should().Be("No");
+        cut.Find("[data-testid=pt-step-auth-credential]").GetAttribute("data-state").Should().Be("Missing");
+        cut.Markup.Should().NotContain("approved configuration", "configured authentication is never presented as approved for k6");
+
+        cut.Find("[data-testid=pt-step-auth]").Change("none");
+        cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Ready");
+        cut.FindAll("[data-testid=pt-step-auth-facts]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Endpoint_evidence_on_the_step_comes_from_the_same_history_view_as_readiness()
+    {
+        var seen = new DateTimeOffset(2026, 11, 3, 9, 27, 0, TimeSpan.Zero);
+        var step = Step("barn", "/api/brukere/{brukerId}/barn") with
+        {
+            Source = new ScenarioStepSource { Origin = ScenarioOperationOrigin.Observed, Evidence = ScenarioEvidence.ObservedOnly, EvidenceIdentity = "GET /api/brukere/{id}/barn", ObservedCount = 2, ObservedLastSeen = seen },
+        };
+        var cut = Render(step);
+        var run = new BirkNext.LocalHttpsProxy.EndpointDiscoveryRunSummary("live", "env", "app.example.test", seen, null, BirkNext.LocalHttpsProxy.EndpointDiscoveryRunSummary.InProgress, 1, 0, 1, 0);
+        cut.Render(p => p.Add(x => x.History, new BirkNext.LocalHttpsProxy.EndpointObservationHistoryView("env", "app.example.test", true, run, null, [run],
+            [new BirkNext.LocalHttpsProxy.ObservedOperationHistory { Identity = "GET /api/brukere/{id}/barn", LastObservedAt = seen, ObservationCount = 2, LastRunId = "live" }])));
+
+        var evidence = cut.Find("[data-testid=pt-step-endpoint-evidence]");
+        evidence.GetAttribute("data-state").Should().Be("Current");
+        evidence.TextContent.Should().Contain("Observed 2× · last observed 09:27 UTC");
+        cut.Find("[data-testid=pt-step-endpoint-comparison]").TextContent.Should().Be("Reviewed against discovery 09:27 UTC · Latest discovery 09:27 UTC · No changes");
+
+        cut.Render(p => p.Add(x => x.History, BirkNext.LocalHttpsProxy.EndpointObservationHistoryView.Empty("env", "app.example.test")));
+        cut.Find("[data-testid=pt-step-endpoint-evidence]").TextContent.Should().Contain("Not in Endpoint Discovery history");
     }
 
     [Fact]

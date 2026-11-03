@@ -32,9 +32,32 @@ public static class PerformanceEndpointEvidence
         return new(state, identity, reviewed, latest.LastObservedAt, latest.LastRunId, authChanged);
     }
 
+    /// <summary>
+    /// One line for a step's endpoint evidence, the same on the step card and in Readiness: "Observed 2× · last observed 09:27 UTC · Follow latest
+    /// observation", "Newer observation available · …", or "Not in Endpoint Discovery history".
+    /// </summary>
+    public static string Summary(PerformanceEndpointEvidenceInfo info, int? count = null, string? tracking = null)
+    {
+        var observed = count is > 0 ? $"Observed {count}×" : "Observed";
+        var last = info.LatestObserved is { } at ? $" · last observed {at.ToUniversalTime():HH:mm} UTC" : "";
+        var follow = tracking is { Length: > 0 } t ? $" · {t}" : "";
+        return info.State switch
+        {
+            PerformanceEndpointEvidenceState.NotInHistory => Label(info.State),
+            PerformanceEndpointEvidenceState.NewerAvailable => $"Newer observation available{last}{follow}",
+            PerformanceEndpointEvidenceState.Current => $"{observed}{last}{follow}",
+            _ => $"{observed} · {Label(info.State).ToLowerInvariant()}{last}{follow}",
+        };
+    }
+
+    /// <summary>"Reviewed against discovery 09:27 UTC · Latest discovery 09:27 UTC · No changes" — what the reviewed values were based on.</summary>
+    public static string Comparison(PerformanceEndpointEvidenceInfo info) => info.LatestObserved is not { } latest ? ""
+        : $"Reviewed against discovery {(info.ReviewedAgainst is { } r ? $"{r.ToUniversalTime():HH:mm} UTC" : "not recorded")} · Latest discovery {latest.ToUniversalTime():HH:mm} UTC · "
+          + (info.State == PerformanceEndpointEvidenceState.NewerAvailable ? "Newer observation available — review its values before running" : "No changes");
+
     public static string Label(PerformanceEndpointEvidenceState state) => state switch
     {
-        PerformanceEndpointEvidenceState.Current => "Current",
+        PerformanceEndpointEvidenceState.Current => "Observed",
         PerformanceEndpointEvidenceState.NewerAvailable => "Newer evidence available",
         PerformanceEndpointEvidenceState.Historical => "Historical",
         PerformanceEndpointEvidenceState.Stale => "Stale",

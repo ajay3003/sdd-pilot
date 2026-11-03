@@ -578,6 +578,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "readiness");
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-blocker-headline]").TextContent.Should().Be("Container reachability has not been checked"));
         cut.Find("[data-testid=pt-blocker-detail]").TextContent.Should().Contain("Host reachability does not prove container reachability");
+        var summary = cut.Find("[data-testid=pt-readiness-summary]").TextContent;
+        summary.Should().StartWith("Blocked · 1 required prerequisite:").And.Contain("Container network: The load generator must");
+        summary.Split("Blocked").Length.Should().Be(2, "the blocked state is stated once, followed by what blocks");
         _api.Calls.Should().NotContain("network-check", "the check sends a request, so it runs only on explicit action");
         var action = cut.Find("[data-testid=pt-blocker-action]");
         action.TextContent.Should().Be("Check container network");
@@ -586,7 +589,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         _api.Readiness = ReadyState();
         action.Click();
         _api.Calls.Should().Contain("network-check").And.NotContain("start").And.NotContain("update", "re-checking never re-saves an unchanged definition");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-network-result]").TextContent.Should().Contain("Container reachable — The k6 container reached"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-network-result]").TextContent.Should().StartWith("Target reachable — ", "the base target answered; no scenario endpoint is claimed verified"));
         cut.Find("[data-testid=pt-readiness-summary]").TextContent.Should().Contain("Ready to run.");
     }
 

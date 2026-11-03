@@ -18,10 +18,7 @@ public sealed class EndpointDiscoveryHistoryController(EndpointObservationHistor
     {
         if (string.IsNullOrWhiteSpace(environmentId) || EndpointObservationHistoryService.HostOf(targetUrl) is not { } host)
             return BadRequest(new { message = "environmentId and an absolute targetUrl are required." });
-        var runtime = await proxy.GetRuntimeAsync();
-        var live = runtime.ProfileId == environmentId && runtime.State is not (LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Failed or LocalHttpsProxyState.Stale or LocalHttpsProxyState.NotStarted)
-            && runtime.RuntimeId is not null ? runtime.ObservedNetworkEndpoints : null;
-        return Ok(await history.ViewAsync(environmentId, host, live, ct));
+        return Ok(await history.CurrentViewAsync(proxy, environmentId, host, ct));
     }
 
     /// <summary>One-time import of the observations this browser held before runs were recorded (ignored once any run exists for the host).</summary>

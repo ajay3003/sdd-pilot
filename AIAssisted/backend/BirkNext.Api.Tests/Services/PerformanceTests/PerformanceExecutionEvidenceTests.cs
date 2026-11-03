@@ -9,6 +9,7 @@ using BirkNext.PerformanceTests;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Xunit;
 using static BirkNext.Api.Tests.Services.PerformanceTests.PerformanceTestReviewTests;
 using Path = System.IO.Path;
@@ -114,7 +115,7 @@ public sealed class PerformanceExecutionEvidenceTests
         public PerformanceTestExecutionService Execution => Services.GetRequiredService<PerformanceTestExecutionService>();
         public PerformanceTestReadinessService Readiness => Services.GetRequiredService<PerformanceTestReadinessService>();
 
-        public Harness(IContainerExecutionRuntime? custom = null, FakeRuntime? runtime = null, PerformanceTestOptions? options = null)
+        public Harness(IContainerExecutionRuntime? custom = null, FakeRuntime? runtime = null, PerformanceTestOptions? options = null, ILocalHttpsProxyService? proxy = null)
         {
             Runner = runtime ?? new FakeRuntime();
             var name = Guid.NewGuid().ToString();
@@ -131,6 +132,7 @@ public sealed class PerformanceExecutionEvidenceTests
             services.AddScoped<IqrSourceStore>();
             services.AddSingleton(TimeProvider.System);
             services.AddScoped<EndpointObservationHistoryService>();
+            if (proxy is not null) services.AddSingleton(proxy);
             Services = services.BuildServiceProvider();
         }
 
@@ -206,8 +208,81 @@ public sealed class PerformanceExecutionEvidenceTests
         await h.RecordDiscoveryAsync(auth: false, T0.AddMinutes(28));
         var readiness = await h.Readiness.EvaluateAsync(d, PerformanceTestReviewTests.Data(), false);
         readiness.Items.Single(i => i.Key == "endpoint-evidence").Should().Match<PerformanceReadinessItem>(i => !i.Blocking && i.State == PerformanceReadinessState.Optional
-            && i.Detail.Contains("1 newer evidence available") && i.Detail.Contains("never overwritten silently"));
+            && i.Status == "Newer observation available" && i.Detail.Contains("Newer observation available · last observed 13:11 UTC")
+            && i.Detail.Contains("Reviewed against discovery 12:43 UTC · Latest discovery 13:11 UTC") && i.Detail.Contains("never overwritten silently"));
         readiness.Ready.Should().BeTrue(string.Join(" | ", readiness.Blockers));
+    }
+
+    private static PerformanceTestDefinition Observed(DateTimeOffset reviewed, Func<PerformanceTestDefinition, PerformanceTestDefinition>? change = null) => Definition(x =>
+    {
+        var d = x with { Scenario = x.Scenario with { Steps = [x.Scenario.Steps[0] with
+        {
+            Source = new ScenarioStepSource { Origin = ScenarioOperationOrigin.Observed, Evidence = ScenarioEvidence.ObservedOnly, EvidenceIdentity = "GET /api/payments/{id}", ObservedCount = 2, ObservedLastSeen = reviewed },
+        }] } };
+        return change is null ? d : change(d);
+    });
+
+    [Fact]
+    public async Task Endpoint_evidence_reads_observed_in_readiness_in_the_step_cards_own_words()
+    {
+        await using var h = new Harness();
+        var seen = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var d = await h.SeedAsync(Observed(seen));
+        await h.RecordDiscoveryAsync(auth: false, seen);
+
+        var item = (await h.Readiness.EvaluateAsync(d, PerformanceTestReviewTests.Data(), false)).Items.Single(i => i.Key == "endpoint-evidence");
+        item.State.Should().Be(PerformanceReadinessState.Ready);
+        item.Status.Should().Be("Observed");
+        item.Detail.Should().StartWith($"Observed 3× · last observed {seen:HH:mm} UTC · Pinned.").And.Contain("No changes");
+    }
+
+    [Fact]
+    public async Task A_step_created_from_a_capture_still_running_is_observed_in_readiness_not_missing_from_history()
+    {
+        // The Scenario tab reads the history view with the running capture merged in; readiness used to read only the persisted runs and so
+        // reported "1 not in Endpoint Discovery history" for the same step the step card showed as "Observed 2×".
+        var seen = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var proxy = new Mock<ILocalHttpsProxyService>();
+        proxy.Setup(p => p.GetRuntimeAsync()).ReturnsAsync(new LocalHttpsProxyStatus
+        {
+            ProfileId = "pay-qa", RuntimeId = "runtime-1", State = LocalHttpsProxyState.Listening,
+            ObservedNetworkEndpoints = [new ObservedNetworkEndpoint { Category = ObservedTrafficCategory.Rest, Host = "paymenthub-qa.example.test", Port = 443, Method = "GET",
+                Path = "/api/payments/12345678", Count = 2, LastStatus = 200, FirstObservedAt = seen, LastObservedAt = seen, Provenance = RequestProvenance.ApplicationTraffic }],
+        });
+        await using var h = new Harness(proxy: proxy.Object);
+        var d = await h.SeedAsync(Observed(seen));
+
+        var item = (await h.Readiness.EvaluateAsync(d, PerformanceTestReviewTests.Data(), false)).Items.Single(i => i.Key == "endpoint-evidence");
+        item.Status.Should().Be("Observed");
+        item.Detail.Should().StartWith("Observed 2×").And.NotContain("Not in Endpoint Discovery history");
+
+        await using var stopped = new Harness();
+        var persistedOnly = (await stopped.Readiness.EvaluateAsync(await stopped.SeedAsync(Observed(seen)), PerformanceTestReviewTests.Data(), false)).Items.Single(i => i.Key == "endpoint-evidence");
+        persistedOnly.Status.Should().Be("Not in history", "with no capture running and nothing recorded, the step genuinely is not in the history");
+    }
+
+    [Fact]
+    public async Task Configured_Target_Environment_authentication_blocks_execution_with_the_step_cards_reason_and_other_checks_stay_green()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync(Definition(x => x with { AuthenticationReference = PerformanceScenarioRuntime.TargetEnvironmentAuthentication }));
+
+        var readiness = await h.Readiness.EvaluateAsync(d, PerformanceTestReviewTests.Data(), false);
+        readiness.Items.Where(i => i.Blocking).Select(i => i.Key).Should().Equal(["authentication"], "only the execution credential is missing");
+        readiness.Items.Single(i => i.Key == "authentication").Detail.Should().Be(PerformanceScenarioRuntime.NoExecutionCredential)
+            .And.Contain("configured for attended/browser use").And.Contain("non-interactive credential is available to k6");
+        var dims = PerformanceScenarioRuntime.Dimensions(d, 0);
+        (dims.Execution.State, dims.Credential!.PerformanceCompatible, dims.Credential.Interactive)
+            .Should().Be((StepDimensionState.Blocked, false, true), "the step card and Readiness apply the same rule");
+    }
+
+    [Fact]
+    public void Target_reachability_names_the_base_target_and_never_claims_a_scenario_endpoint_was_verified()
+    {
+        var reach = new PerformanceReachability { TargetOrigin = "https://paymenthub-qa.example.test", State = PerformanceProbeStates.Reachable, Reachable = true, HttpStatus = 200, CheckedAt = DateTimeOffset.UtcNow };
+        var item = PerformanceTestReadinessService.NetworkItem(true, reach, fresh: true, sameConfiguration: true);
+        item.Label.Should().Be("Target reachability");
+        item.Detail.Should().StartWith("Base target returned HTTP 200 to the k6 container.").And.Contain("Scenario endpoints are not verified");
     }
 
     // ── k6 telemetry stream ────────────────────────────────────────────────────────────────────────────────────────

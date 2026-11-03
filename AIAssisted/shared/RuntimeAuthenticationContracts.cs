@@ -75,7 +75,8 @@ public static class RuntimeAuthenticationCatalog
         new(EndpointDiscovery, "Endpoint Discovery", "Proxy capture", RuntimeAuthenticationSupport.Supported, AttendedAuthenticationSource.LocalHttpsProxy, RuntimeAuthenticationSupport.Unsupported, true, false, ObserveUnattended),
         new(BrowserDiscovery, "Browser Discovery", "Companion capture", RuntimeAuthenticationSupport.Supported, AttendedAuthenticationSource.InteractiveBrowser, RuntimeAuthenticationSupport.Unsupported, true, false, ObserveUnattended),
         new(PerformanceK6, "Performance Test Review", "k6 load test", RuntimeAuthenticationSupport.NotApplicable, AttendedAuthenticationSource.None, RuntimeAuthenticationSupport.NotApplicable, true, true,
-            "k6 runs without a browser; it uses the scenario's authentication references.", "Scenario authentication references (token values resolved on the backend per run)"),
+            "k6 runs without a browser, so an attended (interactive) sign-in cannot be used.",
+            "A non-interactive credential for k6. BirkNext does not issue one yet: steps that use Target Environment authentication are configured but blocked from execution"),
         new(IntegrationRuntime, "Integration Quality Review", "Runtime evidence and tests", RuntimeAuthenticationSupport.NotApplicable, AttendedAuthenticationSource.None, RuntimeAuthenticationSupport.NotApplicable, false, true,
             "Integrations authenticate with their own service credentials; browser login does not apply.", "Per-integration service credentials (Azure, Service Bus, Event Hub, Altinn clients)"),
     ];

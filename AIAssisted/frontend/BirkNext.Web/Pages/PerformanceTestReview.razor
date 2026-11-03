@@ -78,7 +78,7 @@
     }
     else
     {
-        <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.PerformanceK6" Profile="_profile" />
+        <BirkNext.Web.Components.RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.PerformanceK6" Profile="_profile" />
         var groups = D.Groups(_isNew, _dirty, _readiness);
         var (readyCount, requiredCount) = D.RequiredCounts(groups);
         var envSafety = D.EnvironmentSafety(_draft.EnvironmentType, _readiness);
@@ -897,6 +897,7 @@
 
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
         <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations" ObservedAuthentication="ObservedAuthentication"
+            History="_history" AuthenticationMethod="@(_profile?.Authentication is { RequiresAuthentication: true } auth ? BirkNext.Web.Services.AuthenticationPresentation.ProviderLabel(auth.AuthenticationType) : null)"
             OnTrial="@(_profile is null ? null : d => Api.TrialAsync(_profile.Id, new PerformanceTrialRequest { Definition = d }))" />
 
         <section class="ptc-panel" aria-labelledby="pt-testdata-h" data-testid="pt-testdata">
@@ -1187,7 +1188,7 @@
         {
             var blocking = _readiness.Items.Where(i => i.Blocking).ToList();
             var actionable = D.ActionableBlockers(_readiness);
-            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : $"Blocked — {blocking.Count} required prerequisite{(blocking.Count == 1 ? "" : "s")}:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests. Running still asks for confirmation." : PageState.Label)</p>
+            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : $"Blocked · {blocking.Count} required prerequisite{(blocking.Count == 1 ? "" : "s")}:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests. Running still asks for confirmation." : blocking.Count == 1 ? $"{blocking[0].Label}: {blocking[0].Detail}" : string.Join(", ", blocking.Select(i => i.Label)))</p>
             @if (blocking.Count > 0)
             {
                 <section class="ptc-blocker-callout" aria-labelledby="pt-blocker-h" data-testid="pt-blocker-callout" data-count="@blocking.Count">
