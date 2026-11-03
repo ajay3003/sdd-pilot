@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.DeliveryReporting;
+using BirkNext.Interpretation;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using BirkNext.Web.Services.Explorers;
@@ -110,11 +111,11 @@ public static class DeliverySnapshotParser
     /// <summary>3: Norwegian headings (Brukerhistorie / Prioritet / Fase), functional requirements and [P] markers stored.
     /// 4: scenario-based specifications (Scenario N → Sn), removed stories, and safe source text decoding (see <see cref="SourceTextDecoder"/>).</summary>
     public const int ParserVersion = 4;
-    private static readonly Regex ScenarioHeadingRe = new(@"^\s*Scenario\s+(\d+)\s*(?:[-–—:]\s*)?(.*?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ScenarioHeadingRe = SpecStoryHeadings.ScenarioHeadingRe;
     // Removed = structure, never a word in the title ("User Deactivated When Removed from Entra" is not removed): a struck-through story heading,
     // or a separate trailing marker after the title ("— Removed 2026-10-27", "(Removed)", "[Fjernet]").
-    private static readonly Regex RemovedStrikeRe = new(@"^#{2,6}\s+~~\s*(?:User\s+Story|Brukerhistorie)\s+(\d+)\b\s*(?:[-–—:]\s*)?(.*?)~~", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex RemovedMarkerRe = new(@"^#{2,6}\s+(?:User\s+Story|Brukerhistorie)\s+(\d+)\b\s*(?:[-–—:]\s*)?(.*?)(?:\s+[-–—]\s*|\s*[\[(])(?:Removed|Fjernet|Withdrawn|Utgått)\b[^\])]*[\])]?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex RemovedStrikeRe = SpecStoryHeadings.RemovedStrikeRe;
+    private static readonly Regex RemovedMarkerRe = SpecStoryHeadings.RemovedMarkerRe;
     private static readonly Regex CheckboxRe = new(@"^\s*[-*+]\s+\[([ xX])\]", RegexOptions.Compiled);
     private static readonly Regex StatusLineRe = new(@"^\s*(?:[-*]\s+)?\*{0,2}(?:Delivery\s+)?Status\*{0,2}\s*:\s*\*{0,2}\s*(.+?)\s*\*{0,2}\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ClarificationRe = new(@"\[NEEDS CLARIFICATION", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -122,10 +123,9 @@ public static class DeliverySnapshotParser
     private static readonly Regex GitCommitRe = new(@"^[0-9a-f]{40}$", RegexOptions.Compiled);
     private static readonly Regex FeatureNumberRe = new(@"^(\d{1,4})[-_]", RegexOptions.Compiled);
     // English and Norwegian headings: User Story / Brukerhistorie, Priority / Prioritet, Phase / Fase.
-    private static readonly Regex StoryHeadingRe = new(@"^\s*(?:User\s+Story|Brukerhistorie)\s+(\d+)\s*(?:[-–—:]\s*)?(.*?)\s*(?:\(\s*(?:Priority|Prioritet)\s*:\s*([A-Za-z0-9]+)\s*\))?\s*(?:🎯.*)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex StoryHeadingRe = SpecStoryHeadings.StoryHeadingRe;
     private static readonly Regex PhaseHeadingRe = new(@"^\s*(?:Phase|Fase)\s+(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex PhaseStoryRe = new(@"\b(?:User\s+Story|Brukerhistorie)\s+(\d+)\b|\bUS\s*-?\s*(\d+)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex StoryTagRe = new(@"^US\s*-?\s*0*(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex DescriptionStopRe = new(@"^\s*\*{0,2}(Why this priority|Independent Test|Acceptance Scenarios|Acceptance Criteria)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly HashSet<string> SourceExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -360,7 +360,7 @@ public static class DeliverySnapshotParser
         groupTitle is not null && PhaseHeadingRe.Match(StripMarkdown(groupTitle)) is { Success: true } m ? $"phase-{int.Parse(m.Groups[1].Value)}" : null;
 
     /// <summary>"US2", "US-02", "us 2" → "US2"; anything else null.</summary>
-    public static string? StoryKey(string? tag) => tag is not null && StoryTagRe.Match(tag.Trim()) is { Success: true } m ? $"US{int.Parse(m.Groups[1].Value)}" : null;
+    public static string? StoryKey(string? tag) => BirkNext.Interpretation.WorkItemInterpreter.StoryKey(tag);
 
     /// <summary>
     /// Explicit user stories (SpecExplorer UserStory nodes) and acceptance criteria with their owner: a criterion written under a story's section

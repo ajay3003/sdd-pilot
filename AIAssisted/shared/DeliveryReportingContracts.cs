@@ -524,6 +524,8 @@ public sealed record DeliveryTaskRow(string Key, string? TaskId, string Text, bo
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryMappingConfidence? MappingConfidence { get; init; }
     /// <summary>Why the task has this relationship, in plain language.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RelationshipNote { get; init; }
+    /// <summary>The shared interpretation rule that produced the relationship (WI-EXPLICIT, WI-SHARED, …); null in reports frozen before it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RelationshipRule { get; init; }
     public string? PhaseKey { get; init; }
     /// <summary>Only an explicit [USn] reference to an existing story; null = feature-level.</summary>
     public string? UserStoryKey { get; init; }
@@ -661,6 +663,9 @@ public sealed record WeeklyDeliveryReport
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryDirectionReview? Direction { get; init; }
     /// <summary>Version of the source parser that produced the snapshots' hierarchy (reproducibility).</summary>
     public int ParserVersion { get; init; }
+    /// <summary>The work-item interpretation rule set the report was classified with (BirkNext.Interpretation.WorkItemInterpreter.RuleSetVersion);
+    /// null in reports frozen before the shared engine. A frozen report is never reclassified with a newer rule set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? InterpretationRuleSet { get; init; }
 }
 
 public static class DeliveryReportTitles

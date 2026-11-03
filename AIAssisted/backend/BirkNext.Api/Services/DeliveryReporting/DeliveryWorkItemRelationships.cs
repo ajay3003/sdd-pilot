@@ -1,10 +1,15 @@
 using System.Text.RegularExpressions;
 using BirkNext.DeliveryReporting;
+using BirkNext.Interpretation;
 
 namespace BirkNext.Api.Services.DeliveryReporting;
 
 /// <summary>A task's relationship to its feature's requirement model, with the group it belongs to and why.</summary>
-public sealed record DeliveryTaskClassification(DeliveryTaskRelationship Relationship, string? GroupKey, DeliveryMappingConfidence Confidence, string Note, string? LinkedKey);
+public sealed record DeliveryTaskClassification(DeliveryTaskRelationship Relationship, string? GroupKey, DeliveryMappingConfidence Confidence, string Note, string? LinkedKey)
+{
+    /// <summary>The shared interpretation rule that produced it (WI-EXPLICIT, WI-SHARED, …).</summary>
+    public string? RuleId { get; init; }
+}
 
 /// <summary>
 /// The one rule that relates a task to the requirement model of its feature (report, Overview, Stories and exports all read its result). Pure and
@@ -20,79 +25,23 @@ public sealed record DeliveryTaskClassification(DeliveryTaskRelationship Relatio
 /// </summary>
 public static partial class DeliveryWorkItemRelationships
 {
-    public const string ScenarioKind = "Scenario", UserStoryKind = "UserStory", SharedGroupKey = "shared";
-
-    [GeneratedRegex(@"\b(?:User\s+Story|Brukerhistorie)\s+(\d+)\b|\bUS\s*-?\s*(\d+)\b", RegexOptions.IgnoreCase)]
-    private static partial Regex PhaseStoryRe();
-    [GeneratedRegex(@"\b(?:User\s+Story|Brukerhistorie|US)\s*-?\s*\d+\s*(.*)$", RegexOptions.IgnoreCase)]
-    private static partial Regex PhaseNameRe();
-    [GeneratedRegex(@"\((?:Priority|Prioritet)\s*:[^)]*\).*$", RegexOptions.IgnoreCase)]
-    private static partial Regex PriorityRe();
-    [GeneratedRegex(@"[^\p{L}\p{Nd}]+")]
-    private static partial Regex NonWordRe();
+    public const string ScenarioKind = "Scenario", UserStoryKind = "UserStory", SharedGroupKey = WorkItemInterpreter.SharedGroupKey;
 
     public static bool IsScenario(DeliveryContentStory s) => string.Equals(s.Kind, ScenarioKind, StringComparison.Ordinal);
 
+    /// <summary>Delivery's adapter onto the shared <see cref="WorkItemInterpreter"/>: the stored snapshot content becomes the engine's typed inputs.</summary>
     public static DeliveryTaskClassification Classify(DeliveryContentTask task, DeliveryContentFeature feature)
     {
-        var userStories = feature.Stories.Where(s => !IsScenario(s)).ToList();
-        var scenarios = feature.Stories.Where(IsScenario).ToList();
         var phase = task.PhaseKey is null ? null : feature.Phases.FirstOrDefault(p => p.Key == task.PhaseKey)?.Title;
-        var phaseStory = phase is not null && PhaseStoryRe().Match(phase) is { Success: true } pm ? $"US{int.Parse(pm.Groups[1].Success ? pm.Groups[1].Value : pm.Groups[2].Value)}" : null;
-
-        if (task.StoryReference is not { Length: > 0 } raw)
-        {
-            if (phaseStory is null)
-                return new(DeliveryTaskRelationship.SharedFoundational, SharedGroupKey, DeliveryMappingConfidence.None,
-                    phase is null ? "No story tag and not in a story phase: shared or foundational work of the feature, not owned by one story."
-                        : $"No story tag, in phase \"{phase}\": shared or foundational work, not owned by one story.", null);
-            var story = userStories.FirstOrDefault(s => s.Key == phaseStory && !s.Removed);
-            return new(DeliveryTaskRelationship.StoryPhase, phaseStory, story is null ? DeliveryMappingConfidence.GroupLevel : DeliveryMappingConfidence.PhaseTitle,
-                $"No [{phaseStory}] tag; the task sits in phase \"{phase}\"{(story is null ? ", which names a story the specification does not define" : $" of {phaseStory}")}.", story?.Key);
-        }
-
-        var key = DeliverySnapshotParser.StoryKey(raw);
-        if (key is null)
-            return new(DeliveryTaskRelationship.UnresolvedReference, null, DeliveryMappingConfidence.None, $"[{raw}] is not a single story reference; it cannot be linked.", null);
-        var named = feature.Stories.FirstOrDefault(s => s.Key == key && !IsScenario(s));
-        if (named is { Removed: true })
-            return new(DeliveryTaskRelationship.RemovedStoryReference, key, DeliveryMappingConfidence.Explicit,
-                $"[{raw}] references {key} \"{named.Title}\", which the specification marks removed. Review whether these tasks still belong to the scope.", key);
-        if (named is not null)
-            return new(DeliveryTaskRelationship.ExplicitStory, key, DeliveryMappingConfidence.Explicit, $"[{raw}] references {key} in spec.md.", key);
-        if (userStories.Count == 0 && scenarios.Count == 0)
-            return new(DeliveryTaskRelationship.FunctionalGroup, key, DeliveryMappingConfidence.GroupLevel,
-                $"Derived from [{raw}] references in tasks.md. {(feature.SpecPath is null ? "The feature has no spec.md" : "spec.md defines no user stories")}, so this is a functional group, " +
-                "not a formally defined User Story; no one-to-one mapping to detailed requirements is assumed.", null);
-        if (userStories.Count == 0)
-        {
-            var scenario = ScenarioByPhaseName(phase, scenarios);
-            return scenario is not null
-                ? new(DeliveryTaskRelationship.ScenarioGroup, key, DeliveryMappingConfidence.PhaseTitle,
-                    $"spec.md is written as scenarios. The phase \"{phase}\" is named in {ScenarioLabel(scenario)}, so the [{raw}] group is linked to it.", scenario.Key)
-                : new(DeliveryTaskRelationship.ScenarioGroup, key, DeliveryMappingConfidence.GroupLevel,
-                    $"spec.md is written as scenarios, not user stories. [{raw}] groups these tasks; no scenario is linked because no phase or title evidence names one (equal numbers are not evidence).", null);
-        }
-        var defined = userStories.Where(s => !s.Removed).Select(s => s.Key).ToList();
-        return new(DeliveryTaskRelationship.UnresolvedReference, key, DeliveryMappingConfidence.None,
-            $"[{raw}] names no story in spec.md ({(defined.Count == 0 ? "it defines none" : "it defines " + string.Join(", ", defined))}). The reference is shown as written, never re-pointed.", null);
+        var k = WorkItemInterpreter.Classify(new InterpretedTask(task.StoryReference, phase), Interpreted(feature));
+        return new(k.Relationship, k.GroupKey, k.Confidence, k.Note, k.LinkedKey) { RuleId = k.RuleId };
     }
+
+    public static InterpretedFeature Interpreted(DeliveryContentFeature feature) =>
+        new([.. feature.Stories.Select(s => new InterpretedStory(s.Key, s.Title, IsScenario(s), s.Removed))], feature.SpecPath is not null);
 
     /// <summary>"Scenario 1" for a scenario key S1.</summary>
-    public static string ScenarioLabel(DeliveryContentStory s) => $"Scenario {s.Key.TrimStart('S')} \"{s.Title}\"";
-
-    /// <summary>The single scenario whose title contains the phase's own name ("Hendelsestidslinje"); null when none or several do.</summary>
-    private static DeliveryContentStory? ScenarioByPhaseName(string? phase, List<DeliveryContentStory> scenarios)
-    {
-        if (phase is null || PhaseNameRe().Match(PriorityRe().Replace(phase, "")) is not { Success: true } m) return null;
-        var name = Words(m.Groups[1].Value);
-        if (name.Length < 5) return null;
-        var hits = scenarios.Where(s => Words(s.Title).Contains(name, StringComparison.Ordinal)).ToList();
-        return hits.Count == 1 ? hits[0] : null;
-    }
-
-    /// <summary>Lower-case letters and digits separated by single spaces (dashes, mojibake punctuation and emoji dropped).</summary>
-    private static string Words(string text) => NonWordRe().Replace(text.Replace("â€”", " ").Replace("â€“", " ").ToLowerInvariant(), " ").Trim();
+    public static string ScenarioLabel(DeliveryContentStory s) => WorkItemInterpreter.ScenarioLabel(new InterpretedStory(s.Key, s.Title, true, s.Removed));
 
     /// <summary>The requirement model a feature is written in: what the Stories column and Overview say instead of "0 user stories".</summary>
     public static string RequirementModel(DeliveryContentFeature f)
@@ -148,16 +97,7 @@ public static partial class DeliveryWorkItemRelationships
     }
 
     /// <summary>Why BirkNext created a group of this kind — the tooltip/info text of its badge.</summary>
-    public static string Explanation(DeliveryTaskRelationship kind) => kind switch
-    {
-        DeliveryTaskRelationship.ExplicitStory => "A User Story defined in spec.md; its tasks reference it explicitly with [USn].",
-        DeliveryTaskRelationship.StoryPhase => "Tasks without a story tag inside a tasks.md phase titled for a story. Linked by the phase title, not by a tag.",
-        DeliveryTaskRelationship.FunctionalGroup => "Derived from stable [USn] references in tasks.md. There is no matching User Story in spec.md; tasks are grouped without claiming a one-to-one story mapping.",
-        DeliveryTaskRelationship.ScenarioGroup => "The specification is written as scenarios instead of user stories. Tasks are grouped by their [USn] tag; a scenario is linked only when the phase title names it.",
-        DeliveryTaskRelationship.SharedFoundational => "Setup, foundational, polish and cross-cutting work that is not owned by one story. Normal for Spec-Kit task lists — not a traceability defect.",
-        DeliveryTaskRelationship.RemovedStoryReference => "Tasks still reference a story the specification marks removed. Review whether they belong to the scope.",
-        _ => "Tasks reference a story the specification does not define. The reference is shown as written and never re-pointed.",
-    };
+    public static string Explanation(DeliveryTaskRelationship kind) => WorkItemInterpreter.Explanation(kind);
 
     private static int Order(DeliveryTaskRelationship kind) => kind switch
     {

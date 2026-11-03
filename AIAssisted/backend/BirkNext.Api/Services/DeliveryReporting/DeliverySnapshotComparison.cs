@@ -381,7 +381,7 @@ public static class DeliverySnapshotComparison
             }, DeliveryWorkItemRelationships.Classify(t, owner));
         static DeliveryTaskRow Classified(DeliveryTaskRow row, DeliveryTaskClassification k) => row with
         {
-            Relationship = k.Relationship, GroupKey = k.GroupKey, MappingConfidence = k.Confidence, RelationshipNote = k.Note,
+            Relationship = k.Relationship, GroupKey = k.GroupKey, MappingConfidence = k.Confidence, RelationshipNote = k.Note, RelationshipRule = k.RuleId,
             // "Parent story unresolved" now only for genuinely unresolved references (not functional or scenario groups).
             UnresolvedStoryReference = k.Relationship == DeliveryTaskRelationship.UnresolvedReference ? row.UnresolvedStoryReference : null,
         };
