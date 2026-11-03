@@ -222,7 +222,9 @@ public sealed class TestDataRegistryStore
     /// asset (<paramref name="keepAssetIds"/>): its lifecycle (approval) and explicit bindings stay, and the protection records always stay.
     /// Nothing is restored to a seeded value. Returns the assets removed.
     /// </summary>
-    public int ClearAll(IReadOnlySet<string>? keepAssetIds = null)
+    /// <param name="clearProtection">Only for "Reset everything": the protection records go too, so a re-created canonical fixture is protected
+    /// again by its declaration (alias + capability, never a negative test) instead of by a stale record keyed on its alias-derived id.</param>
+    public int ClearAll(IReadOnlySet<string>? keepAssetIds = null, bool clearProtection = false)
     {
         lock (_gate)
         {
@@ -233,7 +235,7 @@ public sealed class TestDataRegistryStore
                 Assets = [.. _registry.Assets.Where(a => keep.Contains(a.Id))],
                 Lifecycle = [.. _registry.Lifecycle.Where(l => keep.Contains(l.AssetId))],
                 Usages = [.. _registry.Usages.Where(u => u.AssetId is { } id && keep.Contains(id))],
-                Protected = _registry.Protected,
+                Protected = clearProtection ? [] : _registry.Protected,
             };
             Write();
             return removed;

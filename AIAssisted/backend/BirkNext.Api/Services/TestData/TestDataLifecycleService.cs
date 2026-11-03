@@ -312,7 +312,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         var defaults = catalog.Assets().Where(a => a.Ownership == TestDataOwnership.ProtectedDefault).ToList();
         var reset = _editors.Sum(e => e.ResetProtectedToProduct());
         var fixtures = canonical?.ClearAllForFullReset() ?? 0;
-        var removed = registry.ClearAll() + _editors.Sum(e => e.ClearLocal());
+        var removed = registry.ClearAll(clearProtection: true) + _editors.Sum(e => e.ClearLocal());
         var unresolved = (await UsagesAsync(ct)).Count(u => u.Unresolved);
         return new TestDataResetSummary
         {

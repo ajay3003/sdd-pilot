@@ -73,6 +73,11 @@ public sealed class DataResetScopeTests : IDisposable
         summary.ProtectedFixturesRemoved.Should().Be(1);
         summary.SystemDefaultsRecreated.Should().Contain([SkoleNaervaerTestIdentityDefaults.ChildAlias, SkoleNaervaerTestIdentityDefaults.ReporterAlias]);
         summary.ProtectedDefaultsPreserved.Should().Be(0);
+
+        h.Registry.ProtectedAssets().Should().BeEmpty("no stale protection record keyed on an alias-derived id survives");
+        h.Store.Add(Fixture(), new SkoleNaervaerCanonicalFixtures().Fixtures, DateTimeOffset.UtcNow);
+        h.Catalog.Assets().Single(a => a.Alias == SkoleNaervaerCanonicalFixtures.ValidReportAlias).ProtectionKind
+            .Should().Be(TestDataProtectionKinds.CanonicalFixture, "a re-created canonical fixture is protected again by its declaration");
     }
 
     [Fact]
