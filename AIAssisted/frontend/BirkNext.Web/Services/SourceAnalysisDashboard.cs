@@ -69,6 +69,30 @@ public static class SourceEvidenceStates
         _ => "neutral",
     };
 
+    /// <summary>
+    /// The global semantic status for a Source Analysis state, with the scope-qualified label Source Analysis shows ("Not detected in this snapshot",
+    /// "Not verified at runtime", "Confirmed in source"). Same meaning as everywhere else; the label only names the scope.
+    /// </summary>
+    public static (SemanticStatus Status, string? QualifiedLabel) ToSemantic(SourceEvidenceState s) => s switch
+    {
+        SourceEvidenceState.Detected => (SemanticStatus.Detected, null),
+        SourceEvidenceState.InventoryComplete => (SemanticStatus.InventoryComplete, null),
+        SourceEvidenceState.SourceModelAvailable => (SemanticStatus.SourceModelAvailable, null),
+        SourceEvidenceState.ClassificationIncomplete => (SemanticStatus.ClassificationIncomplete, null),
+        SourceEvidenceState.Heuristic => (SemanticStatus.Heuristic, null),
+        SourceEvidenceState.LimitedBySource => (SemanticStatus.LimitedBySource, null),
+        SourceEvidenceState.NotDetectedInSnapshot => (SemanticStatus.NotDetected, "Not detected in this snapshot"),
+        SourceEvidenceState.NotVerifiedAtRuntime => (SemanticStatus.NotVerified, "Not verified at runtime"),
+        SourceEvidenceState.NeedsReview => (SemanticStatus.NeedsReview, null),
+        SourceEvidenceState.Conflict => (SemanticStatus.Conflict, null),
+        SourceEvidenceState.Failed => (SemanticStatus.FailedToAssess, null),
+        SourceEvidenceState.ConfirmedInSource => (SemanticStatus.Confirmed, "Confirmed in source"),
+        SourceEvidenceState.Inferred => (SemanticStatus.Inferred, null),
+        SourceEvidenceState.Ambiguous => (SemanticStatus.NeedsReview, "Ambiguous"),
+        SourceEvidenceState.NotApplicable => (SemanticStatus.NotApplicable, null),
+        _ => (SemanticStatus.NotAssessed, null),
+    };
+
     /// <summary>The states the legend explains, in reading order.</summary>
     public static readonly IReadOnlyList<SourceEvidenceState> Legend =
     [

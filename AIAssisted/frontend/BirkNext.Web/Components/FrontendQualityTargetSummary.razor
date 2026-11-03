@@ -10,7 +10,7 @@
         <a href="@ChangeHref" class="fqr-link" data-testid="fqr-change-target">Change target</a>
     </div>
     <dl class="fqr-target-list">
-        <div><dt>Environment</dt><dd data-testid="fqr-target-environment">@Summary.Environment @if (Summary.EnvironmentType != "—") { <span class="fqr-pill fqr-pill-muted">@Summary.EnvironmentType</span> }</dd></div>
+        <div><dt>Environment</dt><dd data-testid="fqr-target-environment">@Summary.Environment @if (Summary.EnvironmentType != "—") { <MetaBadge Kind="BadgeKind.Environment" Text="@Summary.EnvironmentType" /> }</dd></div>
         <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-target-url">@Summary.Url</dd></div>
         @* The review's scope and the authenticated path, never "Authentication: Not required" — that read as a fact about
            the application. Whether a sign-in provider is configured is in Technical details. *@

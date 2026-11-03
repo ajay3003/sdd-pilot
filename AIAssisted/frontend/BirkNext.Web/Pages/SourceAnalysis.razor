@@ -55,7 +55,7 @@
                 <dl class="sa-legend" data-testid="sa-status-legend-list">
                     @foreach (var state in SourceEvidenceStates.Legend)
                     {
-                        <div data-state="@state"><dt><span class="sa-state-badge is-@SourceEvidenceStates.Tone(state)">@SourceEvidenceStates.Label(state)</span></dt><dd>@SourceEvidenceStates.Meaning(state)</dd></div>
+                        <div data-state="@state"><dt><SemanticStatusBadge Status="SourceEvidenceStates.ToSemantic(state).Status" QualifiedLabel="@SourceEvidenceStates.ToSemantic(state).QualifiedLabel" /></dt><dd>@SourceEvidenceStates.Meaning(state)</dd></div>
                     }
                 </dl>
             </ReviewDisclosure>
@@ -82,7 +82,7 @@
                     <ul class="sa-coverage-dimensions" aria-label="Analysis coverage by dimension" data-testid="sa-coverage-reasons">
                         @foreach (var d in SourceAnalysisDashboard.Coverage(selected))
                         {
-                            <li data-testid="sa-coverage-dimension" data-key="@d.Key" data-state="@d.State"><span class="sa-coverage-label">@d.Label</span> <span class="sa-state-badge is-@SourceEvidenceStates.Tone(d.State)" title="@SourceEvidenceStates.Meaning(d.State)">@SourceEvidenceStates.Label(d.State)</span> <span class="sa-muted">@d.Text</span></li>
+                            <li data-testid="sa-coverage-dimension" data-key="@d.Key" data-state="@d.State"><span class="sa-coverage-label">@d.Label</span> <SemanticStatusBadge Status="SourceEvidenceStates.ToSemantic(d.State).Status" QualifiedLabel="@SourceEvidenceStates.ToSemantic(d.State).QualifiedLabel" Explanation="@SourceEvidenceStates.Meaning(d.State)" /> <span class="sa-muted">@d.Text</span></li>
                         }
                     </ul>
                     @if (coverage.Limitations.Count > 0)

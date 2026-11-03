@@ -81,7 +81,7 @@ public sealed class InfrastructureAutomationUiTests : BunitContext
     public void Overview_counts_scripts_checks_artifacts_and_remote_state_beside_the_declarations()
     {
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, Evidence()));
-        cut.FindAll("[data-testid=sd-infra-overview] dt").Select(d => d.TextContent).Should().Equal("Resources", "Resource types", "Bindings", "Environment references", "Needs review");
+        cut.FindAll("[data-testid=sd-infra-overview] dt").Select(d => d.TextContent).Should().Equal("Resources", "Resource types", "Bindings", "Environment references", "Unresolved references");
         cut.FindAll("[data-testid=sd-infra-automation-overview] > div").Select(d => d.TextContent).Should()
             .Equal("Infrastructure scripts3", "Source validation checks2", "Generated artifact definitions1", "Remote-state dependencies1");
         cut.Find("[data-testid=sd-infra-automation-summary]").TextContent.Should().Contain("never run").And.Contain("not executed or passed");

@@ -18,7 +18,8 @@ public enum ProjectActivityType
 }
 
 /// <summary>The badge of an event. Imported is not reviewed; Completed keeps the review's own outcome in <see cref="ProjectActivityItem.Outcome"/>.</summary>
-public enum ProjectActivityStatus { Imported, Attention, Completed, Failed, Configured, Generated }
+/// <remarks>Unknown (appended): a stored value this version does not recognise — shown neutrally, never as Completed.</remarks>
+public enum ProjectActivityStatus { Imported, Attention, Completed, Failed, Configured, Generated, Unknown }
 
 /// <summary>Coarse filter groups (Imports, Reviews, Runs, Configuration, Delivery).</summary>
 public enum ProjectActivityCategory { Import, Review, Run, Configuration, Delivery }

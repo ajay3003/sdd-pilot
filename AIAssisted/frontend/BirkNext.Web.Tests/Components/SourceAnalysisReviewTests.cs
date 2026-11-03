@@ -143,7 +143,7 @@ public sealed class SourceAnalysisReviewTests : BunitContext
     {
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, SourceEvidenceDomainsUiTests.Evidence()));
         cut.Find("[data-testid=sd-infra-lead]").TextContent.Should().Be("Infrastructure detected");
-        cut.FindAll("[data-testid=sd-infra-overview] dt").Select(d => d.TextContent).Should().Equal("Resources", "Resource types", "Bindings", "Environment references", "Needs review");
+        cut.FindAll("[data-testid=sd-infra-overview] dt").Select(d => d.TextContent).Should().Equal("Resources", "Resource types", "Bindings", "Environment references", "Unresolved references");
         cut.FindAll("[data-testid=sd-infra-category]").Select(c => c.GetAttribute("data-category")).Should().Equal("Compute", "Messaging", "Networking");
         cut.Find("[data-testid=sd-infra-categories]").TextContent.Should().Contain("A declaration does not prove the resource exists");
         cut.Find("[data-testid=sd-infra-review]").TextContent.Should().Be("Review infrastructure");

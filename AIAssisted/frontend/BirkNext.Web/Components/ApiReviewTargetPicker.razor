@@ -32,7 +32,7 @@
                                            data-testid="aqr-target-checkbox" aria-label="@($"Include {card.DisplayName} in the review")" />
                                     <div class="aqr-target-text">
                                         <label for="@checkboxId" class="aqr-target-name" data-testid="aqr-target-name">@card.DisplayName</label>
-                                        @if (card.ConfidenceLabel != "Verified") { <span class="aqr-pill aqr-pill-attention">@card.ConfidenceLabel</span> }
+                                        @if (card.ConfidenceLabel != "Verified") { <MetaBadge Kind="BadgeKind.Confidence" Text="@card.ConfidenceLabel" /> }
                                         <span class="aqr-target-endpoint-line" data-testid="aqr-target-path">
                                         @if (endpoint is not null)
                                         {
@@ -118,7 +118,7 @@
                                 <div><dt>Operations</dt><dd data-testid="aqr-target-operations">@card.OperationCount@(card.WriteCount > 0 ? $" · {card.WriteCount} write (not executed)" : "")</dd></div>
                                 @if (card.HasContract) { <div><dt>Contract</dt><dd>OpenAPI</dd></div> }
                                 @if (card.SchemaLabel is not null && !ReadOnly) { <div class="aqr-target-meta-wide"><dt>Schema</dt><dd data-testid="aqr-target-schema">@card.SchemaLabel</dd></div> }
-                                @if (card.ConfidenceLabel != "Verified") { <div><dt>Confidence</dt><dd><span class="aqr-pill aqr-pill-attention">@card.ConfidenceLabel</span></dd></div> }
+                                @if (card.ConfidenceLabel != "Verified") { <div><dt>Confidence</dt><dd><MetaBadge Kind="BadgeKind.Confidence" Text="@card.ConfidenceLabel" /></dd></div> }
                             </dl>
                             @if (card.Operations.Count > 0)
                             {

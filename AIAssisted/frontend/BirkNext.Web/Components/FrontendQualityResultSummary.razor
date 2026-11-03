@@ -201,7 +201,7 @@
         <dl class="fqr-target-list fqr-result-meta" data-testid="fqr-result-meta">
             <div>
                 <dt>Target</dt>
-                <dd data-testid="fqr-result-environment">@Result.Environment <span class="fqr-pill fqr-pill-muted">@Result.EnvironmentType</span></dd>
+                <dd data-testid="fqr-result-environment">@Result.Environment <MetaBadge Kind="BadgeKind.Environment" Text="@Result.EnvironmentType" /></dd>
             </div>
             <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-result-url">@Result.Url</dd></div>
             @if (Result.CompletedAt is { } completed)

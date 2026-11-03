@@ -14,8 +14,9 @@
         CandidateReviewStatus.New         => "New",
         CandidateReviewStatus.Accepted    => "Accepted",
         CandidateReviewStatus.Rejected    => "Rejected",
-        CandidateReviewStatus.NeedsReview => "Needs Review",
-        _                                 => Status.ToString(),
+        CandidateReviewStatus.NeedsReview => "Needs review",
+        CandidateReviewStatus.AutoAccepted => "Auto-accepted",
+        _                                 => "Unknown",
     };
 
     private string _key => Status switch

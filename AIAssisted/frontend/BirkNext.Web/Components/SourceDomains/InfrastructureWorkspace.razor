@@ -20,13 +20,13 @@
     }
     else if (!SourceEvidenceDomainsPresentation.Assessed(I))
     {
-        <SourceDomainHeader Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
+        <SourceDomainHeader Area="@(SourceAnalysisDashboard.Infrastructure(new BirkNext.Integrations.IqrSourceSnapshot { EvidenceDomains = Evidence }, []))" Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
         <div class="sd-neutral" data-testid="sd-infra-not-assessed"><p><strong>@SourceDomainText.Label(I.Status)</strong> @I.StatusReason</p></div>
         <SourceDomainLimitations Slug="infra" Result="I" Capabilities="Capabilities" />
     }
     else
     {
-        <SourceDomainHeader Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
+        <SourceDomainHeader Area="@(SourceAnalysisDashboard.Infrastructure(new BirkNext.Integrations.IqrSourceSnapshot { EvidenceDomains = Evidence }, []))" Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
         <SourceViewNav Label="Infrastructure views" Views="Tabs" @bind-Current="_tab" Prefix="sd-infra-tab" Slug="Slug" />
         @switch (_tab)
         {
@@ -38,7 +38,7 @@
                     <div><dt>Resource types</dt><dd>@resources.Select(r => r.ResourceType).Distinct().Count()</dd></div>
                     <div><dt>Bindings</dt><dd>@I.Dependencies.Count</dd></div>
                     <div><dt>Environment references</dt><dd>@I.Environments.Count</dd></div>
-                    <div><dt>Needs review</dt><dd data-testid="sd-infra-unresolved">@I.UnresolvedReferences.Count</dd></div>
+                    <div><dt>Unresolved references</dt><dd data-testid="sd-infra-unresolved">@I.UnresolvedReferences.Count</dd></div>
                 </dl>
                 <section class="sd-panel" aria-labelledby="sd-infra-automation-heading" data-testid="sd-infra-automation-summary">
                     <h3 id="sd-infra-automation-heading">Infrastructure automation</h3>

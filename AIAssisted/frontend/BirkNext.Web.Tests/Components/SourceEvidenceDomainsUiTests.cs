@@ -198,7 +198,8 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     public void Infrastructure_page_is_summary_first_with_filterable_resources_and_expandable_settings()
     {
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, Evidence()));
-        cut.Find("[data-testid=sd-infra-status]").TextContent.Should().Contain("Partial");
+        // The header shows the same canonical area state as the Source Analysis overview card (one truth per domain).
+        cut.Find("[data-testid=sd-infra-status] .ssb-label").TextContent.Should().Be(StatusVocabulary.Label(SemanticStatus.Detected));
         cut.Find("[data-testid=sd-infra-provenance]").TextContent.Should().Contain("abcdef01").And.Contain("analyzer v1");
         cut.Find("[data-testid=sd-infra-overview]").TextContent.Should().Contain("Resources3");
         cut.Find("[data-testid=sd-infra-categories]").TextContent.Should().Contain("Messaging");

@@ -88,7 +88,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     }
 
     private static AngleSharp.Dom.IElement Row(IRenderedComponent<SourceAnalysis> cut, string key) => cut.Find($"[data-testid=sa-area-card][data-key={key}]");
-    private static string Status(IRenderedComponent<SourceAnalysis> cut, string key) => Row(cut, key).QuerySelector("[data-testid=sa-area-state]")!.TextContent;
+    private static string Status(IRenderedComponent<SourceAnalysis> cut, string key) => Row(cut, key).QuerySelector("[data-testid=sa-area-state] .ssb-label")!.TextContent;
     private static string Reason(IRenderedComponent<SourceAnalysis> cut, string key) => Row(cut, key).QuerySelector("[data-testid=sa-area-note]")!.TextContent;
     /// <summary>"Components 3 · Messaging channels 1 · …" — the card's defined metrics, or null when the area has none (not assessed is not zero).</summary>
     private static string? Detail(IRenderedComponent<SourceAnalysis> cut, string key) =>

@@ -22,7 +22,8 @@ public static class ProjectActivityPresentation
         ProjectActivityStatus.Failed => "Failed",
         ProjectActivityStatus.Configured => "Configured",
         ProjectActivityStatus.Generated => "Generated",
-        _ => "Completed",
+        ProjectActivityStatus.Completed => "Completed",
+        _ => "Unknown",
     };
 
     /// <summary>Dashboard pill tone: an import is neutral (imported ≠ passed), failures and attention stand out, completion is informational.</summary>

@@ -5,7 +5,7 @@
 @* Source Analysis → Contracts: source contracts and schemas of the selected snapshot (stored analysis). A source contract is a design artifact:
    it does not prove the deployed API or message flow is compatible with it. Producer/consumer come from project ownership only. *@
 <section class="sd-workspace" aria-labelledby="sd-contracts-heading" data-testid="contracts-workspace">
-    <SourceDomainHeader Title="Contracts" Slug="contracts" Result="K" Note="@SourceEvidenceDomainsPresentation.ContractsNote" HeadingId="sd-contracts-heading" Reason="@StatusReason" />
+    <SourceDomainHeader Area="@(SourceAnalysisDashboard.Contracts(new BirkNext.Integrations.IqrSourceSnapshot { EvidenceDomains = Evidence }))" Title="Contracts" Slug="contracts" Result="K" Note="@SourceEvidenceDomainsPresentation.ContractsNote" HeadingId="sd-contracts-heading" Reason="@StatusReason" />
     @if (!SourceEvidenceDomainsPresentation.Assessed(K))
     {
         <div class="sd-empty" data-testid="sd-contracts-not-assessed">

@@ -4,7 +4,15 @@
 @* Header every quality-evidence domain page shares: title + analysis status (completeness, never quality) with its primary reason, the domain's
    OWN source limitation (the generic source-only note is stated once at the top of Source Analysis), and the provenance of the evidence
    (snapshot fingerprint, analyzer version, extraction time) one disclosure away. *@
-<h2 id="@HeadingId" tabindex="-1">@Title <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(Result.Status)" HiddenPrefix="Analysis status: " TestId="@($"sd-{Slug}-status")" /></h2>
+<h2 id="@HeadingId" tabindex="-1">@Title @if (Area is { } area)
+    {
+        var (status, qualified) = SourceEvidenceStates.ToSemantic(area.State);
+        <SemanticStatusBadge Status="status" QualifiedLabel="@qualified" Explanation="@area.StateNote" TestId="@($"sd-{Slug}-status")" />
+    }
+    else
+    {
+        <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(Result.Status)" HiddenPrefix="Analysis status: " TestId="@($"sd-{Slug}-status")" />
+    }</h2>
 @if ((Reason ?? Result.StatusReason) is { } reason && Result.Status != SourceDomainStatus.Complete) { <p class="sd-reason sa-status-reason" data-testid="@($"sd-{Slug}-reason")">@reason</p> }
 <p class="sa-scope-note" role="note" data-testid="@($"sd-{Slug}-boundary")">@Note</p>
 <ReviewDisclosure Text="View provenance" CollapseText="Hide provenance" TestId="@($"sd-{Slug}-provenance-detail")" Class="disclosure-small">
@@ -20,4 +28,7 @@
     [Parameter] public string? HeadingId { get; set; }
     /// <summary>The primary reason for a non-complete status from the domain's own data (e.g. "58 uncategorized keys"); the analyzer's reason otherwise.</summary>
     [Parameter] public string? Reason { get; set; }
+    /// <summary>The domain's canonical area summary (the same one the Source Analysis overview card shows); its state replaces the legacy completeness
+    /// label so the overview and the detail page never disagree.</summary>
+    [Parameter] public SourceAreaSummary? Area { get; set; }
 }

@@ -4,7 +4,7 @@
 @* Source Analysis → Configuration: normalized configuration entries of the selected snapshot (stored analysis, never re-analyzed). Secret values
    are never shown: sensitive entries show their kind only. Different environments are variants, not conflicts. Configured ≠ deployed. *@
 <section class="sd-workspace" aria-labelledby="sd-config-heading" data-testid="configuration-workspace">
-    <SourceDomainHeader Title="Configuration" Slug="config" Result="C" Note="@SourceEvidenceDomainsPresentation.ConfigurationNote" HeadingId="sd-config-heading" Reason="@StatusReason" />
+    <SourceDomainHeader Area="@(SourceAnalysisDashboard.Configuration(new BirkNext.Integrations.IqrSourceSnapshot { EvidenceDomains = Evidence }))" Title="Configuration" Slug="config" Result="C" Note="@SourceEvidenceDomainsPresentation.ConfigurationNote" HeadingId="sd-config-heading" Reason="@StatusReason" />
     @if (!SourceEvidenceDomainsPresentation.Assessed(C) && Declared.Count == 0)
     {
         <div class="sd-empty" data-testid="sd-config-not-assessed"><p><strong>@(C.Status == SourceDomainStatus.NotDetected ? "No supported configuration files detected in the selected source." : SourceDomainText.Label(C.Status))</strong></p></div>

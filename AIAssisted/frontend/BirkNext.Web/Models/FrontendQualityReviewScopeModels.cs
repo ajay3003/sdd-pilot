@@ -8,6 +8,8 @@ public sealed record FrontendQualityCoveragePass(FrontendReviewAccessScope Mode,
 /// sign-in: a public review of an application with Microsoft Entra ID configured is PublicOnly, and that is not a claim
 /// that the application has no authentication.
 /// </summary>
+/// <remarks>Stored by name in FQR history (localStorage); older history stored numbers, which the string converter still reads.</remarks>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum FrontendReviewAccessScope
 {
     PublicOnly,

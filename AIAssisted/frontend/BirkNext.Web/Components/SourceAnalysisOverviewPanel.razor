@@ -23,7 +23,8 @@
                 <div class="sao-card-head">
                     <span class="sao-icon" aria-hidden="true">@a.Icon</span>
                     <h3 class="sao-card-title">@a.Title</h3>
-                    <span class="sao-badge is-@SourceEvidenceStates.Tone(a.State)" title="@SourceEvidenceStates.Meaning(a.State)" data-testid="sa-area-state">@SourceEvidenceStates.Label(a.State)</span>
+                    @{ var (semantic, qualified) = SourceEvidenceStates.ToSemantic(a.State); }
+                    <SemanticStatusBadge Status="semantic" QualifiedLabel="@qualified" Explanation="@SourceEvidenceStates.Meaning(a.State)" TestId="sa-area-state" />
                 </div>
                 <p class="sao-note" data-testid="sa-area-note">@a.StateNote</p>
                 @if (a.Metrics.Count > 0)

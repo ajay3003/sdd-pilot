@@ -74,7 +74,8 @@ public sealed partial class ProjectActivityService(AppDbContext db, TimeProvider
         return new()
         {
             Id = r.Id, ProjectContextId = r.ProjectContextId, ProjectName = r.ProjectName, Type = type, Category = ProjectActivityCategories.Of(type),
-            Status = Enum.TryParse<ProjectActivityStatus>(r.Status, out var s) ? s : ProjectActivityStatus.Completed,
+            // An unrecognised stored status is Unknown, never silently a success.
+            Status = Enum.TryParse<ProjectActivityStatus>(r.Status, out var s) ? s : ProjectActivityStatus.Unknown,
             SourceModule = r.SourceModule, Title = r.Title, Summary = r.Summary, Outcome = r.Outcome, RelatedEntityType = r.RelatedEntityType,
             RelatedEntityId = r.RelatedEntityId, PackageId = r.PackageId, PackageName = r.PackageName, EnvironmentId = r.EnvironmentId,
             EnvironmentName = r.EnvironmentName, Route = r.Route, OccurredAt = r.OccurredAt,

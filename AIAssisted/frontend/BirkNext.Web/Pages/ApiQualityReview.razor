@@ -167,7 +167,7 @@
                         else if (targetSummary is not null)
                         {
                             <strong data-testid="aqr-env-name">@targetSummary.Environment</strong>
-                            <span class="aqr-pill aqr-pill-muted">@targetSummary.EnvironmentType</span>
+                            <MetaBadge Kind="BadgeKind.Environment" Text="@targetSummary.EnvironmentType" />
                             <span> · </span><span class="aqr-mono" data-testid="aqr-env-url">@HostOf(targetSummary.FrontendUrl)</span>
                             <span class="aqr-muted aqr-strip-note" data-testid="aqr-env-auth" aria-describedby="aqr-frontend-signin-help">Frontend sign-in: <span data-testid="aqr-target-authentication">@targetSummary.Authentication</span></span>
                             <span class="aqr-visually-hidden" id="aqr-frontend-signin-help" data-testid="aqr-frontend-signin-help">Frontend access does not require sign-in; selected APIs may still require authenticated access.</span>
@@ -473,7 +473,7 @@
                     <div><dt>Read-only requests executed</dt><dd data-testid="aqr-result-operations">@outcome.RequestsExecuted</dd></div>
                 </dl>
                 <dl class="aqr-dl aqr-result-meta" data-testid="aqr-result-meta">
-                    <div><dt>Target</dt><dd><strong data-testid="aqr-result-env">@summary.Environment</strong> <span class="aqr-pill aqr-pill-muted">@summary.EnvironmentType</span></dd></div>
+                    <div><dt>Target</dt><dd><strong data-testid="aqr-result-env">@summary.Environment</strong> <MetaBadge Kind="BadgeKind.Environment" Text="@summary.EnvironmentType" /></dd></div>
                     <div><dt>Completed</dt><dd data-testid="aqr-result-generated">@summary.GeneratedAt</dd></div>
                     <div><dt>Authenticated access</dt><dd data-testid="aqr-result-access">@outcome.AuthenticatedAccess</dd></div>
                     <div><dt>Read-only</dt><dd class="aqr-muted" data-testid="aqr-result-readonly">Write operations are never executed automatically.</dd></div>

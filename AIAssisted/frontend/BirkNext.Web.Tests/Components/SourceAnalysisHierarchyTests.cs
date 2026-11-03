@@ -450,7 +450,7 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         OpenDomain(cut, "observability");
         cut.FindAll("[data-testid=obs-dimension] .sa-status").Should().OnlyContain(b => b.GetAttribute("data-dimension") == "Observation");
         OpenDomain(cut, "infrastructure");
-        cut.Find("[data-testid=sd-infra-status]").GetAttribute("data-dimension").Should().Be("Completeness");
+        Enum.TryParse<SemanticStatus>(cut.Find("[data-testid=sd-infra-status]").GetAttribute("data-status"), out _).Should().BeTrue("the domain header uses the global status vocabulary");
         cut.FindAll("[data-testid=sd-infra-capability] .sa-status").Should().OnlyContain(b => b.GetAttribute("data-dimension") == "ParserSupport");
     }
 }

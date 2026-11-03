@@ -4,7 +4,7 @@
 @* Source Analysis → CI/CD: pipeline definitions of the selected snapshot (stored analysis). A step listed here is what a pipeline intends to
    run — never that it ran or passed; no execution history is read. Secrets are names only. *@
 <section class="sd-workspace" aria-labelledby="sd-cicd-heading" data-testid="cicd-workspace">
-    <SourceDomainHeader Title="CI/CD" Slug="cicd" Result="P" Note="@SourceEvidenceDomainsPresentation.PipelineNote" HeadingId="sd-cicd-heading" Reason="@SourceAnalysisReview.CiCdReason(P)" />
+    <SourceDomainHeader Area="@(SourceAnalysisDashboard.CiCd(new BirkNext.Integrations.IqrSourceSnapshot { EvidenceDomains = Evidence }))" Title="CI/CD" Slug="cicd" Result="P" Note="@SourceEvidenceDomainsPresentation.PipelineNote" HeadingId="sd-cicd-heading" Reason="@SourceAnalysisReview.CiCdReason(P)" />
     @if (!SourceEvidenceDomainsPresentation.Assessed(P))
     {
         <div class="sd-empty" data-testid="sd-cicd-not-assessed">
