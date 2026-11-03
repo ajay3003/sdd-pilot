@@ -68,9 +68,13 @@ public class FeatureVisibilityService
     public bool AdminSystemSettings  => _flags.AdminSystemSettings;
     public bool QualityReview        => _flags.QualityReview;
 
+    /// <summary>Raised when the flags change (a System Settings save), so navigation and workspace tabs follow without a page change.</summary>
+    public event Action? Changed;
+
     public void ApplyLocalFlags(FeatureVisibilityDto flags)
     {
         _flags = flags;
         IsLoaded = true;
+        Changed?.Invoke();
     }
 }

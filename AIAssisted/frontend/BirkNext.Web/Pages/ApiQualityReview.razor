@@ -997,7 +997,11 @@
         _context = context;
         _runtime = runtime;
         _history = context.ActiveTargetError is null ? History.For(context.ActiveProfile.Id) : null;
-        _report ??= _history?.LastReport is { } last && last.Environment.EnvironmentId == context.ActiveProfile.Id ? last : null;
+        // The last report is the current result only for the same environment AND the same target it reviewed; after the Target Environment's URL
+        // changed it stays in History, never shown as the result for the new target.
+        _report ??= _history?.LastReport is { } last && last.Environment.EnvironmentId == context.ActiveProfile.Id
+            && (string.IsNullOrEmpty(last.Environment.TargetUrl) // a report saved before the target was recorded: legacy, kept
+                || string.Equals(last.Environment.TargetUrl.TrimEnd('/'), context.TargetUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) ? last : null;
         _targets = targets;
         _capabilities = capabilities;
         (_schemaArtifacts, _schemaArtifactsError) = schemas;

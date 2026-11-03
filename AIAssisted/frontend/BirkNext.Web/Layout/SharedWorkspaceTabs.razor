@@ -27,7 +27,10 @@
     {
         _workspace = NavigationCatalog.WorkspaceFor(NavigationCatalog.RelativePath(Navigation));
         Navigation.LocationChanged += OnLocationChanged;
+        FeatureViz.Changed += OnFeatureVisibilityChanged;
     }
+
+    private void OnFeatureVisibilityChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(() =>
     {
@@ -35,5 +38,9 @@
         StateHasChanged();
     });
 
-    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        FeatureViz.Changed -= OnFeatureVisibilityChanged;
+    }
 }

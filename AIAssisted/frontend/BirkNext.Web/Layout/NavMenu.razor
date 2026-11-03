@@ -112,6 +112,8 @@
         ExpandCurrentSection();
         _sections.Changed += OnSectionsChanged;
         Navigation.LocationChanged += OnLocationChanged;
+        // Feature Visibility is owned by System Settings; a save there changes which items exist here, immediately.
+        FeatureViz.Changed += OnFeatureVisibilityChanged;
 
         _applicability = ServiceProvider.GetService<ProjectApplicabilityState>();
         if (_applicability is null) return;
@@ -127,6 +129,8 @@
     {
         if (NavigationCatalog.SectionForLocation(NavigationCatalog.RelativeLocation(Navigation)) is { } section) _sections.Expand(section.Id);
     }
+
+    private void OnFeatureVisibilityChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
@@ -201,6 +205,7 @@
     {
         _sections.Changed -= OnSectionsChanged;
         Navigation.LocationChanged -= OnLocationChanged;
+        FeatureViz.Changed -= OnFeatureVisibilityChanged;
         if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged;
         if (_workspace is not null) _workspace.Changed -= OnWorkspaceChanged;
     }

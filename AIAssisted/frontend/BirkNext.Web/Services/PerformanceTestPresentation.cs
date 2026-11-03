@@ -10,13 +10,36 @@ using PerformanceThreshold = BirkNext.PerformanceTests.PerformanceThreshold;
 
 namespace BirkNext.Web.Services;
 
+/// <summary>A saved definition whose target differs from the live Target Environment: what it was saved with, and what the environment says now.</summary>
+public sealed record PerformanceTargetDrift(string SavedOrigin, string LiveOrigin, string SavedEnvironmentName, string LiveEnvironmentName);
+
 /// <summary>Labels and tones for Performance Test Review. Neutral states (not assessed, optional, provider missing) never use the failure tone.</summary>
 public static class PerformanceTestPresentation
 {
+    /// <summary>The Target Environment's live origin for a definition (scheme + authority of its Target URL), or "" when it has none.</summary>
+    public static string LiveOrigin(FrontendAnalysisProfile profile) =>
+        Uri.TryCreate(profile.TargetUrl, UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Authority) : "";
+
+    /// <summary>
+    /// The Target Environment owns the target: a saved definition keeps the origin, environment name and type it was saved with only as history.
+    /// When the live Target Environment differs, the definition is brought to the live values (the caller marks it unsaved, so it cannot run until
+    /// the new version is saved) and the previous values are returned for display — never a silent load test against a stale origin.
+    /// </summary>
+    public static (PerformanceTestDefinition Definition, PerformanceTargetDrift? Drift) WithLiveTarget(PerformanceTestDefinition saved, FrontendAnalysisProfile profile)
+    {
+        var origin = LiveOrigin(profile);
+        var name = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name;
+        var type = profile.EnvironmentType.ToString();
+        if (string.Equals(saved.TargetOrigin, origin, StringComparison.OrdinalIgnoreCase) && saved.EnvironmentName == name && saved.EnvironmentType == type)
+            return (saved, null);
+        return (saved with { TargetOrigin = origin, EnvironmentName = name, EnvironmentType = type },
+            new PerformanceTargetDrift(saved.TargetOrigin, origin, saved.EnvironmentName, name));
+    }
+
     public static PerformanceTestDefinition NewDefinition(FrontendAnalysisProfile profile) => new()
     {
         Id = "", EnvironmentId = profile.Id, Name = "Baseline check", TargetType = PerformanceTargetType.RestHttp,
-        TargetOrigin = Uri.TryCreate(profile.TargetUrl, UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Authority) : "",
+        TargetOrigin = LiveOrigin(profile),
         EnvironmentType = profile.EnvironmentType.ToString(), EnvironmentName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name,
         // No placeholder step: a new definition starts empty, so no enabled "GET /" can silently become load traffic. Saved definitions keep theirs.
         Scenario = new PerformanceScenario { Name = "Main scenario", Steps = [] },

@@ -46,4 +46,35 @@ public sealed class RuntimeReviewEnvironmentScopeTests
         settings.Raise(s => s.Changed += null);
         session.QualityReview.HasResult.Should().BeFalse("the next settings change for another active environment clears it");
     }
+
+    [Fact]
+    public void Changing_the_same_environments_target_URL_clears_its_results_but_an_unrelated_save_does_not()
+    {
+        var settings = new Mock<IFrontendAnalysisSettingsService>();
+        var active = new FrontendAnalysisProfile { Id = "dev", Name = "DEV", TargetUrl = "https://dev.example.test" };
+        settings.SetupGet(s => s.ActiveProfile).Returns(() => active);
+        var session = new RuntimeReviewSessionService(settings.Object);
+        session.SaveQualityResult(Report(), new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "DEV", TargetUrl = "https://dev.example.test" }, TargetUrl = "https://dev.example.test" });
+
+        active.Notes = "edited notes";
+        settings.Raise(s => s.Changed += null);
+        session.QualityReview.HasResult.Should().BeTrue("notes are not part of what the result depends on");
+
+        active.TargetUrl = "https://dev2.example.test";
+        settings.Raise(s => s.Changed += null);
+        session.QualityReview.HasResult.Should().BeFalse("the result reviewed another target");
+    }
+
+    [Fact]
+    public void Feature_visibility_changes_are_announced_so_navigation_follows_immediately()
+    {
+        var features = new FeatureVisibilityService();
+        var raised = 0;
+        features.Changed += () => raised++;
+
+        features.ApplyLocalFlags(new FeatureVisibilityDto { Dashboard = false });
+
+        raised.Should().Be(1);
+        features.Dashboard.Should().BeFalse();
+    }
 }

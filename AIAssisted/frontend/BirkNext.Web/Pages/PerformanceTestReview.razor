@@ -98,6 +98,10 @@
                 <h2 id="pt-card-target-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">◎</span>Target</h2>
                 <p class="ptc-value ptc-break" data-testid="pt-hero-target">@(string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? "Not configured" : _draft.TargetOrigin)</p>
                 <p class="ptc-sub">@D.TargetLabel(_draft.TargetType) · from the Target Environment</p>
+                @if (_targetDrift is { } drift)
+                {
+                    <p class="ptc-sub ptc-drift" role="status" data-testid="pt-target-drift">The Target Environment changed since this definition was saved (saved: @(drift.SavedOrigin.Length == 0 ? "no target" : drift.SavedOrigin)@(drift.SavedEnvironmentName != drift.LiveEnvironmentName ? $" · {drift.SavedEnvironmentName}" : "")). Save this version to run against @(drift.LiveOrigin.Length == 0 ? "the current environment" : drift.LiveOrigin).</p>
+                }
                 @if (string.IsNullOrWhiteSpace(_draft.TargetOrigin)) { <p><a href="admin/system-settings?section=target-environments">Configure the target</a></p> }
             </section>
 
@@ -269,6 +273,7 @@
     private bool _promoteAcceptFailures;
     private string? _promoteError;
     private System.Threading.Timer? _poll;
+    private PerformanceTargetDrift? _targetDrift;
 
     // The backend refuses Production; the button follows the same rule so it never offers what the backend will reject.
     private bool CanRun => !_isNew && !_dirty && _readiness?.Ready == true && !(_runs.FirstOrDefault()?.IsActive ?? false) && !D.IsProduction(_draft.EnvironmentType);
@@ -499,9 +504,16 @@
         _overview = await Api.OverviewAsync(_profile!.Id);
         if (_overview is null) return;
         var chosen = _overview.Definitions.FirstOrDefault(d => d.Id == select) ?? _overview.Definitions.FirstOrDefault();
-        if (chosen is null) { _draft = P.NewDefinition(_profile); _isNew = true; }
-        else { _draft = chosen; _isNew = false; }
-        _dirty = false;
+        _targetDrift = null;
+        if (chosen is null) { _draft = P.NewDefinition(_profile); _isNew = true; _dirty = false; }
+        else
+        {
+            // The Target Environment owns the target: a definition saved against another origin is brought to the live one and must be saved
+            // again before it can run (never a load test against a stale origin).
+            (_draft, _targetDrift) = P.WithLiveTarget(chosen, _profile);
+            _isNew = false;
+            _dirty = _targetDrift is not null;
+        }
         await RefreshDefinitionStateAsync();
     }
 

@@ -15,11 +15,13 @@ public sealed record RuntimeReviewContextSnapshot(
     string TargetUrl,
     string ProfileName,
     string Environment,
-    string? ProfileId = null);
+    string? ProfileId = null,
+    string? EnvironmentFingerprint = null);
 
 internal interface IRuntimeReviewScoped
 {
     string? ProfileId { get; }
+    string? EnvironmentFingerprint { get; }
     void Clear();
 }
 
@@ -31,6 +33,8 @@ public sealed class RuntimeReviewSessionState<TReport> : IRuntimeReviewScoped
     public string? ProfileName { get; private set; }
     /// <summary>The Target Environment (profile id) the result belongs to; a result is never shown as current for another environment.</summary>
     public string? ProfileId { get; private set; }
+    /// <summary>The environment's target and authentication when the result was produced (see <see cref="RuntimeReviewSessionService.Fingerprint"/>).</summary>
+    public string? EnvironmentFingerprint { get; private set; }
     public string? Environment { get; private set; }
     public DateTimeOffset? RunTimestamp { get; private set; }
     public string? ErrorMessage { get; private set; }
@@ -44,6 +48,7 @@ public sealed class RuntimeReviewSessionState<TReport> : IRuntimeReviewScoped
         TargetUrl = context.TargetUrl;
         ProfileName = context.ProfileName;
         ProfileId = context.ProfileId;
+        EnvironmentFingerprint = context.EnvironmentFingerprint;
         Environment = context.Environment;
         RunTimestamp = DateTimeOffset.UtcNow;
         ErrorMessage = null;
@@ -56,6 +61,7 @@ public sealed class RuntimeReviewSessionState<TReport> : IRuntimeReviewScoped
         TargetUrl = context.TargetUrl;
         ProfileName = context.ProfileName;
         ProfileId = context.ProfileId;
+        EnvironmentFingerprint = context.EnvironmentFingerprint;
         Environment = context.Environment;
         RunTimestamp = runTimestamp;
         ErrorMessage = null;
@@ -68,6 +74,7 @@ public sealed class RuntimeReviewSessionState<TReport> : IRuntimeReviewScoped
         TargetUrl = context.TargetUrl;
         ProfileName = context.ProfileName;
         ProfileId = context.ProfileId;
+        EnvironmentFingerprint = context.EnvironmentFingerprint;
         Environment = context.Environment;
         RunTimestamp = DateTimeOffset.UtcNow;
         ErrorMessage = errorMessage;
@@ -80,6 +87,7 @@ public sealed class RuntimeReviewSessionState<TReport> : IRuntimeReviewScoped
         TargetUrl = null;
         ProfileName = null;
         ProfileId = null;
+        EnvironmentFingerprint = null;
         Environment = null;
         RunTimestamp = null;
         ErrorMessage = null;
@@ -105,14 +113,26 @@ public sealed class RuntimeReviewSessionService : IDisposable
 
     public void Dispose() { if (_settings is not null) _settings.Changed -= OnSettingsChanged; }
 
-    private void OnSettingsChanged() => ScopeTo(_settings?.ActiveProfile?.Id);
+    private void OnSettingsChanged() => ScopeTo(_settings?.ActiveProfile?.Id, _settings?.ActiveProfile is { } p ? Fingerprint(p) : null);
 
-    /// <summary>Clears every result that belongs to another Target Environment than <paramref name="activeProfileId"/>.</summary>
-    public void ScopeTo(string? activeProfileId)
+    /// <summary>
+    /// Clears every result that belongs to another Target Environment than <paramref name="activeProfileId"/>, or to the same environment before its
+    /// target or authentication changed (<paramref name="activeFingerprint"/>): a result is never current for a target it did not review.
+    /// </summary>
+    public void ScopeTo(string? activeProfileId, string? activeFingerprint = null)
     {
         foreach (var state in new IRuntimeReviewScoped[] { SecurityReview, PerformanceReview, QualityReview, ApiQualityReview, IntegrationQualityReview })
-            if (state.ProfileId is { } id && id != activeProfileId) state.Clear();
+            if (state.ProfileId is { } id && (id != activeProfileId
+                || activeFingerprint is not null && state.EnvironmentFingerprint is { } fp && fp != activeFingerprint)) state.Clear();
     }
+
+    /// <summary>
+    /// What a runtime result depends on in its Target Environment's configuration: the frontend, API and GraphQL targets and the configured API auth
+    /// type. The effective (observed) browser authentication is deliberately left out — the context factory applies it to its copy, so it would
+    /// differ from the stored profile without any configuration change.
+    /// </summary>
+    public static string Fingerprint(FrontendAnalysisProfile p) =>
+        string.Join("|", p.TargetUrl?.Trim(), p.RestBaseUrl?.Trim(), p.GraphQlEndpoint?.Trim(), p.ApiAuth?.AuthType.ToString());
 
     public RuntimeReviewSessionState<WasmSecurityReviewReport>     SecurityReview    { get; } = new();
     public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
@@ -168,7 +188,7 @@ public sealed class RuntimeReviewSessionService : IDisposable
         IntegrationQualityReview.MarkRunning(CreateIntegrationQualitySnapshot(context));
 
     public void SaveIntegrationQualityResult(BirkNext.Integrations.IntegrationReviewResult result, FrontendAnalysisContext context) =>
-        Save(IntegrationQualityReview, result, new RuntimeReviewContextSnapshot($"{result.TopicsReviewed} topics", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString(), context.ActiveProfile.Id), result.CompletedAt);
+        Save(IntegrationQualityReview, result, new RuntimeReviewContextSnapshot($"{result.TopicsReviewed} topics", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString(), context.ActiveProfile.Id, Fingerprint(context.ActiveProfile)), result.CompletedAt);
 
     private void Save<TReport>(RuntimeReviewSessionState<TReport> state, TReport report, RuntimeReviewContextSnapshot context, DateTimeOffset at)
     {
@@ -198,17 +218,19 @@ public sealed class RuntimeReviewSessionService : IDisposable
             context.TargetUrl,
             context.ActiveProfile.Name,
             context.ActiveProfile.EnvironmentType.ToString(),
-            context.ActiveProfile.Id);
+            context.ActiveProfile.Id,
+            Fingerprint(context.ActiveProfile));
 
     private static RuntimeReviewContextSnapshot CreateApiQualitySnapshot(FrontendAnalysisContext context) =>
         new(
             context.RestBaseUrl ?? context.TargetUrl,
             context.ActiveProfile.Name,
             context.ActiveProfile.EnvironmentType.ToString(),
-            context.ActiveProfile.Id);
+            context.ActiveProfile.Id,
+            Fingerprint(context.ActiveProfile));
 
     private static RuntimeReviewContextSnapshot CreateIntegrationQualitySnapshot(FrontendAnalysisContext context) =>
-        new("Configured integrations", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString(), context.ActiveProfile.Id);
+        new("Configured integrations", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString(), context.ActiveProfile.Id, Fingerprint(context.ActiveProfile));
 
     private static DateTimeOffset ToOffset(DateTime timestamp)
     {

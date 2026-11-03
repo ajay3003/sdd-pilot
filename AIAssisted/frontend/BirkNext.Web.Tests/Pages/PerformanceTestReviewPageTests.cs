@@ -151,7 +151,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Items = [new("provider", "Provider", PerformanceReadinessState.Ready, "k6 0.52.0 is available.", false), new("thresholds", "Thresholds", PerformanceReadinessState.Ready, "1 required, 0 advisory.", false)],
     };
 
-    private void Register(bool profile = true, ProviderAvailability availability = ProviderAvailability.Available, PerformanceTestReadiness? readiness = null, List<PerformanceTestDefinition>? definitions = null)
+    private void Register(bool profile = true, ProviderAvailability availability = ProviderAvailability.Available, PerformanceTestReadiness? readiness = null, List<PerformanceTestDefinition>? definitions = null,
+        FrontendEnvironmentType environmentType = FrontendEnvironmentType.QA)
     {
         _api.Overview = new PerformanceTestOverview { Definitions = definitions ?? [Definition], Provider = Provider(availability), Limits = new PerformanceSafetyLimits(50, 50, 1800, 3600, 200_000, true, true) };
         _api.Readiness = readiness ?? ReadyState();
@@ -159,7 +160,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext
         {
-            ActiveProfile = profile ? new FrontendAnalysisProfile { Id = "pay", Name = "PaymentHub QA", EnvironmentType = FrontendEnvironmentType.QA, TargetUrl = "https://paymenthub-qa.example.test/app" } : null,
+            ActiveProfile = profile ? new FrontendAnalysisProfile { Id = "pay", Name = "PaymentHub QA", EnvironmentType = environmentType, TargetUrl = "https://paymenthub-qa.example.test/app" } : null,
         });
         Services.AddSingleton(context.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
@@ -853,7 +854,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     [Fact]
     public void Production_IsBlocked_InRed_AndRunIsDisabled()
     {
-        Register(definitions: [Definition with { EnvironmentType = "Production", EnvironmentName = "PaymentHub PROD" }]);
+        // The Target Environment owns the environment type: a Production environment, not only a definition that says so.
+        Register(definitions: [Definition with { EnvironmentType = "Production" }], environmentType: FrontendEnvironmentType.Production);
         var cut = Page();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-production-block]").TextContent.Should().Contain("cannot run against Production"));
 
