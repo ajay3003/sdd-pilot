@@ -79,6 +79,11 @@ public sealed class IntegrationJourneyRunner(IEnumerable<IJourneyStepExecutor> e
     {
         var mandatory = journey.Steps.Where(step => step.Mandatory).Select(step => step.StepId).ToHashSet(StringComparer.Ordinal);
         var relevant = results.Where(result => mandatory.Contains(result.StepId)).ToArray();
+        // No mandatory step: nothing defines success, so nothing was verified (never a vacuous "every mandatory step was verified").
+        if (mandatory.Count == 0)
+            return results.Any(result => result.State == JourneyStepState.UnexpectedResult)
+                ? (JourneyRunState.Failed, "At least one step observed an unexpected result.")
+                : (JourneyRunState.NotVerified, "The journey defines no mandatory step, so no outcome could be verified.");
         if (results.Any(result => result.State == JourneyStepState.UnexpectedResult))
             return (JourneyRunState.Failed, "At least one step observed an unexpected result.");
         if (relevant.Length == mandatory.Count && relevant.All(result => result.State == JourneyStepState.Verified))

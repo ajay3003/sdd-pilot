@@ -131,9 +131,9 @@ public sealed class HeadlessDiagnosticTests
         Assert.Equal("Available", r.HeadlessBrowser); Assert.True(HeadlessDiagnosticPolicy.IsDedicatedProfile(b.LaunchedProfile!));
     }
     [Fact] public async Task LaunchFailureStopsAuthenticationAndCleansUp()
-    { var b = new Browser { LaunchError = new PlaywrightException("secret") }; var r = await Service(b).RunAsync(Request); Assert.Equal(HeadlessBlocker.BrowserAutomationBlocked, r.PrimaryBlocker); Assert.DoesNotContain("observe", b.Calls); Assert.Contains("dispose", b.Calls); Assert.DoesNotContain("secret", JsonSerializer.Serialize(r)); }
+    { var b = new Browser { LaunchError = new PlaywrightException("secret") }; var r = await Service(b).RunAsync(Request); Assert.Equal(HeadlessBlocker.BrowserAutomationBlocked, r.PrimaryBlocker); Assert.Equal(HeadlessRunStatus.Failed, r.Status); Assert.DoesNotContain("observe", b.Calls); Assert.Contains("dispose", b.Calls); Assert.DoesNotContain("secret", JsonSerializer.Serialize(r)); }
     [Fact] public async Task TargetOnlyAfterBrowserControl()
-    { var b = new Browser { Controls = new([false]) }; var r = await Service(b).RunAsync(Request); Assert.DoesNotContain("navigate", b.Calls); Assert.Equal(HeadlessBlocker.BrowserAutomationBlocked, r.PrimaryBlocker); }
+    { var b = new Browser { Controls = new([false]) }; var r = await Service(b).RunAsync(Request); Assert.DoesNotContain("navigate", b.Calls); Assert.Equal(HeadlessBlocker.BrowserAutomationBlocked, r.PrimaryBlocker); Assert.Equal(HeadlessRunStatus.Blocked, r.Status); }
     [Theory] [InlineData(true)] [InlineData(false)]
     public async Task TargetClosesBeforeAuth(bool throws)
     {

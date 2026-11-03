@@ -17,7 +17,9 @@ public enum HeadlessEvidenceProvenance { Observed, Derived, Configured, Unknown 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum HeadlessReadiness { Ready, NotReady, Unknown }
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum HeadlessRunStatus { Completed, Blocked, Cancelled }
+/// <summary>Completed: the diagnostic observed the flow (its finding, even a blocker such as MFA, is in Readiness/PrimaryBlocker). Blocked: it
+/// could not run (guard, busy, no browser control). Cancelled. Failed: it stopped on an unexpected error — never reported as Completed.</summary>
+public enum HeadlessRunStatus { Completed, Blocked, Cancelled, Failed }
 
 public sealed record HeadlessDiagnosticRequest
 {

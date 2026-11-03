@@ -265,7 +265,7 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
                 return report;
             }
             entered = await _gate.WaitAsync(0, ct);
-            if (!entered) { run.Block(HeadlessBlocker.Unknown, current, "Another headless diagnostic is running. Try again after it completes.", true); return report; }
+            if (!entered) { report.Status = HeadlessRunStatus.Blocked; run.Block(HeadlessBlocker.Unknown, current, "Another headless diagnostic is running. Try again after it completes.", true); return report; }
             run.Stage(current, HeadlessStageState.Passed, "Prerequisite target control demonstrated; fresh dedicated profile selected.");
             browser = factory.Create(request);
             current = HeadlessStage.HeadlessEdgeLaunch; timer.Restart();
@@ -276,11 +276,11 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
             run.Stage(current, HeadlessStageState.Passed, "Microsoft Edge / msedge / Headless = true / fresh persistent context.", timer.ElapsedMilliseconds);
             logger.LogInformation("HeadlessEdgeStarted {DiagnosticId}", report.DiagnosticId);
             current = HeadlessStage.HeadlessBrowserControl; timer.Restart();
-            if (!await browser.ControlAsync(ct)) { run.Block(HeadlessBlocker.BrowserAutomationBlocked, current, "Headless browser control could not be proven on about:blank."); return report; }
+            if (!await browser.ControlAsync(ct)) { report.Status = HeadlessRunStatus.Blocked; run.Block(HeadlessBlocker.BrowserAutomationBlocked, current, "Headless browser control could not be proven on about:blank."); return report; }
             run.Stage(current, HeadlessStageState.Passed, "Safe title and DOM reads on about:blank succeeded.", timer.ElapsedMilliseconds);
             current = HeadlessStage.TargetNavigation; timer.Restart();
             await browser.NavigateAsync(ct);
-            if (!await browser.ControlAsync(ct)) { report.TargetControl = "Lost"; run.Block(HeadlessBlocker.BrowserAutomationBlocked, current, "Playwright could not retain target control before authentication assessment. MFA and session control were not tested."); return report; }
+            if (!await browser.ControlAsync(ct)) { report.TargetControl = "Lost"; report.Status = HeadlessRunStatus.Blocked; run.Block(HeadlessBlocker.BrowserAutomationBlocked, current, "Playwright could not retain target control before authentication assessment. MFA and session control were not tested."); return report; }
             report.TargetControl = "Available";
             run.Stage(current, HeadlessStageState.Passed, "Navigation and safe target automation control succeeded.", timer.ElapsedMilliseconds);
             logger.LogInformation("HeadlessTargetReached {DiagnosticId}", report.DiagnosticId);
@@ -321,6 +321,7 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
         }
         catch (Exception ex)
         {
+            report.Status = HeadlessRunStatus.Failed;
             var kind = BrowserAutomationDiagnosticExceptionClassifier.Classify(ex);
             var type = BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex);
             if (current == HeadlessStage.HeadlessEdgeLaunch) report.HeadlessBrowser = "Unavailable";

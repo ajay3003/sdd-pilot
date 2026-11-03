@@ -12,7 +12,7 @@
         <div><dt>Target Environment</dt><dd>@Profile?.Name (@Profile?.EnvironmentType)</dd></div>
         <div><dt>Target URL</dt><dd><code>@HeadlessEvidenceSanitizer.Url(Profile?.TargetUrl)</code></dd></div>
         <div><dt>Browser automation</dt><dd data-testid="had-prerequisite">@(_report?.BrowserAutomation ?? (_proof is null ? "Not checked" : _proof.Available ? "Available" : "Blocked / not demonstrated"))</dd></div>
-        <div><dt>Headless authentication</dt><dd class="had-readiness" data-testid="had-readiness">@(_cancelled ? "Cancelled" : _report is null ? "Not tested" : _report.Status == HeadlessRunStatus.Cancelled ? "Cancelled" : Readiness(_report.Readiness))</dd></div>
+        <div><dt>Headless authentication</dt><dd class="had-readiness" data-testid="had-readiness">@(_cancelled ? "Cancelled" : _report is null ? "Not tested" : _report.Status == HeadlessRunStatus.Cancelled ? "Cancelled" : _report.Status == HeadlessRunStatus.Failed ? "Diagnostic failed — not assessed" : Readiness(_report.Readiness))</dd></div>
     </dl>
     <p>First run <strong>Browser Automation Diagnostic</strong> in System Settings → Frontend Testing Capabilities for this target. Its successful result is required and remains valid for 30 minutes. Browser control and unattended authentication are separate findings.</p>
     @if (!Eligible)
