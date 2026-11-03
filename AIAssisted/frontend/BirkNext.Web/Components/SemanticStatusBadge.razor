@@ -1,0 +1,21 @@
+@* The one status badge: input is a semantic status (never a colour or free label). Label, icon, intent and tooltip come from StatusVocabulary;
+   a consumer may add context (scope, count) and a contextual explanation, never a different meaning. The text is always visible — colour and icon
+   only reinforce it. *@
+<span class="ssb ssb-@StatusVocabulary.IntentClass(Definition.Intent)" data-status="@Status" data-family="@Definition.Family" data-testid="@TestId"
+      title="@(Explanation is { Length: > 0 } e ? $"{Definition.Meaning} {e}" : Definition.Meaning)">
+    <span class="ssb-icon" aria-hidden="true">@Definition.Icon</span><span class="ssb-label">@Label</span>@if (Scope is { Length: > 0 } scope) { <span class="ssb-scope"> · @scope</span> }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public SemanticStatus Status { get; set; }
+    /// <summary>What the status applies to when it is not the whole ("Performance execution", "this snapshot") or a real decision count.</summary>
+    [Parameter] public string? Scope { get; set; }
+    /// <summary>Contextual explanation appended to the canonical tooltip.</summary>
+    [Parameter] public string? Explanation { get; set; }
+    /// <summary>A qualified label for the same meaning (e.g. "Test inventory complete" for InventoryComplete); never a different meaning.</summary>
+    [Parameter] public string? QualifiedLabel { get; set; }
+    [Parameter] public string? TestId { get; set; }
+
+    private StatusDefinition Definition => StatusVocabulary.Of(Status);
+    private string Label => QualifiedLabel ?? Definition.Label;
+}

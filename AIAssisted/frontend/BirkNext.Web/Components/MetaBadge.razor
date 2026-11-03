@@ -1,0 +1,10 @@
+@* Metadata pill — type, provenance, scope, environment, confidence, change or count. Never a semantic status, never warning/danger coloured:
+   "OpenAPI" (type), "Source Analysis" (provenance) and "Development" (environment) must not look like "Needs review". *@
+<span class="mb mb-@Kind.ToString().ToLowerInvariant()" data-kind="@Kind" data-testid="@TestId" title="@Title">@if (Kind == BadgeKind.Provenance) { <span class="mb-prefix">From </span> }@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public BadgeKind Kind { get; set; }
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? TestId { get; set; }
+}
