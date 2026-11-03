@@ -278,7 +278,13 @@
                     <div><dt>Location</dt><dd data-testid="it-location">@(detail.Location ?? "Not stated by any source")</dd></div>
                     <div><dt>Status</dt><dd>@P.Status(detail.Status)</dd></div>
                     <div><dt>Sources</dt><dd>@P.Sources(detail.Provenance)</dd></div>
+                    @if (detail.Aliases.Count > 0)
+                    {
+                        @* One component, as each source named it: the sources keep their own wording. *@
+                        <div><dt>Also named</dt><dd><ul class="it-aliases" data-testid="it-aliases">@foreach (var alias in detail.Aliases) { <li data-testid="it-alias" data-basis="@alias.Basis"><strong>@alias.Name</strong> <span class="it-note">· @string.Join(", ", alias.Sources.Select(P.Source)) · @alias.Basis</span></li> }</ul></dd></div>
+                    }
                 </dl>
+                @if (detail.IdentityNote is { } identityNote) { <p class="it-note" role="note" data-testid="it-identity-note">Needs confirmation: @identityNote</p> }
                 @foreach (var group in detail.Interfaces.GroupBy(item => item.Type))
                 {
                     <h3 class="it-subheading">@P.Type(group.Key)</h3>

@@ -214,23 +214,9 @@ public static class IntegrationReviewEvidence
             + (confirm > 0 ? $" · {confirm} need{(confirm == 1 ? "s" : "")} confirmation" : "");
     }
 
-    /// <summary>Two names for the same end: equal, or one is the abbreviation the other states in brackets ("MU" ↔ "Meldingsutveksleren (MU)").</summary>
-    private static bool SameEnd(string? a, string? b)
-    {
-        static IEnumerable<string> Names(string name)
-        {
-            yield return name.Trim();
-            var open = name.LastIndexOf('(');
-            var close = name.LastIndexOf(')');
-            if (open > 0 && close > open + 1)
-            {
-                yield return name[(open + 1)..close].Trim();
-                yield return name[..open].Trim();
-            }
-        }
-        return !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
-            && Names(a).Any(x => x.Length > 0 && Names(b).Any(y => string.Equals(x, y, StringComparison.OrdinalIgnoreCase)));
-    }
+    /// <summary>Two names for the same end: equal, or one is the abbreviation the other states in brackets ("MU" ↔ "Meldingsutveksleren (MU)").
+    /// The same rule Integration Topology identifies components by (<see cref="BirkNext.Api.Services.IntegrationTopology.ComponentNames"/>).</summary>
+    private static bool SameEnd(string? a, string? b) => BirkNext.Api.Services.IntegrationTopology.ComponentNames.Same(a, b);
 
     /// <summary>A candidate the Connected System already describes: one of its ends is the system (by name or by provider name).</summary>
     private static bool Touches(IntegrationReviewCandidate candidate, ExternalIntegration system)

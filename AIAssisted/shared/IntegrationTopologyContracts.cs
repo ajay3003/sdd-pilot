@@ -60,7 +60,15 @@ public sealed record TopologyComponent
     public TopologyStatus Status { get; init; }
     public List<TopologyProvenance> Provenance { get; init; } = [];
     public List<TopologyInterface> Interfaces { get; init; } = [];
+    /// <summary>The other names sources used for this one component, with why each is the same component and which sources used it.
+    /// Source evidence keeps its own wording; the canonical component only collects it.</summary>
+    public List<TopologyComponentAlias> Aliases { get; init; } = [];
+    /// <summary>Set when a source's name could be this component or another one: they are kept separate until the identity is confirmed.</summary>
+    public string? IdentityNote { get; init; }
 }
+
+/// <summary>A name a source used for a component, why it identifies that component, and the sources that used it.</summary>
+public sealed record TopologyComponentAlias(string Name, string Basis, List<TopologySource> Sources);
 
 public sealed record TopologyConnection
 {

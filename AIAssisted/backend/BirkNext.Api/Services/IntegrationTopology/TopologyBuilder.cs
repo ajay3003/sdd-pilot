@@ -6,7 +6,8 @@ namespace BirkNext.Api.Services.IntegrationTopology;
 /// <summary>
 /// Merges what every provider reports into one canonical topology. Identity is explicit, never guessed from similar names:
 /// <list type="bullet">
-/// <item>a component is its normalized name, or an alias a profile declared for it;</item>
+/// <item>a component is its normalized name, an alias a profile declared for it, or a name stated in "Full name (ABBR)" form
+/// (<see cref="ComponentNames"/>) — a stated name that could be two components is kept separate and marked for confirmation;</item>
 /// <item>an interface is component + type + direction + operation + normalized address (REST path parameters collapse to {});</item>
 /// <item>a connection is from-component + to-component + type + normalized address.</item>
 /// </list>
@@ -22,7 +23,17 @@ public sealed partial class TopologyBuilder
     private readonly List<TopologySourceSummary> _sources = [];
     private readonly Dictionary<string, string> _canonical = new(StringComparer.Ordinal);
 
-    private sealed class ComponentState { public string Name = ""; public string? Type; public string? Location; public TopologyComponentKind Kind; public List<(TopologyStatus Level, TopologyProvenance Provenance)> Evidence = []; }
+    private sealed class ComponentState
+    {
+        public string Name = ""; public string? Type; public string? Location; public TopologyComponentKind Kind; public List<(TopologyStatus Level, TopologyProvenance Provenance)> Evidence = [];
+        /// <summary>Every name sources used for the component (trimmed), with the identity basis and the sources that used it.</summary>
+        public Dictionary<string, (string Basis, HashSet<TopologySource> Sources)> Names = new(StringComparer.Ordinal);
+        public string? IdentityNote;
+    }
+
+    public const string BasisName = "Same name";
+    public const string BasisDeclaredAlias = "Alias declared by a domain profile";
+    public const string BasisStated = "Abbreviation stated in the name";
     private sealed class InterfaceState
     {
         public string ComponentKey = ""; public TopologyInterfaceType Type; public string Protocol = ""; public TopologyDirection Direction; public string Address = "";
@@ -48,20 +59,60 @@ public sealed partial class TopologyBuilder
         foreach (var alias in aliases.Append(canonical)) _aliases[Normalize(alias)] = key;
     }
 
-    public string ComponentKey(string name) => _aliases.GetValueOrDefault(Normalize(name)) ?? Normalize(name);
+    public string ComponentKey(string name) => Resolve(name, null).Key;
 
     /// <summary>The key of a component by its name or, when the name is not aliased, by one of its other exact identities (for example its
-    /// project name) that a profile aliased. Only exact normalized identities are used.</summary>
-    public string ComponentKey(string name, IEnumerable<string>? identities) =>
-        _aliases.ContainsKey(Normalize(name)) ? ComponentKey(name)
-        : identities?.Select(Normalize).FirstOrDefault(_aliases.ContainsKey) is { } alias ? _aliases[alias] : Normalize(name);
+    /// project name) that a profile aliased, or by a name it states (<see cref="ComponentNames"/>). Only exact normalized identities are used.</summary>
+    public string ComponentKey(string name, IEnumerable<string>? identities) => Resolve(name, identities).Key;
+
+    /// <summary>
+    /// Which component a name identifies: an alias (a profile's, or a stated name already recorded), an aliased project identity, an existing
+    /// component of that name, else the one existing application component the name states ("Order Service (OS)" → OS). A stated name
+    /// that points at two different components identifies neither: it stays its own component with an identity note.
+    /// </summary>
+    private (string Key, string Basis, string? Ambiguity, string Named) Resolve(string name, IEnumerable<string>? identities)
+    {
+        var normalized = Normalize(name);
+        if (_aliases.TryGetValue(normalized, out var aliased)) return (aliased, aliased == normalized ? BasisName : _statedAliases.Contains(normalized) ? BasisStated : BasisDeclaredAlias, null, name.Trim());
+        // Identified by another of its identities (e.g. its project): that identity is the name the source used for this component.
+        if (identities?.FirstOrDefault(i => _aliases.ContainsKey(Normalize(i))) is { } identity) return (_aliases[Normalize(identity)], BasisDeclaredAlias, null, identity.Trim());
+        if (_components.ContainsKey(normalized)) return (normalized, BasisName, null, name.Trim());
+        var stated = ComponentNames.Stated(name).Skip(1).Select(Normalize)
+            .Select(part => _aliases.GetValueOrDefault(part) ?? (_components.TryGetValue(part, out var existing) && existing.Kind != TopologyComponentKind.Resource ? part : null))
+            .OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+        return stated.Count switch
+        {
+            1 => (stated[0], BasisStated, null, name.Trim()),
+            > 1 => (normalized, BasisName, $"\"{name.Trim()}\" states the names of {string.Join(" and ", stated.Select(NameOf))}: kept separate until the identity is confirmed.", name.Trim()),
+            _ => (normalized, BasisName, null, name.Trim()),
+        };
+    }
+
+    private readonly HashSet<string> _statedAliases = new(StringComparer.Ordinal);
 
     public string Component(string name, TopologyStatus level, TopologyProvenance provenance, string? type = null, string? location = null,
         IEnumerable<string>? identities = null, TopologyComponentKind kind = TopologyComponentKind.Application)
     {
-        var key = ComponentKey(name, identities);
-        if (!_components.TryGetValue(key, out var state))
+        var (key, basis, ambiguity, named) = Resolve(name, identities);
+        var created = !_components.TryGetValue(key, out var state);
+        if (created)
             _components[key] = state = new ComponentState { Name = _canonical.GetValueOrDefault(key) ?? name.Trim(), Kind = kind };
+        var stated = ComponentNames.Stated(name);
+        if (basis == BasisStated && stated.Count > 1)
+        {
+            // The name states this component: later statements of it resolve here, and the fuller name ("Full name (ABBR)") is shown.
+            if (_aliases.TryAdd(Normalize(name), key)) _statedAliases.Add(Normalize(name));
+            if (stated.Skip(1).Any(part => Normalize(part) == Normalize(state!.Name))) state!.Name = name.Trim();
+        }
+        else if (created && stated.Count > 1 && ambiguity is null && kind != TopologyComponentKind.Resource)
+        {
+            // A new component named "Full name (ABBR)": a later source naming it ABBR or the full name means this component.
+            foreach (var part in stated.Skip(1).Select(Normalize))
+                if (!_components.ContainsKey(part) && _aliases.TryAdd(part, key)) _statedAliases.Add(part);
+        }
+        if (ambiguity is not null && state!.IdentityNote is null) state.IdentityNote = ambiguity;
+        if (!state!.Names.TryGetValue(named, out var use)) state.Names[named] = use = (basis, []);
+        use.Sources.Add(provenance.Source);
         if (kind != TopologyComponentKind.Application) state.Kind = kind;
         state.Type ??= type;
         state.Location ??= location;
@@ -209,6 +260,9 @@ public sealed partial class TopologyBuilder
         {
             Id = pair.Key, Name = pair.Value.Name, Kind = pair.Value.Kind, ComponentType = pair.Value.Type, Location = pair.Value.Location, Status = Level(pair.Value.Evidence, false, false),
             Provenance = Distinct(pair.Value.Evidence),
+            Aliases = [.. pair.Value.Names.Where(n => !string.Equals(n.Key, pair.Value.Name, StringComparison.OrdinalIgnoreCase)).OrderBy(n => n.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(n => new TopologyComponentAlias(n.Key, n.Value.Basis, [.. n.Value.Sources.Order()]))],
+            IdentityNote = pair.Value.IdentityNote,
             Interfaces = [.. _interfaces.Where(item => item.Value.ComponentKey == pair.Key).OrderBy(item => item.Value.Type).ThenBy(item => item.Value.Address, StringComparer.Ordinal)
                 .Select(item => new TopologyInterface
                 {

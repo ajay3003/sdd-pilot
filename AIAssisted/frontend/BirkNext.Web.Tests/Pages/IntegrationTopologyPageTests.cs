@@ -91,6 +91,37 @@ public sealed class IntegrationTopologyPageTests : BunitContext
     }
 
     [Fact]
+    public void OneComponent_ShowsEveryNameSourcesUsedForIt_AndAnUnconfirmedIdentityNeedsConfirmation()
+    {
+        var sample = Sample();
+        _api.View = sample with
+        {
+            Components =
+            [
+                sample.Components[0] with
+                {
+                    Name = "Report Service (RS)",
+                    Aliases = [new("RS", "Abbreviation stated in the name", [TopologySource.SourceAnalysis]), new("Shop.Report.Api", "Alias declared by a domain profile", [TopologySource.SourceAnalysis])],
+                },
+                sample.Components[1] with { IdentityNote = "\"Intake (IN)\" states the names of Intake and Inbound: kept separate until the identity is confirmed." },
+            ],
+        };
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=it-select]").Should().HaveCount(2));
+
+        page.FindAll("[data-testid=it-select]")[0].Click();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=it-alias]").Should().HaveCount(2));
+        page.FindAll("[data-testid=it-alias]").Select(a => a.TextContent).Should().SatisfyRespectively(
+            rs => rs.Should().Contain("RS").And.Contain("Source Analysis").And.Contain("Abbreviation stated in the name"),
+            api => api.Should().Contain("Shop.Report.Api"));
+        page.FindAll("[data-testid=it-identity-note]").Should().BeEmpty();
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=it-select]")[1].Click());
+        page.WaitForAssertion(() => page.Find("[data-testid=it-identity-note]"));
+        page.Find("[data-testid=it-identity-note]").TextContent.Should().Contain("Needs confirmation").And.Contain("kept separate");
+    }
+
+    [Fact]
     public void DiscoverInterfaces_IsAnExplicitPreviewedAction_SeparateFromRefresh()
     {
         _api.View = Sample() with { Discovery = new([new("ReportService", "report.example.test", "/swagger/v1/swagger.json")], [new("Legacy", "", "https://other.example.test/x", "not on its own origin")]) };
