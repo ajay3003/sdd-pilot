@@ -557,6 +557,12 @@ public sealed class DependencyReviewTests
         var common = Path.Combine(Downloads, "M2LB.Common.zip");
         var standalone = Path.Combine(Downloads, "renovate.json");
         if (!File.Exists(m2lb) || !File.Exists(common) || !File.Exists(standalone)) return;
+        // Pinned to exact archives (SHA-256). M2LB.Common gained renovate.json + renovate-pipeline.yml on 28 Oct 2026; the version without
+        // them is no longer on disk — "Missing" coverage stays covered by the fixture tests above.
+        foreach (var (file, sha) in new[] { (m2lb, "40ef503403afb11abb1e4fc9fd0e7aea8c4cfc540b44b436bbe0411caad750fe"),
+                     (common, "6015c521dbfe11ba843ea0beb400ea200f4160a291b0408b6bc04fe21b344cff"), (standalone, "bff00c05eb32bb9b6ecb188dfae15f66de6e2de9ee33c4da79bb7126d1a5a6a2") })
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(file))).ToLowerInvariant().Should().Be(sha,
+                $"archive drift in {Path.GetFileName(file)}: review what changed and pin the new archive, never loosen the assertions");
         await using var db = Db();
         var (result, error) = await Service(db).RunAsync("acceptance", [("M2LB (1).zip", await File.ReadAllBytesAsync(m2lb)), ("M2LB.Common.zip", await File.ReadAllBytesAsync(common))],
             [("M2LB", "renovate.json", await File.ReadAllTextAsync(standalone))]);
@@ -570,7 +576,10 @@ public sealed class DependencyReviewTests
         repo.Managers.Single(m => m.Manager == "docker-compose").State.Should().Be(ManagerState.IgnoredByPaths);
         System.Text.Json.JsonSerializer.Serialize(result).Should().NotContain("System.AccessToken");
         var commonRepo = result.Repositories.Single(r => r.Repository == "M2LB.Common");
-        commonRepo.Coverage.Should().Be(RenovateCoverage.Missing);
-        commonRepo.Dependencies.Should().OnlyContain(d => d.OwnerFile.EndsWith("Directory.Packages.props") || d.OwnerFile.EndsWith(".csproj") || d.OwnerFile.EndsWith(".json"));
+        commonRepo.Coverage.Should().Be(RenovateCoverage.Configured, "the repository carries its own renovate.json");
+        commonRepo.Managers.Single(m => m.Manager == "azure-pipelines").State.Should().Be(ManagerState.DisabledByDefault);
+        commonRepo.Findings.Should().Contain(f => f.RuleId == "major-automerge");
+        commonRepo.Dependencies.Should().OnlyContain(d => d.OwnerFile.EndsWith("Directory.Packages.props") || d.OwnerFile.EndsWith(".csproj") || d.OwnerFile.EndsWith(".json")
+            || d.OwnerFile.EndsWith("renovate-pipeline.yml"), "the pipeline file is read for the azure-pipelines manager, which Renovate does not process by default");
     }
 }

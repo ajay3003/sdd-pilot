@@ -947,24 +947,33 @@ public sealed class SecurityClassificationTests
 
     // ── Real read-only acceptance (runs only where the developer's archive exists) ─────────────────────────────────
 
+    /// <summary>The M2LB archive this acceptance is pinned to (SHA-256), 30 Oct 2026: the CDC deserializer reads Sikkerhetsnivå as a nullable
+    /// int ("never coerced to 0") and a raw-Debezium → deserializer → guard test exists. The archive before that fix is no longer on disk; the
+    /// defect it showed (a constant classification at the deserializer) stays covered by the fixture tests above.</summary>
+    private const string RealM2lbArchive = "40ef503403afb11abb1e4fc9fd0e7aea8c4cfc540b44b436bbe0411caad750fe";
+
     [Fact]
     public void RealM2lbSourceAcceptance()
     {
         var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "M2LB (1).zip");
         if (!File.Exists(path)) return;
-        var (archive, files, error) = ScimSourceReader.Read("M2LB (1).zip", File.ReadAllBytes(path), p => p.Contains("/docs/") || p.Contains("/specs/"));
+        var bytes = File.ReadAllBytes(path);
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant().Should().Be(RealM2lbArchive,
+            "archive drift: these expectations describe one exact M2LB archive — review what the new archive changed and pin it, never loosen the assertions");
+        var (archive, files, error) = ScimSourceReader.Read("M2LB (1).zip", bytes, p => p.Contains("/docs/") || p.Contains("/specs/"));
         error.Should().BeNull();
 
         var evidence = ClassificationSourceAnalyzer.Analyze("dev", [archive!], files, DateTimeOffset.UtcNow);
         var result = Evaluate(evidence);
 
         evidence.Levels.Select(l => $"{l.Nivaa}={l.Verdi}/{l.BiRKKode}/{l.ElementsKode}").Should().Equal("0=Ingen//", "1=SkjultAdresse//", "2=Kode7/Kode 7/K1", "3=Kode6/Kode 6/K2");
-        Fact(evidence, "cdc-deserializer").State.Should().Be(ClassificationState.IssueDetected);
-        Fact(evidence, "cdc-deserializer").Locations.Single().Should().Be(new SourceLocation("PersonAdapter/src/M2LB.PersonBiRKAdapter.Worker/Workers/CdcProcessorWorker.cs", 301));
+        Fact(evidence, "cdc-deserializer").State.Should().Be(ClassificationState.SourceVerified, "the level is read as a nullable int, never coerced to 0");
+        Fact(evidence, "cdc-deserializer").Locations.Single().Should().Be(new SourceLocation("PersonAdapter/src/M2LB.PersonBiRKAdapter.Worker/Workers/CdcProcessorWorker.cs", 310));
         Fact(evidence, "graphql-hentBarnRegistreringIdFraEksternId").State.Should().Be(ClassificationState.IssueDetected);
         Fact(evidence, "grant-implementation").State.Should().Be(ClassificationState.DocumentedOnly);
-        evidence.TestCoverage.Single(c => c.Scenario.StartsWith("Raw Debezium")).State.Should().Be(RepositoryTestCoverageState.Missing);
-        result.Findings.Should().Contain(f => f.RuleId == "cdc-classification-constant");
+        evidence.TestCoverage.Single(c => c.Scenario.StartsWith("Raw Debezium")).State.Should().Be(RepositoryTestCoverageState.Present);
+        result.Findings.Should().NotContain(f => f.RuleId == "cdc-classification-constant");
+        result.Findings.Should().Contain(f => f.RuleId == "graphql-unguarded");
         JsonSerializer.Serialize(evidence).Should().NotContain("@example.com");
     }
 
