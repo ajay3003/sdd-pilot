@@ -348,7 +348,7 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
         foreach (var asset in fixtures)
         {
             var check = asset.Approval == TestDataApproval.Approved && schemas is not null ? TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct)) : null;
-            facts.Add(new(asset.Alias, asset.Approval == TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId));
+            facts.Add(new(asset.Alias, asset.Approval == TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId, testData.InputsChanged(asset.Id)));
         }
         var (state, fixture) = TestDataXmlReadiness.Evaluate(facts);
         return state switch
@@ -357,6 +357,7 @@ public sealed class EnvironmentSetupService(AppDbContext db, ExternalIntegration
             TestDataXmlReadinessState.NotApproved => new(d, SetupDependencyState.NotApproved, $"{fixtures.Count} XML fixture{(fixtures.Count == 1 ? "" : "s")} for {d.Reference}, none approved.", owner, href) { ActionLabel = "Open Test Data" },
             TestDataXmlReadinessState.Ready or TestDataXmlReadinessState.Outdated =>
                 new(d, SetupDependencyState.Resolved, $"XML fixture {fixture!.Alias} is valid against the {d.Reference} schema (schema-valid is not business-valid).", owner, href),
+            TestDataXmlReadinessState.RegenerationRequired => new(d, missing, $"XML fixture {fixture!.Alias} was generated from Test Data values that changed since; generate and approve a new version.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
             TestDataXmlReadinessState.Invalid => new(d, SetupDependencyState.Incompatible, $"The XML fixture for {d.Reference} is invalid against its XSD.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
             TestDataXmlReadinessState.SchemaUnavailable => new(d, missing, $"The XML fixture for {d.Reference} cannot be validated: the contract schema is unavailable.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },
             _ => new(d, missing, $"The XML fixture for {d.Reference} is not validated against the contract.", owner, href) { ActionLabel = "Open Test Data", Hint = hint },

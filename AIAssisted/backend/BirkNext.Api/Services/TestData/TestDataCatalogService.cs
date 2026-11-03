@@ -184,6 +184,10 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
                     + string.Join(" ", check.Issues.Take(3));
             if (check?.Status != TestDataSchemaStatus.Validated && target.RecordedValidation is { } recorded && recorded != "Valid")
                 return $"{target.Alias} (version {target.Version ?? 1}) did not pass validation against its XSD when it was generated; invalid XML cannot be approved.";
+            // Existing is not valid: without a backend validation and without any validation recorded when it was generated, nothing says the XML
+            // conforms to its schema, so it cannot be approved.
+            if (check?.Status != TestDataSchemaStatus.Validated && target.RecordedValidation is null)
+                return $"{target.Alias} (version {target.Version ?? 1}) has not been validated against its XSD (the schema is not available to the backend and no validation was recorded). Validate it before approving.";
         }
         return Approve(asset, target);
     }

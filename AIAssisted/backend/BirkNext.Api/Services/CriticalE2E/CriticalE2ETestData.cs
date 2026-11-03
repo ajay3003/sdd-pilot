@@ -20,7 +20,7 @@ public static class CriticalE2ETestData
     /// <summary>Problems of the referenced aliases: unmapped placeholder, unknown, not approved (expired/disabled), wrong data type, other environment.</summary>
     public static List<string> Issues(CriticalE2EFlowDefinition flow, TestDataCatalog catalog, DateTimeOffset now, string? environmentName = null, string? environmentType = null)
     {
-        var assets = catalog.Assets().ToDictionary(a => a.Alias, StringComparer.Ordinal);
+        var assets = catalog.ByAlias();
         var issues = new List<string>();
         foreach (var mapping in flow.DataMappings ?? [])
         {

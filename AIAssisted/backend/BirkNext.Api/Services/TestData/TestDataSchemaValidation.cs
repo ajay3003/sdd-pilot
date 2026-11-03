@@ -154,7 +154,8 @@ public sealed class TestDataSchemaValidationService(TestDataCatalog catalog, ITe
     public async Task<TestDataCatalogView> ViewAsync(CancellationToken ct)
     {
         var view = catalog.View();
-        var assets = catalog.Assets().ToDictionary(a => a.Id, StringComparer.Ordinal);
+        // Same-alias fixtures from one provider share an id (both are Disabled until unique): group, never throw.
+        var assets = catalog.Assets().GroupBy(a => a.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var checkedAssets = new List<TestDataAssetSummary>(view.Assets.Count);
         foreach (var summary in view.Assets)
             checkedAssets.Add(assets.TryGetValue(summary.Id, out var asset) ? await CheckAsync(summary, asset, ct) : summary);

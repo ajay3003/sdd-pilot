@@ -293,10 +293,12 @@ public sealed record TestDataResolutionResult(List<TestDataRoleResolution> Roles
 
 /// <summary>How ready a contract's XML fixture is for test use (Test Data readiness only, never runtime delivery).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TestDataXmlReadinessState { Missing, NotApproved, Ready, Outdated, Invalid, NotValidated, SchemaUnavailable }
+/// <summary>… RegenerationRequired: approved and schema-valid, but generated from Test Data values that changed since (its content is never
+/// rewritten; a new draft version is generated and approved).</summary>
+public enum TestDataXmlReadinessState { Missing, NotApproved, Ready, Outdated, Invalid, NotValidated, SchemaUnavailable, RegenerationRequired }
 
 /// <summary>One saved XML fixture as the readiness rule needs it: approval, the schema check's status and the snapshot it was checked against.</summary>
-public sealed record TestDataXmlFixtureFacts(string Alias, bool Approved, TestDataSchemaStatus? SchemaStatus, Guid? SchemaSnapshotId);
+public sealed record TestDataXmlFixtureFacts(string Alias, bool Approved, TestDataSchemaStatus? SchemaStatus, Guid? SchemaSnapshotId, bool InputsChanged = false);
 
 /// <summary>
 /// The one XML fixture readiness rule, shared by Test Data and its consumers (browser) and Setup Library preflight (backend), so a fixture
@@ -321,9 +323,12 @@ public static class TestDataXmlReadiness
         var approved = fixtures.Where(f => f.Approved).ToList();
         if (approved.Count == 0) return (TestDataXmlReadinessState.NotApproved, fixtures[0]);
         var validated = approved.Where(f => f.SchemaStatus == TestDataSchemaStatus.Validated).ToList();
-        if (validated.FirstOrDefault(f => currentSnapshot is null || f.SchemaSnapshotId is null || f.SchemaSnapshotId == currentSnapshot) is { } ready)
+        // An approved fixture whose mapped Test Data changed since it was generated is not ready: it still holds the old values.
+        var current = validated.Where(f => !f.InputsChanged).ToList();
+        if (current.FirstOrDefault(f => currentSnapshot is null || f.SchemaSnapshotId is null || f.SchemaSnapshotId == currentSnapshot) is { } ready)
             return (TestDataXmlReadinessState.Ready, ready);
-        if (validated.Count > 0) return (TestDataXmlReadinessState.Outdated, validated[0]);
+        if (current.Count > 0) return (TestDataXmlReadinessState.Outdated, current[0]);
+        if (validated.Count > 0) return (TestDataXmlReadinessState.RegenerationRequired, validated[0]);
         if (approved.FirstOrDefault(f => f.SchemaStatus == TestDataSchemaStatus.Invalid) is { } invalid) return (TestDataXmlReadinessState.Invalid, invalid);
         if (approved.FirstOrDefault(f => f.SchemaStatus is TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved) is { } unavailable)
             return (TestDataXmlReadinessState.SchemaUnavailable, unavailable);

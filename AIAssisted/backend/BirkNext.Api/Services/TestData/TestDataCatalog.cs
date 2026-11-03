@@ -97,7 +97,24 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
     public List<TestDataAsset> Candidates(TestDataRequirement requirement) => TestDataResolver.Candidates(Assets(), requirement, _clock.GetUtcNow());
 
     /// <summary>The value behind an asset alias, for execution only (never returned to a client, logged or stored).</summary>
-    public string? Reveal(string alias) => Assets().FirstOrDefault(asset => string.Equals(asset.Alias, alias, StringComparison.Ordinal))?.Value?.Reveal();
+    /// <summary>The value behind an alias for a run — never of a disabled asset (a duplicated alias disables every copy until it is unique).</summary>
+    public string? Reveal(string alias) => Assets().FirstOrDefault(asset => string.Equals(asset.Alias, alias, StringComparison.Ordinal)) is { Approval: not TestDataApproval.Disabled } asset
+        ? asset.Value?.Reveal() : null;
+
+    /// <summary>
+    /// One asset per alias for consumer checks. A duplicated alias is a catalog condition (every copy is Disabled with the reason), reported by the
+    /// consumer's own issues — never an exception that takes the consumer page down.
+    /// </summary>
+    /// <summary>Whether a generated fixture was built from Test Data values that changed (or no longer exist) since — the same rule the Test
+    /// Data page shows as "Regeneration recommended".</summary>
+    public bool InputsChanged(string assetId)
+    {
+        var view = View();
+        return view.Assets.FirstOrDefault(a => a.Id == assetId) is { } summary && TestDataValueVersions.Changed(summary, view.Assets).Count > 0;
+    }
+
+    public IReadOnlyDictionary<string, TestDataAsset> ByAlias() =>
+        Assets().GroupBy(asset => asset.Alias, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
     /// <summary>
     /// The page view. Each provider is read on its own: one that fails is reported as an unavailable source with a scoped problem, and

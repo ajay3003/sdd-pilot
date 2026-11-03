@@ -25,7 +25,7 @@ public sealed class TestDataXmlVersionTests : IDisposable
 
     private const string Alias = SkoleNaervaerCanonicalFixtures.ValidReportAlias;
 
-    private object Version(string xml, int? version, bool legacyApproved = false, string validation = "Valid", string? valueVersions = null) => new
+    private object Version(string xml, int? version, bool legacyApproved = false, string? validation = "Valid", string? valueVersions = null) => new
     {
         id = Guid.NewGuid(), fileName = "contracts/skolenaervaer.xsd", profileName = "Valid", xml, projectScope = "import:m2lb",
         provenance = new { sourceSnapshotId = Guid.NewGuid(), selectedContractPath = "contracts/skolenaervaer.xsd", contractFingerprint = new string('b', 64) },
@@ -134,5 +134,37 @@ public sealed class TestDataXmlVersionTests : IDisposable
         TestDataValueVersions.Changed(childChanged.Single(a => a.Alias == Alias), childChanged).Should().ContainSingle(c => c.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias);
         var reporterChanged = assets.Select(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias ? a with { ValueVersion = 3 } : a).ToList();
         TestDataValueVersions.Changed(reporterChanged.Single(a => a.Alias == Alias), reporterChanged).Should().BeEmpty("the reporter is submission context, not mapped into the XML");
+    }
+
+    [Fact]
+    public async Task A_version_nobody_validated_cannot_be_approved()
+    {
+        _items.Add(Version("<Report>v1</Report>", null, legacyApproved: true));
+        _items.Add(Version("<Report>v2</Report>", 2, validation: null));
+        var (catalog, service, _) = Create();
+        var id = catalog.Assets().Single(a => a.Alias == Alias).Id;
+
+        (await service.ApproveAsync(id, 2, CancellationToken.None)).Should().Contain("has not been validated against its XSD", "existing is not valid");
+        catalog.Assets().Single(a => a.Alias == Alias).Value!.Reveal().Should().Be("<Report>v1</Report>");
+    }
+
+    [Fact]
+    public void A_duplicated_alias_is_reported_by_consumers_never_thrown_and_never_revealed()
+    {
+        _items.Add(Version("<Report>a</Report>", null));
+        _items.Add(Version("<Report>b</Report>", null));
+        var (catalog, _, _) = Create();
+
+        var byAlias = catalog.ByAlias();
+        byAlias[Alias].Approval.Should().Be(TestDataApproval.Disabled, "every copy of a duplicated alias is disabled until it is unique");
+        catalog.Reveal(Alias).Should().BeNull("a disabled duplicate's value is never handed to a run");
+    }
+
+    [Fact]
+    public void An_approved_fixture_built_from_changed_Test_Data_needs_regeneration_and_is_never_ready()
+    {
+        var stale = new TestDataXmlFixtureFacts(Alias, Approved: true, TestDataSchemaStatus.Validated, null, InputsChanged: true);
+        TestDataXmlReadiness.Evaluate([stale]).State.Should().Be(TestDataXmlReadinessState.RegenerationRequired);
+        TestDataXmlReadiness.Evaluate([stale, stale with { Alias = "fresh", InputsChanged = false }]).Should().Be((TestDataXmlReadinessState.Ready, stale with { Alias = "fresh", InputsChanged = false }));
     }
 }

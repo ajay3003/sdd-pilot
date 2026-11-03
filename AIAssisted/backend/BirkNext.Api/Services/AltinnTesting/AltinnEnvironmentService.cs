@@ -258,7 +258,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
     {
         var check = asset.Approval == BirkNext.TestData.TestDataApproval.Approved && schemas is not null
             ? BirkNext.Api.Services.TestData.TestDataSchemaValidator.Check(asset, await schemas.FindAsync(asset.Schema!, ct)) : null;
-        return new(asset.Alias, asset.Approval == BirkNext.TestData.TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId);
+        return new(asset.Alias, asset.Approval == BirkNext.TestData.TestDataApproval.Approved, check?.Status, check?.SourceSnapshotId, testData.InputsChanged(asset.Id));
     }
 
     /// <summary>Approved positive XML fixtures for the form's contract (a contract lookup — a suggestion, not a binding).</summary>
@@ -284,6 +284,7 @@ public sealed class AltinnEnvironmentService(AltinnEnvironmentSettingsStore stor
         BirkNext.TestData.TestDataXmlReadinessState.NotApproved => "not approved",
         BirkNext.TestData.TestDataXmlReadinessState.Invalid => "invalid against its XSD",
         BirkNext.TestData.TestDataXmlReadinessState.Outdated => "needs revalidation",
+        BirkNext.TestData.TestDataXmlReadinessState.RegenerationRequired => "was generated from Test Data values that changed since (regeneration required)",
         BirkNext.TestData.TestDataXmlReadinessState.SchemaUnavailable => "cannot be validated (schema unavailable)",
         _ => "not validated",
     };

@@ -94,7 +94,7 @@ public static class PerformanceCentralTestData
     /// <summary>Problems of the mapped aliases: unknown, not approved (or expired/disabled), wrong data type, or for another environment.</summary>
     public static List<string> Issues(PerformanceTestDefinition d, TestDataCatalog catalog, DateTimeOffset now)
     {
-        var assets = catalog.Assets().ToDictionary(a => a.Alias, StringComparer.Ordinal);
+        var assets = catalog.ByAlias();
         var issues = new List<string>();
         foreach (var (step, mapping) in Mappings(d).Concat(Variables(d).Select(v => (Step: new HttpPerformanceStep { Name = $"scenario variable {v.Name}" },
             Mapping: new ScenarioDataMapping(v.Name, [v.AssetAlias!], TestDataDataType.SimpleValues, "variable")))))

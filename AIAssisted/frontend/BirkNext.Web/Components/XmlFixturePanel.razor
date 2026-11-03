@@ -82,6 +82,7 @@
                     <button type="button" class="btn btn-primary btn-sm" data-testid="xf-create" @onclick="() => Open(current?.Approval == TestDataApproval.Approved ? current.Alias : null)">@(readiness switch
                     {
                         TestDataXmlReadinessState.Outdated => "Revalidate against current XSD",
+                        TestDataXmlReadinessState.RegenerationRequired => "Regenerate XML (new draft version)",
                         TestDataXmlReadinessState.Invalid => "Create a valid XML fixture",
                         _ when context.CanonicalFixtureAlias is not null && !HasCanonical(context) => "Create missing XML fixture",
                         // The canonical fixture exists (approved): the action makes a new draft version of it, never another fixture.

@@ -64,7 +64,8 @@ public static class XmlFixturePresentation
     public static (TestDataXmlReadinessState State, string Text, TestDataAssetSummary? Fixture) Readiness(IReadOnlyList<TestDataAssetSummary> fixtures, Guid? currentSnapshot)
     {
         var (state, facts) = TestDataXmlReadiness.Evaluate(
-            [.. fixtures.Select(f => new TestDataXmlFixtureFacts(f.Alias, f.Approval == TestDataApproval.Approved, f.SchemaCheck?.Status, f.SchemaCheck?.SourceSnapshotId ?? f.Schema?.SourceSnapshotId))],
+            [.. fixtures.Select(f => new TestDataXmlFixtureFacts(f.Alias, f.Approval == TestDataApproval.Approved, f.SchemaCheck?.Status, f.SchemaCheck?.SourceSnapshotId ?? f.Schema?.SourceSnapshotId,
+                InputsChanged: f.Staleness is not null))],
             currentSnapshot);
         return (state, ReadinessText(state), facts is null ? null : fixtures.First(f => f.Alias == facts.Alias));
     }
@@ -75,6 +76,7 @@ public static class XmlFixturePresentation
         TestDataXmlReadinessState.NotApproved => "Saved, not approved",
         TestDataXmlReadinessState.Ready => "Ready for test use",
         TestDataXmlReadinessState.Outdated => "Validation outdated",
+        TestDataXmlReadinessState.RegenerationRequired => "Regeneration required",
         TestDataXmlReadinessState.Invalid => "Invalid",
         TestDataXmlReadinessState.SchemaUnavailable => "Schema unavailable",
         _ => "Needs validation",
@@ -116,6 +118,7 @@ public static class XmlFixturePresentation
                 TestDataXmlReadinessState.Missing => "XML fixture missing",
                 TestDataXmlReadinessState.NotApproved => "XML fixture not approved",
                 TestDataXmlReadinessState.Outdated => "XML fixture validation outdated",
+                TestDataXmlReadinessState.RegenerationRequired => "XML fixture regeneration required (mapped Test Data changed)",
                 TestDataXmlReadinessState.SchemaUnavailable => "Contract schema unavailable",
                 _ => "XML fixture needs validation",
             });
