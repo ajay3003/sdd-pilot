@@ -7,11 +7,12 @@ public static class TaskExplorerService
 {
     // ── Regex patterns ────────────────────────────────────────────────────
 
+    // "-", "*" and "+" are all Markdown list bullets; Delivery Reporting already accepts "+" — one rule for the same tasks.md.
     private static readonly Regex CheckboxTaskRe = new(
-        @"^\s*[-*]\s+\[([xX ])\]\s+(.+)$", RegexOptions.Compiled);
+        @"^\s*[-*+]\s+\[([xX ])\]\s+(.+)$", RegexOptions.Compiled);
 
     private static readonly Regex BareTaskRe = new(
-        @"^\s*[-*]?\s*T(\d{2,4}[a-zA-Z]*)\b\s*[-–.]?\s*(.*)$", RegexOptions.Compiled);
+        @"^\s*[-*+]?\s*T(\d{2,4}[a-zA-Z]*)\b\s*[-–.]?\s*(.*)$", RegexOptions.Compiled);
 
     private static readonly Regex TaskIdRe = new(
         @"\bT(\d{2,4}[a-zA-Z]*)\b", RegexOptions.Compiled);
@@ -459,10 +460,12 @@ public static class TaskExplorerService
                 userStoryTag = "Story"; // [Story] or [Story?]
         }
 
+        // The shared identifier grammar (FR-1, FR01, FR-001 → FR-001), the same normalization the specification uses, so a task's reference
+        // matches the requirement it names.
         var frIds = FrRefRe.Matches(body)
-            .Select(m => $"FR-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList();
+            .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}")).Distinct().ToList();
         var scIds = ScRefRe.Matches(body)
-            .Select(m => $"SC-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList();
+            .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"SC-{m.Groups[2].Value}")).Distinct().ToList();
 
         // Find first task ID in the body
         var taskMatch = TaskIdRe.Match(body);
