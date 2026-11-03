@@ -141,7 +141,7 @@ public sealed record ProjectEvidenceView(
     /// <summary>Why, in one sentence, from the same counts as the table (bound is never presented as ready).</summary>
     public string ReadinessExplanation => !IsConfigured ? "No Project evidence is configured for this Target Application yet."
         : RequiredReadyAll ? $"All {RequiredTotal} required roles are bound and satisfy their evidence requirements. Ready is not QA verified."
-        : RequiredMissing == 0 && Conflicts == 0
+        : RequiredMissing == 0 && Conflicts == 0 && RequiredBound == RequiredTotal
             ? $"All {RequiredTotal} required roles are bound, but {RequiredTotal - RequiredReady} do{(RequiredTotal - RequiredReady == 1 ? "es" : "")} not yet fully satisfy their evidence requirements."
             : $"{RequiredBound} of {RequiredTotal} required roles are bound and {RequiredReady} ready; {RequiredMissing} missing{(Conflicts > 0 ? $", {Conflicts} with a conflict" : "")}.";
 
@@ -168,6 +168,11 @@ public sealed record ProjectEvidenceView(
         + TestPackRows.Count(r => !r.IsRequired && r.Status.State is TestPackSourceState.Bound or TestPackSourceState.Available);
 
     /// <summary>Required evidence not resolved, in table order (project roles, then activated Test Pack roles).</summary>
+    /// <summary>Every required role (and required Test Pack source) that is not Ready yet — the list behind "N / M required ready", so the
+    /// gap is always named (BlockingLabels lists only missing/undecided/conflicting roles, not partial ones).</summary>
+    public IReadOnlyList<string> NotReadyLabels => [.. Rows.Where(r => r.IsRequired && !r.IsReady).Select(r => r.Role.Label),
+        .. TestPackRows.Where(r => r.IsRequired && !r.IsReady).Select(r => r.Status.Role.Label)];
+
     public IReadOnlyList<string> BlockingLabels => [.. Rows.Where(r => r.Blocks).Select(r => r.Role.Label), .. TestPackRows.Where(r => r.Blocks).Select(r => r.Status.Role.Label)];
 
     public EvidenceRoleRow? Row(string roleKey) => Rows.FirstOrDefault(r => string.Equals(r.Role.RoleKey, roleKey, StringComparison.Ordinal));

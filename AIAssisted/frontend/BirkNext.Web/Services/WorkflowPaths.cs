@@ -203,7 +203,7 @@ public static class WorkflowPaths
                 "Review project evidence", ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environment.Id)));
         else if (evidenceOf(environment.Id) is { RequiredReadyAll: false } partial)
             steps.Add(new(ProjectStep, $"Project evidence for {partial.ProjectName}", false,
-                $"{partial.RequiredReady} / {partial.RequiredTotal} required ready. Missing: {string.Join(", ", partial.BlockingLabels)}.",
+                $"{partial.RequiredReady} / {partial.RequiredTotal} required ready. Not ready yet: {string.Join(", ", partial.NotReadyLabels.DefaultIfEmpty(partial.Conflicts > 0 ? "a conflicting source" : "required evidence"))}.",
                 "Review Project evidence", ProjectEvidence.ProjectEvidenceResolver.ProjectTabHref(environment.Id)));
         else
             steps.Add(new(ProjectStep, $"Project evidence for {environment.Project.ProjectName}", true, "Required evidence is ready.",

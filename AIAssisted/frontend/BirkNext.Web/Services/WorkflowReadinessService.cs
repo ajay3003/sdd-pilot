@@ -200,6 +200,19 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
     public event Action? ReadinessChanged;
 
+    private readonly QualityReviewSessionService? _qualitySession;
+    private readonly RuntimeReviewSessionService? _runtimeReviews;
+
+    /// <summary>A review that already produced a result in this session (for the active environment) is not recommended again as the next step.</summary>
+    private bool HasRun(string reviewId) => reviewId switch
+    {
+        "quality-review" => _qualitySession?.Status == AnalysisSessionStatus.Completed,
+        "frontend-quality-review" => _runtimeReviews?.QualityReview.Status == RuntimeReviewStatus.Completed,
+        "api-quality-review" => _runtimeReviews?.ApiQualityReview.Status == RuntimeReviewStatus.Completed,
+        "integration-quality-review" => _runtimeReviews?.IntegrationQualityReview.Status == RuntimeReviewStatus.Completed,
+        _ => false,
+    };
+
     public WorkflowReadinessService(
         ICurrentWorkspaceProjection workspace,
         ProjectApplicabilityState applicability,
@@ -209,8 +222,12 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         ImplementationTraceabilityApiService? changeTraceability = null,
         FeatureVisibilityService? features = null,
         ProjectEvidence.IProjectEvidenceService? evidence = null,
-        IFrontendAnalysisSettingsService? settings = null)
+        IFrontendAnalysisSettingsService? settings = null,
+        QualityReviewSessionService? qualitySession = null,
+        RuntimeReviewSessionService? runtimeReviews = null)
     {
+        _qualitySession = qualitySession;
+        _runtimeReviews = runtimeReviews;
         _features = features;
         _evidence = evidence;
         _settings = settings;
@@ -579,7 +596,8 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                     ImplementationEvidenceRoute, "Open Implementation Evidence Review");
         }
 
-        if (reviews.FirstOrDefault() is { } review)
+        // Reviews in sidebar order, skipping those that already ran: recommending a finished review again is never the next step.
+        if (reviews.FirstOrDefault(r => !HasRun(r.ReviewId)) is { } review)
         {
             // A runtime review against an incomplete target (no URL, or the seed's example URL) would test nothing real.
             if (inputs.Target.Status == ProjectInputStatus.Partial && NeedsTarget(review.ReviewId))

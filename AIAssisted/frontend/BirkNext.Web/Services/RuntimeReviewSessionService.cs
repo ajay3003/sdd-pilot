@@ -14,14 +14,23 @@ public enum RuntimeReviewStatus
 public sealed record RuntimeReviewContextSnapshot(
     string TargetUrl,
     string ProfileName,
-    string Environment);
+    string Environment,
+    string? ProfileId = null);
 
-public sealed class RuntimeReviewSessionState<TReport>
+internal interface IRuntimeReviewScoped
+{
+    string? ProfileId { get; }
+    void Clear();
+}
+
+public sealed class RuntimeReviewSessionState<TReport> : IRuntimeReviewScoped
 {
     public RuntimeReviewStatus Status { get; private set; } = RuntimeReviewStatus.NotRun;
     public TReport? Report { get; private set; }
     public string? TargetUrl { get; private set; }
     public string? ProfileName { get; private set; }
+    /// <summary>The Target Environment (profile id) the result belongs to; a result is never shown as current for another environment.</summary>
+    public string? ProfileId { get; private set; }
     public string? Environment { get; private set; }
     public DateTimeOffset? RunTimestamp { get; private set; }
     public string? ErrorMessage { get; private set; }
@@ -34,6 +43,7 @@ public sealed class RuntimeReviewSessionState<TReport>
         Report = default;
         TargetUrl = context.TargetUrl;
         ProfileName = context.ProfileName;
+        ProfileId = context.ProfileId;
         Environment = context.Environment;
         RunTimestamp = DateTimeOffset.UtcNow;
         ErrorMessage = null;
@@ -45,6 +55,7 @@ public sealed class RuntimeReviewSessionState<TReport>
         Report = report;
         TargetUrl = context.TargetUrl;
         ProfileName = context.ProfileName;
+        ProfileId = context.ProfileId;
         Environment = context.Environment;
         RunTimestamp = runTimestamp;
         ErrorMessage = null;
@@ -56,25 +67,53 @@ public sealed class RuntimeReviewSessionState<TReport>
         Report = default;
         TargetUrl = context.TargetUrl;
         ProfileName = context.ProfileName;
+        ProfileId = context.ProfileId;
         Environment = context.Environment;
         RunTimestamp = DateTimeOffset.UtcNow;
         ErrorMessage = errorMessage;
     }
 
-    internal void Clear()
+    public void Clear()
     {
         Status = RuntimeReviewStatus.NotRun;
         Report = default;
         TargetUrl = null;
         ProfileName = null;
+        ProfileId = null;
         Environment = null;
         RunTimestamp = null;
         ErrorMessage = null;
     }
 }
 
-public sealed class RuntimeReviewSessionService
+/// <summary>
+/// This browser session's latest runtime review results — per review, and only for the active Target Environment: switching the active
+/// environment clears results of the previous one (each review's own history keeps them per environment). A run that was started before a
+/// switch still shows its own result, labelled with the environment it ran against (its ProfileId/ProfileName), never relabelled.
+/// </summary>
+public sealed class RuntimeReviewSessionService : IDisposable
 {
+    private readonly IFrontendAnalysisSettingsService? _settings;
+
+    public RuntimeReviewSessionService() { }
+
+    public RuntimeReviewSessionService(IFrontendAnalysisSettingsService settings)
+    {
+        _settings = settings;
+        _settings.Changed += OnSettingsChanged;
+    }
+
+    public void Dispose() { if (_settings is not null) _settings.Changed -= OnSettingsChanged; }
+
+    private void OnSettingsChanged() => ScopeTo(_settings?.ActiveProfile?.Id);
+
+    /// <summary>Clears every result that belongs to another Target Environment than <paramref name="activeProfileId"/>.</summary>
+    public void ScopeTo(string? activeProfileId)
+    {
+        foreach (var state in new IRuntimeReviewScoped[] { SecurityReview, PerformanceReview, QualityReview, ApiQualityReview, IntegrationQualityReview })
+            if (state.ProfileId is { } id && id != activeProfileId) state.Clear();
+    }
+
     public RuntimeReviewSessionState<WasmSecurityReviewReport>     SecurityReview    { get; } = new();
     public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
     public RuntimeReviewSessionState<FrontendQualityReviewReport>  QualityReview     { get; } = new();
@@ -85,7 +124,7 @@ public sealed class RuntimeReviewSessionService
         SecurityReview.MarkRunning(CreateSnapshot(context));
 
     public void SaveSecurityResult(WasmSecurityReviewReport report, FrontendAnalysisContext context) =>
-        SecurityReview.Complete(report, CreateSnapshot(context), ToOffset(report.ScannedAt));
+        Save(SecurityReview, report, CreateSnapshot(context), ToOffset(report.ScannedAt));
 
     public void MarkSecurityFailed(FrontendAnalysisContext context, string errorMessage) =>
         SecurityReview.Fail(CreateSnapshot(context), errorMessage);
@@ -96,7 +135,7 @@ public sealed class RuntimeReviewSessionService
         PerformanceReview.MarkRunning(CreateSnapshot(context));
 
     public void SavePerformanceResult(WasmPerformanceReviewReport report, FrontendAnalysisContext context) =>
-        PerformanceReview.Complete(report, CreateSnapshot(context), ToOffset(report.ReviewedAt));
+        Save(PerformanceReview, report, CreateSnapshot(context), ToOffset(report.ReviewedAt));
 
     public void MarkPerformanceFailed(FrontendAnalysisContext context, string errorMessage) =>
         PerformanceReview.Fail(CreateSnapshot(context), errorMessage);
@@ -107,7 +146,7 @@ public sealed class RuntimeReviewSessionService
         QualityReview.MarkRunning(CreateSnapshot(context));
 
     public void SaveQualityResult(FrontendQualityReviewReport report, FrontendAnalysisContext context) =>
-        QualityReview.Complete(report, CreateSnapshot(context), ToOffset(report.GeneratedAt));
+        Save(QualityReview, report, CreateSnapshot(context), ToOffset(report.GeneratedAt));
 
     public void MarkQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
         QualityReview.Fail(CreateSnapshot(context), errorMessage);
@@ -118,7 +157,7 @@ public sealed class RuntimeReviewSessionService
         ApiQualityReview.MarkRunning(CreateApiQualitySnapshot(context));
 
     public void SaveApiQualityResult(ApiReviewReport report, FrontendAnalysisContext context) =>
-        ApiQualityReview.Complete(report, CreateApiQualitySnapshot(context), report.GeneratedAt);
+        Save(ApiQualityReview, report, CreateApiQualitySnapshot(context), report.GeneratedAt);
 
     public void MarkApiQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
         ApiQualityReview.Fail(CreateApiQualitySnapshot(context), errorMessage);
@@ -129,7 +168,12 @@ public sealed class RuntimeReviewSessionService
         IntegrationQualityReview.MarkRunning(CreateIntegrationQualitySnapshot(context));
 
     public void SaveIntegrationQualityResult(BirkNext.Integrations.IntegrationReviewResult result, FrontendAnalysisContext context) =>
-        IntegrationQualityReview.Complete(result, new RuntimeReviewContextSnapshot($"{result.TopicsReviewed} topics", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString()), result.CompletedAt);
+        Save(IntegrationQualityReview, result, new RuntimeReviewContextSnapshot($"{result.TopicsReviewed} topics", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString(), context.ActiveProfile.Id), result.CompletedAt);
+
+    private void Save<TReport>(RuntimeReviewSessionState<TReport> state, TReport report, RuntimeReviewContextSnapshot context, DateTimeOffset at)
+    {
+        state.Complete(report, context, at);
+    }
 
     public void MarkIntegrationQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
         IntegrationQualityReview.Fail(CreateIntegrationQualitySnapshot(context), errorMessage);
@@ -153,16 +197,18 @@ public sealed class RuntimeReviewSessionService
         new(
             context.TargetUrl,
             context.ActiveProfile.Name,
-            context.ActiveProfile.EnvironmentType.ToString());
+            context.ActiveProfile.EnvironmentType.ToString(),
+            context.ActiveProfile.Id);
 
     private static RuntimeReviewContextSnapshot CreateApiQualitySnapshot(FrontendAnalysisContext context) =>
         new(
             context.RestBaseUrl ?? context.TargetUrl,
             context.ActiveProfile.Name,
-            context.ActiveProfile.EnvironmentType.ToString());
+            context.ActiveProfile.EnvironmentType.ToString(),
+            context.ActiveProfile.Id);
 
     private static RuntimeReviewContextSnapshot CreateIntegrationQualitySnapshot(FrontendAnalysisContext context) =>
-        new("Configured integrations", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString());
+        new("Configured integrations", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString(), context.ActiveProfile.Id);
 
     private static DateTimeOffset ToOffset(DateTime timestamp)
     {

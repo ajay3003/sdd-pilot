@@ -105,4 +105,19 @@ public sealed class SourceAnalysisDashboardTests
         SourceAnalysisDashboard.Coverage(snapshot).Select(d => (d.Key, d.State)).Last().Should().Be(("runtime", SourceEvidenceState.NotVerifiedAtRuntime));
         SourceAnalysisDashboard.Target("cicd").Should().Be((SourceAnalysisAreas.Quality, "CI/CD"));
     }
+
+    [Fact]
+    public void An_unsupported_observability_snapshot_is_not_assessed_never_detected_with_counts()
+    {
+        var snapshot = Snapshot(SourceEvidenceDomainsUiTests.Evidence()) with
+        {
+            Observability = new BirkNext.SourceObservability.SourceObservabilitySnapshot { Status = BirkNext.SourceArchitecture.ArchitectureStatus.Unsupported },
+        };
+
+        var card = SourceAnalysisDashboard.Observability(snapshot);
+
+        card.State.Should().Be(SourceEvidenceState.NotAssessed);
+        card.Metrics.Should().BeEmpty("not assessed is not zero");
+        card.StateNote.Should().Contain("No supported project type");
+    }
 }

@@ -60,6 +60,26 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
+    public void A_failed_review_shows_an_error_records_failed_and_never_crashes_or_keeps_an_old_result()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Run Document Quality Review"));
+        ClickRun(cut);
+        cut.WaitForAssertion(() => _qualitySession.Status.Should().Be(AnalysisSessionStatus.Completed));
+
+        _qualityReview.Failure = new InvalidOperationException("engine unavailable");
+        cut.Find("button.qr-input-panel-toggle").Click(); // the input panel collapses after a result; reopen it to run again
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-error]").TextContent.Should().Contain("engine unavailable").And.Contain("No result was recorded"));
+        _qualitySession.Status.Should().Be(AnalysisSessionStatus.Failed);
+        cut.FindAll("[data-testid=qr-post-run-warning]").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Export HTML", "the previous run's result is not shown as this run's");
+    }
+
+    [Fact]
     public void ReadOnlyUi_DoesNotRenderManualArtifactInputControls()
     {
         SeedProjectA();
@@ -1434,6 +1454,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         public List<RunCall> Calls { get; } = [];
         public QualityReviewReport? FixedReport { get; set; }
+        public Exception? Failure { get; set; }
 
         public void SetReport(QualityReviewReport report) => FixedReport = report;
 
@@ -1450,6 +1471,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var selected = selectedPackIds.ToList();
             Calls.Add(new RunCall(constitutionText, specText, planText, taskText, dataModelText, selected));
 
+            if (Failure is not null) return Task.FromException<QualityReviewReport>(Failure);
             if (FixedReport != null)
                 return Task.FromResult(FixedReport);
 

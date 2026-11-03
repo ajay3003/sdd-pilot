@@ -3,6 +3,7 @@
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using Microsoft.Extensions.Logging
 @inject IQualityReviewService QrService
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject IDeliveryReadinessAssessmentService DrService
@@ -444,6 +445,14 @@
     }
 
     <!-- ── Results ───────────────────────────────────────────────────────── -->
+    @if (_runError is { } runError)
+    {
+        <div class="notification notification-error" role="alert" data-testid="qr-run-error">The review could not be completed: @runError. No result was recorded for this run.</div>
+    }
+    @if (_postRunWarning is { } postRunWarning)
+    {
+        <div class="notification notification-warning" role="status" data-testid="qr-post-run-warning">The review completed and its result is shown below, but @postRunWarning</div>
+    }
     @if (_report is not null)
     {
         <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-bottom:0.25rem">
@@ -1203,10 +1212,22 @@
         };
     }
 
+    private string? _runError;
+    private string? _postRunWarning;
+
+    /// <summary>
+    /// The review is one step and its bookkeeping another: a failure of the review itself marks the run Failed and shows no result (never the
+    /// previous run's); a failure after the result was saved (lifecycle history, diagnostic export) keeps the completed result and says what
+    /// was not saved. Nothing is rethrown into the Blazor event handler.
+    /// </summary>
     private async Task RunReview()
     {
-        if (CannotRun) return;
+        if (CannotRun || _running) return;
         _running = true;
+        _runError = null;
+        _postRunWarning = null;
+        _report = null;
+        string? stage = null;
         try
         {
             var artifactSnapshot = BuildArtifactSnapshot();
@@ -1228,6 +1249,7 @@
             }, selectedPackIds);
 
             QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot, inputs);
+            stage = "the review history could not be saved";
 
             if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph && sddGraph.Project(sddWorkspace, SddProjectionMode).Rows.Count > 0)
             {
@@ -1249,7 +1271,9 @@
             }
 
             // Capture diagnostic snapshot from the exact run
+            stage = "the diagnostic export could not be prepared";
             _diagnosticSnapshot = await BuildDiagnosticExportAsync(_report, selectedPackIds);
+            stage = "the Dashboard summary could not be updated";
 
             // Publish pack results so Dashboard can consume the shared quality session.
             var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
@@ -1286,11 +1310,19 @@
             _drRecPhaseFilter        = null;
             _drRecSearch             = string.Empty;
         }
+        catch (Exception ex) when (stage is not null && _report is not null)
+        {
+            // The result was saved: keep it Completed, and say which bookkeeping step failed.
+            (Services.GetService(typeof(ILogger<QualityReview>)) as ILogger)?.LogWarning(ex, "Document Quality Review post-run step failed: {Stage}", stage);
+            _postRunWarning = $"{stage} ({ex.Message}).";
+        }
         catch (Exception ex)
         {
+            (Services.GetService(typeof(ILogger<QualityReview>)) as ILogger)?.LogError(ex, "Document Quality Review run failed");
             QualitySession.MarkFailed(_selectedPacks, _selectedProject ?? string.Empty, BuildArtifactSnapshot(), ex.Message);
+            _report = null;
             _diagnosticSnapshot = null;
-            throw;
+            _runError = ex.Message;
         }
         finally
         {

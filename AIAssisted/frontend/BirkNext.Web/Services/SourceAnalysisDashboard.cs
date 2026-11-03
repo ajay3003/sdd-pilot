@@ -199,6 +199,8 @@ public static class SourceAnalysisDashboard
     {
         var href = Href(SourceAnalysisAreas.Quality, "Observability");
         if (s.Observability is not { } o) return NotAssessed("observability", "Observability", "◎", href, "This snapshot predates observability analysis.");
+        if (o.Status == ArchitectureStatus.Unsupported)
+            return NotAssessed("observability", "Observability", "◎", href, "No supported project type was found, so observability was not analyzed (counts are not assessed, not zero).");
         var review = SourceObservabilityPresentation.NeedsReview(o);
         return new("observability", "Observability", "◎", review > 0 ? SourceEvidenceState.NeedsReview : SourceEvidenceState.Detected,
             "Logging, tracing and correlation as written in source · runtime telemetry not verified",

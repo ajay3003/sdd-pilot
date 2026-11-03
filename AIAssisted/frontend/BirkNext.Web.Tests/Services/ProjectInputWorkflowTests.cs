@@ -50,10 +50,10 @@ public sealed class ProjectInputWorkflowTests
     private readonly Mock<IFrontendAnalysisSettingsService> _settings = new();
     private readonly Mock<ICurrentWorkspaceProjection> _projection = new() { CallBase = true };
 
-    private Task<WorkflowReadiness> ReadinessAsync(FeatureVisibilityService? features = null) => Create(features).Service.GetReadinessAsync();
+    private Task<WorkflowReadiness> ReadinessAsync(FeatureVisibilityService? features = null, QualityReviewSessionService? quality = null) => Create(features, quality).Service.GetReadinessAsync();
 
     /// <summary>The production chain: workspace projection + applicability (Target Environments, source coverage) + readiness.</summary>
-    private (WorkflowReadinessService Service, ProjectApplicabilityState Applicability) Create(FeatureVisibilityService? features = null)
+    private (WorkflowReadinessService Service, ProjectApplicabilityState Applicability) Create(FeatureVisibilityService? features = null, QualityReviewSessionService? quality = null)
     {
         _projection.Setup(p => p.GetAsync()).ReturnsAsync(() => _workspace);
         var projection = _projection;
@@ -66,7 +66,7 @@ public sealed class ProjectInputWorkflowTests
         var applicability = new ProjectApplicabilityState(api.Object, contexts.Object, projection.Object, _settings.Object);
         _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
             .ReturnsAsync(() => _steps);
-        return (new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance, features: features), applicability);
+        return (new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance, features: features, qualitySession: quality), applicability);
     }
 
     /// <summary>A Target Environment saved, created, switched or reset: the settings service announces it.</summary>
@@ -131,6 +131,20 @@ public sealed class ProjectInputWorkflowTests
         r.NextRecommendedAction.Title.Should().NotBe("Load project artifacts");
         r.ArtifactLoad.Should().Be(ArtifactLoadState.Done);
         r.AlternativeActions.Should().BeEmpty("source and target are optional, not blockers");
+    }
+
+    [Fact]
+    public async Task A_review_that_already_ran_this_session_is_not_recommended_again()
+    {
+        Documents(AllRoles);
+        DocumentStepsApproved();
+        var quality = new QualityReviewSessionService();
+        quality.SaveResult(new QualityReviewReport { OverallScore = 90, PackResults = [], RunAt = DateTimeOffset.UtcNow }, ["qa-auditor"], "p", new Dictionary<WorkspaceArtifactKind, string>());
+
+        var r = await ReadinessAsync(quality: quality);
+
+        r.NextRecommendedAction?.Key.Should().NotBe(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review", "a finished review is never the next step again");
+        r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain("quality-review", "it stays applicable and listed");
     }
 
     [Fact]
