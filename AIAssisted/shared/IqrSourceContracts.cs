@@ -77,9 +77,9 @@ public sealed record IqrSourceSnapshot
 }
 
 /// <summary>
-/// A Source Analysis snapshot as a readiness snapshot carries it: identity, provenance, freshness, status and counts. Readiness carries
-/// references and summaries, never evidence blobs — a full <see cref="IqrSourceSnapshot"/> is megabytes and is fetched by id only when a
-/// person opens its evidence (GET api/source-analysis/{id}).
+/// A Source Analysis snapshot as a list or a readiness snapshot carries it: identity, provenance, freshness, status, counts and which evidence
+/// it holds. Lists and readiness carry references and summaries, never evidence blobs — a full <see cref="IqrSourceSnapshot"/> is megabytes
+/// and is fetched by id only when it is opened (GET api/source-analysis/{id}).
 /// </summary>
 public sealed record IqrSourceSnapshotSummary
 {
@@ -103,9 +103,31 @@ public sealed record IqrSourceSnapshotSummary
     public int LimitationCount { get; init; }
     /// <summary>The first <see cref="MaxLimitations"/> limitations; <see cref="LimitationCount"/> says how many there are.</summary>
     public List<string> Limitations { get; init; } = [];
+    /// <summary>Repository identity key (same repository across snapshots); null when the snapshot predates repository identity.</summary>
+    public string? RepositoryKey { get; init; }
+    /// <summary>The Project Import that created the snapshot; null for a source-only upload.</summary>
+    public string? ProjectImportId { get; init; }
+    // Which evidence the snapshot holds, so a reader picks the snapshot it needs before fetching it.
+    public bool HasArchitecture { get; init; }
+    public bool HasDatabaseArchitecture { get; init; }
+    public int Databases { get; init; }
+    public bool HasObservability { get; init; }
+    public bool HasEvidenceDomains { get; init; }
+    public int InfrastructureResources { get; init; }
+    /// <summary>OpenAPI documents among the source contracts (REST contract binding reads these).</summary>
+    public int OpenApiContracts { get; init; }
+    public bool HasDependencyEvidence { get; init; }
+    public bool HasCodeRiskEvidence { get; init; }
+    /// <summary>Source test definitions discovered; null when the snapshot predates source test discovery.</summary>
+    public int? SourceTestDefinitions { get; init; }
 
     public static IqrSourceSnapshotSummary From(IqrSourceSnapshot s) => new()
     {
+        RepositoryKey = s.Repository?.Key, ProjectImportId = s.ProjectImport?.ImportId, HasArchitecture = s.Architecture is not null,
+        HasDatabaseArchitecture = s.DatabaseArchitecture is not null, Databases = s.DatabaseArchitecture?.Databases.Count ?? 0, HasObservability = s.Observability is not null, HasEvidenceDomains = s.EvidenceDomains is not null,
+        InfrastructureResources = s.EvidenceDomains?.Infrastructure.Resources.Count ?? 0, OpenApiContracts = s.EvidenceDomains?.Contracts.Contracts.Count(c => c.Type == BirkNext.SourceDomains.SourceContractType.OpenApi) ?? 0,
+        HasDependencyEvidence = s.DependencyEvidence is not null, HasCodeRiskEvidence = s.CodeRiskEvidence is not null,
+        SourceTestDefinitions = s.TestInventory?.Definitions.Count,
         Id = s.Id, IntegrationId = s.IntegrationId, Archive = s.Archive, Commit = s.Commit, Branch = s.Branch, Repository = s.Repository?.DisplayName,
         AnalyzerVersion = s.AnalyzerVersion, AnalyzedAt = s.AnalyzedAt, Status = s.Status, Projects = s.Projects.Count, Configurations = s.Configurations.Count,
         Rules = s.Rules.Count, Tests = s.Tests.Count, Dataflows = s.Dataflows.Count, HasIntegrationPath = s.IntegrationPath is not null,

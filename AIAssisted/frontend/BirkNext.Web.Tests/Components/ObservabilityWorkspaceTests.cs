@@ -202,7 +202,7 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
             new() { Id = Guid.NewGuid(), IntegrationId = "source-analysis", Archive = new SourceArchive("legacy.zip", new string('9', 64), 40), AnalyzedAt = DateTimeOffset.Parse("2026-09-01T10:00:00Z") },
             new() { Id = Guid.NewGuid(), IntegrationId = "source-analysis", Archive = new SourceArchive("other-repo.zip", new string('8', 64), 40), AnalyzedAt = DateTimeOffset.Parse("2026-09-15T10:00:00Z"), Observability = Fixture() },
         };
-        api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(snapshots);
+        api.SetupSourceSnapshots((IReadOnlyList<IqrSourceSnapshot>)snapshots);
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
         Services.AddSingleton(api.Object);

@@ -85,7 +85,7 @@
     /// <summary>Environment scopes the reader can register for (Target Environment ids and names). Shared is always offered.</summary>
     [Parameter] public IReadOnlyList<(string Id, string Label)> Scopes { get; set; } = [];
     [Parameter] public EventCallback<string> OnRegistered { get; set; }
-    private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
+    private IReadOnlyList<IqrSourceSnapshotSummary>? _snapshots;
     private IReadOnlyList<TestDataCandidate>? _candidates;
     private readonly HashSet<string> _dismissed = [];
     private string _selected = "", _alias = "", _scope = "";
@@ -96,7 +96,7 @@
     protected override async Task OnInitializedAsync()
     {
         if (ServiceProvider.GetService(typeof(IIntegrationCatalogApiService)) is not IIntegrationCatalogApiService api) { _error = "Source Analysis is unavailable in this session."; return; }
-        try { _snapshots = await api.ListSourceSnapshotsAsync(""); }
+        try { _snapshots = await api.ListSourceSnapshotSummariesAsync(""); }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
     }
 

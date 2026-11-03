@@ -48,8 +48,9 @@ public sealed class AuthorizationCheckInputsLoader(IServiceProvider services)
         if (services.GetService<IIntegrationCatalogApiService>() is not { } api) return ([], null);
         try
         {
-            var latest = (await api.ListSourceSnapshotsAsync(environmentId, ct))
-                .Where(s => s.CodeRiskEvidence is not null).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault();
+            var newest = (await api.ListSourceSnapshotSummariesAsync(environmentId, ct))
+                .Where(s => s.HasCodeRiskEvidence).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault();
+            var latest = newest is null ? null : await api.GetSourceSnapshotAsync(newest.Id, ct);
             if (latest?.CodeRiskEvidence is not { } evidence) return ([], "No Source Analysis snapshot with endpoint authorization metadata.");
             var withNames = evidence.Endpoints.Count(e => e.Policies is not null);
             return (evidence.Endpoints, withNames == 0 && evidence.Endpoints.Count > 0

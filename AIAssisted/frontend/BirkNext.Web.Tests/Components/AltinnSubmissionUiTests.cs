@@ -480,7 +480,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         Services.AddSingleton(factory.Object);
         var catalog = new Mock<IIntegrationCatalogApiService>();
         catalog.Setup(a => a.GetCatalogAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<CancellationToken>())).ReturnsAsync(new IntegrationCatalog());
-        catalog.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        catalog.SetupSourceSnapshots([]);
         Services.AddSingleton(catalog.Object);
 
         Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("extensions/skolenaervaer?tab=rapportmottak");

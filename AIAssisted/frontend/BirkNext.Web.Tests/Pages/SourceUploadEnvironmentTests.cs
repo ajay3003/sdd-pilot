@@ -22,7 +22,7 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
 
     private void Setup(FrontendAnalysisContext context)
     {
-        _api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _api.SetupSourceSnapshots([]);
         var factory = new Mock<IFrontendAnalysisContextFactory>();
         factory.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(context);
         Services.AddSingleton(_api.Object);
@@ -63,7 +63,7 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
         cut.Find("[data-testid=sa-target-state]").TextContent.Should().Be("Not selected");
         cut.Find("[data-testid=sa-runtime-verification]").TextContent.Should().Be("Not performed here");
         cut.Find("[data-testid=sa-runtime-dependent]").TextContent.Should().Contain("Runtime-dependent evidence is not available here");
-        _api.Verify(a => a.ListSourceSnapshotsAsync("", It.IsAny<CancellationToken>()), Times.Once, "the workspace's snapshots are listed without a target");
+        _api.Verify(a => a.ListSourceSnapshotSummariesAsync("", It.IsAny<CancellationToken>()), Times.Once, "the workspace's snapshots are listed without a target");
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
             ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-aaaaaaaaaaaaaaaa", ArchiveFileName = "shop.zip", ArchiveSha256 = new string('a', 64), ImportedAt = DateTimeOffset.UtcNow },
         };
         Setup(NoActiveEnvironment());
-        _api.Setup(a => a.ListSourceSnapshotsAsync("", It.IsAny<CancellationToken>())).ReturnsAsync([snapshot]);
+        _api.SetupSourceSnapshots(new List<IqrSourceSnapshot> { snapshot }, "");
 
         var cut = Render<SourceAnalysis>();
 
@@ -92,7 +92,7 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
         var cut = Render<SourceAnalysis>();
 
         cut.WaitForElement("[data-testid=sa-empty-upload]");
-        _api.Verify(a => a.ListSourceSnapshotsAsync("dev", It.IsAny<CancellationToken>()), Times.Once);
+        _api.Verify(a => a.ListSourceSnapshotSummariesAsync("dev", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Client error mapping: request validation is never an archive rejection ──────────────────────────────────────────

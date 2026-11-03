@@ -211,13 +211,15 @@
         @if (_sourceSnapshots.Count > 0)
         {
             <label for="sdd-source-snapshot">Snapshot</label>
-            <select id="sdd-source-snapshot" data-testid="ier-source-snapshot" @bind="_selectedSourceSnapshotId">
+            <select id="sdd-source-snapshot" data-testid="ier-source-snapshot" @bind="_selectedSourceSnapshotId" @bind:after="LoadChosenSourceSnapshotAsync">
                 <option value="">Select a snapshot</option>
                 @foreach (var snapshot in _sourceSnapshots)
                 { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToLocalTime().ToString("g") · @snapshot.Status · @Short(snapshot.Archive.Sha256)</option> }
             </select>
             <button data-testid="ier-bind-codelinks" @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(CodeLinkProject))">Bind explicit CodeLinks</button>
-            @if (_sourceSnapshots.FirstOrDefault(x => x.Id == _selectedSourceSnapshotId) is { } chosen
+            @if (_chosenSourceLoading) { <p role="status" aria-busy="true" data-testid="ier-source-snapshot-loading">Loading analysis…</p> }
+            else if (_chosenSourceError is { } chosenError) { <p role="alert" data-testid="ier-source-snapshot-error">Could not load analysis: @chosenError <button type="button" @onclick="LoadChosenSourceSnapshotAsync">Retry</button></p> }
+            @if (_chosenSourceSnapshot is { } chosen && chosen.Id == _selectedSourceSnapshotId
                 && SourceBindingSuggestions.For(SourceBindingSuggestions.ModuleOf(Artifacts.SddLifecycle.ActiveRequirementScope), chosen) is { Count: > 0 } suggestions)
             {
                 @* Candidate assistance only: a suggested binding is not saved and is not implementation evidence. *@
@@ -265,7 +267,7 @@
     private string _baselineLabel = "";
     private string? _sourceMessage;
     private Guid? _selectedSourceSnapshotId;
-    private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot> _sourceSnapshots = [];
+    private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshotSummary> _sourceSnapshots = [];
     private string _testResultJson = "";
     private ArtifactLogicalIdentity.HistoryScope _historyScope = ArtifactLogicalIdentity.HistoryScope.ArtifactPack;
 
@@ -437,10 +439,37 @@
         catch (Exception ex) { _sourceMessage = $"Source Analysis is unavailable: {ex.Message}"; }
     }
 
+    // The list holds summaries; the chosen snapshot is fetched by id (for binding suggestions and CodeLink binding).
+    private BirkNext.Integrations.IqrSourceSnapshot? _chosenSourceSnapshot;
+    private bool _chosenSourceLoading;
+    private string? _chosenSourceError;
+
+    private async Task LoadChosenSourceSnapshotAsync()
+    {
+        _chosenSourceError = null;
+        if (_selectedSourceSnapshotId is not { } id || _sourceSnapshots.All(s => s.Id != id)) { _chosenSourceSnapshot = null; return; }
+        if (_chosenSourceSnapshot?.Id == id) return;
+        _chosenSourceSnapshot = null; _chosenSourceLoading = true;
+        try
+        {
+            var snapshot = await SddEvidenceApi.SourceSnapshotAsync(id);
+            if (_selectedSourceSnapshotId != id) return;
+            _chosenSourceSnapshot = snapshot;
+            if (snapshot is null) _chosenSourceError = "This source snapshot is no longer stored.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (_selectedSourceSnapshotId == id) _chosenSourceError = BackendRequestClassifier.FromException("Source analysis", ex).UserMessage;
+        }
+        finally { if (_selectedSourceSnapshotId == id) _chosenSourceLoading = false; }
+    }
+
     private async Task BindSourceEvidenceAsync()
     {
-        var snapshot = _sourceSnapshots.FirstOrDefault(x => x.Id == _selectedSourceSnapshotId);
-        if (snapshot is null) { _sourceMessage = "Select a valid snapshot."; return; }
+        if (_sourceSnapshots.All(x => x.Id != _selectedSourceSnapshotId)) { _sourceMessage = "Select a valid snapshot."; return; }
+        await LoadChosenSourceSnapshotAsync();
+        var snapshot = _chosenSourceSnapshot;
+        if (snapshot is null) { _sourceMessage = _chosenSourceError ?? "Select a valid snapshot."; return; }
         if (snapshot.Status == BirkNext.Integrations.SourceAnalysisStatus.Failed)
         {
             SddEvidenceGraphService.RecordSourceSnapshot(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);

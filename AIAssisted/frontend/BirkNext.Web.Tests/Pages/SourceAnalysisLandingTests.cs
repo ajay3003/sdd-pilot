@@ -27,7 +27,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
 
     public SourceAnalysisLandingTests()
     {
-        _api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _snapshots.ToList());
+        _api.SetupSourceSnapshots(() => _snapshots.ToList());
         _api.Setup(a => a.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
@@ -159,13 +159,13 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         navigation.NavigateTo("source-analysis");
         var revisit = Render<SourceAnalysis>();
         revisit.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().Be(older.Id.ToString());
-        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _api.Verify(a => a.ListSourceSnapshotSummariesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
 
         navigation.NavigateTo("source-analysis?area=Infrastructure");
         var deepLink = Render<SourceAnalysis>();
         deepLink.Find("[data-testid=area-qualityevidence]").GetAttribute("aria-current").Should().Be("page", "a legacy area link maps onto Quality Evidence");
         deepLink.Find("[data-testid=sa-quality-infrastructure]").GetAttribute("aria-current").Should().Be("true");
-        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _api.Verify(a => a.ListSourceSnapshotSummariesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
 
         _uploads.Should().Be(1);
         cut.WaitForAssertion(() => cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("shop-api.zip"));
-        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2), "the successful new analysis invalidates and refreshes the prior cached response");
+        _api.Verify(a => a.ListSourceSnapshotSummariesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2), "the successful new analysis invalidates and refreshes the prior cached response");
         cut.Find("[data-testid=area-overview]").GetAttribute("aria-current").Should().Be("page");
         Status(cut, "architecture").Should().Be("Complete");
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "sa-current-heading");

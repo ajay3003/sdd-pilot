@@ -12,8 +12,8 @@ public sealed class SourceAnalysisSnapshotStateTests
         var state = new SourceAnalysisSnapshotState();
         var key = new SourceAnalysisSnapshotKey("dev", Guid.NewGuid(), "shop", 4);
         var calls = 0;
-        IReadOnlyList<IqrSourceSnapshot> expected = [new() { Id = Guid.NewGuid() }];
-        Task<IReadOnlyList<IqrSourceSnapshot>> Load()
+        IReadOnlyList<IqrSourceSnapshotSummary> expected = [new() { Id = Guid.NewGuid() }];
+        Task<IReadOnlyList<IqrSourceSnapshotSummary>> Load()
         {
             calls++;
             return Task.FromResult(expected);
@@ -34,10 +34,10 @@ public sealed class SourceAnalysisSnapshotStateTests
         var workspaceId = Guid.NewGuid();
         var key = new SourceAnalysisSnapshotKey("dev", workspaceId, "shop", 4);
         var calls = 0;
-        Task<IReadOnlyList<IqrSourceSnapshot>> Load()
+        Task<IReadOnlyList<IqrSourceSnapshotSummary>> Load()
         {
             calls++;
-            return Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([new() { Id = Guid.NewGuid() }]);
+            return Task.FromResult<IReadOnlyList<IqrSourceSnapshotSummary>>([new() { Id = Guid.NewGuid() }]);
         }
 
         await state.GetOrLoadAsync(key, Load);
@@ -56,17 +56,17 @@ public sealed class SourceAnalysisSnapshotStateTests
         var state = new SourceAnalysisSnapshotState();
         var key = new SourceAnalysisSnapshotKey("dev", Guid.NewGuid(), "shop", 1);
         var calls = 0;
-        Func<Task<IReadOnlyList<IqrSourceSnapshot>>> fail = () =>
+        Func<Task<IReadOnlyList<IqrSourceSnapshotSummary>>> fail = () =>
         {
             calls++;
-            return Task.FromException<IReadOnlyList<IqrSourceSnapshot>>(new InvalidOperationException("offline"));
+            return Task.FromException<IReadOnlyList<IqrSourceSnapshotSummary>>(new InvalidOperationException("offline"));
         };
 
         await FluentActions.Awaiting(() => state.GetOrLoadAsync(key, fail)).Should().ThrowAsync<InvalidOperationException>();
         await state.GetOrLoadAsync(key, () =>
         {
             calls++;
-            return Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+            return Task.FromResult<IReadOnlyList<IqrSourceSnapshotSummary>>([]);
         });
         state.SelectSnapshot(key, "snapshot-a");
 

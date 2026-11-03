@@ -65,15 +65,17 @@
                 </dl>
             </ReviewDisclosure>
         </section>
-        var selected = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
+        // The list holds summaries; the selected snapshot's evidence is fetched by id (_detail) — never every snapshot to show one.
+        var selectedSummary = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
+        var selected = selectedSummary is not null && _detail?.Id == selectedSummary.Id ? _detail : null;
         <section class="sa-card sa-snapshot-bar" aria-labelledby="sa-snapshot-heading" data-testid="sa-snapshot-bar">
             <div class="sa-snapshot-head">
                 <h2 id="sa-snapshot-heading">Current snapshot</h2>
-                @if (selected is not null)
+                @if (selectedSummary is not null)
                 {
-                    <p class="sa-current-title" data-testid="sa-current" data-snapshot="@selected.Id">
-                        <strong data-testid="sa-current-archive">@selected.Archive.FileName</strong>
-                        <span class="sa-muted"><span data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</span> files · Analyzed <span data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</span></span>
+                    <p class="sa-current-title" data-testid="sa-current" data-snapshot="@selectedSummary.Id">
+                        <strong data-testid="sa-current-archive">@selectedSummary.Archive.FileName</strong>
+                        <span class="sa-muted"><span data-testid="sa-current-files">@selectedSummary.Archive.FilesAnalyzed</span> files · Analyzed <span data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selectedSummary.AnalyzedAt)</span></span>
                     </p>
                 }
             </div>
@@ -172,6 +174,19 @@
                 </dl>
                 <p class="sa-muted">The uploaded archive is being analyzed. @SourceAnalysisOverview.SafetyNote</p>
             </section>
+        }
+        else if (selectedSummary is not null && selected is null)
+        {
+            @* The snapshot exists; its evidence is being fetched, or could not be — never shown as "no analysis". *@
+            @if (_detailError is { } detailError)
+            {
+                <section class="sa-card sa-error-card" role="alert" data-testid="sa-detail-error">
+                    <h2>Could not load analysis</h2>
+                    <p>@detailError</p>
+                    <button type="button" class="btn-primary" data-testid="sa-detail-retry" @onclick="RetryDetailAsync">Retry</button>
+                </section>
+            }
+            else { @LoadingAnalysis }
         }
         else if (selected is null)
         {
@@ -327,7 +342,12 @@
                 {
                     @if (selected.Observability is { } observability)
                     {
-                        <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@PreviousObservability(selected)" ChooseSnapshot="FocusSelectorAsync" Layers="@selected.EvidenceDomains?.CrossDomain.ObservabilityLayers" />
+                        @if (PreviousDetail(PreviousObservabilityCandidate(selectedSummary!)) is { Ready: true } prior)
+                        {
+                            @PreviousNote(prior)
+                            <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@prior.Detail?.Observability" ChooseSnapshot="FocusSelectorAsync" Layers="@selected.EvidenceDomains?.CrossDomain.ObservabilityLayers" />
+                        }
+                        else { @LoadingAnalysis }
                     }
                     else { <p class="sa-card" data-testid="observability-missing">This historical source snapshot predates observability analysis. Upload the same source archive to create a new immutable analysis.</p> }
                 }
@@ -337,15 +357,28 @@
                 }
                 else if (_domain == "Dependencies")
                 {
-                    <BirkNext.Web.Components.SourceDomains.DependencyEvidenceWorkspace @key="selected.Id" Snapshot="selected" Snapshots="_snapshots" />
+                    @if (DependencySources() is { } dependencySources)
+                    {
+                        <BirkNext.Web.Components.SourceDomains.DependencyEvidenceWorkspace @key="selected.Id" Snapshot="selected" Sources="dependencySources" />
+                    }
+                    else if (_dependencySourcesError is { } dependencyError)
+                    {
+                        <p class="sa-card" role="alert" data-testid="sa-dependency-sources-error">Could not load the other snapshots' dependency evidence: @dependencyError <button type="button" class="btn-secondary" data-testid="sa-dependency-sources-retry" @onclick="RetryDependencySources">Retry</button></p>
+                    }
+                    else { @LoadingAnalysis }
                 }
                 else if (selected.EvidenceDomains is { } evidence)
                 {
-                    var previous = SourceEvidenceDomainsPresentation.Previous(_snapshots, selected);
-                    @if (_domain == "Infrastructure") { <InfrastructureWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
-                    else if (_domain == "Configuration") { <ConfigurationWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
-                    else if (_domain == "CI/CD") { <PipelineWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
-                    else { <ContractsWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" SourceName="@selected.Archive.FileName" /> }
+                    @if (PreviousDetail(PreviousEvidenceCandidate(selectedSummary!)) is { Ready: true } prior)
+                    {
+                        var previous = PreviousEvidence(prior);
+                        @PreviousNote(prior)
+                        @if (_domain == "Infrastructure") { <InfrastructureWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                        else if (_domain == "Configuration") { <ConfigurationWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                        else if (_domain == "CI/CD") { <PipelineWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                        else { <ContractsWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" SourceName="@selected.Archive.FileName" /> }
+                    }
+                    else { @LoadingAnalysis }
                 }
                 else { <p class="sa-card" data-testid="evidence-missing">@SourceEvidenceDomainsPresentation.HistoricalNote</p> }
             }
@@ -353,13 +386,21 @@
             {
                 @if (selected.Architecture is { } architecture)
                 {
-                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" ChooseSnapshot="FocusSelectorAsync" InitialTab="@_architectureTab" />
+                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" PreviousSources="@PreviousArchitectureSources(selected)" LoadPrevious="LoadPreviousArchitectureAsync" OpenDatabase="OpenDatabase" ChooseSnapshot="FocusSelectorAsync" InitialTab="@_architectureTab" />
                 }
                 else { <p class="sa-card" data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
             }
             else
             {
-                @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" InitialTab="@_databaseTab" ChooseSnapshot="FocusSelectorAsync" /> }
+                @if (selected.DatabaseArchitecture is { } database)
+                {
+                    @if (PreviousDetail(PreviousDatabaseCandidate(selectedSummary!)) is { Ready: true } prior)
+                    {
+                        @PreviousNote(prior)
+                        <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@prior.Detail?.DatabaseArchitecture" FocusDatabaseId="@_focusDatabase" InitialTab="@_databaseTab" ChooseSnapshot="FocusSelectorAsync" />
+                    }
+                    else { @LoadingAnalysis }
+                }
                 else { <p class="sa-card" data-testid="database-missing">This historical source snapshot predates database extraction. Upload the same source archive to create a new immutable analysis.</p> }
             }
         }
@@ -442,12 +483,97 @@
             <a class="sa-summary-open" href="@ReviewHref(row.Area, row.Domain)" data-testid="@($"sa-open-{row.Key}")" @onclick="() => OpenReview(row.Area, row.Domain, null)" @onclick:preventDefault>@(open ? "Open" : "Review")<span class="visually-hidden">@(" " + row.Title)</span></a>
         </li>;
     // A new or reselected snapshot changes the source input: applicability (sidebar, Recommended Workflow) re-reads it now.
-    private void SnapshotChanged()
+    private async Task SnapshotChanged()
     {
         _focusDatabase = null; _databaseTab = null;
         if (_snapshotKey is { } key) SnapshotState.SelectSnapshot(key, _selected);
         _ = Applicability.RefreshAsync();
+        await LoadSelectedDetailAsync();
     }
+
+    // ── Summary first: the selected snapshot's evidence, and an earlier snapshot only where an area compares with it, fetched by id ──
+    private IqrSourceSnapshot? _detail;
+    private string? _detailError;
+
+    private Task<IqrSourceSnapshot?> FetchDetail(Guid id) => Api.GetSourceSnapshotAsync(id);
+
+    private async Task LoadSelectedDetailAsync()
+    {
+        _detailError = null;
+        if (!Guid.TryParse(_selected, out var id) || _snapshots.All(s => s.Id != id)) { _detail = null; return; }
+        if (_detail?.Id == id) return;
+        _detail = null;
+        StateHasChanged();
+        try
+        {
+            var detail = await SnapshotState.GetDetailAsync(id, FetchDetail);
+            if (_selected != id.ToString()) return; // another snapshot was chosen meanwhile
+            _detail = detail;
+            if (detail is null) _detailError = "This source snapshot is no longer stored. Choose another snapshot or reload the list.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (_selected == id.ToString()) _detailError = BackendRequestClassifier.FromException("Source analysis", ex).UserMessage;
+        }
+    }
+
+    private Task RetryDetailAsync() => LoadSelectedDetailAsync();
+
+    private static readonly RenderFragment LoadingAnalysis = @<p class="sa-card sa-muted" role="status" aria-busy="true" data-testid="sa-detail-loading">Loading analysis…</p>;
+
+    private sealed record PriorState(bool Ready, IqrSourceSnapshot? Detail, bool Failed);
+    private readonly HashSet<Guid> _priorWatched = [];
+
+    /// <summary>An earlier snapshot an area compares with: ready (with its detail, or none) or still loading. A failed fetch is ready without
+    /// a comparison and says so; it is never shown as "no earlier analysis".</summary>
+    private PriorState PreviousDetail(IqrSourceSnapshotSummary? candidate)
+    {
+        if (candidate is null) return new(true, null, false);
+        var task = SnapshotState.GetDetailAsync(candidate.Id, FetchDetail);
+        if (!task.IsCompleted)
+        {
+            if (_priorWatched.Add(candidate.Id)) _ = task.ContinueWith(_ => { _priorWatched.Remove(candidate.Id); return InvokeAsync(StateHasChanged); }, TaskScheduler.Default);
+            return new(false, null, false);
+        }
+        return task.IsCompletedSuccessfully ? new(true, task.Result, false) : new(true, null, true);
+    }
+
+    private static RenderFragment PreviousNote(PriorState prior) => prior.Failed
+        ? @<p class="sa-muted" role="note" data-testid="sa-previous-unavailable">The earlier snapshot to compare with could not be loaded; changes are not shown.</p>
+        : _ => { };
+
+    private static (string Label, SourceEvidenceDomainsSnapshot Evidence)? PreviousEvidence(PriorState prior) =>
+        prior.Detail is { EvidenceDomains: { } earlier } p ? ($"{p.Archive.FileName} · {SourceAnalysisOverview.Utc(p.AnalyzedAt)}", earlier) : null;
+
+    private IqrSourceSnapshotSummary? PreviousObservabilityCandidate(IqrSourceSnapshotSummary current) =>
+        _snapshots.Where(s => s.Id != current.Id && s.AnalyzedAt < current.AnalyzedAt && s.HasObservability && SameRepository(s, current)).MaxBy(s => s.AnalyzedAt);
+    private IqrSourceSnapshotSummary? PreviousEvidenceCandidate(IqrSourceSnapshotSummary current) =>
+        _snapshots.Where(s => s.Id != current.Id && s.AnalyzedAt < current.AnalyzedAt && s.HasEvidenceDomains && SameRepository(s, current)).MaxBy(s => s.AnalyzedAt);
+    private IqrSourceSnapshotSummary? PreviousDatabaseCandidate(IqrSourceSnapshotSummary current) =>
+        _snapshots.Where(s => s.IntegrationId == current.IntegrationId && s.AnalyzedAt < current.AnalyzedAt && s.HasDatabaseArchitecture).MaxBy(s => s.AnalyzedAt);
+
+    private IReadOnlyList<(string Label, Guid Id)> PreviousArchitectureSources(IqrSourceSnapshot current) =>
+        _snapshots.Where(s => s.Id != current.Id && s.HasArchitecture).OrderByDescending(s => s.AnalyzedAt).Select(s => ($"{s.Archive.FileName} · {s.AnalyzedAt:u}", s.Id)).ToList();
+    private async Task<BirkNext.SourceArchitecture.ArchitectureSnapshot?> LoadPreviousArchitectureAsync(Guid id) => (await SnapshotState.GetDetailAsync(id, FetchDetail))?.Architecture;
+
+    // The Dependencies view maps internal packages across snapshots: only their dependency evidence is fetched, never the snapshots.
+    private Task<IReadOnlyList<BirkNext.Dependencies.DependencySourceEvidence>>? _dependencySources;
+    private string? _dependencySourcesError;
+    private IReadOnlyList<BirkNext.Dependencies.DependencySourceEvidence>? DependencySources()
+    {
+        if (_dependencySources is null)
+        {
+            _dependencySourcesError = null;
+            _dependencySources = Api.ListDependencySourcesAsync(_snapshotKey?.EnvironmentId ?? "");
+            _ = _dependencySources.ContinueWith(t =>
+            {
+                if (!t.IsCompletedSuccessfully) _dependencySourcesError = t.Exception?.InnerException is { } ex ? BackendRequestClassifier.FromException("Dependency evidence", ex).UserMessage : "the request failed.";
+                return InvokeAsync(StateHasChanged);
+            }, TaskScheduler.Default);
+        }
+        return _dependencySources.IsCompletedSuccessfully ? _dependencySources.Result : null;
+    }
+    private void RetryDependencySources() => _dependencySources = null;
     private async Task FocusSelectorAsync() { try { await JS.InvokeVoidAsync("birknextFocusElement", "sa-snapshot-select"); } catch (JSException) { } }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -457,14 +583,9 @@
         try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
     }
 
-    private IReadOnlyList<(string Label, BirkNext.SourceArchitecture.ArchitectureSnapshot Snapshot)> PreviousArchitectures(IqrSourceSnapshot current) =>
-        _snapshots.Where(s => s.Id != current.Id && s.Architecture is not null).OrderByDescending(s => s.AnalyzedAt)
-            .Select(s => ($"{s.Archive.FileName} · {s.AnalyzedAt:u}", s.Architecture!)).ToList();
-    /// <summary>The latest earlier Observability analysis of the SAME repository (repository key, else archive name) — never another repository.</summary>
-    private BirkNext.SourceObservability.SourceObservabilitySnapshot? PreviousObservability(IqrSourceSnapshot current) =>
-        _snapshots.Where(s => s.Id != current.Id && s.AnalyzedAt < current.AnalyzedAt && s.Observability is not null && SameRepository(s, current)).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.Observability;
-    private static bool SameRepository(IqrSourceSnapshot a, IqrSourceSnapshot b) =>
-        a.Repository is { } ra && b.Repository is { } rb ? ra.Key == rb.Key : a.Archive.FileName == b.Archive.FileName;
+    /// <summary>The same repository (repository key, else archive name) — an earlier analysis of another repository is never compared.</summary>
+    private static bool SameRepository(IqrSourceSnapshotSummary a, IqrSourceSnapshotSummary b) =>
+        a.RepositoryKey is { } ra && b.RepositoryKey is { } rb ? ra == rb : a.Archive.FileName == b.Archive.FileName;
     /// <summary>No snapshot is shown (none stored, or none chosen) and no upload is running: the empty state offers the actions once.</summary>
     private sealed record EmptyState(string Kind, string Text, bool ImportLink, bool CanRetry = false);
     private bool _retryingImport;
@@ -495,7 +616,7 @@
             if (commit.Source.SnapshotId is not { } created) { _retryImportMessage = commit.Source.Message ?? "The snapshot could still not be created."; return; }
             SnapshotState.Invalidate();
             await Load();
-            if (_snapshots.Any(s => s.Id == created)) { _selected = created.ToString(); _linkedMissing = null; SnapshotChanged(); }
+            if (_snapshots.Any(s => s.Id == created)) { _selected = created.ToString(); _linkedMissing = null; await SnapshotChanged(); }
         }
         catch (HttpRequestException ex) { _retryImportMessage = BackendRequestClassifier.FromException("Source snapshot retry", ex).UserMessage; }
         finally { _retryingImport = false; }
@@ -526,7 +647,7 @@
     };
 
     private bool NoSnapshotSelected => !_busy && _snapshots.All(s => s.Id.ToString() != _selected);
-    private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
+    private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshotSummary> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
     protected override async Task OnInitializedAsync()
     {
         var context = await ContextFactory.GetActiveContextAsync();
@@ -536,13 +657,14 @@
         _snapshotKey = new(_profile?.Id ?? "", workspace.WorkspaceId, workspace.ProjectSlug, workspace.Version);
         await Load();
         _loaded = true;
+        await LoadSelectedDetailAsync();
     }
     private async Task Load()
     {
         if (_snapshotKey is not { } key) return;
         try
         {
-            _snapshots = await SnapshotState.GetOrLoadAsync(key, () => Api.ListSourceSnapshotsAsync(key.EnvironmentId));
+            _snapshots = await SnapshotState.GetOrLoadAsync(key, () => Api.ListSourceSnapshotSummariesAsync(key.EnvironmentId));
             _currentImport = ServiceProvider.GetService<ProjectImportActivation>()?.Current;
             _linkedMissing = null;
             bool Stored(string? id) => id is not null && _snapshots.Any(s => s.Id.ToString() == id);
@@ -572,7 +694,7 @@
     private async Task Upload(InputFileChangeEventArgs args)
     {
         _busy = true; _error = null; _pendingArchive = args.File.Name;
-        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { SnapshotState.Invalidate(); await Load(); _selected = snapshot.Id.ToString(); SnapshotChanged(); _area = SourceAnalysisAreas.Overview; _domain = null; Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = null, ["view"] = null })); _focusId = "sa-current-heading"; } }
+        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { SnapshotState.Invalidate(); _dependencySources = null; await Load(); _selected = snapshot.Id.ToString(); _detail = snapshot; await SnapshotChanged(); _area = SourceAnalysisAreas.Overview; _domain = null; Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = null, ["view"] = null })); _focusId = "sa-current-heading"; } }
         catch (IOException) { _error = new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024); }
         catch (HttpRequestException ex) when (BackendRequestClassifier.FromException("Source upload", ex).IsTransportFailure) { _error = new("SOURCE_ANALYSIS_UNAVAILABLE", "upload", "Source Analysis could not be reached. Existing snapshots are unchanged; retry when the service is available."); }
         catch (HttpRequestException ex) { _error = new("SOURCE_UPLOAD_FAILED", "upload", $"{BackendRequestClassifier.FromException("Source upload", ex).UserMessage} Existing snapshots are unchanged."); }
@@ -580,7 +702,6 @@
         catch (Exception) { _error = new("SOURCE_UPLOAD_FAILED", "upload", "The source upload could not be completed. Existing snapshots are unchanged; correct the archive or retry."); }
         finally { _busy = false; }
     }
-    private BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? Previous(IqrSourceSnapshot current) => _snapshots.Where(s => s.IntegrationId == current.IntegrationId && s.AnalyzedAt < current.AnalyzedAt && s.DatabaseArchitecture is not null).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.DatabaseArchitecture;
     private static string UploadErrorTitle(SourceUploadFailure failure) => failure.Stage switch
     {
         "prerequisite" => "Target Environment required",

@@ -29,6 +29,7 @@ public static class SourceAnalysisOverview
     public static string ShortFingerprint(string sha256) => string.IsNullOrEmpty(sha256) ? "Unknown" : sha256.Length <= 8 ? sha256 : sha256[..8] + "…";
 
     public static string OptionLabel(IqrSourceSnapshot s) => $"{s.Archive.FileName} · {Utc(s.AnalyzedAt)} · {ShortFingerprint(s.Archive.Sha256)}";
+    public static string OptionLabel(IqrSourceSnapshotSummary s) => $"{s.Archive.FileName} · {Utc(s.AnalyzedAt)} · {ShortFingerprint(s.Archive.Sha256)}";
 
     public static string Utc(DateTimeOffset at) => at.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") + " UTC";
 

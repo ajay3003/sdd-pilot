@@ -180,7 +180,7 @@ public sealed class TestEvidenceUiTests : BunitContext
             Status = BirkNext.Integrations.SourceAnalysisStatus.Ready, TestInventory = S.Inventory(S.SnapshotB, "sha-b", S.Discount, S.Square),
         };
         var sources = new Mock<ISddEvidenceApiService>();
-        sources.Setup(x => x.SourceSnapshotsAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync([snapshot]);
+        sources.SetupSourceSnapshots([snapshot], "pilot");
         Services.AddSingleton(sources.Object);
         var cut = Render<SddTestEvidencePanel>();
         cut.Find("[data-testid=te-source-env]").GetAttribute("value").Should().Be("dev", "prefilled from the current snapshot");

@@ -26,7 +26,7 @@
                 <label for="te-source-pick">Snapshot
                     <select id="te-source-pick" @bind="_sourcePick" data-testid="te-source-pick">
                         @foreach (var snap in _sourceSnapshots)
-                        { <option value="@snap.Id">@snap.Archive.FileName · @snap.AnalyzedAt.ToLocalTime().ToString("g") · @(snap.TestInventory is { } inv ? $"{inv.Definitions.Count} tests" : "no test discovery")</option> }
+                        { <option value="@snap.Id">@snap.Archive.FileName · @snap.AnalyzedAt.ToLocalTime().ToString("g") · @(snap.SourceTestDefinitions is { } tests ? $"{tests} tests" : "no test discovery")</option> }
                     </select>
                 </label>
             }
@@ -235,7 +235,7 @@
     private SddTestEvidenceNotifier? Notifier => Services.GetService(typeof(SddTestEvidenceNotifier)) as SddTestEvidenceNotifier;
     private string _sourceEnvironment = "";
     private string _sourcePick = "";
-    private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot> _sourceSnapshots = [];
+    private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshotSummary> _sourceSnapshots = [];
 
     private string SourceTestsSummary
     {
@@ -266,8 +266,16 @@
     /// <summary>Records the picked snapshot's metadata (as the selected source of this workspace) and its test definitions.</summary>
     private async Task RecordPickedAsync()
     {
-        var snapshot = _sourceSnapshots.FirstOrDefault(s => s.Id.ToString() == _sourcePick);
-        if (snapshot is null) return;
+        var picked = _sourceSnapshots.FirstOrDefault(s => s.Id.ToString() == _sourcePick);
+        if (picked is null || Sources is not { } sources) return;
+        if (picked.SourceTestDefinitions is null) { _message = "This snapshot was analyzed before source test discovery existed. Upload the source again to discover tests."; return; }
+        // The list holds summaries; the picked snapshot's test inventory is fetched by id.
+        BirkNext.Integrations.IqrSourceSnapshot? snapshot;
+        _busy = true;
+        try { snapshot = await sources.SourceSnapshotAsync(picked.Id); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _message = $"Could not load the snapshot: {BackendRequestClassifier.FromException("Source analysis", ex).UserMessage}"; return; }
+        finally { _busy = false; }
+        if (snapshot is null) { _message = "This source snapshot is no longer stored."; return; }
         if (snapshot.TestInventory is null) { _message = "This snapshot was analyzed before source test discovery existed. Upload the source again to discover tests."; return; }
         SddEvidenceGraphService.RecordSourceSnapshot(Workspace.SddLifecycle, snapshot, _sourceEnvironment.Trim());
         SddEvidenceGraphService.SourceSnapshotChanged(Workspace.SddLifecycle, snapshot.Id, snapshot.Archive.Sha256);

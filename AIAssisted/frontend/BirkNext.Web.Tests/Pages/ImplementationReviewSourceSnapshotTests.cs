@@ -33,7 +33,7 @@ public sealed class ImplementationReviewSourceSnapshotTests : BunitContext
     public void Load_is_enabled_without_an_environment_and_lists_the_workspace_snapshots()
     {
         var snapshot = new IqrSourceSnapshot { Id = Guid.NewGuid(), Archive = new SourceArchive("project.zip", new string('a', 64), 10), Status = SourceAnalysisStatus.Ready };
-        _api.Setup(x => x.SourceSnapshotsAsync("", It.IsAny<CancellationToken>())).ReturnsAsync([snapshot]);
+        _api.SetupSourceSnapshots([snapshot], "");
         var cut = Render<ImplementationReview>();
 
         var load = cut.Find("[data-testid=ier-load-snapshots]");

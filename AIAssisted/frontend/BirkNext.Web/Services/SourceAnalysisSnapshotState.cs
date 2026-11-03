@@ -10,13 +10,13 @@ public sealed class SourceAnalysisSnapshotState
 {
     private readonly object _gate = new();
     private SourceAnalysisSnapshotKey? _key;
-    private Task<IReadOnlyList<IqrSourceSnapshot>>? _pending;
+    private Task<IReadOnlyList<IqrSourceSnapshotSummary>>? _pending;
     private string? _selectedSnapshotId;
     private long _generation;
 
-    public Task<IReadOnlyList<IqrSourceSnapshot>> GetOrLoadAsync(
+    public Task<IReadOnlyList<IqrSourceSnapshotSummary>> GetOrLoadAsync(
         SourceAnalysisSnapshotKey key,
-        Func<Task<IReadOnlyList<IqrSourceSnapshot>>> load)
+        Func<Task<IReadOnlyList<IqrSourceSnapshotSummary>>> load)
     {
         lock (_gate)
         {
@@ -43,11 +43,38 @@ public sealed class SourceAnalysisSnapshotState
         }
     }
 
+    // Full snapshots opened on this page, by id: a stored snapshot is immutable, so an entry never goes stale. Bounded (a snapshot can be tens of
+    // megabytes in memory); a failed fetch is not kept, so opening it again retries.
+    private const int MaxDetails = 3;
+    private readonly List<(Guid Id, Task<IqrSourceSnapshot?> Detail)> _details = [];
+
+    /// <summary>One full snapshot, fetched once while it stays among the last few opened.</summary>
+    public Task<IqrSourceSnapshot?> GetDetailAsync(Guid id, Func<Guid, Task<IqrSourceSnapshot?>> load)
+    {
+        lock (_gate)
+        {
+            var index = _details.FindIndex(d => d.Id == id && !d.Detail.IsFaulted && !d.Detail.IsCanceled);
+            if (index >= 0)
+            {
+                var hit = _details[index];
+                _details.RemoveAt(index);
+                _details.Add(hit);
+                return hit.Detail;
+            }
+            _details.RemoveAll(d => d.Id == id);
+            var detail = load(id);
+            _details.Add((id, detail));
+            while (_details.Count > MaxDetails) _details.RemoveAt(0);
+            return detail;
+        }
+    }
+
     /// <summary>Force the next read to use the server after an analysis/import has produced new evidence.</summary>
     public void Invalidate()
     {
         lock (_gate)
         {
+            _details.Clear();
             _generation++;
             _key = null;
             _pending = null;
@@ -55,10 +82,10 @@ public sealed class SourceAnalysisSnapshotState
         }
     }
 
-    private async Task<IReadOnlyList<IqrSourceSnapshot>> LoadAndStoreAsync(
+    private async Task<IReadOnlyList<IqrSourceSnapshotSummary>> LoadAndStoreAsync(
         SourceAnalysisSnapshotKey key,
         long generation,
-        Func<Task<IReadOnlyList<IqrSourceSnapshot>>> load)
+        Func<Task<IReadOnlyList<IqrSourceSnapshotSummary>>> load)
     {
         try
         {

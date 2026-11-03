@@ -28,7 +28,7 @@ public sealed class SourceAnalysisLinkedSnapshotTests : BunitContext
 
     public SourceAnalysisLinkedSnapshotTests()
     {
-        _catalog.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _snapshots.ToList());
+        _catalog.SetupSourceSnapshots(() => _snapshots.ToList());
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext());
         var autoSave = new Mock<IWorkspaceAutoSaveService>();

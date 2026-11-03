@@ -25,7 +25,7 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
 
     public SourceEvidenceDomainsUiTests()
     {
-        _api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _snapshots.ToList());
+        _api.SetupSourceSnapshots(() => _snapshots.ToList());
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
         Services.AddSingleton(_api.Object);

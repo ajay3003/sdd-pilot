@@ -143,8 +143,11 @@ public sealed class ProjectImportPipelineTests : IAsyncLifetime
 
         using var list = JsonDocument.Parse(await _client.GetStringAsync("/api/source-analysis?environmentId=dev"));
         var snapshot = list.RootElement.EnumerateArray().Should().ContainSingle().Subject;
-        snapshot.GetProperty("projectImport").GetProperty("importId").GetString().Should().Be(importId);
+        // The list is summaries: the import identity is a reference; the snapshot itself (with its full provenance) is fetched by id.
+        snapshot.GetProperty("projectImportId").GetString().Should().Be(importId);
         snapshot.GetProperty("archive").GetProperty("sha256").GetString().Should().Be(root.GetProperty("archive").GetProperty("sha256").GetString());
+        using var detail = JsonDocument.Parse(await _client.GetStringAsync($"/api/source-analysis/{snapshot.GetProperty("id").GetString()}"));
+        detail.RootElement.GetProperty("projectImport").GetProperty("importId").GetString().Should().Be(importId);
 
         using var again = await _client.PostAsync($"/api/project-import/{stagingId}/commit?environmentId=dev", null);
         again.StatusCode.Should().Be(HttpStatusCode.OK, "a repeated commit of a settled stage returns the same result");

@@ -9,7 +9,9 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
 {
     /// <summary>Stored Source Analysis snapshots (newest first) for components that let the reader choose one.</summary>
     public IReadOnlyList<IqrSourceSnapshot> SourceSnapshots { get; set; } = [];
-    public Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(SourceSnapshots);
+    public Task<IReadOnlyList<IqrSourceSnapshotSummary>> ListSourceSnapshotSummariesAsync(string environmentId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<IqrSourceSnapshotSummary>>([.. SourceSnapshots.Select(IqrSourceSnapshotSummary.From)]);
+    public Task<IqrSourceSnapshot?> GetSourceSnapshotAsync(Guid snapshotId, CancellationToken ct = default) => Task.FromResult(SourceSnapshots.FirstOrDefault(s => s.Id == snapshotId));
     public Func<string, Task<IntegrationMappingEvidenceCheck>>? MappingCheck { get; set; }
     /// <summary>The canonical IQR source-evidence bindings the pane shows per integration (read-only here).</summary>
     public IReadOnlyList<IntegrationEvidenceBinding> EvidenceBindings { get; set; } = [];

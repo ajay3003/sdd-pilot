@@ -42,7 +42,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     {
         _context = new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "DEV" } };
         _integrations.Setup(a => a.GetCatalogAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<CancellationToken>())).ReturnsAsync(new IntegrationCatalog());
-        _integrations.Setup(a => a.ListSourceSnapshotsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _integrations.SetupSourceSnapshots([], "dev");
         _integrations.Setup(a => a.ListEvidenceBindingsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(bindings);
     }
 

@@ -788,7 +788,11 @@
         var snapshots = (IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot>)[];
         if (targets.Any(t => t.ApiType == ApiReviewTargetType.Rest) && ServiceProvider.GetService<IIntegrationCatalogApiService>() is { } api)
         {
-            try { snapshots = await api.ListSourceSnapshotsAsync(context.ActiveProfile.Id); }
+            try
+            {
+                var withOpenApi = (await api.ListSourceSnapshotSummariesAsync(context.ActiveProfile.Id)).Where(s => s.OpenApiContracts > 0).ToList();
+                snapshots = [.. (await Task.WhenAll(withOpenApi.Select(s => api.GetSourceSnapshotAsync(s.Id)))).OfType<BirkNext.Integrations.IqrSourceSnapshot>()];
+            }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException) { snapshots = []; }
         }
         return targets.Where(t => t.ApiType == ApiReviewTargetType.Rest)

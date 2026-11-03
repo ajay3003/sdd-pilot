@@ -75,13 +75,20 @@
 @code {
     [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = default!;
     [Parameter] public IReadOnlyList<IqrSourceSnapshot> Snapshots { get; set; } = [];
+    /// <summary>The other snapshots' dependency evidence only (Source Analysis lists summaries, not snapshots). Used instead of
+    /// <see cref="Snapshots"/> when set.</summary>
+    [Parameter] public IReadOnlyList<DependencySourceEvidence>? Sources { get; set; }
 
     /// <summary>Mappings among the loaded snapshots that involve this snapshot as producer or consumer.</summary>
     private IReadOnlyList<InternalPackageMapping> Mappings()
     {
         // The viewed snapshot first, so it stands for its own archive content when the same archive was analyzed more than once.
-        var sources = Snapshots.Where(s => s.Id != Snapshot.Id).OrderBy(s => s.AnalyzedAt).Prepend(Snapshot).Where(s => s.DependencyEvidence is not null)
-            .Select(s => new DependencySourceEvidence(s.Id, s.Archive.FileName, s.AnalyzedAt, s.DependencyEvidence!, s.Archive.Sha256)).ToList();
+        var others = Sources is not null
+            ? Sources.Where(s => s.SnapshotId != Snapshot.Id).OrderBy(s => s.AnalyzedAt)
+            : Snapshots.Where(s => s.Id != Snapshot.Id).OrderBy(s => s.AnalyzedAt).Where(s => s.DependencyEvidence is not null)
+                .Select(s => new DependencySourceEvidence(s.Id, s.Archive.FileName, s.AnalyzedAt, s.DependencyEvidence!, s.Archive.Sha256));
+        var sources = (Snapshot.DependencyEvidence is { } own ? [new DependencySourceEvidence(Snapshot.Id, Snapshot.Archive.FileName, Snapshot.AnalyzedAt, own, Snapshot.Archive.Sha256)]
+            : Array.Empty<DependencySourceEvidence>()).Concat(others).ToList();
         return [.. DependencyEvidenceQueries.InternalPackageMappings(sources)
             .Where(m => m.ProducerSnapshotId == Snapshot.Id || m.Consumers.Any(c => c.SnapshotId == Snapshot.Id))
             .Select(m => m with { Consumers = m.ProducerSnapshotId == Snapshot.Id ? m.Consumers : [.. m.Consumers.Where(c => c.SnapshotId == Snapshot.Id)] })];

@@ -17,7 +17,7 @@
         else
         {
             <label class="sd-field">Source snapshot
-                <select data-testid="data-model-evidence-snapshot" value="@_selected" @onchange="e => _selected = e.Value?.ToString() ?? string.Empty">
+                <select data-testid="data-model-evidence-snapshot" value="@_selection?.Selected" @onchange="e => _selection!.SelectAsync(e.Value?.ToString())">
                     <option value="">Select a snapshot…</option>
                     @foreach (var s in _snapshots) { <option value="@s.Id">@s.Archive.FileName · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
                 </select>
@@ -96,7 +96,12 @@
             </ReviewDisclosure>
         </ReviewDisclosure>
     }
-    else if (Snapshot is not null || _selected.Length > 0)
+    else if (Snapshot is null && _selection is { Loading: true }) { <p class="sd-muted" role="status" aria-busy="true" data-testid="data-model-evidence-loading">Loading analysis…</p> }
+    else if (Snapshot is null && _selection?.Error is { } selectionError)
+    {
+        <p class="sd-muted" role="alert" data-testid="data-model-evidence-load-error">Could not load analysis: @selectionError <button type="button" class="btn-secondary" @onclick="() => _selection!.SelectAsync(_selection.Selected)">Retry</button></p>
+    }
+    else if (Snapshot is not null || _selection?.Selected.Length > 0)
     {
         <p class="sd-muted" data-testid="data-model-evidence-unavailable">This snapshot has no database model (it predates database analysis or the source has none).</p>
     }
@@ -108,10 +113,10 @@
     /// <summary>The documented model shown (feature, shared or combined) for field-level differences; names alone compare structures only.</summary>
     [Parameter] public BirkNext.Web.Models.DataModelDocument? DocumentedModel { get; set; }
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
-    private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
-    private string _selected = "";
+    private IReadOnlyList<IqrSourceSnapshotSummary>? _snapshots;
+    private SourceSnapshotSelection? _selection;
     private string? _error;
-    private DatabaseArchitectureSnapshot? Model => Snapshot ?? _snapshots?.FirstOrDefault(s => s.Id.ToString() == _selected)?.DatabaseArchitecture;
+    private DatabaseArchitectureSnapshot? Model => Snapshot ?? _selection?.Snapshot?.DatabaseArchitecture;
 
     private static string ScopeText(DataModelSourceComparison c)
     {
@@ -127,7 +132,8 @@
     {
         if (Snapshot is not null) return;
         if (ServiceProvider.GetService(typeof(IIntegrationCatalogApiService)) is not IIntegrationCatalogApiService api) { _error = "Source Analysis is unavailable in this session."; return; }
-        try { _snapshots = [.. (await api.ListSourceSnapshotsAsync("")).Where(s => s.DatabaseArchitecture is { Databases.Count: > 0 })]; }
+        _selection = new(api);
+        try { _snapshots = [.. (await api.ListSourceSnapshotSummariesAsync("")).Where(s => s.Databases > 0)]; }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
     }
 }

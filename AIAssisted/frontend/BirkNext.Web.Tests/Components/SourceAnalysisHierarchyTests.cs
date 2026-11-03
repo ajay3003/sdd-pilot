@@ -30,7 +30,7 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
 
     public SourceAnalysisHierarchyTests()
     {
-        _api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _snapshots.ToList());
+        _api.SetupSourceSnapshots(() => _snapshots.ToList());
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext());
         Services.AddSingleton(_api.Object);

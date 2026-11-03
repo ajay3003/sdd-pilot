@@ -109,9 +109,18 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     /// The workspace's Source Analysis snapshots (newest first) whether or not a Target Environment is selected; with a target, also the
     /// legacy per-integration snapshots an earlier version stored for it, so their history stays readable.
     /// </summary>
+    /// <summary>The stored snapshots as summaries: identity, provenance, status, counts and which evidence each holds. A full snapshot is
+    /// megabytes; it is fetched by id when it is opened (GET {snapshotId}).</summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshot>>> List([FromQuery] string? environmentId, CancellationToken ct) =>
-        Ok(await store.ListAsync(environmentId ?? "", ct));
+    public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshotSummary>>> List([FromQuery] string? environmentId, CancellationToken ct) =>
+        Ok((await store.ListAsync(environmentId ?? "", ct)).Select(IqrSourceSnapshotSummary.From).ToList());
+
+    /// <summary>The dependency evidence of every stored snapshot that has it — what internal-package mappings between snapshots are built from —
+    /// without the rest of each snapshot.</summary>
+    [HttpGet("dependency-sources")]
+    public async Task<ActionResult<IReadOnlyList<BirkNext.Dependencies.DependencySourceEvidence>>> DependencySources([FromQuery] string? environmentId, CancellationToken ct) =>
+        Ok((await store.ListAsync(environmentId ?? "", ct)).Where(s => s.DependencyEvidence is not null)
+            .Select(s => new BirkNext.Dependencies.DependencySourceEvidence(s.Id, s.Archive.FileName, s.AnalyzedAt, s.DependencyEvidence!, s.Archive.Sha256)).ToList());
 
     /// <summary>One Source Analysis snapshot with its full evidence — fetched when a person opens it; readiness only carries its summary.</summary>
     [HttpGet("{snapshotId:guid}")]

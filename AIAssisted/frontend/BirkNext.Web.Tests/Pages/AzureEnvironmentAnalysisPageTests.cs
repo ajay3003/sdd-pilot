@@ -203,11 +203,11 @@ public sealed class AzureEnvironmentAnalysisPageTests : BunitContext
     {
         _summaries = [new(Snapshot().Id, "orders-dev", Snapshot().CapturedAt, AzureAnalysisStatus.Partial, ["Contoso Orders Dev"], 3, 2, "dev")];
         var sourceId = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001");
-        _sources.Setup(s => s.ListSourceSnapshotsAsync("orders-dev", It.IsAny<CancellationToken>())).ReturnsAsync([new IqrSourceSnapshot
+        _sources.SetupSourceSnapshots(new List<IqrSourceSnapshot> { new IqrSourceSnapshot
         {
             Id = sourceId, Archive = new("orders.zip", "abc123", 4), AnalyzedAt = DateTimeOffset.Parse("2026-10-01T09:00:00Z"),
             EvidenceDomains = new SourceEvidenceDomainsSnapshot { Infrastructure = new InfrastructureEvidence { Resources = [new InfrastructureResource { Id = "x", ResourceType = "azurerm_linux_web_app" }] } },
-        }]);
+        } }, "orders-dev");
         _api.Setup(a => a.ComparisonAsync("orders-dev", Snapshot().Id, sourceId, "dev", It.IsAny<CancellationToken>())).ReturnsAsync((new DeclaredObservedComparison
         {
             SourceSnapshotId = sourceId, SourceFingerprint = "abc12345ffff", InfrastructureAnalyzerVersion = 2, AzureSnapshotId = Snapshot().Id, AzureCapturedAt = Snapshot().CapturedAt,

@@ -48,7 +48,11 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
 /// </summary>
 public interface IIntegrationCatalogApiService
 {
-    Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+    /// <summary>The stored Source Analysis snapshots as summaries (identity, status, counts, which evidence each holds). A reader picks the
+    /// snapshot it needs and fetches it with <see cref="GetSourceSnapshotAsync"/>; the list never carries evidence.</summary>
+    Task<IReadOnlyList<IqrSourceSnapshotSummary>> ListSourceSnapshotSummariesAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshotSummary>>([]);
+    /// <summary>The dependency evidence of every stored snapshot that has it (internal-package mappings between snapshots), nothing else.</summary>
+    Task<IReadOnlyList<BirkNext.Dependencies.DependencySourceEvidence>> ListDependencySourcesAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<BirkNext.Dependencies.DependencySourceEvidence>>([]);
     /// <summary>One Source Analysis snapshot with its full evidence, or null when it is no longer stored. Readiness carries only summaries.</summary>
     Task<IqrSourceSnapshot?> GetSourceSnapshotAsync(Guid snapshotId, CancellationToken ct = default) => Task.FromResult<IqrSourceSnapshot?>(null);
     /// <summary>The canonical Integration Quality Review source-evidence bindings of an environment (one snapshot per integration).</summary>
@@ -184,7 +188,11 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         return await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>(Json, ct);
     }
 
-    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
+    public async Task<IReadOnlyList<IqrSourceSnapshotSummary>> ListSourceSnapshotSummariesAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<IqrSourceSnapshotSummary>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
+
+    public async Task<IReadOnlyList<BirkNext.Dependencies.DependencySourceEvidence>> ListDependencySourcesAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<BirkNext.Dependencies.DependencySourceEvidence>>($"api/source-analysis/dependency-sources?{Env(environmentId)}", Json, ct) ?? [];
 
     public async Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<IntegrationEvidenceBinding>>($"api/integration-review/evidence-bindings?{Env(environmentId)}", Json, ct) ?? [];

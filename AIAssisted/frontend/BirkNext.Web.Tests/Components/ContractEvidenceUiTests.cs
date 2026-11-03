@@ -96,7 +96,7 @@ public sealed class ContractEvidenceUiTests : BunitContext
             EvidenceDomains = Evidence() };
         var newer = older with { Id = Guid.NewGuid(), Archive = new SourceArchive("api-v2.zip", "b", 1), AnalyzedAt = DateTimeOffset.Parse("2026-10-20T08:00:00Z") };
         var api = new Mock<IIntegrationCatalogApiService>();
-        api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([newer, older]);
+        api.SetupSourceSnapshots(new List<IqrSourceSnapshot> { newer, older });
         Services.AddSingleton(api.Object);
 
         var cut = Render<SourceContractEvidencePanel>(p => p.Add(x => x.EnvironmentId, "dev"));

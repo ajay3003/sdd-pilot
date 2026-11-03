@@ -120,7 +120,7 @@ public sealed class SourceAnalysisApplicabilityRefreshTests : BunitContext
     {
         var snapshots = new List<BirkNext.Integrations.IqrSourceSnapshot>();
         var api = new Mock<IIntegrationCatalogApiService>();
-        api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => snapshots.ToList());
+        api.SetupSourceSnapshots(() => snapshots.ToList());
         api.Setup(a => a.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {

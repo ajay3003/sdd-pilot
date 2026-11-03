@@ -150,35 +150,32 @@
     {
         <h3>Source architecture changes</h3>
         <p class="arch-limitation" role="note" data-testid="arch-change-label">This compares source declarations. It is not deployment drift, a runtime traffic change or a runtime environment difference.</p>
-        @if (Previous.Count == 0)
+        @if (LoadPrevious is not null)
+        {
+            @* Earlier snapshots are listed as summaries and fetched only when chosen. *@
+            @if (PreviousSources.Count == 0)
+            {
+                <p class="sa-empty-line" data-testid="arch-no-previous">No earlier architecture analysis is available for comparison. @if (ChooseSnapshot.HasDelegate) { <button type="button" class="arch-link" data-testid="arch-choose-snapshot" @onclick="() => ChooseSnapshot.InvokeAsync()">Choose another snapshot</button> }</p>
+            }
+            else
+            {
+                <label>Compare with <select value="@_previousSourceId" @onchange="PreviousSourceChanged" data-testid="arch-previous">@foreach (var p in PreviousSources) { <option value="@p.Id">@p.Label</option> }</select></label>
+                @if (_previousLoading) { <p class="arch-muted" role="status" data-testid="arch-previous-loading">Loading the earlier snapshot…</p> }
+                else if (_previousError is { } previousError)
+                {
+                    <p class="arch-limitation" role="alert" data-testid="arch-previous-error">Could not load the earlier snapshot: @previousError <button type="button" class="arch-link" data-testid="arch-previous-retry" @onclick="LoadSelectedPreviousAsync">Retry</button></p>
+                }
+                else if (_loadedPrevious is { } loaded) { @Comparison(loaded) }
+            }
+        }
+        else if (Previous.Count == 0)
         {
             <p class="sa-empty-line" data-testid="arch-no-previous">No earlier architecture analysis is available for comparison. @if (ChooseSnapshot.HasDelegate) { <button type="button" class="arch-link" data-testid="arch-choose-snapshot" @onclick="() => ChooseSnapshot.InvokeAsync()">Choose another snapshot</button> }</p>
         }
         else
         {
             <label>Compare with <select @bind="_previousId" data-testid="arch-previous">@foreach (var p in Previous) { <option value="@p.Snapshot.SnapshotId">@p.Label</option> }</select></label>
-            @if (Previous.FirstOrDefault(p => p.Snapshot.SnapshotId.ToString() == _previousId).Snapshot is { } previous)
-            {
-                @if (previous.AnalyzerVersion != Snapshot.AnalyzerVersion) { <p class="arch-muted">Analyzer versions differ; changes may reflect extraction coverage rather than changed source.</p> }
-                var changes = ArchitectureDiff.Compare(previous, Snapshot);
-                var comparison = ArchitectureComparability.Classify(previous, Snapshot, changes);
-                @if (changes.Count == 0) { <p class="sa-empty-line" data-testid="arch-no-changes">No source architecture change between these snapshots.</p> }
-                else
-                {
-                    @if (!comparison.Comparable) { <p class="arch-limitation" role="note" data-testid="arch-coverage-difference">@ArchitectureComparability.WeakCoverageNote</p> }
-                    <p class="arch-muted" data-testid="arch-comparability">@comparison.Summary</p>
-                    <dl class="sa-change-summary" data-testid="arch-change-summary" data-comparable="@(comparison.Comparable ? "true" : "false")">
-                        @foreach (var g in SourceAnalysisReview.ArchitectureChanges(changes)) { <div data-testid="arch-change-group" data-area="@g.Label"><dt>@g.Label</dt><dd>@SourceAnalysisReview.ChangeText(g)</dd></div> }
-                    </dl>
-                    <ReviewDisclosure Text="@($"View detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="arch-change-details" Class="disclosure-small">
-                        @foreach (var area in changes.GroupBy(c => c.Area).OrderBy(g => g.Key, StringComparer.Ordinal))
-                        {
-                            <h4 class="sa-change-area">@area.Key</h4>
-                            <ul class="arch-list" data-testid="arch-changes" data-area="@area.Key">@foreach (var c in area) { <li data-kind="@c.Kind"><strong>@(c.Kind switch { ArchitectureChangeKind.Added => "+ Added", ArchitectureChangeKind.Removed => "− Removed", _ => "~ Changed" })</strong> @c.Name <span class="arch-muted">@c.Detail</span></li> }</ul>
-                        }
-                    </ReviewDisclosure>
-                }
-            }
+            @if (Previous.FirstOrDefault(p => p.Snapshot.SnapshotId.ToString() == _previousId).Snapshot is { } previous) { @Comparison(previous) }
         }
     }
     else
@@ -382,6 +379,7 @@
     {
         if (InitialTab is { } tab && Tabs.Contains(tab)) _tab = tab;
         if (_tab == "Dependencies" && InitialTab is not null) _depState = nameof(ArchitectureEvidenceState.Unresolved);
+        if (_tab == "Changes") _ = EnsurePreviousAsync();
     }
 
     protected override void OnParametersSet()
@@ -394,7 +392,73 @@
         _tab = tab;
         _highlight = null;
         _pathResult = null;
+        if (tab == "Changes") _ = EnsurePreviousAsync();
     }
+
+    /// <summary>Earlier snapshots to compare with (label + source snapshot id), newest first — fetched only when chosen. Used instead of
+    /// <see cref="Previous"/> when <see cref="LoadPrevious"/> is set.</summary>
+    [Parameter] public IReadOnlyList<(string Label, Guid Id)> PreviousSources { get; set; } = [];
+    /// <summary>Fetches one earlier snapshot's architecture (null when it is no longer stored or holds none).</summary>
+    [Parameter] public Func<Guid, Task<ArchitectureSnapshot?>>? LoadPrevious { get; set; }
+    private string _previousSourceId = "";
+    private ArchitectureSnapshot? _loadedPrevious;
+    private bool _previousLoading;
+    private string? _previousError;
+
+    private async Task EnsurePreviousAsync()
+    {
+        if (LoadPrevious is null || PreviousSources.Count == 0 || _previousSourceId != "") return;
+        _previousSourceId = PreviousSources[0].Id.ToString();
+        await LoadSelectedPreviousAsync();
+    }
+
+    private async Task PreviousSourceChanged(ChangeEventArgs e)
+    {
+        _previousSourceId = e.Value?.ToString() ?? "";
+        await LoadSelectedPreviousAsync();
+    }
+
+    private async Task LoadSelectedPreviousAsync()
+    {
+        if (LoadPrevious is null || !Guid.TryParse(_previousSourceId, out var id)) return;
+        _previousLoading = true; _previousError = null; _loadedPrevious = null;
+        StateHasChanged();
+        try
+        {
+            var loaded = await LoadPrevious(id);
+            if (_previousSourceId != id.ToString()) return; // another snapshot was chosen meanwhile
+            _loadedPrevious = loaded;
+            if (loaded is null) _previousError = "it is no longer stored or holds no architecture analysis.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _previousError = "the request failed.";
+        }
+        finally { _previousLoading = false; StateHasChanged(); }
+    }
+
+    /// <summary>The changes between an earlier architecture analysis and this one.</summary>
+    private RenderFragment Comparison(ArchitectureSnapshot previous) => @<text>
+        @if (previous.AnalyzerVersion != Snapshot.AnalyzerVersion) { <p class="arch-muted">Analyzer versions differ; changes may reflect extraction coverage rather than changed source.</p> }
+        @{ var changes = ArchitectureDiff.Compare(previous, Snapshot);
+        var comparison = ArchitectureComparability.Classify(previous, Snapshot, changes); }
+        @if (changes.Count == 0) { <p class="sa-empty-line" data-testid="arch-no-changes">No source architecture change between these snapshots.</p> }
+        else
+        {
+            @if (!comparison.Comparable) { <p class="arch-limitation" role="note" data-testid="arch-coverage-difference">@ArchitectureComparability.WeakCoverageNote</p> }
+            <p class="arch-muted" data-testid="arch-comparability">@comparison.Summary</p>
+            <dl class="sa-change-summary" data-testid="arch-change-summary" data-comparable="@(comparison.Comparable ? "true" : "false")">
+                @foreach (var g in SourceAnalysisReview.ArchitectureChanges(changes)) { <div data-testid="arch-change-group" data-area="@g.Label"><dt>@g.Label</dt><dd>@SourceAnalysisReview.ChangeText(g)</dd></div> }
+            </dl>
+            <ReviewDisclosure Text="@($"View detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="arch-change-details" Class="disclosure-small">
+                @foreach (var area in changes.GroupBy(c => c.Area).OrderBy(g => g.Key, StringComparer.Ordinal))
+                {
+                    <h4 class="sa-change-area">@area.Key</h4>
+                    <ul class="arch-list" data-testid="arch-changes" data-area="@area.Key">@foreach (var c in area) { <li data-kind="@c.Kind"><strong>@(c.Kind switch { ArchitectureChangeKind.Added => "+ Added", ArchitectureChangeKind.Removed => "− Removed", _ => "~ Changed" })</strong> @c.Name <span class="arch-muted">@c.Detail</span></li> }</ul>
+                }
+            </ReviewDisclosure>
+        }
+    </text>;
 
     private static RenderFragment Options(IEnumerable<string> values) => builder =>
     {

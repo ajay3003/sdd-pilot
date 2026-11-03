@@ -243,7 +243,7 @@
     private string _tab = "overview";
     private string _filter = "";
     private string? _expanded;
-    private IReadOnlyList<IqrSourceSnapshot> _sourceSnapshots = [];
+    private IReadOnlyList<IqrSourceSnapshotSummary> _sourceSnapshots = [];
     private Guid? _sourceSnapshotId;
     private string _compareEnvironment = "";
     private DeclaredObservedComparison? _comparison;
@@ -354,8 +354,9 @@
         if (_profile is null || _snapshot is null) return;
         if (tab == "declared" && _sourceSnapshots.Count == 0)
         {
-            _sourceSnapshots = (await Sources.ListSourceSnapshotsAsync(_profile.Id, _cts.Token)).Where(s => s.EvidenceDomains is not null).ToList();
-            _sourceSnapshotId = _sourceSnapshots.Where(s => s.EvidenceDomains!.Infrastructure.Resources.Count > 0).OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
+            // Summaries: the comparison itself reads the chosen snapshot on the server, by id.
+            _sourceSnapshots = (await Sources.ListSourceSnapshotSummariesAsync(_profile.Id, _cts.Token)).Where(s => s.HasEvidenceDomains).ToList();
+            _sourceSnapshotId = _sourceSnapshots.Where(s => s.InfrastructureResources > 0).OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
             _compareEnvironment = _snapshot.Scope.Environment?.Raw ?? "";
         }
         if (tab == "suggestions" && _suggestions is null) _suggestions = await Api.TargetSuggestionsAsync(_profile.Id, _snapshot.Id, _cts.Token);
@@ -593,7 +594,7 @@
                         <select value="@_sourceSnapshotId" @onchange="OnSourceSnapshot" data-testid="az-declared-source">
                             @foreach (var src in _sourceSnapshots.OrderByDescending(x => x.AnalyzedAt))
                             {
-                                <option value="@src.Id">@src.Archive.FileName · @P.Utc(src.AnalyzedAt) · @src.EvidenceDomains!.Infrastructure.Resources.Count declared</option>
+                                <option value="@src.Id">@src.Archive.FileName · @P.Utc(src.AnalyzedAt) · @src.InfrastructureResources declared</option>
                             }
                         </select>
                     </label>

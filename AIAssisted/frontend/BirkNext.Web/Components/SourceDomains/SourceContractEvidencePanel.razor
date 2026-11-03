@@ -14,12 +14,17 @@
     else
     {
         <label class="sd-field">Source snapshot
-            <select data-testid="source-contract-snapshot" value="@_selected" @onchange="e => _selected = e.Value?.ToString() ?? string.Empty">
+            <select data-testid="source-contract-snapshot" value="@_selection?.Selected" @onchange="e => _selection!.SelectAsync(e.Value?.ToString())">
                 <option value="">Select a snapshot…</option>
                 @foreach (var s in _snapshots) { <option value="@s.Id">@s.Archive.FileName · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
             </select>
         </label>
-        @if (_snapshots.FirstOrDefault(s => s.Id.ToString() == _selected) is { } snapshot)
+        @if (_selection is { Loading: true }) { <p class="sd-muted" role="status" aria-busy="true" data-testid="source-contract-loading">Loading analysis…</p> }
+        else if (_selection?.Error is { } selectionError)
+        {
+            <p class="sd-muted" role="alert" data-testid="source-contract-load-error">Could not load analysis: @selectionError <button type="button" class="btn-secondary" @onclick="() => _selection!.SelectAsync(_selection.Selected)">Retry</button></p>
+        }
+        else if (_selection?.Snapshot is { } snapshot)
         {
             @if (snapshot.EvidenceDomains?.Contracts is not { } evidence)
             {
@@ -51,14 +56,15 @@
     [Parameter] public IReadOnlyList<SourceContractType> Types { get; set; } = [SourceContractType.OpenApi, SourceContractType.GraphQlSchema];
     [Parameter] public string Note { get; set; } = "The API contract as declared in a Source Analysis snapshot, from the shared contract evidence. Choose the snapshot that matches the deployed version — none is selected automatically.";
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
-    private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
-    private string _selected = "";
+    private IReadOnlyList<IqrSourceSnapshotSummary>? _snapshots;
+    private SourceSnapshotSelection? _selection;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
         if (ServiceProvider.GetService(typeof(IIntegrationCatalogApiService)) is not IIntegrationCatalogApiService api) { _error = "Source Analysis is unavailable in this session."; return; }
-        try { _snapshots = await api.ListSourceSnapshotsAsync(EnvironmentId); }
+        _selection = new(api);
+        try { _snapshots = await api.ListSourceSnapshotSummariesAsync(EnvironmentId); }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
     }
 }
