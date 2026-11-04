@@ -84,3 +84,47 @@
 .dlr-source-choice { display: flex; flex-wrap: wrap; gap: 1rem; border: 1px solid var(--clr-border-input); border-radius: 6px; padding: .4rem .75rem; margin: .5rem 0; }
 .dlr-source-choice legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }
 .dlr-scope { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin: .25rem 0; font-size: .9rem; overflow-wrap: anywhere; }
+
+/* ── Redesign phase A: one sticky report header, summary first, progressive disclosure ──────────────────────────────
+   Colour rules: blue = selection/navigation/action, green = confirmed positive, amber = real attention, red = blocked/failed only,
+   grey = neutral/not assessed; type, module and provenance are never coloured as status. Fewer borders: whitespace and dividers. */
+.dlr-sticky { position: sticky; top: 0; z-index: 5; background: var(--clr-surface, #f8fafc); padding: .5rem 0 0; display: grid; gap: .5rem;
+    box-shadow: 0 1px 0 var(--clr-border-subtle, #e2e8f0); }
+.dlr-header-period { margin: 0; font-size: .95rem; color: var(--clr-text-body); }
+.dlr-header-meta { margin: .1rem 0 0; font-size: .85rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.dlr-sticky .dlr-tabs { border-bottom: 0; }
+
+.dlr-headline { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.dlr-headline-card { background: var(--clr-surface-white); border-radius: 12px; padding: 1rem 1.25rem; box-shadow: var(--shadow-sm); }
+.dlr-headline-h { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); }
+.dlr-headline-value { margin: 0 0 .5rem; font-size: 2rem; font-weight: 700; color: var(--clr-text-heading); line-height: 1.1; }
+.dlr-headline-value span { font-size: .95rem; font-weight: 600; color: var(--clr-text-body); }
+.dlr-headline-list { list-style: none; margin: 0; padding: .5rem 0 0; border-top: 1px solid var(--clr-border-subtle, #e2e8f0); display: grid; gap: .2rem;
+    font-size: .9rem; color: var(--clr-text-body); }
+
+.dlr-all-figures > summary, .dlr-hygiene > summary { cursor: pointer; color: var(--clr-link, #1d4ed8); font-weight: 600; padding: .25rem 0; }
+.dlr-hygiene { margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--clr-border-subtle, #e2e8f0); }
+.dlr-hygiene > summary { color: var(--clr-text-muted); }
+
+.dlr-more { position: relative; display: inline-block; }
+.dlr-more > summary { list-style: none; cursor: pointer; padding: .1rem .5rem; border-radius: 6px; font-weight: 700; color: var(--clr-text-body); }
+.dlr-more > summary::-webkit-details-marker { display: none; }
+.dlr-more > summary:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.dlr-more-menu { position: absolute; right: 0; z-index: 4; min-width: 12rem; display: grid; gap: .1rem; padding: .35rem; background: var(--clr-surface-white);
+    border-radius: 8px; box-shadow: var(--shadow-md, 0 6px 18px rgba(15, 23, 42, .15)); }
+.dlr-more-menu .btn-link { text-align: left; padding: .3rem .5rem; }
+
+.dlr-report-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+.dlr-report-card { min-width: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem 1rem; padding: .85rem 1rem; border-radius: 10px;
+    background: var(--clr-surface, #f8fafc); }
+.dlr-report-card.is-open { box-shadow: inset 3px 0 0 var(--clr-primary, #1d4ed8); }
+.dlr-report-card-main { flex: 1 1 min(28rem, 100%); min-width: 0; }
+.dlr-report-card-title { margin: 0 0 .2rem; font-size: 1rem; color: var(--clr-text-heading); }
+.dlr-report-card p { margin: .15rem 0; overflow-wrap: anywhere; }
+.dlr-report-pair { display: flex; flex-wrap: wrap; gap: .35rem .75rem; align-items: baseline; }
+.dlr-pair-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--clr-text-muted); margin-right: .25rem; }
+.dlr-report-badges { display: flex; flex-wrap: wrap; gap: .35rem; }
+.dlr-report-badges .dlr-badge { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
+.dlr-report-card .dlr-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+/* On a phone a pinned header would take most of the screen: it scrolls with the page there. */
+@media (max-width: 640px) { .dlr-sticky { position: static; box-shadow: none; } }

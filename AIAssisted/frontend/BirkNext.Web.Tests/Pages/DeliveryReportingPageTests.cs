@@ -317,6 +317,46 @@ public sealed class DeliveryReportingPageTests : BunitContext
             .And.Contain("not present in the baseline"));
     }
 
+    [Fact]
+    public void Redesign_SummaryFirst_HygieneApart_ActionsInMenus_HistoryAsCards()
+    {
+        _api.Report = SampleReport() with
+        {
+            Metrics = [new("features-changed", "Features changed", 1), new("new-features", "New features", 0), new("inventory-features", "Features", 2) { Group = DeliveryMetricGroups.Inventory },
+                new("inventory-stories", "User stories", 3) { Group = DeliveryMetricGroups.Inventory }, new("inventory-unchecked", "Unchecked tasks", 4) { Group = DeliveryMetricGroups.Inventory }],
+            Attention =
+            [
+                new(DeliveryAttentionKind.BrokenTraceability, DeliveryAttentionSeverity.Review, "Child search", "US2 has no traceable tasks.", "frontend::001-child-search"),
+                new(DeliveryAttentionKind.SourceEncoding, DeliveryAttentionSeverity.Review, "spec.md", "Suspected encoding damage.", "frontend::002-case-overview"),
+                new(DeliveryAttentionKind.UnmappedArtifact, DeliveryAttentionSeverity.Review, "Task file outside a feature", "A tasks.md is not inside a feature folder."),
+            ],
+        };
+        var page = RenderAt($"?project={ProjectId}&tab=overview");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-headline]"));
+        page.Find("[data-testid=dlr-headline-change]").TextContent.Should().Contain("1").And.Contain("changed features");
+        page.Find("[data-testid=dlr-headline-current]").TextContent.Should().Contain("2").And.Contain("3 user stories").And.Contain("4 open tasks");
+        page.Find("[data-testid=dlr-headline-quality]").TextContent.Should().Contain("1").And.Contain("2 project hygiene warnings");
+        page.Find("[data-testid=dlr-header-meta]").TextContent.Should().StartWith("2 features · 3 user stories");
+        page.Find("[data-testid=dlr-sticky-header]").QuerySelector("[data-testid=dlr-tab-overview]").Should().NotBeNull("the tabs sit in the one sticky header");
+        page.Find("[data-testid=dlr-cards]").Closest("details").Should().NotBeNull("every figure stays available under All figures");
+        var attention = page.Find("[data-testid=dlr-attention]");
+        attention.QuerySelector("h2")!.TextContent.Should().Be("Delivery attention");
+        var hygiene = page.Find("[data-testid=dlr-hygiene]");
+        hygiene.HasAttribute("open").Should().BeFalse("hygiene warnings are collapsed by default");
+        hygiene.QuerySelector("summary")!.TextContent.Should().Be("Project hygiene warnings · 2");
+        attention.QuerySelectorAll("[data-testid=dlr-attention-group] li").Should().ContainSingle("only the feature's delivery issue is delivery attention");
+
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting?project={ProjectId}&tab=snapshots");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-snapshot-more]").Should().NotBeEmpty());
+        page.FindAll("[data-testid=dlr-snapshot-row]")[0].QuerySelector("[data-testid=dlr-snapshot-delete]")!.Closest("details").Should().NotBeNull("rare actions sit in the ⋯ menu");
+        page.FindAll("[data-testid=dlr-snapshot-row]")[0].QuerySelector("[data-testid=dlr-snapshot-view]")!.Closest("details").Should().BeNull("View stays inline");
+
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting?project={ProjectId}&tab=history");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-history-row]").TagName.Should().Be("LI"));
+        page.Find("[data-testid=dlr-history-pair]").TextContent.Should().Contain("Baseline").And.Contain("Current");
+    }
+
     // ---- Snapshot identity: two "Current 2026-11-04" snapshots of the same day stay individually selectable ----
 
     static readonly DateTimeOffset Nov4 = new(2026, 11, 4, 0, 0, 0, TimeSpan.FromHours(1));

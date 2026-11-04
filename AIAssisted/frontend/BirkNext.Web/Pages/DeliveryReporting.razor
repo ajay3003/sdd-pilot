@@ -19,11 +19,21 @@
 <PageTitle>Delivery Reporting</PageTitle>
 
 <div class="sd-workspace dlr-page" data-testid="dlr-page" aria-busy="@(_loaded ? "false" : "true")">
+    @* One header for every tab (sticky while scrolling): which report, which period, what it holds, and the project/import actions. *@
+    <div class="dlr-sticky" data-testid="dlr-sticky-header">
     <header class="dlr-header">
         <div>
             @* "Weekly" only when the comparison genuinely covers a reporting week; a same-day or ad-hoc comparison is a change report. *@
             <h1 class="dlr-title" data-testid="dlr-title">@(_report is null ? "Delivery Reporting" : $"{_report.ProjectName} — {(_report.Kind == DeliveryReportKind.Weekly ? "Weekly Delivery Report" : "Delivery Change Report")}")</h1>
-            <p class="dlr-lead">What changed in your features and user stories between two imported snapshots: progress, scope changes, attention items and potential focus.</p>
+            @if (_report is { } headerReport)
+            {
+                <p class="dlr-header-period" data-testid="dlr-header-period">Current: <strong>@P.Day(headerReport.Current.EffectiveAt)</strong> <span aria-hidden="true">→</span> Baseline: <strong>@P.Day(headerReport.Baseline.EffectiveAt)</strong></p>
+                <p class="dlr-header-meta" data-testid="dlr-header-meta">@HeaderMeta(headerReport)</p>
+            }
+            else
+            {
+                <p class="dlr-lead">What changed in your features and user stories between two imported snapshots: progress, scope changes, attention items and potential focus.</p>
+            }
         </div>
         <div class="dlr-header-actions">
             <label class="dlr-field dlr-project-field">
@@ -58,6 +68,17 @@
         </form>
     }
 
+    @if (_loaded && _projectId is not null)
+    {
+        <nav class="dlr-tabs" aria-label="Delivery Reporting sections">
+            @foreach (var (id, label) in P.Tabs)
+            {
+                <a href="@TabHref(id)" class="dlr-tab @(_tab == id ? "active" : "")" aria-current="@(_tab == id ? "page" : null)" data-testid="dlr-tab-@id">@label</a>
+            }
+        </nav>
+    }
+    </div>
+
     @if (_error is not null) { <p class="dlr-error" role="alert" data-testid="dlr-error">@_error</p> }
     @if (_notice is not null) { <p class="dlr-notice" role="status" data-testid="dlr-notice">@_notice</p> }
 
@@ -75,13 +96,6 @@
     }
     else
     {
-        <nav class="dlr-tabs" aria-label="Delivery Reporting sections">
-            @foreach (var (id, label) in P.Tabs)
-            {
-                <a href="@TabHref(id)" class="dlr-tab @(_tab == id ? "active" : "")" aria-current="@(_tab == id ? "page" : null)" data-testid="dlr-tab-@id">@label</a>
-            }
-        </nav>
-
         @if (_tab == "overview") { @Overview() }
         else if (_tab == "stories") { @Stories() }
         else if (_tab == "snapshots") { @Snapshots() }
@@ -94,6 +108,31 @@
 </div>
 
 @code {
+    // ── Shared presentation helpers (header, headline cards, attention split) ──────────────────────────────────────
+
+    /// <summary>A frozen metric's value, or "–" when the report does not carry it (never a 0 for an unknown).</summary>
+    private static string Fig(WeeklyDeliveryReport r, string key) => r.Metrics.FirstOrDefault(m => m.Key == key)?.Value.ToString() ?? "–";
+
+    private static string CriteriaNow(WeeklyDeliveryReport r) =>
+        r.Stories.Any(s => s.Hierarchy is not null) ? r.Stories.Where(s => !s.RemovedFeature).Sum(s => s.Hierarchy?.CriteriaCurrent ?? 0).ToString() : "–";
+
+    /// <summary>"38 features · 138 user stories · 6 scenarios · 123 AC · Partial comparison".</summary>
+    private static string HeaderMeta(WeeklyDeliveryReport r) => string.Join(" · ", new[]
+    {
+        $"{Fig(r, "inventory-features")} features",
+        r.Metrics.Any(m => m.Key == "inventory-stories") ? $"{Fig(r, "inventory-stories")} user stories" : null,
+        r.Metrics.Any(m => m.Key == "inventory-scenarios") ? $"{Fig(r, "inventory-scenarios")} scenarios" : null,
+        CriteriaNow(r) is var ac && ac != "–" ? $"{ac} AC" : null,
+        r.PeriodCoverage switch { DeliveryPeriodCoverage.FullPeriod => "Full-period comparison", DeliveryPeriodCoverage.PartialPeriod => "Partial comparison",
+            DeliveryPeriodCoverage.SameDay => "Same-day comparison", _ => null },
+        r.Scope?.Label is { Length: > 0 } scope ? $"Scope: {scope}" : null,
+    }.Where(x => x is not null));
+
+    /// <summary>Repository hygiene, not a feature's delivery: items without a feature, and suspected source encoding damage.</summary>
+    private static bool IsHygiene(DeliveryAttentionItem a) => a.FeatureKey is null || a.Kind == DeliveryAttentionKind.SourceEncoding;
+    private static List<DeliveryAttentionItem> HygieneItems(WeeklyDeliveryReport r) => [.. r.Attention.Where(IsHygiene)];
+    private static List<DeliveryAttentionItem> DeliveryAttention(WeeklyDeliveryReport r) => [.. r.Attention.Where(a => !IsHygiene(a))];
+
     // ── Overview ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private RenderFragment Overview() => __builder =>
@@ -144,7 +183,42 @@
             @foreach (var warning in report.ComparisonWarnings) { <p class="dlr-warning" role="note" data-testid="dlr-comparison-warning"><strong>Comparison:</strong> @warning</p> }
         </section>
 
+        @* Summary first: three cards answer "what changed", "what is there" and "what needs attention"; every figure stays one click away. *@
+        <section class="dlr-headline" aria-label="Report summary" data-testid="dlr-headline">
+            <div class="dlr-headline-card" data-testid="dlr-headline-change">
+                <h3 class="dlr-headline-h">Delivery change</h3>
+                <p class="dlr-headline-value">@Fig(report, "features-changed") <span>changed features</span></p>
+                <ul class="dlr-headline-list">
+                    <li>@Fig(report, "new-features") new</li>
+                    <li>@Fig(report, "specifications-changed") specification@(Fig(report, "specifications-changed") == "1" ? "" : "s") changed</li>
+                    <li>@Fig(report, "removed-features") removed</li>
+                    <li>@Fig(report, "tasks-completed") tasks checked this period</li>
+                </ul>
+            </div>
+            <div class="dlr-headline-card" data-testid="dlr-headline-current">
+                <h3 class="dlr-headline-h">Current delivery</h3>
+                <p class="dlr-headline-value">@Fig(report, "inventory-features") <span>features</span></p>
+                <ul class="dlr-headline-list">
+                    <li>@Fig(report, "inventory-stories") user stories</li>
+                    <li>@CriteriaNow(report) acceptance criteria</li>
+                    <li>@Fig(report, "inventory-unchecked") open tasks</li>
+                </ul>
+            </div>
+            <div class="dlr-headline-card" data-testid="dlr-headline-quality">
+                <h3 class="dlr-headline-h">Quality</h3>
+                <p class="dlr-headline-value">@(DeliveryAttention(report).Count + report.ScopeChanges.Count) <span>need attention</span></p>
+                <ul class="dlr-headline-list">
+                    <li>@Fig(report, "quality-unresolved-references") unresolved references</li>
+                    <li>@Fig(report, "quality-removed-story-references") removed-story references</li>
+                    <li>@HygieneItems(report).Count project hygiene warning@(HygieneItems(report).Count == 1 ? "" : "s")</li>
+                    <li>@report.ComparisonWarnings.Count snapshot / comparison warning@(report.ComparisonWarnings.Count == 1 ? "" : "s")</li>
+                </ul>
+            </div>
+        </section>
+
         @* Period changes, current inventory and quality signals are different questions: grouped, never one undifferentiated row (v3). *@
+        <details class="dlr-all-figures">
+        <summary>All figures (@report.Metrics.Count)</summary>
         <section aria-label="Summary" class="dlr-cards-groups" data-testid="dlr-cards">
             @foreach (var group in report.Metrics.GroupBy(m => report.Version >= 3 ? m.Group : DeliveryMetricGroups.Period))
             {
@@ -162,6 +236,7 @@
                 </div>
             }
         </section>
+        </details>
 
         <div class="dlr-grid">
             <section class="dlr-card" data-testid="dlr-summary">
@@ -181,14 +256,15 @@
                 }
             </section>
             <section class="dlr-card" data-testid="dlr-attention">
-                <h2 class="dlr-h2">Review and signals</h2>
+                <h2 class="dlr-h2">Delivery attention</h2>
                 @if (report.Attention.Count == 0 && report.ScopeChanges.Count == 0) { <p class="dlr-muted">Nothing needs attention.</p> }
                 else
                 {
-                    @* Three different kinds of item, counted separately: a scope change to confirm is not a defect. *@
+                    @if (DeliveryAttention(report).Count == 0 && report.ScopeChanges.Count == 0) { <p class="dlr-muted" data-testid="dlr-attention-none">No delivery attention items; only project hygiene warnings below.</p> }
+                    @* Three different kinds of item, counted separately: a scope change to confirm is not a defect. Repository hygiene is apart. *@
                     @foreach (var category in Enum.GetValues<DeliveryAttentionCategory>())
                     {
-                        var items = report.Attention.Where(a => DeliveryAttentionCategories.Of(a.Kind) == category).ToList();
+                        var items = DeliveryAttention(report).Where(a => DeliveryAttentionCategories.Of(a.Kind) == category).ToList();
                         var scope = category == DeliveryAttentionCategory.ScopeChange ? report.ScopeChanges : [];
                         if (items.Count + scope.Count == 0) continue;
                         <div class="dlr-attention-group" data-testid="dlr-attention-group" data-category="@category">
@@ -205,6 +281,14 @@
                                 }
                             </ul>
                         </div>
+                    }
+                    @if (HygieneItems(report) is { Count: > 0 } hygiene)
+                    {
+                        @* Encoding damage, files outside features, duplicate numbers: repository hygiene, not the delivery of a feature. *@
+                        <details class="dlr-hygiene" data-testid="dlr-hygiene">
+                            <summary>Project hygiene warnings · @hygiene.Count</summary>
+                            <ul class="dlr-list">@foreach (var a in hygiene) { <li><strong>@DeliveryReportingText.Attention(a.Kind)</strong> — @a.Title<br /><span class="dlr-muted">@a.Detail</span></li> }</ul>
+                        </details>
                     }
                 }
             </section>
@@ -392,9 +476,14 @@
                                     <td class="dlr-row-actions">
                                         <button type="button" class="btn-link" data-testid="dlr-snapshot-view" aria-expanded="@(_viewId == s.Id ? "true" : "false")" @onclick="() => View(s)">View<span class="visually-hidden"> @s.Label</span></button>
                                         <button type="button" class="btn-link" data-testid="dlr-snapshot-compare" @onclick="() => CompareFrom(s)">Compare<span class="visually-hidden"> @s.Label</span></button>
-                                        <button type="button" class="btn-link" data-testid="dlr-snapshot-rename" @onclick="() => { _renameId = s.Id; _renameValue = s.Label; }">Rename<span class="visually-hidden"> @s.Label</span></button>
-                                        <button type="button" class="btn-link" data-testid="dlr-snapshot-correct" @onclick="() => { _correctId = s.Id; _correctValue = s.EffectiveAt.ToLocalTime().DateTime; _correctReason = null; }">Correct date<span class="visually-hidden"> of @s.Label</span></button>
-                                        <button type="button" class="btn-link dlr-danger" data-testid="dlr-snapshot-delete" @onclick="() => AskDeleteSnapshot(s)">Delete<span class="visually-hidden"> @s.Label</span></button>
+                                        <details class="dlr-more" data-testid="dlr-snapshot-more">
+                                            <summary aria-label="@($"More actions for {P.DisplayName(s)}")">⋯</summary>
+                                            <div class="dlr-more-menu">
+                                                <button type="button" class="btn-link" data-testid="dlr-snapshot-rename" @onclick="() => { _renameId = s.Id; _renameValue = s.Label; }">Rename<span class="visually-hidden"> @s.Label</span></button>
+                                                <button type="button" class="btn-link" data-testid="dlr-snapshot-correct" @onclick="() => { _correctId = s.Id; _correctValue = s.EffectiveAt.ToLocalTime().DateTime; _correctReason = null; }">Correct effective date<span class="visually-hidden"> of @s.Label</span></button>
+                                                <button type="button" class="btn-link dlr-danger" data-testid="dlr-snapshot-delete" @onclick="() => AskDeleteSnapshot(s)">Delete<span class="visually-hidden"> @s.Label</span></button>
+                                            </div>
+                                        </details>
                                     </td>
                                 </tr>
                                 @if (_viewId == s.Id && _view is { } detail)
@@ -427,34 +516,40 @@
             @if (_reports.Count == 0) { <p data-testid="dlr-history-empty">No reports generated yet.</p> }
             else
             {
-                <div class="dlr-table-wrap">
-                    <table class="dlr-table" data-testid="dlr-history-table">
-                        <thead><tr><th scope="col">Report</th><th scope="col">Period</th><th scope="col">Baseline → current</th><th scope="col">Generated</th><th scope="col">Coverage</th><th scope="col">Changed</th><th scope="col">Attention</th><th scope="col">Actions</th></tr></thead>
-                        <tbody>
-                            @foreach (var r in _reports)
-                            {
-                                <tr data-testid="dlr-history-row">
-                                    <th scope="row">@(r.DisplayTitle.Length > 0 ? r.DisplayTitle : $"{r.Title} — {r.WeekLabel}")@if (_report?.ReportId == r.Id) { <span class="dlr-muted"> (open)</span> }
-                                        @if (HistoryVersion(r) is { } version) { <br /><span class="dlr-muted" data-testid="dlr-history-version">@version</span> }
-                                        @if (r.ScopeLabel.Length > 0) { <br /><span class="dlr-muted" data-testid="dlr-history-scope">Scope: @r.ScopeLabel</span> }</th>
-                                    <td>@P.Period(r.PeriodStart, r.PeriodEnd)@if (r.CoverageText.Length > 0) { <br /><span class="dlr-muted" data-testid="dlr-history-coverage">@r.CoverageText</span> }</td>
-                                    <td data-testid="dlr-history-pair">@r.BaselineLabel → @r.CurrentLabel
-                                        @if (r.BaselineSource.Length > 0) { <br /><span class="dlr-muted">@r.BaselineSource → @r.CurrentSource</span> }
-                                        @if (r.Direction is { } d && d != DeliveryDirectionState.Chronological) { <br /><span class="dlr-badge dlr-tone-warn">@DirectionLabel(d)@(r.DirectionConfirmed ? " · confirmed" : "")</span> }</td>
-                                    <td>@P.DayTime(r.GeneratedAt)</td>
-                                    <td><span class="dlr-badge @P.CoverageTone(r.Coverage)">@r.Coverage</span></td>
-                                    <td>@r.StoriesChanged</td>
-                                    <td>@r.AttentionCount</td>
-                                    <td class="dlr-row-actions">
-                                        <button type="button" class="btn-link" data-testid="dlr-history-open" @onclick="() => OpenReport(r.Id)">Open<span class="visually-hidden"> @r.Title @r.WeekLabel</span></button>
-                                        <ExportMenu TestId="dlr-history-export" Options="ExportOptions(r.Id)" />
+                <ul class="dlr-report-list" data-testid="dlr-history-table">
+                    @foreach (var r in _reports)
+                    {
+                        <li class="dlr-report-card @(_report?.ReportId == r.Id ? "is-open" : "")" data-testid="dlr-history-row">
+                            <div class="dlr-report-card-main">
+                                <h3 class="dlr-report-card-title">@(r.DisplayTitle.Length > 0 ? r.DisplayTitle : $"{r.Title} — {r.WeekLabel}")@if (_report?.ReportId == r.Id) { <span class="dlr-muted"> (open)</span> }</h3>
+                                <p class="dlr-muted">@if (HistoryVersion(r) is { } version) { <span data-testid="dlr-history-version">@version · </span> }Generated @P.DayTime(r.GeneratedAt) · @P.Period(r.PeriodStart, r.PeriodEnd)</p>
+                                @if (r.ScopeLabel.Length > 0) { <p class="dlr-muted" data-testid="dlr-history-scope">Scope: @r.ScopeLabel</p> }
+                                <p class="dlr-report-pair" data-testid="dlr-history-pair">
+                                    <span><span class="dlr-pair-label">Baseline</span> @r.BaselineLabel@if (r.BaselineSource.Length > 0) { <span class="dlr-muted"> · @r.BaselineSource</span> }</span>
+                                    <span aria-hidden="true">→</span>
+                                    <span><span class="dlr-pair-label">Current</span> @r.CurrentLabel@if (r.CurrentSource.Length > 0) { <span class="dlr-muted"> · @r.CurrentSource</span> }</span>
+                                </p>
+                                <p class="dlr-report-badges">
+                                    @if (r.CoverageText.Length > 0) { <span class="dlr-badge" data-testid="dlr-history-coverage">@r.CoverageText</span> }
+                                    <span class="dlr-badge @P.CoverageTone(r.Coverage)">@r.Coverage</span>
+                                    @if (r.Direction is { } d && d != DeliveryDirectionState.Chronological) { <span class="dlr-badge dlr-tone-warn">@DirectionLabel(d)@(r.DirectionConfirmed ? " · confirmed" : "")</span> }
+                                    <span class="dlr-badge">@r.StoriesChanged changed</span>
+                                    <span class="dlr-badge @(r.AttentionCount > 0 ? "dlr-tone-warn" : "")">@r.AttentionCount attention</span>
+                                </p>
+                            </div>
+                            <div class="dlr-row-actions">
+                                <button type="button" class="btn-secondary" data-testid="dlr-history-open" @onclick="() => OpenReport(r.Id)">Open report<span class="visually-hidden"> @r.Title @r.WeekLabel</span></button>
+                                <ExportMenu TestId="dlr-history-export" Options="ExportOptions(r.Id)" />
+                                <details class="dlr-more">
+                                    <summary aria-label="@($"More actions for {r.Title} {r.WeekLabel}")">⋯</summary>
+                                    <div class="dlr-more-menu">
                                         <button type="button" class="btn-link dlr-danger" data-testid="dlr-history-delete" @onclick="() => AskDeleteReport(r)">Delete<span class="visually-hidden"> @r.Title @r.WeekLabel</span></button>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                                    </div>
+                                </details>
+                            </div>
+                        </li>
+                    }
+                </ul>
             }
         </section>
     };
