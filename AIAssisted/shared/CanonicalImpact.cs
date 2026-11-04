@@ -60,6 +60,11 @@ public static class CanonicalImpactRules
     /// <summary>Relations whose TARGET is part of / produced by the source: a change of the source impacts the target (walked source → target).</summary>
     public static readonly HashSet<CanonicalRelationType> Forward = [CanonicalRelationType.Contains, CanonicalRelationType.Exposes, CanonicalRelationType.Produces];
 
+    /// <summary>Part-of relations (either direction): they carry definite impact only down from the changed entity itself; below an impacted
+    /// container they are Potential (an impacted service does not make every class or operation in it impacted).</summary>
+    public static readonly HashSet<CanonicalRelationType> Containment =
+        [CanonicalRelationType.Contains, CanonicalRelationType.Exposes, CanonicalRelationType.Produces, CanonicalRelationType.BelongsTo];
+
     /// <summary>Entities a test gap is reported for when impacted.</summary>
     public static readonly HashSet<string> Testable = [nameof(CanonicalEntityType.Requirement), nameof(CanonicalEntityType.UserStory), nameof(CanonicalEntityType.Scenario)];
 

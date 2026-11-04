@@ -60,8 +60,8 @@ public sealed partial class CanonicalInterpretationService
                     if (e.Resolution == nameof(RelationResolution.Unresolved)) { unknown++; continue; }
                     var step = new ImpactPathStep(e.Relation, e.Reverse, $"{target.EntityType}|{target.IdentityKey}", target.EntityType, target.DisplayName, e.Resolution);
                     // Containment carries definite impact only down from the changed entity itself: an impacted service does not make all of its
-                    // operations impacted, so below the root a Contains / Exposes / Produces step is Potential.
-                    var established = allEstablished && e.Established && (e.Reverse || id == root.Id);
+                    // operations or classes impacted, so below the root a part-of step is Potential.
+                    var established = allEstablished && e.Established && (id == root.Id || !CanonicalImpactRules.Containment.Contains(Enum.Parse<CanonicalRelationType>(e.Relation)));
                     if (target.EntityType == nameof(CanonicalEntityType.Test))
                     {
                         // A test is impacted only through the relation that verifies the changed (or impacted) entity.

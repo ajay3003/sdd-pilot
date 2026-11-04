@@ -46,6 +46,8 @@ public sealed class CanonicalImpactTests
         Entity(CanonicalEntityType.Test, "t-explicit", "AbsenceTests.Registers");
         Entity(CanonicalEntityType.Test, "t-candidate", "AbsenceLongTests.Over10Days");
         Entity(CanonicalEntityType.Test, "t-unrelated", "Unrelated.Uses");
+        Entity(CanonicalEntityType.Service, "svc", "SkoleService");
+        Entity(CanonicalEntityType.SourceSymbol, "sym", "AbsenceHandler");
 
         Relation("us1", CanonicalRelationType.DependsOn, "fravaer", RelationResolution.Explicit);            // Direct
         Relation("us1", CanonicalRelationType.Contains, "sc1", RelationResolution.Derived);                  // Potential (containment below the root)
@@ -58,6 +60,8 @@ public sealed class CanonicalImpactTests
         Relation("t-explicit", CanonicalRelationType.Verifies, "us1", RelationResolution.Explicit);
         Relation("t-candidate", CanonicalRelationType.Verifies, "sc1", RelationResolution.Candidate);
         Relation("t-unrelated", CanonicalRelationType.Uses, "fravaer", RelationResolution.Explicit);         // a test is impacted only via VERIFIES
+        Relation("svc", CanonicalRelationType.Consumes, "fravaer", RelationResolution.Explicit);             // Direct
+        Relation("sym", CanonicalRelationType.BelongsTo, "svc", RelationResolution.Derived);                 // Potential (part of an impacted service)
         await db.SaveChangesAsync();
         return new CanonicalInterpretationService(db, new NoSources(), TimeProvider.System);
     }
@@ -76,6 +80,8 @@ public sealed class CanonicalImpactTests
             ["Absence over 10 days"] = ImpactLevel.Potential,
             ["FR-001 absence is reported"] = ImpactLevel.Downstream,
             ["Candidate dependent"] = ImpactLevel.Potential,
+            ["SkoleService"] = ImpactLevel.Direct,
+            ["AbsenceHandler"] = ImpactLevel.Potential,
         }, "rejected and alias relations never impact, the cycle back to the root is not revisited, and an impacted story's parts are only potentially impacted");
         view.Entities.Single(e => e.Name == "Absence over 10 days").Path.Select(p => p.Relation).Should().Equal(["DependsOn", "Contains"], "every entity carries its path");
 
@@ -93,7 +99,7 @@ public sealed class CanonicalImpactTests
     {
         var service = await Graph();
         var shallow = (await service.ImpactAsync("proj", "Contract|fravaer", default, maxDepth: 1))!;
-        shallow.Entities.Select(e => e.Name).Should().BeEquivalentTo(["Register absence", "Candidate dependent"]);
+        shallow.Entities.Select(e => e.Name).Should().BeEquivalentTo(["Register absence", "Candidate dependent", "SkoleService"]);
 
         (await service.ImpactAsync("proj", "Contract|missing", default)).Should().BeNull();
         (await service.ImpactAsync("proj", "NotAType|fravaer", default)).Should().BeNull();
