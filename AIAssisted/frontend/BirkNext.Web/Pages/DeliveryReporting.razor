@@ -237,17 +237,19 @@
                     <label class="dlr-field"><span>Current snapshot</span>
                         <select data-testid="dlr-current" value="@(_currentId?.ToString() ?? "")" @onchange="OnCurrentChanged">
                             <option value="">Choose…</option>
-                            @foreach (var s in _snapshots) { <option value="@s.Id">@SnapshotOption(s)</option> }
+                            @foreach (var s in P.Sorted(_snapshots)) { <option value="@s.Id" title="@($"Snapshot {s.Id}")">@SnapshotOption(s)</option> }
                         </select>
                     </label>
                     <label class="dlr-field"><span>Baseline snapshot</span>
                         <select data-testid="dlr-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="OnBaselineChanged">
                             <option value="">Choose…</option>
-                            @foreach (var s in _snapshots.Where(s => s.Id != _currentId)) { <option value="@s.Id">@SnapshotOption(s)</option> }
+                            @foreach (var s in P.Sorted(_snapshots.Where(s => s.Id != _currentId))) { <option value="@s.Id" title="@($"Snapshot {s.Id}")">@SnapshotOption(s)</option> }
                         </select>
                     </label>
                     <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null || _comparison is { CanGenerate: false } || _comparison is { RequiresConfirmation: true } && !_confirmDirection)" @onclick="Generate">@(_comparison is { RequiresConfirmation: true } && _confirmDirection ? "Generate anyway" : "Generate report")</button>
                 </div>
+                <p class="dlr-muted dlr-sort-note">@BirkNext.Snapshots.SnapshotSelectionLabels.SortExplanation “Current” marks the newest snapshot imported as current.</p>
+                @if (_selectionNotice is not null) { <p class="dlr-warning" role="status" data-testid="dlr-selection-notice">@_selectionNotice</p> }
                 @PreviewPanel()
                 @if (_suggestion is not null)
                 {
@@ -329,7 +331,7 @@
                     <table class="dlr-table" data-testid="dlr-snapshot-table">
                         <thead><tr><th scope="col">Snapshot</th><th scope="col">Effective date</th><th scope="col">Imported</th><th scope="col">Source</th><th scope="col">Features</th><th scope="col">Tasks</th><th scope="col">Role</th><th scope="col">Coverage</th><th scope="col">Actions</th></tr></thead>
                         <tbody>
-                            @foreach (var s in _snapshots)
+                            @foreach (var s in P.Sorted(_snapshots))
                             {
                                 <tr data-testid="dlr-snapshot-row">
                                     <th scope="row">
@@ -341,7 +343,7 @@
                                                 <button type="submit" class="btn-link">Save</button><button type="button" class="btn-link" @onclick="() => _renameId = null">Cancel</button>
                                             </form>
                                         }
-                                        else { @s.Label }
+                                        else { @P.DisplayName(s) if (P.GivenName(s) is null) { <span class="dlr-muted" title="@($"Stored name: {s.Label}")"> · @DeliveryReportingText.Role(s.Role)</span> } }
                                     </th>
                                     <td data-testid="dlr-snapshot-effective">@P.Day(s.EffectiveAt)<br /><span class="dlr-muted" data-testid="dlr-snapshot-effective-provenance">@s.EffectiveAtProvenance@(s.EffectiveAtCorrections.Count > 0 ? $" · {s.EffectiveAtCorrections.Count} correction{(s.EffectiveAtCorrections.Count == 1 ? "" : "s")}" : "")</span>
                                         @if (_correctId == s.Id)
@@ -581,6 +583,20 @@
     private bool _focusImport;
 
     private Guid? _baselineId, _currentId;
+    /// <summary>True once the person picked a snapshot (current, baseline, swap or Compare): refreshes keep those exact ids and never pick a default instead.</summary>
+    private bool _userChoseSnapshots;
+    private string? _selectionNotice;
+
+    /// <summary>Keeps the chosen ids that still exist; a chosen snapshot that no longer exists is reported, never replaced by the latest one.</summary>
+    private async Task KeepSelectionAsync()
+    {
+        var missing = new List<string>();
+        if (_currentId is { } c && _snapshots.All(s => s.Id != c)) { _currentId = null; missing.Add("current"); }
+        if (_baselineId is { } b && _snapshots.All(s => s.Id != b)) { _baselineId = null; missing.Add("baseline"); }
+        _selectionNotice = missing.Count == 0 ? null
+            : $"The previously selected {string.Join(" and ", missing)} snapshot is unavailable. Select the intended snapshot.";
+        await LoadPreviewAsync();
+    }
     private DeliveryBaselineSuggestion? _suggestion;
 
     private string _storyFilter = "default";
@@ -649,6 +665,7 @@
         _snapshots = [];
         _reports = [];
         _baselineId = _currentId = null;
+        (_userChoseSnapshots, _selectionNotice) = (false, null);
         _suggestion = null;
         if (_projectId is not { } id) return;
         _snapshots = await Api.SnapshotsAsync(id);
@@ -658,11 +675,14 @@
         await DefaultSelectionAsync();
     }
 
-    /// <summary>Preselects the most recent snapshot as current and asks for a suggested baseline (never chosen when ambiguous).</summary>
+    /// <summary>
+    /// Default (only when the person has not chosen): current = the project's current pointer (newest snapshot imported as Current), else the newest
+    /// snapshot; baseline = the suggested baseline (never chosen when ambiguous). A person's choice is never replaced by this.
+    /// </summary>
     private async Task DefaultSelectionAsync()
     {
         if (_snapshots.Count < 2) return;
-        _currentId = (_snapshots.FirstOrDefault(s => s.Role == DeliverySnapshotRole.Current) ?? _snapshots[0]).Id;
+        _currentId = P.CurrentPointer(_snapshots) ?? P.Sorted(_snapshots)[0].Id;
         await SuggestAsync();
         await LoadPreviewAsync();
     }
@@ -678,8 +698,15 @@
 
     private string TabHref(string tab) => $"{P.Route}?project={_projectId}&tab={tab}{(_report is null ? "" : $"&report={_report.ReportId}")}";
 
-    private static string SnapshotOption(DeliverySnapshotSummary s) =>
-        $"{s.Label} · {P.Day(s.EffectiveAt)} · {DeliveryReportingText.Role(s.Role)} · {s.CompletedTaskCount}/{s.TaskCount} tasks";
+    private IReadOnlyList<DeliverySnapshotSummary>? _optionsFor;
+    private IReadOnlyDictionary<Guid, string> _options = new Dictionary<Guid, string>();
+
+    /// <summary>Unique option text (the value is the SnapshotId); recomputed only when the list changes.</summary>
+    private string SnapshotOption(DeliverySnapshotSummary s)
+    {
+        if (!ReferenceEquals(_optionsFor, _snapshots)) (_optionsFor, _options) = (_snapshots, P.SnapshotOptions(_snapshots));
+        return _options.GetValueOrDefault(s.Id) ?? P.DisplayName(s);
+    }
 
     private string? SelectedPeriod()
     {
@@ -699,6 +726,7 @@
     private async Task OnCurrentChanged(ChangeEventArgs e)
     {
         _currentId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        (_userChoseSnapshots, _selectionNotice) = (true, null);
         await SuggestAsync();
         await LoadPreviewAsync();
     }
@@ -821,10 +849,12 @@
                 Session.Clear(id, preview.StagingId);
                 _importOpen = false;
                 _preview = null;
-                _notice = $"Snapshot “{snapshot.Label}” imported: {snapshot.FeatureCount} features, {snapshot.CompletedTaskCount}/{snapshot.TaskCount} tasks completed.";
+                _notice = $"Snapshot “{P.DisplayName(snapshot)}” imported: {snapshot.FeatureCount} features, {snapshot.CompletedTaskCount}/{snapshot.TaskCount} tasks completed.";
                 _snapshots = await Api.SnapshotsAsync(id);
                 _projects = (await Api.ProjectsAsync()).Projects;
-                await DefaultSelectionAsync();
+                // A choice the person made stays; only an unchosen selection follows the new current snapshot.
+                if (!_userChoseSnapshots) await DefaultSelectionAsync();
+                else await KeepSelectionAsync();
             }
             else if (result.DuplicateWarning is { } duplicate) _preview = preview with { DuplicateWarning = duplicate };
             else _importError = result.Error;
@@ -857,6 +887,7 @@
     private async Task OnBaselineChanged(ChangeEventArgs e)
     {
         _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        (_userChoseSnapshots, _selectionNotice) = (true, null);
         await LoadPreviewAsync();
     }
 
@@ -871,13 +902,14 @@
     private async Task Swap()
     {
         (_baselineId, _currentId) = (_currentId, _baselineId);
+        _userChoseSnapshots = true;
         await LoadPreviewAsync();
     }
 
     private static string DirectionLabel(DeliveryDirectionState state) => state switch
     {
         DeliveryDirectionState.InventoryReduced => "Possible rollback / scope reduction / reversed direction",
-        DeliveryDirectionState.SameEffectiveDate => "Same effective date — order not confirmable from dates",
+        DeliveryDirectionState.SameEffectiveDate => "Same effective date — source order not confirmable from dates",
         DeliveryDirectionState.BaselineLater => "Reversed — the baseline is later than the current snapshot",
         _ => "Chronological",
     };
@@ -943,8 +975,8 @@
         _busy = true;
         _error = null;
         var confirm = _confirmDirection;
-        var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline)?.Label;
-        var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current)?.Label;
+        var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline) is { } b ? P.DisplayName(b) : null;
+        var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current) is { } c ? P.DisplayName(c) : null;
         WeeklyDeliveryReport? generated = null;
         try
         {
@@ -1043,6 +1075,7 @@
     private async Task CompareFrom(DeliverySnapshotSummary s)
     {
         _currentId = s.Id;
+        (_userChoseSnapshots, _selectionNotice) = (true, null);
         await SuggestAsync();
         await LoadPreviewAsync();
         Nav.NavigateTo($"{P.Route}?project={_projectId}&tab=overview{(_report is null ? "" : $"&report={_report.ReportId}")}");
@@ -1068,13 +1101,17 @@
     private void AskDeleteSnapshot(DeliverySnapshotSummary s)
     {
         var reports = s.ReportCount > 0 ? $" {s.ReportCount} generated report{(s.ReportCount == 1 ? "" : "s")} used it and keep their saved content." : "";
-        _confirm = new("Delete snapshot?", $"Delete snapshot “{s.Label}” ({P.Day(s.EffectiveAt)})? Only Delivery Reporting data is removed.{reports}", "Delete snapshot", async () =>
+        _confirm = new("Delete snapshot?", $"Delete snapshot “{P.DisplayName(s)}” ({P.Day(s.EffectiveAt)})? Only Delivery Reporting data is removed.{reports}", "Delete snapshot", async () =>
         {
             if (_projectId is not { } id) return;
             _error = await Api.DeleteSnapshotAsync(id, s.Id);
             _snapshots = await Api.SnapshotsAsync(id);
             if (_viewId == s.Id) { _viewId = null; _view = null; }
-            if (_baselineId == s.Id || _currentId == s.Id) await DefaultSelectionAsync();
+            if (_baselineId == s.Id || _currentId == s.Id)
+            {
+                if (_userChoseSnapshots) await KeepSelectionAsync();
+                else await DefaultSelectionAsync();
+            }
             _notice = _error is null ? "Snapshot deleted." : null;
         });
         _focusConfirm = true;

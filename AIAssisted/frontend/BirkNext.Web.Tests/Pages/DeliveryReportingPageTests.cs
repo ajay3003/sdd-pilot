@@ -286,6 +286,69 @@ public sealed class DeliveryReportingPageTests : BunitContext
         page.WaitForAssertion(() => _api.LastGenerate!.ConfirmDirection.Should().BeTrue("the confirmation is sent and recorded in the frozen report"));
     }
 
+    // ---- Snapshot identity: two "Current 2026-11-04" snapshots of the same day stay individually selectable ----
+
+    static readonly DateTimeOffset Nov4 = new(2026, 11, 4, 0, 0, 0, TimeSpan.FromHours(1));
+    static DeliverySnapshotSummary Snap(Guid id, string label, DeliverySnapshotRole role, int importedMinute, int features, int done, int total) => new()
+    {
+        Id = id, ProjectId = ProjectId, Label = label, EffectiveAt = Nov4, ImportedAt = Nov4.AddHours(13).AddMinutes(importedMinute), Role = role,
+        SourceFileName = "M2LB.zip", FeatureCount = features, CompletedTaskCount = done, TaskCount = total, Coverage = DeliveryCoverage.Complete,
+    };
+    static readonly Guid Earlier = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"), Later = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002"),
+        Base = Guid.Parse("cccccccc-0000-0000-0000-000000000003");
+
+    private void SameDaySnapshots()
+    {
+        _api.Snapshots.Clear();
+        _api.Snapshots.AddRange([
+            Snap(Earlier, "Current 2026-11-04", DeliverySnapshotRole.Current, 6, 29, 976, 1373),
+            Snap(Later, "Current 2026-11-04", DeliverySnapshotRole.Current, 11, 38, 2038, 2142),
+            Snap(Base, "Baseline 2026-11-04", DeliverySnapshotRole.Baseline, -60, 29, 1413, 1471)]);
+        _api.Comparison = new DeliveryComparisonPreview { CanGenerate = true, Direction = DeliveryDirectionState.SameEffectiveDate };
+    }
+
+    [Fact]
+    public void Two_same_day_current_snapshots_have_distinct_options_and_each_is_selected_and_generated_by_its_exact_id()
+    {
+        SameDaySnapshots();
+        var page = RenderAt($"?project={ProjectId}&tab=overview");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-current]").GetAttribute("value").Should().Be(Later.ToString(),
+            "by default the current pointer is the newest snapshot imported as current (not the first role match in list order)"));
+
+        var options = page.FindAll("[data-testid=dlr-current] option").Where(o => o.GetAttribute("value") != "").ToList();
+        options.Select(o => o.GetAttribute("value")).Should().Equal(Later.ToString(), Earlier.ToString(), Base.ToString());
+        options.Select(o => o.TextContent).Should().OnlyHaveUniqueItems();
+        options[0].TextContent.Should().Contain("imported").And.Contain("38 features").And.Contain("2038/2142 tasks").And.EndWith("Current");
+        options[1].TextContent.Should().Contain("976/1373 tasks").And.Contain("earlier current import").And.NotContain("Current 2026-11-04", "the generated role-date name is never shown as the name");
+
+        page.Find("[data-testid=dlr-current]").Change(Earlier.ToString());
+        page.WaitForAssertion(() => _api.PreviewRequests[^1].Current.Should().Be(Earlier));
+        page.Find("[data-testid=dlr-current]").GetAttribute("value").Should().Be(Earlier.ToString());
+        page.Find("[data-testid=dlr-baseline]").Change(Base.ToString());
+        page.Find("[data-testid=dlr-generate-run]").Click();
+        page.WaitForAssertion(() => _api.LastGenerate.Should().Match<GenerateWeeklyReportRequest>(g => g.CurrentSnapshotId == Earlier && g.BaselineSnapshotId == Base));
+    }
+
+    [Fact]
+    public void A_chosen_snapshot_that_disappears_is_reported_and_never_replaced_by_the_latest()
+    {
+        SameDaySnapshots();
+        var page = RenderAt($"?project={ProjectId}&tab=snapshots");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-snapshot-compare]").Should().HaveCount(3));
+        // Choose the earlier current snapshot explicitly (Compare from the snapshot list), then delete it.
+        var rows = page.FindAll("[data-testid=dlr-snapshot-compare]");
+        rows[1].Click();
+        page.WaitForAssertion(() => _api.PreviewRequests[^1].Current.Should().Be(Earlier));
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting?project={ProjectId}&tab=snapshots");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-snapshot-delete]").Should().HaveCount(3));
+        page.FindAll("[data-testid=dlr-snapshot-delete]")[1].Click();
+        page.Find("[data-testid=dlr-confirm-yes]").Click();
+        page.WaitForAssertion(() => _api.Deleted.Should().Contain(Earlier));
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting?project={ProjectId}&tab=overview");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-selection-notice]").TextContent.Should().Contain("previously selected current snapshot is unavailable"));
+        page.Find("[data-testid=dlr-current]").GetAttribute("value").Should().Be("", "the latest snapshot is never substituted for a chosen one");
+    }
+
     [Fact]
     public void Swap_exchanges_baseline_and_current_and_re_previews_never_silently()
     {

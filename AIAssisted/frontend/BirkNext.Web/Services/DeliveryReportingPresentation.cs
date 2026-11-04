@@ -75,6 +75,44 @@ public static class DeliveryReportingPresentation
         _ => "dlr-tone-warn", // insufficient coverage means evidence is missing, not that delivery failed
     };
 
+    // ---- Snapshot selection: identity is the SnapshotId; the role and date are metadata, never the name ----
+
+    /// <summary>
+    /// The project's current snapshot (Delivery's pointer rule): the newest snapshot imported with role Current — newest effective date, then newest import,
+    /// then id. Older snapshots imported as Current are not "Current" any more; they are shown as earlier current imports. Null when none was imported as Current.
+    /// </summary>
+    public static Guid? CurrentPointer(IReadOnlyList<DeliverySnapshotSummary> snapshots) =>
+        Sorted(snapshots.Where(s => s.Role == DeliverySnapshotRole.Current)).FirstOrDefault()?.Id;
+
+    public static IReadOnlyList<DeliverySnapshotSummary> Sorted(IEnumerable<DeliverySnapshotSummary> snapshots) =>
+        [.. snapshots.OrderByDescending(s => s.EffectiveAt).ThenByDescending(s => s.ImportedAt).ThenBy(s => s.Id)];
+
+    /// <summary>The snapshot's own name: a name someone gave it, or null when the stored name is the generated "{role} {date}" form (shown from metadata).</summary>
+    public static string? GivenName(DeliverySnapshotSummary s) => BirkNext.Snapshots.SnapshotSelectionLabels.IsGeneratedRoleDateName(s.Label) ? null : s.Label;
+
+    /// <summary>A readable name for messages and the snapshot list: the given name, else "4 Nov 2026 · imported 13:11".</summary>
+    public static string DisplayName(DeliverySnapshotSummary s) => GivenName(s) ?? $"{Day(s.EffectiveAt)} · imported {s.ImportedAt.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture)}";
+
+    /// <summary>Unique one-line option text per snapshot (the option value is always the SnapshotId), e.g.
+    /// "4 Nov 2026 · imported 4 Nov 13:11 · 38 features · 2038/2142 tasks · Current".</summary>
+    public static IReadOnlyDictionary<Guid, string> SnapshotOptions(IReadOnlyList<DeliverySnapshotSummary> snapshots)
+    {
+        var current = CurrentPointer(snapshots);
+        var options = snapshots.Select(s => new BirkNext.Snapshots.SnapshotSelectionOption(s.Id.ToString(), "Delivery", s.EffectiveAt, s.ImportedAt,
+            s.AzureDevOps?.Branch is { } branch ? branch : System.IO.Path.GetFileNameWithoutExtension(s.SourceFileName),
+            string.Join(" · ", new[] { GivenName(s), $"{s.FeatureCount} features", $"{s.CompletedTaskCount}/{s.TaskCount} tasks" }.OfType<string>()),
+            [.. Pointers(s, current)])).ToList();
+        return BirkNext.Snapshots.SnapshotSelectionLabels.Labels(options, TimeZoneInfo.Local).ToDictionary(kv => Guid.Parse(kv.Key), kv => kv.Value);
+    }
+
+    /// <summary>Badges for one snapshot: "Current" only for the pointer; the import role of the others is said as what it is.</summary>
+    public static IEnumerable<string> Pointers(DeliverySnapshotSummary s, Guid? current)
+    {
+        if (s.Id == current) yield return "Current";
+        else if (s.Role == DeliverySnapshotRole.Current) yield return "earlier current import";
+        else if (s.Role == DeliverySnapshotRole.Baseline) yield return "imported as baseline";
+    }
+
     public static string Day(DateTimeOffset value) => value.ToLocalTime().ToString("d MMM yyyy", CultureInfo.InvariantCulture);
     public static string DayTime(DateTimeOffset value) => value.ToLocalTime().ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture);
 
