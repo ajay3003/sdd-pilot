@@ -89,6 +89,26 @@ public static class DeliveryWorkItems
         return items;
     }
 
+    /// <summary>Only in the baseline: a removed feature, a story the specification marks removed or that disappeared, a removed task.</summary>
+    public static bool IsRemoved(DeliveryWorkItem i) => i.Feature.RemovedFeature || i.Type switch
+    {
+        DeliveryWorkItemType.Story => i.Story!.Removed || i.Story.Change == DeliveryItemChange.Removed,
+        DeliveryWorkItemType.Task => i.Task!.Change == DeliveryTaskChange.Removed,
+        _ => false,
+    };
+
+    /// <summary>
+    /// A genuine review need of the current state — feature attention, an unresolved or removed-story reference, a group whose reference cannot be
+    /// resolved. A change between snapshots (story changed, task reopened) is a comparison fact, not a current review need.
+    /// </summary>
+    public static bool NeedsReview(DeliveryWorkItem i) => i.Type switch
+    {
+        DeliveryWorkItemType.Feature => i.Feature.HasActiveAttention || i.Feature.Attention.Count > 0,
+        DeliveryWorkItemType.Group => i.Group!.NeedsReview,
+        DeliveryWorkItemType.Task => i.Task!.UnresolvedStoryReference is not null || i.Task.Relationship is DeliveryTaskRelationship.RemovedStoryReference,
+        _ => false,
+    };
+
     public static string FeatureChange(DeliveryStoryRow f) => f.RemovedFeature ? (f.RemovalUnconfirmed ? "Missing (unconfirmed removal)" : "Removed — baseline only")
         : f.NewFeature ? "New this period" : DeliveryReportingText.Movement(f.Movement);
 
@@ -142,4 +162,40 @@ public static class DeliveryWorkItems
         if (t.Parallel) lines.Add("Marked [P] (parallelisable) in the source.");
         return lines;
     }
+}
+
+/// <summary>
+/// The shared work-item explorer serves two pages with different questions. Current state (Delivery Overview): what the current snapshot holds —
+/// removed items and period-change classifications are not shown. Comparison (Delivery Reports → Stories): what changed between the baseline and the
+/// current snapshot — the Change Board, change filter and change badges apply. Checklist state, change classification and review need stay
+/// separate dimensions in both modes.
+/// </summary>
+public enum DeliveryExplorerMode { CurrentState, Comparison }
+
+/// <summary>Typed mode options: every mode difference of the explorer is decided here, not by conditionals scattered through the markup.</summary>
+public sealed record DeliveryExplorerOptions(DeliveryExplorerMode Mode)
+{
+    public static readonly DeliveryExplorerOptions CurrentState = new(DeliveryExplorerMode.CurrentState);
+    public static readonly DeliveryExplorerOptions Comparison = new(DeliveryExplorerMode.Comparison);
+
+    public bool ShowChanges => Mode == DeliveryExplorerMode.Comparison;
+    /// <summary>Removed features, stories and tasks exist only in the baseline: the current inventory leaves them out.</summary>
+    public bool IncludeRemoved => Mode == DeliveryExplorerMode.Comparison;
+
+    public IReadOnlyList<(string Key, string Label)> Views => ShowChanges
+        ? [("hierarchy", "Hierarchy"), ("list", "List"), ("board", "Change Board"), ("phases", "Phases")]
+        : [("hierarchy", "Hierarchy"), ("list", "List"), ("phases", "Phases")];
+
+    /// <summary>The item is part of this mode's inventory.</summary>
+    public bool Includes(DeliveryWorkItem item) => IncludeRemoved || !DeliveryWorkItems.IsRemoved(item);
+
+    /// <summary>"Needs review" of this mode: in comparison mode a change that needs a look counts too; in current state only genuine review needs.</summary>
+    public bool Attention(DeliveryWorkItem item) => ShowChanges ? item.Attention : DeliveryWorkItems.NeedsReview(item);
+
+    /// <summary>The other page's view of the same canonical item: changes for it (Reports) or its current state (Overview).</summary>
+    public string CrossPageLabel => ShowChanges ? "View current state in Delivery Overview" : "View changes in Delivery Reports";
+
+    public static string CrossPageHref(DeliveryExplorerMode from, Guid projectId, Guid reportId, string itemId) => from == DeliveryExplorerMode.Comparison
+        ? $"delivery-overview?project={projectId}&explore=items&item={Uri.EscapeDataString(itemId)}"
+        : $"delivery-reporting?project={projectId}&tab=stories&report={reportId}&item={Uri.EscapeDataString(itemId)}";
 }

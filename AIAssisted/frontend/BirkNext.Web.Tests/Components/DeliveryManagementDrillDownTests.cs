@@ -169,4 +169,37 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
         page.Find("[data-testid=do-count]").TextContent.Should().StartWith("2 of 2 features shown").And.Contain("blocked, needs review, new and changed first");
         page.FindAll("[data-testid=do-change]").Select(c => c.TextContent).Should().BeSubsetOf(["New", "Changed", "Unchanged", "Removed", "Needs confirmation"]);
     }
+
+    [Fact]
+    public void Overview_states_its_purpose_and_current_snapshot_scope_and_checklist_is_not_verification()
+    {
+        var page = Overview();
+        page.Find("h1").TextContent.Should().Be("Delivery Overview");
+        page.Find("[data-testid=do-lead]").TextContent.Should().Be("Current delivery state, work-item progress, and quality findings.");
+        page.Find("[data-testid=do-checklist-clarification]").TextContent.Should().Contain("source checkboxes, not verified implementation or QA completion");
+        page.Find("[data-testid=do-context]").TextContent.Should().StartWith("Current snapshot: ").And.EndWith("2 features");
+        page.FindAll(".do-filter-note").Should().BeEmpty("no paragraph explaining the filter implementation");
+    }
+
+    [Fact]
+    public void Overview_work_items_use_the_shared_explorer_in_current_state_mode_and_keep_filters_and_selection_in_the_url()
+    {
+        Services.AddSingleton<IDeliveryReportingApiService>(new DeliveryReportingPageTests.FakeApi());
+        Services.AddSingleton(new BackgroundOperationService());
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo($"delivery-overview?project={DeliveryReportingPageTests.ProjectId}&state=InProgress");
+        var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
+        page.WaitForElement("[data-testid=do-explore-items]").Change(true);
+        nav.Uri.Should().Contain("explore=items").And.Contain("state=InProgress", "switching the view keeps the filters");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-workspace]").GetAttribute("data-mode").Should().Be("CurrentState"));
+        page.FindAll("[data-testid=dws-view-board]").Should().BeEmpty();
+        page.FindAll("[data-testid=dws-module-toggle]")[0].Click();
+        page.FindAll("[data-testid=dws-item]")[0].Click();
+        nav.Uri.Should().Contain("item=f%3A", "the selection is the canonical id, deep-linkable and shared with Delivery Reports");
+        page.WaitForAssertion(() => page.Find("[data-testid=dws-cross-page]").GetAttribute("href").Should().StartWith("delivery-reporting?").And.Contain("tab=stories"));
+
+        page.Find("[data-testid=do-explore-features]").Change(true);
+        nav.Uri.Should().NotContain("explore=").And.NotContain("item=").And.Contain("state=InProgress");
+    }
 }

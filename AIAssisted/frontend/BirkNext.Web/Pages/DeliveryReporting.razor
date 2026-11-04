@@ -23,16 +23,20 @@
     <div class="dlr-sticky" data-testid="dlr-sticky-header">
     <header class="dlr-header">
         <div>
-            @* "Weekly" only when the comparison genuinely covers a reporting week; a same-day or ad-hoc comparison is a change report. *@
-            <h1 class="dlr-title" data-testid="dlr-title">@(_report is null ? "Delivery Reporting" : $"{_report.ProjectName} — {(_report.Kind == DeliveryReportKind.Weekly ? "Weekly Delivery Report" : "Delivery Change Report")}")</h1>
+            <h1 class="dlr-page-title" data-testid="dlr-page-title">Delivery Reports</h1>
+            <p class="dlr-lead" data-testid="dlr-lead">Understand what changed between delivery snapshots.
+                <span class="dlr-info" tabindex="0" title="@CoverageHelp" aria-label="@CoverageHelp">ⓘ</span></p>
+            <p class="dlr-sub">Compare scope, Features, User Stories, tasks and quality findings. Generate reports and inspect historical evidence.</p>
             @if (_report is { } headerReport)
             {
-                <p class="dlr-header-period" data-testid="dlr-header-period">Current: <strong>@P.Day(headerReport.Current.EffectiveAt)</strong> <span aria-hidden="true">→</span> Baseline: <strong>@P.Day(headerReport.Baseline.EffectiveAt)</strong></p>
+                @* "Weekly" only when the comparison genuinely covers a reporting week; a same-day or ad-hoc comparison is a change report. *@
+                <p class="dlr-title" data-testid="dlr-title">@DeliveryReportContext.Title(headerReport)@if (DeliveryReportContext.Week(headerReport) is { } week) { <span class="dlr-muted"> · @week</span> }</p>
+                <p class="dlr-header-period" data-testid="dlr-context" role="status">@DeliveryReportContext.Line(headerReport)</p>
                 <p class="dlr-header-meta" data-testid="dlr-header-meta">@HeaderMeta(headerReport)</p>
             }
             else
             {
-                <p class="dlr-lead">What changed in your features and user stories between two imported snapshots: progress, scope changes, attention items and potential focus.</p>
+                <p class="dlr-muted dlr-clarify" data-testid="dlr-clarification">Change reporting reflects the selected snapshots. Same-day comparisons are not full weekly reports.</p>
             }
         </div>
         <div class="dlr-header-actions">
@@ -110,6 +114,8 @@
 @code {
     // ── Shared presentation helpers (header, headline cards, attention split) ──────────────────────────────────────
 
+    private const string CoverageHelp = "Comparison coverage depends on the selected snapshots and their source/revision context.";
+
     /// <summary>A frozen metric's value, or "–" when the report does not carry it (never a 0 for an unknown).</summary>
     private static string Fig(WeeklyDeliveryReport r, string key) => r.Metrics.FirstOrDefault(m => m.Key == key)?.Value.ToString() ?? "–";
 
@@ -129,6 +135,11 @@
     }.Where(x => x is not null));
 
     /// <summary>Repository hygiene, not a feature's delivery: items without a feature, and suspected source encoding damage.</summary>
+    /// <summary>What the headline total measures: attention items attached to a feature plus scope changes to confirm (each item once); the reference counts
+    /// are categories that may overlap it, and hygiene warnings and comparison limitations are listed apart.</summary>
+    private const string AttentionDefinition = "Delivery attention items: attention items attached to a feature plus scope changes requiring confirmation, each counted once. "
+        + "Reference counts below are categories within or overlapping this total; project hygiene warnings and comparison limitations are not included.";
+
     private static bool IsHygiene(DeliveryAttentionItem a) => a.FeatureKey is null || a.Kind == DeliveryAttentionKind.SourceEncoding;
     private static List<DeliveryAttentionItem> HygieneItems(WeeklyDeliveryReport r) => [.. r.Attention.Where(IsHygiene)];
     private static List<DeliveryAttentionItem> DeliveryAttention(WeeklyDeliveryReport r) => [.. r.Attention.Where(a => !IsHygiene(a))];
@@ -147,7 +158,8 @@
             return;
         }
         var report = _report;
-        <section class="dlr-card dlr-report-head" data-testid="dlr-report">
+        <section class="dlr-card dlr-report-head" data-testid="dlr-report" aria-label="Saved report comparison">
+            <p class="dlr-kicker" data-testid="dlr-saved-label">Saved report comparison <span class="dlr-muted">· frozen when generated; the selection below does not change it</span></p>
             <div class="dlr-report-title">
                 <h2 class="dlr-h2" data-testid="dlr-report-title">@DeliveryReportTitles.Display(report)</h2>
                 @if (report.CoverageText.Length > 0) { <p class="dlr-coverage-text" data-testid="dlr-report-coverage" data-coverage="@report.PeriodCoverage">@report.CoverageText</p> }
@@ -179,8 +191,17 @@
                 <label><input type="checkbox" data-testid="dlr-export-unchanged" @bind="_exportUnchanged" /> Include unchanged stories</label>
                 <span class="dlr-muted">PDF: open the HTML export and use your browser's Print → Save as PDF.</span>
             </div>
-            @foreach (var note in report.CoverageNotes) { <p class="dlr-warning" role="note" data-testid="dlr-coverage-note"><strong>Coverage:</strong> @note</p> }
-            @foreach (var warning in report.ComparisonWarnings) { <p class="dlr-warning" role="note" data-testid="dlr-comparison-warning"><strong>Comparison:</strong> @warning</p> }
+            @if (report.CoverageNotes.Count + report.ComparisonWarnings.Count > 0)
+            {
+                @* Metadata limits of the comparison (unknown revision, different coverage): context to read the figures with, not delivery blockers. *@
+                <details class="dlr-limitations" data-testid="dlr-limitations">
+                    <summary>Comparison limitations · @(report.CoverageNotes.Count + report.ComparisonWarnings.Count) <span class="dlr-muted">— how to read these figures, not delivery defects</span></summary>
+                    <ul class="dlr-list">
+                        @foreach (var note in report.CoverageNotes) { <li data-testid="dlr-coverage-note"><strong>Coverage:</strong> @note</li> }
+                        @foreach (var warning in report.ComparisonWarnings) { <li data-testid="dlr-comparison-warning"><strong>Comparison:</strong> @warning</li> }
+                    </ul>
+                </details>
+            }
         </section>
 
         @* Summary first: three cards answer "what changed", "what is there" and "what needs attention"; every figure stays one click away. *@
@@ -206,13 +227,12 @@
             </div>
             <div class="dlr-headline-card" data-testid="dlr-headline-quality">
                 <h3 class="dlr-headline-h">Quality</h3>
-                <p class="dlr-headline-value">@(DeliveryAttention(report).Count + report.ScopeChanges.Count) <span>need attention</span></p>
+                <p class="dlr-headline-value" title="@AttentionDefinition"><span data-testid="dlr-attention-total">@(DeliveryAttention(report).Count + report.ScopeChanges.Count)</span> <span>delivery attention items</span></p>
                 <ul class="dlr-headline-list">
                     <li>@Fig(report, "quality-unresolved-references") unresolved references</li>
                     <li>@Fig(report, "quality-removed-story-references") removed-story references</li>
-                    <li>@HygieneItems(report).Count project hygiene warning@(HygieneItems(report).Count == 1 ? "" : "s")</li>
-                    <li>@report.ComparisonWarnings.Count snapshot / comparison warning@(report.ComparisonWarnings.Count == 1 ? "" : "s")</li>
                 </ul>
+                <p class="dlr-muted dlr-headline-apart" data-testid="dlr-attention-apart">Not counted above: @HygieneItems(report).Count project hygiene warning@(HygieneItems(report).Count == 1 ? "" : "s") · @(report.ComparisonWarnings.Count + report.CoverageNotes.Count) comparison limitation@(report.ComparisonWarnings.Count + report.CoverageNotes.Count == 1 ? "" : "s")</p>
             </div>
         </section>
 
@@ -319,6 +339,7 @@
                 <p class="dlr-muted" role="status" data-testid="dlr-generate-running">Generating a report (@running.Context.Baseline → @running.Context.Revision) — it continues if you leave this page; see Activity.</p>
             }
             <h2 class="dlr-h2" id="dlr-generate-title">Generate delivery report</h2>
+            <p class="dlr-kicker" data-testid="dlr-new-config-label">New report configuration <span class="dlr-muted">· chooses the snapshots for a new report; saved reports keep their own snapshots</span></p>
             @if (_snapshots.Count < 2)
             {
                 <p class="dlr-muted">Import at least two snapshots (a baseline and a current one) to compare.</p>
@@ -387,7 +408,8 @@
         }
         else
         {
-            <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" SelectedId="@ItemQuery" OnSelect="SelectWorkItem" />
+            <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" Options="DeliveryExplorerOptions.Comparison" ProjectId="_projectId"
+                SelectedId="@ItemQuery" OnSelect="SelectWorkItem" />
         }
     };
 

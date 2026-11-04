@@ -6,10 +6,10 @@
    Module → Feature → User Story → explicitly linked Tasks, with Phase as an independent dimension. Hierarchy, List, Board and Phases are views of
    the same items; the selection stays in the detail panel while navigating and is deep-linkable (?item=). Nothing is inferred: no task is linked to
    a story without an explicit [USn], unresolved references stay visible, and features without tasks.md say so instead of showing 0/0. *@
-<section class="dws" aria-label="Work items" data-testid="dlr-workspace">
+<section class="dws" aria-label="Work items" data-testid="dlr-workspace" data-mode="@Options.Mode">
     <div class="dws-toolbar" data-testid="dws-toolbar">
         <div class="dws-views" role="radiogroup" aria-label="View" data-testid="dws-views">
-            @foreach (var (key, label) in Views)
+            @foreach (var (key, label) in Options.Views)
             {
                 <label class="dws-view @(_view == key ? "is-active" : "")"><input type="radio" name="dws-view" value="@key" checked="@(_view == key)" @onchange="() => _view = key" data-testid="dws-view-@key" /> @label</label>
             }
@@ -25,12 +25,27 @@
             <select value="@_type" @onchange="e => _type = e.Value?.ToString() ?? string.Empty" data-testid="dws-type">
                 <option value="">All types</option><option value="Feature">Features</option><option value="Story">User stories / scenarios</option><option value="Group">Groups</option><option value="Task">Tasks</option>
             </select></label>
-        <label><span class="visually-hidden">Change</span>
-            <select value="@_change" @onchange="e => _change = e.Value?.ToString() ?? string.Empty" data-testid="dws-change">
-                <option value="">Any change</option><option value="changed">Changed this period</option><option value="unchanged">Unchanged</option>
-            </select></label>
+        @if (Options.ShowChanges)
+        {
+            <label><span class="visually-hidden">Change</span>
+                <select value="@_change" @onchange="e => _change = e.Value?.ToString() ?? string.Empty" data-testid="dws-change">
+                    <option value="">Any change</option><option value="changed">Changed this period</option><option value="unchanged">Unchanged</option>
+                </select></label>
+        }
         <label class="dws-check"><input type="checkbox" checked="@_attentionOnly" @onchange="e => _attentionOnly = e.Value is true" data-testid="dws-attention" /> Needs review</label>
     </div>
+
+    <p class="dws-status" role="status" data-testid="dws-count">
+        <span>@_items.Count(Matches) of @_items.Count work items@(Options.ShowChanges ? " (baseline and current)" : " in the current snapshot")</span>
+        @if (Filtering)
+        {
+            @foreach (var (label, clear) in Chips())
+            {
+                <button type="button" class="dws-filter-chip" @onclick="clear" aria-label="@($"Remove filter {label}")" data-testid="dws-chip">@label <span aria-hidden="true">×</span></button>
+            }
+            <button type="button" class="btn-link" @onclick="ClearFilters" data-testid="dws-clear">Clear all</button>
+        }
+    </p>
 
     <details class="dws-legend" data-testid="dws-legend">
         <summary>Work item types &amp; relationships</summary>
@@ -61,18 +76,26 @@
     /// <summary>Deep-linked selection (?item=).</summary>
     [Parameter] public string? SelectedId { get; set; }
     [Parameter] public EventCallback<string?> OnSelect { get; set; }
+    /// <summary>Current state (Delivery Overview) or comparison (Delivery Reports → Stories); comparison is the default for existing callers.</summary>
+    [Parameter] public DeliveryExplorerOptions Options { get; set; } = DeliveryExplorerOptions.Comparison;
+    /// <summary>The delivery project: enables the link to the same canonical item on the other Delivery page.</summary>
+    [Parameter] public Guid? ProjectId { get; set; }
 
-    private static readonly (string Key, string Label)[] Views = [("hierarchy", "Hierarchy"), ("list", "List"), ("board", "Change Board"), ("phases", "Phases")];
+    private const int PageSize = 100;
+    private int _shown = PageSize;
     private string _view = "hierarchy", _search = "", _module = "", _type = "", _change = "", _sort = "id";
     private bool _attentionOnly, _sortDesc;
     private string? _selected;
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
     private IReadOnlyList<DeliveryWorkItem> _items = [];
     private WeeklyDeliveryReport? _built;
+    private DeliveryExplorerOptions? _builtFor;
 
     protected override void OnParametersSet()
     {
-        if (!ReferenceEquals(_built, Report)) { _items = W.Build(Report); _built = Report; }
+        if (!ReferenceEquals(_built, Report) || _builtFor != Options) { _items = [.. W.Build(Report).Where(Options.Includes)]; (_built, _builtFor) = (Report, Options); }
+        if (Options.Views.All(v => v.Key != _view)) _view = "hierarchy";
+        if (!Options.ShowChanges) _change = "";
         if (SelectedId is not null && SelectedId != _selected && _items.Any(i => i.Id == SelectedId)) { _selected = SelectedId; ExpandTo(SelectedId); }
     }
 
@@ -83,7 +106,7 @@
         (_module.Length == 0 || i.Module == _module)
         && (_type.Length == 0 || i.Type.ToString() == _type)
         && (_change.Length == 0 || (_change == "changed") == IsChanged(i))
-        && (!_attentionOnly || i.Attention)
+        && (!_attentionOnly || Options.Attention(i))
         && (_search.Trim().Length == 0 || i.SourceId.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) || i.Title.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private static bool IsChanged(DeliveryWorkItem i) => i.Type switch
@@ -95,6 +118,18 @@
     };
 
     private bool Filtering => _search.Trim().Length > 0 || _module.Length > 0 || _type.Length > 0 || _change.Length > 0 || _attentionOnly;
+
+    /// <summary>Active filters as removable chips (labels, never ids).</summary>
+    private IEnumerable<(string Label, Action Clear)> Chips()
+    {
+        if (_search.Trim().Length > 0) yield return ($"Search: {_search.Trim()}", () => _search = "");
+        if (_module.Length > 0) yield return ($"Module: {_module}", () => _module = "");
+        if (_type.Length > 0) yield return ($"Type: {_type}", () => _type = "");
+        if (_change.Length > 0) yield return (_change == "changed" ? "Changed this period" : "Unchanged", () => _change = "");
+        if (_attentionOnly) yield return ("Needs review", () => _attentionOnly = false);
+    }
+
+    private void ClearFilters() { (_search, _module, _type, _change, _attentionOnly) = ("", "", "", "", false); _shown = PageSize; }
 
     private async Task Select(string id)
     {
@@ -150,8 +185,8 @@
             </button>
             @Badge(i)
             <span class="dws-meta">@i.Progress</span>
-            @if (IsChanged(i)) { <span class="dws-chip dws-chip-change" data-testid="dws-change-chip">@i.Change</span> }
-            @if (i.Attention) { <span class="dws-chip dws-chip-attention" title="Needs review">!</span> }
+            @if (Options.ShowChanges && IsChanged(i)) { <span class="dws-chip dws-chip-change" data-testid="dws-change-chip">@i.Change</span> }
+            @if (Options.Attention(i)) { <span class="dws-chip dws-chip-attention" title="Needs review" data-testid="dws-review-chip">Review</span> }
         </li>
     };
 
@@ -215,6 +250,9 @@
     // ── List: one sortable table over every matching item ───────────────────────────────────────────────────────────────────────
     private void SortBy(string column) { if (_sort == column) _sortDesc = !_sortDesc; else { _sort = column; _sortDesc = false; } }
 
+    private IEnumerable<(string Key, string Label)> ListColumns => new[] { ("id", "ID"), ("type", "Type"), ("title", "Title"), ("parent", "Parent"), ("module", "Module"), ("phase", "Phase"), ("progress", "Progress") }
+        .Concat(Options.ShowChanges ? [("change", "Period change")] : []).Append(("attention", "Review"));
+
     private string PhaseTitle(DeliveryWorkItem i) => i.PhaseKey is { } pk && i.Feature.Hierarchy?.Phases.FirstOrDefault(p => p.Key == pk) is { } ph ? ph.Title : "—";
 
     private RenderFragment ListView() => __builder =>
@@ -226,13 +264,18 @@
             "title" => rows.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
             "phase" => rows.OrderBy(PhaseTitle, StringComparer.OrdinalIgnoreCase),
             "change" => rows.OrderBy(i => i.Change, StringComparer.Ordinal),
+            "module" => rows.OrderBy(i => i.Module, StringComparer.OrdinalIgnoreCase),
+            "parent" => rows.OrderBy(i => i.ParentId, StringComparer.Ordinal),
+            "attention" => rows.OrderByDescending(i => Options.Attention(i)),
             _ => rows.OrderBy(i => i.FeatureKey, StringComparer.Ordinal).ThenBy(i => i.Type).ThenBy(i => i.SourceId, StringComparer.Ordinal),
         };
-        var list = (_sortDesc ? rows.Reverse() : rows).Take(500).ToList();
+        var all = (_sortDesc ? rows.Reverse() : rows).ToList();
+        var list = all.Take(_shown).ToList();
         if (list.Count == 0) { <p class="dws-empty" data-testid="dws-none">No work items match these filters.</p> return; }
         <div class="dws-tablewrap"><table class="dlr-table dws-table" data-testid="dws-list">
+            <colgroup><col class="dws-c-id" /><col class="dws-c-type" /><col class="dws-c-title" /><col class="dws-c-parent" /><col class="dws-c-module" /><col class="dws-c-phase" /><col class="dws-c-progress" />@if (Options.ShowChanges) { <col class="dws-c-change" /> }<col class="dws-c-review" /></colgroup>
             <thead><tr>
-                @foreach (var (key, label) in new[] { ("id", "ID"), ("type", "Type"), ("title", "Title"), ("phase", "Phase"), ("progress", "Progress"), ("change", "Period change"), ("attention", "Attention") })
+                @foreach (var (key, label) in ListColumns)
                 {
                     <th scope="col" aria-sort="@(_sort == key ? (_sortDesc ? "descending" : "ascending") : "none")"><button type="button" class="btn-link" @onclick="() => SortBy(key)" data-testid="dws-sort-@key">@label</button></th>
                 }
@@ -240,14 +283,23 @@
             <tbody>
                 @foreach (var i in list)
                 {
-                    <tr class="@(_selected == i.Id ? "is-selected" : "")" data-testid="dws-list-row" data-id="@i.Id">
-                        <td><button type="button" class="btn-link" @onclick="() => Select(i.Id)">@i.SourceId</button></td>
-                        <td>@TypeLabel(i)</td><td>@i.Title</td><td>@PhaseTitle(i)</td><td>@i.Progress</td><td>@i.Change</td><td>@(i.Attention ? "Needs review" : "—")</td>
+                    var parent = i.ParentId is { } pid ? _items.FirstOrDefault(x => x.Id == pid) : null;
+                    <tr class="@(_selected == i.Id ? "is-selected" : "")" data-testid="dws-list-row" data-id="@i.Id" aria-selected="@(_selected == i.Id ? "true" : "false")">
+                        <td><button type="button" class="btn-link" @onclick="() => Select(i.Id)">@(i.SourceId.Length > 0 ? i.SourceId : TypeLabel(i))</button></td>
+                        <td>@TypeLabel(i)</td>
+                        <td class="dws-cell-title" title="@i.Title"><button type="button" class="dws-title-button" @onclick="() => Select(i.Id)" data-testid="dws-list-title">@i.Title</button></td>
+                        <td class="dws-cell-title" title="@(parent?.Title)">@(parent is null ? "—" : parent.SourceId.Length > 0 ? parent.SourceId : parent.Title)</td>
+                        <td>@i.Module</td><td>@PhaseTitle(i)</td><td>@i.Progress</td>
+                        @if (Options.ShowChanges) { <td>@i.Change</td> }
+                        <td>@(Options.Attention(i) ? "Needs review" : "—")</td>
                     </tr>
                 }
             </tbody>
         </table></div>
-        @if (_items.Count(Matches) > list.Count) { <p class="dws-meta">Showing the first @list.Count of @_items.Count(Matches) — narrow the filters to see the rest.</p> }
+        @if (all.Count > list.Count)
+        {
+            <p class="dws-meta" data-testid="dws-more">Showing @list.Count of @all.Count. <button type="button" class="btn-link" @onclick="() => _shown += PageSize" data-testid="dws-show-more">Show @Math.Min(PageSize, all.Count - list.Count) more</button></p>
+        }
     };
 
     // ── Board: evidence-based change groups, features only ─────────────────────────────────────────────────────────────────────
@@ -318,12 +370,17 @@
             <header class="dws-detail-head">
                 <p class="dws-kicker" data-testid="dws-detail-type">@TypeLabel(i).ToUpperInvariant() · @i.SourceId</p>
                 <h2 class="dws-detail-title" data-testid="dws-detail-title">@i.Title</h2>
+                @if (ProjectId is { } project && (Options.ShowChanges || !W.IsRemoved(i)))
+                {
+                    <a class="dws-cross" href="@DeliveryExplorerOptions.CrossPageHref(Options.Mode, project, Report.ReportId, i.Id)" data-testid="dws-cross-page">@Options.CrossPageLabel</a>
+                }
                 <dl class="dws-facts">
                     <div><dt>Module</dt><dd>@i.Module</dd></div>
                     @if (parent is not null) { <div><dt>Parent</dt><dd data-testid="dws-detail-parent"><button type="button" class="btn-link" @onclick="() => Select(parent.Id)">@parent.SourceId · @parent.Title</button></dd></div> }
                     @if (i.Story?.Priority is { } priority) { <div><dt>Priority</dt><dd data-testid="dws-detail-priority">@priority</dd></div> }
                     @if (i.Type == DeliveryWorkItemType.Feature) { <div><dt>Status</dt><dd data-testid="dws-detail-status">@W.StatusProvenance(i.Feature.RemovedFeature ? i.Feature.BaselineStatus : i.Feature.CurrentStatus)</dd></div> }
-                    <div><dt>Change</dt><dd data-testid="dws-detail-change">@i.Change</dd></div>
+                    @if (Options.ShowChanges) { <div><dt>Change</dt><dd data-testid="dws-detail-change">@i.Change</dd></div> }
+                    @if (Options.Attention(i)) { <div><dt>Review</dt><dd data-testid="dws-detail-review">Needs review</dd></div> }
                     @if (PhaseTitle(i) is { } phase && phase != "—") { <div><dt>Phase</dt><dd>@phase</dd></div> }
                 </dl>
             </header>
@@ -368,10 +425,10 @@
                     <div><dt>Tasks without a user story</dt><dd data-testid="dws-feature-unassigned">@unassigned</dd></div>
                 }
             }
-            @if (f.TasksCompletedThisPeriod > 0) { <div><dt>Completed this period</dt><dd>@f.TasksCompletedThisPeriod matched task(s) [ ] → [x]</dd></div> }
+            @if (Options.ShowChanges && f.TasksCompletedThisPeriod > 0) { <div><dt>Completed this period</dt><dd>@f.TasksCompletedThisPeriod matched task(s) [ ] → [x]</dd></div> }
         </dl>
         @if (f.RemovedFeature) { <p class="dlr-warning" data-testid="dws-removed">@(f.RemovalUnconfirmed ? "Missing from a current snapshot that was not read completely — review before treating it as removed." : "Removed from the current scope — shown from the baseline only. A removal is a scope change to confirm, not a defect.")</p> }
-        @if (f.Reasons.Count > 0) { <h3 class="dws-h">Changes this period</h3><ul class="dlr-list" data-testid="dws-feature-changes">@foreach (var r in f.Reasons) { <li>@r</li> }</ul> }
+        @if (Options.ShowChanges && f.Reasons.Count > 0) { <h3 class="dws-h">Changes this period</h3><ul class="dlr-list" data-testid="dws-feature-changes">@foreach (var r in f.Reasons) { <li>@r</li> }</ul> }
         @if (f.Attention.Count > 0 || (h?.Tasks.Any(t => t.UnresolvedStoryReference is not null) ?? false))
         {
             <h3 class="dws-h">Traceability and review</h3>
@@ -401,8 +458,8 @@
             <ol class="dlr-list" data-testid="dws-story-criteria">
                 @foreach (var c in s.Criteria)
                 {
-                    <li data-testid="dws-criterion" data-change="@c.Change">@c.Text @if (c.Change != DeliveryItemChange.Unchanged) { <span class="dws-chip dws-chip-change">@DeliveryReportingText.Change(c.Change)</span> }
-                        @if (c.BaselineText is { } before) { <br /><span class="dws-meta">Baseline: @before</span> }</li>
+                    <li data-testid="dws-criterion" data-change="@c.Change">@c.Text @if (Options.ShowChanges && c.Change != DeliveryItemChange.Unchanged) { <span class="dws-chip dws-chip-change">@DeliveryReportingText.Change(c.Change)</span> }
+                        @if (Options.ShowChanges && c.BaselineText is { } before) { <br /><span class="dws-meta">Baseline: @before</span> }</li>
                 }
             </ol>
         }
@@ -413,7 +470,7 @@
             <ul class="dlr-list" data-testid="dws-story-tasks">
                 @foreach (var t in tasks)
                 {
-                    <li><button type="button" class="btn-link" @onclick="() => Select(t.Id)">@t.SourceId</button> @t.Title <span class="dws-meta">@TaskStates(t.Task!)</span></li>
+                    <li><button type="button" class="btn-link" @onclick="() => Select(t.Id)">@t.SourceId</button> @t.Title <span class="dws-meta">@States(t.Task!)</span></li>
                 }
             </ul>
         }
@@ -434,18 +491,21 @@
             @if (g.NeedsReview) { <div><dt>Review</dt><dd class="dlr-warning" data-testid="dws-group-review">Needs review — the reference cannot be resolved to a defined story.</dd></div> }
         </dl>
         <h3 class="dws-h">Tasks (@tasks.Count)</h3>
-        <ul class="dlr-list" data-testid="dws-group-tasks">@foreach (var t in tasks) { <li><button type="button" class="btn-link" @onclick="() => Select(t.Id)">@t.SourceId</button> @t.Title <span class="dws-meta">@TaskStates(t.Task!)</span></li> }</ul>
+        <ul class="dlr-list" data-testid="dws-group-tasks">@foreach (var t in tasks) { <li><button type="button" class="btn-link" @onclick="() => Select(t.Id)">@t.SourceId</button> @t.Title <span class="dws-meta">@States(t.Task!)</span></li> }</ul>
         @Evidence(null, i.Feature.Evidence.TasksPath, null, null)
     };
 
     private static string TaskStates(DeliveryTaskRow t) =>
         $"{(t.BaselineCompleted is { } was ? (was ? "[x]" : "[ ]") + " → " : "")}{(t.Change == DeliveryTaskChange.Removed ? "removed" : t.Completed ? "[x]" : "[ ]")} · {DeliveryReportingText.TaskChange(t.Change)}";
 
+    /// <summary>Checklist state in current state; baseline → current and the change classification in comparison.</summary>
+    private string States(DeliveryTaskRow t) => Options.ShowChanges ? TaskStates(t) : t.Completed ? "[x] checked in source" : "[ ] open in source";
+
     private RenderFragment TaskBody(DeliveryWorkItem i, DeliveryFeatureHierarchy? h) => __builder =>
     {
         var t = i.Task!;
         <dl class="dws-facts" data-testid="dws-task-facts">
-            <div><dt>State</dt><dd data-testid="dws-task-state">@TaskStates(t)</dd></div>
+            <div><dt>Checklist</dt><dd data-testid="dws-task-state">@States(t)</dd></div>
             @if (t.Relationship is { } relationship)
             {
                 <div><dt>Relationship</dt><dd data-testid="dws-task-relationship" data-kind="@relationship">@W.RelationshipLabel(relationship)@(t.MappingConfidence is { } c ? $" · {W.ConfidenceLabel(c)}" : "")</dd></div>
@@ -466,7 +526,7 @@
     {
         <details class="dws-section" data-testid="dws-evidence"><summary>Source evidence</summary>
             <dl class="dws-facts">
-                <div><dt>Snapshot</dt><dd>@Report.Current.SourceFileName (current) · @Report.Baseline.SourceFileName (baseline)</dd></div>
+                <div><dt>Snapshot</dt><dd data-testid="dws-evidence-snapshot">@Report.Current.SourceFileName (current)@(Options.ShowChanges ? $" · {Report.Baseline.SourceFileName} (baseline)" : "")</dd></div>
                 @if (spec is not null) { <div><dt>Specification</dt><dd><code>@spec</code>@(location is null ? "" : $" · {location}")</dd></div> }
                 @if (tasks is not null) { <div><dt>Tasks</dt><dd><code>@tasks</code></dd></div> }
                 @if (plan is not null) { <div><dt>Plan</dt><dd><code>@plan</code></dd></div> }

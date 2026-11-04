@@ -128,3 +128,13 @@
 .dlr-report-card .dlr-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 /* On a phone a pinned header would take most of the screen: it scrolls with the page there. */
 @media (max-width: 640px) { .dlr-sticky { position: static; box-shadow: none; } }
+.dlr-page-title { margin: 0; font-size: 1.5rem; }
+.dlr-lead { margin: .125rem 0 0; }
+.dlr-sub { margin: .125rem 0 0; color: var(--clr-text-muted); font-size: .9375rem; }
+.dlr-clarify { margin: .25rem 0 0; font-size: .8125rem; }
+.dlr-title { margin: .5rem 0 0; font-weight: 600; font-size: 1.125rem; }
+.dlr-info { cursor: help; margin-left: .25rem; }
+.dlr-kicker { margin: 0 0 .25rem; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.dlr-limitations { margin-top: .75rem; border: 1px solid var(--clr-border); border-radius: .5rem; padding: .5rem .75rem; }
+.dlr-limitations summary { cursor: pointer; font-weight: 600; }
+.dlr-headline-apart { margin: .5rem 0 0; font-size: .8125rem; }

@@ -149,7 +149,12 @@ public sealed class DeliveryReportingPageTests : BunitContext
         var page = RenderAt($"?project={ProjectId}");
 
         page.WaitForAssertion(() => page.Find("[data-testid=dlr-report]"));
-        page.Find("h1").TextContent.Should().Be("M2LB — Weekly Delivery Report");
+        page.Find("h1").TextContent.Should().Be("Delivery Reports", "the page title names the page; the saved report is named below it");
+        page.Find("[data-testid=dlr-title]").TextContent.Should().StartWith("M2LB — Weekly Delivery Report");
+        page.Find("[data-testid=dlr-context]").TextContent.Should().StartWith("Baseline: ").And.Contain("→ Current: ").And.EndWith("Coverage not determined");
+        page.Find("[data-testid=dlr-saved-label]").TextContent.Should().StartWith("Saved report comparison");
+        page.Find("[data-testid=dlr-new-config-label]").TextContent.Should().StartWith("New report configuration",
+            "the generation fields are a new configuration, never the snapshots of the saved report");
         page.Find("[data-testid=dlr-meta-period]").TextContent.Should().Contain("26–30 Oct 2026");
         page.Find("[data-testid=dlr-meta-baseline]").TextContent.Should().Contain("26 Oct 2026 · Git archive");
         page.Find("[data-testid=dlr-meta-current]").TextContent.Should().Contain("30 Oct 2026 · ZIP import");

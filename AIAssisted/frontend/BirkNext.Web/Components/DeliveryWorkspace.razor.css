@@ -67,3 +67,12 @@
 .dws-legend-list > div { display: contents; }
 .dws-legend-list dd { margin: 0; color: var(--clr-text-muted, #475569); }
 @media (max-width: 640px) { .dws-legend-list { grid-template-columns: 1fr; } }
+.dws-status { display: flex; flex-wrap: wrap; gap: .375rem .5rem; align-items: center; margin: .5rem 0; font-size: .875rem; color: var(--clr-text-muted); }
+.dws-filter-chip { border: 1px solid var(--clr-border); border-radius: 999px; background: var(--clr-surface, transparent); padding: .125rem .625rem; font-size: .8125rem; cursor: pointer; }
+.dws-table { table-layout: fixed; width: 100%; }
+.dws-c-id { width: 7.5rem; } .dws-c-type { width: 7.5rem; } .dws-c-title { width: auto; } .dws-c-parent { width: 8rem; } .dws-c-module { width: 7rem; }
+.dws-c-phase { width: 9rem; } .dws-c-progress { width: 6.5rem; } .dws-c-change { width: 9rem; } .dws-c-review { width: 7rem; }
+.dws-cell-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dws-title-button { all: unset; cursor: pointer; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dws-title-button:focus-visible { outline: 2px solid var(--clr-focus, currentColor); outline-offset: 2px; }
+.dws-cross { display: inline-block; margin: .25rem 0 .5rem; font-size: .875rem; }

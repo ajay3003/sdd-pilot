@@ -199,6 +199,96 @@ public sealed class DeliveryWorkspaceTests : BunitContext
         removed.Find("[data-testid=dws-removed]").TextContent.Should().Contain("baseline only").And.Contain("not a defect");
         removed.Find("[data-testid=dws-feature-progress]").TextContent.Should().Be("3/3 tasks checked");
     }
+    private static readonly Guid Project = Guid.Parse("11111111-2222-3333-4444-555555555555");
+
+    private IRenderedComponent<DeliveryWorkspace> RenderMode(DeliveryExplorerOptions options, string? selected = null) =>
+        Render<DeliveryWorkspace>(p => p.Add(x => x.Report, Report()).Add(x => x.Options, options).Add(x => x.ProjectId, Project)
+            .Add(x => x.SelectedId, selected).Add(x => x.OnSelect, (string? id) => _selected = id));
+
+    /// <summary>Current state (Delivery Overview): the current inventory only — no removed items, no Change Board, no change filter or badges — and
+    /// "Needs review" means a genuine review need, never "changed between snapshots".</summary>
+    [Fact]
+    public void Current_state_mode_shows_the_current_inventory_without_comparison_dimensions()
+    {
+        var cut = RenderMode(DeliveryExplorerOptions.CurrentState);
+        cut.Find("[data-testid=dlr-workspace]").GetAttribute("data-mode").Should().Be("CurrentState");
+        cut.FindAll("[data-testid=dws-view-board]").Should().BeEmpty("the Change Board is a comparison view");
+        cut.FindAll("[data-testid=dws-change]").Should().BeEmpty();
+        cut.Find("[data-testid=dws-count]").TextContent.Should().Contain("in the current snapshot");
+
+        cut.Find("[data-testid=dws-view-list]").Change(true);
+        var ids = cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).ToList();
+        ids.Should().NotContain(DeliveryWorkItems.FeatureId(Legacy), "a removed feature exists only in the baseline");
+        ids.Should().Contain(DeliveryWorkItems.FeatureId(Fresh));
+        cut.FindAll("[data-testid=dws-list] th").Select(h => h.TextContent).Should().Equal(["ID", "Type", "Title", "Parent", "Module", "Phase", "Progress", "Review"]);
+        cut.FindAll("[data-testid=dws-change-chip]").Should().BeEmpty();
+
+        cut.Find("[data-testid=dws-attention]").Change(true);
+        cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).Should().BeEquivalentTo(
+            [DeliveryWorkItems.FeatureId(Dashboard), DeliveryWorkItems.TaskId(Dashboard, "T012")],
+            "the feature with attention and the unresolved [US9] task need review; a story added this period does not");
+        cut.Find("[data-testid=dws-chip]").TextContent.Should().Contain("Needs review");
+        cut.Find("[data-testid=dws-clear]").Click();
+        cut.FindAll("[data-testid=dws-chip]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Current_state_details_show_checklist_state_and_link_to_the_changes_of_the_same_canonical_item()
+    {
+        var task = RenderMode(DeliveryExplorerOptions.CurrentState, DeliveryWorkItems.TaskId(Dashboard, "T010"));
+        task.Find("[data-testid=dws-task-state]").TextContent.Should().Be("[x] checked in source", "checklist state only — no baseline transition");
+        task.FindAll("[data-testid=dws-detail-change]").Should().BeEmpty();
+        task.Find("[data-testid=dws-evidence-snapshot]").TextContent.Should().Be("M2LB.zip (current)");
+        var feature = RenderMode(DeliveryExplorerOptions.CurrentState, DeliveryWorkItems.FeatureId(Dashboard));
+        feature.FindAll("[data-testid=dws-feature-changes]").Should().BeEmpty("period changes belong to Delivery Reports");
+        feature.Find("[data-testid=dws-cross-page]").GetAttribute("href").Should()
+            .Be($"delivery-reporting?project={Project}&tab=stories&report={Guid.Empty}&item={Uri.EscapeDataString(DeliveryWorkItems.FeatureId(Dashboard))}");
+    }
+
+    [Fact]
+    public void Comparison_mode_keeps_changes_and_links_to_the_current_state_of_the_same_item()
+    {
+        var cut = RenderMode(DeliveryExplorerOptions.Comparison, DeliveryWorkItems.TaskId(Dashboard, "T010"));
+        cut.Find("[data-testid=dws-task-state]").TextContent.Should().Contain("[ ] → [x]");
+        cut.Find("[data-testid=dws-detail-change]").TextContent.Should().NotBeEmpty();
+        cut.Find("[data-testid=dws-evidence-snapshot]").TextContent.Should().Contain("(baseline)");
+        cut.Find("[data-testid=dws-cross-page]").GetAttribute("href").Should()
+            .Be($"delivery-overview?project={Project}&explore=items&item={Uri.EscapeDataString(DeliveryWorkItems.TaskId(Dashboard, "T010"))}");
+        var removed = RenderMode(DeliveryExplorerOptions.Comparison, DeliveryWorkItems.FeatureId(Legacy));
+        removed.FindAll("[data-testid=dws-cross-page]").Should().ContainSingle("comparison mode links to the current state even for a removed item, where Overview says it is not current");
+        cut.Find("[data-testid=dws-view-list]").Change(true);
+        cut.FindAll("[data-testid=dws-list] th").Select(h => h.TextContent).Should().Contain("Period change");
+    }
+
+    [Fact]
+    public void Both_modes_build_the_same_canonical_identities_and_checklist_state_for_current_items()
+    {
+        var report = Report();
+        var all = DeliveryWorkItems.Build(report);
+        var current = all.Where(DeliveryExplorerOptions.CurrentState.Includes).ToList();
+        var comparison = all.Where(DeliveryExplorerOptions.Comparison.Includes).ToList();
+        comparison.Should().HaveCount(all.Count);
+        current.Select(i => i.Id).Should().BeSubsetOf(comparison.Select(i => i.Id));
+        current.Should().OnlyContain(i => !DeliveryWorkItems.IsRemoved(i));
+        current.Where(i => i.Task is not null).Select(i => (i.Id, i.Task!.Completed)).Should()
+            .BeEquivalentTo(comparison.Where(i => i.Task is not null && !DeliveryWorkItems.IsRemoved(i)).Select(i => (i.Id, i.Task!.Completed)));
+    }
+
+    [Fact]
+    public void The_list_pages_long_inventories_instead_of_cutting_them_off()
+    {
+        var report = Report();
+        var h = report.Stories[0].Hierarchy!;
+        var many = report with { Stories = [report.Stories[0] with { Hierarchy = h with { Tasks = [.. Enumerable.Range(1, 250).Select(n => new DeliveryTaskRow($"X{n:000}", $"X{n:000}", $"Task {n}", n % 2 == 0, DeliveryTaskChange.Unchanged))] } }] };
+        var cut = Render<DeliveryWorkspace>(p => p.Add(x => x.Report, many).Add(x => x.Options, DeliveryExplorerOptions.CurrentState));
+        cut.Find("[data-testid=dws-view-list]").Change(true);
+        cut.Find("[data-testid=dws-type]").Change("Task");
+        cut.FindAll("[data-testid=dws-list-row]").Should().HaveCount(100);
+        cut.Find("[data-testid=dws-show-more]").Click();
+        cut.FindAll("[data-testid=dws-list-row]").Should().HaveCount(200);
+        cut.Find("[data-testid=dws-count]").TextContent.Should().StartWith("250 of ");
+    }
+
     /// <summary>Report v4: tasks hang under requirement-model groups — never a "Tasks without a user story" bucket — with explained badges.</summary>
     [Fact]
     public void Report_v4_groups_replace_the_unassigned_bucket_with_explained_badges()
