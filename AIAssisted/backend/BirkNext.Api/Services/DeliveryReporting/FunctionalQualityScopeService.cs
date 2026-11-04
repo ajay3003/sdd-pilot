@@ -294,7 +294,8 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
             if (rows.Count == 0) return null;
             return rows.GroupBy(r => r.IdentityKey, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key,
                 g => (g.Count(r => r.Resolution is nameof(RelationResolution.Explicit) or nameof(RelationResolution.Derived) || r.ReviewState == nameof(RelationReviewState.Confirmed)),
-                      g.Count(r => r.Resolution == nameof(RelationResolution.Candidate) && r.ReviewState != nameof(RelationReviewState.Confirmed))), StringComparer.OrdinalIgnoreCase);
+                      g.Count(r => r.Resolution is nameof(RelationResolution.Candidate) or nameof(RelationResolution.Ambiguous) && r.ReviewState != nameof(RelationReviewState.Confirmed))),
+                StringComparer.OrdinalIgnoreCase);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { return null; }
     }
@@ -304,6 +305,11 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         if (index is null) return (ScopeCoverage.NotAssessed, null);
         if (r.Type is not (ScopeArtifactType.Requirement or ScopeArtifactType.UserStory or ScopeArtifactType.AcceptanceCriterion)) return (ScopeCoverage.NotAssessed, null);
         var id = CorrelationRules.NormalizeRequirement(r.DisplayId) ?? r.DisplayId;
+        // correlation/3: tests are linked to the feature pack's own requirement/story (module/feature/id) when the evidence says which pack.
+        if (index.TryGetValue(CorrelationRules.Scoped(r.Feature.Module, r.Feature.FeatureKey, id), out var scoped))
+            return scoped.Explicit > 0
+                ? (ScopeCoverage.AutomatedCoverage, $"{scoped.Explicit} test(s) explicitly verify {id} of this feature pack (canonical VERIFIES).")
+                : (ScopeCoverage.CandidateCoverageOnly, $"{scoped.Candidate} suggested or ambiguous test link(s) to {id} of this feature pack — not confirmed coverage.");
         if (!index.TryGetValue(id, out var links)) return (ScopeCoverage.NoKnownCoverage, "No canonical test relation names this item.");
         // A test that names "FR-001" cannot say which feature it means when several features use that id: never claimed as coverage.
         var shared = reqFeatures.TryGetValue(id, out var n) && n > 1;

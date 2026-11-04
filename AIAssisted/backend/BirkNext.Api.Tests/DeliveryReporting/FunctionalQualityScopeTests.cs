@@ -317,6 +317,25 @@ public sealed class FunctionalQualityScopeTests
     }
 
     [Fact]
+    public async Task A_test_linked_to_the_feature_packs_own_requirement_counts_as_coverage_even_when_other_packs_reuse_the_id()
+    {
+        // correlation/3 scopes requirement ids per feature pack, so "FR-001 of SkoleService/001-rapport" is unambiguous although Receiver also has FR-001.
+        await using var db = Db();
+        await using var canonical = Canonical();
+        var (project, _) = await SeedAllAsync(db);
+        var test = Entity(CanonicalEntityType.Test, "tests/rapport", "RapportTests");
+        var scoped = Entity(CanonicalEntityType.Requirement, CorrelationRules.Scoped("SkoleService", "001-rapport", "FR-001"), "FR-001");
+        canonical.Entities.AddRange(test, scoped);
+        canonical.Relations.Add(Relation(test, scoped, CanonicalRelationType.Verifies, RelationResolution.Explicit));
+        await canonical.SaveChangesAsync();
+
+        var r = await Service(db, canonical).ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false), default);
+        r.Items.Single(i => i.Key == "req:SkoleService/001-rapport/FR-001").Should().Match<ScopeItem>(i =>
+            i.Coverage == ScopeCoverage.AutomatedCoverage && i.CoverageDetail!.Contains("of this feature pack"));
+        r.Items.Single(i => i.Key == "req:MeldingsutvekslerReceiver/002-mottak/FR-001").Coverage.Should().Be(ScopeCoverage.NoKnownCoverage, "the other pack's FR-001 is not covered");
+    }
+
+    [Fact]
     public async Task Builder_candidates_are_searched_and_bounded_on_the_server()
     {
         await using var db = Db();

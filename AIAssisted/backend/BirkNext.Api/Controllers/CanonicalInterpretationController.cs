@@ -20,6 +20,24 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     [HttpGet("summary")]
     public Task<ActionResult<CanonicalSummaryView>> Summary(string scope, CancellationToken ct) => Run(() => service.SummaryAsync(scope, ct));
 
+    /// <summary>The shared review queue: decisions first, then suggestions; one item per question, whichever feature it came from.</summary>
+    [HttpGet("review")]
+    public Task<ActionResult<ReviewQueueView>> Review(string scope, [FromQuery] ReviewItemKind? kind, [FromQuery] ReviewItemType? type, [FromQuery] int skip = 0,
+        [FromQuery] int take = 25, CancellationToken ct = default) => Run(() => service.ReviewQueueAsync(scope, kind, type, skip, take, ct));
+
+    /// <summary>End-to-end trace counts (document, implementation and test evidence apart).</summary>
+    [HttpGet("trace/summary")]
+    public Task<ActionResult<TraceSummaryView>> TraceSummary(string scope, CancellationToken ct) => Run(() => service.TraceSummaryAsync(scope, ct));
+
+    [HttpGet("trace/features")]
+    public Task<ActionResult<IReadOnlyList<TraceFeatureRow>>> TraceFeatures(string scope, [FromQuery] string? module, CancellationToken ct) =>
+        Run(() => service.TraceFeaturesAsync(scope, module, ct));
+
+    /// <summary>One feature's Requirement → work item → task → implementation → API/contract → test chain (lazy, per feature).</summary>
+    [HttpGet("trace/features/{featureId:guid}")]
+    public Task<ActionResult<TraceFeatureDetail>> TraceFeature(string scope, Guid featureId, CancellationToken ct) =>
+        RunOrNotFound(() => service.TraceFeatureAsync(scope, featureId, ct));
+
     [HttpGet("snapshots")]
     public Task<ActionResult<IReadOnlyList<InterpretationSnapshotView>>> Snapshots(string scope, [FromQuery] int take = 20, CancellationToken ct = default) =>
         Run(() => service.SnapshotsAsync(scope, take, ct));

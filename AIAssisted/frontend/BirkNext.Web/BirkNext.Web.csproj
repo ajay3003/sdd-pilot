@@ -62,6 +62,7 @@
     <Compile Include="../../shared/FunctionalQualityScope.cs" Link="Models/FunctionalQualityScope.cs" />
     <Compile Include="../../shared/CanonicalCorrelation.cs" Link="Models/CanonicalCorrelation.cs" />
     <Compile Include="../../shared/CorrelationRules.cs" Link="Models/CorrelationRules.cs" />
+    <Compile Include="../../shared/CanonicalReviewQueue.cs" Link="Models/CanonicalReviewQueue.cs" />
     <Compile Include="../../shared/DataResetContracts.cs" Link="Models/DataResetContracts.cs" />
     <Compile Include="../../shared/BrowserAuthenticationContracts.cs" Link="Models/BrowserAuthenticationContracts.cs" />
     <Compile Include="../../shared/ProjectCompatibilityContracts.cs" Link="Models/ProjectCompatibilityContracts.cs" />
