@@ -25,10 +25,19 @@ public sealed class TestDataXmlVersionTests : IDisposable
 
     private const string Alias = SkoleNaervaerCanonicalFixtures.ValidReportAlias;
 
+    private const string PermissiveXsd = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="Report" type="xs:string" /></xs:schema>""";
+    private string _fingerprint = new('b', 64);
+
+    private sealed class ServerSchema : ITestDataSchemaSource
+    {
+        public Task<TestDataSchemaPackage?> FindAsync(TestDataSchemaReference reference, CancellationToken ct) =>
+            Task.FromResult<TestDataSchemaPackage?>(new(reference.SourceSnapshotId ?? Guid.NewGuid(), new Dictionary<string, string> { [reference.SchemaPath] = PermissiveXsd }, true));
+    }
+
     private object Version(string xml, int? version, bool legacyApproved = false, string? validation = "Valid", string? valueVersions = null) => new
     {
         id = Guid.NewGuid(), fileName = "contracts/skolenaervaer.xsd", profileName = "Valid", xml, projectScope = "import:m2lb",
-        provenance = new { sourceSnapshotId = Guid.NewGuid(), selectedContractPath = "contracts/skolenaervaer.xsd", contractFingerprint = new string('b', 64) },
+        provenance = new { sourceSnapshotId = Guid.NewGuid(), selectedContractPath = "contracts/skolenaervaer.xsd", contractFingerprint = _fingerprint },
         testData = new
         {
             alias = Alias, intent = "positive", approved = legacyApproved, registeredAt = DateTimeOffset.UtcNow, version,
@@ -49,7 +58,7 @@ public sealed class TestDataXmlVersionTests : IDisposable
         public Task<IqrSourceSnapshot?> ResolveAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<IqrSourceSnapshot?>(null);
     }
 
-    private (TestDataCatalog Catalog, TestDataCatalogService Service, TestDataRegistryStore Registry) Create()
+    private (TestDataCatalog Catalog, TestDataCatalogService Service, TestDataRegistryStore Registry) Create(ITestDataSchemaSource? schemas = null)
     {
         Directory.CreateDirectory(_dir);
         var defaults = new ProtectedTestDataDefaultsStore(Path.Combine(_dir, "test-data"), NullLogger<ProtectedTestDataDefaultsStore>.Instance);
@@ -59,7 +68,7 @@ public sealed class TestDataXmlVersionTests : IDisposable
             new SchemaStudioTestDataProvider(() => [JsonSerializer.Serialize(new { version = 1, items = _items }, new JsonSerializerOptions(JsonSerializerDefaults.Web))]),
             new RegisteredTestDataProvider(registry)], TimeProvider.System, registry, [new SkoleNaervaerCanonicalFixtures()]);
         var sources = new Sources();
-        var service = new TestDataCatalogService(new TestDataSchemaValidationService(catalog, new NoSchemas()), catalog, registry, new TestDataCandidateService(sources, registry),
+        var service = new TestDataCatalogService(new TestDataSchemaValidationService(catalog, schemas ?? new NoSchemas()), catalog, registry, new TestDataCandidateService(sources, registry),
             sources, TimeProvider.System);
         return (catalog, service, registry);
     }
@@ -77,6 +86,7 @@ public sealed class TestDataXmlVersionTests : IDisposable
     [Fact]
     public async Task A_regenerated_draft_never_replaces_the_approved_version_until_it_is_approved_under_the_same_id()
     {
+        _fingerprint = BirkNext.Schemas.XmlSchemaPackageAnalyzer.Fingerprint(PermissiveXsd);
         _items.Add(Version("<Report>v1</Report>", null, legacyApproved: true));
         _items.Add(Version("<Report>v2</Report>", 2));
         var (catalog, service, _) = Create();
@@ -94,6 +104,10 @@ public sealed class TestDataXmlVersionTests : IDisposable
         (before.State, before.BoundAssetId).Should().Be((ConnectedSystemTestDataState.Bound, "schema-studio:" + Alias));
         before.DraftNote.Should().Contain("Draft update available (version 2)");
 
+        // Without the XSD on the server, a browser "Valid" never approves (draft only)…
+        (await Create().Service.ApproveAsync(current.Id, 2, CancellationToken.None)).Should().StartWith(TestDataCatalogService.ServerValidationRequiredTitle);
+        // …with the XSD available to the server and validating the XML, the draft is approved under the same id.
+        (catalog, service, _) = Create(new ServerSchema());
         (await service.ApproveAsync(current.Id, 2, CancellationToken.None)).Should().BeNull();
         var promoted = catalog.Assets().Single(a => a.Alias == Alias);
         (promoted.Id, promoted.Version, promoted.Draft, promoted.Value!.Reveal(), promoted.Approval).Should().Be(("schema-studio:" + Alias, 2, null, "<Report>v2</Report>", TestDataApproval.Approved));
@@ -144,7 +158,7 @@ public sealed class TestDataXmlVersionTests : IDisposable
         var (catalog, service, _) = Create();
         var id = catalog.Assets().Single(a => a.Alias == Alias).Id;
 
-        (await service.ApproveAsync(id, 2, CancellationToken.None)).Should().Contain("has not been validated against its XSD", "existing is not valid");
+        (await service.ApproveAsync(id, 2, CancellationToken.None)).Should().Contain(TestDataCatalogService.ServerValidationRequiredTitle, "existing is not valid");
         catalog.Assets().Single(a => a.Alias == Alias).Value!.Reveal().Should().Be("<Report>v1</Report>");
     }
 

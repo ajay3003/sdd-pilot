@@ -186,13 +186,23 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
                     + string.Join(" ", check.Issues.Take(3));
             if (check?.Status != TestDataSchemaStatus.Validated && target.RecordedValidation is { } recorded && recorded != "Valid")
                 return $"{target.Alias} (version {target.Version ?? 1}) did not pass validation against its XSD when it was generated; invalid XML cannot be approved.";
-            // Existing is not valid: without a backend validation and without any validation recorded when it was generated, nothing says the XML
-            // conforms to its schema, so it cannot be approved.
-            if (check?.Status != TestDataSchemaStatus.Validated && target.RecordedValidation is null)
-                return $"{target.Alias} (version {target.Version ?? 1}) has not been validated against its XSD (the schema is not available to the backend and no validation was recorded). Validate it before approving.";
+            // Schema-backed XML is approved only on the server's own validation. A browser-reported "Valid" is client-reported only: the asset can
+            // still be saved and kept as a draft (Needs validation), but not approved until the XSD is available to the server and validates it.
+            if (check?.Status != TestDataSchemaStatus.Validated)
+                return ServerValidationRequired(target, check);
         }
         return Approve(asset, target);
     }
+
+    public const string ServerValidationRequiredTitle = "Approval blocked — server validation required";
+
+    private static string ServerValidationRequired(TestDataAsset target, TestDataSchemaCheck? check) =>
+        $"{ServerValidationRequiredTitle}. {target.Alias} (version {target.Version ?? 1}) is "
+        + (target.RecordedValidation == "Valid" ? "only client-reported as valid. " : "not validated by the server. ")
+        + (check?.Status is TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved or null
+            ? $"The associated XSD ({target.Schema!.SchemaPath}) is not available to the server. "
+            : $"{check.Detail} ")
+        + "Associate the XSD (import a source package that contains it, or POST api/test-data/schema-associations), retry validation, or keep it as a draft.";
 
     /// <summary>Explicit approval of the asset's current version (fingerprint). A deprecated asset is not approved for new usage.</summary>
     public string? Approve(string assetId) =>
