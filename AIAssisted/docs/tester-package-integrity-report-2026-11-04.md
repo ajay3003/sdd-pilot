@@ -84,6 +84,13 @@ A failure at any step means the tester never receives the artifact.
   - `validate-package.ps1` under `pwsh` on Linux (no `pwsh` on this machine; only cross-platform APIs are used, and the pipelines already ran `check-migrations.ps1` with `pwsh`);
   - a full container + backend start on a clean machine (needs a container runtime on the agent). The smoke job covers package integrity and launcher preflight.
 
+## Follow-up fix: first pipeline run
+
+The first pipeline run failed in the Linux packaging step: "Package validation could not run: Could not find item …/package-clean/BirkNext/AIAssisted/.env".
+- **Cause:** on Linux a dotfile is hidden, and `Get-Item` / `Get-ChildItem` skip hidden items without `-Force`. The required `.env` check threw, and the manifest left dotfiles out.
+- **Fix:** every file listing and inspection now uses `-Force` / `-LiteralPath`.
+- **Verified on Windows:** with `.env` marked Hidden, the old script fails identically; the fixed one validates (843 files, `.env` included).
+
 ## Leftovers for you
 
 The safety check blocked removing two throwaway folders I created at the drive root for the clean-folder test. They hold only copies of published binaries. Please delete them yourself:
