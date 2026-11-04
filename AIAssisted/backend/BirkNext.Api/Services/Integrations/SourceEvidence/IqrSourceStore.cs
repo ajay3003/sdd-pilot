@@ -235,6 +235,9 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         // the same workspace and the models above. A failure never fails the snapshot; it is recorded as a limitation.
         await ReportProgressAsync("Analyzing generated documentation", "Comparing generated documentation evidence with the source snapshot.");
         snapshot = snapshot with { GeneratedDocumentation = AnalyzeGeneratedDocumentation(snapshot, workspace, architectureInput, architectureResults.SelectMany(r => r.Facts).ToList(), ct) };
+        // The project's own glossary (if any) from the Markdown already read: project evidence of this snapshot, never global vocabulary.
+        await ReportProgressAsync("Analyzing project glossary", "Detecting the project's own glossary and terminology proposals.");
+        snapshot = snapshot with { Glossary = AnalyzeGlossary(snapshot, workspace) };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         await ReportProgressAsync("Saving source snapshot", "Persisting one immutable Source Analysis snapshot.");
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
@@ -316,6 +319,24 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
             {
                 SnapshotId = snapshot.Id, AnalyzerVersion = SourceAnalysis.CodeRisk.CodeRiskSourceAnalyzer.Version,
                 Limitations = [$"Code-risk analysis stopped on an unsupported pattern ({ex.GetType().Name}); no code-risk observations were recorded."],
+            };
+        }
+    }
+
+    internal static BirkNext.Glossary.ProjectGlossarySnapshot AnalyzeGlossary(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace)
+    {
+        var project = System.IO.Path.GetFileNameWithoutExtension(snapshot.ProjectImport?.ArchiveFileName is { Length: > 0 } imported ? imported : snapshot.Archive.FileName);
+        try
+        {
+            return SourceAnalysis.Glossary.ProjectGlossaryAnalyzer.Analyze(snapshot.Id, project, snapshot.AnalyzedAt,
+                [.. (workspace.DocumentationCandidates ?? []).Select(d => (d.Path, d.Content))]);
+        }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+        {
+            return new BirkNext.Glossary.ProjectGlossarySnapshot
+            {
+                SourceSnapshotId = snapshot.Id, ProjectName = project, AnalyzerVersion = SourceAnalysis.Glossary.ProjectGlossaryAnalyzer.Version, AnalyzedAt = snapshot.AnalyzedAt,
+                Limitations = [$"Glossary analysis stopped on an unsupported pattern ({ex.GetType().Name}); no glossary evidence was recorded."],
             };
         }
     }
