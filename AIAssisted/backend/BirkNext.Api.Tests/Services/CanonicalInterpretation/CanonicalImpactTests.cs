@@ -48,7 +48,7 @@ public sealed class CanonicalImpactTests
         Entity(CanonicalEntityType.Test, "t-unrelated", "Unrelated.Uses");
 
         Relation("us1", CanonicalRelationType.DependsOn, "fravaer", RelationResolution.Explicit);            // Direct
-        Relation("us1", CanonicalRelationType.Contains, "sc1", RelationResolution.Derived);                  // Downstream (forward)
+        Relation("us1", CanonicalRelationType.Contains, "sc1", RelationResolution.Derived);                  // Potential (containment below the root)
         Relation("fr1", CanonicalRelationType.DerivedFrom, "us1", RelationResolution.Explicit);              // Downstream, unverified
         Relation("f-candidate", CanonicalRelationType.DependsOn, "fravaer", RelationResolution.Candidate);   // Potential
         Relation("f-unresolved", CanonicalRelationType.DependsOn, "fravaer", RelationResolution.Unresolved); // Unknown
@@ -73,10 +73,10 @@ public sealed class CanonicalImpactTests
         levels.Should().BeEquivalentTo(new Dictionary<string, ImpactLevel>
         {
             ["Register absence"] = ImpactLevel.Direct,
-            ["Absence over 10 days"] = ImpactLevel.Downstream,
+            ["Absence over 10 days"] = ImpactLevel.Potential,
             ["FR-001 absence is reported"] = ImpactLevel.Downstream,
             ["Candidate dependent"] = ImpactLevel.Potential,
-        }, "rejected and alias relations never impact, and the cycle back to the root is not revisited");
+        }, "rejected and alias relations never impact, the cycle back to the root is not revisited, and an impacted story's parts are only potentially impacted");
         view.Entities.Single(e => e.Name == "Absence over 10 days").Path.Select(p => p.Relation).Should().Equal(["DependsOn", "Contains"], "every entity carries its path");
 
         view.Tests.Select(t => (t.Name, t.Retest)).Should().Equal([("AbsenceTests.Registers", RetestLevel.MustRetest), ("AbsenceLongTests.Over10Days", RetestLevel.ShouldRetest)],
@@ -98,6 +98,13 @@ public sealed class CanonicalImpactTests
         (await service.ImpactAsync("proj", "Contract|missing", default)).Should().BeNull();
         (await service.ImpactAsync("proj", "NotAType|fravaer", default)).Should().BeNull();
         (await service.ImpactAsync("other", "Contract|fravaer", default)).Should().BeNull("impact never crosses canonical scopes");
+    }
+
+    [Fact]
+    public async Task Containment_carries_definite_impact_down_from_the_changed_entity_only()
+    {
+        var view = (await (await Graph()).ImpactAsync("proj", "UserStory|us1", default))!;
+        view.Entities.Single(e => e.Name == "Absence over 10 days").Level.Should().Be(ImpactLevel.Direct, "the story itself changed, so its scenario is impacted");
     }
 
     [Fact]
