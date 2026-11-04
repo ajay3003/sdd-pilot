@@ -62,7 +62,29 @@ public sealed record ScopeQuery(string? ScopeKey, Guid? CustomScopeId, bool Incl
 public sealed record ScopeResolution(ScopeDefinition Scope, Guid? SnapshotId, string? SnapshotLabel, string RuleSetVersion, IReadOnlyList<ScopeItem> Items, ScopeSummary Summary,
     IReadOnlyList<ScopeRelatedModule> RelatedModules, IReadOnlyList<string> Limitations, string PrecedenceNote);
 
-public sealed record ScopeItemDetail(ScopeItem Item, string FullText, IReadOnlyList<ScopeItem> Children, IReadOnlyList<string> CoverageEvidence, TestDesignAssessmentView? Assessment);
+public sealed record ScopeItemDetail(ScopeItem Item, string FullText, IReadOnlyList<ScopeItem> Children, IReadOnlyList<string> CoverageEvidence, TestDesignAssessmentView? Assessment)
+{
+    /// <summary>The tests the canonical engine relates to this item (VERIFIES), one per relation, explicit apart from candidates; rejected candidates stay
+    /// listed as rejected so a refresh never turns them back into coverage. Empty when nothing is interpreted.</summary>
+    public IReadOnlyList<ScopeTestLink> Tests { get; init; } = [];
+    /// <summary>False when no canonical interpretation exists: "no tests" then means "not assessed", not "untested".</summary>
+    public bool TestsAssessed { get; init; }
+}
+
+/// <summary>How a test relates to a requirement. Explicit: the source states it, or a person confirmed it. Candidate: inferred, ambiguous, or an id several
+/// features share — never coverage. Rejected: a person rejected it in the shared review registry.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ScopeTestLinkKind { Explicit, Candidate, Rejected }
+
+public sealed record ScopeTestEvidence(string Kind, string Reference, string? Detail);
+
+/// <summary>
+/// One canonical Test → VERIFIES → requirement relation as Functional Quality Scope shows it: the test's identity and where it was found, the rule and
+/// evidence of the relation, its review state (decisions go to the shared canonical registry by <see cref="RelationKey"/> in <see cref="Scope"/>), and the
+/// execution state — discovery is never execution, so without linked run evidence it says so.
+/// </summary>
+public sealed record ScopeTestLink(string RelationKey, string Scope, ScopeTestLinkKind Kind, string TestIdentity, string TestName, string? Location,
+    string Resolution, string Confidence, string RuleId, string Explanation, string ReviewState, IReadOnlyList<ScopeTestEvidence> Evidence, string Execution);
 
 public sealed record ScopeReferenceRequest(string ItemKey, ScopeInclusion Mode);
 

@@ -297,6 +297,47 @@ public sealed class FunctionalQualityScopeTests
     }
 
     [Fact]
+    public async Task Item_detail_lists_each_test_explicit_apart_from_candidates_and_keeps_rejected_ones_rejected()
+    {
+        await using var db = Db();
+        await using var canonical = Canonical();
+        var (project, _) = await SeedAllAsync(db);
+        var explicitTest = Entity(CanonicalEntityType.Test, "tests/rapport/Sends_report", "Sends report");
+        var candidateTest = Entity(CanonicalEntityType.Test, "tests/rapport/Maybe_report", "Maybe report");
+        var rejectedTest = Entity(CanonicalEntityType.Test, "tests/rapport/Not_report", "Not report");
+        var sharedTest = Entity(CanonicalEntityType.Test, "tests/any/Fr1", "Names FR-001");
+        var fr1 = Entity(CanonicalEntityType.Requirement, "FR-001", "FR-001");
+        var fr2 = Entity(CanonicalEntityType.Requirement, "FR-002", "FR-002");
+        canonical.Entities.AddRange(explicitTest, candidateTest, rejectedTest, sharedTest, fr1, fr2);
+        var link = Relation(explicitTest, fr2, CanonicalRelationType.Verifies, RelationResolution.Explicit);
+        link.RuleId = "verifies.test-name-id";
+        link.EvidenceJson = """[{"kind":"TestName","reference":"RapportTests.cs","detail":"[Fact] FR_002_sends_report"}]""";
+        canonical.Relations.AddRange(link,
+            Relation(candidateTest, fr2, CanonicalRelationType.Verifies, RelationResolution.Candidate),
+            Relation(rejectedTest, fr2, CanonicalRelationType.Verifies, RelationResolution.Candidate, RelationReviewState.Rejected),
+            Relation(sharedTest, fr1, CanonicalRelationType.Verifies, RelationResolution.Explicit));
+        canonical.Occurrences.Add(new CanonicalOccurrenceRecord { Id = Guid.NewGuid(), EntityId = explicitTest.Id, Scope = "env", SourceSnapshotId = "s", OccurrenceKey = "k", Kind = "Test",
+            Detail = "SkoleService.Tests/RapportTests.cs:42" });
+        await canonical.SaveChangesAsync();
+
+        var detail = (await Service(db, canonical).DetailAsync(project, "req:SkoleService/001-rapport/FR-002", default))!;
+        detail.TestsAssessed.Should().BeTrue();
+        detail.Tests.Select(t => (t.TestName, t.Kind)).Should().Equal(
+            [("Sends report", ScopeTestLinkKind.Explicit), ("Maybe report", ScopeTestLinkKind.Candidate), ("Not report", ScopeTestLinkKind.Rejected)],
+            "explicit first, candidates apart, a rejected candidate never comes back as coverage");
+        detail.Tests[0].Should().Match<ScopeTestLink>(t => t.Location == "SkoleService.Tests/RapportTests.cs:42" && t.RuleId == "verifies.test-name-id" && t.Scope == "env"
+            && t.RelationKey == link.RelationKey && t.Execution.Contains("not an executed test"));
+        detail.Tests[0].Evidence.Should().ContainSingle().Which.Should().Be(new ScopeTestEvidence("TestName", "RapportTests.cs", "[Fact] FR_002_sends_report"));
+
+        var shared = (await Service(db, canonical).DetailAsync(project, "req:SkoleService/001-rapport/FR-001", default))!;
+        shared.Tests.Should().ContainSingle().Which.Should().Match<ScopeTestLink>(t => t.Kind == ScopeTestLinkKind.Candidate && t.Explanation.Contains("several features use"),
+            "a test naming an id several features share cannot say which it verifies");
+
+        var none = (await Service(db).DetailAsync(project, "req:SkoleService/001-rapport/FR-002", default))!;
+        none.Should().Match<ScopeItemDetail>(d => !d.TestsAssessed && d.Tests.Count == 0, "without interpretation, no tests means not assessed — not untested");
+    }
+
+    [Fact]
     public async Task A_story_or_criterion_id_reused_by_several_features_is_never_claimed_as_automated_coverage()
     {
         // Real M2LB: "US1", "SC-004" and "AC-1" exist in nearly every feature; a test naming "US1" cannot say which feature it verifies.

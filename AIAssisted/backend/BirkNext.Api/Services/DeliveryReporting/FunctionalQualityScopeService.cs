@@ -168,7 +168,14 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         if (view is null) return null;
         var children = all.Items.Where(i => i.ParentKey == key).ToList();
         var assessment = await db.TestDesignAssessments.AsNoTracking().FirstOrDefaultAsync(a => a.ProjectId == projectId && a.ItemKey == key, ct);
-        return new(view, item.Text, children, view.CoverageDetail is { } d ? [d] : [], assessment is null ? null : View(assessment));
+        var id = CorrelationRules.NormalizeRequirement(item.DisplayId) ?? item.DisplayId;
+        var sharedId = raw.Where(r => string.Equals(CorrelationRules.NormalizeRequirement(r.DisplayId) ?? r.DisplayId, id, StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.Feature.Id).Distinct().Count() > 1;
+        var tests = await TestLinksAsync(CorrelationRules.Scoped(item.Feature.Module, item.Feature.FeatureKey, id), id, sharedId, ct);
+        return new(view, item.Text, children, view.CoverageDetail is { } d ? [d] : [], assessment is null ? null : View(assessment))
+        {
+            Tests = tests ?? [], TestsAssessed = tests is not null,
+        };
     }
 
     // ── Scope roots and relations ─────────────────────────────────────────────────────────────────────────────────────
@@ -325,6 +332,60 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
                 StringComparer.OrdinalIgnoreCase);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { return null; }
+    }
+
+    /// <summary>
+    /// The individual VERIFIES relations behind an item's coverage, classified exactly as <see cref="Coverage"/> counts them: the feature pack's own id first;
+    /// an unscoped id several features share is never explicit. Null when nothing is interpreted. Read-only: decisions go to the shared registry.
+    /// </summary>
+    private async Task<IReadOnlyList<ScopeTestLink>?> TestLinksAsync(string scopedKey, string id, bool sharedId, CancellationToken ct)
+    {
+        if (canonical is null) return null;
+        try
+        {
+            if (!await canonical.Relations.AsNoTracking().AnyAsync(r => r.RelationType == nameof(CanonicalRelationType.Verifies), ct)) return null;
+            var rows = await (from r in canonical.Relations.AsNoTracking()
+                              join t in canonical.Entities.AsNoTracking() on r.TargetEntityId equals t.Id
+                              join s in canonical.Entities.AsNoTracking() on r.SourceEntityId equals s.Id
+                              where r.Active && r.RelationType == nameof(CanonicalRelationType.Verifies) && (t.IdentityKey == scopedKey || t.IdentityKey == id)
+                              select new { Relation = r, Target = t.IdentityKey, Test = s }).ToListAsync(ct);
+            // The feature pack's own requirement wins: an unscoped relation is only used when the pack has none.
+            var scoped = rows.Where(x => string.Equals(x.Target, scopedKey, StringComparison.OrdinalIgnoreCase)).ToList();
+            var chosen = scoped.Count > 0 ? scoped : rows;
+            var unscopedShared = scoped.Count == 0 && sharedId;
+            var testIds = chosen.Select(x => x.Test.Id).Distinct().ToList();
+            var locations = (await canonical.Occurrences.AsNoTracking().Where(o => testIds.Contains(o.EntityId)).ToListAsync(ct))
+                .GroupBy(o => o.EntityId).ToDictionary(g => g.Key, g => g.Select(o => o.Detail ?? o.OccurrenceKey).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)));
+            return [.. chosen.Select(x =>
+            {
+                var r = x.Relation;
+                var kind = r.ReviewState == nameof(RelationReviewState.Rejected) ? ScopeTestLinkKind.Rejected
+                    : !unscopedShared && (r.Resolution is nameof(RelationResolution.Explicit) or nameof(RelationResolution.Derived) || r.ReviewState == nameof(RelationReviewState.Confirmed))
+                        ? ScopeTestLinkKind.Explicit : ScopeTestLinkKind.Candidate;
+                var evidence = ParseEvidence(r.EvidenceJson);
+                var explanation = unscopedShared && kind != ScopeTestLinkKind.Rejected
+                    ? $"{r.Explanation} The test names {id}, which several features use — it does not say which feature it verifies.".Trim()
+                    : r.Explanation;
+                return new ScopeTestLink(r.RelationKey, r.Scope, kind, x.Test.IdentityKey, x.Test.DisplayName.Length > 0 ? x.Test.DisplayName : x.Test.IdentityKey,
+                    locations.GetValueOrDefault(x.Test.Id), r.Resolution, r.Confidence, r.RuleId, explanation, r.ReviewState, evidence,
+                    "Execution evidence not linked — a discovered test is not an executed test.");
+            }).OrderBy(t => t.Kind).ThenBy(t => t.TestName, StringComparer.OrdinalIgnoreCase)];
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { return null; }
+    }
+
+    private static IReadOnlyList<ScopeTestEvidence> ParseEvidence(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return [];
+            static string? Str(JsonElement e, string name) =>
+                e.EnumerateObject().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) is { Value.ValueKind: JsonValueKind.String } p ? p.Value.GetString() : null;
+            return [.. doc.RootElement.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object)
+                .Select(e => new ScopeTestEvidence(Str(e, "kind") ?? "", Str(e, "reference") ?? "", Str(e, "detail")))];
+        }
+        catch (JsonException) { return []; }
     }
 
     private static (ScopeCoverage, string?) Coverage(Raw r, Dictionary<string, (int Explicit, int Candidate)>? index, IReadOnlyDictionary<string, int> reqFeatures)

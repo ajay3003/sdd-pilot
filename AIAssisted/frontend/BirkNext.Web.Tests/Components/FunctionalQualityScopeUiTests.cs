@@ -1,4 +1,5 @@
 using BirkNext.DeliveryReporting;
+using BirkNext.Interpretation;
 using BirkNext.Web.Components;
 using BirkNext.Web.Services;
 using Bunit;
@@ -239,5 +240,124 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
         var items = cut.FindAll("[data-testid=fqs-scenario]");
         items[0].GetAttribute("data-priority").Should().Be("High");
         items[0].TextContent.Should().Contain("Given").And.Contain("a valid report").And.Contain("Derived from SkoleService / 001-rapport / US1 / AC-2");
+    }
+
+    // ── Acceptance journey: filter → requirement → criteria → tests → test → back, with filter and selection kept ─────────────
+
+    private static ScopeTestLink Link(string name, ScopeTestLinkKind kind, string review = "NotReviewed") =>
+        new($"tests/{name}->Verifies->US1", "env-dev", kind, $"tests/{name}", name, kind == ScopeTestLinkKind.Explicit ? "SkoleService.Tests/RapportTests.cs:42" : null,
+            kind == ScopeTestLinkKind.Explicit ? "Explicit" : "Candidate", "High", "verifies.test-name-id", $"{name} names US1.", review,
+            [new ScopeTestEvidence("TestName", "RapportTests.cs", $"[Fact] {name}")], "Execution evidence not linked — a discovered test is not an executed test.");
+
+    private static readonly string LongText = "Som skoletjeneste vil jeg motta rapporten slik at fraværet registreres. " + string.Concat(Enumerable.Repeat("Rapporten valideres mot skjemaet og lagres. ", 10));
+
+    private (IRenderedComponent<FunctionalQualityScopePanel> Cut, Mock<IFunctionalQualityScopeApiService> Api) Journey(Mock<ICanonicalInterpretationApiService>? review = null, string? startUrl = null)
+    {
+        var builtIn = new ScopeDefinition { Name = "Skolenærvær", Roots = ["profile:skolenaervaer"], BuiltIn = true };
+        var api = Api(Resolution(builtIn, Story, Criterion, Scenario, Privacy, PersonStory), new AvailableScope("profile:skolenaervaer", "Skolenærvær", "Domain flow", "2 module(s)"));
+        api.Setup(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<CancellationToken>())).ReturnsAsync(new ScopeItemDetail(Privacy, LongText, [Criterion], ["1 test(s) explicitly verify US2."], null)
+        {
+            TestsAssessed = true, Tests = [Link("Sends_report", ScopeTestLinkKind.Explicit), Link("Maybe_report", ScopeTestLinkKind.Candidate), Link("Not_report", ScopeTestLinkKind.Rejected, "Rejected")],
+        });
+        if (review is not null) Services.AddSingleton(review.Object);
+        if (startUrl is not null) Services.GetRequiredService<NavigationManager>().NavigateTo(startUrl);
+        var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project));
+        cut.WaitForElement("[data-testid=fqs-item]");
+        return (cut, api);
+    }
+
+    [Fact]
+    public void Acceptance_journey_keeps_the_filter_and_selection_and_separates_explicit_tests_from_candidates()
+    {
+        var (cut, _) = Journey();
+        var nav = Services.GetRequiredService<NavigationManager>();
+        cut.FindAll("[data-testid=fqs-item]").Should().HaveCount(5);
+        cut.Find("[data-testid=fqs-filter-category]").Change("Privacy");
+        cut.FindAll("[data-testid=fqs-item]").Should().ContainSingle();
+        cut.Find("[data-testid=fqs-shown]").TextContent.Should().StartWith("Showing 1 of 5 items");
+        cut.Find("[data-testid=fqs-filter-chip]").TextContent.Should().Contain("Quality: Privacy");
+
+        cut.Find("[data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-detail]");
+        cut.Find($"[data-key='{Privacy.Key}']").ClassList.Should().Contain("is-selected");
+        cut.Find("[data-testid=fqs-full-text]").ClassList.Should().Contain("is-clamped");
+        cut.Find("[data-testid=fqs-expand-text]").Click();
+        cut.Find("[data-testid=fqs-full-text]").ClassList.Should().NotContain("is-clamped");
+        cut.Find("[data-testid=fqs-sec-criteria]").TextContent.Should().Contain("AC-1");
+
+        cut.Find("[data-testid=fqs-tests-explicit]").TextContent.Should().Contain("Sends_report").And.NotContain("Maybe_report");
+        cut.Find("[data-testid=fqs-tests-candidates]").TextContent.Should().Contain("Maybe_report").And.Contain("Candidate — not confirmed");
+        cut.Find("[data-testid=fqs-tests-rejected]").TextContent.Should().Contain("Not_report").And.Contain("not coverage");
+
+        cut.FindAll("[data-testid=fqs-test-open]")[0].Click();
+        cut.Find("[data-testid=fqs-test-identity]").TextContent.Should().Be("tests/Sends_report");
+        cut.Find("[data-testid=fqs-test-location]").TextContent.Should().Be("SkoleService.Tests/RapportTests.cs:42");
+        cut.Find("[data-testid=fqs-test-relationship]").TextContent.Should().Contain("Explicitly linked").And.Contain("VERIFIES");
+        cut.Find("[data-testid=fqs-test-execution]").TextContent.Should().Contain("not an executed test", "discovery is never execution");
+        cut.Find("[data-testid=fqs-test-evidence]").TextContent.Should().Contain("RapportTests.cs");
+        cut.Find("[data-testid=fqs-review-readonly]").TextContent.Should().Contain("Correlation Review", "without the review service the test detail is read-only, not a dead button");
+
+        cut.Find("[data-testid=fqs-test-back]").Click();
+        cut.Find("[data-testid=fqs-sec-tests]");
+        cut.Find("[data-testid=fqs-detail-close]").Click();
+        cut.FindAll("[data-testid=fqs-detail]").Should().BeEmpty();
+        cut.FindAll("[data-testid=fqs-item]").Should().ContainSingle("the Privacy filter stays active");
+        nav.Uri.Should().Contain("fq-quality=Privacy");
+
+        cut.Find("[data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-detail]");
+        nav.Uri.Should().Contain("fq-item=" + Uri.EscapeDataString(Privacy.Key));
+    }
+
+    [Fact]
+    public void Returning_to_the_page_restores_the_filter_and_the_selected_item_from_the_url()
+    {
+        var (cut, api) = Journey(startUrl: $"delivery-reporting?tab=scope&fq-quality=Privacy&fq-item={Uri.EscapeDataString(Privacy.Key)}");
+        cut.FindAll("[data-testid=fqs-item]").Should().ContainSingle().Which.GetAttribute("data-key").Should().Be(Privacy.Key);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=fqs-detail]").GetAttribute("data-key").Should().Be(Privacy.Key));
+        api.Verify(a => a.ResolveAsync(Project, It.IsAny<ScopeQuery>(), It.IsAny<CancellationToken>()), Times.Once(), "restoring is filtering, never re-analysis");
+    }
+
+    [Fact]
+    public void A_filter_that_hides_the_selected_item_clears_the_selection_instead_of_leaving_a_stale_detail()
+    {
+        var (cut, _) = Journey();
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-detail]");
+        cut.Find("[data-testid=fqs-filter-module]").Change("Person");
+        cut.FindAll("[data-testid=fqs-detail]").Should().BeEmpty();
+        cut.Find("[data-testid=fqs-notice]").TextContent.Should().Contain("no longer selected");
+        cut.Find("[data-testid=fqs-filter-chip]").Click();
+        cut.FindAll("[data-testid=fqs-item]").Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void Advanced_filters_are_grouped_apart_and_open_when_one_is_active()
+    {
+        var (cut, _) = Journey();
+        cut.Find("[data-testid=fqs-advanced]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=fqs-filter-coverage]").Change("AutomatedCoverage");
+        cut.Find("[data-testid=fqs-advanced]").HasAttribute("open").Should().BeTrue();
+        cut.FindAll("[data-testid=fqs-item]").Should().ContainSingle().Which.GetAttribute("data-key").Should().Be(Privacy.Key);
+        cut.Find("[data-testid=fqs-clear-filters]").Click();
+        cut.FindAll("[data-testid=fqs-item]").Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void A_candidate_is_reviewed_through_the_shared_registry_and_the_item_is_re_read()
+    {
+        var review = new Mock<ICanonicalInterpretationApiService>();
+        review.Setup(r => r.DecisionsAsync("env-dev", It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<ReviewDecisionView>)[], (string?)null));
+        review.Setup(r => r.DecideAsync("env-dev", It.IsAny<ReviewDecisionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ReviewDecisionView(Guid.NewGuid(), 1, ReviewTargetKind.Relation, "k", ReviewDecisionOutcome.Rejected, "local user", DateTimeOffset.UnixEpoch,
+                null, "fp", "rules", null, null, "{}"), (string?)null));
+        var (cut, api) = Journey(review);
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-tests-candidates]");
+        cut.FindAll("[data-testid=fqs-test-open]").Single(b => b.TextContent == "Maybe_report").Click();
+        cut.Find("[data-testid=fqs-review-reject]").Click();
+        review.Verify(r => r.DecideAsync("env-dev", It.Is<ReviewDecisionRequest>(q => q.TargetKind == ReviewTargetKind.Relation
+            && q.TargetKey == "tests/Maybe_report->Verifies->US1" && q.Outcome == ReviewDecisionOutcome.Rejected), It.IsAny<CancellationToken>()), Times.Once());
+        api.Verify(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<CancellationToken>()), Times.Exactly(2), "the classification is re-read from the registry, never patched locally");
     }
 }
