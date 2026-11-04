@@ -29,6 +29,14 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     [HttpGet("trace/summary")]
     public Task<ActionResult<TraceSummaryView>> TraceSummary(string scope, CancellationToken ct) => Run(() => service.TraceSummaryAsync(scope, ct));
 
+    /// <summary>
+    /// The governance gate for one action (governance/1), optionally limited to modules (findings of other modules are left out; global ones stay).
+    /// Deterministic and network-free: <c>ExitCode</c> is non-zero only for an unwaived blocking finding, so a CI step can call this directly.
+    /// </summary>
+    [HttpGet("governance")]
+    public Task<ActionResult<BirkNext.Governance.GateResult>> Governance(string scope, [FromQuery] BirkNext.Governance.GateAction action = BirkNext.Governance.GateAction.ReleaseReadiness,
+        [FromQuery] string[]? module = null, CancellationToken ct = default) => Run(() => service.GovernanceAsync(scope, action, module, ct));
+
     [HttpGet("trace/features")]
     public Task<ActionResult<IReadOnlyList<TraceFeatureRow>>> TraceFeatures(string scope, [FromQuery] string? module, CancellationToken ct) =>
         Run(() => service.TraceFeaturesAsync(scope, module, ct));

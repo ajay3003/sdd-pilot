@@ -1,3 +1,4 @@
+using BirkNext.Governance;
 using BirkNext.Integrations;
 using BirkNext.Interpretation;
 using BirkNext.Web.Components;
@@ -161,6 +162,13 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=cr-sum-contracts]").TextContent.Should()
             .Contain("70 logical").And.Contain("84 versions").And.Contain("81 distinct contents").And.Contain("88 occurrences"));
         cut.Find("[data-testid=cr-sum-package]").TextContent.Should().Contain("Infrastructure").And.Contain("Contracts");
+        api.Verify(a => a.GovernanceAsync("dev", GateAction.ReleaseReadiness, null, It.IsAny<CancellationToken>()), Times.Once(), "the governance gate is evaluated for the project");
+
+        // Regression: Explore passed the literal text "_scope" as the project (api/canonical/_scope/… → 400). It must send the active project.
+        cut.Find("[data-testid=cr-explore-text]").Change("MU");
+        cut.Find("[data-testid=cr-explore-run]").Click();
+        cut.WaitForAssertion(() => api.Verify(a => a.EntitiesAsync("dev", It.IsAny<CanonicalEntityType?>(), "MU", 0, 5, It.IsAny<CancellationToken>()), Times.Once()));
+        api.Verify(a => a.EntitiesAsync(It.Is<string>(s => s != "dev"), It.IsAny<CanonicalEntityType?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     [Fact]

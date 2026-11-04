@@ -1,0 +1,107 @@
+@using BirkNext.Governance
+@inject ICanonicalInterpretationApiService Api
+
+@* The governance gate for one action, computed server-side from the canonical store (governance/1). The decision always comes with its reasons; each
+   finding says why it matters, what it was found in, who resolves it and how. Policy and rule ids stay under technical details. *@
+<section class="ggp" aria-labelledby="ggp-h" data-testid="@TestId">
+    <header class="ggp-head">
+        <h2 id="ggp-h" class="ggp-title">Governance</h2>
+        <label class="ggp-action">Gate for
+            <select data-testid="@($"{TestId}-action")" value="@_action" @onchange="ActionAsync">
+                @foreach (var a in Enum.GetValues<GateAction>()) { <option value="@a">@GovernancePolicies.ActionLabel(a)</option> }
+            </select>
+        </label>
+    </header>
+    @if (_error is not null)
+    {
+        <p class="ggp-muted" role="alert" data-testid="@($"{TestId}-error")">Governance could not be evaluated: @_error</p>
+    }
+    else if (_result is null)
+    {
+        <p class="ggp-muted" role="status">Evaluating…</p>
+    }
+    else
+    {
+        var r = _result;
+        <p class="ggp-decision ggp-@r.Decision.ToString().ToLowerInvariant()" role="status" data-testid="@($"{TestId}-decision")" data-decision="@r.Decision">
+            <span class="ggp-icon" aria-hidden="true">@Icon(r.Decision)</span>
+            <strong>@GovernancePolicies.DecisionLabel(r.Decision)</strong> <span>— @r.Reason</span>
+        </p>
+        <p class="ggp-muted ggp-small" data-testid="@($"{TestId}-counts")">@r.Blocking blocking · @r.Warnings warning@(r.Warnings == 1 ? "" : "s") · @r.Waived with reviewed exception
+            · policy set @r.PolicySetVersion@(r.ModuleScope.Count > 0 ? $" · modules {string.Join(", ", r.ModuleScope)}" : "")</p>
+        @if (r.Findings.Count > 0)
+        {
+            <ul class="ggp-findings">
+                @foreach (var f in r.Findings.Take(MaxFindings))
+                {
+                    <li class="ggp-finding" data-testid="@($"{TestId}-finding")" data-policy="@f.Finding.PolicyId" data-level="@f.Level">
+                        <div class="ggp-finding-head">
+                            <span class="ggp-level ggp-level-@f.Level.ToString().ToLowerInvariant()">@LevelIcon(f.Level) @(f.Waiver is null ? GovernancePolicies.LevelLabel(f.Level) : "Accepted by reviewed exception")</span>
+                            <strong>@f.Finding.Title</strong>
+                            @if (f.Finding.Module is { } m) { <MetaBadge Kind="BadgeKind.Scope" Text="@m" /> }
+                        </div>
+                        <p class="ggp-why">@f.Finding.WhyItMatters</p>
+                        @if (f.Finding.Evidence.Count > 0) { <p class="ggp-muted ggp-small" data-testid="@($"{TestId}-evidence")">Found in: @string.Join(" · ", f.Finding.Evidence)</p> }
+                        <p class="ggp-small"><strong>Resolve:</strong> @f.Finding.Resolution <span class="ggp-muted">(owner: @f.Finding.Owner)</span></p>
+                        @if (f.Waiver is { } w) { <p class="ggp-small" data-testid="@($"{TestId}-waiver")">Exception: @w.Reason</p> }
+                        <details class="ggp-tech">
+                            <summary>Technical details</summary>
+                            <p class="ggp-small">Policy <code>@f.Finding.PolicyId</code> v@(f.Finding.PolicyVersion) · level from @f.LevelSource
+                                @if (f.Finding.RuleIds is { Count: > 0 } rules) { <span> · rules @string.Join(", ", rules)</span> }
+                                @if (f.Finding.AffectedConsumers.Count > 0) { <span> · affects @string.Join(", ", f.Finding.AffectedConsumers)</span> }
+                                @if (r.InterpretationId is { } id) { <span> · interpretation @id.ToString("D")[..8]</span> }</p>
+                        </details>
+                    </li>
+                }
+            </ul>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Scope { get; set; } = "";
+    /// <summary>Change it after a review decision so the gate is evaluated again.</summary>
+    [Parameter] public int Version { get; set; }
+    [Parameter] public GateAction Action { get; set; } = GateAction.ReleaseReadiness;
+    [Parameter] public int MaxFindings { get; set; } = 20;
+    [Parameter] public string TestId { get; set; } = "ggp";
+
+    private GateAction _action;
+    private GateResult? _result;
+    private string? _error, _key;
+    private bool _actionSet;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_actionSet) { _action = Action; _actionSet = true; }
+        var key = $"{Scope}|{Version}|{_action}";
+        if (key == _key) return;
+        _key = key;
+        await LoadAsync();
+    }
+
+    private async Task ActionAsync(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<GateAction>(e.Value?.ToString(), out var action)) return;
+        _action = action;
+        _key = $"{Scope}|{Version}|{_action}";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _result = null;
+        (_result, _error) = await Api.GovernanceAsync(Scope, _action);
+    }
+
+    private static string Icon(GateDecision d) => d switch
+    {
+        GateDecision.Ready => "✓",
+        GateDecision.ReadyWithLimitations => "!",
+        GateDecision.PassedWithException => "✓!",
+        GateDecision.Blocked => "✕",
+        _ => "?",
+    };
+
+    private static string LevelIcon(FindingLevel l) => l switch { FindingLevel.Blocking => "✕", FindingLevel.Warning => "!", FindingLevel.NotAssessed => "?", _ => "i" };
+}

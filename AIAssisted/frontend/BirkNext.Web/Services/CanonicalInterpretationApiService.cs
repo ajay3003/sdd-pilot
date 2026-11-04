@@ -36,6 +36,10 @@ public interface ICanonicalInterpretationApiService
     /// <summary>Graph impact (impact/1) of a change to one entity ("Type|identity"): bounded server-side walk with relation paths.</summary>
     Task<(CanonicalImpactView? Impact, string? Error)> ImpactAsync(string scope, string entityKey, CancellationToken ct = default) =>
         Task.FromResult<(CanonicalImpactView?, string?)>((null, "Impact analysis is not available."));
+    /// <summary>The governance gate (governance/1) for one action, evaluated server-side; optionally limited to modules.</summary>
+    Task<(BirkNext.Governance.GateResult? Result, string? Error)> GovernanceAsync(string scope, BirkNext.Governance.GateAction action, IReadOnlyList<string>? modules = null,
+        CancellationToken ct = default) =>
+        Task.FromResult<(BirkNext.Governance.GateResult?, string?)>((null, "Governance is not available."));
 }
 
 public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanonicalInterpretationApiService
@@ -68,6 +72,10 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
 
     public Task<(CanonicalImpactView?, string?)> ImpactAsync(string scope, string entityKey, CancellationToken ct = default) =>
         GetAsync<CanonicalImpactView>($"{Base(scope)}/impact?entity={Uri.EscapeDataString(entityKey)}", ct);
+
+    public Task<(BirkNext.Governance.GateResult?, string?)> GovernanceAsync(string scope, BirkNext.Governance.GateAction action, IReadOnlyList<string>? modules = null,
+        CancellationToken ct = default) =>
+        GetAsync<BirkNext.Governance.GateResult>($"{Base(scope)}/governance?action={action}{string.Concat((modules ?? []).Select(m => $"&module={Uri.EscapeDataString(m)}"))}", ct);
 
     public Task<(ReviewQueueView?, string?)> ReviewItemsAsync(string scope, ReviewItemKind kind, ReviewItemType? type, int skip = 0, int take = 20, CancellationToken ct = default) =>
         GetAsync<ReviewQueueView>($"{Base(scope)}/review?kind={kind}&skip={skip}&take={take}{(type is { } t ? $"&type={t}" : "")}", ct);

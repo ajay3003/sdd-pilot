@@ -55,6 +55,7 @@
                 }
             </section>
         }
+        <GovernanceGatePanel Scope="@_scope" Version="_governanceVersion" TestId="cr-governance" />
         <section class="cr-card" aria-labelledby="cr-interpret-h" data-testid="cr-interpret">
             <h2 id="cr-interpret-h">Interpret source evidence</h2>
             <p class="cr-muted">Reads stored Source Analysis snapshots only (no archive is parsed again). Each run creates a new, frozen interpretation; an unchanged
@@ -189,7 +190,7 @@
             </div>
             @if (_exploreSearch is not null)
             {
-                <CanonicalCorrelationPanel Scope="_scope" Title="Matching entities" Search="@_exploreSearch" EntityType="@ExploreType" MaxEntities="5" TestId="cr-explore-panel" />
+                <CanonicalCorrelationPanel Scope="@_scope" Title="Matching entities" Search="@_exploreSearch" EntityType="@ExploreType" MaxEntities="5" TestId="cr-explore-panel" />
             }
         </section>
 
@@ -236,6 +237,8 @@
     private static readonly (string, string)[] InterpretStages = [("interpret", "Correlating stored evidence"), ("refresh", "Refreshing the review queue")];
 
     private bool _initialising = true, _queueLoading, _saving;
+    /// <summary>Bumped after every decision or interpretation: the governance gate is evaluated again (one fact, recomputed).</summary>
+    private int _governanceVersion;
     private string? _scope, _projectName, _queueError, _decisionError, _interpretError, _exploreText, _exploreSearch, _exploreType;
     private List<IqrSourceSnapshotSummary> _sources = [];
     private readonly HashSet<Guid> _selected = [];
@@ -262,6 +265,7 @@
         if (_scope is null) return;
         try { _sources = [.. (await Catalog.ListSourceSnapshotSummariesAsync(_scope)).OrderByDescending(s => s.AnalyzedAt)]; }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _interpretError = "Source Analysis snapshots could not be listed."; }
+        _governanceVersion++;
         await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
     }
 
@@ -315,6 +319,7 @@
         var (_, error) = await Api.DecideAsync(_scope, new(kind, item.TargetKey, outcome, null, _notes.GetValueOrDefault(item.ReviewItemId)));
         _saving = false;
         if (error is not null) { _decisionError = error; return; }
+        _governanceVersion++;
         await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
     }
 
@@ -333,6 +338,7 @@
             if (error is not null) { _decisionError = error; break; }
         }
         _saving = false;
+        _governanceVersion++;
         await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
     }
 
