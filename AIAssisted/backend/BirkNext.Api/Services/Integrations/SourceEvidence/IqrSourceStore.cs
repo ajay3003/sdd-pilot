@@ -110,6 +110,14 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         db.SourceSchemaArtifacts.AsNoTracking().FirstOrDefaultAsync(x => x.SnapshotId == snapshotId, ct);
     /// <summary>Every snapshot available with this environment: the workspace's Source Analysis snapshots (whatever target, if any, was active
     /// when they were created) plus the legacy per-integration snapshots an earlier version stored for this environment. Newest first.</summary>
+    /// <summary>Only the legacy per-integration snapshots an earlier version stored for this environment (not Source Analysis snapshots).</summary>
+    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListLegacyAsync(string environmentId, CancellationToken ct = default)
+    {
+        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId != SourceAnalysisOwner && r.EnvironmentId == environmentId)
+            .OrderByDescending(r => r.AnalyzedAt).Take(50).ToListAsync(ct);
+        return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, Json)!).ToList();
+    }
+
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default)
     {
         var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == SourceAnalysisOwner || r.EnvironmentId == environmentId)

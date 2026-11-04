@@ -12,7 +12,8 @@ namespace BirkNext.Api.Services.Snapshots;
 public interface ISnapshotSource
 {
     string Name { get; }
-    /// <summary>Snapshots not yet registered (and registered ones still Running), with the lineage edges their owner stored.</summary>
+    /// <summary>Snapshots not yet registered, and registered ones to refresh (still Running, or registered before their summary was stored),
+    /// with the lineage edges their owner stored.</summary>
     Task<IReadOnlyList<(SnapshotMetadata Metadata, IReadOnlyList<SnapshotLineageEdge> Edges)>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct);
 }
 
@@ -40,7 +41,9 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
         {
             var existing = await db.Entries.ToListAsync(ct);
             var registered = existing.Select(e => $"{e.Type}|{e.Id}").ToHashSet(StringComparer.Ordinal);
-            var running = existing.Where(e => e.Status == nameof(SnapshotProcessingStatus.Running)).Select(e => $"{e.Type}|{e.Id}").ToHashSet(StringComparer.Ordinal);
+            var running = existing.Where(e => e.Status == nameof(SnapshotProcessingStatus.Running)
+                    || (e.Type == nameof(SnapshotType.SourceAnalysis) && e.SummaryJson is null && e.PayloadAvailable))
+                .Select(e => $"{e.Type}|{e.Id}").ToHashSet(StringComparer.Ordinal);
             var byKey = existing.ToDictionary(e => $"{e.Type}|{e.Id}", StringComparer.Ordinal);
             var edgeKeys = (await db.Edges.Select(e => new { e.FromType, e.FromId, e.Kind, e.ToType, e.ToId }).ToListAsync(ct))
                 .Select(e => $"{e.FromType}|{e.FromId}|{e.Kind}|{e.ToType}|{e.ToId}").ToHashSet(StringComparer.Ordinal);
@@ -64,8 +67,10 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
                     var key = Key(m.Type, m.Id);
                     if (byKey.TryGetValue(key, out var row))
                     {
-                        // Only the processing status of a still-running snapshot changes; identity, timestamps and retention never do.
+                        // Only the processing status of a still-running snapshot (and a summary not stored yet) change; identity, timestamps and
+                        // retention never do.
                         if (row.Status != m.Status.ToString()) { row.Status = m.Status.ToString(); row.UpdatedAt = now; updated++; }
+                        if (row.SummaryJson is null && m.SummaryJson is not null) { row.SummaryJson = m.SummaryJson; row.UpdatedAt = now; updated++; }
                     }
                     else
                     {
@@ -74,7 +79,7 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
                             Type = m.Type.ToString(), Id = m.Id, Project = m.Project, Module = m.Module, Label = Trim(m.Label, 300), CreatedAt = m.CreatedAt, EffectiveAt = m.EffectiveAt,
                             SourceRevision = m.SourceRevision, AnalysisVersion = m.AnalysisVersion, StorageReference = m.StorageReference, ContentFingerprint = m.ContentFingerprint,
                             Status = m.Status.ToString(), Retention = m.Retention.ToString(), Frozen = m.Frozen, MetadataVersion = m.MetadataVersion,
-                            PayloadAvailable = m.PayloadAvailable, RegisteredAt = now, UpdatedAt = now,
+                            PayloadAvailable = m.PayloadAvailable, SummaryJson = m.SummaryJson, RegisteredAt = now, UpdatedAt = now,
                         };
                         db.Entries.Add(row);
                         byKey[key] = row;
@@ -100,6 +105,26 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
         }
         finally { SyncGate.Release(); }
     }
+
+    /// <summary>
+    /// Source Analysis selector list from registry rows only (newest first): each snapshot's stored summary plus the registry pointers it holds.
+    /// No snapshot payload is loaded. Null when a registered snapshot has no stored summary yet (the caller then uses the legacy path).
+    /// </summary>
+    public async Task<IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshotSummary>?> SourceAnalysisSummariesAsync(int take, CancellationToken ct)
+    {
+        await SyncAsync(true, ct); // a snapshot uploaded a moment ago must be listed at once (sync reads ids; only new payloads, once)
+        var type = nameof(SnapshotType.SourceAnalysis);
+        var rows = await db.Entries.AsNoTracking().Where(e => e.Type == type && e.PayloadAvailable)
+            .OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id).Take(Math.Clamp(take, 1, 200)).Select(e => new { e.Id, e.Project, e.Module, e.SummaryJson }).ToListAsync(ct);
+        if (rows.Any(r => r.SummaryJson is null)) return null;
+        var pointers = await PointerMapAsync(rows.Select(r => (r.Project ?? "", type, r.Module)).Distinct().ToList(), ct);
+        return [.. rows.Select(r => System.Text.Json.JsonSerializer.Deserialize<BirkNext.Integrations.IqrSourceSnapshotSummary>(r.SummaryJson!, SummaryJson)! with
+        {
+            RegistryPointers = [.. pointers.Where(p => p.Key.Type == type && p.Key.Module == r.Module && p.Key.Project == (r.Project ?? "") && p.Value == r.Id).Select(p => p.Key.Kind.ToString())],
+        })];
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions SummaryJson = new(System.Text.Json.JsonSerializerDefaults.Web);
 
     /// <summary>Test hook: the next <see cref="SyncAsync"/> with force=false runs again.</summary>
     internal static void ResetThrottle() => _lastSync = DateTimeOffset.MinValue;

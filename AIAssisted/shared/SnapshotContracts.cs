@@ -84,6 +84,8 @@ public sealed record SnapshotMetadata(
     string? AnalysisVersion, string StorageReference, string? ContentFingerprint, SnapshotProcessingStatus Status, SnapshotRetentionClass Retention, bool Frozen,
     int MetadataVersion, bool PayloadAvailable = true)
 {
+    /// <summary>The owner's compact summary (JSON) computed once at registration, served to selectors instead of the payload. Never the payload.</summary>
+    [JsonIgnore] public string? SummaryJson { get; init; }
     public SnapshotReference Reference => new(Type, Id, Label, AnalysisVersion);
 }
 

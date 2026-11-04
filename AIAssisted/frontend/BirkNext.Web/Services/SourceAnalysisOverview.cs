@@ -29,7 +29,22 @@ public static class SourceAnalysisOverview
     public static string ShortFingerprint(string sha256) => string.IsNullOrEmpty(sha256) ? "Unknown" : sha256.Length <= 8 ? sha256 : sha256[..8] + "…";
 
     public static string OptionLabel(IqrSourceSnapshot s) => $"{s.Archive.FileName} · {Utc(s.AnalyzedAt)} · {ShortFingerprint(s.Archive.Sha256)}";
-    public static string OptionLabel(IqrSourceSnapshotSummary s) => $"{s.Archive.FileName} · {Utc(s.AnalyzedAt)} · {ShortFingerprint(s.Archive.Sha256)}";
+    /// <summary>"M2LB · 2026-11-03 09:12 UTC · Partial · 1680 files · Current": readable first, never an opaque id. Pointers come from the Snapshot
+    /// Registry (Latest ≠ Latest completed ≠ Current ≠ Approved); a snapshot listed without registry data shows none.</summary>
+    public static string OptionLabel(IqrSourceSnapshotSummary s) => string.Join(" · ", new[]
+    {
+        System.IO.Path.GetFileNameWithoutExtension(s.Archive.FileName) is { Length: > 0 } name ? name : s.Archive.FileName,
+        Utc(s.AnalyzedAt), SourceEvidence(s.Status), s.Archive.FilesAnalyzed > 0 ? $"{s.Archive.FilesAnalyzed} files" : null,
+    }.Concat((s.RegistryPointers ?? []).Select(PointerLabel)).Append(ShortFingerprint(s.Archive.Sha256)).OfType<string>()); // fingerprint last: tells same-name archives apart
+
+    public static string PointerLabel(string pointer) => pointer switch
+    {
+        "LatestCreated" => "Latest",
+        "LatestCompleted" => "Latest completed",
+        "CurrentSelected" => "Current",
+        "CurrentApproved" => "Approved",
+        _ => pointer,
+    };
 
     public static string Utc(DateTimeOffset at) => at.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") + " UTC";
 

@@ -111,9 +111,19 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     /// </summary>
     /// <summary>The stored snapshots as summaries: identity, provenance, status, counts and which evidence each holds. A full snapshot is
     /// megabytes; it is fetched by id when it is opened (GET {snapshotId}).</summary>
+    /// Summary-first: Source Analysis snapshots come from the Snapshot Registry's stored summaries (no payload is loaded); only legacy
+    /// per-integration snapshots of the environment are still read from their store. Falls back to the legacy path when the registry cannot answer.
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshotSummary>>> List([FromQuery] string? environmentId, CancellationToken ct) =>
-        Ok((await store.ListAsync(environmentId ?? "", ct)).Select(IqrSourceSnapshotSummary.From).ToList());
+    public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshotSummary>>> List([FromQuery] string? environmentId, CancellationToken ct,
+        [FromServices] Services.Snapshots.SnapshotRegistryService? registry = null)
+    {
+        IReadOnlyList<IqrSourceSnapshotSummary>? fromRegistry = null;
+        try { if (registry is not null) fromRegistry = await registry.SourceAnalysisSummariesAsync(50, ct); }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { fromRegistry = null; }
+        if (fromRegistry is null) return Ok((await store.ListAsync(environmentId ?? "", ct)).Select(IqrSourceSnapshotSummary.From).ToList());
+        var legacy = string.IsNullOrWhiteSpace(environmentId) ? [] : (await store.ListLegacyAsync(environmentId, ct)).Select(IqrSourceSnapshotSummary.From);
+        return Ok(fromRegistry.Concat(legacy).OrderByDescending(s => s.AnalyzedAt).ThenByDescending(s => s.Id).Take(50).ToList());
+    }
 
     /// <summary>The dependency evidence of every stored snapshot that has it — what internal-package mappings between snapshots are built from —
     /// without the rest of each snapshot.</summary>

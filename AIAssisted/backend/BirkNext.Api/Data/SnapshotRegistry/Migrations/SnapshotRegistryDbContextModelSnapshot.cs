@@ -157,6 +157,10 @@ namespace BirkNext.Api.Data.SnapshotRegistry.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("storage_reference");
 
+                    b.Property<string>("SummaryJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("summary");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");

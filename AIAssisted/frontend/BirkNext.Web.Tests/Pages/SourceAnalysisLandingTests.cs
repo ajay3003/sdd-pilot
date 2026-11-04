@@ -136,7 +136,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         _snapshots = [Snapshot("shop-api.zip", "c850a1b2" + new string('0', 56), DateTimeOffset.Parse("2026-09-29T08:15:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0))];
         var cut = Render<SourceAnalysis>();
 
-        cut.FindAll("[data-testid=source-snapshot] option").Select(o => o.TextContent).Should().Equal("Select a source snapshot", "shop-api.zip · 2026-09-29 08:15 UTC · c850a1b2…");
+        cut.FindAll("[data-testid=source-snapshot] option").Select(o => o.TextContent).Should().Equal("Select a source snapshot", "shop-api · 2026-09-29 08:15 UTC · Ready · 120 files · c850a1b2…");
         cut.Find("[data-testid=source-snapshot]").Change("");
         cut.Find("[data-testid=sa-choose-existing]").HasAttribute("disabled").Should().BeFalse();
         cut.Find("[data-testid=sa-choose-existing]").Click();

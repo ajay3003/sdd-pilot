@@ -121,6 +121,11 @@ public sealed record IqrSourceSnapshotSummary
     /// <summary>Source test definitions discovered; null when the snapshot predates source test discovery.</summary>
     public int? SourceTestDefinitions { get; init; }
 
+    /// <summary>Registry pointers this snapshot holds (Latest, LatestCompleted, CurrentSelected, CurrentApproved) when listed from the Snapshot
+    /// Registry; null from the legacy list path.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? RegistryPointers { get; init; }
+
     public static IqrSourceSnapshotSummary From(IqrSourceSnapshot s) => new()
     {
         RepositoryKey = s.Repository?.Key, ProjectImportId = s.ProjectImport?.ImportId, HasArchitecture = s.Architecture is not null,

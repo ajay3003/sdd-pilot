@@ -12,6 +12,7 @@ using Item = (SnapshotMetadata Metadata, IReadOnlyList<SnapshotLineageEdge> Edge
 /// <summary>Source Analysis snapshots: immutable, project-independent; metadata read once from the stored evidence (archive, commit, analyzer).</summary>
 public sealed class SourceAnalysisSnapshotSource(AppDbContext db) : ISnapshotSource
 {
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
     public string Name => "Source Analysis";
 
     public async Task<IReadOnlyList<Item>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct)
@@ -19,9 +20,12 @@ public sealed class SourceAnalysisSnapshotSource(AppDbContext db) : ISnapshotSou
         const string owner = Integrations.SourceEvidence.IqrSourceStore.SourceAnalysisOwner;
         var ids = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == owner).Select(r => r.Id).ToListAsync(ct);
         var items = new List<Item>();
-        foreach (var id in ids.Where(id => !registered.Contains($"{SnapshotType.SourceAnalysis}|{id}")))
+        foreach (var id in ids.Where(id => !registered.Contains($"{SnapshotType.SourceAnalysis}|{id}") || running.Contains($"{SnapshotType.SourceAnalysis}|{id}")))
         {
             var row = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.Id == id).Select(r => new { r.AnalyzedAt, r.EvidenceJson }).FirstAsync(ct);
+            // Read once: the selector summary is computed here and stored with the entry, so listing never loads the payload again.
+            var summary = System.Text.Json.JsonSerializer.Serialize(BirkNext.Integrations.IqrSourceSnapshotSummary.From(
+                System.Text.Json.JsonSerializer.Deserialize<BirkNext.Integrations.IqrSourceSnapshot>(row.EvidenceJson, Web)!), Web);
             using var doc = JsonDocument.Parse(row.EvidenceJson);
             var root = doc.RootElement;
             var commit = JsonMetadata.String(root, "commit");
@@ -33,7 +37,7 @@ public sealed class SourceAnalysisSnapshotSource(AppDbContext db) : ISnapshotSou
                 string.IsNullOrWhiteSpace(commit) || commit == "Unknown" ? null : commit, JsonMetadata.String(root, "analyzerVersion") is { } v ? $"analyzer {v}" : null,
                 $"public.iqr_source_snapshots:{id}", JsonMetadata.String(root, "archive", "sha256"),
                 status is "Partial" ? SnapshotProcessingStatus.Partial : status is "Failed" ? SnapshotProcessingStatus.Failed : SnapshotProcessingStatus.Completed,
-                SnapshotRetentionClass.Working, Frozen: true, SnapshotRegistryService.MetadataVersion);
+                SnapshotRetentionClass.Working, Frozen: true, SnapshotRegistryService.MetadataVersion) { SummaryJson = summary };
             IReadOnlyList<SnapshotLineageEdge> edges = string.IsNullOrWhiteSpace(import) ? []
                 : [new(me, SnapshotLineageKind.ImportedFrom, new(SnapshotType.SourceImport, import, JsonMetadata.String(root, "projectImport", "archiveFileName")), Name)];
             items.Add((metadata, edges));

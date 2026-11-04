@@ -38,7 +38,7 @@ public sealed class SnapshotRegistryTests : IDisposable
         [new SourceAnalysisSnapshotSource(_app), new DeliverySnapshotSource(_delivery), new InterpretationSnapshotSource(_canonical), new ReviewRunSnapshotSource(_app), new ExecutionSnapshotSource(_app)],
         TimeProvider.System);
 
-    private Guid SourceAnalysis(string archive, DateTimeOffset at, string commit = "Unknown", string? importId = null, string status = "Complete")
+    private Guid SourceAnalysis(string archive, DateTimeOffset at, string commit = "Unknown", string? importId = null, string status = "Ready")
     {
         var id = Guid.NewGuid();
         var import = importId is null ? "" : $$""","projectImport":{"importId":"{{importId}}","archiveFileName":"{{archive}}"}""";
@@ -242,6 +242,40 @@ public sealed class SnapshotRegistryTests : IDisposable
         var after = (await registry.GetAsync(SnapshotType.Execution, run.Id.ToString(), default))!;
         after.Status.Should().Be(SnapshotProcessingStatus.Completed);
         after.Project.Should().Be("dev");
+    }
+
+    [Fact]
+    public async Task Source_Analysis_selector_summaries_come_from_the_registry_without_loading_payloads_again()
+    {
+        var partial = SourceAnalysis("M2LB.zip", DateTimeOffset.Parse("2026-11-03T09:12:00Z"), status: "Partial");
+        var failed = SourceAnalysis("Terraform.zip", DateTimeOffset.Parse("2026-11-03T09:15:00Z"), status: "Failed");
+        var registry = Registry();
+        await registry.SyncAsync(true, default);
+        (await registry.SetPointerAsync(new(null, SnapshotType.SourceAnalysis, "source-analysis", SnapshotPointerKind.CurrentSelected, partial.ToString()), "tester", default)).Should().BeNull();
+
+        // Break every payload: listing must still work because it never reads them again.
+        foreach (var row in _app.IqrSourceSnapshots) _app.Entry(row).Property(r => r.EvidenceJson).CurrentValue = "{ broken";
+        _app.SaveChanges();
+        var list = (await registry.SourceAnalysisSummariesAsync(50, default))!;
+
+        list.Select(s => s.Archive.FileName).Should().Equal("Terraform.zip", "M2LB.zip");
+        list.Single(s => s.Id == failed).RegistryPointers.Should().Contain("LatestCreated").And.NotContain("LatestCompleted",
+            "a Failed snapshot is never latest completed");
+        list.Single(s => s.Id == partial).RegistryPointers.Should().Contain("CurrentSelected").And.NotContain("LatestCompleted", "Partial is not completed either: no fallback");
+        list.Single(s => s.Id == partial).Status.Should().Be(BirkNext.Integrations.SourceAnalysisStatus.Partial);
+    }
+
+    [Fact]
+    public async Task Entries_registered_before_summaries_are_backfilled_once()
+    {
+        var id = SourceAnalysis("M2LB.zip", DateTimeOffset.Parse("2026-11-03T09:12:00Z"));
+        var registry = Registry();
+        await registry.SyncAsync(true, default);
+        _registry.Entries.Single().SummaryJson = null; // as registered by the earlier version
+        _registry.SaveChanges();
+
+        (await registry.SourceAnalysisSummariesAsync(50, default))!.Single().Id.Should().Be(id);
+        _registry.Entries.AsNoTracking().Single().SummaryJson.Should().NotBeNull();
     }
 
     [Fact]

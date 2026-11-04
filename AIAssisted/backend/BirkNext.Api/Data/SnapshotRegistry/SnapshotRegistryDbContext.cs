@@ -26,6 +26,8 @@ public sealed class SnapshotEntryRecord
     public bool Frozen { get; set; }
     public int MetadataVersion { get; set; }
     public bool PayloadAvailable { get; set; } = true;
+    /// <summary>The owner's compact summary (JSON), computed once; what selectors list instead of loading payloads.</summary>
+    public string? SummaryJson { get; set; }
     public DateTimeOffset RegisteredAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -94,6 +96,7 @@ public sealed class SnapshotRegistryDbContext(DbContextOptions<SnapshotRegistryD
             e.Property(x => x.Frozen).HasColumnName("frozen");
             e.Property(x => x.MetadataVersion).HasColumnName("metadata_version");
             e.Property(x => x.PayloadAvailable).HasColumnName("payload_available");
+            e.Property(x => x.SummaryJson).HasColumnName("summary").HasColumnType("jsonb");
             e.Property(x => x.RegisteredAt).HasColumnName("registered_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.Project, x.Type, x.Module, x.CreatedAt });
