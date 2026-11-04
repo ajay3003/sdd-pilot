@@ -22,16 +22,18 @@ Strong colour is reserved for decision-relevant states; red only for Blocked, Co
 | Confirmed | Explicitly established by authoritative evidence or an explicit reviewed association. | An explicit declaration or a person's confirmation exists. | Runtime health or verification (unless the evidence itself is runtime evidence). | Positive | ✓ |
 | Inferred | Derived defensibly from available evidence, not declared. | A deterministic but indirect relation. | Ambiguity (use Needs review) or manual approval. | Info | ⇢ |
 | Unknown | No defensible state can be established. | Nothing more precise applies (also the safe fallback for unrecognised values). | A more precise state exists. | Neutral | ? |
+| Unresolved | A reference exists but its target could not be resolved. | A stated link points at something not found or ambiguous. | Missing (nothing is referenced) or Conflict. | Warning | ? |
 
 ## Assessment
 
 | Term | Meaning | Use when | Do not use when | Intent | Icon |
 |---|---|---|---|---|---|
 | Not assessed | The assessment has not been performed. | Nothing has evaluated this yet. | While loading (use Assessing) or after a failure (use Failed to assess). | Neutral | ○ |
+| Warning | A non-blocking concern was found. | The result is usable but something deserves attention. | Blocked (it stops work) or Needs review (a decision is required). | Warning | ⚠ |
 | Assessing | The assessment is loading or computing. | Work is in progress. | Showing a previous result that is being refreshed (keep it, add a refreshing hint). | Active | ⟳ |
 | Ready | All required prerequisites for this specific activity are satisfied. | The activity can start; prerequisites differ per feature. | Lifecycle, presence, configuration alone, or one sub-dimension while the whole is blocked (name the scope). | Positive | ✓ |
 | Ready with limitations | The activity can proceed; known limitations remain that do not block its purpose. | Non-blocking limitations are listed. | A required prerequisite is missing. | Positive | ✓ |
-| Needs review | A human decision or confirmation is required before this can be considered resolved. | A conflict, ambiguity or explicit confirmation exists. | Raw analyzer limitations, unresolved-by-source counts or heuristic parsing that need no decision. | Warning | ! |
+| Needs review | A specific unresolved decision requires human assessment. | A conflict, ambiguity or explicit confirmation exists. | Raw analyzer limitations, unresolved-by-source counts or heuristic parsing that need no decision. | Warning | ! |
 | Blocked | A required prerequisite prevents the activity from proceeding. | Something required is missing or refused. | Optional data is missing. | Danger | ⛔ |
 | Failed to assess | The assessment itself failed technically or could not complete. | An analyzer or request failed. | The assessed thing is merely blocked or needs review. | Danger | ✕ |
 
@@ -39,6 +41,7 @@ Strong colour is reserved for decision-relevant states; red only for Blocked, Co
 
 | Term | Meaning | Use when | Do not use when | Intent | Icon |
 |---|---|---|---|---|---|
+| Available | It exists and can be used. | A source, asset or capability is present and usable. | Ready (all prerequisites met) or verified. | Info | ◇ |
 | Missing | No configuration exists at the owning scope. | The value was never configured. | It is required right now (the consumer says Blocked). | Neutral | ○ |
 | Configured | A usable configuration value exists at its owning scope. | The setting is present. | Implying approved, runtime verified, execution-compatible or healthy. | Info | ⚙ |
 | Invalid | Configuration or content exists but is invalid for its declared purpose. | Validation found it unusable. | It is merely unverified. | Danger | ✕ |
@@ -67,13 +70,13 @@ Strong colour is reserved for decision-relevant states; red only for Blocked, Co
 
 | Term | Meaning | Use when | Do not use when | Intent | Icon |
 |---|---|---|---|---|---|
-| Inventory complete | Every item of this kind in the stated scope was read. | Discovery is complete (tests, dependencies…). | Quality, execution or pass/fail completeness. | Positive | ✓ |
+| Inventory complete | All supported inventory items were discovered; this does not confirm runtime quality or successful execution. | Discovery is complete (tests, dependencies…). | Quality, execution or pass/fail completeness. | Info | ✓ |
 | Source model available | A model was built from source. | Architecture/data model extracted. | Runtime verification. | Positive | ✓ |
 | Classification incomplete | Everything was read; some items could not be categorised. | A classification gap that may need action. | Defects or human decisions. | Warning | ◐ |
 | Partial | A defined coverage dimension is only partly satisfied. | A genuine whole/part relationship. | Source limitations, heuristic parsing, unknown runtime state, review needs or not-applicable evidence. | Warning | ◑ |
 | Limited by source | Constrained by what the source, tool or scope can establish. | An analyzer limitation. | A human decision is required. | Neutral | ◌ |
 | Heuristic | Read with pattern-based parsing, not a structured parser. | Describing the parse approach. | Indicating a defect or a review need. | Info | ≈ |
-| Not applicable | This dimension does not apply here. | Out of scope by design. | Not yet assessed. | Neutral | – |
+| Not applicable | This dimension is not relevant to the selected source or operation. | Out of scope by design. | Not yet assessed, or missing (use Missing). | Neutral | – |
 
 ## Discovery
 
@@ -97,8 +100,10 @@ Strong colour is reserved for decision-relevant states; red only for Blocked, Co
 
 | Term | Meaning | Use when | Do not use when | Intent | Icon |
 |---|---|---|---|---|---|
+| Not run | The operation has not been executed. | A run, test or check that could be started has not been. | Failed (nothing failed) or Not assessed (an assessment, not a run). | Neutral | ○ |
 | Completed | The operation ran to completion. | An operation finished (its own result is stated separately). | Quality passed or tests passed. | Positive | ✓ |
 | Failed | The operation itself failed. | Prefer a specific label (Import failed, Validation failed). | A negative assessment result. | Danger | ✕ |
 | Conflict | Two or more authoritative evidence sources disagree. | Deterministic disagreement. | Missing evidence, unknown or a parser limitation. | Danger | ⚡ |
 | Imported | Imported into BirkNext. | An import completed. | Reviewed, approved or tested. | Info | ↓ |
+| Cancelled | The operation was stopped before it finished. | A person or the system cancelled a run. | Failed (nothing failed) or Blocked. | Neutral | ⊘ |
 

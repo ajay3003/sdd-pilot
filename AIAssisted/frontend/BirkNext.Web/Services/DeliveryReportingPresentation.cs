@@ -63,7 +63,8 @@ public static class DeliveryReportingPresentation
         DeliveryMovement.Progressed or DeliveryMovement.Completed => "dlr-tone-good",
         DeliveryMovement.Regressed => "dlr-tone-bad",
         DeliveryMovement.NewThisPeriod => "dlr-tone-info",
-        DeliveryMovement.Removed or DeliveryMovement.NeedsReview => "dlr-tone-warn",
+        DeliveryMovement.NeedsReview => "dlr-tone-warn",
+        DeliveryMovement.Removed => "dlr-tone-neutral", // removed is a change, not a problem
         _ => "dlr-tone-neutral",
     };
 
@@ -71,7 +72,7 @@ public static class DeliveryReportingPresentation
     {
         DeliveryCoverage.Complete => "dlr-tone-good",
         DeliveryCoverage.Partial => "dlr-tone-warn",
-        _ => "dlr-tone-bad",
+        _ => "dlr-tone-warn", // insufficient coverage means evidence is missing, not that delivery failed
     };
 
     public static string Day(DateTimeOffset value) => value.ToLocalTime().ToString("d MMM yyyy", CultureInfo.InvariantCulture);

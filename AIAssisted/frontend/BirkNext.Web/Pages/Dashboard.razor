@@ -118,7 +118,7 @@
                 <div class="sdd-hero" data-testid="sdd-hero" data-status="@hero.Status">
                     <div class="sdd-hero-state">
                         <span class="sdd-hero-label">Overall readiness</span>
-                        <span class="db-pill is-@DashboardPresentation.Tone(hero.Status)" data-testid="sdd-hero-readiness"><span aria-hidden="true">@DashboardPresentation.Icon(hero.Status) </span>@hero.Readiness</span>
+                        <SemanticStatusBadge Status="DashboardPresentation.Semantic(hero.Status)" QualifiedLabel="@hero.Readiness" TestId="sdd-hero-readiness" />
                         <span class="db-muted" data-testid="sdd-hero-detail">@hero.Detail</span>
                     </div>
                     <dl class="sdd-hero-facts">
@@ -337,7 +337,7 @@
                 {
                     <li class="db-readiness-row" data-testid="db-readiness-row" data-key="@row.Key" data-status="@row.Status">
                         <span class="db-readiness-name">@row.Label</span>
-                        <span class="db-pill is-@DashboardPresentation.Tone(row.Status)"><span aria-hidden="true">@DashboardPresentation.Icon(row.Status) </span>@row.StatusLabel</span>
+                        <SemanticStatusBadge Status="DashboardPresentation.Semantic(row.Status)" QualifiedLabel="@row.StatusLabel" />
                         <span class="db-readiness-text">@row.Text</span>
                     </li>
                 }
@@ -429,7 +429,7 @@
                     <div class="db-health-card is-@DashboardPresentation.Tone(area.Status)" data-testid="db-health-area" data-key="@area.Key" data-status="@area.Status">
                         <h3 class="db-health-label">@area.Area</h3>
                         <span class="db-health-help">@area.Help</span>
-                        <span class="db-pill is-@DashboardPresentation.Tone(area.Status)" data-testid="db-health-status"><span aria-hidden="true">@DashboardPresentation.Icon(area.Status) </span>@DashboardPresentation.Label(area.Status)</span>
+                        <SemanticStatusBadge Status="DashboardPresentation.Semantic(area.Status)" QualifiedLabel="@DashboardPresentation.Label(area.Status)" TestId="db-health-status" />
                         @if (area.Result is { } result) { <span class="db-health-result" data-testid="db-health-result">@result</span> }
                         <span class="db-health-text">@area.Explanation</span>
                         @if (area.ActionLabel is { } action && area.Href is { } href) { <a href="@href" class="db-health-action">@action</a> }
@@ -444,7 +444,7 @@
                 {
                     <li class="db-health-row" data-testid="db-health-area" data-key="@area.Key" data-status="@area.Status">
                         <span class="db-health-row-name">@area.Area <span class="db-health-help">@area.Help</span></span>
-                        <span class="db-pill is-@DashboardPresentation.Tone(area.Status)" data-testid="db-health-status"><span aria-hidden="true">@DashboardPresentation.Icon(area.Status) </span>@DashboardPresentation.Label(area.Status)</span>
+                        <SemanticStatusBadge Status="DashboardPresentation.Semantic(area.Status)" QualifiedLabel="@DashboardPresentation.Label(area.Status)" TestId="db-health-status" />
                         <span class="db-health-text">@area.Explanation</span>
                         @if (area.ActionLabel is { } action && area.Href is { } href) { <a href="@href" class="db-health-action">@action</a> }
                     </li>
@@ -465,7 +465,7 @@
                 <div class="db-artifact-card is-@DashboardPresentation.Tone(card.Status)" data-testid="db-artifact-card" data-role="@role" data-status="@card.Status" data-availability="@(_workspace?.Role(role).Availability ?? ArtifactRoleAvailability.Missing)">
                     <h3 class="db-artifact-name">@card.Title</h3>
                     <span class="db-artifact-summary" data-testid="db-artifact-summary">@card.Summary</span>
-                    <span class="db-pill is-@DashboardPresentation.Tone(card.Status)" data-testid="db-artifact-status"><span aria-hidden="true">@DashboardPresentation.Icon(card.Status) </span>@card.StatusLabel</span>
+                    <SemanticStatusBadge Status="DashboardPresentation.Semantic(card.Status)" QualifiedLabel="@card.StatusLabel" TestId="db-artifact-status" />
                     @if (card.Meta.Length > 0) { <span class="db-artifact-meta" data-testid="db-artifact-meta">@card.Meta</span> }
                     @if (_workflowReadiness?.ReviewFor(role) is { } review && card.Status != DashboardStatus.NotApplicable)
                     {
@@ -703,7 +703,7 @@
                 @if (Snapshot.DeliveryReport is { } dr)
                 {
                     <div class="db-analysis-score @ScoreClass(dr.Health.OverallReadinessScore)">@dr.Health.OverallReadinessScore.ToString("0")%</div>
-                    <span class="db-analysis-status @ReadinessStatusClass(dr.DevelopmentDecision.State)">@ReadinessStateLabel(dr.DevelopmentDecision.State)</span>
+                    <SemanticStatusBadge Status="ReadinessSemantic(dr.DevelopmentDecision.State)" QualifiedLabel="@ReadinessStateLabel(dr.DevelopmentDecision.State)" />
                     @if (_topBlockerTitle is not null)
                     {
                         <div class="db-analysis-finding">@_topBlockerTitle</div>
@@ -755,7 +755,7 @@
                 }
                 else if (RuntimeReviews.QualityReview.Status != RuntimeReviewStatus.NotRun)
                 {
-                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.QualityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.QualityReview.Status)</span>
+                    <SemanticStatusBadge Status="RuntimeSemantic(RuntimeReviews.QualityReview.Status)" />
                     @if (RuntimeReviews.QualityReview.ErrorMessage is not null)
                     {
                         <div class="db-analysis-finding">@RuntimeReviews.QualityReview.ErrorMessage</div>
@@ -797,7 +797,7 @@
                 }
                 else if (RuntimeReviews.ApiQualityReview.Status != RuntimeReviewStatus.NotRun)
                 {
-                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.ApiQualityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.ApiQualityReview.Status)</span>
+                    <SemanticStatusBadge Status="RuntimeSemantic(RuntimeReviews.ApiQualityReview.Status)" />
                     @if (RuntimeReviews.ApiQualityReview.ErrorMessage is not null)
                     {
                         <div class="db-analysis-finding">@RuntimeReviews.ApiQualityReview.ErrorMessage</div>
@@ -835,7 +835,7 @@
                 }
                 else if (RuntimeReviews.IntegrationQualityReview.Status != RuntimeReviewStatus.NotRun)
                 {
-                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.IntegrationQualityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.IntegrationQualityReview.Status)</span>
+                    <SemanticStatusBadge Status="RuntimeSemantic(RuntimeReviews.IntegrationQualityReview.Status)" />
                     @if (RuntimeReviews.IntegrationQualityReview.ErrorMessage is not null)
                     {
                         <div class="db-analysis-finding">@RuntimeReviews.IntegrationQualityReview.ErrorMessage</div>
@@ -1252,12 +1252,32 @@
         _                             => "db-status-notrun",
     };
 
+    // Not ready is a warning, never red; only Blocked is danger; an unassessed state is neutral (shared vocabulary intents).
     private static string ReadinessStatusClass(ReadinessState state) => state switch
     {
         ReadinessState.Ready       => "db-status-healthy",
         ReadinessState.MostlyReady => "db-status-warning",
+        ReadinessState.NotReady    => "db-status-warning",
         ReadinessState.Blocked     => "db-status-critical",
-        _                          => "db-status-critical",
+        _                          => "db-status-notrun",
+    };
+
+    private static SemanticStatus ReadinessSemantic(ReadinessState state) => state switch
+    {
+        ReadinessState.Ready       => SemanticStatus.Ready,
+        ReadinessState.MostlyReady => SemanticStatus.ReadyWithLimitations,
+        ReadinessState.NotReady    => SemanticStatus.Warning,
+        ReadinessState.Blocked     => SemanticStatus.Blocked,
+        _                          => SemanticStatus.NotAssessed,
+    };
+
+    /// <summary>Running is in progress (not a warning), Completed is an operation outcome (not "healthy"), never-run is Not run (not failed).</summary>
+    private static SemanticStatus RuntimeSemantic(RuntimeReviewStatus status) => status switch
+    {
+        RuntimeReviewStatus.Running   => SemanticStatus.Assessing,
+        RuntimeReviewStatus.Completed => SemanticStatus.Completed,
+        RuntimeReviewStatus.Failed    => SemanticStatus.Failed,
+        _                             => SemanticStatus.NotRun,
     };
 
     private static string ReadinessStateLabel(ReadinessState state) => state switch

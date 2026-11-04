@@ -167,6 +167,6 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
         page.FindAll("[data-testid=do-item]").Should().ContainSingle().Which.TextContent.Should().Contain("Case overview");
         page.Find("[data-testid=do-search]").Input("");
         page.Find("[data-testid=do-count]").TextContent.Should().StartWith("2 of 2 features shown").And.Contain("blocked, needs review, new and changed first");
-        page.FindAll("[data-testid=do-change]").Select(c => c.TextContent).Should().BeSubsetOf(["NEW", "CHANGED", "UNCHANGED", "REMOVED", "NEEDS CONFIRMATION"]);
+        page.FindAll("[data-testid=do-change]").Select(c => c.TextContent).Should().BeSubsetOf(["New", "Changed", "Unchanged", "Removed", "Needs confirmation"]);
     }
 }

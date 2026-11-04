@@ -922,8 +922,8 @@
     private static string ResultTone(CriticalE2EStatus status) => status switch
     {
         CriticalE2EStatus.Passed => "good",
-        CriticalE2EStatus.Failed => "bad",
-        CriticalE2EStatus.Blocked or CriticalE2EStatus.Inconclusive => "warning",
+        CriticalE2EStatus.Failed or CriticalE2EStatus.Blocked => "bad",
+        CriticalE2EStatus.Inconclusive => "warning",
         _ => "neutral",
     };
 

@@ -16,11 +16,11 @@ public enum StatusIntent { Positive, Info, Neutral, Warning, Danger, Active }
 public enum SemanticStatus
 {
     // Evidence
-    Detected, Confirmed, Inferred, Unknown,
+    Detected, Confirmed, Inferred, Unknown, Unresolved,
     // Assessment / readiness
-    NotAssessed, Assessing, Ready, ReadyWithLimitations, NeedsReview, Blocked, FailedToAssess,
+    NotAssessed, Assessing, Ready, ReadyWithLimitations, NeedsReview, Blocked, FailedToAssess, NotRun, Warning,
     // Configuration
-    Missing, Configured, Invalid, Disabled,
+    Missing, Configured, Invalid, Disabled, Available,
     // Runtime verification
     NotVerified, Verifying, Verified, VerificationFailed, Unavailable,
     // Lifecycle
@@ -32,7 +32,7 @@ public enum SemanticStatus
     // Freshness / change
     Current, Stale, Historical, Live, Changed, New, Removed,
     // Outcome
-    Completed, Failed, Conflict, Imported,
+    Completed, Failed, Conflict, Imported, Cancelled,
 }
 
 /// <summary>One canonical status definition: the single source the badge, tooltips, documentation and tests read.</summary>
@@ -64,6 +64,10 @@ public static class StatusVocabulary
         // ── Assessment / readiness ──
         new(SemanticStatus.NotAssessed, "Not assessed", StatusFamily.Assessment, StatusIntent.Neutral, "○",
             "The assessment has not been performed.", "Nothing has evaluated this yet.", "While loading (use Assessing) or after a failure (use Failed to assess)."),
+        new(SemanticStatus.NotRun, "Not run", StatusFamily.Outcome, StatusIntent.Neutral, "○",
+            "The operation has not been executed.", "A run, test or check that could be started has not been.", "Failed (nothing failed) or Not assessed (an assessment, not a run)."),
+        new(SemanticStatus.Warning, "Warning", StatusFamily.Assessment, StatusIntent.Warning, "⚠",
+            "A non-blocking concern was found.", "The result is usable but something deserves attention.", "Blocked (it stops work) or Needs review (a decision is required)."),
         new(SemanticStatus.Assessing, "Assessing", StatusFamily.Assessment, StatusIntent.Active, "⟳",
             "The assessment is loading or computing.", "Work is in progress.", "Showing a previous result that is being refreshed (keep it, add a refreshing hint)."),
         new(SemanticStatus.Ready, "Ready", StatusFamily.Assessment, StatusIntent.Positive, "✓",
@@ -72,7 +76,7 @@ public static class StatusVocabulary
         new(SemanticStatus.ReadyWithLimitations, "Ready with limitations", StatusFamily.Assessment, StatusIntent.Positive, "✓",
             "The activity can proceed; known limitations remain that do not block its purpose.", "Non-blocking limitations are listed.", "A required prerequisite is missing."),
         new(SemanticStatus.NeedsReview, "Needs review", StatusFamily.Assessment, StatusIntent.Warning, "!",
-            "A human decision or confirmation is required before this can be considered resolved.", "A conflict, ambiguity or explicit confirmation exists.",
+            "A specific unresolved decision requires human assessment.", "A conflict, ambiguity or explicit confirmation exists.",
             "Raw analyzer limitations, unresolved-by-source counts or heuristic parsing that need no decision."),
         new(SemanticStatus.Blocked, "Blocked", StatusFamily.Assessment, StatusIntent.Danger, "⛔",
             "A required prerequisite prevents the activity from proceeding.", "Something required is missing or refused.", "Optional data is missing."),
@@ -80,6 +84,8 @@ public static class StatusVocabulary
             "The assessment itself failed technically or could not complete.", "An analyzer or request failed.", "The assessed thing is merely blocked or needs review."),
 
         // ── Configuration ──
+        new(SemanticStatus.Available, "Available", StatusFamily.Configuration, StatusIntent.Info, "◇",
+            "It exists and can be used.", "A source, asset or capability is present and usable.", "Ready (all prerequisites met) or verified."),
         new(SemanticStatus.Missing, "Missing", StatusFamily.Configuration, StatusIntent.Neutral, "○",
             "No configuration exists at the owning scope.", "The value was never configured.", "It is required right now (the consumer says Blocked)."),
         new(SemanticStatus.Configured, "Configured", StatusFamily.Configuration, StatusIntent.Info, "⚙",
@@ -112,8 +118,8 @@ public static class StatusVocabulary
             "Kept for history, no longer active.", "Retired but retained.", "Deleted or failed."),
 
         // ── Coverage / completeness ──
-        new(SemanticStatus.InventoryComplete, "Inventory complete", StatusFamily.Coverage, StatusIntent.Positive, "✓",
-            "Every item of this kind in the stated scope was read.", "Discovery is complete (tests, dependencies…).", "Quality, execution or pass/fail completeness."),
+        new(SemanticStatus.InventoryComplete, "Inventory complete", StatusFamily.Coverage, StatusIntent.Info, "✓",
+            "All supported inventory items were discovered; this does not confirm runtime quality or successful execution.", "Discovery is complete (tests, dependencies…).", "Quality, execution or pass/fail completeness."),
         new(SemanticStatus.SourceModelAvailable, "Source model available", StatusFamily.Coverage, StatusIntent.Positive, "✓",
             "A model was built from source.", "Architecture/data model extracted.", "Runtime verification."),
         new(SemanticStatus.ClassificationIncomplete, "Classification incomplete", StatusFamily.Coverage, StatusIntent.Warning, "◐",
@@ -126,7 +132,7 @@ public static class StatusVocabulary
         new(SemanticStatus.Heuristic, "Heuristic", StatusFamily.Coverage, StatusIntent.Info, "≈",
             "Read with pattern-based parsing, not a structured parser.", "Describing the parse approach.", "Indicating a defect or a review need."),
         new(SemanticStatus.NotApplicable, "Not applicable", StatusFamily.Coverage, StatusIntent.Neutral, "–",
-            "This dimension does not apply here.", "Out of scope by design.", "Not yet assessed."),
+            "This dimension is not relevant to the selected source or operation.", "Out of scope by design.", "Not yet assessed, or missing (use Missing)."),
 
         // ── Discovery ──
         new(SemanticStatus.NotDetected, "Not detected", StatusFamily.Discovery, StatusIntent.Neutral, "○",
@@ -137,6 +143,8 @@ public static class StatusVocabulary
             "The latest version.", "Marking the current snapshot/version.", "Quality."),
         new(SemanticStatus.Stale, "Stale", StatusFamily.Freshness, StatusIntent.Warning, "↻",
             "Previously valid evidence is outdated.", "Inputs changed since it was produced.", "Failure."),
+        new(SemanticStatus.Unresolved, "Unresolved", StatusFamily.Evidence, StatusIntent.Warning, "?",
+            "A reference exists but its target could not be resolved.", "A stated link points at something not found or ambiguous.", "Missing (nothing is referenced) or Conflict."),
         new(SemanticStatus.Historical, "Historical", StatusFamily.Freshness, StatusIntent.Neutral, "⟲",
             "A past version, kept for history.", "Temporal state.", "Low confidence."),
         new(SemanticStatus.Live, "Live", StatusFamily.Freshness, StatusIntent.Active, "●",
@@ -157,6 +165,8 @@ public static class StatusVocabulary
             "Two or more authoritative evidence sources disagree.", "Deterministic disagreement.", "Missing evidence, unknown or a parser limitation."),
         new(SemanticStatus.Imported, "Imported", StatusFamily.Outcome, StatusIntent.Info, "↓",
             "Imported into BirkNext.", "An import completed.", "Reviewed, approved or tested."),
+        new(SemanticStatus.Cancelled, "Cancelled", StatusFamily.Outcome, StatusIntent.Neutral, "⊘",
+            "The operation was stopped before it finished.", "A person or the system cancelled a run.", "Failed (nothing failed) or Blocked."),
     ];
 
     private static readonly Dictionary<SemanticStatus, StatusDefinition> ByKey = Definitions.ToDictionary(d => d.Key);
@@ -220,7 +230,12 @@ public static class StatusVocabulary
         "detected" or "detected in source" or "found" => SemanticStatus.Detected,
         "confirmed" or "confirmed in source" => SemanticStatus.Confirmed,
         "inferred" or "strongly supported" or "suggested" => SemanticStatus.Inferred,
-        "not assessed" or "not run" or "not analyzed" or "not evaluated" or "not checked" => SemanticStatus.NotAssessed,
+        "not assessed" or "not analyzed" or "not evaluated" or "not checked" => SemanticStatus.NotAssessed,
+        "not run" or "not executed" or "notrun" => SemanticStatus.NotRun,
+        "available" => SemanticStatus.Available,
+        "unresolved" => SemanticStatus.Unresolved,
+        "warning" => SemanticStatus.Warning,
+        "cancelled" or "canceled" => SemanticStatus.Cancelled,
         "assessing" or "loading" or "running" => SemanticStatus.Assessing,
         "ready" or "ready to run" or "ready to review" => SemanticStatus.Ready,
         "ready with limitations" => SemanticStatus.ReadyWithLimitations,

@@ -786,3 +786,5 @@
 .aqr-decision-evidence, .aqr-decision-refresh { margin: 0.25rem 0 0; font-size: 0.875rem; }
 .aqr-decision-evidence-label { font-weight: 600; color: var(--clr-text-heading); }
 .aqr-link-button { background: none; border: 0; padding: 0; color: var(--clr-primary); text-decoration: underline; cursor: pointer; font: inherit; }
+
+.aqr-pill-blocked { background: var(--clr-danger-bg-light); color: var(--clr-danger); border-color: var(--clr-danger-border); }

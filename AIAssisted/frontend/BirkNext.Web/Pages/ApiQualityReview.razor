@@ -1111,7 +1111,7 @@
     {
         ApiReviewTargetReviewState.Ready => "ready",
         ApiReviewTargetReviewState.Limited => "warning",
-        _ => "attention",
+        _ => "blocked", // Blocked is danger in the shared vocabulary
     };
 
     private void OnFuzzingLevelChanged(ApiFuzzingLevel level) => _fuzzingLevel = level;
@@ -1477,7 +1477,8 @@
     {
         ApiReviewReadinessLevel.Ready => "ready",
         ApiReviewReadinessLevel.Limited => "warning",
-        ApiReviewReadinessLevel.Blocked => "attention",
+        ApiReviewReadinessLevel.Blocked => "blocked",
+        ApiReviewReadinessLevel.NeedsReview => "warning", // a decision is required: a warning, never muted
         _ => "muted",
     };
 

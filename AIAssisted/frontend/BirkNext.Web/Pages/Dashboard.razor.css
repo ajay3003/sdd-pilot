@@ -335,7 +335,6 @@
     padding: 0.1rem 0.45rem;
     border-radius: var(--radius-pill);
     width: fit-content;
-    text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-top: 0.15rem;
 }
@@ -495,7 +494,6 @@
     padding: 0.1rem 0.45rem;
     border-radius: var(--radius-pill);
     width: fit-content;
-    text-transform: uppercase;
     letter-spacing: 0.04em;
 }
 

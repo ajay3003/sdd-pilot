@@ -111,3 +111,5 @@
 .td-row-actions .td-delete { margin-left: .5rem; }
 .td-protected-note { font-size: .8rem; color: var(--clr-text-muted, #57606a); border: 1px dashed var(--clr-border, #d0d7de); border-radius: 999px; padding: 0 .5rem; }
 .td-table td[data-label="Scope"] { white-space: nowrap; }
+
+.td-pill-info { background: var(--clr-info-bg-light); color: var(--clr-info); border-color: var(--clr-info-border); }

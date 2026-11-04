@@ -107,8 +107,9 @@ public static class IntegrationReviewResultPresentation
 
     public static string ReadinessTone(IntegrationDomainReadiness readiness) => readiness switch
     {
-        IntegrationDomainReadiness.Ready or IntegrationDomainReadiness.Available => "ready",
-        IntegrationDomainReadiness.Partial => "observed",
+        IntegrationDomainReadiness.Ready => "ready",
+        IntegrationDomainReadiness.Available => "observed", // available evidence is informational, not Ready
+        IntegrationDomainReadiness.Partial => "observed", // reviewable with limitations: informational, not a warning
         IntegrationDomainReadiness.Limited => "attention",
         _ => "muted",
     };

@@ -286,3 +286,5 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 .sd-source-contracts .sd-field { display: flex; flex-direction: column; gap: .25rem; max-width: 100%; margin: .25rem 0 .5rem; font-weight: 600; }
 .sd-source-contracts select { width: 100%; max-width: 100%; min-width: 0; font-weight: 400; }
 .sd-source-contracts li { overflow-wrap: anywhere; }
+
+.sd-pill-info { border-color: var(--clr-info-border); background: var(--clr-info-bg-light); color: var(--clr-info); }

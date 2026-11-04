@@ -167,8 +167,9 @@ public static class SourceSetupPresentation
     {
         TestPackSourceState.ReferenceAvailable or TestPackSourceState.ReferenceUnavailable => "neutral",
         TestPackSourceState.Bound or TestPackSourceState.Available => "available",
-        TestPackSourceState.AvailableNotBound or TestPackSourceState.ReviewRequired => "partial",
-        TestPackSourceState.Missing => "rejected",
+        TestPackSourceState.ReviewRequired => "partial",
+        TestPackSourceState.AvailableNotBound => "info", // available, not yet bound: informational, never a failure
+        // Missing is neutral (the vocabulary's Missing): the consumer that requires it says Blocked.
         _ => "neutral",
     };
 

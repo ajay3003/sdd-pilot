@@ -142,13 +142,32 @@ public static class DashboardPresentation
         _ => "○",
     };
 
-    /// <summary>CSS modifier for the status pill.</summary>
-    public static string Tone(DashboardStatus status) => status switch
+    /// <summary>
+    /// The shared semantic status of a dashboard state (rendered with SemanticStatusBadge). Available is not Ready, Partial is not a setup need,
+    /// a load failure is Failed to assess (not "attention"), and both "Available" states are Available — one meaning per word across BirkNext.
+    /// </summary>
+    public static SemanticStatus Semantic(DashboardStatus status) => status switch
     {
-        DashboardStatus.Passed or DashboardStatus.Available => "good",
-        DashboardStatus.AttentionNeeded or DashboardStatus.Failed => "attention",
-        DashboardStatus.NeedsSetup or DashboardStatus.Partial => "setup",
-        DashboardStatus.ReadyToReview or DashboardStatus.InProgress => "ready",
+        DashboardStatus.Loading => SemanticStatus.Assessing,
+        DashboardStatus.Unavailable => SemanticStatus.Unavailable,
+        DashboardStatus.Failed => SemanticStatus.FailedToAssess,
+        DashboardStatus.NeedsSetup => SemanticStatus.Missing,
+        DashboardStatus.NotAssessed => SemanticStatus.NotAssessed,
+        DashboardStatus.ReadyToReview => SemanticStatus.Available, // available input, never a review status (same word, same meaning)
+        DashboardStatus.Available => SemanticStatus.Available,
+        DashboardStatus.Partial => SemanticStatus.Partial,
+        DashboardStatus.InProgress => SemanticStatus.Assessing,
+        DashboardStatus.AttentionNeeded => SemanticStatus.NeedsReview,
+        DashboardStatus.Passed => SemanticStatus.Validated,
+        _ => SemanticStatus.NotApplicable,
+    };
+
+    /// <summary>CSS modifier for legacy pills that are not status badges (package association): derived from the shared intent.</summary>
+    public static string Tone(DashboardStatus status) => StatusVocabulary.Intent(Semantic(status)) switch
+    {
+        StatusIntent.Positive => "good",
+        StatusIntent.Danger or StatusIntent.Warning => "attention",
+        StatusIntent.Active or StatusIntent.Info => "ready",
         _ => "neutral",
     };
 

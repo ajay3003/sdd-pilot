@@ -311,7 +311,7 @@
 /* ── Header status, definition header and the one Save action ── */
 
 .ptc-status-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
-.ptc-status-label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--clr-text-muted); }
+.ptc-status-label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.05em; color: var(--clr-text-muted); }
 .ptc-def-save { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin-left: auto; }
 .ptc-save-hint { font-size: 0.82rem; color: var(--clr-text-muted); max-width: 26rem; }
 .ptc-save-error { flex-basis: 100%; margin: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--clr-danger-border); border-left: 4px solid var(--clr-danger); border-radius: var(--radius-md); background: var(--clr-danger-bg-light); color: var(--ptc-danger-text); font-size: 0.86rem; }

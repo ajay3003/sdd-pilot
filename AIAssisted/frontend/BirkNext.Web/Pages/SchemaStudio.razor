@@ -102,7 +102,7 @@
                     <span class="ss-kicker">Current schema package</span>
                     <h2 id="ss-current-title">@SchemaText.Breakable(package.Name)</h2>
                     <p class="ss-package-facts">
-                        <span class="status-chip @(package.Validation == "Valid" ? "status-chip-healthy" : "status-chip-warning")" title="Technical XSD validation result" data-testid="ss-validity">@package.Validation</span>
+                        <span class="status-chip @(package.Validation switch { "Valid" => "status-chip-healthy", "Invalid" => "status-chip-critical", "Unresolved" or "DependencyUnresolved" or "Partial" => "status-chip-warning", _ => "status-chip-neutral" })" title="Technical XSD validation result" data-testid="ss-validity">@package.Validation</span>
                         <strong data-testid="ss-validity-headline">@SchemaStudioPresentation.ValidityHeadline(package.Validation)</strong>
                         <span aria-hidden="true">·</span> <span data-testid="ss-file-count">@SchemaStudioPresentation.Count(package.Files.Count, "XSD file", "XSD files")</span>
                         <span aria-hidden="true">·</span> <span data-testid="ss-resolution">@SchemaStudioPresentation.ResolutionLine(package)</span>

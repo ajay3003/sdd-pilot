@@ -54,8 +54,10 @@ public static class SourceStatusPresentation
     {
         SourceStatusDimension.Completeness => label switch
         {
-            "Complete" or "Ready" or "Detected" => "positive",
-            "Partial" or "Needs review" or "Review recommended" => "caution",
+            "Complete" or "Ready" => "positive",
+            "Detected" => "inferred", // evidence found — not verified, not ready
+            "Partial" => "caution",
+            "Needs review" or "Review recommended" => "review",
             "Analysis failed" or "Structural failure" => "critical",
             _ => "neutral",
         },
@@ -71,7 +73,8 @@ public static class SourceStatusPresentation
         {
             "Detected" or "Strongly supported" or "Framework instrumentation detected" or "Propagation configured" or "Propagation explicit" => "positive",
             "Partial" or "Propagation inferred" => "partial",
-            "Needs review" or "Conflicting" or "Unresolved" => "review",
+            "Needs review" or "Unresolved" => "review",
+            "Conflicting" => "critical",
             _ => "neutral",
         },
         SourceStatusDimension.Resolution => label switch

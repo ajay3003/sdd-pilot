@@ -109,3 +109,6 @@
 .tep-optional { margin-top: .25rem; }
 .tep-optional .tep-role-card { opacity: .92; }
 @media (prefers-color-scheme: dark) { .tep-role-reason { color: #fcd34d; } }
+
+.tep-tone-info { border-left-color: var(--clr-info); }
+.tep-tone-neutral { border-left-color: var(--clr-border-hover); }

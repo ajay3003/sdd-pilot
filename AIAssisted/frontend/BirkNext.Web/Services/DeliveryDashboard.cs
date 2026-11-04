@@ -134,11 +134,12 @@ public static class DeliveryDashboard
     public static (string Label, DeliveryDashboardTone Tone) Change(DeliveryStoryRow? row) => row switch
     {
         null => ("—", DeliveryDashboardTone.Neutral),
-        { RemovedFeature: true, RemovalUnconfirmed: true } => ("NEEDS CONFIRMATION", DeliveryDashboardTone.Review),
-        { RemovedFeature: true } => ("REMOVED", DeliveryDashboardTone.Review),
-        { NewFeature: true } => ("NEW", DeliveryDashboardTone.Change),
-        { Changed: true } => ("CHANGED", DeliveryDashboardTone.Change),
-        _ => ("UNCHANGED", DeliveryDashboardTone.Neutral),
+        // Readable labels (no shouting); Removed is a neutral change, only an unconfirmed removal needs review.
+        { RemovedFeature: true, RemovalUnconfirmed: true } => ("Needs confirmation", DeliveryDashboardTone.Review),
+        { RemovedFeature: true } => ("Removed", DeliveryDashboardTone.Neutral),
+        { NewFeature: true } => ("New", DeliveryDashboardTone.Change),
+        { Changed: true } => ("Changed", DeliveryDashboardTone.Change),
+        _ => ("Unchanged", DeliveryDashboardTone.Neutral),
     };
 
     /// <summary>Grid rows in priority order: blocked, needs review, new, changed, checklist in progress, then the rest.</summary>

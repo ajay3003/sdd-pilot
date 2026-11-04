@@ -37,7 +37,7 @@ public static class SourceEvidenceDomainsPresentation
     public static string Tone(ArchitectureEvidenceState state) => state switch
     {
         ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported => "complete",
-        ArchitectureEvidenceState.Inferred => "partial",
+        ArchitectureEvidenceState.Inferred => "info", // inferred is informational, not partial
         ArchitectureEvidenceState.Conflict => "attention",
         _ => "muted",
     };

@@ -67,8 +67,11 @@ public sealed record EvidenceRoleRow(
     public string Tone => State switch
     {
         EvidenceRoleState.Ready => "available",
-        EvidenceRoleState.Partial or EvidenceRoleState.Suggested or EvidenceRoleState.NeedsDecision or EvidenceRoleState.Unavailable => "partial",
-        EvidenceRoleState.Missing or EvidenceRoleState.Conflict => "rejected",
+        // Shared vocabulary intents: Missing and Unavailable are neutral (never red), Suggested is informational, a decision or partial
+        // evidence is a warning, only Conflict is danger.
+        EvidenceRoleState.Partial or EvidenceRoleState.NeedsDecision => "partial",
+        EvidenceRoleState.Suggested => "info",
+        EvidenceRoleState.Conflict => "rejected",
         _ => "neutral",
     };
 

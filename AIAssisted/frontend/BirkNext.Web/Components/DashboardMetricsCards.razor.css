@@ -150,8 +150,7 @@
 
 .health-status-label {
     letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
+    }
 
 .health-score-badge {
     display: inline-block;
@@ -161,8 +160,7 @@
     font-size: 0.78rem;
     font-weight: 850;
     letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
+    }
 
 .health-score-badge-healthy { background: #dcfce7; color: #166534; border-color: #86efac; }
 .health-score-badge-attention { background: #fef3c7; color: #92400e; border-color: #fcd34d; }

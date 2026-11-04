@@ -116,8 +116,8 @@ public static class TestDataPresentation
 
     public static string SourceTone(TestDataSourceSummary source) => source.Status switch
     {
-        TestDataSourceStatus.Available => "ready",
-        TestDataSourceStatus.Unavailable => "attention",
+        TestDataSourceStatus.Available => "info",
+        TestDataSourceStatus.Unavailable => "neutral",
         _ => "neutral",
     };
 
@@ -158,7 +158,7 @@ public static class TestDataPresentation
     public static string StatusTone(TestDataAssetStatus status) => status switch
     {
         TestDataAssetStatus.Approved => "ready",
-        TestDataAssetStatus.Deprecated => "neutral",
+        TestDataAssetStatus.Deprecated or TestDataAssetStatus.Draft => "neutral",
         _ => "attention",
     };
 

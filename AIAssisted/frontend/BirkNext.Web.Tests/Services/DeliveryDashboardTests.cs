@@ -78,8 +78,8 @@ public sealed class DeliveryDashboardTests
             Feature("review", 1, 2, 1, 2, attention: ["Unresolved story reference"]), Feature("blocked", 1, 2, 1, 2, status: DeliveryStatus.Blocked));
         var rows = DeliveryDashboard.Rows(DeliveryBacklog.FromReport(report), report);
         rows.Select(r => r.Item.FeatureKey).Should().Equal("blocked", "review", "new", "stable");
-        rows.Single(r => r.Item.FeatureKey == "new").Change.Should().Be("NEW");
-        rows.Single(r => r.Item.FeatureKey == "stable").Change.Should().Be("UNCHANGED");
+        rows.Single(r => r.Item.FeatureKey == "new").Change.Should().Be("New");
+        rows.Single(r => r.Item.FeatureKey == "stable").Change.Should().Be("Unchanged");
         rows.Single(r => r.Item.FeatureKey == "review").StrongestAttention.Should().Be("Unresolved story reference");
     }
 }
