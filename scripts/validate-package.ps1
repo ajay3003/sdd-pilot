@@ -42,7 +42,8 @@ try {
         if (-not (Test-Path $MigrationManifest)) { throw "Migration manifest not found: $MigrationManifest (run scripts/check-migrations.ps1 -ManifestOut first)" }
         # Windows PowerShell 5.1 emits a JSON array as ONE object: enumerate it explicitly.
         $migrations = @((Get-Content $MigrationManifest -Raw | ConvertFrom-Json) | ForEach-Object { $_ })
-        $files = Get-ChildItem -Path $root -Recurse -File |
+        # -Force: dotfiles such as AIAssisted/.env are hidden on Linux and macOS and must be listed and checked too.
+        $files = Get-ChildItem -Path $root -Recurse -File -Force |
             ForEach-Object { $_.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/') } |
             Where-Object { $_ -ne "package-manifest.json" } | Sort-Object
         [PSCustomObject]@{
@@ -69,8 +70,8 @@ try {
     }
     function Need([string]$relative, [string]$what) {
         $full = P $root ($relative -split '/')
-        if (-not (Test-Path $full)) { $problems.Add("$what is missing ($relative)") }
-        elseif ((Get-Item $full) -is [System.IO.FileInfo] -and (Get-Item $full).Length -eq 0) { $problems.Add("$what is empty ($relative)") }
+        if (-not (Test-Path -LiteralPath $full)) { $problems.Add("$what is missing ($relative)") }
+        elseif ((Get-Item -LiteralPath $full -Force) -is [System.IO.FileInfo] -and (Get-Item -LiteralPath $full -Force).Length -eq 0) { $problems.Add("$what is empty ($relative)") }
     }
 
     Need "scripts/start-local.ps1" "Launcher script"
@@ -83,13 +84,13 @@ try {
     Need "AIAssisted/docker-compose.yml" "Local database compose template"
     Need "AIAssisted/.env" "Local environment defaults"
     $framework = Join-Path $frontend "_framework"
-    if (-not (Test-Path $framework) -or -not (Get-ChildItem -Path $framework -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+    if (-not (Test-Path $framework) -or -not (Get-ChildItem -Path $framework -File -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
         $problems.Add("Frontend runtime files are missing (AIAssisted/frontend/wwwroot/_framework)")
     }
     foreach ($devOnly in @("appsettings.Development.json", "appsettings.Local.json")) {
         if (Test-Path (Join-Path $backend $devOnly)) { $problems.Add("Developer-only settings must not be packaged (AIAssisted/backend/$devOnly)") }
     }
-    if (Get-ChildItem -Path (Join-Path $root "AIAssisted") -Recurse -Filter "*.csproj" -ErrorAction SilentlyContinue | Select-Object -First 1) {
+    if (Get-ChildItem -Path (Join-Path $root "AIAssisted") -Recurse -Force -Filter "*.csproj" -ErrorAction SilentlyContinue | Select-Object -First 1) {
         $problems.Add("Source project files (.csproj) are present: this is not a published tester package")
     }
 
