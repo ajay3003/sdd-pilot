@@ -253,6 +253,8 @@
                     <button type="button" class="btn-secondary" data-testid="sa-review-data" @onclick="() => OpenReview(SourceAnalysisAreas.Data, null, null)">Open data model</button>
                     <button type="button" class="btn-secondary" data-testid="sa-review-observability" @onclick='() => OpenReview(SourceAnalysisAreas.Quality, "Observability", null)'>Open quality evidence</button>
                 </div>
+                @* The project's own glossary (evidence of this snapshot only; never BirkNext vocabulary). *@
+                <BirkNext.Web.Components.ProjectGlossaryPanel Glossary="selected.Glossary" />
                 @if (selected.EvidenceDomains is { } evidence)
                 {
                     var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);

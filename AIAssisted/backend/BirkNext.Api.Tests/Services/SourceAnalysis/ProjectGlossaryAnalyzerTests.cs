@@ -125,6 +125,21 @@ public sealed class ProjectGlossaryAnalyzerTests
     }
 
     [Fact]
+    public void AFeatureAboutTerminology_IsNotAGlossary_AndGenericPathTailsAreNoReferences()
+    {
+        // Real M2LB-language false positives: a feature titled "... Terminology Fix" (whose research notes say "source of truth" about data
+        // files) and its checklists/requirements.md, which every feature folder has.
+        var g = Analyze("M2LB-language", M2lb(
+            ("HendelseService/specs/002-fix-romning-refdata/spec.md", "# Feature Specification: Reference Data Correction and Terminology Fix\n\nSee checklists/requirements.md."),
+            ("HendelseService/specs/002-fix-romning-refdata/research.md", "# Research: Reference Data Correction and Terminology Fix\n\nThe files serve as the development-time source of truth for reference data."),
+            ("HendelseService/specs/002-fix-romning-refdata/checklists/requirements.md", "# Specification Quality Checklist: Reference Data Correction and Terminology Fix"),
+            ("Person/specs/001/checklists/requirements.md", "# Checklist")));
+
+        g.Glossaries.Select(x => x.SourcePath).Should().NotContain(p => p.Contains("002-fix-romning-refdata"));
+        g.Glossaries.Single(x => x.SourcePath == "docs/glossary.md").Authority.Should().Be(GlossaryAuthority.Authoritative, "no false claimant makes it a conflict");
+    }
+
+    [Fact]
     public void AFileNameAloneIsNotAuthority()
     {
         var g = Analyze("X", ("docs/glossary.md", "# Glossary\n\n| Term | Meaning |\n|---|---|\n| foo | bar |\n"));

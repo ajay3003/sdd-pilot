@@ -1,0 +1,119 @@
+@using BirkNext.Glossary
+
+@* The project's own glossary, as evidence of the selected Source Analysis snapshot. BirkNext shows and compares it; it never edits the source
+   file, never accepts proposals, and never applies these terms to BirkNext's own UI or status words. *@
+<section class="pg" aria-labelledby="pg-title" data-testid="project-glossary">
+    <h3 id="pg-title" class="pg-title">Project glossary</h3>
+    @if (Glossary is null)
+    {
+        <p class="pg-muted" data-testid="pg-not-analyzed">This snapshot was analyzed before project glossaries were recorded. Analyze the source again to detect its glossary.</p>
+    }
+    else if (Glossary.Glossaries.Count == 0)
+    {
+        <p class="pg-muted" role="status" data-testid="pg-none">@ProjectTerminology.NoGlossary</p>
+    }
+    else
+    {
+        var authoritative = Glossary.Authoritative.FirstOrDefault();
+        <p class="pg-summary" data-testid="pg-summary">
+            Project <strong>@Glossary.ProjectName</strong> ·
+            @if (authoritative is not null) { <span>Authoritative glossary <code>@authoritative.SourcePath</code> · @authoritative.EntryCount terms</span> }
+            else if (Glossary.HasConflict) { <span class="pg-review" data-testid="pg-conflict">Authority conflict · needs review</span> }
+            else { <span>No authoritative glossary identified</span> }
+            @{ var proposalDocs = Glossary.Glossaries.Count(g => g.Authority == GlossaryAuthority.Proposed); var proposalRows = ProjectTerminology.Proposals(Glossary).Count(); }
+            · @proposalRows proposal row@(proposalRows == 1 ? "" : "s") in @proposalDocs document@(proposalDocs == 1 ? "" : "s")
+            · <span class="pg-muted">snapshot @Glossary.SourceSnapshotId.ToString("D")[..8]</span>
+        </p>
+        <p class="pg-muted pg-scope">Owned by the project: these terms apply to @Glossary.ProjectName only, as of this snapshot. BirkNext never changes the glossary file or accepts proposals.</p>
+
+        <div class="pg-tabs" role="tablist" aria-label="Glossary views">
+            @foreach (var (id, label) in Tabs)
+            {
+                <button type="button" role="tab" class="pg-tab @(_tab == id ? "is-active" : "")" aria-selected="@(_tab == id ? "true" : "false")" data-testid="pg-tab" data-tab="@id" @onclick="() => Select(id)">@label</button>
+            }
+        </div>
+
+        @if (_tab == "sources")
+        {
+            <ul class="pg-sources" data-testid="pg-sources">
+                @foreach (var g in Glossary.Glossaries)
+                {
+                    <li data-testid="pg-source" data-authority="@g.Authority">
+                        <strong>@g.Title</strong> <span class="pg-badge pg-badge-@g.Authority.ToString().ToLowerInvariant()">@ProjectTerminology.AuthorityLabel(g.Authority)</span>
+                        <div class="pg-muted"><code>@g.SourcePath</code> · @g.EntryCount rows · content @g.ContentHash</div>
+                        <ul class="pg-evidence">@foreach (var e in g.AuthorityEvidence) { <li>@e</li> }</ul>
+                    </li>
+                }
+            </ul>
+        }
+        else
+        {
+            <label class="pg-search">Search <input type="search" data-testid="pg-search" @bind="_search" @bind:event="oninput" placeholder="Term, preferred form, meaning or section" /></label>
+            var rows = Rows();
+            <p class="pg-muted" role="status" data-testid="pg-count">@rows.Count @(_tab == "proposals" ? "proposal row" : "term")@(rows.Count == 1 ? "" : "s")</p>
+            @if (rows.Count == 0)
+            {
+                <p class="pg-muted" data-testid="pg-empty">@(_tab == "proposals" ? "No proposed glossary changes in this snapshot." : _tab == "inconsistencies" ? "The glossary documents no known inconsistencies." : "No terms match.")</p>
+            }
+            else
+            {
+                <div class="pg-table-wrap">
+                    <table class="pg-table" data-testid="pg-terms">
+                        <thead><tr><th scope="col">Term</th><th scope="col">Preferred form</th><th scope="col">Meaning</th><th scope="col">Section</th><th scope="col">Decision</th></tr></thead>
+                        <tbody>
+                            @foreach (var e in rows.Take(300))
+                            {
+                                <tr data-testid="pg-term" class="@(_open == e.EntryId ? "is-open" : "")">
+                                    <th scope="row"><button type="button" class="pg-link" aria-expanded="@(_open == e.EntryId ? "true" : "false")" @onclick="() => Toggle(e.EntryId)">@e.Term</button></th>
+                                    <td>@(e.PreferredForm is { } p ? ProjectTerminology.Clean(p) : "—")</td>
+                                    <td>@(e.Meaning ?? "—")</td>
+                                    <td class="pg-muted">@e.Category</td>
+                                    <td>@(e.Decision ?? "—")</td>
+                                </tr>
+                                @if (_open == e.EntryId)
+                                {
+                                    <tr class="pg-detail-row"><td colspan="5" data-testid="pg-term-detail">
+                                        <dl class="pg-detail">
+                                            @foreach (var (header, value) in e.Columns) { <div><dt>@header</dt><dd>@value</dd></div> }
+                                            <div><dt>Provenance</dt><dd>@Glossary.ProjectName · <code>@(Glossary.Glossaries.FirstOrDefault(g => g.GlossaryId == e.GlossaryId)?.SourcePath)</code> line @e.Line · snapshot @Glossary.SourceSnapshotId.ToString("D")[..8]</dd></div>
+                                        </dl>
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (rows.Count > 300) { <p class="pg-muted">Showing the first 300; search to narrow.</p> }
+            }
+        }
+        @foreach (var l in Glossary.Limitations) { <p class="pg-muted">@l</p> }
+    }
+</section>
+
+@code {
+    [Parameter] public ProjectGlossarySnapshot? Glossary { get; set; }
+
+    private string _tab = "terms", _search = "";
+    private string? _open;
+
+    private static readonly (string Id, string Label)[] Tabs =
+        [("terms", "Terms"), ("proposals", "Proposals"), ("inconsistencies", "Known inconsistencies"), ("sources", "Sources & authority")];
+
+    private void Select(string id) { _tab = id; _open = null; }
+    private void Toggle(string id) => _open = _open == id ? null : id;
+
+    /// <summary>Terms = the authoritative glossary's rows; Known inconsistencies = its rows in a section the glossary itself titles as such;
+    /// Proposals = rows of proposal documents (never merged into Terms).</summary>
+    private List<ProjectGlossaryEntry> Rows()
+    {
+        IEnumerable<ProjectGlossaryEntry> rows = _tab switch
+        {
+            "proposals" => ProjectTerminology.Proposals(Glossary),
+            "inconsistencies" => ProjectTerminology.TermsOf(Glossary, GlossaryAuthority.Authoritative).Where(e => e.Category.Contains("inconsisten", StringComparison.OrdinalIgnoreCase)),
+            _ => ProjectTerminology.TermsOf(Glossary, GlossaryAuthority.Authoritative).Where(e => !e.Category.Contains("inconsisten", StringComparison.OrdinalIgnoreCase)),
+        };
+        if (_search.Length > 0)
+            rows = rows.Where(e => new[] { e.Term, e.PreferredForm, e.Meaning, e.Category }.Any(v => v?.Contains(_search, StringComparison.OrdinalIgnoreCase) == true));
+        return rows.ToList();
+    }
+}

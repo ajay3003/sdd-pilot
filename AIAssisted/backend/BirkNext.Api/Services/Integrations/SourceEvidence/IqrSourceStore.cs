@@ -286,7 +286,7 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         Task ReportProgressAsync(string stage, string detail) => reportProgress is null ? Task.CompletedTask : reportProgress(new BirkNext.ProjectImport.ProjectImportCommitEvent
         {
             Kind = BirkNext.ProjectImport.ProjectImportCommitEventKind.Progress, StageNumber = ++reportedStage,
-            StageCount = 17, Stage = stage, Detail = detail,
+            StageCount = 18, Stage = stage, Detail = detail,
         });
     }
 

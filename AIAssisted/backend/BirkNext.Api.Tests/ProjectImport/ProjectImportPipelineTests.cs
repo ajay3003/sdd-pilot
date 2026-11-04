@@ -180,7 +180,7 @@ public sealed class ProjectImportPipelineTests : IAsyncLifetime
         events.Should().Contain(e => e.Kind == ProjectImportCommitEventKind.Progress && e.Stage == "Analyzing source structure");
         events.Should().Contain(e => e.Kind == ProjectImportCommitEventKind.Progress && e.Stage == "Saving source snapshot");
         events.Where(e => e.StageCount is not null).Select(e => (e.StageNumber, e.StageCount)).Should()
-            .Equal(Enumerable.Range(1, 17).Select(stage => ((int?)stage, (int?)17)), "the source-analysis updates reflect the 17 real analyzer stages");
+            .Equal(Enumerable.Range(1, 18).Select(stage => ((int?)stage, (int?)18)), "the source-analysis updates reflect the 18 real analyzer stages (project glossary included)");
         events[^1].Kind.Should().Be(ProjectImportCommitEventKind.Completed);
         events[^1].Result!.Source.State.Should().Be(ProjectImportSourceState.Created);
         events.Take(events.Count - 1).Should().OnlyContain(e => e.Kind == ProjectImportCommitEventKind.Progress,

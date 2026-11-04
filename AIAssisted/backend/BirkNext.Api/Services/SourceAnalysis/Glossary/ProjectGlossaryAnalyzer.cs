@@ -87,12 +87,13 @@ public static partial class ProjectGlossaryAnalyzer
         };
     }
 
-    /// <summary>A glossary-like document: its file name or its title says glossary / terminology / word list.</summary>
+    /// <summary>A glossary-like document: its file name says glossary / word list, or its title IS a glossary title ("M2LB domain glossary",
+    /// "Glossary: …") — a feature about terminology ("Reference Data Correction and Terminology Fix") is not a glossary.</summary>
     public static bool IsGlossaryLike(string path, string content)
     {
         if (GlossaryNameRe().IsMatch(System.IO.Path.GetFileNameWithoutExtension(path))) return true;
         var title = content.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith("# ", StringComparison.Ordinal));
-        return title is not null && GlossaryNameRe().IsMatch(title);
+        return title is not null && GlossaryTitleRe().IsMatch(title[2..].Trim());
     }
 
     private static List<ProjectGlossaryEntry> Entries(string glossaryId, IReadOnlyList<MarkdownToken> tokens, out List<string> sections)
@@ -159,8 +160,8 @@ public static partial class ProjectGlossaryAnalyzer
         var normalized = path.Replace('\\', '/');
         var parts = normalized.Split('/');
         var keys = new List<string> { normalized };
+        // Never a generic tail such as "checklists/requirements.md": it names many documents of the project.
         if (parts.Length > 2) keys.Add(string.Join('/', parts[1..]));
-        if (parts.Length >= 2) keys.Add(string.Join('/', parts[^2..]));
         return keys.Distinct().Where(k => k.Contains('/')).Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -168,6 +169,10 @@ public static partial class ProjectGlossaryAnalyzer
 
     [GeneratedRegex(@"(?i)(glossar|ordliste|terminolog|termliste|begrepsliste)")]
     private static partial Regex GlossaryNameRe();
+
+    /// <summary>A title that is a glossary title: it starts or ends with the glossary word.</summary>
+    [GeneratedRegex(@"(?i)^(?:(?:glossary|ordliste|terminology|termliste|begrepsliste)\b.*|.*\b(?:glossary|ordliste|terminology|termliste|begrepsliste))$")]
+    private static partial Regex GlossaryTitleRe();
 
     [GeneratedRegex(@"(?i)(pull[- ]?request|proposal|proposed|forslag|-items\b|\bitems\b)")]
     private static partial Regex ProposalRe();
