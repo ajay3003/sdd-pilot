@@ -80,7 +80,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         if (IsBusy && _running is { } running) return running;
         // A new archive starts a new import session: nothing of the previous result (commit, warnings, duplicate choice) carries over.
         Commit = null; SaveWarning = false; Duplicate = null; ImportAgain = false; Failure = null; KeptSelectionNote = null;
-        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = size; GitRevision = null;
+        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = size; GitRevision = null; AutoDrafts = [];
         FileName = fileName;
         Phase = ProjectImportPhase.Validating;
         Progress = new ProjectImportCommitEvent { Stage = "Uploading and validating the archive", Detail = "Reading the ZIP and checking its entries." };
@@ -161,6 +161,11 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         return OperationOutcome.Success(Route, "Review the import");
     }
 
+    /// <summary>Automatic Test Data XML fixture drafts made after the import (one run per committed snapshot), shown on the result.</summary>
+    public IReadOnlyList<XmlFixtureAutoDraftOutcome> AutoDrafts { get; set; } = [];
+    /// <summary>The snapshot the automatic drafts were made for: a second visit of the result never makes another draft.</summary>
+    public Guid? AutoDraftSnapshot { get; set; }
+
     /// <summary>The Git revision of the current preview (Git Sources import), shown as provenance; null for a chosen ZIP.</summary>
     public BirkNext.GitSources.GitSourceRevision? GitRevision { get; private set; }
 
@@ -173,7 +178,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     {
         if (IsBusy && _running is { } running) return running;
         Commit = null; SaveWarning = false; Duplicate = null; ImportAgain = false; Failure = null; KeptSelectionNote = null;
-        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; GitRevision = null;
+        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; GitRevision = null; AutoDrafts = [];
         FileName = label;
         Phase = ProjectImportPhase.Validating;
         Progress = new ProjectImportCommitEvent { Stage = "Downloading the commit from Azure DevOps", Detail = "Resolving the branch to its commit and validating the archive." };
@@ -357,7 +362,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     public void Reset()
     {
         if (Phase is ProjectImportPhase.Importing) return;
-        Preview = null; Discovery = null; Commit = null; Failure = null; SaveWarning = false; Duplicate = null; ImportAgain = false; KeptSelectionNote = null; GitRevision = null;
+        Preview = null; Discovery = null; Commit = null; Failure = null; SaveWarning = false; Duplicate = null; ImportAgain = false; KeptSelectionNote = null; GitRevision = null; AutoDrafts = [];
         ResultSummary = null; Progress = null; FileName = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; StartedAt = null; ResultSeen = false;
         InputGeneration++;
         Phase = ProjectImportPhase.Choose;

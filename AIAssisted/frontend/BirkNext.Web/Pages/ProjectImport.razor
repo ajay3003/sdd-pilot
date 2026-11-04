@@ -497,6 +497,19 @@
                 </dl>
             }
             <p><strong>@done.ProjectName</strong> imported successfully. Import means BirkNext found and recorded the contents — nothing has been reviewed or tested yet. Imported is not reviewed or approved: review the documents next.</p>
+            @if (Session.AutoDrafts.Count > 0)
+            {
+                <div class="pi-auto-drafts" data-testid="pi-auto-drafts">
+                    <h3 class="pi-subheading">Test Data XML fixtures</h3>
+                    <ul>
+                        @foreach (var d in Session.AutoDrafts)
+                        {
+                            <li data-testid="pi-auto-draft" data-created="@(d.Created ? "true" : "false")"><strong>@(d.Created ? "Draft created" : "Not created")</strong> · @d.Context@(d.Alias is null ? "" : $" ({d.Alias})"): @d.Message
+                                @if (d.Created) { <a href="test-data" data-testid="pi-auto-draft-link">Review and approve in Test Data</a> }</li>
+                        }
+                    </ul>
+                </div>
+            }
             @if (ProjectImportPresentation.Notes(done, doneDiscovery, _commit?.Source) is { Count: > 0 } notes)
             {
                 <ul class="pi-list" data-testid="pi-notes">@foreach (var note in notes) { <li>@note</li> }</ul>
@@ -862,12 +875,24 @@
         {
             if (!Session.IsBusy) StopElapsedTimer();
             if (_phase == Phase.Preview) { await LoadEnvironmentAsync(); _focusId = "pi-archive-heading"; }
-            else if (_phase == Phase.Result) { await LoadSetupAsync(); await LoadProjectEvidenceAsync(); _focusId = "pi-outcome-heading"; }
+            else if (_phase == Phase.Result) { await LoadSetupAsync(); await LoadProjectEvidenceAsync(); await AutoDraftAsync(); _focusId = "pi-outcome-heading"; }
             else if (_phase == Phase.Choose && previous == Phase.Result) await LoadSetupAsync();
             else if (_phase == Phase.Choose && _failure is not null) _focusId = "pi-choose-file";
         }
         if (!_disposed) StateHasChanged();
     });
+
+    /// <summary>
+    /// After a commit that produced (or reused) a source snapshot: draft each Test Pack's canonical XML fixture from that snapshot when nothing
+    /// needs a person (see <see cref="XmlFixtureAutoDraft"/>). Once per snapshot; never approves.
+    /// </summary>
+    private async Task AutoDraftAsync()
+    {
+        if (_commit?.Source is not { State: ProjectImportSourceState.Created or ProjectImportSourceState.Reused, SnapshotId: { } snapshot } || Session.AutoDraftSnapshot == snapshot) return;
+        Session.AutoDraftSnapshot = snapshot;
+        try { Session.AutoDrafts = await XmlFixtureAutoDraft.RunAsync(ServiceProvider, snapshot, Session.Target == ImportTarget.CurrentApplication); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { Session.AutoDrafts = []; }
+    }
 
     private async Task RetrySourceAsync()
     {
