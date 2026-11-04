@@ -1,0 +1,70 @@
+@using BirkNext.Interpretation
+
+@* Graph impact (impact/1) of a change to one canonical entity: retest needs first (a test lead's question), then test gaps, then every impacted
+   entity with the relation path that makes it impacted. Nothing is impacted without a path; unresolved relations are counted, never guessed. *@
+<div class="cis" data-testid="@TestId" role="region" aria-label="Impact if this changes">
+    @if (Error is not null)
+    {
+        <p class="cis-muted" role="alert" data-testid="@($"{TestId}-error")">@Error</p>
+    }
+    else if (Impact is null)
+    {
+        <p class="cis-muted" role="status">Tracing what depends on this…</p>
+    }
+    else
+    {
+        var must = Impact.Tests.Count(t => t.Retest == RetestLevel.MustRetest);
+        <p class="cis-summary" data-testid="@($"{TestId}-summary")">
+            If <strong>@Impact.RootName</strong> changes: @Impact.Entities.Count impacted item@(Impact.Entities.Count == 1 ? "" : "s")
+            (@Impact.Entities.Count(e => e.Level == ImpactLevel.Direct) direct, @Impact.Entities.Count(e => e.Level == ImpactLevel.Downstream) downstream,
+            @Impact.Entities.Count(e => e.Level == ImpactLevel.Potential) potential) · @must must retest · @(Impact.Tests.Count - must) should retest
+            · @Impact.MissingTests.Count without any test@(Impact.Unknown > 0 ? $" · {Impact.Unknown} unknown" : "")
+        </p>
+        @if (Impact.Tests.Count > 0)
+        {
+            <h4 class="cis-heading">Regression scope</h4>
+            <ul class="cis-list" data-testid="@($"{TestId}-tests")">
+                @foreach (var t in Impact.Tests.Take(MaxRows))
+                {
+                    <li data-testid="@($"{TestId}-test")" data-retest="@t.Retest">
+                        <MetaBadge Kind="BadgeKind.Status" Text="@CanonicalImpactRules.RetestLabel(t.Retest)" /> <strong>@t.Name</strong>
+                        <div class="cis-muted cis-small">@t.Why</div>
+                    </li>
+                }
+            </ul>
+        }
+        @if (Impact.MissingTests.Count > 0)
+        {
+            <h4 class="cis-heading">Test gaps</h4>
+            <ul class="cis-list" data-testid="@($"{TestId}-gaps")">
+                @foreach (var m in Impact.MissingTests.Take(MaxRows)) { <li data-testid="@($"{TestId}-gap")"><MetaBadge Kind="BadgeKind.Type" Text="@m.Type" /> @m.Name <span class="cis-muted cis-small">— no test verifies it</span></li> }
+            </ul>
+        }
+        @if (Impact.Entities.Count > 0)
+        {
+            <details class="cis-entities">
+                <summary>Impacted items and why (@Impact.Entities.Count)</summary>
+                <ul class="cis-list" data-testid="@($"{TestId}-entities")">
+                    @foreach (var e in Impact.Entities.Take(MaxRows))
+                    {
+                        <li data-testid="@($"{TestId}-entity")" data-level="@e.Level">
+                            <MetaBadge Kind="BadgeKind.Scope" Text="@CanonicalImpactRules.LevelLabel(e.Level)" /> <MetaBadge Kind="BadgeKind.Type" Text="@e.Type" /> <strong>@e.Name</strong>
+                            <div class="cis-muted cis-small">@Impact.RootName @foreach (var step in e.Path) { <span> @(step.Reverse ? "←" : "→") @step.Relation (@step.Resolution) → @step.EntityName</span> }</div>
+                        </li>
+                    }
+                </ul>
+                @if (Impact.Entities.Count > MaxRows) { <p class="cis-muted cis-small">Showing the first @MaxRows (direct first).</p> }
+            </details>
+        }
+        else { <p class="cis-muted" data-testid="@($"{TestId}-none")">No established or candidate relation makes anything depend on this.</p> }
+        @foreach (var l in Impact.Limitations) { <p class="cis-muted cis-small" data-testid="@($"{TestId}-limitation")">@l</p> }
+        <p class="cis-muted cis-small">Rule set @Impact.Rules · at most @CanonicalImpactRules.MaxDepth relation hops · alias and same-as relations never carry impact.</p>
+    }
+</div>
+
+@code {
+    [Parameter] public CanonicalImpactView? Impact { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string TestId { get; set; } = "cis";
+    [Parameter] public int MaxRows { get; set; } = 50;
+}

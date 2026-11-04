@@ -198,4 +198,38 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         api.Verify(x => x.DecideAsync("dev", It.Is<ReviewDecisionRequest>(r => r.TargetKey == b.RelationKey && r.Outcome == ReviewDecisionOutcome.Confirmed), It.IsAny<CancellationToken>()), Times.Once());
         api.Verify(x => x.DecideAsync("dev", It.Is<ReviewDecisionRequest>(r => r.TargetKey == a.RelationKey), It.IsAny<CancellationToken>()), Times.Never());
     }
+
+    [Fact]
+    public void Impact_loads_only_on_request_and_shows_retest_scope_gaps_and_paths()
+    {
+        var contract = E(CanonicalEntityType.Contract, "fravaer", "Fravaersmelding");
+        var api = new Mock<ICanonicalInterpretationApiService>();
+        api.Setup(a => a.EntitiesAsync("dev", CanonicalEntityType.Contract, null, 0, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new CanonicalPage<CanonicalEntityView>([contract], 1, 0, 3), (string?)null));
+        api.Setup(a => a.EntityAsync("dev", contract.Id, It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalEntityDetail(contract, [], [], [], []), (string?)null));
+        var story = new ImpactedEntity("UserStory|us1", "UserStory", "Register absence", ImpactLevel.Direct, 1,
+            [new("DependsOn", true, "UserStory|us1", "UserStory", "Register absence", "Explicit")]);
+        var requirement = new ImpactedEntity("Requirement|fr1", "Requirement", "FR-001", ImpactLevel.Potential, 2, []);
+        api.Setup(a => a.ImpactAsync("dev", "Contract|fravaer", It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalImpactView
+        {
+            Scope = "dev", RootKey = "Contract|fravaer", RootName = "Fravaersmelding", RootType = "Contract", Entities = [story, requirement],
+            Tests = [new("Test|t1", "AbsenceTests.Registers", RetestLevel.MustRetest, "Fravaersmelding → Register absence ← verified by AbsenceTests.Registers")],
+            MissingTests = [requirement], Unknown = 1, Limitations = ["1 unresolved relation(s) were met: their impact is unknown and not guessed."],
+        }, (string?)null));
+        Services.AddSingleton(api.Object);
+
+        var cut = Render<CanonicalCorrelationPanel>(p => p.Add(x => x.Scope, "dev").Add(x => x.EntityType, CanonicalEntityType.Contract));
+        cut.WaitForElement("[data-testid=ccp-impact]");
+        api.Verify(a => a.ImpactAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never, "impact is never computed because a page opened");
+
+        cut.Find("[data-testid=ccp-impact]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ccp-impact-view-summary]").TextContent.Should().Contain("2 impacted items").And.Contain("1 must retest").And.Contain("1 unknown"));
+        cut.Find("[data-testid=ccp-impact-view-test]").TextContent.Should().Contain("Must retest").And.Contain("verified by AbsenceTests.Registers");
+        cut.Find("[data-testid=ccp-impact-view-gap]").TextContent.Should().Contain("FR-001").And.Contain("no test verifies it");
+        cut.FindAll("[data-testid=ccp-impact-view-entity]").Select(e => e.GetAttribute("data-level")).Should().Equal(["Direct", "Potential"]);
+        cut.Find("[data-testid=ccp-impact-view-entity]").TextContent.Should().Contain("DependsOn (Explicit)");
+
+        cut.Find("[data-testid=ccp-impact]").Click();
+        cut.FindAll("[data-testid=ccp-impact-view]").Should().BeEmpty("a second click closes it");
+    }
 }

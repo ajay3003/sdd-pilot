@@ -61,7 +61,9 @@
     <Compile Include="../../shared/SnapshotContracts.cs" Link="Models/SnapshotContracts.cs" />
     <Compile Include="../../shared/SnapshotSelection.cs" Link="Models/SnapshotSelection.cs" />
     <Compile Include="../../shared/FunctionalQualityScope.cs" Link="Models/FunctionalQualityScope.cs" />
+    <Compile Include="../../shared/TestScenarioIntelligence.cs" Link="Models/TestScenarioIntelligence.cs" />
     <Compile Include="../../shared/CanonicalScope.cs" Link="Models/CanonicalScope.cs" />
+    <Compile Include="../../shared/CanonicalImpact.cs" Link="Models/CanonicalImpact.cs" />
     <Compile Include="../../shared/DeliveryScope.cs" Link="Models/DeliveryScope.cs" />
     <Compile Include="../../shared/CanonicalCorrelation.cs" Link="Models/CanonicalCorrelation.cs" />
     <Compile Include="../../shared/CorrelationRules.cs" Link="Models/CorrelationRules.cs" />

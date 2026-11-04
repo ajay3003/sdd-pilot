@@ -1,0 +1,7 @@
+.cis { margin-top: .5rem; padding: .75rem; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); min-width: 0; overflow-wrap: anywhere; }
+.cis-summary { margin: 0 0 .5rem; }
+.cis-heading { margin: .75rem 0 .25rem; font-size: .9375rem; }
+.cis-list { margin: 0; padding-left: 1.25rem; display: grid; gap: .375rem; font-size: .875rem; }
+.cis-entities summary { cursor: pointer; font-weight: 600; margin-top: .5rem; }
+.cis-muted { color: var(--clr-text-muted); }
+.cis-small { font-size: .8125rem; }

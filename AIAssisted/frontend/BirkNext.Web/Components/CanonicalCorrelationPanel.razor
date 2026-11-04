@@ -36,7 +36,10 @@
                     <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(d.Entity.Type)" />
                     <strong>@d.Entity.DisplayName</strong>
                     <span class="ccp-identity" title="Canonical identity — independent of display names, aliases and file locations">@d.Entity.IdentityKey</span>
+                    <button type="button" class="btn btn-secondary btn-sm ccp-impact-btn" data-testid="@($"{TestId}-impact")" aria-expanded="@(_impact.ContainsKey(d.Entity.Key) ? "true" : "false")"
+                            @onclick="() => ToggleImpactAsync(d.Entity.Key)">If this changes…</button>
                 </div>
+                @if (_impact.TryGetValue(d.Entity.Key, out var impact)) { <CanonicalImpactSummary Impact="impact.View" Error="@impact.Error" TestId="@($"{TestId}-impact-view")" /> }
                 @if (d.Aliases.Count > 0)
                 {
                     <ul class="ccp-aliases" aria-label="Aliases">
@@ -107,6 +110,16 @@
     private bool _loading, _saving;
     private string? _error, _decisionError, _key;
     private List<CanonicalEntityDetail> _details = [];
+    private readonly Dictionary<string, (CanonicalImpactView? View, string? Error)> _impact = new(StringComparer.Ordinal);
+
+    /// <summary>Loads the entity's impact on demand (never on page open) and toggles it closed on a second click.</summary>
+    private async Task ToggleImpactAsync(string entityKey)
+    {
+        if (Scope is null) return;
+        if (_impact.Remove(entityKey)) return;
+        _impact[entityKey] = (null, null);
+        _impact[entityKey] = await Api.ImpactAsync(Scope, entityKey);
+    }
 
     protected override async Task OnParametersSetAsync()
     {

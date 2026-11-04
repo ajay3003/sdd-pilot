@@ -33,6 +33,9 @@ public interface ICanonicalInterpretationApiService
     /// <summary>Summary-first counts of the latest interpretation (the same numbers every consumer shows).</summary>
     Task<(CanonicalSummaryView? Summary, string? Error)> SummaryAsync(string scope, CancellationToken ct = default) =>
         Task.FromResult<(CanonicalSummaryView?, string?)>((null, null));
+    /// <summary>Graph impact (impact/1) of a change to one entity ("Type|identity"): bounded server-side walk with relation paths.</summary>
+    Task<(CanonicalImpactView? Impact, string? Error)> ImpactAsync(string scope, string entityKey, CancellationToken ct = default) =>
+        Task.FromResult<(CanonicalImpactView?, string?)>((null, "Impact analysis is not available."));
 }
 
 public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanonicalInterpretationApiService
@@ -62,6 +65,9 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
     public Task<(CorrelationChainView?, string?)> ChainAsync(string scope, Guid id, CancellationToken ct = default) => GetAsync<CorrelationChainView>($"{Base(scope)}/entities/{id}/chain", ct);
 
     public Task<(CanonicalSummaryView?, string?)> SummaryAsync(string scope, CancellationToken ct = default) => GetAsync<CanonicalSummaryView>($"{Base(scope)}/summary", ct);
+
+    public Task<(CanonicalImpactView?, string?)> ImpactAsync(string scope, string entityKey, CancellationToken ct = default) =>
+        GetAsync<CanonicalImpactView>($"{Base(scope)}/impact?entity={Uri.EscapeDataString(entityKey)}", ct);
 
     public Task<(ReviewQueueView?, string?)> ReviewItemsAsync(string scope, ReviewItemKind kind, ReviewItemType? type, int skip = 0, int take = 20, CancellationToken ct = default) =>
         GetAsync<ReviewQueueView>($"{Base(scope)}/review?kind={kind}&skip={skip}&take={take}{(type is { } t ? $"&type={t}" : "")}", ct);

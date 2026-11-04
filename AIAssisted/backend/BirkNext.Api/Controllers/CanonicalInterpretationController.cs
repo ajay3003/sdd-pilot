@@ -38,6 +38,12 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     public Task<ActionResult<TraceFeatureDetail>> TraceFeature(string scope, Guid featureId, CancellationToken ct) =>
         RunOrNotFound(() => service.TraceFeatureAsync(scope, featureId, ct));
 
+    /// <summary>Graph impact of one canonical entity ("Type|identity"): Direct / Downstream / Potential with relation paths, Unknown counted,
+    /// tests to retest (only through VERIFIES) and test gaps. Bounded and cycle-safe (rule set impact/1).</summary>
+    [HttpGet("impact")]
+    public Task<ActionResult<CanonicalImpactView>> Impact(string scope, [FromQuery] string entity, CancellationToken ct) =>
+        RunOrNotFound(() => service.ImpactAsync(scope, entity ?? "", ct));
+
     [HttpGet("snapshots")]
     public Task<ActionResult<IReadOnlyList<InterpretationSnapshotView>>> Snapshots(string scope, [FromQuery] int take = 20, CancellationToken ct = default) =>
         Run(() => service.SnapshotsAsync(scope, take, ct));
