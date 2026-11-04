@@ -232,11 +232,17 @@
             </details>
         }
 
+        <ReviewDisclosure Text="Canonical package identities" CollapseText="Hide canonical package identities" Hint="stable identity across re-imports · shared aliases" TestId="tep-canonical" @bind-Expanded="_canonicalOpen">
+            @* Packages keep one stable canonical identity across re-imports (the repository identity; each archive is an occurrence). Aliases and
+               associations come from the shared Correlation Review — Project Evidence keeps no alias logic of its own. *@
+            @if (_canonicalOpen) { <CanonicalCorrelationPanel Scope="@CorrelationPresentation.Scope(EnvironmentId)" Title="Packages" EntityType="BirkNext.Interpretation.CanonicalEntityType.Package" MaxEntities="10" MaxRelations="8" TestId="tep-canonical-panel" /> }
+        </ReviewDisclosure>
         <p class="tep-muted tep-ownership" data-testid="tep-ownership">This page associates imported evidence with the selected Target Application. Imported packages and Source Analysis snapshots remain independently owned and are never deleted by changing these associations.</p>
     }
 </section>
 
 @code {
+    private bool _canonicalOpen;
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
     /// <summary>A role key to open and focus (deep link from Recommended Workflow or an Explorer).</summary>
     [Parameter] public string? Focus { get; set; }

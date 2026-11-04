@@ -1,0 +1,31 @@
+@using BirkNext.Interpretation
+
+@* AQR's view of canonical API operations: the identity, the source symbols that implement it, the tests that verify it and the contracts it
+   uses, from the shared correlation engine. AQR's own execution, authentication and readiness logic is untouched. *@
+<div class="col" data-testid="aqr-canonical-operations">
+    <div class="col-form">
+        <select @bind="_method" aria-label="HTTP method" data-testid="aqr-canonical-method">
+            @foreach (var m in Methods) { <option value="@m">@m</option> }
+        </select>
+        <input class="form-control" placeholder="Observed or declared path, e.g. /api/absence/123" @bind="_path" aria-label="Path" data-testid="aqr-canonical-path" />
+        <button type="button" class="btn btn-secondary btn-sm" @onclick="Lookup" data-testid="aqr-canonical-lookup">Look up</button>
+    </div>
+    @if (_lookupPath is null)
+    {
+        <CanonicalCorrelationPanel Scope="Scope" Title="Canonical API operations" EntityType="CanonicalEntityType.ApiOperation" MaxEntities="5" MaxRelations="12" TestId="aqr-canonical-panel" />
+    }
+    else
+    {
+        <CanonicalCorrelationPanel Scope="Scope" Title="@($"{_lookupMethod} {_lookupPath}")" Method="@_lookupMethod" Path="@_lookupPath" MaxRelations="25" TestId="aqr-canonical-panel"
+                                   Empty="No canonical operation matches this method and path (paths are templated the way Endpoint Discovery templates them)." />
+    }
+</div>
+
+@code {
+    [Parameter] public string? Scope { get; set; }
+    private static readonly string[] Methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+    private string _method = "GET";
+    private string? _path, _lookupPath, _lookupMethod;
+
+    private void Lookup() => (_lookupMethod, _lookupPath) = string.IsNullOrWhiteSpace(_path) ? (null, null) : (_method, _path.Trim());
+}

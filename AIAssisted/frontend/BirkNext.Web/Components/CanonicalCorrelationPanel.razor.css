@@ -1,0 +1,14 @@
+.ccp { border: 1px solid var(--clr-border); border-radius: 8px; padding: 0.75rem 1rem; background: var(--clr-surface-white); }
+.ccp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.ccp-title { font-size: 1rem; margin: 0 0 0.5rem; }
+.ccp-link { font-size: 0.875rem; }
+.ccp-muted { color: var(--clr-text-muted); font-size: 0.875rem; margin: 0.25rem 0; }
+.ccp-error { color: var(--clr-danger); font-size: 0.875rem; }
+.ccp-entity { border-top: 1px solid var(--clr-border); padding-top: 0.5rem; margin-top: 0.5rem; }
+.ccp-entity-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ccp-identity { font-family: var(--font-mono); font-size: 0.75rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.ccp-aliases, .ccp-relations { list-style: none; padding: 0; margin: 0.375rem 0 0; display: grid; gap: 0.25rem; }
+.ccp-aliases li, .ccp-relation { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; font-size: 0.875rem; }
+.ccp-verb { color: var(--clr-text-muted); min-width: 6rem; }
+.ccp-other { overflow-wrap: anywhere; }
+.ccp-actions { display: inline-flex; gap: 0.25rem; margin-left: auto; }

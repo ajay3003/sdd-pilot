@@ -536,6 +536,13 @@
                         <MessageFlowReviewPanel EnvironmentId="@profile.Id" />
                     </ReviewDisclosure>
                 </section>
+                <ReviewDisclosure Text="Canonical identity" CollapseText="Hide canonical identity" Hint="shared system identity, aliases and reviewed links" TestId="iqr-canonical" Class="iqr-detail-disclosure" @bind-Expanded="_canonicalOpen">
+                    @if (_canonicalOpen)
+                    {
+                        <CanonicalCorrelationPanel Scope="@CorrelationPresentation.Scope(profile.Id)" Title="Systems this review resolves" EntityType="BirkNext.Interpretation.CanonicalEntityType.System"
+                                                   Search="@(_readiness?.Subjects.FirstOrDefault(s => s.IntegrationId == ScopeId)?.DisplayName)" MaxEntities="5" TestId="iqr-canonical-panel" />
+                    }
+                </ReviewDisclosure>
                 <ReviewDisclosure Text="Advanced" CollapseText="Hide advanced" Hint="topology" TestId="iqr-test-advanced" Class="iqr-detail-disclosure">
                     <section class="iqr-card" aria-labelledby="iqr-topology-heading" data-testid="iqr-topology-section">
                         <h3 id="iqr-topology-heading">Configured integrations and topology</h3>
@@ -917,6 +924,7 @@
 </div>
 
 @code {
+    private bool _canonicalOpen;
     private bool _deliveryExpanded, _testDataExpanded;
 
     private static string? DomainTab(IntegrationReviewDomain domain) => IntegrationReviewResultPresentation.Tabs.FirstOrDefault(t => IntegrationReviewResultPresentation.DomainOf(t) == domain);

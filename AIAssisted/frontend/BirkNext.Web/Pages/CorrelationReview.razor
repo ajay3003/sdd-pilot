@@ -1,0 +1,255 @@
+@page "/correlation-review"
+@using BirkNext.Interpretation
+@using BirkNext.Integrations
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@inject ICanonicalInterpretationApiService Api
+@inject IIntegrationCatalogApiService Catalog
+@inject IFrontendAnalysisContextFactory ContextFactory
+@implements IDisposable
+
+<PageTitle>Correlation Review</PageTitle>
+
+<div class="cr" data-testid="correlation-review">
+    <header class="cr-head">
+        <h1>Correlation Review</h1>
+        <p class="cr-lead">One shared registry of canonical entities, typed relations and review decisions. A decision made here applies to every module in this
+            project (Topology, Integration Quality Review, API Quality Review, Project Evidence, Traceability); heuristics never override it.</p>
+        @if (_scope is not null) { <p class="cr-muted" data-testid="cr-scope">Project: <strong>@_projectName</strong> <MetaBadge Kind="BadgeKind.Scope" Text="@_scope" /></p> }
+    </header>
+
+    @if (_initialising)
+    {
+        <p class="cr-muted" role="status">Loading the active project…</p>
+    }
+    else if (_scope is null)
+    {
+        <p class="cr-muted" data-testid="cr-no-scope">Select a project (Target Environment) first. Canonical interpretation is always scoped to one project.</p>
+    }
+    else
+    {
+        <section class="cr-card" aria-labelledby="cr-interpret-h" data-testid="cr-interpret">
+            <h2 id="cr-interpret-h">Interpret source evidence</h2>
+            <p class="cr-muted">Reads stored Source Analysis snapshots only (no archive is parsed again). Each run creates a new, frozen interpretation; an unchanged
+                one is reused, and earlier interpretations never change.</p>
+            @if (_sources.Count == 0) { <p class="cr-muted" data-testid="cr-no-sources">No Source Analysis snapshots are stored for this project yet.</p> }
+            else
+            {
+                <ul class="cr-sources">
+                    @foreach (var s in _sources)
+                    {
+                        <li><label><input type="checkbox" checked="@_selected.Contains(s.Id)" @onchange="e => Toggle(s.Id, (bool)e.Value!)" data-testid="cr-source" />
+                            @s.Archive.FileName <span class="cr-muted">· analyzed @s.AnalyzedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</span></label></li>
+                    }
+                </ul>
+                <button type="button" class="btn btn-primary" disabled="@(_selected.Count == 0 || _interpreting is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run">Interpret selected</button>
+            }
+            @if (_interpreting is { } run) { <ReviewStageList Stages="run.Stages" TestId="cr-interpret-stages" StageTestId="cr-interpret-stage" RunningText="working…" /> }
+            @if (_interpretError is not null) { <p class="cr-error" role="alert" data-testid="cr-interpret-error">@_interpretError</p> }
+            @if (_lastRun is { } last)
+            {
+                <p class="cr-muted" role="status" data-testid="cr-interpret-result">@(last.Reused ? "Nothing changed: the existing interpretation was reused." : "New interpretation recorded.")
+                    @last.EntityCount entities · @last.RelationCount relations · rules @string.Join(", ", last.RuleSetVersions)</p>
+            }
+        </section>
+
+        <section class="cr-card" aria-labelledby="cr-queue-h" data-testid="cr-queue">
+            <h2 id="cr-queue-h">Needs review <span class="cr-count">@(_queue?.Total ?? 0)</span></h2>
+            <p class="cr-muted">Candidates and ambiguous links, decisions whose evidence changed (revalidation) and conflicts with explicit source evidence.</p>
+            <label class="cr-filter">Rule
+                <select @onchange="e => FilterAsync((string?)e.Value)" data-testid="cr-rule-filter">
+                    <option value="">All rules</option>
+                    @foreach (var rule in Rules) { <option value="@rule.Id" selected="@(rule.Id == _rule)">@rule.Label</option> }
+                </select>
+            </label>
+            @if (_queueLoading) { <p class="cr-muted" role="status">Loading the review queue…</p> }
+            else if (_queueError is not null) { <p class="cr-error" role="alert">@_queueError <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadQueueAsync">Retry</button></p> }
+            else if (_queue is { Items.Count: 0 }) { <p class="cr-muted" data-testid="cr-queue-empty">Nothing waits for a decision.</p> }
+            else if (_queue is { } q)
+            {
+                <ul class="cr-relations">
+                    @foreach (var r in q.Items)
+                    {
+                        var (status, label, explanation) = CorrelationPresentation.Status(r);
+                        <li class="cr-relation" data-testid="cr-queue-item" data-rule="@r.RuleId">
+                            <div class="cr-rel-line">
+                                <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(r.Source.Type)" /> <span>@r.Source.DisplayName</span>
+                                <span class="cr-verb">@CorrelationPresentation.RelationLabel(r.Type)</span>
+                                <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(r.Target.Type)" /> <span>@r.Target.DisplayName</span>
+                            </div>
+                            <div class="cr-rel-line">
+                                <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@explanation" />
+                                <MetaBadge Kind="BadgeKind.Confidence" Text="@r.Confidence.ToString()" Title="@($"Rule {r.RuleId} · {r.RuleSetVersion}")" />
+                                <span class="cr-muted">@r.Explanation</span>
+                            </div>
+                            <details class="cr-evidence"><summary>Evidence (@r.Evidence.Count)</summary>
+                                <ul>@foreach (var e in r.Evidence.Take(10)) { <li><code>@e.Kind</code> @e.Reference @(e.Detail is null ? "" : $"· {e.Detail}")</li> }</ul>
+                            </details>
+                            <div class="cr-actions">
+                                <input class="form-control form-control-sm" placeholder="Note (optional)" value="@_notes.GetValueOrDefault(r.Id)" @onchange="e => _notes[r.Id] = (string?)e.Value" aria-label="Review note" />
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(r, ReviewDecisionOutcome.Confirmed)" data-testid="cr-confirm">Confirm</button>
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(r, ReviewDecisionOutcome.Rejected)" data-testid="cr-reject">Reject</button>
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(r, ReviewDecisionOutcome.Deferred)" data-testid="cr-defer">Defer</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+                <div class="cr-pager">
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(q.Skip == 0)" @onclick="() => PageAsync(-1)">Previous</button>
+                    <span class="cr-muted">@(q.Skip + 1)–@(q.Skip + q.Items.Count) of @q.Total</span>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(q.Skip + q.Items.Count >= q.Total)" @onclick="() => PageAsync(1)">Next</button>
+                </div>
+            }
+            @if (_decisionError is not null) { <p class="cr-error" role="alert">@_decisionError</p> }
+        </section>
+
+        <section class="cr-card" aria-labelledby="cr-explore-h" data-testid="cr-explore">
+            <h2 id="cr-explore-h">Explore an entity</h2>
+            <div class="cr-search">
+                <select @bind="_exploreType" aria-label="Entity type" data-testid="cr-explore-type">
+                    <option value="">Any type</option>
+                    @foreach (var t in Enum.GetValues<CanonicalEntityType>()) { <option value="@t">@CorrelationPresentation.TypeLabel(t)</option> }
+                </select>
+                <input class="form-control" placeholder="Name or identity (e.g. MU, AbsenceApi, FR-001)" @bind="_exploreText" aria-label="Search" data-testid="cr-explore-text" />
+                <button type="button" class="btn btn-secondary" @onclick="Explore" data-testid="cr-explore-run">Show</button>
+            </div>
+            @if (_exploreSearch is not null)
+            {
+                <CanonicalCorrelationPanel Scope="_scope" Title="Matching entities" Search="@_exploreSearch" EntityType="@ExploreType" MaxEntities="5" TestId="cr-explore-panel" />
+            }
+        </section>
+
+        <section class="cr-card" aria-labelledby="cr-history-h" data-testid="cr-history">
+            <h2 id="cr-history-h">Interpretations and decisions</h2>
+            @if (_snapshots.Count == 0) { <p class="cr-muted">No interpretation has been recorded for this project.</p> }
+            else
+            {
+                <table class="cr-table">
+                    <thead><tr><th>Recorded</th><th>Sources</th><th>Rules</th><th>Entities</th><th>Relations</th><th>Decisions applied</th><th>Trigger</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in _snapshots)
+                        {
+                            <tr data-testid="cr-snapshot"><td>@s.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</td><td>@string.Join(", ", s.SourceSnapshots.Select(x => x.Label ?? x.Id))</td>
+                                <td>@string.Join(", ", s.RuleSetVersions)</td><td>@s.EntityCount</td><td>@s.RelationCount</td><td>@s.DecisionSequence</td><td>@s.Trigger</td></tr>
+                        }
+                    </tbody>
+                </table>
+                @if (_snapshots.Count > 1)
+                {
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="CompareAsync" data-testid="cr-compare">Compare the latest two</button>
+                    @if (_comparison is { } c)
+                    {
+                        <p class="cr-muted" data-testid="cr-comparison">@c.Added.Count added · @c.Removed.Count removed · @c.Changed.Count changed@(c.RuleSetChanges.Count > 0 ? $" · rules {string.Join("; ", c.RuleSetChanges)}" : "")</p>
+                    }
+                }
+            }
+            @if (_decisions.Count > 0)
+            {
+                <h3 class="cr-sub">Decision history</h3>
+                <ul class="cr-decisions">
+                    @foreach (var d in _decisions.Take(30))
+                    {
+                        <li data-testid="cr-decision">#@d.Sequence · @d.Outcome · @d.TargetKind · <span class="cr-muted">@d.Reviewer, @d.DecidedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(d.SupersededById is null ? "" : " · superseded")</span>
+                            @if (!string.IsNullOrWhiteSpace(d.Notes)) { <span> — @d.Notes</span> }</li>
+                    }
+                </ul>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private static readonly (string Id, string Label)[] Rules =
+    [
+        (CorrelationRules.IntentRule, "Shared intent / capability candidates (G, H)"), (CorrelationRules.ContractVersionConflictRule, "Contract version conflicts (J)"),
+        (CorrelationRules.SymbolNameRule, "Symbol name candidates (L)"), (CorrelationRules.TestCandidateRule, "Candidate test links (M)"),
+    ];
+    private static readonly (string, string)[] InterpretStages = [("interpret", "Correlating stored evidence"), ("refresh", "Refreshing the review queue")];
+
+    private bool _initialising = true, _queueLoading, _saving;
+    private string? _scope, _projectName, _rule, _queueError, _decisionError, _interpretError, _exploreText, _exploreSearch, _exploreType;
+    private List<IqrSourceSnapshotSummary> _sources = [];
+    private readonly HashSet<Guid> _selected = [];
+    private ReviewAssessment? _interpreting;
+    private InterpretationSnapshotView? _lastRun;
+    private CanonicalPage<CanonicalRelationView>? _queue;
+    private int _skip, _generation;
+    private List<InterpretationSnapshotView> _snapshots = [];
+    private List<ReviewDecisionView> _decisions = [];
+    private InterpretationComparison? _comparison;
+    private readonly Dictionary<Guid, string?> _notes = [];
+
+    private CanonicalEntityType? ExploreType => Enum.TryParse<CanonicalEntityType>(_exploreType, out var t) ? t : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
+        _scope = CorrelationPresentation.Scope(profile?.Id);
+        _projectName = profile?.Name;
+        _initialising = false;
+        if (_scope is null) return;
+        try { _sources = [.. (await Catalog.ListSourceSnapshotSummariesAsync(_scope)).OrderByDescending(s => s.AnalyzedAt)]; }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _interpretError = "Source Analysis snapshots could not be listed."; }
+        await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
+    }
+
+    private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private async Task InterpretAsync()
+    {
+        if (_scope is null) return;
+        var run = new ReviewAssessment(++_generation, InterpretStages);
+        (_interpreting, _interpretError) = (run, null);
+        void Changed() => _ = InvokeAsync(StateHasChanged);
+        try
+        {
+            var (snapshot, error) = await run.StageAsync("interpret", ct => Api.InterpretAsync(_scope, new([.. _selected], Trigger: "Correlation Review"), ct), Changed);
+            if (error is not null) { _interpretError = error; return; }
+            _lastRun = snapshot;
+            await run.StageAsync("refresh", async _ => { await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync()); return true; }, Changed);
+        }
+        catch (OperationCanceledException) { }
+        finally { _interpreting = null; run.Dispose(); }
+    }
+
+    private async Task LoadQueueAsync()
+    {
+        if (_scope is null) return;
+        (_queueLoading, _queueError) = (true, null);
+        var (page, error) = await Api.ReviewQueueAsync(_scope, _rule, _skip, 20);
+        (_queue, _queueError, _queueLoading) = (page, error, false);
+        StateHasChanged();
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (_scope is null) return;
+        _snapshots = [.. (await Api.SnapshotsAsync(_scope)).Items];
+        _decisions = [.. (await Api.DecisionsAsync(_scope)).Items];
+        StateHasChanged();
+    }
+
+    private async Task FilterAsync(string? rule) { _rule = string.IsNullOrEmpty(rule) ? null : rule; _skip = 0; await LoadQueueAsync(); }
+
+    private async Task PageAsync(int direction) { _skip = Math.Max(0, _skip + direction * 20); await LoadQueueAsync(); }
+
+    private async Task DecideAsync(CanonicalRelationView relation, ReviewDecisionOutcome outcome)
+    {
+        if (_scope is null) return;
+        (_saving, _decisionError) = (true, null);
+        var (_, error) = await Api.DecideAsync(_scope, new(ReviewTargetKind.Relation, relation.RelationKey, outcome, null, _notes.GetValueOrDefault(relation.Id)));
+        _saving = false;
+        if (error is not null) { _decisionError = error; return; }
+        await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
+    }
+
+    private void Explore() => _exploreSearch = string.IsNullOrWhiteSpace(_exploreText) ? "" : _exploreText.Trim();
+
+    private async Task CompareAsync()
+    {
+        if (_scope is null || _snapshots.Count < 2) return;
+        _comparison = (await Api.CompareAsync(_scope, _snapshots[1].Id, _snapshots[0].Id)).Comparison;
+    }
+
+    public void Dispose() => _interpreting?.Dispose();
+}

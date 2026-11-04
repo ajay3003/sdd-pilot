@@ -101,6 +101,11 @@
             <p class="it-note" data-testid="it-environment">@(view.EnvironmentName ?? _profile?.Name ?? view.EnvironmentId) · built @view.GeneratedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · resolver v@(view.ResolverVersion) (rebuilt from stored source facts; snapshots are never changed)</p>
         </section>
 
+        @* Shared system identities: the explicit and reviewer-confirmed aliases this view merges by come from Correlation Review. *@
+        <ReviewDisclosure Text="Shared system identities and aliases" CollapseText="Hide shared identities" Hint="canonical aliases this topology applies" TestId="it-canonical" @bind-Expanded="_canonicalOpen">
+            @if (_canonicalOpen) { <CanonicalCorrelationPanel Scope="@CorrelationPresentation.Scope(_profile?.Id)" Title="Systems" EntityType="BirkNext.Interpretation.CanonicalEntityType.System" MaxEntities="10" MaxRelations="10" TestId="it-canonical-panel" /> }
+        </ReviewDisclosure>
+
         @if (_coverage is { } coverage)
         {
             <section class="it-card" aria-labelledby="it-coverage-heading" data-testid="it-coverage">
@@ -385,6 +390,7 @@
 </div>
 
 @code {
+    private bool _canonicalOpen;
     private IIntegrationTopologyApiService? _api;
     private FrontendAnalysisProfile? _profile;
     private IntegrationTopologyView? _view;

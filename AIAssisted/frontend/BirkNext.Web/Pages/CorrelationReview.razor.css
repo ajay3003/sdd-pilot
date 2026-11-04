@@ -1,0 +1,19 @@
+.cr { max-width: 88rem; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; }
+.cr-head h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+.cr-lead { max-width: 60rem; margin: 0 0 0.25rem; }
+.cr-muted { color: var(--clr-text-muted); font-size: 0.875rem; }
+.cr-error { color: var(--clr-danger); font-size: 0.875rem; }
+.cr-card { border: 1px solid var(--clr-border); border-radius: 8px; padding: 1rem; background: var(--clr-surface-white); }
+.cr-card h2 { font-size: 1.125rem; margin: 0 0 0.375rem; display: flex; align-items: center; gap: 0.5rem; }
+.cr-sub { font-size: 1rem; margin: 1rem 0 0.25rem; }
+.cr-count { font-size: 0.875rem; color: var(--clr-text-muted); }
+.cr-sources, .cr-relations, .cr-decisions { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; gap: 0.375rem; }
+.cr-relation { border-top: 1px solid var(--clr-border-subtle); padding-top: 0.5rem; display: grid; gap: 0.25rem; }
+.cr-rel-line, .cr-actions, .cr-search, .cr-pager { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+.cr-actions input { max-width: 20rem; }
+.cr-verb { color: var(--clr-text-muted); }
+.cr-filter { display: inline-flex; gap: 0.375rem; align-items: center; font-size: 0.875rem; margin-bottom: 0.5rem; }
+.cr-search input { max-width: 28rem; }
+.cr-evidence { font-size: 0.8125rem; }
+.cr-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; display: block; overflow-x: auto; }
+.cr-table th, .cr-table td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--clr-border-subtle); }

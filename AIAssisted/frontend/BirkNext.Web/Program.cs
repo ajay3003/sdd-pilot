@@ -311,6 +311,8 @@ builder.Services.AddHttpClient<IAiCodeReviewApiService, AiCodeReviewApiService>(
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IDeliveryReportingApiService, DeliveryReportingApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<ICanonicalInterpretationApiService, CanonicalInterpretationApiService>(client =>
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IDeliveryAzureDevOpsApiService, DeliveryAzureDevOpsApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IBrowserAuthenticationApiService, BrowserAuthenticationApiService>(client =>

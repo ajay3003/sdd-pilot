@@ -1,0 +1,181 @@
+@using BirkNext.Interpretation
+@using BirkNext.Web.Models
+@inject ICanonicalInterpretationApiService Api
+@implements IDisposable
+
+@* Shared canonical correlation panel: what an entity is canonically (identity, aliases, occurrences) and how it relates to other entities, with the
+   shared review actions. Consumers (Project Evidence, Topology, AQR, IQR) embed this; none builds its own review UI. *@
+<section class="ccp" data-testid="@TestId" aria-label="@Title">
+    <header class="ccp-head">
+        <h3 class="ccp-title">@Title</h3>
+        @if (Scope is not null) { <a class="ccp-link" href="correlation-review" data-testid="@($"{TestId}-open-review")">Open Correlation Review</a> }
+    </header>
+
+    @if (Scope is null)
+    {
+        <p class="ccp-muted" data-testid="@($"{TestId}-no-scope")">Select a project (Target Environment) to see its canonical correlations.</p>
+    }
+    else if (_assessment is { } a && _loading)
+    {
+        <ReviewStageList Stages="a.Stages" TestId="@($"{TestId}-stages")" StageTestId="@($"{TestId}-stage")" />
+    }
+    else if (_error is not null)
+    {
+        <p class="ccp-error" role="alert" data-testid="@($"{TestId}-error")">@_error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync">Retry</button></p>
+    }
+    else if (_details.Count == 0)
+    {
+        <p class="ccp-muted" data-testid="@($"{TestId}-empty")">@Empty</p>
+    }
+    else
+    {
+        @foreach (var d in _details)
+        {
+            <article class="ccp-entity" data-testid="@($"{TestId}-entity")" data-entity="@d.Entity.Id">
+                <div class="ccp-entity-head">
+                    <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(d.Entity.Type)" />
+                    <strong>@d.Entity.DisplayName</strong>
+                    <span class="ccp-identity" title="Canonical identity — independent of display names, aliases and file locations">@d.Entity.IdentityKey</span>
+                </div>
+                @if (d.Aliases.Count > 0)
+                {
+                    <ul class="ccp-aliases" aria-label="Aliases">
+                        @foreach (var alias in d.Aliases)
+                        {
+                            var (status, label) = CorrelationPresentation.AliasStatus(alias.State);
+                            <li data-testid="@($"{TestId}-alias")">
+                                <span>@alias.Alias</span>
+                                <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@alias.Source" />
+                                @if (alias.State == AliasState.Proposed)
+                                {
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAliasAsync(d, alias, ReviewDecisionOutcome.Confirmed)">Confirm</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAliasAsync(d, alias, ReviewDecisionOutcome.Rejected)">Reject</button>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (d.Occurrences.Count > 0)
+                {
+                    <p class="ccp-muted">Seen in @d.Occurrences.Select(o => o.SourceSnapshotId).Distinct().Count() source snapshot(s), @d.Occurrences.Count occurrence(s).</p>
+                }
+                <ul class="ccp-relations" aria-label="Relations">
+                    @foreach (var r in CorrelationPresentation.Ordered(d.Outgoing.Concat(d.Incoming)).Take(MaxRelations))
+                    {
+                        var (status, label, explanation) = CorrelationPresentation.Status(r);
+                        var other = r.Source.Id == d.Entity.Id ? r.Target : r.Source;
+                        <li class="ccp-relation" data-testid="@($"{TestId}-relation")" data-rule="@r.RuleId" data-counts="@(r.Counts ? "true" : "false")">
+                            <span class="ccp-verb">@(r.Source.Id == d.Entity.Id ? CorrelationPresentation.RelationLabel(r.Type) : $"← {CorrelationPresentation.RelationLabel(r.Type)}")</span>
+                            <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(other.Type)" />
+                            <span class="ccp-other">@other.DisplayName</span>
+                            <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@($"{explanation} {r.Explanation}")" />
+                            <MetaBadge Kind="BadgeKind.Confidence" Text="@r.Confidence.ToString()" Title="@($"Rule {r.RuleId} · {r.RuleSetVersion}")" />
+                            @if (r.NeedsReview)
+                            {
+                                <span class="ccp-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(r, ReviewDecisionOutcome.Confirmed)">Confirm</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(r, ReviewDecisionOutcome.Rejected)">Reject</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(r, ReviewDecisionOutcome.Deferred)">Defer</button>
+                                </span>
+                            }
+                        </li>
+                    }
+                </ul>
+            </article>
+        }
+        @if (_decisionError is not null) { <p class="ccp-error" role="alert">@_decisionError</p> }
+    }
+</section>
+
+@code {
+    /// <summary>Project scope: the active Target Environment profile id. Null shows a "select a project" note.</summary>
+    [Parameter] public string? Scope { get; set; }
+    [Parameter] public string Title { get; set; } = "Canonical correlation";
+    [Parameter] public CanonicalEntityType? EntityType { get; set; }
+    /// <summary>Find entities by name (display name or identity key contains). Ignored when <see cref="Method"/> and <see cref="Path"/> are set.</summary>
+    [Parameter] public string? Search { get; set; }
+    [Parameter] public string? Method { get; set; }
+    [Parameter] public string? Path { get; set; }
+    [Parameter] public int MaxEntities { get; set; } = 3;
+    [Parameter] public int MaxRelations { get; set; } = 25;
+    [Parameter] public string Empty { get; set; } = "No canonical entity is recorded for this yet. Run an interpretation in Correlation Review.";
+    [Parameter] public string TestId { get; set; } = "ccp";
+
+    private static readonly (string, string)[] Stages = [("entities", "Finding canonical entities"), ("relations", "Loading relations and reviews")];
+    private ReviewAssessment? _assessment;
+    private int _generation;
+    private bool _loading, _saving;
+    private string? _error, _decisionError, _key;
+    private List<CanonicalEntityDetail> _details = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{Scope}|{EntityType}|{Search}|{Method}|{Path}";
+        if (key == _key) return;
+        _key = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _assessment?.Cancel();
+        if (Scope is null) { _details = []; return; }
+        var a = new ReviewAssessment(++_generation, Stages);
+        _assessment = a;
+        (_loading, _error) = (true, null);
+        void Changed() { if (a.IsCurrent(_generation)) _ = InvokeAsync(StateHasChanged); }
+        try
+        {
+            var details = new List<CanonicalEntityDetail>();
+            if (!string.IsNullOrWhiteSpace(Method) && !string.IsNullOrWhiteSpace(Path))
+            {
+                var (items, error) = await a.StageAsync("entities", ct => Api.OperationsAsync(Scope, Method, Path, ct), Changed);
+                a.Skip("relations");
+                if (error is not null) throw new InvalidOperationException(error);
+                details.AddRange(items.Take(MaxEntities));
+            }
+            else
+            {
+                var (page, error) = await a.StageAsync("entities", ct => Api.EntitiesAsync(Scope, EntityType, Search, 0, MaxEntities, ct), Changed);
+                if (error is not null) throw new InvalidOperationException(error);
+                var found = await a.StageAsync("relations", async ct =>
+                {
+                    var list = new List<CanonicalEntityDetail>();
+                    foreach (var e in page?.Items ?? []) if ((await Api.EntityAsync(Scope, e.Id, ct)).Detail is { } d) list.Add(d);
+                    return list;
+                }, Changed);
+                details.AddRange(found);
+            }
+            if (!a.IsCurrent(_generation)) return;
+            _details = details;
+        }
+        catch (OperationCanceledException) when (a.Cancelled) { return; }
+        catch (InvalidOperationException ex) { if (a.IsCurrent(_generation)) _error = ex.Message; }
+        finally { if (_generation == a.Generation) _loading = false; }
+        StateHasChanged();
+    }
+
+    private async Task DecideAsync(CanonicalRelationView relation, ReviewDecisionOutcome outcome)
+    {
+        if (Scope is null) return;
+        (_saving, _decisionError) = (true, null);
+        var (_, error) = await Api.DecideAsync(Scope, new(ReviewTargetKind.Relation, relation.RelationKey, outcome));
+        _saving = false;
+        if (error is not null) { _decisionError = error; return; }
+        _key = null;
+        await OnParametersSetAsync();
+    }
+
+    private async Task DecideAliasAsync(CanonicalEntityDetail detail, CanonicalAliasView alias, ReviewDecisionOutcome outcome)
+    {
+        if (Scope is null) return;
+        (_saving, _decisionError) = (true, null);
+        var (_, error) = await Api.DecideAsync(Scope, new(ReviewTargetKind.Alias, CorrelationPrecedence.AliasTargetKey(detail.Entity.Key, alias.Alias), outcome));
+        _saving = false;
+        if (error is not null) { _decisionError = error; return; }
+        _key = null;
+        await OnParametersSetAsync();
+    }
+
+    public void Dispose() => _assessment?.Dispose();
+}

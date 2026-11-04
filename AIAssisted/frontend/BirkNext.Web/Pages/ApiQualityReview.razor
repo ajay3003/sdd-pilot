@@ -387,6 +387,9 @@
                 <ReviewDisclosure Text="Source contract evidence" CollapseText="Hide source contract evidence" Hint="Published contract in a Source Analysis snapshot · separate from runtime behaviour" TestId="aqr-source-contracts" Class="aqr-detail-disclosure" @bind-Expanded="_sourceContractsExpanded">
                     @if (_sourceContractsExpanded) { <BirkNext.Web.Components.SourceDomains.SourceContractEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" /> }
                 </ReviewDisclosure>
+                <ReviewDisclosure Text="Canonical operations" CollapseText="Hide canonical operations" Hint="shared identity · implementing source symbols · VERIFIES tests · contracts" TestId="aqr-canonical" Class="aqr-detail-disclosure" @bind-Expanded="_canonicalExpanded">
+                    @if (_canonicalExpanded) { <BirkNext.Web.Components.CanonicalOperationLookup Scope="@CorrelationPresentation.Scope(_context?.ActiveProfileOrNull?.Id)" /> }
+                </ReviewDisclosure>
                 <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="@DeliveryGateStates.NoSnapshot" TestId="aqr-delivery-gates" Class="aqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
                     @if (_deliveryExpanded) { <BirkNext.Web.Components.DeliveryEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" Categories="@([BirkNext.PipelineReview.ValidationCategory.Api, BirkNext.PipelineReview.ValidationCategory.Security, BirkNext.PipelineReview.ValidationCategory.Smoke, BirkNext.PipelineReview.ValidationCategory.HealthCheck, BirkNext.PipelineReview.ValidationCategory.Contract])" /> }
                 </ReviewDisclosure>
@@ -773,6 +776,7 @@
 </div>
 
 @code {
+    private bool _canonicalExpanded;
     private static readonly string[] Tabs = ["Overview", "REST", "GraphQL", "Contracts", "Security", "Errors", "Performance", "Findings"];
 
     private FrontendAnalysisContext? _context;

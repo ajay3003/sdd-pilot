@@ -130,6 +130,9 @@ public static class NavigationCatalog
                 Hint: "Azure DevOps work items → pull requests → commits → changed files (optional)", Aliases: ["Implementation Traceability"]),
             // Cross-cutting impact of requirement and source changes (off by default).
             new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis, Aliases: ["Unified Impact Analysis"]),
+            // Shared canonical correlation: one review registry for aliases, capability candidates, contract versions and test VERIFIES links.
+            new("correlation-review", "Correlation Review", "nav-icon-traceability", Always,
+                Hint: "canonical entities, typed relations and the shared review decisions every module uses", Aliases: ["Canonical interpretation", "Aliases"]),
             new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilityCoverage, OptionalByDefault: true),
             new("traceability/suggestions", "Traceability Suggestions", "nav-icon-suggestions", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilitySuggestions, OptionalByDefault: true),
             new("code-traceability", "Code Traceability", "nav-icon-code-trace", f => f.LegacyTraceabilityNavigationEnabled && f.CodeTraceability, OptionalByDefault: true),
@@ -204,7 +207,7 @@ public static class NavigationCatalog
         new("data-models-schemas", "Data Models & Schemas", ["data-model-explorer", "schema-studio"]),
         new("api-integration-quality", "API & Integration Quality", ["api-quality-review", "integration-topology", "integration-quality-review"]),
         new("generated-documentation", "Generated Documentation", [GeneratedDocumentationExplorerRoute, GeneratedDocumentationHealthRoute]),
-        new("traceability-impact", "Traceability & Impact", ["artifact-traceability", "implementation-traceability", "impact-analysis"]),
+        new("traceability-impact", "Traceability & Impact", ["artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review"]),
     ];
 
     /// <summary>The visible rows of a shared workspace, in its order (rows hidden by Feature Visibility are left out).</summary>
