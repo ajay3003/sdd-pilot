@@ -57,8 +57,8 @@ jobs:
       displayName: 'Restore backend solution'
       workingDirectory: AIAssisted/backend
 
-    - pwsh: ./scripts/check-migrations.ps1
-      displayName: 'Validate migration file integrity'
+    - pwsh: ./scripts/check-migrations.ps1 -ManifestOut "$(Build.ArtifactStagingDirectory)/migrations.json"
+      displayName: 'Validate migration file integrity (every migrations folder) and record migration ids'
       workingDirectory: .
 
     - script: dotnet build BirkNext.sln --configuration Release --no-restore
@@ -124,7 +124,7 @@ jobs:
           cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/.env.example"
           # The checked-in example contains only local development defaults required by docker-compose.
           cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/.env"
-          cp scripts/start-local.bat scripts/start-local.ps1 scripts/check-migrations.ps1 "$PACKAGE_DIR/scripts/"
+          cp scripts/start-local.bat scripts/start-local.ps1 scripts/check-migrations.ps1 scripts/validate-package.ps1 "$PACKAGE_DIR/scripts/"
           cp AIAssisted/backend/MIGRATION_GUIDE.md "$PACKAGE_DIR/"
 
           cat > "$PACKAGE_DIR/README.md" <<'EOF'
@@ -144,7 +144,9 @@ jobs:
 
           The package includes `AIAssisted/.env` with the checked-in local development defaults. Change those values before using a shared or exposed database. The backend configuration is supplied by the published appsettings and the local startup helper; no developer secrets or machine-specific settings are packaged.
 
-          The helper starts PostgreSQL, applies the backend migration integrity preflight, runs `AIAssisted/backend/BirkNext.Api.dll`, and serves `AIAssisted/frontend/wwwroot` on port 5173.
+          The helper first validates this package (`scripts/validate-package.ps1`: launcher, backend and frontend runtime, configuration templates, every packaged file, and every EF Core migration compiled into `BirkNext.Api.dll`), then starts PostgreSQL, runs `AIAssisted/backend/BirkNext.Api.dll`, and serves `AIAssisted/frontend/wwwroot` on port 5173. The package needs no source `Data/Migrations` folder.
+
+          Extract the package to a short folder (for example `C:\BirkNext`): Windows limits file paths to 260 characters.
           EOF
 
           BACKEND="$PACKAGE_DIR/AIAssisted/backend"
@@ -162,6 +164,16 @@ jobs:
           test -s "$PACKAGE_DIR/AIAssisted/.env"
           test -s "$PACKAGE_DIR/scripts/start-local.ps1"
           test -s "$PACKAGE_DIR/scripts/check-migrations.ps1"
+          test -s "$PACKAGE_DIR/scripts/validate-package.ps1"
+
+          # Package manifest: every packaged file and every EF Core migration id the source holds.
+          pwsh -NoProfile -File "$PACKAGE_DIR/scripts/validate-package.ps1" -CreateManifest \
+            -MigrationManifest "$(Build.ArtifactStagingDirectory)/migrations.json" -SourceCommit "$(Build.SourceVersion)"
+          # Validate an untouched copy in a clean folder, exactly as a tester would receive it.
+          CLEAN_DIR="$(Agent.TempDirectory)/package-clean"
+          rm -rf "$CLEAN_DIR" && mkdir -p "$CLEAN_DIR"
+          cp -r "$PACKAGE_DIR" "$CLEAN_DIR/"
+          pwsh -NoProfile -File "$CLEAN_DIR/BirkNext/scripts/validate-package.ps1" -PackageRoot "$CLEAN_DIR/BirkNext"
 
           echo "Runnable package verified. Key files:"
           printf '%s\n' \
@@ -176,9 +188,50 @@ jobs:
             "$PACKAGE_DIR/scripts/start-local.ps1"
           echo "Artifact file count: $(find "$PACKAGE_DIR" -type f | wc -l)"
 
+    # A candidate only: testers get the package after the Windows smoke test below has passed.
     - task: PublishPipelineArtifact@1
-      displayName: 'Publish BirkNext runnable artifact'
+      displayName: 'Publish BirkNext tester package candidate'
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/BirkNext'
+        artifact: 'birknext-tester-package-candidate'
+        publishLocation: 'pipeline'
+
+- job: SmokeTestTesterPackage
+  displayName: 'Smoke test the tester package on a clean Windows machine, then publish it'
+  dependsOn: BuildAndPackage
+  pool:
+    vmImage: windows-latest
+  timeoutInMinutes: 30
+  steps:
+    - checkout: none
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET (the launcher requires dotnet)'
+      inputs:
+        packageType: sdk
+        version: '8.0.x'
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download tester package candidate'
+      inputs:
+        artifact: 'birknext-tester-package-candidate'
+        path: '$(Pipeline.Workspace)/candidate'
+
+    - powershell: |
+        $ErrorActionPreference = "Stop"
+        # Unpack to a clean, short folder (as a tester should) and run the tester's own entry points with Windows PowerShell.
+        $clean = "C:\bn-smoke"
+        if (Test-Path $clean) { Remove-Item -Recurse -Force $clean }
+        Copy-Item -Recurse "$(Pipeline.Workspace)\candidate" $clean
+        powershell -NoProfile -ExecutionPolicy Bypass -File "$clean\scripts\validate-package.ps1"
+        if ($LASTEXITCODE -ne 0) { throw "Tester package validation failed." }
+        powershell -NoProfile -ExecutionPolicy Bypass -File "$clean\scripts\start-local.ps1" -ValidateOnly -SkipContainers
+        if ($LASTEXITCODE -ne 0) { throw "start-local.ps1 -ValidateOnly failed on the tester package." }
+      displayName: 'Validate the package and the launcher preflight from a clean folder'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish BirkNext tester package (validated)'
+      inputs:
+        targetPath: '$(Pipeline.Workspace)/candidate'
         artifact: 'birknext-tester-package'
         publishLocation: 'pipeline'

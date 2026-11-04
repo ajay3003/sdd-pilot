@@ -7,6 +7,8 @@ param(
     [switch]$Fast,
     [switch]$SkipContainers,
     [switch]$SkipMigrationCheck,
+    # Run every startup preflight (package or source integrity, runnable detection) and exit without starting anything.
+    [switch]$ValidateOnly,
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
     [switch]$ForceKillPorts,
@@ -968,6 +970,30 @@ function Invoke-MigrationIntegrityPreflight {
         return
     }
 
+    # Tester package (published output): migrations are compiled into BirkNext.Api.dll and there is no source Data\Migrations
+    # folder. The package is validated as a whole against what this launcher needs; a tester gets a package message, never a
+    # developer migration guide.
+    $publishedApi = Join-Path $BackendPath "BirkNext.Api.dll"
+    $sourceProject = Join-Path $BackendPath "BirkNext.Api\BirkNext.Api.csproj"
+    if ((Test-Path $publishedApi) -and -not (Test-Path $sourceProject)) {
+        $validateScript = Join-Path $RepoRoot "scripts\validate-package.ps1"
+        if (-not (Test-Path $validateScript)) {
+            Fail "BirkNext tester package is incomplete: scripts\validate-package.ps1 is missing. Download a new tester artifact or contact the build owner."
+            throw "Tester package validation failed."
+        }
+        Info "Tester package detected. Validating the package..."
+        $powerShellExe = (Get-Process -Id $PID).Path
+        if ([string]::IsNullOrWhiteSpace($powerShellExe)) { $powerShellExe = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" } }
+        $process = Start-Process -FilePath $powerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $validateScript, "-PackageRoot", $RepoRoot) `
+            -WorkingDirectory $RepoRoot -NoNewWindow -PassThru -Wait
+        if ($process.ExitCode -ne 0) {
+            Fail "BirkNext cannot start from this tester package. Download a new tester artifact or contact the build owner."
+            throw "Tester package validation failed."
+        }
+        Ok "Tester package validated (EF Core migrations embedded in BirkNext.Api.dll)."
+        return
+    }
+
     $checkScript = Join-Path $RepoRoot "scripts\check-migrations.ps1"
     $migrationGuide = Join-Path $BackendPath "MIGRATION_GUIDE.md"
     $apiProjectPath = Join-Path $BackendPath "BirkNext.Api"
@@ -1105,6 +1131,11 @@ else {
 
 Ok "Backend target:  $($backendRunnable.Path) [$($backendRunnable.Kind)]"
 Ok "Frontend target: $($frontendRunnable.Path) [$($frontendRunnable.Kind)]"
+
+if ($ValidateOnly) {
+    Ok "Validation only: integrity checks and runnable detection passed. Nothing was started."
+    exit 0
+}
 
 $backendPort = if ($backendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $backendRunnable.Path } else { $null }
 $frontendPort = if ($frontendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $frontendRunnable.Path } elseif ($frontendRunnable.Kind -eq "StaticWeb") { 5173 } else { $null }
