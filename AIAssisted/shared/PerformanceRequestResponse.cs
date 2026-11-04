@@ -34,6 +34,9 @@ public sealed record PerformanceTrialRequest
     public PerformanceTestDefinition Definition { get; init; } = new();
     /// <summary>Zero-based index of the last step to send (null = every enabled step).</summary>
     public int? ThroughStep { get; init; }
+    /// <summary>The active Target Environment's proxy identity (profile id + context fingerprint; never a token), so the backend can find the
+    /// credential the Local HTTPS proxy captured for it. Only used when a step authenticates with the Target Environment API credential.</summary>
+    public BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? Identity { get; init; }
 }
 
 /// <summary>The result of one validation request: per step, the request sent and the response received — bounded, redacted, never stored.</summary>

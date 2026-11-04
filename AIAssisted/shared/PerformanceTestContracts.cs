@@ -744,6 +744,9 @@ public sealed record PerformanceRunRequest
     public string DefinitionId { get; init; } = "";
     /// <summary>Optional release/deployment version label recorded with the run.</summary>
     public string? VersionLabel { get; init; }
+    /// <summary>The active Target Environment's proxy identity (profile id + context fingerprint; never a token), so the backend can find the
+    /// credential the Local HTTPS proxy captured for it. Only used when a step authenticates with the Target Environment API credential.</summary>
+    public BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? Identity { get; init; }
 }
 
 public sealed record PerformanceBaselinePromotion

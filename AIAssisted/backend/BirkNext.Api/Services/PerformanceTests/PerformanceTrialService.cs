@@ -44,18 +44,20 @@ public sealed partial class PerformanceTrialService(IHttpClientFactory clients, 
         {
             var s = d.Scenario.Steps[i];
             if (s.Disabled) continue;
-            results.Add(await StepAsync(d, i, s, origin, graphQl, row, ctx, ct));
+            results.Add(await StepAsync(d, i, s, origin, graphQl, row, ctx, request.Identity, ct));
         }
         return new() { Steps = results, At = now };
     }
 
     private async Task<PerformanceTrialStep> StepAsync(PerformanceTestDefinition d, int i, HttpPerformanceStep s, Uri origin, bool graphQl,
-        IReadOnlyDictionary<string, string> row, Dictionary<string, string?> ctx, CancellationToken ct)
+        IReadOnlyDictionary<string, string> row, Dictionary<string, string?> ctx, BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct)
     {
         var step = new PerformanceTrialStep { StepId = s.Id, Index = i, Name = s.Name };
         var readiness = PerformanceScenarioRuntime.Readiness(d, i);
         if (readiness.Status == StepStatus.Blocked) return step with { State = TrialStepState.Blocked, Reason = string.Join(" ", readiness.Reasons) };
-        if (PerformanceScenarioRuntime.EffectiveAuthentication(d, s) is not null)
+        // The Target Environment API credential (captured by the Local HTTPS proxy) is applied in-process below; any other authentication is not sent.
+        var useApiCredential = PerformanceScenarioRuntime.EffectiveAuthentication(d, s) == PerformanceScenarioRuntime.TargetEnvironmentApiCredential;
+        if (PerformanceScenarioRuntime.EffectiveAuthentication(d, s) is not null && !useApiCredential)
             return step with { State = TrialStepState.Blocked, Reason = "This step is authenticated. BirkNext does not issue credentials for automated requests, so it is not sent." };
         if (s.Headers.FirstOrDefault(h => PerformanceRequestResponse.IsSensitiveHeader(h.Name)) is { } sensitive)
             return step with { State = TrialStepState.Blocked, Reason = $"The header '{sensitive.Name}' can carry a credential and is never sent from a scenario." };
@@ -104,6 +106,9 @@ public sealed partial class PerformanceTrialService(IHttpClientFactory clients, 
             message.Content = new StringContent(body.Value, Encoding.UTF8);
             message.Content.Headers.ContentType = MediaTypeHeaderValue.TryParse(headers.FirstOrDefault(h => h.Name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)).Value.Value ?? contentType, out var mt) ? mt : null;
         }
+
+        if (useApiCredential && PerformanceApiCredential.Apply(services.GetService<LocalHttpsProxy.TransientAuthenticatedApiContextStore>(), d.EnvironmentId, identity, message) is { } credentialProblem)
+            return step with { State = TrialStepState.Blocked, Reason = credentialProblem };
 
         var client = clients.CreateClient(ClientName);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

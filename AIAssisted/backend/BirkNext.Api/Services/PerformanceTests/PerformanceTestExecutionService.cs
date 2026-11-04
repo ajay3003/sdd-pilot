@@ -651,6 +651,10 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         var baseline = await store.ActiveBaselineAsync(environmentId, definition.Id, definition.ComparisonFingerprint, ct);
         var readiness = await readinessService.EvaluateAsync(definition, PerformanceTestSafety.HasRuntimeMappings(definition) ? null : data, baseline is not null, ct);
         if (!readiness.Ready) return new(null, readiness.Blockers, null);
+        // Target Environment API credential: present, in scope and valid for the whole run, from this environment's own proxy identity.
+        var credentialStore = scope.ServiceProvider.GetService<LocalHttpsProxy.TransientAuthenticatedApiContextStore>();
+        if (PerformanceApiCredential.Problem(credentialStore, definition, environmentId, request.Identity, _clock.GetUtcNow()) is { } credentialProblem)
+            return new(null, [credentialProblem], null);
         // Central Test Data: resolved here, by the backend, for this run only (a transient profile); the definition and the run keep aliases only.
         if (PerformanceTestSafety.HasRuntimeMappings(definition)) data = null;
         if (PerformanceTestSafety.UsesCentralTestData(definition))
@@ -686,7 +690,8 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         catch { _activeByEnvironment.TryRemove(environmentId, out _); _trackers.TryRemove(run.RunId, out _); throw; }
         var cts = new CancellationTokenSource();
         _active[run.RunId] = cts;
-        LastExecution = Task.Run(() => ExecuteAsync(run, data, cts.Token));
+        var identity = request.Identity;
+        LastExecution = Task.Run(() => ExecuteAsync(run, data, cts.Token, identity));
         _tasks[run.RunId] = LastExecution;
         return new(run, [], null);
     }
@@ -744,7 +749,7 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         return run is { IsActive: true } && !_active.ContainsKey(runId) ? await ReconcileRunAsync(store, run, ct) : run;
     }
 
-    private async Task ExecuteAsync(PerformanceTestRun queued, PerformanceTestDataProfile? data, CancellationToken ct)
+    private async Task ExecuteAsync(PerformanceTestRun queued, PerformanceTestDataProfile? data, CancellationToken ct, BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity = null)
     {
         var tracker = _trackers.GetOrAdd(queued.RunId, _ => new RunTracker(queued, scopes, _clock));
         var run = queued;
@@ -779,6 +784,21 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
                     ThresholdResults = PerformanceTestRules.EvaluateThresholds(r.DefinitionSnapshot.Thresholds, null, false), ExecutionEvidence = Ended(r.ExecutionEvidence, "Blocked — target unreachable from the container network") }, CancellationToken.None));
                 return;
             }
+            // The captured API credential is leased only now, for this container, and re-checked (it may have expired or been replaced since the start).
+            LeasedApiCredential? credential = null;
+            if (PerformanceScenarioRuntime.UsesApiCredential(run.DefinitionSnapshot))
+            {
+                using var credentialScope = scopes.CreateScope();
+                var (leased, leaseProblem) = PerformanceApiCredential.Lease(credentialScope.ServiceProvider.GetService<LocalHttpsProxy.TransientAuthenticatedApiContextStore>(),
+                    run.DefinitionSnapshot, run.EnvironmentId, identity, _clock.GetUtcNow());
+                if (leased is null)
+                {
+                    await tracker.FinishAsync((store, r) => store.SaveRunAsync(r with { State = PerformanceRunState.Blocked, StateReason = leaseProblem, FinishedAt = _clock.GetUtcNow(),
+                        ThresholdResults = PerformanceTestRules.EvaluateThresholds(r.DefinitionSnapshot.Thresholds, null, false), ExecutionEvidence = Ended(r.ExecutionEvidence, "Blocked — API credential unavailable") }, CancellationToken.None));
+                    return;
+                }
+                credential = leased;
+            }
             var startedAt = _clock.GetUtcNow();
             // "Running" (the persisted state) means the provider was started — the stage and evidence below say how far execution actually got.
             tracker.Update(r => r with { State = PerformanceRunState.Running, StartedAt = startedAt, Reachability = reach });
@@ -794,7 +814,7 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
             workloadStart = run.StartedAt;
             var timeout = TimeSpan.FromSeconds(run.DefinitionSnapshot.Workload.TotalSeconds + options.ProviderTimeoutGraceSeconds);
             var workDir = Path.Combine(Path.GetTempPath(), "birknext-performance", run.RunId.ToString("N"));
-            var input = new PerformanceProviderInput(run.RunId, run.DefinitionSnapshot, data, workDir, timeout);
+            var input = new PerformanceProviderInput(run.RunId, run.DefinitionSnapshot, data, workDir, timeout) { Credential = credential };
             var reader = provider.OpenTelemetry(input);
             tracker.Evidence_(e => e with
             {

@@ -36,6 +36,9 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
 
     private PerformanceContainerOptions C => options.Container;
 
+    /// <summary>The container variable holding the whole Authorization value (scheme + token) the generated script sends (value never written to the script or a command line).</summary>
+    public const string ApiAuthorizationVariable = "BIRKNEXT_API_AUTHORIZATION";
+
     public static string ContainerName(Guid runId, string purpose = "run") => $"birknext-k6-{purpose}-{runId:N}";
 
     /// <summary>k6's NDJSON output stream inside the run's mounted output directory (read for counts only; removed with the run directory).</summary>
@@ -204,12 +207,15 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             {
                 Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", "--out", $"json={OutDir}/{TelemetryFile}", $"{InDir}/test.js"],
                 Mounts = Mounts(inDir, outDir, C.CaBundlePathFor(input.Definition.TargetOrigin)), Environment = Environment(C.CaBundlePathFor(input.Definition.TargetOrigin)),
+                // The leased Target Environment API credential reaches k6 only through the container's process environment, for this run.
+                SecretEnvironment = input.Credential is { } credential ? new Dictionary<string, string> { [ApiAuthorizationVariable] = "Bearer " + credential.Token } : new Dictionary<string, string>(),
                 Labels = Labels(input.RunId), Network = target.Network, HostGateway = target.HostGateway, Timeout = input.Timeout, MaxOutputBytes = options.MaxProviderOutputBytes,
                 MemoryMegabytes = C.MemoryMegabytes, Cpus = C.Cpus,
             }, hard.Token);
             // Everything is collected from the run's own directory before it is removed: diagnostics (already captured from the attached client),
             // the final telemetry read and the summary artifact. Removing the container never removes these host-side files.
             var diagnostics = Redact(outcome.StandardError.Length > 0 ? outcome.StandardError : outcome.StandardOutput, options.MaxProviderOutputBytes);
+            if (input.Credential is { Token.Length: > 0 } used) diagnostics = diagnostics.Replace(used.Token, "[redacted]", StringComparison.Ordinal);
             var telemetry = new K6JsonTelemetryReader(Path.Combine(outDir, TelemetryFile)).Read();
             var notes = new List<string>();
             if (!outcome.Removed) notes.Add($"The container {name} could not be confirmed removed; cleanup runs again on the next start.");

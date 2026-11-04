@@ -27,6 +27,8 @@ public static class K6ScriptGenerator
             ["headers"] = new JsonObject(Headers(d, s).Select(h => KeyValuePair.Create(h.Key, (JsonNode?)h.Value))),
             ["body"] = Body(d, s), ["expected"] = new JsonArray(s.ExpectedStatusCodes.Distinct().Order().Select(c => (JsonNode)c).ToArray()),
             ["thinkMs"] = s.ThinkTimeMs ?? 0,
+            // Authenticated with the Target Environment API credential: the token is read from the container environment at run time, never written here.
+            ["auth"] = PerformanceScenarioRuntime.EffectiveAuthentication(d, s) == PerformanceScenarioRuntime.TargetEnvironmentApiCredential,
             ["bind"] = Bindings(d, s), ["bodyMode"] = PerformanceRequestResponse.BodyEncoding(s, d.TargetType == PerformanceTargetType.GraphQlHttp),
             // [name, selector] reads the JSON body (k6 Response.json selector); [name, header, "header"] reads a response header.
             ["outputs"] = new JsonArray((s.Outputs ?? []).Where(o => PerformanceRequestResponse.OutputProblem(o) is null)
@@ -125,6 +127,7 @@ public static class K6ScriptGenerator
                 const url = ORIGIN + fill(s.path, s, r, ctx, 'path', miss) + (q.length > 0 ? `?${q}` : '');
                 const headers = {};
                 for (const h of Object.keys(s.headers)) headers[h] = fill(s.headers[h], s, r, ctx, 'header', miss);
+                if (s.auth) { if (!__ENV.BIRKNEXT_API_AUTHORIZATION) miss.push('authentication'); else headers['Authorization'] = __ENV.BIRKNEXT_API_AUTHORIZATION; }
                 const body = fill(s.body, s, r, ctx, s.bodyMode, miss);
                 // A value that did not resolve (e.g. the producing step's response lacked the output) is a counted failure: the request is not sent
                 // with a literal {placeholder} and no stale or sample value is substituted.

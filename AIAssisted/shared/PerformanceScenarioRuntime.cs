@@ -286,8 +286,19 @@ public static partial class PerformanceScenarioRuntime
 
     // ── Execution credential (the one rule: step card, scenario summary, Readiness tab and backend start) ──────────────────────────────────
 
-    /// <summary>The only authentication reference a scenario can choose today: the Target Environment's own (attended) authentication.</summary>
+    /// <summary>The Target Environment's own (attended, interactive) authentication: not executable by k6.</summary>
     public const string TargetEnvironmentAuthentication = "target-environment";
+
+    /// <summary>
+    /// The API credential the Local HTTPS proxy captured from the person's own browser session for this Target Environment (memory only, bound to
+    /// the environment's approved hosts, expires with the token). The one source k6 can execute: the backend leases it for one run, checks it is
+    /// present, in scope and valid for the whole run, and hands it to k6 only through the container's process environment.
+    /// </summary>
+    public const string TargetEnvironmentApiCredential = "target-environment-api";
+
+    public const string ApiCredentialNote =
+        "Uses the API credential the Local HTTPS proxy captured from your browser session for this Target Environment. The run is blocked unless " +
+        "it is present when the run starts, covers the target host and stays valid for the whole run. It acts as your own account.";
 
     /// <summary>Why a configured authentication cannot run in k6 (Readiness wording; the step uses <see cref="ExecutionCredentialMissing"/>).</summary>
     public const string NoExecutionCredential =
@@ -298,14 +309,34 @@ public static partial class PerformanceScenarioRuntime
         "Target Environment authentication is configured, but no non-interactive credential is available for performance execution.";
 
     /// <summary>Display name of an authentication reference (never a token).</summary>
-    public static string AuthenticationSourceName(string reference) =>
-        reference == TargetEnvironmentAuthentication ? "Target Environment" : reference;
+    public static string AuthenticationSourceName(string reference) => reference switch
+    {
+        TargetEnvironmentAuthentication => "Target Environment",
+        TargetEnvironmentApiCredential => "Target Environment API credential (Local HTTPS proxy)",
+        _ => reference,
+    };
 
     /// <summary>The configured authentication of an executed step and whether k6 can execute it; null when the step runs without authentication.
-    /// No reference is executable by k6 today: a configured authentication is never reported as runnable.</summary>
+    /// Only the proxy-captured API credential is executable (its presence and lifetime are checked when the run starts); attended sign-in never is.</summary>
     public static StepExecutionCredential? ExecutionCredential(PerformanceTestDefinition d, HttpPerformanceStep s) =>
         s.Disabled || EffectiveAuthentication(d, s) is not { } reference ? null
-            : new(reference, AuthenticationSourceName(reference), Interactive: reference == TargetEnvironmentAuthentication, PerformanceCompatible: false, ExecutionCredentialMissing);
+            : reference == TargetEnvironmentApiCredential
+                ? new(reference, AuthenticationSourceName(reference), Interactive: false, PerformanceCompatible: true, ApiCredentialNote)
+                : new(reference, AuthenticationSourceName(reference), Interactive: reference == TargetEnvironmentAuthentication, PerformanceCompatible: false, ExecutionCredentialMissing);
+
+    /// <summary>True when an executed step sends the proxy-captured API credential (the run then needs it leased).</summary>
+    public static bool UsesApiCredential(PerformanceTestDefinition d) =>
+        d.Scenario.Steps.Any(s => !s.Disabled && EffectiveAuthentication(d, s) == TargetEnvironmentApiCredential);
+
+    /// <summary>Why the captured credential cannot serve this run (null = it can): present, in scope and valid until the run's end plus a margin.</summary>
+    public static string? ApiCredentialProblem(bool available, bool inScope, DateTimeOffset? expiresAt, DateTimeOffset now, int runSeconds) =>
+        !available ? "No API credential has been captured for this Target Environment. Start the Local HTTPS proxy (Target Environments → Authentication) and use the application in the proxy browser, then run again."
+        : !inScope ? "The captured API credential does not cover the scenario's target host (it is limited to the Target Environment's approved HTTPS hosts)."
+        : expiresAt is { } end && end < now.AddSeconds(runSeconds + ApiCredentialMarginSeconds)
+            ? $"The captured API credential expires at {end.UtcDateTime:HH:mm} UTC, before this run would end. Use the application in the proxy browser to refresh it, or shorten the run."
+        : null;
+
+    public const int ApiCredentialMarginSeconds = 120;
 
     /// <summary>True when an executed step (or, with no steps, the default) uses an authentication k6 cannot execute.</summary>
     public static bool ExecutionCredentialBlocked(PerformanceTestDefinition d) =>

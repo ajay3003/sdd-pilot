@@ -22,6 +22,11 @@ public sealed record ContainerRunSpec
     public string? Entrypoint { get; init; }
     public IReadOnlyList<ContainerMount> Mounts { get; init; } = [];
     public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>();
+    /// <summary>
+    /// Secret variables (e.g. a leased credential): the CLI gets only <c>--env NAME</c> and reads the value from its own process environment, so the
+    /// value never appears in a command line, a process listing or a log.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> SecretEnvironment { get; init; } = new Dictionary<string, string>();
     public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>();
     /// <summary>Null = the runtime's default bridge network (ordinary outbound access).</summary>
     public string? Network { get; init; }
@@ -90,6 +95,8 @@ public static partial class ContainerArgumentRules
     public static bool IsNetwork(string value) => NamePattern().IsMatch(value);
     public static bool IsLabel(string key, string value) => LabelKeyPattern().IsMatch(key) && LabelValuePattern().IsMatch(value);
     public static bool IsEnvironment(string key, string value) => EnvKeyPattern().IsMatch(key) && !value.Any(char.IsControl) && value.Length <= 2048;
+    /// <summary>A secret variable (e.g. a JWT, often over 2 KB): same name rule, value passed through the process environment only.</summary>
+    public static bool IsSecretEnvironment(string key, string value) => EnvKeyPattern().IsMatch(key) && value.Length > 0 && !value.Any(char.IsControl) && value.Length <= 16 * 1024;
     public static bool IsContainerPath(string value) => ContainerPathPattern().IsMatch(value) && !value.Split('/').Any(s => s is "." or "..");
     /// <summary>A host path for --mount: absolute, no comma/quote/newline (the --mount syntax is comma-separated).</summary>
     public static bool IsHostPath(string value) => Path.IsPathFullyQualified(value) && !value.Any(c => c is ',' or '"' or '\'' || char.IsControl(c));
@@ -182,6 +189,11 @@ public sealed partial class PodmanContainerExecutionRuntime(IProcessRunner runne
             if (!ContainerArgumentRules.IsEnvironment(key, value)) throw new ArgumentException($"Invalid environment variable {key}.", nameof(spec));
             args.Add("--env"); args.Add($"{key}={value}");
         }
+        foreach (var (key, value) in spec.SecretEnvironment.OrderBy(e => e.Key, StringComparer.Ordinal))
+        {
+            if (!ContainerArgumentRules.IsSecretEnvironment(key, value)) throw new ArgumentException($"Invalid secret environment variable {key}.", nameof(spec));
+            args.Add("--env"); args.Add(key);
+        }
         if (spec.Entrypoint is { } entrypoint)
         {
             if (!ContainerArgumentRules.IsContainerPath(entrypoint)) throw new ArgumentException("Invalid entrypoint.", nameof(spec));
@@ -213,7 +225,7 @@ public sealed partial class PodmanContainerExecutionRuntime(IProcessRunner runne
         var removed = false;
         try
         {
-            outcome = await runner.RunAsync(new ProcessSpec(Cli, args, Path.GetTempPath()), spec.Timeout, spec.MaxOutputBytes, ct);
+            outcome = await runner.RunAsync(new ProcessSpec(Cli, args, Path.GetTempPath(), spec.SecretEnvironment.Count > 0 ? spec.SecretEnvironment : null), spec.Timeout, spec.MaxOutputBytes, ct);
         }
         finally
         {

@@ -252,6 +252,7 @@
 
     private bool _loaded;
     private FrontendAnalysisProfile? _profile;
+    private BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? _identity;
     private PerformanceTestOverview? _overview;
     private PerformanceTestDefinition _draft = new();
     private bool _isNew;
@@ -487,7 +488,10 @@
     protected override async Task OnInitializedAsync()
     {
         // No active Target Environment is the "no performance target" state; it is never sent as an empty environment id.
-        _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
+        var activeContext = await ContextFactory.GetActiveContextAsync();
+        _profile = activeContext.ActiveProfileOrNull;
+        // The proxy identity (profile id + context fingerprint, never a token) lets the backend use the API credential the Local HTTPS proxy captured.
+        _identity = BirkNext.Web.Models.ReviewAuthenticationIdentity.ForContext(activeContext);
         // "Back to Performance Test Review" from local execution setup returns to the same saved definition and tab (ids only).
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
         var returnDefinition = query.TryGetValue("definition", out var definition) ? definition.ToString() : null;
@@ -592,7 +596,7 @@
         _starting = true;
         _startBlockers = [];
         PerformanceApiResult<PerformanceTestRun> result;
-        try { result = await Api.StartAsync(_profile!.Id, new PerformanceRunRequest { DefinitionId = _draft.Id, VersionLabel = _versionLabel }); }
+        try { result = await Api.StartAsync(_profile!.Id, new PerformanceRunRequest { DefinitionId = _draft.Id, VersionLabel = _versionLabel, Identity = _identity }); }
         finally { _starting = false; }
         if (result.Value is null) { _message = result.Error; _startBlockers = result.Blockers; return; }
         _message = "Performance test started.";
@@ -910,7 +914,7 @@
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
         <BirkNext.Web.Components.PerformanceScenarioSteps Definition="_draft" OnChange="Changed" Assets="_testDataAssets" Observations="_observations" ObservedAuthentication="ObservedAuthentication"
             History="_history" AuthenticationMethod="@(_profile?.Authentication is { RequiresAuthentication: true } auth ? BirkNext.Web.Services.AuthenticationPresentation.ProviderLabel(auth.AuthenticationType) : null)"
-            OnTrial="@(_profile is null ? null : d => Api.TrialAsync(_profile.Id, new PerformanceTrialRequest { Definition = d }))" />
+            OnTrial="@(_profile is null ? null : d => Api.TrialAsync(_profile.Id, new PerformanceTrialRequest { Definition = d, Identity = _identity }))" />
 
         <section class="ptc-panel" aria-labelledby="pt-testdata-h" data-testid="pt-testdata">
             <h3 id="pt-testdata-h">Test Data</h3>

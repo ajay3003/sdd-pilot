@@ -29,6 +29,12 @@ internal interface ITransientCredentialSink
     bool TryApply(string profileId, string contextFingerprint, HttpRequestMessage request);
     /// <summary>Approved host set of the current (non-expired) context for the profile, so a review can pre-validate a target host without holding a runtime session. Null when no valid context exists.</summary>
     ApprovedHostSet? ScopeOf(string profileId, string contextFingerprint);
+    /// <summary>
+    /// The credential for one performance run against <paramref name="target"/> (an approved HTTPS authority of the same environment), with its
+    /// expiry. Only the performance execution service calls it, to hand the value to its k6 container's process environment for that run.
+    /// False when unavailable, expired or out of scope.
+    /// </summary>
+    bool TryLease(string profileId, string contextFingerprint, Uri target, out string bearerToken, out DateTimeOffset expiresAt);
 }
 
 /// <summary>
@@ -76,6 +82,15 @@ public sealed class TransientAuthenticatedApiContextStore(Func<DateTimeOffset>? 
     }
 
     ApprovedHostSet? ITransientCredentialSink.ScopeOf(string profileId, string contextFingerprint) => Current(profileId, contextFingerprint)?.Scope;
+
+    bool ITransientCredentialSink.TryLease(string profileId, string contextFingerprint, Uri target, out string bearerToken, out DateTimeOffset expiresAt)
+    {
+        (bearerToken, expiresAt) = ("", default);
+        var entry = Current(profileId, contextFingerprint);
+        if (entry is null || !target.IsAbsoluteUri || !entry.Scope.ContainsUri(target)) return false;
+        (bearerToken, expiresAt) = (entry.Reveal(), entry.ExpiresAt);
+        return true;
+    }
 
     private Entry? Current(string profileId, string contextFingerprint)
     {

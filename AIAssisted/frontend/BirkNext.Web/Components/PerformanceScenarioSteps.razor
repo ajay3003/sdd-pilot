@@ -25,7 +25,8 @@
                         <option value="">None</option>
                         @foreach (var (key, label) in AuthOptions) { <option value="@key">@label</option> }
                     </select>
-                    <span class="pss-hint" id="pss-auth-help">Steps inherit it unless they override it. A reference only — no token is copied.</span></dd></div>
+                    <span class="pss-hint" id="pss-auth-help">Steps inherit it unless they override it. A reference only — no token is copied.
+                        @if (Definition.AuthenticationReference == R.TargetEnvironmentApiCredential) { <span data-testid="pss-api-credential-note">@R.ApiCredentialNote</span> }</span></dd></div>
             <div><dt>Steps</dt><dd data-testid="pss-steps-count">@Definition.Scenario.Steps.Count@(Definition.Scenario.Steps.Count(s => s.Disabled && !DD.IsDraft(s)) is > 0 and var off ? $" · {off} disabled" : "")@if (Definition.Scenario.Steps.Count(DD.IsDraft) is > 0 and var drafts) { <span class="pss-warn" data-testid="pss-drafts-count"> · @drafts discovered · review required</span> }</dd></div>
             @if (readiness.Status == StepStatus.Ready && R.ExecutionCredentialBlocked(Definition))
             {
@@ -109,7 +110,11 @@
     [Parameter] public string? AuthenticationMethod { get; set; }
 
     /// <summary>Approved authentication configurations a scenario may reference (references only; credentials stay with their owner).</summary>
-    public static readonly (string Key, string Label)[] AuthOptions = [(R.TargetEnvironmentAuthentication, "Target Environment authentication")];
+    public static readonly (string Key, string Label)[] AuthOptions =
+    [
+        (R.TargetEnvironmentApiCredential, "Target Environment API credential (Local HTTPS proxy)"),
+        (R.TargetEnvironmentAuthentication, "Target Environment authentication (attended sign-in — not for k6)"),
+    ];
 
     private const string Up = "up", Down = "down", Get = "GET", Post = "POST", JsonType = "application/json";
 
@@ -431,7 +436,7 @@
                                     @if (AuthenticationMethod is { Length: > 0 } method) { <div><dt>Method</dt><dd data-testid="pt-step-auth-method">@method</dd></div> }
                                     <div><dt>Interactive (attended)</dt><dd data-testid="pt-step-auth-interactive">@(credential.Interactive ? "Yes" : "No")</dd></div>
                                     <div><dt>Performance execution compatible</dt><dd data-testid="pt-step-auth-compatible">@(credential.PerformanceCompatible ? "Yes" : "No")</dd></div>
-                                    <div><dt>Execution credential</dt><dd data-testid="pt-step-auth-credential" data-state="@(credential.PerformanceCompatible ? "Available" : "Missing")">@(credential.PerformanceCompatible ? "✓ Available" : "✕ Missing")</dd></div>
+                                    <div><dt>Execution credential</dt><dd data-testid="pt-step-auth-credential" data-state="@(credential.PerformanceCompatible ? "CheckedAtStart" : "Missing")">@(credential.PerformanceCompatible ? "Captured by the Local HTTPS proxy — checked when a validation request or run starts" : "✕ Missing")</dd></div>
                                 </dl>
                             }</dd></div>
                         <div><dt>Execution</dt><dd data-testid="pt-step-dim-execution" data-state="@dims.Execution.State"><span aria-hidden="true">@Glyph(dims.Execution.State) </span>@dims.Execution.Text

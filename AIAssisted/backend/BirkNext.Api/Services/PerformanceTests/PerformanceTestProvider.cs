@@ -129,7 +129,11 @@ public sealed record PerformanceContainerOptions
 }
 
 /// <summary>Everything a provider needs for one run. Values are validated; nothing here is a credential.</summary>
-public sealed record PerformanceProviderInput(Guid RunId, PerformanceTestDefinition Definition, PerformanceTestDataProfile? TestData, string WorkingDirectory, TimeSpan Timeout);
+public sealed record PerformanceProviderInput(Guid RunId, PerformanceTestDefinition Definition, PerformanceTestDataProfile? TestData, string WorkingDirectory, TimeSpan Timeout)
+{
+    /// <summary>The leased Target Environment API credential for this run only (never persisted; its text form never shows the value).</summary>
+    public LeasedApiCredential? Credential { get; init; }
+}
 
 public sealed record PerformanceProviderResult
 {
