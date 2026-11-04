@@ -23,6 +23,9 @@ public sealed class IqrCanonicalSourceReader(Integrations.SourceEvidence.IqrSour
 public interface ICanonicalWorkItemReader
 {
     Task<IReadOnlyList<WorkItemIntentInput>?> FeaturesAsync(Guid deliverySnapshotId, CancellationToken ct);
+
+    /// <summary>The snapshot's tasks (case L/M: a task naming a source symbol). Readers without tasks return none.</summary>
+    Task<IReadOnlyList<TaskReferenceInput>> TasksAsync(Guid deliverySnapshotId, CancellationToken ct) => Task.FromResult<IReadOnlyList<TaskReferenceInput>>([]);
 }
 
 public sealed class DeliveryCanonicalWorkItemReader(Data.DeliveryReporting.DeliveryReportingDbContext db) : ICanonicalWorkItemReader
@@ -37,6 +40,13 @@ public sealed class DeliveryCanonicalWorkItemReader(Data.DeliveryReporting.Deliv
         var byFeature = stories.ToLookup(s => s.FeatureSnapshotId, s => s.Title);
         return [.. features.Select(f => new WorkItemIntentInput(f.Module, f.FeatureKey, f.Title, [.. byFeature[f.Id]], f.SpecPath, $"delivery:{deliverySnapshotId}"))];
     }
+
+    public async Task<IReadOnlyList<TaskReferenceInput>> TasksAsync(Guid deliverySnapshotId, CancellationToken ct) =>
+        [.. (await (from t in db.TaskSnapshots.AsNoTracking()
+                    join f in db.FeatureSnapshots.AsNoTracking() on t.FeatureSnapshotId equals f.Id
+                    where t.SnapshotId == deliverySnapshotId
+                    select new { f.Module, f.FeatureKey, t.TaskKey, t.TaskId, t.Text }).ToListAsync(ct))
+            .Select(t => new TaskReferenceInput(t.Module, t.FeatureKey, t.TaskId ?? t.TaskKey, t.Text, $"delivery:{deliverySnapshotId}"))];
 }
 
 /// <summary>Thrown for a request the caller can correct (unknown scope format, unknown target).</summary>
@@ -80,13 +90,15 @@ public sealed partial class CanonicalInterpretationService(
             refs.Add(new(SnapshotType.SourceAnalysis, id.ToString(), snapshot.Archive.FileName, snapshot.AnalyzerVersion.ToString()));
             if (snapshot.TestInventory is null) limitations.Add($"{snapshot.Archive.FileName}: no test inventory recorded (analyzed before test evidence).");
             if (snapshot.CodeRiskEvidence is null) limitations.Add($"{snapshot.Archive.FileName}: no endpoint routes recorded (source symbols for API operations unavailable).");
+            else if (snapshot.CodeRiskEvidence.AnalyzerVersion < 3)
+                limitations.Add($"{snapshot.Archive.FileName}: analyzed before declared types were recorded (code-risk v{snapshot.CodeRiskEvidence.AnalyzerVersion}); re-analyze to correlate tasks with classes.");
             if (snapshot.EvidenceDomains?.Contracts is null) limitations.Add($"{snapshot.Archive.FileName}: no contract evidence recorded.");
         }
         if (request.DeliverySnapshotId is { } deliveryId)
         {
             var features = workItems is null ? null : await workItems.FeaturesAsync(deliveryId, ct);
             if (features is null) throw new CanonicalRequestException($"Delivery snapshot {deliveryId} is not stored.");
-            inputs.Add(CorrelationInput.Empty(scope) with { WorkItems = features });
+            inputs.Add(CorrelationInput.Empty(scope) with { WorkItems = features, Tasks = await workItems!.TasksAsync(deliveryId, ct) });
             refs.Add(new(SnapshotType.Delivery, deliveryId.ToString(), "Delivery snapshot"));
         }
         inputs.Add(CorrelationInput.Empty(scope) with { Systems = CanonicalEvidenceAdapter.DeclaredSystems(profiles ?? [], (packs ?? []).SelectMany(p => p.Aliases)) });
@@ -425,6 +437,45 @@ public sealed partial class CanonicalInterpretationService(
         var details = new List<CanonicalEntityDetail>();
         foreach (var id in matches) if (await EntityAsync(scope, id, ct) is { } d) details.Add(d);
         return details;
+    }
+
+    /// <summary>Summary-first counts for dashboards and consumers, from the latest interpretation's frozen membership (never the whole graph).</summary>
+    public async Task<CanonicalSummaryView> SummaryAsync(string scope, CancellationToken ct)
+    {
+        scope = ValidScope(scope);
+        var latest = await db.Snapshots.AsNoTracking().Where(s => s.Scope == scope).OrderByDescending(s => s.CreatedAt).FirstOrDefaultAsync(ct);
+        if (latest is null)
+            return new(scope, null, null, [], new Dictionary<string, int>(), new Dictionary<string, int>(), 0, 0, 0, 0, new(0, 0, 0, 0, 0), [],
+                ["No canonical interpretation exists for this project yet (Correlation Review → Interpret)."]);
+        var entities = await (from m in db.SnapshotEntities.AsNoTracking()
+                              join e in db.Entities.AsNoTracking() on m.EntityId equals e.Id
+                              where m.SnapshotId == latest.Id
+                              select new { e.Id, e.EntityType, e.DisplayName, e.SourceIdentity, e.AttributesJson }).ToListAsync(ct);
+        var relations = await (from m in db.SnapshotRelations.AsNoTracking()
+                               join r in db.Relations.AsNoTracking() on m.RelationId equals r.Id
+                               where m.SnapshotId == latest.Id
+                               select new { r.RelationType, r.SourceEntityId, r.TargetEntityId, m.Resolution, m.ReviewState }).ToListAsync(ct);
+        var established = relations.Count(r => CorrelationPrecedence.Counts(Enum.Parse<RelationResolution>(r.Resolution)) || r.ReviewState == nameof(RelationReviewState.Confirmed));
+        var needsReview = relations.Count(r => r.ReviewState is nameof(RelationReviewState.RevalidationRequired) or nameof(RelationReviewState.Conflict)
+            || (r.ReviewState is nameof(RelationReviewState.NotReviewed) or nameof(RelationReviewState.Deferred) && r.Resolution is nameof(RelationResolution.Candidate) or nameof(RelationResolution.Ambiguous)));
+        var versions = entities.Where(e => e.EntityType == nameof(CanonicalEntityType.ContractVersion)).ToList();
+        var withIdentity = relations.Where(r => r.RelationType == nameof(CanonicalRelationType.BelongsTo)).Select(r => r.SourceEntityId).ToHashSet();
+        var byId = entities.ToDictionary(e => e.Id);
+        var packages = entities.Where(e => e.EntityType == nameof(CanonicalEntityType.Package)).OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).Select(p =>
+        {
+            var attributes = JsonSerializer.Deserialize<Dictionary<string, string>>(p.AttributesJson, Json) ?? [];
+            var libraries = relations.Where(r => r.SourceEntityId == p.Id && r.RelationType == nameof(CanonicalRelationType.Contains) && byId.TryGetValue(r.TargetEntityId, out var t)
+                    && t.EntityType == nameof(CanonicalEntityType.Library)).Select(r => byId[r.TargetEntityId].DisplayName).Order(StringComparer.Ordinal).ToList();
+            return new CanonicalPackageSummary(p.Id, p.DisplayName, attributes.TryGetValue("capabilities", out var c) ? c.Split(',', StringSplitOptions.RemoveEmptyEntries) : [], libraries);
+        }).ToList();
+        return new(scope, latest.Id, latest.CreatedAt, [.. latest.RuleSetVersions.Split(';', StringSplitOptions.RemoveEmptyEntries)],
+            entities.GroupBy(e => e.EntityType).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
+            relations.GroupBy(r => r.RelationType).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
+            established, relations.Count(r => r.Resolution == nameof(RelationResolution.Candidate) && r.ReviewState != nameof(RelationReviewState.Confirmed)),
+            needsReview, relations.Count(r => r.ReviewState == nameof(RelationReviewState.Conflict)),
+            new(entities.Count(e => e.EntityType == nameof(CanonicalEntityType.Contract)), versions.Count, versions.Select(v => v.SourceIdentity.ToLowerInvariant()).Distinct().Count(),
+                entities.Count(e => e.EntityType == nameof(CanonicalEntityType.ContractOccurrence)), versions.Count(v => !withIdentity.Contains(v.Id))),
+            packages, JsonSerializer.Deserialize<List<string>>(latest.LimitationsJson, Json) ?? []);
     }
 
     public async Task<IReadOnlyList<InterpretationSnapshotView>> SnapshotsAsync(string scope, int take, CancellationToken ct)

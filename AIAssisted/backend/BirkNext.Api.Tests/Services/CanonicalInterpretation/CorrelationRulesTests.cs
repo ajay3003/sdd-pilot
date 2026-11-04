@@ -84,8 +84,9 @@ public sealed class CorrelationRulesTests
 
         result.Entities.Count(e => e.Type == CanonicalEntityType.ContractOccurrence).Should().Be(2, "occurrences are never merged or deleted");
         var version = result.Entities.Should().ContainSingle(e => e.Type == CanonicalEntityType.ContractVersion).Subject;
-        version.IdentityKey.Should().Be("xmlschema:sha256:aaa", "identity of content is the hash, case-insensitive");
-        result.Relations.Where(r => r.Type == CanonicalRelationType.BelongsTo && r.RuleId == CorrelationRules.ContractHashRule)
+        version.IdentityKey.Should().Be("xmlschema:sha256:aaa@v1.0", "identity of content is the hash (case-insensitive), qualified by the declared version context");
+        version.Attribute("contentHash").Should().Be("aaa");
+        result.Relations.Where(r => r.Type == CanonicalRelationType.OccurrenceOf && r.RuleId == CorrelationRules.ContractHashRule)
             .Should().HaveCount(2).And.OnlyContain(r => r.Resolution == RelationResolution.Derived);
         var occurrences = result.Entities.Where(e => e.Type == CanonicalEntityType.ContractOccurrence).ToList();
         occurrences.Select(o => o.Attribute("package")).Should().BeEquivalentTo(["M2LB", "M2LB.Common"]);
@@ -254,7 +255,7 @@ public sealed class CorrelationRulesTests
         var b = Run(In() with { WorkItems = [.. Enumerable.Reverse(items)], Tests = [.. Enumerable.Reverse(tests)] });
         a.Relations.Select(r => (r.Key, r.Resolution, r.EvidenceFingerprint)).Should().Equal(b.Relations.Select(r => (r.Key, r.Resolution, r.EvidenceFingerprint)));
         a.Entities.Select(e => e.Key).Should().Equal(b.Entities.Select(e => e.Key));
-        a.RuleSetVersion.Should().Be("correlation/1");
+        a.RuleSetVersion.Should().Be("correlation/2");
     }
 
     // ---- precedence ----

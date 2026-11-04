@@ -13,6 +13,8 @@ public enum CanonicalEntityType
 {
     Project, Package, Repository, Module, System, Service, Capability, Feature, UserStory, FunctionalGroup, Scenario, Task, Requirement,
     SourceSymbol, ApiOperation, Contract, ContractOccurrence, ContractVersion, MessagingChannel, DataEntity, Test, TestSuite,
+    /// <summary>A shared library a package publishes (e.g. M2LB.Common.Health): distinct from the package that contains it and the services that use it.</summary>
+    Library,
 }
 
 /// <summary>Typed relation between two canonical entities (direction: source → target).</summary>
@@ -20,6 +22,10 @@ public enum CanonicalEntityType
 public enum CanonicalRelationType
 {
     Contains, BelongsTo, Implements, References, DependsOn, Exposes, Consumes, Produces, Verifies, AliasOf, CandidateSameAs, SameAs, Supersedes, DerivedFrom,
+    /// <summary>A source occurrence (file in one package of one snapshot) of a contract version (correlation/2; correlation/1 used BelongsTo).</summary>
+    OccurrenceOf,
+    /// <summary>A service uses a shared library (project or package reference stated in the source).</summary>
+    Uses,
 }
 
 /// <summary>How a relation was established. Only <see cref="Explicit"/>, <see cref="Derived"/> and <see cref="Confirmed"/> count as established.</summary>
@@ -206,6 +212,20 @@ public sealed record AliasResolution(string Name, IReadOnlyList<CanonicalEntityV
 public sealed record InterpretRequest(IReadOnlyList<Guid> SourceSnapshotIds, Guid? DeliverySnapshotId = null, string? Trigger = null);
 
 public sealed record ReviewDecisionRequest(ReviewTargetKind TargetKind, string TargetKey, ReviewDecisionOutcome Outcome, string? Reviewer = null, string? Notes = null);
+
+/// <summary>
+/// The scope's canonical counts, read from the latest interpretation snapshot's frozen membership (so every consumer shows the same numbers for the
+/// same interpretation, and entities left behind by an older rule set are never counted). Each count names what it counts.
+/// </summary>
+public sealed record CanonicalSummaryView(string Scope, Guid? InterpretationId, DateTimeOffset? InterpretedAt, IReadOnlyList<string> RuleSetVersions,
+    IReadOnlyDictionary<string, int> EntitiesByType, IReadOnlyDictionary<string, int> RelationsByType, int EstablishedRelations, int CandidateRelations,
+    int NeedsReview, int Conflicts, CanonicalContractCounts Contracts, IReadOnlyList<CanonicalPackageSummary> Packages, IReadOnlyList<string> Limitations);
+
+/// <summary>Logical contracts (declared identity), versions (content + version context), distinct contents (hashes) and source occurrences, kept apart.</summary>
+public sealed record CanonicalContractCounts(int LogicalContracts, int Versions, int DistinctContents, int Occurrences, int VersionsWithoutLogicalIdentity);
+
+/// <summary>A package with every evidence capability it provides (never one exclusive role) and the shared libraries it publishes.</summary>
+public sealed record CanonicalPackageSummary(Guid Id, string Name, IReadOnlyList<string> Capabilities, IReadOnlyList<string> Libraries);
 
 /// <summary>One page of a scoped listing (the browser never loads the whole graph).</summary>
 public sealed record CanonicalPage<T>(IReadOnlyList<T> Items, int Total, int Skip, int Take);

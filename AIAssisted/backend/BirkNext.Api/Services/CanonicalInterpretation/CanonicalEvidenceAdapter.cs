@@ -22,10 +22,13 @@ public static class CanonicalEvidenceAdapter
         var entities = new List<CanonicalEntityFact>();
         var relations = new List<CanonicalRelationFact>();
         var packageKey = PackageIdentity(snapshot);
+        var capabilities = PackageCapabilities(snapshot);
+        var packageAttributes = new Dictionary<string, string> { ["archiveSha256"] = snapshot.Archive.Sha256, ["archive"] = snapshot.Archive.FileName };
+        if (capabilities.Count > 0) packageAttributes["capabilities"] = string.Join(',', capabilities.Select(c => c.Capability));
         var package = new CanonicalEntityFact(CanonicalEntityType.Package, packageKey, snapshot.Repository?.DisplayName ?? snapshot.Archive.FileName,
             snapshot.Repository?.Key ?? snapshot.Archive.FileName, snapshot.Repository is null ? "archive file name (no repository identity recorded)" : $"repository identity ({snapshot.Repository.Basis})",
-            [new("archive", $"sha256:{snapshot.Archive.Sha256}", snapshot.Archive.FileName, sid)],
-            Attributes: new Dictionary<string, string> { ["archiveSha256"] = snapshot.Archive.Sha256, ["archive"] = snapshot.Archive.FileName });
+            [new("archive", $"sha256:{snapshot.Archive.Sha256}", snapshot.Archive.FileName, sid), .. capabilities.Select(c => new CorrelationEvidence("capability", c.Capability, c.Evidence, sid))],
+            Attributes: packageAttributes);
         entities.Add(package);
 
         var components = snapshot.Architecture?.Components ?? [];
@@ -40,6 +43,9 @@ public static class CanonicalEvidenceAdapter
         }
 
         var symbols = new List<SourceSymbolInput>();
+        // Declared production types (code-risk analyzer v3+): the general source-symbol table, identity = package + namespace + type.
+        foreach (var t in snapshot.CodeRiskEvidence?.Symbols ?? [])
+            symbols.Add(new(packageKey, t.File, t.Name, t.Namespace, t.Kind, null, null, [], [], OwnerOf(t.File, components), sid));
         foreach (var e in (snapshot.CodeRiskEvidence?.Endpoints ?? []).Where(e => e.Kind == "HTTP" && !string.IsNullOrWhiteSpace(e.Route)))
         {
             var method = e.Display.Split(' ', 2)[0];
@@ -47,6 +53,14 @@ public static class CanonicalEvidenceAdapter
             var parts = e.Key.Split('|');
             var symbol = parts.Length > 2 && parts[2] != "minimal" ? parts[1] : $"minimal {method} {e.Route}";
             symbols.Add(new(packageKey, e.File, symbol, null, parts.Length > 2 && parts[2] == "minimal" ? "Endpoint" : "Controller", method, e.Route, [], [], owner, sid));
+        }
+        // GraphQL resolvers: the operation is the schema root (Query/Mutation/Subscription) + field; the resolver method implements it.
+        foreach (var e in (snapshot.CodeRiskEvidence?.Endpoints ?? []).Where(e => e.Kind == "GraphQL" && !string.IsNullOrWhiteSpace(e.Route)))
+        {
+            var parts = e.Key.Split('|');
+            if (parts.Length < 3) continue;
+            var root = parts[2] is "Query" or "Mutation" or "Subscription" ? parts[2].ToUpperInvariant() : "QUERY";
+            symbols.Add(new(packageKey, e.File, parts[1], null, "GraphQL", root, e.Route, [], [], OwnerOf(e.File, components), sid));
         }
 
         var channels = (snapshot.Architecture?.MessagingChannels ?? [])
@@ -79,7 +93,51 @@ public static class CanonicalEvidenceAdapter
                 : Array.Empty<SystemIdentityInput>())
             .ToList();
 
-        return new(scope, [], contracts, symbols, [], tests, systems, entities, relations, channels);
+        // Shared libraries: packages this source publishes, and internal shared projects; uses from project/package references.
+        var libraries = new List<LibraryInput>();
+        foreach (var published in snapshot.DependencyEvidence?.PublishedPackages ?? [])
+            libraries.Add(new(packageKey, published.PackageId, published.Project, sid));
+        foreach (var shared in (snapshot.Architecture?.SharedLibraries ?? []).Where(l => l.Internal))
+            libraries.Add(new(packageKey, shared.Name, shared.SourceProject, sid));
+        var uses = new List<LibraryUseInput>();
+        foreach (var shared in (snapshot.Architecture?.SharedLibraries ?? []).Where(l => l.Internal))
+            foreach (var component in shared.ReferencedByComponents)
+                if (componentNames.GetValueOrDefault(component) is { } user) uses.Add(new(user, shared.Name, $"project reference to {shared.SourceProject}", sid));
+        foreach (var d in snapshot.DependencyEvidence?.Dependencies ?? [])
+            foreach (var file in d.ReferencedBy.Append(d.OwnerFile).Where(f => f.EndsWith("proj", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.Ordinal))
+                if (components.FirstOrDefault(c => string.Equals(c.SourceProject.Replace('\\', '/'), file.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)) is { } owner)
+                    uses.Add(new(owner.Name, d.PackageName, $"package reference in {file}", sid));
+
+        return new(scope, [], contracts, symbols, [], tests, systems, entities, relations, channels, null, libraries, uses);
+    }
+
+    /// <summary>
+    /// What a package provides as evidence, from what Source Analysis found in it (file roles and domain evidence). A package can provide several
+    /// (Terraform-iac-meldingsutveksler: Infrastructure + Contracts); none is exclusive, and nothing is derived from the package name.
+    /// </summary>
+    public static IReadOnlyList<(string Capability, string Evidence)> PackageCapabilities(IqrSourceSnapshot snapshot)
+    {
+        var roles = (snapshot.EvidenceDomains?.FileRoles ?? []).ToDictionary(r => r.Role, r => r.Files);
+        int Files(BirkNext.SourceDomains.SourceFileRole role) => roles.GetValueOrDefault(role);
+        var list = new List<(string, string)>();
+        var production = snapshot.Projects.Count(p => !p.IsTest);
+        var published = snapshot.DependencyEvidence?.PublishedPackages.Count ?? 0;
+        var hosts = snapshot.Architecture?.Components.Count(c => !string.IsNullOrWhiteSpace(c.EntryPoint)) ?? 0;
+        if (production > 0 && (hosts > 0 || published == 0)) list.Add(("ApplicationSource", $"{production} production project(s), {hosts} with an entry point"));
+        if (published > 0) list.Add(("SharedSource", $"{published} published package(s)"));
+        var infra = snapshot.EvidenceDomains?.Infrastructure;
+        if (Files(BirkNext.SourceDomains.SourceFileRole.InfrastructureAsCode) > 0 || infra?.Resources.Count > 0)
+            list.Add(("Infrastructure", $"{Files(BirkNext.SourceDomains.SourceFileRole.InfrastructureAsCode)} IaC file(s), {infra?.Resources.Count ?? 0} resource(s)"));
+        var contracts = snapshot.EvidenceDomains?.Contracts?.Contracts.Count ?? 0;
+        if (contracts > 0 || Files(BirkNext.SourceDomains.SourceFileRole.Contract) > 0)
+            list.Add(("Contracts", $"{contracts} contract(s), {Files(BirkNext.SourceDomains.SourceFileRole.Contract)} contract file(s)"));
+        if (Files(BirkNext.SourceDomains.SourceFileRole.Pipeline) > 0 || snapshot.EvidenceDomains?.CiCd?.Pipelines.Count > 0)
+            list.Add(("Pipelines", $"{snapshot.EvidenceDomains?.CiCd?.Pipelines.Count ?? 0} pipeline definition(s)"));
+        var tests = snapshot.TestInventory?.Definitions.Count ?? 0;
+        if (tests > 0 || snapshot.Projects.Any(p => p.IsTest)) list.Add(("Tests", $"{tests} test(s), {snapshot.Projects.Count(p => p.IsTest)} test project(s)"));
+        if (Files(BirkNext.SourceDomains.SourceFileRole.Configuration) > 0) list.Add(("Configuration", $"{Files(BirkNext.SourceDomains.SourceFileRole.Configuration)} configuration file(s)"));
+        if (Files(BirkNext.SourceDomains.SourceFileRole.Documentation) > 0) list.Add(("Documentation", $"{Files(BirkNext.SourceDomains.SourceFileRole.Documentation)} documentation file(s)"));
+        return list;
     }
 
     /// <summary>The package identity: the repository identity recorded at analysis, else the archive name without version/copy suffixes.</summary>
@@ -118,11 +176,22 @@ public static class CanonicalEvidenceAdapter
     public static IReadOnlyList<SystemIdentityInput> DeclaredSystems(IEnumerable<IntegrationTopology.ITopologyProfile> profiles, IEnumerable<IntegrationAlias> packAliases)
     {
         var list = new List<SystemIdentityInput>();
+        // A name a domain profile declares for a component (its name or one of its declared aliases) names that component. A test pack whose logical
+        // name is such a declared name ("Skolenærværsrapport", declared by the profile for Skoletjenesten) adds its aliases to that component instead of
+        // creating a second system that would then conflict with it. Exact declared names only; never similarity.
+        var declaredName = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var profile in profiles)
             foreach (var c in profile.Components)
+            {
                 list.Add(new(CanonicalEntityType.System, c.Name, [.. c.Aliases], $"domain profile {profile.Id}"));
+                foreach (var name in c.Aliases.Prepend(c.Name)) declaredName.TryAdd(CanonicalKeys.Normalize(name), c.Name);
+            }
         foreach (var group in packAliases.GroupBy(a => a.Logical, StringComparer.OrdinalIgnoreCase))
-            list.Add(new(CanonicalEntityType.System, group.Key, [.. group.Select(a => a.Technical).Distinct(StringComparer.OrdinalIgnoreCase)], "test pack expected aliases"));
+        {
+            var owner = declaredName.GetValueOrDefault(CanonicalKeys.Normalize(group.Key));
+            list.Add(new(CanonicalEntityType.System, owner ?? group.Key, [.. group.Select(a => a.Technical).Append(owner is null ? null : group.Key).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)],
+                owner is null ? "test pack expected aliases" : $"test pack expected aliases (pack name \"{group.Key}\" is declared by the domain profile for {owner})"));
+        }
         // One entity per declared name: profiles and packs that name the same system merge their alias lists (names equal after normalization).
         return [.. list.GroupBy(s => CanonicalKeys.Normalize(s.Name)).Select(g => new SystemIdentityInput(CanonicalEntityType.System, g.First().Name,
             [.. g.SelectMany(s => s.DeclaredAliases).Distinct(StringComparer.OrdinalIgnoreCase)], string.Join("; ", g.Select(s => s.Source).Distinct())))];
@@ -135,6 +204,7 @@ public static class CanonicalEvidenceAdapter
         return new(scope,
             [.. all.SelectMany(i => i.WorkItems)], [.. all.SelectMany(i => i.Contracts)], [.. all.SelectMany(i => i.Symbols)], [.. all.SelectMany(i => i.Operations)],
             [.. all.SelectMany(i => i.Tests)], [.. all.SelectMany(i => i.Systems)], [.. all.SelectMany(i => i.AdditionalEntities ?? [])],
-            [.. all.SelectMany(i => i.AdditionalRelations ?? [])], [.. all.SelectMany(i => i.Channels ?? [])]);
+            [.. all.SelectMany(i => i.AdditionalRelations ?? [])], [.. all.SelectMany(i => i.Channels ?? [])], [.. all.SelectMany(i => i.Tasks ?? [])],
+            [.. all.SelectMany(i => i.Libraries ?? [])], [.. all.SelectMany(i => i.LibraryUses ?? [])]);
     }
 }

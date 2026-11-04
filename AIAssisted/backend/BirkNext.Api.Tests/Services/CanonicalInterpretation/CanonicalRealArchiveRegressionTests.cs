@@ -96,6 +96,25 @@ public sealed class CanonicalRealArchiveRegressionTests(ITestOutputHelper output
         foreach (var g in (await db.Entities.AsNoTracking().ToListAsync()).GroupBy(e => e.EntityType).OrderBy(g => g.Key))
             output.WriteLine($"  entity {g.Key}: {g.Count()}");
         foreach (var l in first.Limitations) output.WriteLine($"  limitation: {l}");
+        foreach (var p in packages.OrderBy(p => p.DisplayName)) output.WriteLine($"  package {p.DisplayName}: {p.AttributesJson}");
+        var versions = await db.Entities.AsNoTracking().Where(e => e.EntityType == nameof(CanonicalEntityType.ContractVersion)).ToListAsync();
+        output.WriteLine($"  contracts logical={await db.Entities.CountAsync(e => e.EntityType == nameof(CanonicalEntityType.Contract))} versions={versions.Count} " +
+                         $"distinctContents={versions.Select(v => v.SourceIdentity.ToLowerInvariant()).Distinct().Count()} withContext={versions.Count(v => v.IdentityKey.Contains('@'))} occurrences={occurrences.Count}");
+        foreach (var r in relations.Where(r => r.RelationType == nameof(CanonicalRelationType.Uses)).Take(10)) output.WriteLine($"  uses {r.RelationKey}");
+
+        // correlation/2 invariants (semantic, never counts): packages expose several capabilities; contract counts nest
+        // (logical ≤ versions, distinct contents ≤ versions ≤ occurrences); USES only ever targets a library some package in scope provides.
+        string Capabilities(string archive) => packages.SingleOrDefault(p => p.AttributesJson.Contains($"\"archive\":\"{archive}\""))?.AttributesJson ?? "";
+        if (paths.Any(p => p.Name == "Terraform-iac-meldingsutveksler.zip"))
+            Capabilities("Terraform-iac-meldingsutveksler.zip").Should().Contain("Infrastructure").And.Contain("Contracts", "an IaC package with schemas provides both, not one exclusive role");
+        if (paths.Any(p => p.Name == "M2LB.Common.zip")) Capabilities("M2LB.Common.zip").Should().Contain("SharedSource");
+        var logical = await db.Entities.CountAsync(e => e.EntityType == nameof(CanonicalEntityType.Contract));
+        var contents = versions.Select(v => v.SourceIdentity.ToLowerInvariant()).Distinct().Count();
+        logical.Should().BeLessThanOrEqualTo(versions.Count);
+        contents.Should().BeLessThanOrEqualTo(versions.Count);
+        versions.Count.Should().BeLessThanOrEqualTo(occurrences.Count, "identical content in several packages is one version with several occurrences");
+        var libraryIds = (await db.Entities.AsNoTracking().Where(e => e.EntityType == nameof(CanonicalEntityType.Library)).Select(e => e.Id).ToListAsync()).ToHashSet();
+        relations.Where(r => r.RelationType == nameof(CanonicalRelationType.Uses)).Should().OnlyContain(r => libraryIds.Contains(r.TargetEntityId) && r.Resolution == nameof(RelationResolution.Explicit));
         explicitVerifies.Should().BeLessThanOrEqualTo(explicitLinks, "an explicit VERIFIES exists only where the test evidence states the link");
         if (explicitLinks > 0) explicitVerifies.Should().BePositive("explicit test links in the evidence become explicit VERIFIES relations (non-requirement ids are reported unresolved)");
     }

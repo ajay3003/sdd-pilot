@@ -72,7 +72,7 @@ public sealed class CanonicalInterpretationServiceTests
         second.Id.Should().Be(first.Id);
         (await db.Entities.CountAsync(), await db.Relations.CountAsync(), await db.Occurrences.CountAsync(), await db.Aliases.CountAsync()).Should().Be(counts);
         (await db.Snapshots.CountAsync()).Should().Be(1);
-        first.RuleSetVersions.Should().Equal("correlation/1");
+        first.RuleSetVersions.Should().Equal(CorrelationRules.RuleSetVersion);
         first.SourceSnapshots.Should().Equal(Src);
     }
 

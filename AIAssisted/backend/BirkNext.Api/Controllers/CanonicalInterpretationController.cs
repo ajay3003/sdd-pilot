@@ -16,6 +16,10 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     public Task<ActionResult<InterpretationSnapshotView>> Interpret(string scope, [FromBody] InterpretRequest request, CancellationToken ct) =>
         Run(() => service.InterpretAsync(scope, request, ct));
 
+    /// <summary>Summary-first counts (latest interpretation): what Dashboard and consumers show before any listing is loaded.</summary>
+    [HttpGet("summary")]
+    public Task<ActionResult<CanonicalSummaryView>> Summary(string scope, CancellationToken ct) => Run(() => service.SummaryAsync(scope, ct));
+
     [HttpGet("snapshots")]
     public Task<ActionResult<IReadOnlyList<InterpretationSnapshotView>>> Snapshots(string scope, [FromQuery] int take = 20, CancellationToken ct = default) =>
         Run(() => service.SnapshotsAsync(scope, take, ct));

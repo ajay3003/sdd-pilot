@@ -33,6 +33,15 @@ public sealed record MessagingChannelInput(string Kind, string EntityName, IRead
 /// <summary>A system / service with its declared alias names (case K input). Declared means: in a profile, a manifest or a configuration key.</summary>
 public sealed record SystemIdentityInput(CanonicalEntityType Type, string Name, IReadOnlyList<string> DeclaredAliases, string Source);
 
+/// <summary>A task as written in a feature's tasks file (case L/M input: a task that names a source symbol).</summary>
+public sealed record TaskReferenceInput(string Module, string FeatureKey, string TaskKey, string Text, string? SourceSnapshotId = null);
+
+/// <summary>A shared library a package publishes or declares as an internal shared project (e.g. M2LB.Common.Health).</summary>
+public sealed record LibraryInput(string Package, string Name, string Source, string? SourceSnapshotId = null);
+
+/// <summary>A service's stated use of a library (project reference or package reference). Only libraries some package in scope provides become relations.</summary>
+public sealed record LibraryUseInput(string Service, string Library, string Evidence, string? SourceSnapshotId = null);
+
 /// <summary>Everything one correlation pass reads, all scoped to one project.</summary>
 public sealed record CorrelationInput(
     string Scope,
@@ -44,7 +53,10 @@ public sealed record CorrelationInput(
     IReadOnlyList<SystemIdentityInput> Systems,
     IReadOnlyList<CanonicalEntityFact>? AdditionalEntities = null,
     IReadOnlyList<CanonicalRelationFact>? AdditionalRelations = null,
-    IReadOnlyList<MessagingChannelInput>? Channels = null)
+    IReadOnlyList<MessagingChannelInput>? Channels = null,
+    IReadOnlyList<TaskReferenceInput>? Tasks = null,
+    IReadOnlyList<LibraryInput>? Libraries = null,
+    IReadOnlyList<LibraryUseInput>? LibraryUses = null)
 {
     public static CorrelationInput Empty(string scope) => new(scope, [], [], [], [], [], []);
 }
@@ -52,13 +64,16 @@ public sealed record CorrelationInput(
 public static partial class CorrelationRules
 {
     /// <summary>Bumped whenever a rule's outcome can change for the same input; stored on every interpretation snapshot.</summary>
-    public const string RuleSetVersion = "correlation/1";
+    /// <remarks>correlation/2: contract versions keep their version context (case J), occurrences use OCCURRENCE_OF, shared libraries + USES,
+    /// task → source-symbol references (CR-L-TASK), conflicting declared aliases surface for review (CR-K-CONFLICT).</remarks>
+    public const string RuleSetVersion = "correlation/2";
 
     public const string IntentRule = "CR-G-INTENT", CapabilityRule = "CR-H-CAPABILITY", ContractHashRule = "CR-I-HASH", ContractVersionRule = "CR-J-VERSION",
         ContractVersionConflictRule = "CR-J-CONFLICT", DeclaredAliasRule = "CR-K-DECLARED", AcronymAliasRule = "CR-K-ACRONYM", SymbolRouteRule = "CR-L-ROUTE",
         SymbolRequirementRule = "CR-L-REQUIREMENT", SymbolContractRule = "CR-L-CONTRACT", SymbolServiceRule = "CR-L-SERVICE", SymbolNameRule = "CR-L-NAME",
         TestExplicitRule = "CR-M-EXPLICIT", TestCandidateRule = "CR-M-CANDIDATE", TestSuiteRule = "CR-M-SUITE", OperationServiceRule = "CR-N-EXPOSES", ContractServiceRule = "CR-N-CONTRACT",
-        ChannelRule = "CR-N-CHANNEL";
+        ChannelRule = "CR-N-CHANNEL", AliasConflictRule = "CR-K-CONFLICT", TaskOwnerRule = "CR-L-TASK-OWNER", TaskSymbolRule = "CR-L-TASK", SymbolMemberRule = "CR-L-MEMBER",
+        LibraryRule = "CR-N-LIBRARY", LibraryUseRule = "CR-N-USES";
 
     /// <summary>Minimum Jaccard share of significant intent terms two features must have in common before a shared capability is even proposed…</summary>
     public const double IntentSimilarityThreshold = 0.34;
@@ -97,10 +112,12 @@ public static partial class CorrelationRules
         foreach (var r in input.AdditionalRelations ?? []) Relation(r);
         WorkItemIntents(input.WorkItems, Entity, Relation);
         ContractOccurrences(input.Contracts, Entity, Relation);
-        Systems(input.Systems, Entity, aliases);
+        Systems(input.Systems, Entity, Relation, aliases, limitations);
         Operations(input.Operations, Entity, Relation);
         Channels(input.Channels ?? [], Entity, Relation);
         Symbols(input.Symbols, entities, Entity, Relation);
+        Libraries(input.Libraries ?? [], input.LibraryUses ?? [], entities, Entity, Relation);
+        TaskReferences(input.Tasks ?? [], input.Symbols, entities, Entity, Relation, limitations);
         Tests(input.Tests, entities, Entity, Relation, limitations);
 
         // A relation whose endpoint was never established is dropped and reported, never pointed at a fabricated entity.
@@ -212,6 +229,27 @@ public static partial class CorrelationRules
         return string.IsNullOrWhiteSpace(declared) ? null : $"{c.Kind.ToLowerInvariant()}:{CanonicalKeys.Normalize(declared)}";
     }
 
+    /// <summary>
+    /// The version context of an occurrence (case J): its declared version ("v2.1"), else a version segment of its path ("contracts/v2/x.xsd",
+    /// "Api.V1.Schema.xsd"), else null. Identical bytes under v1 and v2 stay two versions sharing one content hash; identical bytes in several
+    /// packages under the same (or no) context stay one version with several occurrences (case I).
+    /// </summary>
+    public static string? VersionContext(ContractOccurrenceInput c)
+    {
+        if (!string.IsNullOrWhiteSpace(c.DeclaredVersion)) return "v" + c.DeclaredVersion.Trim().TrimStart('v', 'V').ToLowerInvariant();
+        var path = c.Path.Replace('\\', '/');
+        var dot = path.LastIndexOf('.');
+        var m = PathVersionRe().Match(dot > path.LastIndexOf('/') ? path[..dot] : path);
+        return m.Success ? "v" + m.Groups[1].Value.Replace('_', '.').ToLowerInvariant() : null;
+    }
+
+    [GeneratedRegex(@"(?:^|[/_.\-])[vV](\d+(?:[._]\d+)*)(?=$|[/_.\-])")]
+    private static partial Regex PathVersionRe();
+
+    /// <summary>Contract version identity: content hash, qualified by version context when the occurrence has one.</summary>
+    public static string ContractVersionIdentity(ContractOccurrenceInput c) =>
+        $"{c.Kind.ToLowerInvariant()}:sha256:{c.ContentHash.ToLowerInvariant()}{(VersionContext(c) is { } ctx ? "@" + ctx : "")}";
+
     static void ContractOccurrences(IReadOnlyList<ContractOccurrenceInput> contracts, Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation)
     {
         var ordered = contracts.OrderBy(c => c.SourceSnapshotId, StringComparer.Ordinal).ThenBy(c => c.Package, StringComparer.Ordinal).ThenBy(c => c.Path, StringComparer.Ordinal).ToList();
@@ -223,14 +261,20 @@ public static partial class CorrelationRules
                 Attributes: Attrs(("package", c.Package), ("repository", c.Repository), ("contentHash", c.ContentHash), ("kind", c.Kind), ("revision", c.SourceRevision), ("declaredVersion", c.DeclaredVersion)));
             entity(occurrence);
 
-            // Identical bytes are the same contract content wherever they occur (case I); the occurrence records stay separate.
-            var version = new CanonicalEntityFact(CanonicalEntityType.ContractVersion, $"{c.Kind.ToLowerInvariant()}:sha256:{c.ContentHash.ToLowerInvariant()}",
-                $"{c.Title ?? c.Namespace ?? System.IO.Path.GetFileName(c.Path)}{(c.DeclaredVersion is null ? "" : $" v{c.DeclaredVersion}")}", c.ContentHash, "content hash",
-                [new("contentHash", c.ContentHash, c.Path, c.SourceSnapshotId)], c.DeclaredVersion,
-                Attrs(("namespace", c.Namespace), ("declaredVersion", c.DeclaredVersion), ("kind", c.Kind)));
+            // Identical bytes are the same contract content wherever they occur (case I); the occurrence records stay separate. The version context
+            // (declared version or path version segment) is part of the version identity, so v1/ and v2/ copies of the same bytes stay apart (case J).
+            var context = VersionContext(c);
+            var version = new CanonicalEntityFact(CanonicalEntityType.ContractVersion, ContractVersionIdentity(c),
+                $"{c.Title ?? c.Namespace ?? System.IO.Path.GetFileName(c.Path)}{(context is null ? "" : $" {context}")}", c.ContentHash,
+                context is null ? "content hash" : "content hash + version context",
+                [new("contentHash", c.ContentHash, c.Path, c.SourceSnapshotId)], c.DeclaredVersion ?? context?.TrimStart('v'),
+                Attrs(("namespace", c.Namespace), ("declaredVersion", c.DeclaredVersion), ("kind", c.Kind), ("contentHash", c.ContentHash.ToLowerInvariant()),
+                    ("versionContext", context), ("versionContextSource", context is null ? null : c.DeclaredVersion is null ? "path" : "declared")));
             entity(version);
-            relation(new(occurrence.Key, version.Key, CanonicalRelationType.BelongsTo, RelationResolution.Derived, CorrelationConfidence.High, ContractHashRule,
-                [new("contentHash", c.ContentHash, c.Path, c.SourceSnapshotId)], "The file content hashes to this contract version."));
+            relation(new(occurrence.Key, version.Key, CanonicalRelationType.OccurrenceOf, RelationResolution.Derived, CorrelationConfidence.High, ContractHashRule,
+                [new("contentHash", c.ContentHash, c.Path, c.SourceSnapshotId)], context is null
+                    ? "The file content hashes to this contract version."
+                    : $"The file content hashes to this contract version in version context {context} ({(c.DeclaredVersion is null ? "from its path" : "declared")})."));
 
             var identity = ContractIdentity(c);
             if (identity is null) continue; // no declared identity: the version stands alone rather than being grouped by file name
@@ -246,10 +290,10 @@ public static partial class CorrelationRules
                      .GroupBy(c => (Identity: ContractIdentity(c)!, c.DeclaredVersion))
                      .Where(g => g.Select(c => c.ContentHash.ToLowerInvariant()).Distinct().Count() > 1))
         {
-            var hashes = clash.Select(c => (Kind: c.Kind.ToLowerInvariant(), Hash: c.ContentHash.ToLowerInvariant())).Distinct().OrderBy(h => h.Hash, StringComparer.Ordinal).ToList();
-            for (var i = 1; i < hashes.Count; i++)
-                relation(new(CanonicalKeys.EntityKey(CanonicalEntityType.ContractVersion, $"{hashes[i].Kind}:sha256:{hashes[i].Hash}"),
-                    CanonicalKeys.EntityKey(CanonicalEntityType.ContractVersion, $"{hashes[0].Kind}:sha256:{hashes[0].Hash}"),
+            var versions = clash.Select(ContractVersionIdentity).Distinct().Order(StringComparer.Ordinal).ToList();
+            for (var i = 1; i < versions.Count; i++)
+                relation(new(CanonicalKeys.EntityKey(CanonicalEntityType.ContractVersion, versions[i]),
+                    CanonicalKeys.EntityKey(CanonicalEntityType.ContractVersion, versions[0]),
                     CanonicalRelationType.CandidateSameAs, RelationResolution.Ambiguous, CorrelationConfidence.Low, ContractVersionConflictRule,
                     [.. clash.Select(c => new CorrelationEvidence("path", c.Path, c.Package, c.SourceSnapshotId))],
                     $"Both declare {clash.Key.Identity} version {clash.Key.DeclaredVersion} but their content differs. Compatibility is never inferred from the name: review."));
@@ -259,7 +303,7 @@ public static partial class CorrelationRules
             foreach (var service in c.ReferencingServices!.Order(StringComparer.Ordinal))
             {
                 entity(ServiceFact(service, "contract reference"));
-                relation(new(ServiceKey(service), CanonicalKeys.EntityKey(CanonicalEntityType.ContractVersion, $"{c.Kind.ToLowerInvariant()}:sha256:{c.ContentHash.ToLowerInvariant()}"),
+                relation(new(ServiceKey(service), CanonicalKeys.EntityKey(CanonicalEntityType.ContractVersion, ContractVersionIdentity(c)),
                     CanonicalRelationType.References, RelationResolution.Explicit, CorrelationConfidence.Explicit, ContractServiceRule,
                     [new("reference", c.Path, service, c.SourceSnapshotId)], "The service's source references this contract file."));
             }
@@ -270,15 +314,32 @@ public static partial class CorrelationRules
 
     // ---- Case K: aliases are scoped, never identity ----
 
-    static void Systems(IReadOnlyList<SystemIdentityInput> systems, Action<CanonicalEntityFact> entity, List<CanonicalAliasFact> aliases)
+    static void Systems(IReadOnlyList<SystemIdentityInput> systems, Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation, List<CanonicalAliasFact> aliases,
+        List<string> limitations)
     {
-        var ordered = systems.OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
+        var ordered = systems.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Type).ToList();
+        var declared = new List<CanonicalAliasFact>();
         foreach (var s in ordered)
         {
             var fact = new CanonicalEntityFact(s.Type, CanonicalKeys.Normalize(s.Name), s.Name, s.Name, "declared system name", [new("declared", s.Source, s.Name)]);
             entity(fact);
             foreach (var alias in s.DeclaredAliases.Where(a => !string.IsNullOrWhiteSpace(a)).Order(StringComparer.Ordinal))
-                aliases.Add(new(fact.Key, alias, AliasState.Explicit, s.Source, DeclaredAliasRule));
+                declared.Add(new(fact.Key, alias, AliasState.Explicit, s.Source, DeclaredAliasRule));
+        }
+
+        // Two declarations giving the same alias to different entities of the same kind disagree: neither applies, both are proposed, and the pair is surfaced
+        // for review. Picking the first or the last declaration would silently remap every consumer.
+        foreach (var group in declared.GroupBy(a => (Type: a.EntityKey[..a.EntityKey.IndexOf('|')], Alias: CanonicalKeys.Normalize(a.Alias)))
+                     .OrderBy(g => g.Key.Type, StringComparer.Ordinal).ThenBy(g => g.Key.Alias, StringComparer.Ordinal))
+        {
+            var owners = group.Select(a => a.EntityKey).Distinct().Order(StringComparer.Ordinal).ToList();
+            if (owners.Count == 1) { aliases.AddRange(group); continue; }
+            aliases.AddRange(group.Select(a => a with { State = AliasState.Proposed, RuleId = AliasConflictRule, Source = $"{a.Source} (conflicting declaration)" }));
+            for (var i = 1; i < owners.Count; i++)
+                relation(new(owners[i], owners[0], CanonicalRelationType.CandidateSameAs, RelationResolution.Ambiguous, CorrelationConfidence.Low, AliasConflictRule,
+                    [.. group.Select(a => new CorrelationEvidence("declared-alias", a.Source, a.Alias))],
+                    $"\"{group.First().Alias}\" is declared as an alias of more than one entity. Neither declaration is applied until a reviewer decides which one it names (or that they are the same)."));
+            limitations.Add($"Alias \"{group.First().Alias}\" is declared for {owners.Count} different entities; it is not applied until reviewed.");
         }
 
         // An acronym that matches another system's initials is only a proposal: the same letters can name different systems in different projects.
@@ -288,6 +349,7 @@ public static partial class CorrelationRules
                 if (ReferenceEquals(s, other) || s.Type != other.Type) continue;
                 if (!IsAcronym(s.Name) || !AcronymMatches(s.Name, other.Name)) continue;
                 if (other.DeclaredAliases.Any(a => string.Equals(a, s.Name, StringComparison.OrdinalIgnoreCase))) continue; // already explicit
+                if (declared.Any(a => CanonicalKeys.Normalize(a.Alias) == CanonicalKeys.Normalize(s.Name))) continue; // declared (or in conflict) elsewhere
                 aliases.Add(new(CanonicalKeys.EntityKey(other.Type, CanonicalKeys.Normalize(other.Name)), s.Name, AliasState.Proposed, $"{s.Source} ↔ {other.Source}", AcronymAliasRule));
             }
     }
@@ -409,14 +471,133 @@ public static partial class CorrelationRules
             }
 
             foreach (var hash in s.ContractReferences.Order(StringComparer.Ordinal))
-            {
-                var target = known.Values.FirstOrDefault(e => e.Type == CanonicalEntityType.ContractVersion && e.SourceIdentity.Equals(hash, StringComparison.OrdinalIgnoreCase));
-                if (target is null) continue;
-                relation(new(fact.Key, target.Key, CanonicalRelationType.References, RelationResolution.Explicit, CorrelationConfidence.Explicit, SymbolContractRule, [evidence],
-                    "The symbol loads or declares this contract file."));
-            }
+                foreach (var target in known.Values.Where(e => e.Type == CanonicalEntityType.ContractVersion && e.SourceIdentity.Equals(hash, StringComparison.OrdinalIgnoreCase))
+                             .OrderBy(e => e.Key, StringComparer.Ordinal).ToList())
+                    relation(new(fact.Key, target.Key, CanonicalRelationType.References, RelationResolution.Explicit, CorrelationConfidence.Explicit, SymbolContractRule, [evidence],
+                        "The symbol loads or declares this contract file."));
+        }
+
+        // A member symbol (an endpoint method "Ns.Type.Method") belongs to its declared type symbol when both are in the same package.
+        var all = known.Values.Where(e => e.Type == CanonicalEntityType.SourceSymbol).ToDictionary(e => e.IdentityKey, StringComparer.Ordinal);
+        foreach (var member in all.Values.Where(e => e.Attribute("kind") is "Controller" or "Endpoint" or "GraphQL").OrderBy(e => e.IdentityKey, StringComparer.Ordinal).ToList())
+        {
+            var dot = member.IdentityKey.LastIndexOf('.');
+            if (dot <= member.IdentityKey.IndexOf('|')) continue;
+            if (all.TryGetValue(member.IdentityKey[..dot], out var owner) && owner.Attribute("kind") is "Class" or "Record" or "Struct")
+                relation(new(owner.Key, member.Key, CanonicalRelationType.Contains, RelationResolution.Derived, CorrelationConfidence.High, SymbolMemberRule,
+                    [new("symbol", member.Attribute("path") ?? member.SourceIdentity)], "The member is declared in this type."));
         }
     }
+
+    /// <summary>The simple type name of a symbol identity ("pkg|Ns.Outer.Type" → "Type").</summary>
+    static string SimpleName(CanonicalEntityFact symbol) => symbol.IdentityKey[(symbol.IdentityKey.LastIndexOf('.') is var d and > 0 && d > symbol.IdentityKey.IndexOf('|') ? d + 1 : symbol.IdentityKey.IndexOf('|') + 1)..];
+
+    // ---- Shared libraries (M2LB.Common): Package CONTAINS Library, Service USES Library ----
+
+    static void Libraries(IReadOnlyList<LibraryInput> libraries, IReadOnlyList<LibraryUseInput> uses, IReadOnlyDictionary<string, CanonicalEntityFact> known,
+        Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation)
+    {
+        foreach (var l in libraries.OrderBy(l => l.Name, StringComparer.Ordinal).ThenBy(l => l.Package, StringComparer.Ordinal))
+        {
+            var segments = l.Name.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            var fact = new CanonicalEntityFact(CanonicalEntityType.Library, CanonicalKeys.Normalize(l.Name), l.Name, l.Name, "published package / shared project name",
+                [new("library", l.Source, l.Package, l.SourceSnapshotId)], Attributes: Attrs(("capability", segments.Length > 1 ? segments[^1] : null), ("package", l.Package)));
+            entity(fact);
+            var package = CanonicalKeys.EntityKey(CanonicalEntityType.Package, l.Package);
+            if (known.ContainsKey(package))
+                relation(new(package, fact.Key, CanonicalRelationType.Contains, RelationResolution.Explicit, CorrelationConfidence.Explicit, LibraryRule,
+                    [new("library", l.Source, l.Package, l.SourceSnapshotId)], "The package's source publishes this library."));
+        }
+        // Only libraries a package in scope provides: a third-party package reference is a dependency, not a shared capability of this project.
+        var provided = libraries.Select(l => CanonicalKeys.Normalize(l.Name)).ToHashSet(StringComparer.Ordinal);
+        foreach (var u in uses.Where(u => provided.Contains(CanonicalKeys.Normalize(u.Library)))
+                     .OrderBy(u => u.Service, StringComparer.Ordinal).ThenBy(u => u.Library, StringComparer.Ordinal))
+        {
+            entity(ServiceFact(u.Service, "library consumer"));
+            relation(new(ServiceKey(u.Service), CanonicalKeys.EntityKey(CanonicalEntityType.Library, CanonicalKeys.Normalize(u.Library)), CanonicalRelationType.Uses,
+                RelationResolution.Explicit, CorrelationConfidence.Explicit, LibraryUseRule, [new("reference", u.Evidence, u.Library, u.SourceSnapshotId)],
+                $"The service's project references {u.Library}; the shared implementation is not duplicated per service."));
+        }
+    }
+
+    // ---- Case L/M: a task that names a source symbol ----
+
+    /// <summary>Identifiers a task can name: `backticked` names, File.cs names and PascalCase compounds (two or more humps).</summary>
+    public static IReadOnlyList<string> NamedSymbols(string text)
+    {
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (Match m in BacktickRe().Matches(text))
+        {
+            var raw = m.Groups[1].Value;
+            if (raw.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) { names.Add(System.IO.Path.GetFileNameWithoutExtension(raw)); continue; }
+            var head = raw.Split('(')[0];
+            var parts = head.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            // `Type.Method()` names the type; `Ns.Type` names the type; a lone `Type` names itself.
+            if (parts.Length > 0) names.Add(raw.Contains('(') && parts.Length > 1 ? parts[^2] : parts[^1]);
+        }
+        foreach (Match m in FileNameRe().Matches(text)) names.Add(m.Groups[1].Value);
+        foreach (Match m in PascalRe().Matches(text)) names.Add(m.Value);
+        return [.. names.Where(n => n.Length >= 4)];
+    }
+
+    [GeneratedRegex(@"`([A-Za-z_][A-Za-z0-9_.()]*)`")]
+    private static partial Regex BacktickRe();
+
+    [GeneratedRegex(@"\b([A-Z][A-Za-z0-9_]+)\.cs\b")]
+    private static partial Regex FileNameRe();
+
+    [GeneratedRegex(@"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b")]
+    private static partial Regex PascalRe();
+
+    /// <summary>A symbol belongs to a Delivery module when one dot-segment of its owning service is the module name (exact, case-insensitive).</summary>
+    public static bool InModule(string? service, string module) =>
+        service is not null && (string.Equals(service, module, StringComparison.OrdinalIgnoreCase)
+            || service.Split('.', StringSplitOptions.RemoveEmptyEntries).Any(seg => string.Equals(seg, module, StringComparison.OrdinalIgnoreCase)));
+
+    static void TaskReferences(IReadOnlyList<TaskReferenceInput> tasks, IReadOnlyList<SourceSymbolInput> symbolInputs, IReadOnlyDictionary<string, CanonicalEntityFact> known,
+        Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation, List<string> limitations)
+    {
+        if (tasks.Count == 0) return;
+        // Type-level symbols by simple name, with the service that owns them (from the symbol input).
+        var owners = symbolInputs.GroupBy(s => $"{CanonicalKeys.Normalize(s.Package)}|{(string.IsNullOrWhiteSpace(s.Namespace) ? s.Symbol : $"{s.Namespace}.{s.Symbol}")}")
+            .ToDictionary(g => g.Key, g => g.First().Service, StringComparer.Ordinal);
+        var byName = known.Values.Where(e => e.Type == CanonicalEntityType.SourceSymbol && e.Attribute("kind") is "Class" or "Record" or "Struct" or "Interface" or "Enum")
+            .GroupBy(SimpleName, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.OrderBy(e => e.Key, StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
+        var ambiguousElsewhere = 0;
+        foreach (var t in tasks.OrderBy(t => t.Module, StringComparer.Ordinal).ThenBy(t => t.FeatureKey, StringComparer.Ordinal).ThenBy(t => t.TaskKey, StringComparer.Ordinal))
+        {
+            var names = NamedSymbols(t.Text).Where(byName.ContainsKey).ToList();
+            if (names.Count == 0) continue;
+            var feature = CanonicalKeys.EntityKey(CanonicalEntityType.Feature, $"{CanonicalKeys.Normalize(t.Module)}/{CanonicalKeys.Normalize(t.FeatureKey)}");
+            var task = new CanonicalEntityFact(CanonicalEntityType.Task, $"{CanonicalKeys.Normalize(t.Module)}/{CanonicalKeys.Normalize(t.FeatureKey)}/{CanonicalKeys.Normalize(t.TaskKey)}",
+                $"{t.TaskKey} {Shorten(t.Text, 120)}", $"{t.Module}/{t.FeatureKey}/{t.TaskKey}", "module + feature + task key", [new("task", t.TaskKey, t.FeatureKey, t.SourceSnapshotId)]);
+            entity(task);
+            if (known.ContainsKey(feature))
+                relation(new(feature, task.Key, CanonicalRelationType.Contains, RelationResolution.Explicit, CorrelationConfidence.Explicit, TaskOwnerRule,
+                    [new("task", t.TaskKey, t.FeatureKey, t.SourceSnapshotId)], "The task is listed in this feature's tasks file."));
+            foreach (var name in names)
+            {
+                var candidates = byName[name];
+                var inModule = candidates.Where(c => InModule(owners.GetValueOrDefault(c.IdentityKey), t.Module)).ToList();
+                var evidence = new CorrelationEvidence("task-text", $"{t.Module}/{t.FeatureKey}/{t.TaskKey}", name, t.SourceSnapshotId);
+                if (inModule.Count == 1)
+                    relation(new(task.Key, inModule[0].Key, CanonicalRelationType.References, RelationResolution.Explicit, CorrelationConfidence.Explicit, TaskSymbolRule, [evidence],
+                        $"The task names \"{name}\" and exactly one type with that name exists in module {t.Module} ({inModule[0].DisplayName}). A reference is not proof the task is implemented."));
+                else if (inModule.Count > 1)
+                    foreach (var c in inModule)
+                        relation(new(task.Key, c.Key, CanonicalRelationType.References, RelationResolution.Ambiguous, CorrelationConfidence.Low, TaskSymbolRule, [evidence],
+                            $"The task names \"{name}\", and {inModule.Count} types in module {t.Module} have that name. Choose the one it means."));
+                else if (candidates.Count == 1)
+                    relation(new(task.Key, candidates[0].Key, CanonicalRelationType.References, RelationResolution.Candidate, CorrelationConfidence.Low, TaskSymbolRule, [evidence],
+                        $"The task names \"{name}\"; the only type with that name is outside module {t.Module} ({candidates[0].DisplayName}). Confirm or reject."));
+                else ambiguousElsewhere++;
+            }
+        }
+        if (ambiguousElsewhere > 0)
+            limitations.Add($"{ambiguousElsewhere} symbol name(s) named in tasks match several types outside the task's module; no link was proposed.");
+    }
+
+    static string Shorten(string text, int max) => text.Length <= max ? text : text[..max] + "…";
 
     static string SymbolStem(string symbol)
     {
