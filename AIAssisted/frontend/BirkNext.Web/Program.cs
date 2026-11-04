@@ -313,6 +313,8 @@ builder.Services.AddHttpClient<IDeliveryReportingApiService, DeliveryReportingAp
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ICanonicalInterpretationApiService, CanonicalInterpretationApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<ISnapshotRegistryApiService, SnapshotRegistryApiService>(client =>
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IDeliveryAzureDevOpsApiService, DeliveryAzureDevOpsApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IBrowserAuthenticationApiService, BrowserAuthenticationApiService>(client =>

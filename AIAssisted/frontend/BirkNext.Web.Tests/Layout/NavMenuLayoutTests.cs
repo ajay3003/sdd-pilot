@@ -276,7 +276,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("getting-started", new[] { "dashboard", "getting-started", "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("delivery-reporting", new[] { NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting" })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
-    [InlineData("traceability", new[] { "artifact-traceability", "impact-analysis", "correlation-review" })]
+    [InlineData("traceability", new[] { "artifact-traceability", "impact-analysis", "correlation-review", "snapshots" })]
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
@@ -296,7 +296,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
 
         cut.FindAll("#nav-section-traceability a.nav-link").Select(a => a.GetAttribute("href")).Should()
-            .Equal("artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review");
+            .Equal("artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review", "snapshots");
     }
 
     [Fact]

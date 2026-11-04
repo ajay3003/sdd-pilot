@@ -1,0 +1,174 @@
+@page "/snapshots"
+@using BirkNext.Snapshots
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@inject ISnapshotRegistryApiService Api
+@implements IDisposable
+
+<PageTitle>Snapshots</PageTitle>
+
+<div class="sb" data-testid="snapshot-browser">
+    <header class="sb-head">
+        <h1>Snapshots</h1>
+        <p class="sb-lead">Every stored snapshot across BirkNext — Source Analysis, Delivery, reports, interpretations, review runs and executions — as metadata only.
+            Payloads stay with their owners; viewing a snapshot never changes which one is current.</p>
+    </header>
+
+    <section class="sb-filters" aria-label="Filters">
+        <label>Type <select @bind="_type" @bind:after="ReloadAsync" data-testid="sb-type">
+            <option value="">All types</option>
+            @foreach (var t in Enum.GetValues<SnapshotType>()) { <option value="@t">@SnapshotPresentation.Type(t)</option> }
+        </select></label>
+        <label>Status <select @bind="_status" @bind:after="ReloadAsync" data-testid="sb-status">
+            <option value="">Any status</option>
+            @foreach (var s in Enum.GetValues<SnapshotProcessingStatus>()) { <option value="@s">@s</option> }
+        </select></label>
+        <label>Project <input class="form-control form-control-sm" @bind="_project" @bind:after="ReloadAsync" placeholder="Any project" data-testid="sb-project" /></label>
+        <label>Sort <select @bind="_sort" @bind:after="ReloadAsync" data-testid="sb-sort">
+            <option value="">Newest first</option><option value="created">Oldest first</option><option value="effective">Effective date</option><option value="label">Label</option>
+        </select></label>
+    </section>
+
+    @if (_loading is { } run) { <ReviewStageList Stages="run.Stages" TestId="sb-stages" StageTestId="sb-stage" /> }
+    else if (_error is not null) { <p class="sb-error" role="alert" data-testid="sb-error">@_error <button type="button" class="btn btn-secondary btn-sm" @onclick="ReloadAsync">Retry</button></p> }
+    else if (_page is { Items.Count: 0 }) { <p class="sb-muted" data-testid="sb-empty">No snapshots match these filters.</p> }
+    else if (_page is { } pg)
+    {
+        <table class="sb-table" data-testid="sb-table">
+            <thead><tr><th>Snapshot</th><th>Type</th><th>Project</th><th>Created</th><th>Effective</th><th>Revision</th><th>Status</th><th>Retention</th><th>Pointers</th><th>Referenced by</th></tr></thead>
+            <tbody>
+                @foreach (var item in pg.Items)
+                {
+                    var m = item.Metadata;
+                    <tr data-testid="sb-row" data-type="@m.Type" data-id="@m.Id" class="@(_selected?.Snapshot.Id == m.Id ? "is-selected" : "")">
+                        <td><button type="button" class="btn btn-link btn-sm" @onclick="() => SelectAsync(m)" data-testid="sb-open">@m.Label</button></td>
+                        <td><MetaBadge Kind="BadgeKind.Type" Text="@SnapshotPresentation.Type(m.Type)" Title="@m.Module" /></td>
+                        <td>@(m.Project ?? "—")</td>
+                        <td>@m.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(m.EffectiveAt is { } e ? e.UtcDateTime.ToString("yyyy-MM-dd") : "Not recorded")</td>
+                        <td class="sb-mono">@(m.SourceRevision ?? "Unknown")</td>
+                        <td><SemanticStatusBadge Status="SnapshotPresentation.Status(m.Status)" /></td>
+                        <td><MetaBadge Kind="BadgeKind.Provenance" Text="@SnapshotPresentation.Retention(m.Retention)" />@if (m.Frozen) { <MetaBadge Kind="BadgeKind.Type" Text="Frozen" /> }</td>
+                        <td>@foreach (var p in item.Pointers) { <MetaBadge Kind="BadgeKind.Scope" Text="@SnapshotPresentation.Pointer(p)" /> }</td>
+                        <td>@item.ReferencedBy</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="sb-pager">
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@(pg.Skip == 0)" @onclick="() => PageAsync(-1)">Previous</button>
+            <span class="sb-muted">@(pg.Skip + 1)–@(pg.Skip + pg.Items.Count) of @pg.Total</span>
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@(pg.Skip + pg.Items.Count >= pg.Total)" @onclick="() => PageAsync(1)">Next</button>
+        </div>
+    }
+
+    @if (_selected is { } lineage)
+    {
+        var s = lineage.Snapshot;
+        <section class="sb-detail" aria-labelledby="sb-detail-h" data-testid="sb-detail">
+            <h2 id="sb-detail-h">@s.Label</h2>
+            <dl class="sb-facts">
+                <div><dt>Snapshot id</dt><dd class="sb-mono">@s.Id</dd></div>
+                <div><dt>Module</dt><dd>@s.Module</dd></div>
+                <div><dt>Analysis / rule set</dt><dd>@(s.AnalysisVersion ?? "Not recorded")</dd></div>
+                <div><dt>Fingerprint</dt><dd class="sb-mono">@(s.ContentFingerprint ?? "Not recorded")</dd></div>
+                <div><dt>Stored in</dt><dd class="sb-mono">@s.StorageReference</dd></div>
+            </dl>
+            <h3>Built from</h3>
+            @if (lineage.Upstream.Count == 0) { <p class="sb-muted">No upstream snapshot is recorded.</p> }
+            else { <ul data-testid="sb-upstream">@foreach (var e in lineage.Upstream) { <li>@Name(e.From) <span class="sb-muted">@SnapshotPresentation.Lineage(e.Kind)</span> @Name(e.To)</li> }</ul> }
+            <h3>Used by</h3>
+            @if (lineage.Downstream.Count == 0) { <p class="sb-muted">Nothing recorded uses this snapshot.</p> }
+            else { <ul data-testid="sb-downstream">@foreach (var e in lineage.Downstream) { <li>@Name(e.From) <span class="sb-muted">@SnapshotPresentation.Lineage(e.Kind)</span> @Name(e.To)</li> }</ul> }
+            <div class="sb-actions">
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => PointAsync(SnapshotPointerKind.CurrentSelected)" data-testid="sb-set-current">Make current</button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || s.Status != SnapshotProcessingStatus.Completed)" @onclick="() => PointAsync(SnapshotPointerKind.CurrentApproved)" data-testid="sb-set-approved">Approve as current</button>
+                @if (s.Retention == SnapshotRetentionClass.Protected)
+                { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => RetainAsync(s.Type is SnapshotType.SourceAnalysis or SnapshotType.Delivery ? SnapshotRetentionClass.Working : SnapshotRetentionClass.Historical)" data-testid="sb-unprotect">Remove protection</button> }
+                else if (s.Retention != SnapshotRetentionClass.FrozenReportEvidence)
+                { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => RetainAsync(SnapshotRetentionClass.Protected)" data-testid="sb-protect">Protect</button> }
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="CheckDeletionAsync" data-testid="sb-deletion-check">Can it be deleted?</button>
+            </div>
+            @if (_actionError is not null) { <p class="sb-error" role="alert">@_actionError</p> }
+            @if (_deletion is { } d)
+            {
+                <div class="sb-deletion" role="status" data-testid="sb-deletion">
+                    <SemanticStatusBadge Status="@(d.Allowed ? SemanticStatus.Ready : SemanticStatus.Blocked)" QualifiedLabel="@(d.Allowed ? "Deletable" : "Blocked")" />
+                    <ul>@foreach (var b in d.Blocking) { <li>@b</li> }@foreach (var n in d.Notes) { <li class="sb-muted">@n</li> }</ul>
+                    @if (d.NotChecked.Count > 0) { <p class="sb-muted">Not checkable here: @string.Join("; ", d.NotChecked)</p> }
+                    <p class="sb-muted">This page never deletes; deletion happens in the owning module and runs the same check.</p>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private static readonly (string, string)[] Stages = [("list", "Loading snapshot metadata")];
+    private ReviewAssessment? _loading;
+    private int _generation, _skip;
+    private string? _type, _status, _project, _sort, _error, _actionError;
+    private bool _busy;
+    private SnapshotListPage? _page;
+    private SnapshotLineageView? _selected;
+    private SnapshotDeletionCheck? _deletion;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync() { _skip = 0; await LoadAsync(); }
+
+    private async Task PageAsync(int direction) { _skip = Math.Max(0, _skip + direction * 25); await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        _loading?.Cancel();
+        var run = new ReviewAssessment(++_generation, Stages);
+        (_loading, _error) = (run, null);
+        try
+        {
+            var (page, error) = await run.StageAsync("list", ct => Api.ListAsync(string.IsNullOrWhiteSpace(_project) ? null : _project.Trim(),
+                Enum.TryParse<SnapshotType>(_type, out var t) ? t : null, null, Enum.TryParse<SnapshotProcessingStatus>(_status, out var s) ? s : null,
+                string.IsNullOrEmpty(_sort) ? null : _sort, _skip, 25, ct), () => _ = InvokeAsync(StateHasChanged));
+            if (!run.IsCurrent(_generation)) return; // a newer filter change wins; this response is stale
+            (_page, _error) = (page, error);
+        }
+        catch (OperationCanceledException) when (run.Cancelled) { return; }
+        finally { if (_generation == run.Generation) _loading = null; run.Dispose(); }
+    }
+
+    private async Task SelectAsync(SnapshotMetadata m)
+    {
+        (_deletion, _actionError) = (null, null);
+        var (lineage, error) = await Api.LineageAsync(m.Type, m.Id);
+        (_selected, _actionError) = (lineage, error);
+    }
+
+    private async Task PointAsync(SnapshotPointerKind kind)
+    {
+        if (_selected?.Snapshot is not { } s) return;
+        _busy = true;
+        _actionError = await Api.SetPointerAsync(new(s.Project, s.Type, s.Module, kind, s.Id));
+        _busy = false;
+        if (_actionError is null) await LoadAsync();
+    }
+
+    private async Task RetainAsync(SnapshotRetentionClass retention)
+    {
+        if (_selected?.Snapshot is not { } s) return;
+        _busy = true;
+        _actionError = await Api.SetRetentionAsync(s.Type, s.Id, retention);
+        _busy = false;
+        if (_actionError is null) { await LoadAsync(); await SelectAsync(s with { Retention = retention }); }
+    }
+
+    private async Task CheckDeletionAsync()
+    {
+        if (_selected?.Snapshot is not { } s) return;
+        (_deletion, _actionError) = await Api.DeletionCheckAsync(s.Type, s.Id);
+    }
+
+    private string Name(SnapshotReference r) =>
+        _selected?.Related.FirstOrDefault(m => m.Type == r.Type && m.Id == r.Id)?.Label ?? r.Label ?? $"{SnapshotPresentation.Type(r.Type)} {r.Id[..Math.Min(8, r.Id.Length)]}";
+
+    public void Dispose() => _loading?.Dispose();
+}

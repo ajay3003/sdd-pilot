@@ -62,8 +62,17 @@ public sealed class DeliveryReportingController(DeliverySnapshotStore store, Del
         await store.UpdateSnapshotAsync(projectId, snapshotId, request, ct) is { } summary ? Ok(summary) : NotFound();
 
     [HttpDelete("projects/{projectId:guid}/snapshots/{snapshotId:guid}")]
-    public async Task<IActionResult> DeleteSnapshot(Guid projectId, Guid snapshotId, CancellationToken ct) =>
-        await store.DeleteSnapshotAsync(projectId, snapshotId, ct) ? NoContent() : NotFound();
+    public async Task<IActionResult> DeleteSnapshot(Guid projectId, Guid snapshotId, [FromServices] Services.Snapshots.SnapshotRegistryService? registry, CancellationToken ct)
+    {
+        // The shared deletion check: a Protected snapshot is refused. Reports that used it keep their frozen content (their live link becomes empty).
+        // When the registry itself cannot be read (no registry database, e.g. a test host), Delivery's own rules apply as before.
+        BirkNext.Snapshots.SnapshotDeletionCheck? check = null;
+        try { if (registry is not null) check = await registry.DeletionCheckAsync(BirkNext.Snapshots.SnapshotType.Delivery, snapshotId.ToString(), null, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException and (InvalidOperationException or System.Data.Common.DbException)) { check = null; }
+        if (check is { Allowed: false })
+            return Conflict(new { message = "This snapshot cannot be deleted: " + string.Join(" ", check.Blocking) });
+        return await store.DeleteSnapshotAsync(projectId, snapshotId, ct) ? NoContent() : NotFound();
+    }
 
     [HttpGet("projects/{projectId:guid}/snapshots/{snapshotId:guid}/baseline-suggestion")]
     public async Task<IActionResult> SuggestBaseline(Guid projectId, Guid snapshotId, CancellationToken ct) =>

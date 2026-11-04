@@ -123,6 +123,15 @@ builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanoni
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationDataReset>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalAliasSource>();
+// Shared Snapshot Registry: its own schema (snapshot_registry); metadata synced from each owner store by adapters, payloads never copied.
+builder.Services.AddDbContext<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>(options =>
+    BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.SourceAnalysisSnapshotSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.DeliverySnapshotSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.InterpretationSnapshotSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.ReviewRunSnapshotSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.ExecutionSnapshotSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.SnapshotRegistryService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.DeliveryReporting.DeliveryImportStagingStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliverySnapshotStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingImportService>();
@@ -851,6 +860,7 @@ try
         // Skipped with the main context when a test host swaps it for a non-relational provider (no database to migrate).
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>());
+        await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>());
     }
     // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
     await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();

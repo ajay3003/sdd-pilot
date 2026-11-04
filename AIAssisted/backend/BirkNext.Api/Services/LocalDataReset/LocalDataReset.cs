@@ -134,6 +134,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Project Import archives staged for commit (memory and staging directory)",
         "Delivery Management: reporting projects, delivery snapshots, comparisons and saved Delivery Reports (report history)",
         "Canonical interpretation: canonical entities, aliases, relations, interpretation snapshots and the shared review decisions made on them",
+        "Snapshot Registry metadata: lineage, current/approved pointers and retention classes (rebuilt from the remaining stores on next use)",
     ];
 
     public static readonly IReadOnlyList<string> Preserved =
@@ -209,6 +210,16 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 using var scope = services.CreateScope();
                 if (scope.ServiceProvider.GetService<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationDataReset>() is { } canonical) await canonical.ResetAsync(ct);
             }, domains, "Canonical interpretation");
+            await Step(warnings, "Snapshot Registry", async () =>
+            {
+                using var scope = services.CreateScope();
+                if (scope.ServiceProvider.GetService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>() is { } snapshots && snapshots.Database.IsRelational())
+                {
+                    await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_edge", ct);
+                    await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_pointer", ct);
+                    await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_entry", ct);
+                }
+            }, domains, "Snapshot Registry");
 
             logger.LogWarning("Local data reset {Epoch} completed: {Deleted} database rows, {Warnings} warning(s)", epoch, deleted, warnings.Count);
             return new()
