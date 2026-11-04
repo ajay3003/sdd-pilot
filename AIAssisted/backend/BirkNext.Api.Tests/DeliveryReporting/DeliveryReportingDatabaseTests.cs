@@ -8,6 +8,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Npgsql;
 using Xunit;
 using static BirkNext.Api.Tests.DeliveryReporting.DeliveryReportingFixtures;
@@ -21,10 +22,6 @@ namespace BirkNext.Api.Tests.DeliveryReporting;
 /// </summary>
 public sealed class DeliveryReportingDatabaseTests
 {
-    private static string BaseConnectionString =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__Default")
-        ?? "Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext";
-
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = now;
@@ -224,9 +221,9 @@ public sealed class DeliveryReportingDatabaseTests
 
     private static async Task WithDatabase(Func<string, Task> body)
     {
-        var database = "birknext_delivery_reporting_" + Guid.NewGuid().ToString("N")[..12];
-        var admin = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = "postgres", Pooling = false }.ConnectionString;
-        var target = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = database, Pooling = false }.ConnectionString;
+        var database = TestPostgres.TemporaryName("birknext_delivery_reporting");
+        var admin = TestPostgres.Admin().ConnectionString;
+        var target = TestPostgres.Temporary(database).ConnectionString;
         await Execute(admin, $"CREATE DATABASE \"{database}\"");
         try { await body(target); }
         finally

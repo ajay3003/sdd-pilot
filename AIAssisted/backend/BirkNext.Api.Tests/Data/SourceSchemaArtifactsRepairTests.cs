@@ -5,6 +5,7 @@ using BirkNext.Integrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Npgsql;
 using Xunit;
 
@@ -19,10 +20,6 @@ namespace BirkNext.Api.Tests.Data;
 public sealed class SourceSchemaArtifactsRepairTests
 {
     private const string EarlyArtifactsMigration = "20261014082517_AddSourceSchemaArtifacts";
-
-    private static string BaseConnectionString =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__Default")
-        ?? "Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext";
 
     private static byte[] Archive() => ProjectImportServiceTests.Zip([.. ProjectImportServiceTests.Source,
         ("shop/contracts/order.xsd", """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="Order" type="xs:string"/></xs:schema>""")]);
@@ -83,9 +80,9 @@ public sealed class SourceSchemaArtifactsRepairTests
 
     private static async Task WithDatabase(Func<string, Task> body)
     {
-        var database = "birknext_artifact_repair_" + Guid.NewGuid().ToString("N")[..12];
-        var admin = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = "postgres", Pooling = false }.ConnectionString;
-        var target = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = database, Pooling = false }.ConnectionString;
+        var database = TestPostgres.TemporaryName("birknext_artifact_repair");
+        var admin = TestPostgres.Admin().ConnectionString;
+        var target = TestPostgres.Temporary(database).ConnectionString;
         await Execute(admin, $"CREATE DATABASE \"{database}\"");
         try { await body(target); }
         finally

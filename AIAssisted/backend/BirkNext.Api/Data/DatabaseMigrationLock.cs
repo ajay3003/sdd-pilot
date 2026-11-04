@@ -26,7 +26,12 @@ public static class DatabaseMigrationLock
         await db.Database.OpenConnectionAsync(ct);
         try
         {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", [LockKey], ct);
+            // Waiting for the lock lasts as long as another process's migrations, which can exceed the default 30 s command timeout on a
+            // fresh or busy database (the waiter then failed instead of finding nothing left to apply). Only cancellation ends the wait.
+            var commandTimeout = db.Database.GetCommandTimeout();
+            db.Database.SetCommandTimeout(TimeSpan.Zero);
+            try { await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", [LockKey], ct); }
+            finally { db.Database.SetCommandTimeout(commandTimeout); }
             try
             {
                 await db.Database.MigrateAsync(ct);

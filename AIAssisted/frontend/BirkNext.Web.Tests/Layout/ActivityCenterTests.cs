@@ -72,7 +72,7 @@ public sealed class ActivityCenterTests : BunitContext
         _ops.Find(second.Operation.Id)!.IsActive.Should().BeTrue();
 
         gate.SetResult();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-open]").TextContent.Should().Be("Open the imported project"), TimeSpan.FromSeconds(5));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-open]").TextContent.Should().Be("Open the imported project"), TimeSpan.FromSeconds(30)); // generous: under a full parallel run the completion can take seconds to propagate
         cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-open]").GetAttribute("href").Should().Be("project-import?done");
         cut.Find("[data-testid=activity-live]").TextContent.Should().Contain("Completed");
         cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-dismiss]").Click();

@@ -259,14 +259,11 @@ public sealed class DeliveryAzureDevOpsTests : IAsyncLifetime
     private DeliveryAzureDevOpsImportService Service(DateTimeOffset now, DeliveryReportingDbContext? db = null) =>
         new(Git(), Imports(db!, new Clock(now)), new Clock(now), NullLogger<DeliveryAzureDevOpsImportService>.Instance);
 
-    private static string BaseConnectionString =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__Default") ?? "Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext";
-
     private static async Task WithDatabase(Func<string, Task> body, DateTimeOffset _)
     {
-        var database = "birknext_delivery_reporting_" + Guid.NewGuid().ToString("N")[..12];
-        var admin = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = "postgres", Pooling = false }.ConnectionString;
-        var target = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = database, Pooling = false }.ConnectionString;
+        var database = TestPostgres.TemporaryName("birknext_delivery_reporting");
+        var admin = TestPostgres.Admin().ConnectionString;
+        var target = TestPostgres.Temporary(database).ConnectionString;
         await Execute(admin, $"CREATE DATABASE \"{database}\"");
         try { await body(target); }
         finally

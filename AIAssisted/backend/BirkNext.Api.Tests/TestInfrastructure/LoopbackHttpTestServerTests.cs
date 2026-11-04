@@ -10,7 +10,9 @@ namespace BirkNext.Api.Tests.TestInfrastructure;
 /// </summary>
 public sealed class LoopbackHttpTestServerTests
 {
-    private static readonly TimeSpan Bound = TimeSpan.FromSeconds(15);
+    // A hang guard, not a performance limit: under a full parallel test run the listener and client can be starved well past 15 s
+    // (seen at 21–38 s), so the guard is generous and only fails a test that really hangs.
+    private static readonly TimeSpan Bound = TimeSpan.FromSeconds(90);
 
     private static Task Ok(HttpListenerContext context)
     {

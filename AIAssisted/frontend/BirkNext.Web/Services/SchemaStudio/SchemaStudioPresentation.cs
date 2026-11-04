@@ -252,7 +252,7 @@ public static class SchemaStudioPresentation
 
     /// <summary>"12-digit pattern" for digit-count patterns; every other pattern is reported neutrally as "pattern rule".</summary>
     public static string PatternSummary(string pattern) =>
-        System.Text.RegularExpressions.Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+)\}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50))
+        System.Text.RegularExpressions.Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+)\}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
             is { Success: true } digits ? $"{digits.Groups[1].Value}-digit pattern"
             : SchemaPatternMeaning.Recognize(pattern) ?? "pattern rule";
 

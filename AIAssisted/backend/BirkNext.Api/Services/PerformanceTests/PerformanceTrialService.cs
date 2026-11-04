@@ -22,7 +22,6 @@ public sealed partial class PerformanceTrialService(IHttpClientFactory clients, 
     public const string ClientName = "performance-trial";
     public const int MaxInspectedBytes = 256 * 1024;
     public const long MaxCountedBytes = 16L * 1024 * 1024;
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
     [GeneratedRegex(@"\{([A-Za-z_][A-Za-z0-9_]*)\}")] private static partial Regex PlaceholderPattern();
     [GeneratedRegex(@"\.([A-Za-z_][A-Za-z0-9_]*)|\[(\d{1,4})\]")] private static partial Regex PathSegment();
@@ -108,7 +107,7 @@ public sealed partial class PerformanceTrialService(IHttpClientFactory clients, 
 
         var client = clients.CreateClient(ClientName);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(Timeout);
+        timeout.CancelAfter(options.TrialRequestTimeout);
         var watch = Stopwatch.StartNew();
         HttpResponseMessage response;
         try { response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token); }

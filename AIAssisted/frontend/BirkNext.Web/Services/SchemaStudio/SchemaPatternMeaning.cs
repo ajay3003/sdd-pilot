@@ -27,7 +27,7 @@ public static class SchemaPatternMeaning
     {
         if (string.IsNullOrWhiteSpace(pattern) || pattern.Length > 300) return null;
         Regex regex;
-        try { regex = new Regex($"^(?:{pattern})$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50)); }
+        try { regex = new Regex($"^(?:{pattern})$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250)); }
         catch (ArgumentException) { return null; }
         try
         {

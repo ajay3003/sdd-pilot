@@ -1,5 +1,6 @@
 using BirkNext.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Npgsql;
 using Xunit;
 
@@ -12,16 +13,12 @@ namespace BirkNext.Api.Tests.Data;
 /// </summary>
 public sealed class DatabaseMigrationLockTests
 {
-    private static string BaseConnectionString =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__Default")
-        ?? "Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext";
-
     [Fact]
     public async Task ConcurrentMigrationsOfAFreshDatabase_AllSucceed_AndApplyEveryMigrationOnce()
     {
-        var database = "birknext_migration_lock_" + Guid.NewGuid().ToString("N")[..12];
-        var admin = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = "postgres", Pooling = false };
-        var target = new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = database, Pooling = false }.ConnectionString;
+        var database = TestPostgres.TemporaryName("birknext_migration_lock");
+        var admin = TestPostgres.Admin();
+        var target = TestPostgres.Temporary(database).ConnectionString;
         await Execute(admin.ConnectionString, $"CREATE DATABASE \"{database}\"");
         try
         {

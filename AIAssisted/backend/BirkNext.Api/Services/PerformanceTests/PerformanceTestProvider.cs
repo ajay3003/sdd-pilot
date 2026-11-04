@@ -12,6 +12,8 @@ namespace BirkNext.Api.Services.PerformanceTests;
 public sealed record PerformanceTestOptions
 {
     public int MaxVirtualUsers { get; init; } = 50;
+    /// <summary>One trial request's time limit (a single request, not a load test).</summary>
+    public TimeSpan TrialRequestTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public double MaxRequestsPerSecond { get; init; } = 50;
     public int MaxDurationSeconds { get; init; } = 30 * 60;
     public int MaxSoakDurationSeconds { get; init; } = 60 * 60;

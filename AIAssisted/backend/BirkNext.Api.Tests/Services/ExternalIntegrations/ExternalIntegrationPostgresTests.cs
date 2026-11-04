@@ -12,6 +12,7 @@ using BirkNext.Integrations;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Npgsql;
 
 namespace BirkNext.Api.Tests.Services.ExternalIntegrations;
@@ -24,12 +25,9 @@ namespace BirkNext.Api.Tests.Services.ExternalIntegrations;
 public sealed class ExternalIntegrationPostgresTests : IAsyncLifetime
 {
     private const string Env = "pg-env";
-    private static string BaseConnectionString =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__Default") ?? "Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext";
-
-    private readonly string _database = "birknext_external_" + Guid.NewGuid().ToString("N")[..12];
-    private string Admin => new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = "postgres", Pooling = false }.ConnectionString;
-    private string Target => new NpgsqlConnectionStringBuilder(BaseConnectionString) { Database = _database, Pooling = false }.ConnectionString;
+    private readonly string _database = TestPostgres.TemporaryName("birknext_external");
+    private string Admin => TestPostgres.Admin().ConnectionString;
+    private string Target => TestPostgres.Temporary(_database).ConnectionString;
     private AppDbContext Context() => new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(Target).Options);
 
     public async Task InitializeAsync()

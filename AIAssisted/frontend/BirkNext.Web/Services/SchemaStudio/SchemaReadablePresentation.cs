@@ -116,9 +116,9 @@ public static class SchemaReadablePresentation
     /// <see cref="SchemaPatternMeaning"/>); every other pattern is reported neutrally.</summary>
     public static string PatternLabel(string pattern)
     {
-        var exact = Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+)\}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
+        var exact = Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+)\}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         if (exact.Success) return $"Exactly {exact.Groups[1].Value} digits";
-        var range = Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+),(\d+)\}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
+        var range = Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+),(\d+)\}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         if (range.Success) return $"Between {range.Groups[1].Value} and {range.Groups[2].Value} digits";
         return SchemaPatternMeaning.Recognize(pattern) ?? "Pattern rule defined";
     }
@@ -152,6 +152,6 @@ public static class SchemaReadablePresentation
 
     /// <summary>Collapses runs of whitespace inside documentation lines (tabs from source formatting) without changing any words.</summary>
     public static string Normalize(string text) => string.Join("\n", text.Replace("\r\n", "\n").Split('\n')
-        .Select(line => Regex.Replace(line, @"[ \t]+", " ", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50)).Trim())
+        .Select(line => Regex.Replace(line, @"[ \t]+", " ", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Trim())
         .Where(line => line.Length > 0));
 }

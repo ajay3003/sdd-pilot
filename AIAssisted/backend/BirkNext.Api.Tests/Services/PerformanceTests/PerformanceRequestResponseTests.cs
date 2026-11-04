@@ -76,7 +76,8 @@ public sealed class PerformanceRequestResponseTests : IAsyncLifetime
         public HttpClient CreateClient(string name) => new(new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = DecompressionMethods.All });
     }
 
-    private PerformanceTrialService Service() => new(new Clients(), new PerformanceTestOptions(), new ServiceCollection().BuildServiceProvider());
+    // A generous request limit: under a full parallel test run the loopback server can be starved for more than the product's 15 s.
+    private PerformanceTrialService Service() => new(new Clients(), new PerformanceTestOptions { TrialRequestTimeout = TimeSpan.FromSeconds(60) }, new ServiceCollection().BuildServiceProvider());
 
     private PerformanceTestDefinition Definition(PerformanceTargetType type, params HttpPerformanceStep[] steps) => PerformanceTestReviewTests.Definition(d => d with
     {
