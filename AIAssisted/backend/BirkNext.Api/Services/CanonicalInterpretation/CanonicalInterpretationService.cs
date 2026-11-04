@@ -26,6 +26,9 @@ public interface ICanonicalWorkItemReader
 
     /// <summary>The snapshot's tasks (case L/M: a task naming a source symbol). Readers without tasks return none.</summary>
     Task<IReadOnlyList<TaskReferenceInput>> TasksAsync(Guid deliverySnapshotId, CancellationToken ct) => Task.FromResult<IReadOnlyList<TaskReferenceInput>>([]);
+
+    /// <summary>Each feature pack's requirements, stories and tasks with the shared work-item interpretation applied. Readers without it return none.</summary>
+    Task<IReadOnlyList<WorkItemStructureInput>> StructuresAsync(Guid deliverySnapshotId, CancellationToken ct) => Task.FromResult<IReadOnlyList<WorkItemStructureInput>>([]);
 }
 
 public sealed class DeliveryCanonicalWorkItemReader(Data.DeliveryReporting.DeliveryReportingDbContext db) : ICanonicalWorkItemReader
@@ -39,6 +42,41 @@ public sealed class DeliveryCanonicalWorkItemReader(Data.DeliveryReporting.Deliv
             .Select(s => new { s.FeatureSnapshotId, s.Title }).ToListAsync(ct);
         var byFeature = stories.ToLookup(s => s.FeatureSnapshotId, s => s.Title);
         return [.. features.Select(f => new WorkItemIntentInput(f.Module, f.FeatureKey, f.Title, [.. byFeature[f.Id]], f.SpecPath, $"delivery:{deliverySnapshotId}"))];
+    }
+
+    /// <summary>
+    /// The stored Delivery rows of each feature pack, with every task classified by the one Phase 1 engine (<see cref="WorkItemInterpreter.Classify"/>):
+    /// the canonical engine persists that interpretation and never re-derives it. No Markdown is parsed here.
+    /// </summary>
+    public async Task<IReadOnlyList<WorkItemStructureInput>> StructuresAsync(Guid deliverySnapshotId, CancellationToken ct)
+    {
+        var features = await db.FeatureSnapshots.AsNoTracking().Where(f => f.SnapshotId == deliverySnapshotId)
+            .Select(f => new { f.Id, f.Module, f.FeatureKey, f.Title, f.SpecPath, f.RequirementsJson }).ToListAsync(ct);
+        var stories = (await db.UserStorySnapshots.AsNoTracking().Where(s => s.SnapshotId == deliverySnapshotId)
+            .Select(s => new { s.FeatureSnapshotId, s.StoryKey, s.Title, s.Kind, s.Removed }).ToListAsync(ct)).ToLookup(s => s.FeatureSnapshotId);
+        var phases = (await db.PhaseSnapshots.AsNoTracking().Where(p => p.SnapshotId == deliverySnapshotId)
+            .Select(p => new { p.FeatureSnapshotId, p.PhaseKey, p.Title }).ToListAsync(ct)).ToLookup(p => p.FeatureSnapshotId);
+        var tasks = (await db.TaskSnapshots.AsNoTracking().Where(t => t.SnapshotId == deliverySnapshotId)
+            .Select(t => new { t.FeatureSnapshotId, t.TaskKey, t.TaskId, t.Text, t.Completed, t.UserStory, t.PhaseKey, t.Position }).ToListAsync(ct)).ToLookup(t => t.FeatureSnapshotId);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var result = new List<WorkItemStructureInput>();
+        foreach (var f in features)
+        {
+            var defined = stories[f.Id].Select(s => new InterpretedStory(s.StoryKey, s.Title, s.Kind == "Scenario", s.Removed)).ToList();
+            var interpreted = new InterpretedFeature(defined, f.SpecPath is not null);
+            var phaseTitles = phases[f.Id].ToDictionary(p => p.PhaseKey, p => p.Title, StringComparer.Ordinal);
+            var requirements = (JsonSerializer.Deserialize<List<WorkItemRequirementInput>>(string.IsNullOrWhiteSpace(f.RequirementsJson) ? "[]" : f.RequirementsJson, json) ?? [])
+                .Where(r => !string.IsNullOrWhiteSpace(r.Key)).ToList();
+            var taskInputs = tasks[f.Id].OrderBy(t => t.Position).Select(t =>
+            {
+                var phase = t.PhaseKey is null ? null : phaseTitles.GetValueOrDefault(t.PhaseKey);
+                var k = WorkItemInterpreter.Classify(new InterpretedTask(t.UserStory, phase), interpreted);
+                return new WorkItemTaskInput(t.TaskId ?? t.TaskKey, t.Text, t.Completed, phase, k.Relationship, k.GroupKey, k.LinkedKey, k.RuleId, t.UserStory);
+            }).ToList();
+            result.Add(new(f.Module, f.FeatureKey, f.Title, requirements,
+                [.. defined.Select(s => new WorkItemStoryInput(s.Key, s.Title, s.IsScenario, s.Removed))], taskInputs, $"delivery:{deliverySnapshotId}"));
+        }
+        return result;
     }
 
     public async Task<IReadOnlyList<TaskReferenceInput>> TasksAsync(Guid deliverySnapshotId, CancellationToken ct) =>
@@ -98,7 +136,10 @@ public sealed partial class CanonicalInterpretationService(
         {
             var features = workItems is null ? null : await workItems.FeaturesAsync(deliveryId, ct);
             if (features is null) throw new CanonicalRequestException($"Delivery snapshot {deliveryId} is not stored.");
-            inputs.Add(CorrelationInput.Empty(scope) with { WorkItems = features, Tasks = await workItems!.TasksAsync(deliveryId, ct) });
+            inputs.Add(CorrelationInput.Empty(scope) with
+            {
+                WorkItems = features, Tasks = await workItems!.TasksAsync(deliveryId, ct), Structures = await workItems.StructuresAsync(deliveryId, ct),
+            });
             refs.Add(new(SnapshotType.Delivery, deliveryId.ToString(), "Delivery snapshot"));
         }
         inputs.Add(CorrelationInput.Empty(scope) with { Systems = CanonicalEvidenceAdapter.DeclaredSystems(profiles ?? [], (packs ?? []).SelectMany(p => p.Aliases)) });
@@ -454,7 +495,9 @@ public sealed partial class CanonicalInterpretationService(
         var relations = await (from m in db.SnapshotRelations.AsNoTracking()
                                join r in db.Relations.AsNoTracking() on m.RelationId equals r.Id
                                where m.SnapshotId == latest.Id
-                               select new { r.RelationType, r.SourceEntityId, r.TargetEntityId, m.Resolution, m.ReviewState }).ToListAsync(ct);
+                               select new { r.RelationType, r.SourceEntityId, r.TargetEntityId, m.Resolution, m.ReviewState, m.RuleId }).ToListAsync(ct);
+        var (decisionCount, suggestionCount) = CanonicalReviewQueue.Count(relations.Select(r =>
+            (r.RuleId, Enum.Parse<RelationResolution>(r.Resolution), Enum.Parse<RelationReviewState>(r.ReviewState), r.SourceEntityId, r.TargetEntityId)));
         var established = relations.Count(r => CorrelationPrecedence.Counts(Enum.Parse<RelationResolution>(r.Resolution)) || r.ReviewState == nameof(RelationReviewState.Confirmed));
         var needsReview = relations.Count(r => r.ReviewState is nameof(RelationReviewState.RevalidationRequired) or nameof(RelationReviewState.Conflict)
             || (r.ReviewState is nameof(RelationReviewState.NotReviewed) or nameof(RelationReviewState.Deferred) && r.Resolution is nameof(RelationResolution.Candidate) or nameof(RelationResolution.Ambiguous)));
@@ -475,7 +518,13 @@ public sealed partial class CanonicalInterpretationService(
             needsReview, relations.Count(r => r.ReviewState == nameof(RelationReviewState.Conflict)),
             new(entities.Count(e => e.EntityType == nameof(CanonicalEntityType.Contract)), versions.Count, versions.Select(v => v.SourceIdentity.ToLowerInvariant()).Distinct().Count(),
                 entities.Count(e => e.EntityType == nameof(CanonicalEntityType.ContractOccurrence)), versions.Count(v => !withIdentity.Contains(v.Id))),
-            packages, JsonSerializer.Deserialize<List<string>>(latest.LimitationsJson, Json) ?? []);
+            packages, JsonSerializer.Deserialize<List<string>>(latest.LimitationsJson, Json) ?? [])
+        {
+            // The same classification as the shared review queue: decisions are questions someone must answer; suggestions are optional proposals.
+            Decisions = decisionCount
+                + entities.Count(e => e.EntityType == nameof(CanonicalEntityType.Task) && Attr(e.AttributesJson, "relationship") == "UnresolvedReference"),
+            Suggestions = suggestionCount,
+        };
     }
 
     public async Task<IReadOnlyList<InterpretationSnapshotView>> SnapshotsAsync(string scope, int take, CancellationToken ct)

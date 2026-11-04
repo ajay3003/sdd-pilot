@@ -42,6 +42,21 @@ public sealed record LibraryInput(string Package, string Name, string Source, st
 /// <summary>A service's stated use of a library (project reference or package reference). Only libraries some package in scope provides become relations.</summary>
 public sealed record LibraryUseInput(string Service, string Library, string Evidence, string? SourceSnapshotId = null);
 
+/// <summary>A requirement as written in one feature pack's spec (FR-001 in pack A is not FR-001 in pack B).</summary>
+public sealed record WorkItemRequirementInput(string Key, string Text);
+
+/// <summary>A user story or acceptance scenario defined in one feature pack's spec.</summary>
+public sealed record WorkItemStoryInput(string Key, string Title, bool Scenario, bool Removed);
+
+/// <summary>A task with the shared Phase 1 interpretation (<see cref="WorkItemInterpreter"/>) already applied by the reader: the canonical engine never
+/// reclassifies a task, it persists what the one work-item engine decided.</summary>
+public sealed record WorkItemTaskInput(string TaskKey, string Text, bool Completed, string? Phase, BirkNext.DeliveryReporting.DeliveryTaskRelationship Relationship,
+    string? GroupKey, string? LinkedKey, string WorkItemRuleId, string? StoryReference);
+
+/// <summary>One feature pack's work-item structure: requirements, stories/scenarios and interpreted tasks (cases A–F persisted canonically).</summary>
+public sealed record WorkItemStructureInput(string Module, string FeatureKey, string Title, IReadOnlyList<WorkItemRequirementInput> Requirements,
+    IReadOnlyList<WorkItemStoryInput> Stories, IReadOnlyList<WorkItemTaskInput> Tasks, string? SourceSnapshotId = null);
+
 /// <summary>Everything one correlation pass reads, all scoped to one project.</summary>
 public sealed record CorrelationInput(
     string Scope,
@@ -56,7 +71,8 @@ public sealed record CorrelationInput(
     IReadOnlyList<MessagingChannelInput>? Channels = null,
     IReadOnlyList<TaskReferenceInput>? Tasks = null,
     IReadOnlyList<LibraryInput>? Libraries = null,
-    IReadOnlyList<LibraryUseInput>? LibraryUses = null)
+    IReadOnlyList<LibraryUseInput>? LibraryUses = null,
+    IReadOnlyList<WorkItemStructureInput>? Structures = null)
 {
     public static CorrelationInput Empty(string scope) => new(scope, [], [], [], [], [], []);
 }
@@ -64,16 +80,19 @@ public sealed record CorrelationInput(
 public static partial class CorrelationRules
 {
     /// <summary>Bumped whenever a rule's outcome can change for the same input; stored on every interpretation snapshot.</summary>
+    /// <remarks>correlation/3: feature-pack-scoped requirements, stories, groups and tasks (Phase 1 interpretation persisted), and explicit test links
+    /// resolved to the feature pack they belong to (FR-001 is never merged across packs by its text).</remarks>
     /// <remarks>correlation/2: contract versions keep their version context (case J), occurrences use OCCURRENCE_OF, shared libraries + USES,
     /// task → source-symbol references (CR-L-TASK), conflicting declared aliases surface for review (CR-K-CONFLICT).</remarks>
-    public const string RuleSetVersion = "correlation/2";
+    public const string RuleSetVersion = "correlation/3";
 
     public const string IntentRule = "CR-G-INTENT", CapabilityRule = "CR-H-CAPABILITY", ContractHashRule = "CR-I-HASH", ContractVersionRule = "CR-J-VERSION",
         ContractVersionConflictRule = "CR-J-CONFLICT", DeclaredAliasRule = "CR-K-DECLARED", AcronymAliasRule = "CR-K-ACRONYM", SymbolRouteRule = "CR-L-ROUTE",
         SymbolRequirementRule = "CR-L-REQUIREMENT", SymbolContractRule = "CR-L-CONTRACT", SymbolServiceRule = "CR-L-SERVICE", SymbolNameRule = "CR-L-NAME",
         TestExplicitRule = "CR-M-EXPLICIT", TestCandidateRule = "CR-M-CANDIDATE", TestSuiteRule = "CR-M-SUITE", OperationServiceRule = "CR-N-EXPOSES", ContractServiceRule = "CR-N-CONTRACT",
         ChannelRule = "CR-N-CHANNEL", AliasConflictRule = "CR-K-CONFLICT", TaskOwnerRule = "CR-L-TASK-OWNER", TaskSymbolRule = "CR-L-TASK", SymbolMemberRule = "CR-L-MEMBER",
-        LibraryRule = "CR-N-LIBRARY", LibraryUseRule = "CR-N-USES";
+        LibraryRule = "CR-N-LIBRARY", LibraryUseRule = "CR-N-USES", RequirementRule = "CR-W-REQUIREMENT", StoryRule = "CR-W-STORY", TaskGroupRule = "CR-W-TASK",
+        TestScopeAmbiguityRule = "CR-M-SCOPE";
 
     /// <summary>Minimum Jaccard share of significant intent terms two features must have in common before a shared capability is even proposed…</summary>
     public const double IntentSimilarityThreshold = 0.34;
@@ -111,6 +130,7 @@ public static partial class CorrelationRules
         foreach (var e in input.AdditionalEntities ?? []) Entity(e);
         foreach (var r in input.AdditionalRelations ?? []) Relation(r);
         WorkItemIntents(input.WorkItems, Entity, Relation);
+        WorkItemStructures(input.Structures ?? [], Entity, Relation);
         ContractOccurrences(input.Contracts, Entity, Relation);
         Systems(input.Systems, Entity, Relation, aliases, limitations);
         Operations(input.Operations, Entity, Relation);
@@ -218,6 +238,99 @@ public static partial class CorrelationRules
 
     [GeneratedRegex(@"[\p{L}][\p{L}\p{Nd}]+")]
     private static partial Regex WordRe();
+
+    // ---- Cases A–F persisted: feature-pack-scoped requirements, stories, groups and tasks ----
+
+    /// <summary>A work-item identity inside one feature pack: module + feature folder + the id as written (FR-001, US1, S2, T010, group:US3, shared).</summary>
+    public static string Scoped(string module, string featureKey, string id) => $"{CanonicalKeys.Normalize(module)}/{CanonicalKeys.Normalize(featureKey)}/{id}";
+
+    /// <summary>Requirement text without the list marker and the id it repeats ("- **FR-001**: The system…" → "The system…"); display only, never identity.</summary>
+    public static string RequirementText(string text, string key)
+    {
+        var t = text.Trim().TrimStart('-', '*', ' ').Replace("**", "").Trim();
+        if (t.StartsWith(key, StringComparison.OrdinalIgnoreCase)) t = t[key.Length..].TrimStart(' ', ':', '-', '–', '.').Trim();
+        return t.Length == 0 ? text.Trim() : t;
+    }
+
+    static void WorkItemStructures(IReadOnlyList<WorkItemStructureInput> structures, Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation)
+    {
+        foreach (var f in structures.OrderBy(f => f.Module, StringComparer.Ordinal).ThenBy(f => f.FeatureKey, StringComparer.Ordinal))
+        {
+            var feature = new CanonicalEntityFact(CanonicalEntityType.Feature, $"{CanonicalKeys.Normalize(f.Module)}/{CanonicalKeys.Normalize(f.FeatureKey)}", f.Title, $"{f.Module}/{f.FeatureKey}",
+                "module + feature folder key", [new("feature", f.FeatureKey, f.Module, f.SourceSnapshotId)]);
+            entity(feature);
+            CorrelationEvidence Ev(string kind, string reference) => new(kind, $"{f.Module}/{f.FeatureKey}/{reference}", null, f.SourceSnapshotId);
+            foreach (var r in f.Requirements.OrderBy(r => r.Key, StringComparer.Ordinal))
+            {
+                var id = NormalizeRequirement(r.Key) ?? r.Key;
+                var fact = new CanonicalEntityFact(CanonicalEntityType.Requirement, Scoped(f.Module, f.FeatureKey, id), $"{r.Key}: {Shorten(RequirementText(r.Text, r.Key), 100)}", $"{f.Module}/{f.FeatureKey}/{r.Key}",
+                    "module + feature pack + requirement id", [Ev("requirement", r.Key)], Attributes: Attrs(("id", id), ("module", f.Module), ("feature", f.FeatureKey), ("text", Shorten(r.Text, 400))));
+                entity(fact);
+                relation(new(feature.Key, fact.Key, CanonicalRelationType.Contains, RelationResolution.Explicit, CorrelationConfidence.Explicit, RequirementRule, [Ev("requirement", r.Key)],
+                    "The requirement is written in this feature pack's specification."));
+            }
+            foreach (var st in f.Stories.OrderBy(x => x.Key, StringComparer.Ordinal))
+            {
+                var fact = new CanonicalEntityFact(st.Scenario ? CanonicalEntityType.Scenario : CanonicalEntityType.UserStory, Scoped(f.Module, f.FeatureKey, st.Key),
+                    $"{st.Key} {Shorten(st.Title, 100)}", $"{f.Module}/{f.FeatureKey}/{st.Key}", "module + feature pack + story key", [Ev("story", st.Key)],
+                    Attributes: Attrs(("id", st.Key), ("module", f.Module), ("feature", f.FeatureKey), ("removed", st.Removed ? "true" : null)));
+                entity(fact);
+                relation(new(feature.Key, fact.Key, CanonicalRelationType.Contains, RelationResolution.Explicit, CorrelationConfidence.Explicit, StoryRule, [Ev("story", st.Key)],
+                    st.Removed ? "The specification lists this story as removed." : $"The {(st.Scenario ? "scenario" : "user story")} is defined in this feature pack's specification."));
+            }
+            foreach (var t in f.Tasks.OrderBy(t => t.TaskKey, StringComparer.Ordinal))
+            {
+                var task = new CanonicalEntityFact(CanonicalEntityType.Task, Scoped(f.Module, f.FeatureKey, CanonicalKeys.Normalize(t.TaskKey)), $"{t.TaskKey} {Shorten(t.Text, 120)}",
+                    $"{f.Module}/{f.FeatureKey}/{t.TaskKey}", "module + feature + task key", [Ev("task", t.TaskKey)],
+                    Attributes: Attrs(("id", t.TaskKey), ("module", f.Module), ("feature", f.FeatureKey), ("completed", t.Completed ? "true" : "false"), ("phase", t.Phase),
+                        ("relationship", t.Relationship.ToString()), ("workItemRule", t.WorkItemRuleId), ("storyReference", t.StoryReference)));
+                entity(task);
+                relation(new(feature.Key, task.Key, CanonicalRelationType.Contains, RelationResolution.Explicit, CorrelationConfidence.Explicit, TaskOwnerRule, [Ev("task", t.TaskKey)],
+                    "The task is listed in this feature's tasks file. A checked box is not proof of implementation."));
+                var why = $"Work-item rule {t.WorkItemRuleId} ({WorkItemInterpreter.Label(t.Relationship)}).";
+                switch (t.Relationship)
+                {
+                    case BirkNext.DeliveryReporting.DeliveryTaskRelationship.ExplicitStory or BirkNext.DeliveryReporting.DeliveryTaskRelationship.StoryPhase when t.LinkedKey is not null:
+                        relation(new(task.Key, CanonicalKeys.EntityKey(CanonicalEntityType.UserStory, Scoped(f.Module, f.FeatureKey, t.LinkedKey)), CanonicalRelationType.BelongsTo,
+                            t.Relationship == BirkNext.DeliveryReporting.DeliveryTaskRelationship.ExplicitStory ? RelationResolution.Explicit : RelationResolution.Derived,
+                            t.Relationship == BirkNext.DeliveryReporting.DeliveryTaskRelationship.ExplicitStory ? CorrelationConfidence.Explicit : CorrelationConfidence.High, TaskGroupRule,
+                            [Ev("task", t.TaskKey)], why));
+                        break;
+                    case BirkNext.DeliveryReporting.DeliveryTaskRelationship.FunctionalGroup or BirkNext.DeliveryReporting.DeliveryTaskRelationship.ScenarioGroup:
+                    {
+                        var scenario = t.Relationship == BirkNext.DeliveryReporting.DeliveryTaskRelationship.ScenarioGroup;
+                        var group = new CanonicalEntityFact(scenario ? CanonicalEntityType.ScenarioGroup : CanonicalEntityType.FunctionalGroup,
+                            Scoped(f.Module, f.FeatureKey, "group:" + (t.GroupKey ?? "?")), $"{t.GroupKey} — {(scenario ? "Scenario group" : "Functional group")}",
+                            $"{f.Module}/{f.FeatureKey}/{t.GroupKey}", "module + feature + group key", [Ev("group", t.GroupKey ?? "?")],
+                            Attributes: Attrs(("id", t.GroupKey), ("module", f.Module), ("feature", f.FeatureKey)));
+                        entity(group);
+                        relation(new(feature.Key, group.Key, CanonicalRelationType.Contains, RelationResolution.Derived, CorrelationConfidence.High, TaskGroupRule, [Ev("group", t.GroupKey ?? "?")],
+                            "Derived from the tasks file's [USn] tags (the spec defines no matching user stories)."));
+                        relation(new(task.Key, group.Key, CanonicalRelationType.BelongsTo, RelationResolution.Derived, CorrelationConfidence.High, TaskGroupRule, [Ev("task", t.TaskKey)], why));
+                        if (scenario && t.LinkedKey is not null)
+                            relation(new(group.Key, CanonicalKeys.EntityKey(CanonicalEntityType.Scenario, Scoped(f.Module, f.FeatureKey, t.LinkedKey)), CanonicalRelationType.References,
+                                RelationResolution.Derived, CorrelationConfidence.High, TaskGroupRule, [Ev("task", t.TaskKey)], "The phase title names this scenario."));
+                        break;
+                    }
+                    case BirkNext.DeliveryReporting.DeliveryTaskRelationship.SharedFoundational:
+                    {
+                        var shared = new CanonicalEntityFact(CanonicalEntityType.SharedFoundationGroup, Scoped(f.Module, f.FeatureKey, "shared"), "Shared & foundational work",
+                            $"{f.Module}/{f.FeatureKey}/shared", "module + feature", [Ev("group", "shared")], Attributes: Attrs(("module", f.Module), ("feature", f.FeatureKey)));
+                        entity(shared);
+                        relation(new(task.Key, shared.Key, CanonicalRelationType.BelongsTo, RelationResolution.Derived, CorrelationConfidence.High, TaskGroupRule, [Ev("task", t.TaskKey)],
+                            why + " Shared and foundational work is not a missing user story."));
+                        break;
+                    }
+                    case BirkNext.DeliveryReporting.DeliveryTaskRelationship.RemovedStoryReference when t.GroupKey is not null:
+                        relation(new(task.Key, CanonicalKeys.EntityKey(CanonicalEntityType.UserStory, Scoped(f.Module, f.FeatureKey, t.GroupKey)), CanonicalRelationType.References,
+                            RelationResolution.Unresolved, CorrelationConfidence.Explicit, TaskGroupRule, [Ev("task", t.TaskKey)],
+                            why + " The task names a story the specification marks removed: update the task, restore the story or mark the task obsolete."));
+                        break;
+                    // Unresolved references ([US6] when US1–US5 exist, ranges) have no target: the task keeps the reference as an attribute and is a review item.
+                }
+            }
+        }
+    }
 
     // ---- Case I + J: contract identity ≠ occurrence; versions never collapse ----
 
@@ -634,6 +747,9 @@ public static partial class CorrelationRules
 
     static void Tests(IReadOnlyList<TestInput> tests, IReadOnlyDictionary<string, CanonicalEntityFact> known, Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation, List<string> limitations)
     {
+        var scopedById = known.Values.Where(e => e.Type is CanonicalEntityType.Requirement or CanonicalEntityType.UserStory && e.Attribute("module") is not null && e.Attribute("id") is not null)
+            .GroupBy(e => e.Attribute("id")!, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.OrderBy(e => e.Key, StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
+        var scopeDropped = 0;
         var unresolved = 0;
         var unresolvedIds = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var t in tests.OrderBy(t => t.Package, StringComparer.Ordinal).ThenBy(t => t.Path, StringComparer.Ordinal).ThenBy(t => t.Name, StringComparer.Ordinal))
@@ -653,6 +769,19 @@ public static partial class CorrelationRules
             foreach (var target in t.ExplicitTargets.Select(x => VerifyTarget(x, known)).Distinct().OrderBy(x => x.Key, StringComparer.Ordinal))
             {
                 if (target.Key is null) { unresolved++; unresolvedIds.UnionWith(t.ExplicitTargets.Where(x => VerifyTarget(x, known).Key is null)); continue; }
+                // A requirement id the evidence also defines per feature pack is linked to the pack the test belongs to — never to all packs that use the id.
+                var scoped = ScopedTargets(target.Id!, t, scopedById);
+                if (scoped.Matches.Count > 0)
+                {
+                    if (scoped.Chosen is { } one)
+                        relation(new(fact.Key, one.Key, CanonicalRelationType.Verifies, RelationResolution.Explicit, CorrelationConfidence.Explicit, TestExplicitRule, [evidence],
+                            $"The test names {target.Id} explicitly and {scoped.Why}. This says what it is meant to verify, not that it ran or passed."));
+                    else
+                        foreach (var m in scoped.Matches)
+                            relation(new(fact.Key, m.Key, CanonicalRelationType.Verifies, RelationResolution.Ambiguous, CorrelationConfidence.Low, TestScopeAmbiguityRule, [evidence],
+                                $"The test names {target.Id}, which {scoped.Matches.Count} feature packs define, and nothing in the test says which one. Choose the pack it verifies."));
+                    continue;
+                }
                 if (!known.ContainsKey(target.Key)) entity(RequirementFact(target.Id!, "explicit test reference", t.SourceSnapshotId));
                 relation(new(fact.Key, target.Key, CanonicalRelationType.Verifies, RelationResolution.Explicit, CorrelationConfidence.Explicit, TestExplicitRule, [evidence],
                     $"The test names {target.Id} explicitly. This says what it is meant to verify, not that it ran or passed."));
@@ -661,6 +790,16 @@ public static partial class CorrelationRules
             {
                 if (target.Key is null) { unresolved++; unresolvedIds.UnionWith(t.CandidateTargets.Where(x => VerifyTarget(x, known).Key is null)); continue; }
                 if (t.ExplicitTargets.Select(NormalizeRequirement).Contains(target.Id)) continue; // explicit already
+                var scopedCandidate = ScopedTargets(target.Id!, t, scopedById);
+                if (scopedCandidate.Matches.Count > 0)
+                {
+                    // A naming-only guess is proposed only when the test's own module narrows it to one pack; otherwise it is not proposed at all.
+                    if (scopedCandidate.Chosen is { } one)
+                        relation(new(fact.Key, one.Key, CanonicalRelationType.Verifies, RelationResolution.Candidate, CorrelationConfidence.Low, TestCandidateRule, [evidence],
+                            $"The test looks related to {target.Id} by naming only ({scopedCandidate.Why}). A candidate is never counted as traceability until confirmed."));
+                    else scopeDropped++;
+                    continue;
+                }
                 if (!known.ContainsKey(target.Key)) entity(RequirementFact(target.Id!, "candidate test reference", t.SourceSnapshotId));
                 relation(new(fact.Key, target.Key, CanonicalRelationType.Verifies, RelationResolution.Candidate, CorrelationConfidence.Low, TestCandidateRule, [evidence],
                     $"The test looks related to {target.Id} by naming only. A candidate is never counted as traceability until confirmed."));
@@ -668,6 +807,21 @@ public static partial class CorrelationRules
         }
         if (unresolved > 0)
             limitations.Add($"{unresolved} test link(s) could not be resolved to a requirement, story, capability or operation (e.g. {string.Join(", ", unresolvedIds.Take(6))}).");
+        if (scopeDropped > 0)
+            limitations.Add($"{scopeDropped} naming-only test link(s) name an id several feature packs define and the test's module does not narrow it; no candidate was proposed.");
+    }
+
+    /// <summary>
+    /// The feature-pack-scoped requirements/stories with this id, and the one the test belongs to: the only pack that defines it, or the only one in the
+    /// module the test's project/path names (a dot, slash or pipe segment equal to the module). Null <c>Chosen</c> means the test does not say which.
+    /// </summary>
+    static (IReadOnlyList<CanonicalEntityFact> Matches, CanonicalEntityFact? Chosen, string Why) ScopedTargets(string id, TestInput t, IReadOnlyDictionary<string, List<CanonicalEntityFact>> scopedById)
+    {
+        if (!scopedById.TryGetValue(id, out var matches)) return ([], null, "");
+        if (matches.Count == 1) return (matches, matches[0], $"only {matches[0].Attribute("module")}/{matches[0].Attribute("feature")} defines it");
+        var segments = $"{t.Path}|{t.Name}|{t.StableIdentity}|{t.Package}".Split(['/', '\\', '.', '|'], StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var inModule = matches.Where(m => segments.Contains(m.Attribute("module")!)).ToList();
+        return inModule.Count == 1 ? (matches, inModule[0], $"the test belongs to module {inModule[0].Attribute("module")}, where only {inModule[0].Attribute("feature")} defines it") : (matches, null, "");
     }
 
     /// <summary>A test target is an operation key ("GET /x"), a known entity key, or a requirement/story id.</summary>

@@ -15,6 +15,10 @@ public enum CanonicalEntityType
     SourceSymbol, ApiOperation, Contract, ContractOccurrence, ContractVersion, MessagingChannel, DataEntity, Test, TestSuite,
     /// <summary>A shared library a package publishes (e.g. M2LB.Common.Health): distinct from the package that contains it and the services that use it.</summary>
     Library,
+    /// <summary>Tasks grouped by [USn] in a scenario-based spec (case B): not a user story.</summary>
+    ScenarioGroup,
+    /// <summary>Shared and foundational tasks of a feature (case E): not a missing user story.</summary>
+    SharedFoundationGroup,
 }
 
 /// <summary>Typed relation between two canonical entities (direction: source → target).</summary>
@@ -219,7 +223,8 @@ public sealed record ReviewDecisionRequest(ReviewTargetKind TargetKind, string T
 /// </summary>
 public sealed record CanonicalSummaryView(string Scope, Guid? InterpretationId, DateTimeOffset? InterpretedAt, IReadOnlyList<string> RuleSetVersions,
     IReadOnlyDictionary<string, int> EntitiesByType, IReadOnlyDictionary<string, int> RelationsByType, int EstablishedRelations, int CandidateRelations,
-    int NeedsReview, int Conflicts, CanonicalContractCounts Contracts, IReadOnlyList<CanonicalPackageSummary> Packages, IReadOnlyList<string> Limitations);
+    int NeedsReview, int Conflicts, CanonicalContractCounts Contracts, IReadOnlyList<CanonicalPackageSummary> Packages, IReadOnlyList<string> Limitations,
+    int Decisions = 0, int Suggestions = 0);
 
 /// <summary>Logical contracts (declared identity), versions (content + version context), distinct contents (hashes) and source occurrences, kept apart.</summary>
 public sealed record CanonicalContractCounts(int LogicalContracts, int Versions, int DistinctContents, int Occurrences, int VersionsWithoutLogicalIdentity);

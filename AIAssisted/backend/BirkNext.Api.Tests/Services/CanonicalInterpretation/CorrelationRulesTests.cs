@@ -255,7 +255,7 @@ public sealed class CorrelationRulesTests
         var b = Run(In() with { WorkItems = [.. Enumerable.Reverse(items)], Tests = [.. Enumerable.Reverse(tests)] });
         a.Relations.Select(r => (r.Key, r.Resolution, r.EvidenceFingerprint)).Should().Equal(b.Relations.Select(r => (r.Key, r.Resolution, r.EvidenceFingerprint)));
         a.Entities.Select(e => e.Key).Should().Equal(b.Entities.Select(e => e.Key));
-        a.RuleSetVersion.Should().Be("correlation/2");
+        a.RuleSetVersion.Should().Be(CorrelationRules.RuleSetVersion);
     }
 
     // ---- precedence ----
