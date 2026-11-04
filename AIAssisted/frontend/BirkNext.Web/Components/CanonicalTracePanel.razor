@@ -1,0 +1,148 @@
+@using BirkNext.Interpretation
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+
+@* End-to-end traceability from the shared interpretation: Requirement → work item → task → implementation → API/contract → test. Summary first;
+   feature packs and each feature's chain load on request. Every link shows its state and why it exists; a missing link is shown as missing. *@
+
+<section class="ctp" aria-labelledby="ctp-heading" data-testid="ct-panel">
+    <h2 id="ctp-heading">Requirement → code → test (shared interpretation)</h2>
+    @if (_unavailable is not null)
+    {
+        <p class="ctp-muted" role="status" data-testid="ct-unavailable">Shared interpretation unavailable: @_unavailable</p>
+    }
+    else if (_summary is null)
+    {
+        <p class="ctp-muted" role="status">@(_loading ? "Loading the shared interpretation…" : "Select a project (Target Environment) to see the shared interpretation.")</p>
+    }
+    else
+    {
+        var s = _summary;
+        <dl class="ctp-counts" data-testid="ct-summary">
+            <div><dt>Requirements</dt><dd>@s.Requirements</dd></div>
+            <div><dt>User stories / scenarios</dt><dd>@s.UserStories / @s.Scenarios</dd></div>
+            <div><dt>Functional / scenario groups</dt><dd>@s.FunctionalGroups / @s.ScenarioGroups</dd></div>
+            <div><dt>Tasks</dt><dd>@s.Tasks <span class="ctp-muted">(@s.SharedFoundationTasks shared &amp; foundational)</span></dd></div>
+            <div><dt>Tasks with implementation evidence</dt><dd data-testid="ct-implemented">@s.TasksWithImplementation</dd></div>
+            <div><dt>Requirements with explicit tests</dt><dd data-testid="ct-tested">@s.RequirementsWithExplicitTests</dd></div>
+            <div><dt>Only suggested test links</dt><dd>@s.RequirementsWithCandidateTestsOnly</dd></div>
+            <div><dt>No linked test</dt><dd>@s.RequirementsWithoutTests</dd></div>
+            <div><dt>Story references to fix</dt><dd>@(s.UnresolvedStoryReferences + s.RemovedStoryReferences)</dd></div>
+        </dl>
+        <p class="ctp-muted">Document, implementation and test evidence are counted separately; none of them is a completion percentage, and a checked task is not implementation evidence.</p>
+        @foreach (var l in s.Limitations) { <p class="ctp-limit" data-testid="ct-limitation">@l</p> }
+        @if (_features is null)
+        {
+            <button type="button" class="btn-secondary" data-testid="ct-show-features" disabled="@(s.Features == 0)" @onclick="LoadFeaturesAsync">Show @s.Features feature pack@(s.Features == 1 ? "" : "s")</button>
+        }
+        else
+        {
+            <ul class="ctp-features" data-testid="ct-features">
+                @foreach (var f in _features)
+                {
+                    var open = _open.ContainsKey(f.Feature.Id);
+                    <li class="ctp-feature" data-testid="ct-feature">
+                        <button type="button" class="ctp-feature-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleAsync(f.Feature.Id)">
+                            <strong>@f.Feature.SourceIdentity</strong> <span>@f.Feature.DisplayName</span>
+                            <span class="ctp-muted">@f.Requirements requirements · @f.Tasks tasks · @f.TasksWithImplementation with implementation · @f.RequirementsWithExplicitTests explicitly tested@(f.StoryReferenceIssues > 0 ? $" · {f.StoryReferenceIssues} story reference(s) to fix" : "")</span>
+                        </button>
+                        @if (open) { @Detail(_open[f.Feature.Id]) }
+                    </li>
+                }
+            </ul>
+        }
+        <p class="ctp-muted"><a href="correlation-review">Open the shared review queue</a> to answer ambiguous links once for every view.</p>
+    }
+</section>
+
+@code {
+    private TraceSummaryView? _summary;
+    private IReadOnlyList<TraceFeatureRow>? _features;
+    private readonly Dictionary<Guid, TraceFeatureDetail?> _open = [];
+    private string? _scope, _unavailable;
+    private bool _loading;
+    private ICanonicalInterpretationApiService? _api;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _api = Services.GetService<ICanonicalInterpretationApiService>();
+        if (_api is null || Services.GetService<IFrontendAnalysisContextFactory>() is not { } contexts) return;
+        try { _scope = CorrelationPresentation.Scope((await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id); }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _scope = null; }
+        if (_scope is null) return;
+        _loading = true;
+        var (summary, error) = await _api.TraceSummaryAsync(_scope);
+        (_summary, _unavailable, _loading) = (summary, error, false);
+    }
+
+    private async Task LoadFeaturesAsync()
+    {
+        if (_api is null || _scope is null) return;
+        var (items, error) = await _api.TraceFeaturesAsync(_scope, null);
+        if (error is not null) { _unavailable = error; return; }
+        _features = items;
+    }
+
+    private async Task ToggleAsync(Guid featureId)
+    {
+        if (_open.Remove(featureId) || _api is null || _scope is null) return;
+        _open[featureId] = null;
+        var (detail, error) = await _api.TraceFeatureAsync(_scope, featureId);
+        if (error is not null) { _open.Remove(featureId); _unavailable = error; return; }
+        _open[featureId] = detail;
+    }
+
+    private RenderFragment Link(TraceLink link) => __builder =>
+    {
+        var (status, label, explanation) = CorrelationPresentation.Status(link.Relation);
+        <li class="ctp-link" data-testid="ct-link" data-counts="@(link.Relation.Counts ? "true" : "false")">
+            <span>@link.Entity.DisplayName</span>
+            <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@explanation" />
+            <details class="ctp-why"><summary>Why linked</summary><p>@link.Relation.Explanation</p><p class="ctp-muted">Rule @link.Relation.RuleId</p></details>
+        </li>
+    };
+
+    private RenderFragment Links(string title, IReadOnlyList<TraceLink> links, string missing) => __builder =>
+    {
+        <div class="ctp-level"><span class="ctp-level-title">@title</span>
+            @if (links.Count == 0) { <span class="ctp-missing" data-testid="ct-missing">@missing</span> }
+            else { <ul class="ctp-links">@foreach (var l in links) { @Link(l) }</ul> }
+        </div>
+    };
+
+    private RenderFragment Detail(TraceFeatureDetail? d) => __builder =>
+    {
+        if (d is null) { <p class="ctp-muted" role="status">Loading the chain…</p>; return; }
+        <div class="ctp-detail" data-testid="ct-detail">
+            @foreach (var g in d.Gaps) { <p class="ctp-limit">@g</p> }
+            <h3 class="ctp-h3">Requirements</h3>
+            @if (d.Requirements.Count == 0) { <p class="ctp-muted">The specification lists no requirements.</p> }
+            <ul class="ctp-items">
+                @foreach (var r in d.Requirements)
+                {
+                    <li data-testid="ct-requirement"><strong>@r.Requirement.DisplayName</strong> @Links("Tests", r.Tests, "No linked test")</li>
+                }
+            </ul>
+            <h3 class="ctp-h3">Work items and tasks</h3>
+            @foreach (var w in d.WorkItems)
+            {
+                <div class="ctp-workitem" data-testid="ct-workitem" data-kind="@w.Kind">
+                    <MetaBadge Kind="BadgeKind.Type" Text="@w.Kind" /> @if (w.Item is { } item) { <strong>@item.DisplayName</strong> }
+                    <ul class="ctp-items">
+                        @foreach (var t in w.Tasks)
+                        {
+                            var done = t.Task.Attributes.GetValueOrDefault("completed") == "true";
+                            <li data-testid="ct-task">
+                                <span>@t.Task.DisplayName</span> <span class="ctp-muted">@(done ? "checked in the tasks file" : "open in the tasks file")</span>
+                                @Links("Implementation", t.Implementation, "Implementation evidence not linked")
+                                @if (t.Operations.Count > 0) { @Links("API", t.Operations, "") }
+                                @if (t.Contracts.Count > 0) { @Links("Contracts", t.Contracts, "") }
+                                @if (t.Operations.Count > 0) { @Links("Tests of the API", t.Tests, "No linked test") }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    };
+}

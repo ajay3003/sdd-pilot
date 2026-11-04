@@ -15,7 +15,8 @@ public sealed class CanonicalSummaryUiTests : BunitContext
 {
     static CanonicalSummaryView Summary(int needsReview, Guid? interpretation = null) => new("dev", interpretation ?? Guid.NewGuid(), DateTimeOffset.UnixEpoch,
         ["correlation/2", "work-items/1"], new Dictionary<string, int> { ["SourceSymbol"] = 1437 }, new Dictionary<string, int> { ["Uses"] = 38 }, 2500, 1362, needsReview, 1,
-        new(70, 84, 81, 88, 14), [new(Guid.NewGuid(), "Terraform-iac-meldingsutveksler", ["Infrastructure", "Contracts", "Pipelines"], [])], []);
+        new(70, 84, 81, 88, 14), [new(Guid.NewGuid(), "Terraform-iac-meldingsutveksler", ["Infrastructure", "Contracts", "Pipelines"], [])], [])
+        { Decisions = needsReview, Suggestions = 1361 };
 
     private Mock<ICanonicalInterpretationApiService> Setup(string? profile, CanonicalSummaryView? summary)
     {
@@ -36,6 +37,7 @@ public sealed class CanonicalSummaryUiTests : BunitContext
         var cut = Render<CanonicalSummaryTile>();
         cut.WaitForElement("[data-testid=db-canonical-summary]");
         cut.Find("[data-testid=cst-review]").TextContent.Should().Be("1363");
+        cut.Find("[data-testid=cst-suggestions]").TextContent.Should().Be("1361", "optional suggestions are shown apart from decisions");
         cut.Find("[data-testid=db-canonical-summary]").TextContent.Should().Contain("70 logical contracts (88 occurrences)").And.Contain("correlation/2");
         cut.Find("[data-testid=cst-open-review]").GetAttribute("href").Should().Be("correlation-review");
         api.Verify(a => a.EntitiesAsync(It.IsAny<string>(), It.IsAny<CanonicalEntityType?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),

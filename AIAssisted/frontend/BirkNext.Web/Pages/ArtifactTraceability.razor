@@ -20,6 +20,10 @@
 
     <p class="at-neutral-note">This report counts document-level links and derived phase-heading alignment. It does not represent implementation verification or test execution. <a href="/traceability">Open the shared SDD evidence graph</a>.</p>
 
+    @* Requirement → work item → task → implementation → API/contract → test from the shared (canonical) interpretation of imported source and Delivery
+       snapshots; independent of the document coverage below, and never merged with it. *@
+    <BirkNext.Web.Components.CanonicalTracePanel />
+
     @if (_inputs is null)
     {
         <p role="status" class="at-workspace-loading">Loading current workspace artifacts…</p>

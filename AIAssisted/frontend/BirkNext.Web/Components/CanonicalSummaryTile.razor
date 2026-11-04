@@ -18,11 +18,12 @@
             <p class="cst-muted">Latest interpretation @s.InterpretedAt!.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @string.Join(", ", s.RuleSetVersions)</p>
             <ul class="cst-counts">
                 <li><strong data-testid="cst-established">@s.EstablishedRelations</strong> established relations</li>
-                <li><strong data-testid="cst-review">@s.NeedsReview</strong> decisions needed</li>
+                <li><strong data-testid="cst-review">@s.Decisions</strong> decision@(s.Decisions == 1 ? "" : "s") needed</li>
+                @if (s.Suggestions > 0) { <li><strong data-testid="cst-suggestions">@s.Suggestions</strong> optional suggestions</li> }
                 @if (s.Conflicts > 0) { <li><strong data-testid="cst-conflicts">@s.Conflicts</strong> conflicts</li> }
                 <li><strong>@s.Contracts.LogicalContracts</strong> logical contracts (@s.Contracts.Occurrences occurrences)</li>
             </ul>
-            @if (s.NeedsReview > 0) { <a class="btn-secondary" href="correlation-review" data-testid="cst-open-review">Open Correlation Review</a> }
+            @if (s.Decisions > 0) { <a class="btn-secondary" href="correlation-review" data-testid="cst-open-review">Open the review queue</a> }
         }
     </section>
 }

@@ -21,6 +21,15 @@ public interface ICanonicalInterpretationApiService
     Task<(IReadOnlyList<CanonicalEntityDetail> Items, string? Error)> OperationsAsync(string scope, string method, string path, CancellationToken ct = default);
     Task<(IReadOnlyList<ReviewDecisionView> Items, string? Error)> DecisionsAsync(string scope, string? target = null, CancellationToken ct = default);
     Task<(ReviewDecisionView? Decision, string? Error)> DecideAsync(string scope, ReviewDecisionRequest request, CancellationToken ct = default);
+    /// <summary>The shared review queue (decisions or suggestions, optionally one type), ranked and paged.</summary>
+    Task<(ReviewQueueView? Queue, string? Error)> ReviewItemsAsync(string scope, ReviewItemKind kind, ReviewItemType? type, int skip = 0, int take = 20, CancellationToken ct = default) =>
+        Task.FromResult<(ReviewQueueView?, string?)>((null, "The shared review queue is not available."));
+    Task<(TraceSummaryView? Summary, string? Error)> TraceSummaryAsync(string scope, CancellationToken ct = default) =>
+        Task.FromResult<(TraceSummaryView?, string?)>((null, null));
+    Task<(IReadOnlyList<TraceFeatureRow> Items, string? Error)> TraceFeaturesAsync(string scope, string? module, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<TraceFeatureRow>, string?)>(([], null));
+    Task<(TraceFeatureDetail? Detail, string? Error)> TraceFeatureAsync(string scope, Guid featureId, CancellationToken ct = default) =>
+        Task.FromResult<(TraceFeatureDetail?, string?)>((null, null));
     /// <summary>Summary-first counts of the latest interpretation (the same numbers every consumer shows).</summary>
     Task<(CanonicalSummaryView? Summary, string? Error)> SummaryAsync(string scope, CancellationToken ct = default) =>
         Task.FromResult<(CanonicalSummaryView?, string?)>((null, null));
@@ -53,6 +62,20 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
     public Task<(CorrelationChainView?, string?)> ChainAsync(string scope, Guid id, CancellationToken ct = default) => GetAsync<CorrelationChainView>($"{Base(scope)}/entities/{id}/chain", ct);
 
     public Task<(CanonicalSummaryView?, string?)> SummaryAsync(string scope, CancellationToken ct = default) => GetAsync<CanonicalSummaryView>($"{Base(scope)}/summary", ct);
+
+    public Task<(ReviewQueueView?, string?)> ReviewItemsAsync(string scope, ReviewItemKind kind, ReviewItemType? type, int skip = 0, int take = 20, CancellationToken ct = default) =>
+        GetAsync<ReviewQueueView>($"{Base(scope)}/review?kind={kind}&skip={skip}&take={take}{(type is { } t ? $"&type={t}" : "")}", ct);
+
+    public Task<(TraceSummaryView?, string?)> TraceSummaryAsync(string scope, CancellationToken ct = default) => GetAsync<TraceSummaryView>($"{Base(scope)}/trace/summary", ct);
+
+    public async Task<(IReadOnlyList<TraceFeatureRow>, string?)> TraceFeaturesAsync(string scope, string? module, CancellationToken ct = default)
+    {
+        var (items, error) = await GetAsync<List<TraceFeatureRow>>($"{Base(scope)}/trace/features{(string.IsNullOrWhiteSpace(module) ? "" : $"?module={Uri.EscapeDataString(module)}")}", ct);
+        return (items ?? [], error);
+    }
+
+    public Task<(TraceFeatureDetail?, string?)> TraceFeatureAsync(string scope, Guid featureId, CancellationToken ct = default) =>
+        GetAsync<TraceFeatureDetail>($"{Base(scope)}/trace/features/{featureId}", ct);
 
     public Task<(CanonicalPage<CanonicalRelationView>?, string?)> ReviewQueueAsync(string scope, string? rule, int skip = 0, int take = 25, CancellationToken ct = default) =>
         GetAsync<CanonicalPage<CanonicalRelationView>>($"{Base(scope)}/relations?needsReview=true&skip={skip}&take={take}{(string.IsNullOrWhiteSpace(rule) ? "" : $"&rule={Uri.EscapeDataString(rule)}")}", ct);
