@@ -348,6 +348,10 @@ public sealed class DeliveryReportingPageTests : BunitContext
         page.Find("[data-testid=dlr-headline-change]").TextContent.Should().Contain("1").And.Contain("changed features");
         page.Find("[data-testid=dlr-headline-current]").TextContent.Should().Contain("2").And.Contain("3 user stories").And.Contain("4 open tasks");
         page.Find("[data-testid=dlr-headline-quality]").TextContent.Should().Contain("1").And.Contain("2 project hygiene warnings");
+        page.Find("[data-testid=dlr-attention-total]").TextContent.Should().Be("1", "only the feature-attached item counts; hygiene is listed apart");
+        page.Find("[data-testid=dlr-attention-features]").TextContent.Should().Be("on 1 feature");
+        page.Find("[data-testid=dlr-attention-scope]").TextContent.Should().StartWith($"{_api.Report.ScopeChanges.Count} scope change").And.Contain("not defects");
+        page.Find("[data-testid=dlr-attention-apart]").TextContent.Should().StartWith("Not counted above: 2 project hygiene warnings");
         page.Find("[data-testid=dlr-header-meta]").TextContent.Should().StartWith("2 features · 3 user stories");
         page.Find("[data-testid=dlr-sticky-header]").QuerySelector("[data-testid=dlr-tab-overview]").Should().NotBeNull("the tabs sit in the one sticky header");
         page.Find("[data-testid=dlr-cards]").Closest("details").Should().NotBeNull("every figure stays available under All figures");

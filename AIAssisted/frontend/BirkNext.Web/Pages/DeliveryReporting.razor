@@ -139,8 +139,8 @@
     /// <summary>Repository hygiene, not a feature's delivery: items without a feature, and suspected source encoding damage.</summary>
     /// <summary>What the headline total measures: attention items attached to a feature plus scope changes to confirm (each item once); the reference counts
     /// are categories that may overlap it, and hygiene warnings and comparison limitations are listed apart.</summary>
-    private const string AttentionDefinition = "Delivery attention items: attention items attached to a feature plus scope changes requiring confirmation, each counted once. "
-        + "Reference counts below are categories within or overlapping this total; project hygiene warnings and comparison limitations are not included.";
+    private const string AttentionDefinition = "Feature attention items: review items attached to a feature, each counted once (e.g. broken traceability, a removed-story reference, a specification "
+        + "without tasks). Scope changes to confirm are counted apart; task reference counts overlap these items; project hygiene warnings and comparison limitations are not included.";
 
     private static bool IsHygiene(DeliveryAttentionItem a) => a.FeatureKey is null || a.Kind == DeliveryAttentionKind.SourceEncoding;
     private static List<DeliveryAttentionItem> HygieneItems(WeeklyDeliveryReport r) => [.. r.Attention.Where(IsHygiene)];
@@ -229,10 +229,11 @@
             </div>
             <div class="dlr-headline-card" data-testid="dlr-headline-quality">
                 <h3 class="dlr-headline-h">Quality</h3>
-                <p class="dlr-headline-value" title="@AttentionDefinition"><span data-testid="dlr-attention-total">@(DeliveryAttention(report).Count + report.ScopeChanges.Count)</span> <span>delivery attention items</span></p>
+                <p class="dlr-headline-value" title="@AttentionDefinition"><span data-testid="dlr-attention-total">@DeliveryAttention(report).Count</span> <span>feature attention item@(DeliveryAttention(report).Count == 1 ? "" : "s")</span></p>
                 <ul class="dlr-headline-list">
-                    <li>@Fig(report, "quality-unresolved-references") unresolved references</li>
-                    <li>@Fig(report, "quality-removed-story-references") removed-story references</li>
+                    <li data-testid="dlr-attention-features">on @DeliveryAttention(report).Select(a => a.FeatureKey).Distinct().Count() feature@(DeliveryAttention(report).Select(a => a.FeatureKey).Distinct().Count() == 1 ? "" : "s")</li>
+                    <li data-testid="dlr-attention-scope">@report.ScopeChanges.Count scope change@(report.ScopeChanges.Count == 1 ? "" : "s") to confirm (new or removed features — not defects)</li>
+                    <li title="Task-level reference counts; they overlap the feature attention items above.">@Fig(report, "quality-unresolved-references") unresolved · @Fig(report, "quality-removed-story-references") removed-story task references</li>
                 </ul>
                 <p class="dlr-muted dlr-headline-apart" data-testid="dlr-attention-apart">Not counted above: @HygieneItems(report).Count project hygiene warning@(HygieneItems(report).Count == 1 ? "" : "s") · @(report.ComparisonWarnings.Count + report.CoverageNotes.Count) comparison limitation@(report.ComparisonWarnings.Count + report.CoverageNotes.Count == 1 ? "" : "s")</p>
             </div>
