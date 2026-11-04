@@ -161,6 +161,10 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         return OperationOutcome.Success(Route, "Review the import");
     }
 
+    /// <summary>Repositories still to import from one Azure DevOps selection (each through its own review), and how many were selected.</summary>
+    public IReadOnlyList<(BirkNext.GitSources.GitImportRequest Request, string Label)> GitQueue { get; set; } = [];
+    public int GitQueueTotal { get; set; }
+
     /// <summary>Automatic Test Data XML fixture drafts made after the import (one run per committed snapshot), shown on the result.</summary>
     public IReadOnlyList<XmlFixtureAutoDraftOutcome> AutoDrafts { get; set; } = [];
     /// <summary>The snapshot the automatic drafts were made for: a second visit of the result never makes another draft.</summary>

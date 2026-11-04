@@ -90,6 +90,8 @@ public static class NavigationCatalog
             new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow, Aliases: ["Getting Started"]),
             new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
                 Hint: "primary input: one project ZIP becomes project artifacts and a Source Analysis snapshot", Aliases: ["Project Inputs", "Upload ZIP"]),
+            new("sources", "Source Management", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
+                Hint: "imported ZIPs and linked Azure DevOps repositories: roles, updates, earlier imports", Aliases: ["Git Sources", "Linked repositories"]),
             new("demo-projects", "Demo Projects", "nav-icon-sample-projects", f => f.SampleProjects,
                 Hint: "optional built-in example projects", Aliases: ["Sample Projects"]),
             new(TargetEnvironmentsRoute, "Target Environments", "nav-icon-target", f => f.AdminSystemSettings,

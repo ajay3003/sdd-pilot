@@ -1,5 +1,6 @@
 using BirkNext.GitSources;
 using BirkNext.Web.Components;
+using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
@@ -21,6 +22,7 @@ public sealed class GitSourcesUiTests : BunitContext
     {
         var api = new Mock<IGitSourcesApiService>();
         api.Setup(a => a.StatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((status, (string?)null));
+        api.Setup(a => a.LinksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
         Services.AddSingleton(api.Object);
         return api;
     }
@@ -65,36 +67,106 @@ public sealed class GitSourcesUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=gss-state]").GetAttribute("data-state").Should().Be("SigningIn"));
     }
 
-    [Fact]
-    public void Import_picker_loads_only_when_asked_and_hands_over_the_chosen_branch()
+    private void ActiveProject()
     {
-        var api = Api(new() { State = GitConnectionState.Connected, Account = "tester@bufdir.no", Message = "Signed in." });
-        api.Setup(a => a.RepositoriesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(([new GitRepository("r1", "M2LB.Common", "M2LB", "main", null, false)], (string?)null));
-        api.Setup(a => a.BranchesAsync("r1", It.IsAny<CancellationToken>())).ReturnsAsync((
-            [new GitBranch("feature/rapport", Sha, new(2026, 11, 3, 10, 0, 0, TimeSpan.Zero), "B", "recent", false), new GitBranch("main", new string('a', 40), null, null, null, true)], (string?)null));
-        (GitImportRequest Request, string Label)? chosen = null;
-        var cut = Render<GitImportPicker>(p => p.Add(x => x.OnImport, ((GitImportRequest Request, string Label) c) => chosen = c));
-
-        api.Verify(a => a.StatusAsync(It.IsAny<CancellationToken>()), Times.Never(), "nothing is read until the section is opened");
-        cut.Find("details").TriggerEvent("ontoggle", EventArgs.Empty);
-        cut.WaitForElement("[data-testid=gip-load-repos]");
-        api.Verify(a => a.RepositoriesAsync(It.IsAny<CancellationToken>()), Times.Never());
-        cut.Find("[data-testid=gip-load-repos]").Click();
-        cut.WaitForElement("[data-testid=gip-repo]").Change("r1");
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gip-branch]").Select(b => b.GetAttribute("data-branch")).Should().Equal(["feature/rapport", "main"]));
-        cut.Find("[data-testid=gip-import]").HasAttribute("disabled").Should().BeTrue("a branch must be chosen");
-        cut.Find("[data-testid=gip-branch][data-branch='feature/rapport']").Change(true);
-        cut.Find("[data-testid=gip-import]").Click();
-        chosen.Should().Be((new GitImportRequest("r1", "feature/rapport"), "M2LB.Common @ feature/rapport"));
+        var contexts = new Mock<IFrontendAnalysisContextFactory>();
+        contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext
+        {
+            ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Project = new EnvironmentProject { ProjectName = "M2LB" } },
+        });
+        Services.AddSingleton(contexts.Object);
     }
 
     [Fact]
-    public void Import_picker_sends_people_to_settings_when_not_connected()
+    public void Import_wizard_browses_organization_project_repositories_links_each_and_queues_the_imports()
     {
+        ActiveProject();
+        var api = Api(new() { State = GitConnectionState.Connected, Account = "tester@bufdir.no", Message = "Signed in." });
+        const string Org = "https://dev.azure.com/bufdir";
+        api.Setup(a => a.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
+        api.Setup(a => a.OrganizationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((
+            (IReadOnlyList<GitOrganization>)[new GitOrganization("a1", "bufdir", Org, true), new GitOrganization("a2", "other", "https://dev.azure.com/other", true)], (string?)null, (string?)null));
+        api.Setup(a => a.ProjectsAsync(Org, null, It.IsAny<CancellationToken>())).ReturnsAsync((new GitProjectPage([new GitProject("p1", "M2LB", "wellFormed")], "next-1"), (string?)null));
+        api.Setup(a => a.ProjectsAsync(Org, "next-1", It.IsAny<CancellationToken>())).ReturnsAsync((new GitProjectPage([new GitProject("p2", "Meldingsutveksler", null)], null), (string?)null));
+        api.Setup(a => a.ProjectRepositoriesAsync(Org, "p1", It.IsAny<CancellationToken>())).ReturnsAsync((
+            (IReadOnlyList<GitRepository>)[new GitRepository("r1", "M2LB.Common", "M2LB", "main", null, false), new GitRepository("r2", "M2LB.Infra", "M2LB", "main", null, false)], (string?)null));
+        api.Setup(a => a.BranchesInAsync(Org, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((
+            (IReadOnlyList<GitBranch>)[new GitBranch("feature/rapport", Sha, new(2026, 11, 3, 10, 0, 0, TimeSpan.Zero), "B", "recent", false), new GitBranch("main", new string('a', 40), null, null, null, true)], (string?)null));
+        var links = new List<GitLinkRequest>();
+        api.Setup(a => a.LinkAsync(It.IsAny<GitLinkRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((GitLinkRequest r, CancellationToken _) => links.Add(r)).ReturnsAsync((new GitSourceLink { Id = "x" }, (string?)null));
+        IReadOnlyList<(GitImportRequest Request, string Label)>? queued = null;
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest Request, string Label)> q) => queued = q));
+
+        cut.WaitForElement("[data-testid=giw-load-orgs]");
+        api.Verify(a => a.OrganizationsAsync(It.IsAny<CancellationToken>()), Times.Never(), "opening reads only the sign-in state");
+        cut.Find("[data-testid=giw-load-orgs]").Click();
+        cut.WaitForElement("[data-testid=giw-org]").Change(Org);
+        cut.WaitForElement("[data-testid=giw-more-projects]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=giw-project] option").Select(o => o.TextContent).Should().Equal(["Choose…", "M2LB", "Meldingsutveksler"]));
+        cut.Find("[data-testid=giw-project]").Change("p1");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=giw-repo]").Should().HaveCount(2));
+
+        cut.Find("[data-testid=giw-repo][data-repo=r1] [data-testid=giw-repo-check]").Change(true);
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=giw-branch] option").Select(o => o.GetAttribute("value")).Should().Equal(["feature/rapport", "main"]));
+        cut.Find("[data-testid=giw-branch]").Change("feature/rapport");
+        cut.Find("[data-testid=giw-role][data-role=Infrastructure]").Change(true);
+        cut.Find("[data-testid=giw-role][data-role=Contracts]").Change(true);
+        cut.Find("[data-testid=giw-repo][data-repo=r2] [data-testid=giw-repo-check]").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=giw-selected-count]").TextContent.Should().Be("2 selected"));
+        cut.FindAll("[data-testid=giw-review-row]").Should().HaveCount(2);
+
+        cut.Find("[data-testid=giw-import]").Click();
+        cut.WaitForAssertion(() => queued.Should().NotBeNull());
+        links.Select(l => (l.RepositoryId, l.Branch, l.EnvironmentId, l.BirkNextProject)).Should().Equal([("r1", "feature/rapport", "dev", "M2LB"), ("r2", "main", "dev", "M2LB")],
+            "each repository is linked by its stable id to the active BirkNext project");
+        links[0].Roles.Should().BeEquivalentTo(["Infrastructure", "Contracts"], "several roles per repository");
+        queued!.Select(q => (q.Request.RepositoryId, q.Request.Branch, q.Request.OrganizationUrl, q.Label))
+            .Should().Equal([("r1", "feature/rapport", Org, "M2LB.Common @ feature/rapport"), ("r2", "main", Org, "M2LB.Infra @ main")]);
+    }
+
+    [Fact]
+    public void Import_wizard_rejects_a_short_commit_and_blocks_import_until_fixed()
+    {
+        ActiveProject();
+        var api = Api(new() { State = GitConnectionState.Connected, Message = "Signed in." });
+        const string Org = "https://dev.azure.com/bufdir";
+        api.Setup(a => a.OrganizationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitOrganization>)[new GitOrganization("a1", "bufdir", Org, true)], (string?)null, (string?)null));
+        api.Setup(a => a.ProjectsAsync(Org, null, It.IsAny<CancellationToken>())).ReturnsAsync((new GitProjectPage([new GitProject("p1", "M2LB", null)], null), (string?)null));
+        api.Setup(a => a.ProjectRepositoriesAsync(Org, "p1", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitRepository>)[new GitRepository("r1", "M2LB.Common", "M2LB", "main", null, false)], (string?)null));
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest Request, string Label)> _) => { }));
+        cut.WaitForElement("[data-testid=giw-load-orgs]").Click();
+        cut.WaitForElement("[data-testid=giw-project]").Change("p1");
+        cut.WaitForElement("[data-testid=giw-repo-check]").Change(true);
+        cut.WaitForElement("[data-testid=giw-commit]").Change("abc123");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=giw-commit-problem]").TextContent.Should().Contain("40-character"));
+        cut.Find("[data-testid=giw-import]").HasAttribute("disabled").Should().BeTrue();
+        api.Verify(a => a.CommitAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public void Import_wizard_sends_people_to_settings_when_not_connected()
+    {
+        ActiveProject();
         var api = Api(new() { State = GitConnectionState.NotConnected, Message = "Not connected." });
-        var cut = Render<GitImportPicker>(p => p.Add(x => x.OnImport, ((GitImportRequest Request, string Label) _) => { }));
-        cut.Find("details").TriggerEvent("ontoggle", EventArgs.Empty);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=gip-not-connected]").InnerHtml.Should().Contain("admin/system-settings?section=git-sources"));
-        api.Verify(a => a.RepositoriesAsync(It.IsAny<CancellationToken>()), Times.Never());
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest Request, string Label)> _) => { }));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=giw-not-connected]").InnerHtml.Should().Contain("admin/system-settings?section=git-sources"));
+        api.Verify(a => a.OrganizationsAsync(It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public void Settings_card_shows_configuration_health_and_the_device_code()
+    {
+        Api(new()
+        {
+            State = GitConnectionState.AwaitingDeviceCode, Message = "Enter the code.", DeviceCode = new GitDeviceCode("ABCD-1234", "https://microsoft.com/devicelogin", DateTimeOffset.UtcNow.AddMinutes(10)),
+            Diagnostics = [new("client-id", "App registration (client id)", GitCheckState.Ok, "Client id x."),
+                new("consent", "Delegated Azure DevOps permission", GitCheckState.Failed, "Consent is required.", "An administrator grants consent.")],
+        });
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-device-code]").TextContent.Should().Contain("ABCD-1234"));
+        cut.Find("[data-testid=gss-diagnostics] summary").TextContent.Should().Contain("1 need attention");
+        cut.Find("[data-testid=gss-check][data-key=consent]").TextContent.Should().Contain("Administrator: An administrator grants consent.");
+        cut.Find("[data-testid=gss-check][data-key=client-id]").TextContent.Should().NotContain("Administrator");
     }
 }

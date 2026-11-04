@@ -183,6 +183,10 @@ public sealed class SddProjectImportRecord
     public string ProjectNameBasis { get; set; } = "";
     public string ArchiveFileName { get; set; } = "";
     public string ArchiveSha256 { get; set; } = "";
+    /// <summary>The Git revision this package was retrieved from (Azure DevOps import); null for a chosen ZIP — a ZIP never gets Git metadata.</summary>
+    public BirkNext.GitSources.GitSourceRevision? Git { get; set; }
+    /// <summary>Package roles a person confirmed (several allowed, e.g. Infrastructure + Contracts); empty = the detected role applies.</summary>
+    public List<string> ConfirmedRoles { get; set; } = [];
     public long ArchiveSizeBytes { get; set; }
     public DateTimeOffset ImportedAt { get; set; }
     /// <summary>Roles with exactly one detected document (selected on import).</summary>

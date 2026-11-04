@@ -162,6 +162,7 @@
                     }
                     <button type="button" class="btn-secondary" id="pi-current-import-another" data-testid="pi-current-import-another" aria-expanded="@(_showUpload && Session.Target == ImportTarget.CurrentApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="() => ShowUpload(ImportTarget.CurrentApplication)">Import more evidence</button>
                     <button type="button" class="btn-secondary" id="pi-current-import-application" data-testid="pi-current-import-application" aria-expanded="@(_showUpload && Session.Target == ImportTarget.NewApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="() => ShowUpload(ImportTarget.NewApplication)">Import another application</button>
+                    <a href="sources" class="btn-secondary" data-testid="pi-manage-sources">Manage sources</a>
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Clear current import</button>
                 </div>
                 <p class="pi-muted" data-testid="pi-close-help">Clearing only stops showing this package's documents. The application@(application is null ? "" : $" {application.Name}"), its evidence packages, their source analysis and Integration Quality Review bindings are unchanged: nothing is deleted or unbound. Imported data remains available in history.</p>
@@ -327,22 +328,31 @@
                     ? $"The package starts a new application. {targetApplication.Name} and its evidence stay as they are."
                     : $"The package is added as evidence for {targetApplication.Name}. Nothing already imported is replaced; a supporting package never replaces the application's primary documents.")</p>
             }
-            <ul class="pi-outcomes" data-testid="pi-outcomes">
-                <li>Project documents</li>
-                <li>Source code</li>
-                <li>Contracts and schemas</li>
-                <li>Infrastructure configuration</li>
-            </ul>
-            <p class="pi-muted" data-testid="pi-candidates-note">If several documents could be the same document for one feature, you choose which one after import.</p>
-            <div class="pi-actions">
-                <label class="pi-file-button">
-                    <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
-                    <span aria-hidden="true">Choose project ZIP</span>
-                </label>
-                <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
-                @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
+            <div class="pi-methods">
+                <div class="pi-method" data-testid="pi-method-zip">
+                    <h3>Manual ZIP import</h3>
+                    <p class="pi-muted">Import an exported source repository ZIP from your computer. No Git connection required.</p>
+                <ul class="pi-outcomes" data-testid="pi-outcomes">
+                    <li>Project documents</li>
+                    <li>Source code</li>
+                    <li>Contracts and schemas</li>
+                    <li>Infrastructure configuration</li>
+                </ul>
+                <p class="pi-muted" data-testid="pi-candidates-note">If several documents could be the same document for one feature, you choose which one after import.</p>
+                <div class="pi-actions">
+                    <label class="pi-file-button">
+                        <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
+                        <span aria-hidden="true">Choose project ZIP</span>
+                    </label>
+                    <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
+                    @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
+                </div>
+                </div>
+                <div class="pi-method" data-testid="pi-method-git">
+                    @if (GitSources is not null) { <BirkNext.Web.Components.GitImportWizard OnImport="StartGitQueueAsync" /> }
+                    else { <h3>Azure DevOps Git import</h3><p class="pi-muted">Not available in this BirkNext instance.</p> }
+                </div>
             </div>
-            @if (GitSources is not null) { <BirkNext.Web.Components.GitImportPicker OnImport="StartGitAsync" /> }
             <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
         </section>
         }
@@ -497,6 +507,11 @@
                 </dl>
             }
             <p><strong>@done.ProjectName</strong> imported successfully. Import means BirkNext found and recorded the contents — nothing has been reviewed or tested yet. Imported is not reviewed or approved: review the documents next.</p>
+            @if (Session.GitQueue.Count > 0)
+            {
+                <p class="pi-next-repo" data-testid="pi-git-next">Next repository (@(Session.GitQueueTotal - Session.GitQueue.Count + 1) of @Session.GitQueueTotal): <strong>@Session.GitQueue[0].Label</strong>
+                    <button type="button" class="btn-primary btn-sm" @onclick="NextInGitQueue" data-testid="pi-git-next-button">Import next</button></p>
+            }
             @if (Session.AutoDrafts.Count > 0)
             {
                 <div class="pi-auto-drafts" data-testid="pi-auto-drafts">
@@ -853,6 +868,24 @@
         StartElapsedTimer();
         if (GitSources is not { } git) return;
         _ = Session.StartGitPreviewAsync(choice.Label, ct => git.ImportAsync(choice.Request, ct), _setup);
+    }
+
+    /// <summary>Git mode, several repositories: the first is staged now; each next one is offered on the result (one review per package).</summary>
+    private void StartGitQueueAsync(IReadOnlyList<(BirkNext.GitSources.GitImportRequest Request, string Label)> queue)
+    {
+        if (queue.Count == 0) return;
+        Session.GitQueue = [.. queue.Skip(1)];
+        Session.GitQueueTotal = queue.Count;
+        StartGitAsync(queue[0]);
+    }
+
+    /// <summary>The next repository of the Git queue (after the previous one's result was shown).</summary>
+    private void NextInGitQueue()
+    {
+        if (Session.GitQueue.Count == 0) return;
+        var next = Session.GitQueue[0];
+        Session.GitQueue = [.. Session.GitQueue.Skip(1)];
+        StartGitAsync(next);
     }
 
     /// <summary>Starts the import of the staged archive. A repeated click while it runs returns the running import; no second one starts.</summary>

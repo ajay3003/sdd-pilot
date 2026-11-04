@@ -1,5 +1,6 @@
 @using BirkNext.GitSources
 @inject IGitSourcesApiService Git
+@inject IServiceProvider Services
 
 @* System Settings → Git Sources. Opening this section reads only the local sign-in state; Azure DevOps is contacted only by Sign in, Test Git
    connection, Refresh repositories / branches and Track. Configured is not verified: only the explicit test verifies the chain. *@
@@ -22,6 +23,24 @@
         {
             <ul class="gss-list" data-testid="gss-requirements">@foreach (var r in _status.Requirements) { <li>@r</li> }</ul>
         }
+        @if (_status.Diagnostics.Count > 0)
+        {
+            <details class="gss-health" open="@(_status.State is not GitConnectionState.Connected)" data-testid="gss-diagnostics">
+                <summary>Configuration health (@_status.Diagnostics.Count(d => d.State is GitCheckState.Missing or GitCheckState.Invalid or GitCheckState.Failed) need attention)</summary>
+                <ul class="gss-list">
+                    @foreach (var d in _status.Diagnostics)
+                    {
+                        <li data-testid="gss-check" data-key="@d.Key" data-state="@d.State"><strong>@CheckIcon(d.State) @d.Label</strong> — @d.Detail
+                            @if (d.AdminAction is { } action && d.State is not GitCheckState.Ok) { <div class="gss-muted gss-small">Administrator: @action</div> }</li>
+                    }
+                </ul>
+            </details>
+        }
+        @if (_status.DeviceCode is { } deviceCode)
+        {
+            <p class="gss-device" role="status" data-testid="gss-device-code">Open <a href="@deviceCode.VerificationUrl" target="_blank" rel="noopener">@deviceCode.VerificationUrl</a> in any browser and enter <strong><code>@deviceCode.UserCode</code></strong> (expires @deviceCode.ExpiresOn.UtcDateTime.ToString("HH:mm") UTC).
+                <button type="button" class="btn-secondary btn-sm" @onclick="RefreshAsync">I have signed in — refresh</button></p>
+        }
         <div class="gss-row">
             <label class="gss-grow">Azure DevOps organization URL
                 <input class="form-control" @bind="_organization" @bind:event="oninput" placeholder="https://dev.azure.com/your-organization" data-testid="gss-org" />
@@ -33,10 +52,15 @@
             {
                 <button type="button" class="btn-primary" disabled="@(_busy || !_status.SignInAvailable)" @onclick="SignInAsync" data-testid="gss-sign-in">@(_status.State == GitConnectionState.ReconnectRequired ? "Reconnect" : "Sign in")</button>
             }
+            @if (_status.DeviceCodeAllowed && _status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed)
+            {
+                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DeviceCodeAsync" data-testid="gss-device-sign-in">Sign in with a device code</button>
+            }
             @if (_status.State == GitConnectionState.SigningIn) { <button type="button" class="btn-secondary" @onclick="RefreshAsync" data-testid="gss-refresh-status">I have signed in — refresh</button> }
             <button type="button" class="btn-secondary" disabled="@(_busy || _status.State == GitConnectionState.NotConfigured)" @onclick="TestAsync" data-testid="gss-test">Test Git connection</button>
-            @if (_status.State == GitConnectionState.Connected)
+            @if (_status.State is GitConnectionState.Connected or GitConnectionState.AccessDenied)
             {
+                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadOrganizationsAsync" data-testid="gss-load-orgs">Find organizations</button>
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadRepositoriesAsync" data-testid="gss-load-repos">@(_repos.Count == 0 ? "Load repositories" : "Refresh repositories")</button>
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DisconnectAsync" data-testid="gss-disconnect">Disconnect</button>
             }
@@ -83,6 +107,34 @@
                 </ul>
             }
         }
+        @if (_organizations is not null)
+        {
+            <div class="gss-orgs" data-testid="gss-orgs">
+                <strong>Organizations</strong>
+                @if (_orgProblem is not null) { <p class="gss-muted gss-small" data-testid="gss-org-problem">@_orgProblem</p> }
+                @foreach (var o in _organizations)
+                {
+                    <label class="gss-org"><input type="checkbox" checked="@_selectedOrgs.Contains(o.Url)" @onchange="e => ToggleOrganization(o.Url, (bool)e.Value!)" data-testid="gss-org" data-org="@o.Url" />
+                        @o.Name <span class="gss-muted gss-small">@o.Url@(o.Discovered ? "" : " · entered")</span></label>
+                }
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="SaveOrganizationsAsync" data-testid="gss-save-orgs">Save selected organizations</button>
+            </div>
+        }
+        @if (_links.Count > 0)
+        {
+            <div class="gss-links" data-testid="gss-links">
+                <strong>Linked sources (this Target Environment)</strong>
+                <ul class="gss-list">
+                    @foreach (var l in _links)
+                    {
+                        <li data-testid="gss-link"><strong>@l.Repository</strong> <span class="gss-muted">· @l.Organization / @l.Project · @LinkRevision(l)</span>
+                            @LinkRoles(l) · @LinkLastImport(l)
+                            @if (l.LastCheck is { } check) { <span class="gss-small"> · @(check.Problem ?? (check.UpdateAvailable ? "update available" : "up to date"))</span> }</li>
+                    }
+                </ul>
+                <a href="sources" class="gss-small">Manage sources</a>
+            </div>
+        }
         @if (_tracked.Count > 0)
         {
             <p class="gss-small"><strong>Tracked branches:</strong> @string.Join(" · ", _tracked.Select(t => $"{t.Repository} @ {t.Branch}"))</p>
@@ -99,7 +151,47 @@
     private string? _organization, _repoId, _error;
     private bool _busy;
 
-    protected override Task OnInitializedAsync() => RefreshAsync();
+    private IReadOnlyList<GitOrganization>? _organizations;
+    private string? _orgProblem;
+    private readonly HashSet<string> _selectedOrgs = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<GitSourceLink> _links = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        foreach (var o in _status?.Organizations ?? []) _selectedOrgs.Add(o);
+        if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
+            try { if ((await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id is { } env) _links = (await Git.LinksAsync(env)).Items; } catch (InvalidOperationException) { }
+    }
+
+    private void ToggleOrganization(string url, bool on) { if (on) _selectedOrgs.Add(url); else _selectedOrgs.Remove(url); }
+
+    private Task DeviceCodeAsync() => Run(async () => { var (s, e) = await Git.DeviceCodeAsync(); (_status, _error) = (s ?? _status, e); });
+
+    private Task LoadOrganizationsAsync() => Run(async () =>
+    {
+        var (items, problem, error) = await Git.OrganizationsAsync();
+        (_organizations, _orgProblem, _error) = (items, problem, error);
+    });
+
+    private Task SaveOrganizationsAsync() => Run(async () =>
+    {
+        var (_, error) = await Git.SelectOrganizationsAsync([.. _selectedOrgs]);
+        _error = error;
+        if (error is null) await RefreshAsync();
+    });
+
+    private static string LinkRevision(GitSourceLink l) => l.PinnedCommit is { } pin ? $"commit {pin[..Math.Min(8, pin.Length)]}" : l.Branch;
+    private static string LinkRoles(GitSourceLink l) => l.Roles.Count > 0 ? string.Join(", ", l.Roles) : "roles detected from content";
+    private static string LinkLastImport(GitSourceLink l) => l.LastImport is { } last ? $"last imported {last.CommitSha[..8]} {last.ImportedAt.UtcDateTime:yyyy-MM-dd}" : "not imported yet";
+
+    private static string CheckIcon(GitCheckState state) => state switch
+    {
+        GitCheckState.Ok => "✓",
+        GitCheckState.Missing or GitCheckState.Invalid or GitCheckState.Failed => "✕",
+        GitCheckState.NotChecked => "○",
+        _ => "i",
+    };
 
     private async Task RefreshAsync()
     {
@@ -160,6 +252,8 @@
         GitConnectionState.SigningIn => "Signing in",
         GitConnectionState.ReconnectRequired => "Reconnect required",
         GitConnectionState.Failed => "Connection failed",
+        GitConnectionState.AwaitingDeviceCode => "Waiting for device-code sign-in",
+        GitConnectionState.AccessDenied => "Azure DevOps access denied",
         _ => "Connected",
     };
 }

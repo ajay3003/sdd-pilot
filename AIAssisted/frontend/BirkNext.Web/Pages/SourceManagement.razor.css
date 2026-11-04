@@ -1,0 +1,15 @@
+.sm { max-width: 88rem; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; min-width: 0; }
+.sm-head h1 { margin: 0 0 .25rem; }
+.sm-muted { color: var(--clr-text-muted); }
+.sm-small { font-size: .8125rem; }
+.sm-error { color: var(--clr-danger); }
+.sm-table-wrap { overflow-x: auto; }
+.sm-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.sm-table th, .sm-table td { text-align: left; padding: .5rem; border-bottom: 1px solid var(--clr-border); vertical-align: top; }
+.sm-actions { display: flex; flex-wrap: wrap; gap: .25rem; }
+.sm-badge { font-size: .75rem; padding: .0625rem .5rem; border: 1px solid var(--clr-border); border-radius: 999px; }
+.sm-badge-git { border-color: var(--clr-success); }
+.sm-roles { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: center; border: 0; padding: 0; margin: 0; }
+.sm-roles label { display: inline-flex; gap: .25rem; }
+.sm-matches { display: grid; gap: .375rem; }
+.sm-match { display: flex; flex-wrap: wrap; gap: .375rem; align-items: center; }

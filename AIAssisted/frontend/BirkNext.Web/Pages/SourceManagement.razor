@@ -1,0 +1,211 @@
+@page "/sources"
+@using BirkNext.GitSources
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services.ProjectImport
+@inject ProjectImportActivation Activation
+@inject ProjectImportSession Session
+@inject IFrontendAnalysisContextFactory Contexts
+@inject IServiceProvider Services
+@inject NavigationManager Nav
+
+<PageTitle>Sources</PageTitle>
+
+@* One view of every source package of the current application, whatever its origin: a chosen ZIP or an Azure DevOps repository. Origin and
+   association are never readiness: analysis state is shown apart. Roles are the person's confirmed decision (several allowed); without one the
+   role detected from content applies. Nothing here deletes a snapshot or a frozen report. *@
+<div class="sm" data-testid="source-management">
+    <header class="sm-head">
+        <h1>Sources</h1>
+        <p class="sm-muted">@(_application?.Name ?? "No imported application yet") · every package of the application, imported from a ZIP or Azure DevOps Git.
+            <a href="project-import?import=1" data-testid="sm-import">Import source</a></p>
+    </header>
+    @if (_error is not null) { <p class="sm-error" role="alert" data-testid="sm-error">@_error</p> }
+    @if (_rows.Count == 0)
+    {
+        <p class="sm-muted" data-testid="sm-empty">No source packages yet. <a href="project-import?import=1">Import a ZIP or an Azure DevOps repository</a>.</p>
+    }
+    else
+    {
+        <div class="sm-table-wrap">
+            <table class="sm-table" data-testid="sm-table">
+                <thead><tr><th scope="col">Source</th><th scope="col">Origin</th><th scope="col">Roles</th><th scope="col">Current snapshot</th><th scope="col">Last import</th><th scope="col">Updates</th><th scope="col">Analysis</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr data-testid="sm-row" data-origin="@row.Origin">
+                            <th scope="row">@row.Name</th>
+                            <td><span class="sm-badge sm-badge-@row.Origin.ToLowerInvariant()">@row.Origin</span>@if (row.Link is { } l) { <div class="sm-muted sm-small">@l.Organization / @l.Project · @(l.PinnedCommit is { } p ? $"commit {p[..8]}" : l.Branch)</div> }</td>
+                            <td data-testid="sm-roles">@Roles(row)</td>
+                            <td>@(row.Record?.SourceSnapshotId is { } snap ? snap.ToString()[..8] : "—")@if (row.Record?.Git is { } g) { <div class="sm-muted sm-small">commit @g.ShortSha</div> }</td>
+                            <td>@(row.Record is { } r ? r.ImportedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") + " UTC" : "Not imported")</td>
+                            <td data-testid="sm-updates">@Updates(row)</td>
+                            <td>@(row.Record?.SourceState is { Length: > 0 } state ? state : "—")</td>
+                            <td class="sm-actions">
+                                @if (row.Link is { } link)
+                                {
+                                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => CheckAsync(link)" data-testid="sm-check">Check for updates</button>
+                                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ImportRevision(link)" data-testid="sm-import-revision">Import revision</button>
+                                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => MatchesAsync(link)" data-testid="sm-matches">Earlier imports</button>
+                                }
+                                else { <a class="btn-secondary btn-sm" href="project-import?import=1" data-testid="sm-upload-version">Upload new version</a> }
+                                @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="btn-secondary btn-sm" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View evidence</a> }
+                                <a class="btn-secondary btn-sm" href="snapshots">Snapshots</a>
+                                <button type="button" class="btn-secondary btn-sm" @onclick="() => ToggleRoleEditor(row)" data-testid="sm-edit-roles">Roles</button>
+                            </td>
+                        </tr>
+                        @if (_editing == row.Key) { <tr><td colspan="8">@RoleEditor(row)</td></tr> }
+                        @if (row.Link is { } m && _matches.TryGetValue(m.Id, out var matches)) { <tr><td colspan="8">@MatchList(m, matches)</td></tr> }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Row(string Key, string Name, string Origin, SddProjectImportRecord? Record, GitSourceLink? Link);
+
+    private static readonly PackageEvidenceRole[] RoleChoices = [.. Enum.GetValues<PackageEvidenceRole>().Where(r => r != PackageEvidenceRole.NotClassified)];
+    private SddApplicationContext? _application;
+    private List<Row> _rows = [];
+    private IReadOnlyList<GitSourceLink> _links = [];
+    private readonly Dictionary<string, IReadOnlyList<GitSourceMatch>> _matches = new(StringComparer.Ordinal);
+    private string? _environmentId, _error, _editing;
+    private bool _busy;
+    // The roles being edited: kept across renders (a set built inside the fragment would be rebuilt, and a ticked role lost, on every re-render).
+    private HashSet<string> _draftRoles = new(StringComparer.Ordinal);
+
+    private void ToggleRoleEditor(Row row)
+    {
+        _editing = _editing == row.Key ? null : row.Key;
+        _draftRoles = new(row.Link is { Roles.Count: > 0 } l ? l.Roles : row.Record?.ConfirmedRoles ?? [], StringComparer.Ordinal);
+    }
+
+    private IGitSourcesApiService? Git => Services.GetService(typeof(IGitSourcesApiService)) as IGitSourcesApiService;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _environmentId = (await Contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+        if (_environmentId is not null && Git is { } git) _links = (await git.LinksAsync(_environmentId)).Items;
+        Build();
+    }
+
+    /// <summary>
+    /// Rows: each import record of the current application (its origin from its own provenance — a ZIP never becomes Git), joined to the link of the
+    /// repository it came from by organization + repository id; then linked repositories not imported yet.
+    /// </summary>
+    private void Build()
+    {
+        _application = Activation.CurrentApplication;
+        var records = _application is null ? Activation.Imports : ApplicationContexts.Imports(Activation.Lifecycle, _application.Id);
+        var rows = records.Select(r => new Row(r.ImportId, r.ProjectName, r.Git is null ? "ZIP" : "Git", r,
+            r.Git is { } g ? _links.FirstOrDefault(l => string.Equals(l.Organization, g.Organization, StringComparison.OrdinalIgnoreCase) && l.RepositoryId == g.RepositoryId) : null)).ToList();
+        rows.AddRange(_links.Where(l => rows.All(r => r.Link?.Id != l.Id)).Select(l => new Row(l.Id, l.Repository, "Git", null, l)));
+        _rows = rows;
+    }
+
+    private static string Roles(Row row)
+    {
+        var confirmed = row.Link is { Roles.Count: > 0 } link ? link.Roles : row.Record?.ConfirmedRoles ?? [];
+        return confirmed.Count > 0 ? string.Join(", ", confirmed.Select(Label)) + " · confirmed" : "Detected from content";
+    }
+
+    private static string Label(string role) => Enum.TryParse<PackageEvidenceRole>(role, out var r) ? ApplicationContexts.RoleLabel(r) : role;
+
+    private static string Updates(Row row) => row.Link switch
+    {
+        null => "Upload a newer ZIP to update",
+        { LastCheck: { Problem: { } problem } } => problem,
+        { LastCheck: { UpdateAvailable: true } c } => $"Update available ({c.RemoteCommit?[..8]})",
+        { LastCheck: { } c } => $"Up to date ({c.CheckedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC)",
+        _ => "Not checked",
+    };
+
+    private async Task CheckAsync(GitSourceLink link)
+    {
+        if (Git is not { } git || _environmentId is null) return;
+        (_busy, _error) = (true, null);
+        var (updated, error) = await git.CheckAsync(link.Id, _environmentId);
+        _busy = false;
+        if (updated is null) { _error = error; return; }
+        _links = [.. _links.Select(l => l.Id == updated.Id ? updated : l)];
+        Build();
+    }
+
+    /// <summary>Imports the link's revision (pinned commit or branch head) through the normal Project Import review.</summary>
+    private void ImportRevision(GitSourceLink link)
+    {
+        if (Git is not { } git) return;
+        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = link.PinnedCommit };
+        _ = Session.StartGitPreviewAsync($"{link.Repository} @ {link.PinnedCommit?[..8] ?? link.Branch}", ct => git.ImportAsync(request, ct), null);
+        Nav.NavigateTo("project-import");
+    }
+
+    private async Task MatchesAsync(GitSourceLink link)
+    {
+        if (Git is not { } git || _environmentId is null) return;
+        (_busy, _error) = (true, null);
+        var (items, error) = await git.MatchesAsync(link.Id, _environmentId);
+        _busy = false;
+        if (error is not null) { _error = error; return; }
+        _matches[link.Id] = items;
+    }
+
+    private async Task DecideAsync(GitSourceLink link, Guid snapshot, bool associate)
+    {
+        if (Git is not { } git || _environmentId is null) return;
+        var (updated, error) = await git.DecideAsync(link.Id, _environmentId, new GitAssociationRequest(snapshot, associate));
+        if (updated is null) { _error = error; return; }
+        _links = [.. _links.Select(l => l.Id == updated.Id ? updated : l)];
+        Build();
+        await MatchesAsync(updated);
+    }
+
+    private async Task SaveRolesAsync(Row row, HashSet<string> roles)
+    {
+        _error = null;
+        if (row.Link is { } link && Git is { } git && _environmentId is not null)
+        {
+            var (updated, error) = await git.LinkAsync(new GitLinkRequest(link.OrganizationUrl, link.RepositoryId, link.Branch, link.PinnedCommit, [.. roles], _environmentId, link.BirkNextProject));
+            if (updated is null) { _error = error; return; }
+            _links = [.. _links.Select(l => l.Id == updated.Id ? updated : l)];
+        }
+        else if (row.Record is { } record)
+        {
+            record.ConfirmedRoles = [.. roles];
+            if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave && !await autoSave.SaveNowAsync()) _error = "The roles could not be saved durably; try again.";
+        }
+        _editing = null;
+        Build();
+    }
+
+    private RenderFragment RoleEditor(Row row) => __builder =>
+    {
+        var current = _draftRoles;
+        <fieldset class="sm-roles" data-testid="sm-role-editor"><legend>Roles of @row.Name (several allowed; none = detected from content)</legend>
+            @foreach (var role in RoleChoices)
+            {
+                <label><input type="checkbox" checked="@current.Contains(role.ToString())" @onchange="e => { if ((bool)e.Value!) current.Add(role.ToString()); else current.Remove(role.ToString()); }" data-testid="sm-role" data-role="@role" /> @ApplicationContexts.RoleLabel(role)</label>
+            }
+            <button type="button" class="btn-primary btn-sm" @onclick="() => SaveRolesAsync(row, current)" data-testid="sm-save-roles">Save roles</button>
+        </fieldset>
+    };
+
+    private RenderFragment MatchList(GitSourceLink link, IReadOnlyList<GitSourceMatch> matches) => __builder =>
+    {
+        <div class="sm-matches" data-testid="sm-match-list">
+            @if (matches.Count == 0) { <p class="sm-muted">No earlier import appears to be this repository (names alone are never evidence).</p> }
+            @foreach (var m in matches)
+            {
+                <div class="sm-match" data-testid="sm-match" data-strength="@m.Strength">
+                    <strong>@(m.Strength switch { GitSourceMatchStrength.SameContent => "Same content", GitSourceMatchStrength.SameCommit => "Same commit", _ => "Possible existing imported source" })</strong>
+                    · @m.ArchiveFileName · snapshot @m.SnapshotId.ToString()[..8] · @string.Join(" ", m.Evidence)
+                    @if (m.Decision is { } decision) { <span class="sm-badge">@decision</span> }
+                    <button type="button" class="btn-secondary btn-sm" @onclick="() => DecideAsync(link, m.SnapshotId, true)" data-testid="sm-associate">Associate with this repository</button>
+                    <button type="button" class="btn-secondary btn-sm" @onclick="() => DecideAsync(link, m.SnapshotId, false)" data-testid="sm-keep-separate">Keep separate</button>
+                    <a class="btn-secondary btn-sm" href="@($"source-analysis?snapshot={m.SnapshotId:D}")">Review evidence</a>
+                </div>
+            }
+        </div>
+    };
+}

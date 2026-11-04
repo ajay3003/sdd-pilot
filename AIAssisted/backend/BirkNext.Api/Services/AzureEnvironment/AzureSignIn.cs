@@ -26,6 +26,9 @@ public interface IAzureTokenBroker
         throw new NotSupportedException("This token broker signs in for Azure Resource Manager only.");
     /// <summary>A token for other resources from the in-memory cache; null when sign-in (or consent) is needed.</summary>
     Task<AzureToken?> SilentForAsync(IReadOnlyList<string> scopes, CancellationToken ct) => Task.FromResult<AzureToken?>(null);
+    /// <summary>Device-code sign-in for other resources (the fallback when the dedicated browser cannot be opened). Same account cache, memory only.</summary>
+    Task<AzureToken> DeviceCodeForAsync(IReadOnlyList<string> scopes, Func<AzureDeviceCodePrompt, Task> prompt, CancellationToken ct) =>
+        throw new NotSupportedException("This token broker signs in for Azure Resource Manager only.");
 }
 
 public sealed class MsalAzureTokenBroker : IAzureTokenBroker
@@ -87,6 +90,12 @@ public sealed class MsalAzureTokenBroker : IAzureTokenBroker
                 HtmlMessageError = "Sign-in did not complete. Return to BirkNext for details.",
             })
             .ExecuteAsync(ct);
+        return From(result);
+    }
+
+    public async Task<AzureToken> DeviceCodeForAsync(IReadOnlyList<string> scopes, Func<AzureDeviceCodePrompt, Task> prompt, CancellationToken ct)
+    {
+        var result = await App.AcquireTokenWithDeviceCode(scopes, code => prompt(new AzureDeviceCodePrompt(code.UserCode, code.VerificationUrl, code.ExpiresOn))).ExecuteAsync(ct);
         return From(result);
     }
 

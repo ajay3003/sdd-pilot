@@ -25,7 +25,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
         cut.FindAll("a").Count(a => a.TextContent.Trim() == "Source Analysis").Should().Be(1);
         entries[0].Should().Be("§Workspace", "Source Analysis is no longer a special item above the groups");
-        entries.Should().ContainInConsecutiveOrder("Import Project", "Demo Projects", "Target Environments", "§Delivery Management");
+        entries.Should().ContainInConsecutiveOrder("Import Project", "Source Management", "Demo Projects", "Target Environments", "§Delivery Management");
         entries.Should().ContainInConsecutiveOrder("§Traceability & Impact", "Requirements Traceability", "Correlation Review", "Release Readiness", "Snapshots", "§Source & Architecture");
         entries.Should().NotContain("Change Traceability", "optional Azure DevOps provenance is off by default");
         entries.Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
@@ -41,7 +41,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("a[href='source-analysis']").Should().BeEmpty();
-        Entries(cut).Should().ContainInConsecutiveOrder("Import Project", "Demo Projects", "Target Environments");
+        Entries(cut).Should().ContainInConsecutiveOrder("Import Project", "Source Management", "Demo Projects", "Target Environments");
 
         flags.ApplyLocalFlags(new FeatureVisibilityDto { SourceAnalysis = true });
         cut.Render();
@@ -72,7 +72,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
-        Entries(cut).Should().ContainInConsecutiveOrder("Recommended Workflow", "Import Project", "§Delivery Management");
+        Entries(cut).Should().ContainInConsecutiveOrder("Recommended Workflow", "Import Project", "Source Management", "§Delivery Management");
         Entries(cut).Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage");
     }
 

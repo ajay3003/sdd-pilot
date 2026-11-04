@@ -11,3 +11,7 @@
 .gss-muted { color: var(--clr-text-muted); }
 .gss-small { font-size: .8125rem; }
 .gss-error { color: var(--clr-danger); }
+.gss-health summary { cursor: pointer; font-weight: 600; }
+.gss-orgs, .gss-links { margin-top: .75rem; display: grid; gap: .25rem; }
+.gss-org { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.gss-device { padding: .5rem .75rem; border-left: .25rem solid var(--clr-warning); }

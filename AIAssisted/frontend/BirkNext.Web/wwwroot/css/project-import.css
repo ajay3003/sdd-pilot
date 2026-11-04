@@ -195,3 +195,9 @@ p.pi-tone-neutral { border-left: 0; }
 
 .pi-capabilities { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0.35rem 0; }
 .pi-not-provided { font-size: 0.82rem; }
+
+/* Two first-class import methods side by side (stacked on narrow screens). */
+.pi-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr)); gap: 1rem; margin-top: .75rem; }
+.pi-method { min-width: 0; padding: .875rem 1rem; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); overflow-wrap: anywhere; }
+.pi-method h3 { margin: 0 0 .25rem; font-size: 1.0625rem; }
+.pi-next-repo { margin: .5rem 0; padding: .5rem .75rem; border-left: .25rem solid var(--clr-primary, var(--clr-success)); }

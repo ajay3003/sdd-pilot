@@ -17,7 +17,15 @@ public sealed record GitSourceRevision(
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum GitConnectionState { NotConfigured, NotConnected, SigningIn, Connected, ReconnectRequired, Failed }
+public enum GitConnectionState { NotConfigured, NotConnected, SigningIn, AwaitingDeviceCode, Connected, ReconnectRequired, AccessDenied, Failed }
+
+/// <summary>One configuration or connection prerequisite, with what an administrator does about it (never a secret).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GitCheckState { Ok, Missing, Invalid, Failed, NotChecked, Info }
+
+public sealed record GitConfigurationCheck(string Key, string Label, GitCheckState State, string Detail, string? AdminAction = null);
+
+public sealed record GitDeviceCode(string UserCode, string VerificationUrl, DateTimeOffset ExpiresOn);
 
 public sealed record GitConnectionStatus
 {
@@ -29,6 +37,11 @@ public sealed record GitConnectionStatus
     public GitTestResult? LastTest { get; init; }
     public bool SignInAvailable { get; init; }
     public IReadOnlyList<GitTrackedBranch> TrackedBranches { get; init; } = [];
+    /// <summary>Prerequisites in order (app registration, client id, tenant, redirect, sign-in method, delegated permission, Azure DevOps access).</summary>
+    public IReadOnlyList<GitConfigurationCheck> Diagnostics { get; init; } = [];
+    public bool DeviceCodeAllowed { get; init; }
+    public GitDeviceCode? DeviceCode { get; init; }
+    public IReadOnlyList<string> Organizations { get; init; } = [];
 }
 
 public sealed record GitTrackedBranch(string RepositoryId, string Repository, string Project, string Branch);
@@ -36,9 +49,73 @@ public sealed record GitTrackedBranch(string RepositoryId, string Repository, st
 /// <summary>Safe settings only (no secret): the organization and the branches the person tracks.</summary>
 public sealed record GitSourceSettings
 {
+    /// <summary>The manually entered organization (advanced; discovery is the normal path).</summary>
     public string? OrganizationUrl { get; init; }
     public List<GitTrackedBranch> TrackedBranches { get; init; } = [];
+    /// <summary>Organizations the person selected (canonical URLs), discovered or entered.</summary>
+    public List<string> Organizations { get; init; } = [];
+    /// <summary>Repositories linked to BirkNext projects (stable Azure DevOps ids; never a name as identity).</summary>
+    public List<GitSourceLink> Links { get; init; } = [];
 }
+
+public sealed record GitOrganization(string Id, string Name, string Url, bool Discovered);
+
+public sealed record GitProject(string Id, string Name, string? State);
+
+public sealed record GitProjectPage(IReadOnlyList<GitProject> Items, string? Next);
+
+public sealed record GitCommitInfo(string CommitSha, DateTimeOffset? CommittedAt, string? Author, string? Message);
+
+/// <summary>One import of a linked repository: the exact revision and the snapshot it produced (immutable history).</summary>
+public sealed record GitLinkImport(string CommitSha, string Branch, Guid? SnapshotId, string? ImportId, DateTimeOffset ImportedAt);
+
+/// <summary>The last explicit update check: the remote revision of the linked branch at that time (never imported by the check).</summary>
+public sealed record GitUpdateCheck(string? RemoteCommit, DateTimeOffset? RemoteCommittedAt, DateTimeOffset CheckedAt, bool UpdateAvailable, string? Problem = null);
+
+/// <summary>
+/// A repository linked to a BirkNext project. Identity = organization + Azure DevOps repository id (a rename keeps the link). Roles are the
+/// person's explicit decision (several allowed, e.g. Infrastructure + Contracts); the branch stays as chosen even when the remote default branch
+/// changes; a pinned commit is imported instead of the branch head.
+/// </summary>
+public sealed record GitSourceLink
+{
+    public string Id { get; init; } = "";
+    public string OrganizationUrl { get; init; } = "";
+    public string Organization { get; init; } = "";
+    public string? ProjectId { get; init; }
+    public string Project { get; init; } = "";
+    public string RepositoryId { get; init; } = "";
+    /// <summary>Display name as last seen (not identity).</summary>
+    public string Repository { get; init; } = "";
+    public string? WebUrl { get; init; }
+    public string Branch { get; init; } = "";
+    public string? PinnedCommit { get; init; }
+    public List<string> Roles { get; init; } = [];
+    /// <summary>The BirkNext project: the Target Environment profile id it is evidence for, and the project's name as shown.</summary>
+    public string EnvironmentId { get; init; } = "";
+    public string? BirkNextProject { get; init; }
+    public DateTimeOffset LinkedAt { get; init; }
+    public List<GitLinkImport> Imports { get; init; } = [];
+    public GitUpdateCheck? LastCheck { get; init; }
+    /// <summary>Earlier (ZIP) snapshots a person confirmed as this repository's evidence; their provenance stays ZIP.</summary>
+    public List<Guid> AssociatedSnapshots { get; init; } = [];
+    /// <summary>Candidate snapshots a person decided to keep separate.</summary>
+    public List<Guid> KeptSeparate { get; init; } = [];
+
+    public static string IdentityOf(string organizationUrl, string repositoryId) => $"{GitSourcePolicy.OrganizationName(organizationUrl).ToLowerInvariant()}|{repositoryId.ToLowerInvariant()}";
+    public GitLinkImport? LastImport => Imports.Count == 0 ? null : Imports[^1];
+}
+
+/// <summary>How strongly an earlier imported snapshot appears to be this repository. Names alone are never evidence.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GitSourceMatchStrength { SameContent, SameCommit, PossibleSameStructure }
+
+public sealed record GitSourceMatch(Guid SnapshotId, string ArchiveFileName, DateTimeOffset AnalyzedAt, GitSourceMatchStrength Strength, IReadOnlyList<string> Evidence,
+    string? Decision);
+
+public sealed record GitLinkRequest(string OrganizationUrl, string RepositoryId, string Branch, string? PinnedCommit, List<string> Roles, string EnvironmentId, string? BirkNextProject);
+
+public sealed record GitAssociationRequest(Guid SnapshotId, bool Associate);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum GitTestStepState { Verified, Failed, Skipped }
@@ -48,18 +125,27 @@ public sealed record GitTestStep(string Name, GitTestStepState State, string Mes
 /// <summary>An explicit, user-triggered connectivity test. It never imports, never creates a snapshot and never writes to the remote.</summary>
 public sealed record GitTestResult(bool Ready, string Summary, IReadOnlyList<GitTestStep> Steps, DateTimeOffset TestedAt, string? Organization, int? RepositoryCount);
 
-public sealed record GitRepository(string Id, string Name, string Project, string? DefaultBranch, string? WebUrl, bool IsDisabled);
+public sealed record GitRepository(string Id, string Name, string Project, string? DefaultBranch, string? WebUrl, bool IsDisabled)
+{
+    public string? ProjectId { get; init; }
+}
 
 public sealed record GitBranch(string Name, string CommitSha, DateTimeOffset? CommittedAt, string? Author, string? Message, bool IsDefault);
 
-public sealed record GitImportRequest(string RepositoryId, string Branch);
+public sealed record GitImportRequest(string RepositoryId, string Branch)
+{
+    /// <summary>The organization (canonical URL); null = the manually configured one.</summary>
+    public string? OrganizationUrl { get; init; }
+    /// <summary>A specific revision instead of the branch head (full SHA, validated against the repository).</summary>
+    public string? Commit { get; init; }
+}
 
 /// <summary>The archive of one commit, staged through the same Project Import preview as a chosen ZIP (commit it with the usual import commit).</summary>
 public sealed record GitImportResult(GitSourceRevision Revision, BirkNext.ProjectImport.ProjectImportPreview? Preview, string? Failure);
 
 /// <summary>A diagnostic provider failure: never collapsed into "connection failed".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum GitFailureKind { SignInRequired, AccessDenied, OrganizationNotFound, RepositoryNotFound, BranchNotFound, Unreachable, TooLarge, Unexpected }
+public enum GitFailureKind { SignInRequired, AccessDenied, OrganizationNotFound, RepositoryNotFound, BranchNotFound, Unreachable, TooLarge, Unexpected, RevisionNotFound, Throttled }
 
 public static partial class GitSourcePolicy
 {
@@ -104,6 +190,8 @@ public static partial class GitSourcePolicy
         GitFailureKind.BranchNotFound => "The branch was not found (it may have been deleted or renamed).",
         GitFailureKind.Unreachable => "Azure DevOps could not be reached from this BirkNext instance.",
         GitFailureKind.TooLarge => "The repository archive is larger than BirkNext imports.",
+        GitFailureKind.RevisionNotFound => "The chosen commit does not exist in this repository (a full 40-character SHA is required).",
+        GitFailureKind.Throttled => "Azure DevOps is rate-limiting requests; wait a moment and try again.",
         _ => "Azure DevOps returned an unexpected response.",
     };
 

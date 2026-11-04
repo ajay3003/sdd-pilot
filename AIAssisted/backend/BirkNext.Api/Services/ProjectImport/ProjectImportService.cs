@@ -22,7 +22,8 @@ public sealed record ProjectImportPreviewResult(ProjectImportPreview? Preview, S
 /// </list>
 /// Source Analysis keeps owning snapshot identity, currentness and evidence; this service never stores documents and never merges the two.
 /// </summary>
-public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger)
+public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
+    BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null)
 {
     /// <summary>The import identity: derived from the exact archive bytes, so the same archive always has the same identity.</summary>
     public static string ImportIdFor(string sha256) => "import-" + sha256[..Math.Min(16, sha256.Length)];
@@ -104,6 +105,8 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
                 ImportedAt = staging.Now, Git = staging.GitRevisionOf(stagingId),
             };
             var source = await SourceAsync(staged, provenance, ct, reportProgress);
+            // A Git import is recorded on its repository links (revision → snapshot) once the source part is settled; a ZIP import has no revision.
+            if (provenance.Git is { } git && !source.CanRetry) gitImports?.Record(git, source.SnapshotId, provenance.ImportId);
             var settled = !source.CanRetry;
             var result = new ProjectImportCommitResult { StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt };
             if (settled) staging.MarkCommitted(staged, result);

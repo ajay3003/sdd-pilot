@@ -65,6 +65,9 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     /// <summary>Every import recorded in this workspace (history), the current one included.</summary>
     public IReadOnlyList<SddProjectImportRecord> Imports => repository.SddLifecycle.ProjectImports;
 
+    /// <summary>The workspace's lifecycle state (applications and their import records).</summary>
+    public SddLifecycleState Lifecycle => repository.SddLifecycle;
+
     public SddProjectImportRecord? Current =>
         repository.SddLifecycle.CurrentProjectImportId is { } id ? repository.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == id) : null;
 
@@ -86,6 +89,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         record.ArchiveSha256 = preview.Archive.Sha256;
         record.ArchiveSizeBytes = preview.Archive.SizeBytes;
         record.ImportedAt = commit?.Provenance.ImportedAt ?? DateTimeOffset.UtcNow;
+        record.Git = commit?.Provenance.Git ?? record.Git;
         record.DetectedRoles = discovery.Roles.Where(r => r.State == SampleRoleState.Detected).Select(r => r.Role.ToString()).ToList();
         record.AmbiguousRoles = discovery.AmbiguousRoles.Select(r => r.Role.ToString()).ToList();
         record.ArtifactDocumentCount = discovery.ArtifactDocuments.Count;
