@@ -279,6 +279,9 @@ public sealed record GenerateWeeklyReportRequest(Guid ProjectId, Guid BaselineSn
     /// <summary>Explicit confirmation that the direction is right when the comparison preview asks for it (e.g. the current snapshot holds fewer
     /// features and tasks). Recorded in the frozen report; never inferred.</summary>
     public bool ConfirmDirection { get; init; }
+    /// <summary>Optional Source (stable source id) and Functional scope (stable scope id) the report covers; both null = the whole comparison.</summary>
+    public string? SourceId { get; init; }
+    public string? FunctionalScopeId { get; init; }
 }
 
 /// <summary>Full-period: the baseline covers the reporting week. Partial-period: part of it. Same-day: both snapshots on one day — a change report,
@@ -343,6 +346,8 @@ public sealed record DeliveryReportSummaryRow(Guid Id, string Title, string Week
     public DeliveryDirectionState? Direction { get; init; }
     public bool DirectionConfirmed { get; init; }
     public int CalculationVersion { get; init; }
+    /// <summary>Source / Functional scope the report was generated for ("M2LB-language · ADR-029: Translate English"); empty = whole comparison.</summary>
+    public string ScopeLabel { get; init; } = "";
 }
 
 public sealed record DeliveryReportSnapshotRef
@@ -666,6 +671,8 @@ public sealed record WeeklyDeliveryReport
     /// <summary>The work-item interpretation rule set the report was classified with (BirkNext.Interpretation.WorkItemInterpreter.RuleSetVersion);
     /// null in reports frozen before the shared engine. A frozen report is never reclassified with a newer rule set.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? InterpretationRuleSet { get; init; }
+    /// <summary>Set when the report covers one Source and/or Functional scope only (exact ids, frozen); null = the whole comparison.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryReportScope? Scope { get; init; }
 }
 
 public static class DeliveryReportTitles

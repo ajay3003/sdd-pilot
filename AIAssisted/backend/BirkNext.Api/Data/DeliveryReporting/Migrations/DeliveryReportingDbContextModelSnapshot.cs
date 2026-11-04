@@ -275,6 +275,10 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("acceptance_fingerprint");
 
+                    b.Property<string>("DecisionReferencesJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("decision_references");
+
                     b.Property<string>("FeatureKey")
                         .IsRequired()
                         .HasMaxLength(400)

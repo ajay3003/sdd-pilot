@@ -90,11 +90,38 @@ public sealed class DeliveryReportingController(DeliverySnapshotStore store, Del
     public async Task<ActionResult<List<DeliveryReportSummaryRow>>> Reports(Guid projectId, CancellationToken ct) => await reports.ListAsync(projectId, ct);
 
     [HttpPost("reports")]
-    public async Task<IActionResult> Generate(GenerateWeeklyReportRequest request, CancellationToken ct)
+    public async Task<IActionResult> Generate(GenerateWeeklyReportRequest request, [FromServices] DeliveryScopeService? scopes, CancellationToken ct)
     {
-        var outcome = await reports.GenerateAsync(request, ct);
+        var filter = new BirkNext.Interpretation.CanonicalScopeFilter(Blank(request.SourceId), Blank(request.FunctionalScopeId));
+        var outcome = await reports.GenerateAsync(request, ct, filter.IsScoped && scopes is not null ? async (report, token) =>
+        {
+            // A scoped report freezes exactly the ids it was generated for; an id unknown in this comparison is refused, never substituted.
+            var view = await scopes.ForReportAsync(request.ProjectId, report, filter, await SnapshotIdsAsync(request.ProjectId, token), token);
+            return view.InvalidFilters.Count > 0 ? (null, string.Join(" ", view.InvalidFilters)) : (view.Report, null);
+        } : null);
         return outcome.Report is null ? StatusCode(outcome.StatusCode, new { message = outcome.Error }) : Ok(outcome.Report);
     }
+
+    /// <summary>
+    /// Source + Functional scope for Delivery Overview: options with scoped counts, the applied selection with its notices and "why included",
+    /// and the scoped projection of the report (or snapshot). Ids only; display names are never matched.
+    /// </summary>
+    [HttpGet("projects/{projectId:guid}/scope")]
+    public async Task<IActionResult> Scope(Guid projectId, [FromServices] DeliveryScopeService scopes, [FromQuery] Guid? report, [FromQuery] Guid? snapshot,
+        [FromQuery] string? source, [FromQuery] string? scope, CancellationToken ct)
+    {
+        var filter = new BirkNext.Interpretation.CanonicalScopeFilter(Blank(source), Blank(scope));
+        var order = await SnapshotIdsAsync(projectId, ct);
+        if (report is { } reportId)
+            return await reports.GetAsync(projectId, reportId, ct) is { } frozen ? Ok(await scopes.ForReportAsync(projectId, frozen, filter, order, ct)) : NotFound();
+        if (snapshot is { } snapshotId)
+            return await store.SnapshotAsync(projectId, snapshotId, ct) is { } detail ? Ok(await scopes.ForSnapshotAsync(projectId, detail, filter, order, ct)) : NotFound();
+        return BadRequest(new { message = "Choose a report or a snapshot." });
+    }
+
+    private async Task<List<Guid>> SnapshotIdsAsync(Guid projectId, CancellationToken ct) => [.. (await store.SnapshotsAsync(projectId, ct)).Select(s => s.Id)];
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     [HttpGet("projects/{projectId:guid}/reports/{reportId:guid}")]
     public async Task<IActionResult> Report(Guid projectId, Guid reportId, CancellationToken ct) =>

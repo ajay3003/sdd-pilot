@@ -36,7 +36,9 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
         return baseline is null || current is null ? (null, "Both snapshots must belong to this reporting project.") : (WeeklyReportBuilder.Preview(baseline, current, Zone), null);
     }
 
-    public async Task<WeeklyReportOutcome> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct)
+    /// <param name="scope">Projects the built report onto the requested Source / Functional scope before it is frozen (null = whole comparison).</param>
+    public async Task<WeeklyReportOutcome> GenerateAsync(GenerateWeeklyReportRequest request, CancellationToken ct,
+        Func<WeeklyDeliveryReport, CancellationToken, Task<(WeeklyDeliveryReport? Report, string? Error)>>? scope = null)
     {
         var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProjectId, ct);
         if (project is null) return new(null, "The reporting project does not exist.", StatusCodes.Status404NotFound);
@@ -62,6 +64,12 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
         var reportId = Guid.NewGuid();
         var now = clock.GetUtcNow();
         var report = WeeklyReportBuilder.Build(reportId, project.Id, project.Name, now, baseline, current, comparison, Zone, direction);
+        if (scope is not null)
+        {
+            var (scoped, error) = await scope(report, ct);
+            if (scoped is null) return new(null, error ?? "The selected scope could not be applied.", StatusCodes.Status400BadRequest);
+            report = scoped;
+        }
 
         var comparisonRecord = new DeliverySnapshotComparisonRecord
         {
@@ -122,6 +130,7 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
                 BaselineEffectiveAt = report?.Baseline.EffectiveAt, CurrentEffectiveAt = report?.Current.EffectiveAt,
                 PairKey = $"{r.BaselineSnapshotId?.ToString() ?? report?.Baseline.SnapshotId.ToString()}→{r.CurrentSnapshotId?.ToString() ?? report?.Current.SnapshotId.ToString()}",
                 Direction = report?.Direction?.State, DirectionConfirmed = report?.Direction?.Confirmed == true, CalculationVersion = report?.CalculationVersion ?? 0,
+                ScopeLabel = report?.Scope?.Label ?? "",
             };
         }).ToList();
     }

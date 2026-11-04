@@ -114,6 +114,33 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
             FunctionalQualityScopeText.Precedence);
     }
 
+    /// <summary>
+    /// Which of the given Delivery features a domain-flow or saved scope covers, with the reason: features of its direct modules (plus related
+    /// modules the scope itself includes) and features holding an explicitly included item. Same definition and module rules as
+    /// <see cref="ResolveAsync"/> — a scoped view never re-implements the scope.
+    /// </summary>
+    public async Task<(ScopeDefinition Definition, Dictionary<string, string> Features)> FeatureMembershipAsync(Guid projectId, string scopeKey,
+        IReadOnlyList<(string Module, string FeatureKey, string Title)> features, CancellationToken ct)
+    {
+        var definition = await DefinitionAsync(projectId, new ScopeQuery(scopeKey, null, false), ct);
+        var rows = features.Select(f => new Feature(Guid.Empty, f.Module, f.FeatureKey, f.Title, null, "[]")).ToList();
+        var modules = rows.Select(f => f.Module).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var (direct, related) = await ScopeModulesAsync(definition, modules, rows, ct);
+        var reasons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (module, reason) in direct) reasons.TryAdd(module, reason);
+        if (definition.IncludeRelated)
+            foreach (var r in related.Where(r => r.Included)) reasons.TryAdd(r.Module, r.Reason);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var f in features.Where(f => reasons.ContainsKey(f.Module))) result[f.FeatureKey] = reasons[f.Module];
+        foreach (var key in definition.ExplicitIncludes)
+        {
+            var parts = key.Contains(':') ? key[(key.IndexOf(':') + 1)..].Split('/') : [];
+            if (parts.Length >= 2 && features.FirstOrDefault(f => f.FeatureKey == parts[1] && string.Equals(f.Module, parts[0], StringComparison.OrdinalIgnoreCase)) is { FeatureKey: not null } hit)
+                result.TryAdd(hit.FeatureKey, "Holds an item a person added to this scope");
+        }
+        return (definition, result);
+    }
+
     /// <summary>Every item of the newest snapshot (all modules), for the custom-scope builder's "available items" list.</summary>
     public Task<ScopeResolution> AllItemsAsync(Guid projectId, bool includeTechnical, CancellationToken ct) =>
         ResolveAsync(projectId, new ScopeQuery(null, null, false, includeTechnical, new ScopeDefinition { Name = "All items", Roots = ["*"] }), ct);

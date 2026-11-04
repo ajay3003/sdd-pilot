@@ -69,6 +69,8 @@ public sealed record ParsedDeliveryFeature
     public List<ParsedDeliveryPhase> Phases { get; init; } = [];
     public List<ParsedDeliveryStory> Stories { get; init; } = [];
     public List<ParsedDeliveryCriterion> Criteria { get; init; } = [];
+    /// <summary>Decision records (ADR-nnn) spec.md cites, normalised (provenance for change-intent correlation; never a status).</summary>
+    public List<string> DecisionReferences { get; init; } = [];
     public DeliveryStatus Status { get; init; }
     public string StatusReason { get; init; } = "";
     public int TaskTotal => Tasks.Count;
@@ -349,6 +351,7 @@ public static class DeliverySnapshotParser
             RequirementCount = requirements, UserStoryCount = stories, OpenClarifications = clarifications, ExplicitStatus = explicitStatus,
             Tasks = parsedTasks, UntrackedTaskCount = untracked, Evidence = evidence,
             Phases = phases, Stories = parsedStories, Criteria = criteria, Requirements = functionalRequirements,
+            DecisionReferences = spec is { } cited ? [.. BirkNext.Interpretation.DecisionReferences.InText(cited.Content)] : [],
         };
         var (status, reason) = DeliveryStatusDerivation.Derive(feature.TasksPath is not null, feature.TaskTotal, feature.TaskCompleted,
             feature.UntrackedTaskCount, feature.ExplicitStatus, feature.OpenClarifications);

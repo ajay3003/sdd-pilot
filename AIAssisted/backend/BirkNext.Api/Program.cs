@@ -152,6 +152,9 @@ builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.Fun
     sp.GetServices<BirkNext.Api.Services.IntegrationTopology.ITopologyProfile>(),
     sp.GetService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>(),
     sp.GetService<BirkNext.Api.Services.TestData.TestDataCatalog>()));
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.DeliveryScopeService(
+    sp.GetService<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationService>(),
+    sp.GetService<BirkNext.Api.Services.DeliveryReporting.FunctionalQualityScopeService>()));
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();

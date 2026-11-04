@@ -158,6 +158,7 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
                 TaskCompleted = feature.TaskCompleted, UntrackedTaskCount = feature.UntrackedTaskCount, Status = feature.Status.ToString(),
                 StatusReason = feature.StatusReason, HierarchyCaptured = true,
                 RequirementsJson = JsonSerializer.Serialize(feature.Requirements.Select(r => new { key = r.Key, text = r.Text }), Json),
+                DecisionReferencesJson = JsonSerializer.Serialize(feature.DecisionReferences, Json),
             };
             db.FeatureSnapshots.Add(featureRecord);
             db.TaskSnapshots.AddRange(feature.Tasks.Select(t => new DeliveryTaskSnapshotRecord

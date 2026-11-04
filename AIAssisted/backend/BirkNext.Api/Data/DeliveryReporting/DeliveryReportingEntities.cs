@@ -77,6 +77,8 @@ public sealed class DeliveryFeatureSnapshotRecord
     public int UntrackedTaskCount { get; set; }
     /// <summary>Functional requirements (FR-001 …) as written: [{ "key", "text" }].</summary>
     public string RequirementsJson { get; set; } = "[]";
+    /// <summary>Decision records (ADR-nnn) spec.md cites: ["ADR-029"]. Null for snapshots imported before citations were recorded.</summary>
+    public string? DecisionReferencesJson { get; set; }
     /// <summary>The feature hierarchy (phases, user stories, acceptance criteria) was parsed at import. False for snapshots imported before
     /// hierarchy support: those are never re-parsed or re-interpreted (snapshot immutability).</summary>
     public bool HierarchyCaptured { get; set; }

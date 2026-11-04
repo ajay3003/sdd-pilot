@@ -37,11 +37,12 @@ public sealed class DeliveryCanonicalWorkItemReader(Data.DeliveryReporting.Deliv
     {
         if (!await db.Snapshots.AnyAsync(s => s.Id == deliverySnapshotId, ct)) return null;
         var features = await db.FeatureSnapshots.AsNoTracking().Where(f => f.SnapshotId == deliverySnapshotId)
-            .Select(f => new { f.Id, f.Module, f.FeatureKey, f.Title, f.SpecPath }).ToListAsync(ct);
+            .Select(f => new { f.Id, f.Module, f.FeatureKey, f.Title, f.SpecPath, f.DecisionReferencesJson }).ToListAsync(ct);
         var stories = await db.UserStorySnapshots.AsNoTracking().Where(s => s.SnapshotId == deliverySnapshotId && !s.Removed)
             .Select(s => new { s.FeatureSnapshotId, s.Title }).ToListAsync(ct);
         var byFeature = stories.ToLookup(s => s.FeatureSnapshotId, s => s.Title);
-        return [.. features.Select(f => new WorkItemIntentInput(f.Module, f.FeatureKey, f.Title, [.. byFeature[f.Id]], f.SpecPath, $"delivery:{deliverySnapshotId}"))];
+        return [.. features.Select(f => new WorkItemIntentInput(f.Module, f.FeatureKey, f.Title, [.. byFeature[f.Id]], f.SpecPath, $"delivery:{deliverySnapshotId}",
+            f.DecisionReferencesJson is null ? null : JsonSerializer.Deserialize<List<string>>(f.DecisionReferencesJson)))];
     }
 
     /// <summary>

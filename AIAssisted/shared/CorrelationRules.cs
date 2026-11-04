@@ -7,7 +7,10 @@ namespace BirkNext.Interpretation;
 // Rules never merge two entities: the strongest heuristic outcome is a Candidate relation that a human confirms or rejects.
 
 /// <summary>A feature or story as written in one module's specification (case G/H input).</summary>
-public sealed record WorkItemIntentInput(string Module, string FeatureKey, string Title, IReadOnlyList<string> StoryTitles, string? Path, string? SourceSnapshotId = null);
+/// <summary>One feature for intent correlation. <paramref name="CitedDecisions"/>: decision records (ADR-nnn) its spec.md cites (null when the
+/// snapshot was imported before citations were recorded).</summary>
+public sealed record WorkItemIntentInput(string Module, string FeatureKey, string Title, IReadOnlyList<string> StoryTitles, string? Path, string? SourceSnapshotId = null,
+    IReadOnlyList<string>? CitedDecisions = null);
 
 /// <summary>A contract file as found in one package of one source snapshot (case I/J input).</summary>
 public sealed record ContractOccurrenceInput(
@@ -84,7 +87,9 @@ public static partial class CorrelationRules
     /// resolved to the feature pack they belong to (FR-001 is never merged across packs by its text).</remarks>
     /// <remarks>correlation/2: contract versions keep their version context (case J), occurrences use OCCURRENCE_OF, shared libraries + USES,
     /// task → source-symbol references (CR-L-TASK), conflicting declared aliases surface for review (CR-K-CONFLICT).</remarks>
-    public const string RuleSetVersion = "correlation/3";
+    /// <remarks>correlation/4: features that declare the same decision record (ADR-nnn in title or folder) form one change intent (CR-G-DECISION);
+    /// a feature that only cites it, or only shares the declaring titles' terms, is a candidate for review.</remarks>
+    public const string RuleSetVersion = "correlation/4";
 
     public const string IntentRule = "CR-G-INTENT", CapabilityRule = "CR-H-CAPABILITY", ContractHashRule = "CR-I-HASH", ContractVersionRule = "CR-J-VERSION",
         ContractVersionConflictRule = "CR-J-CONFLICT", DeclaredAliasRule = "CR-K-DECLARED", AcronymAliasRule = "CR-K-ACRONYM", SymbolRouteRule = "CR-L-ROUTE",
@@ -92,7 +97,7 @@ public static partial class CorrelationRules
         TestExplicitRule = "CR-M-EXPLICIT", TestCandidateRule = "CR-M-CANDIDATE", TestSuiteRule = "CR-M-SUITE", OperationServiceRule = "CR-N-EXPOSES", ContractServiceRule = "CR-N-CONTRACT",
         ChannelRule = "CR-N-CHANNEL", AliasConflictRule = "CR-K-CONFLICT", TaskOwnerRule = "CR-L-TASK-OWNER", TaskSymbolRule = "CR-L-TASK", SymbolMemberRule = "CR-L-MEMBER",
         LibraryRule = "CR-N-LIBRARY", LibraryUseRule = "CR-N-USES", RequirementRule = "CR-W-REQUIREMENT", StoryRule = "CR-W-STORY", TaskGroupRule = "CR-W-TASK",
-        TestScopeAmbiguityRule = "CR-M-SCOPE";
+        TestScopeAmbiguityRule = "CR-M-SCOPE", DecisionRule = "CR-G-DECISION";
 
     /// <summary>Minimum Jaccard share of significant intent terms two features must have in common before a shared capability is even proposed…</summary>
     public const double IntentSimilarityThreshold = 0.34;
@@ -130,6 +135,7 @@ public static partial class CorrelationRules
         foreach (var e in input.AdditionalEntities ?? []) Entity(e);
         foreach (var r in input.AdditionalRelations ?? []) Relation(r);
         WorkItemIntents(input.WorkItems, Entity, Relation);
+        DecisionIntents(input.WorkItems, Entity, Relation);
         WorkItemStructures(input.Structures ?? [], Entity, Relation);
         ContractOccurrences(input.Contracts, Entity, Relation);
         Systems(input.Systems, Entity, Relation, aliases, limitations);
@@ -203,8 +209,60 @@ public static partial class CorrelationRules
         }
     }
 
+    // ---- Case G (decision): features declaring the same decision record → one change intent ----
+
+    /// <summary>
+    /// A decision record (ADR-nnn) named in the title or folder of two or more features is a change intent they were written under: each declaring
+    /// feature Implements it (Derived — the author declared it). A feature whose spec.md only cites the decision, or whose title carries every term
+    /// most declaring titles share (at least two) without any reference, is a Candidate a person confirms or rejects. Features stay separate.
+    /// </summary>
+    static void DecisionIntents(IReadOnlyList<WorkItemIntentInput> items, Action<CanonicalEntityFact> entity, Action<CanonicalRelationFact> relation)
+    {
+        var features = items.OrderBy(i => i.Module, StringComparer.Ordinal).ThenBy(i => i.FeatureKey, StringComparer.Ordinal).ToList();
+        var declared = features.SelectMany(f => DecisionReferences.Declared(f.Title, f.FeatureKey).Select(d => (Decision: d, Feature: f)))
+            .GroupBy(x => x.Decision, StringComparer.Ordinal).Where(g => g.Select(x => FeatureFact(x.Feature).Key).Distinct().Count() >= 2).OrderBy(g => g.Key, StringComparer.Ordinal);
+        foreach (var group in declared)
+        {
+            var members = group.Select(x => x.Feature).DistinctBy(f => FeatureFact(f).Key).ToList();
+            var titleTerms = members.Select(f => TitleTerms(f.Title)).ToList();
+            // The intent's words: terms most declaring titles share (more than half), in title order. One differently worded member (a rename
+            // under the same decision) does not erase the intent's name.
+            var shared = titleTerms.SelectMany(t => t).Distinct(StringComparer.Ordinal)
+                .Where(term => titleTerms.Count(t => t.Contains(term)) * 2 > titleTerms.Count && titleTerms.Count(t => t.Contains(term)) >= 2)
+                .OrderBy(term => titleTerms.Select(t => t.ToList().IndexOf(term)).Where(i => i >= 0).Min()).ThenBy(term => term, StringComparer.Ordinal).ToList();
+            var name = shared.Count > 0 ? $"{group.Key}: {string.Join(' ', shared.Select(Capitalize))}" : group.Key;
+            var capability = new CanonicalEntityFact(CanonicalEntityType.Capability, "decision:" + group.Key.ToLowerInvariant(), name, group.Key,
+                "change intent declared by a shared decision record (case G)",
+                [.. members.Select(m => new CorrelationEvidence("feature", $"{m.Module}/{m.FeatureKey}", m.Title, m.SourceSnapshotId))],
+                Attributes: new Dictionary<string, string> { ["kind"] = "change-intent", ["decision"] = group.Key, ["terms"] = string.Join(',', shared) });
+            entity(capability);
+            foreach (var f in members)
+                relation(new(FeatureFact(f).Key, capability.Key, CanonicalRelationType.Implements, RelationResolution.Derived, CorrelationConfidence.High, DecisionRule,
+                    [new("declared-decision", $"{f.Module}/{f.FeatureKey}", group.Key, f.SourceSnapshotId)],
+                    $"\"{f.Title}\" declares {group.Key} in its title or folder name."));
+            foreach (var f in features.Where(f => members.All(m => FeatureFact(m).Key != FeatureFact(f).Key)))
+            {
+                if (f.CitedDecisions?.Contains(group.Key, StringComparer.Ordinal) == true)
+                    relation(new(FeatureFact(f).Key, capability.Key, CanonicalRelationType.Implements, RelationResolution.Candidate, CorrelationConfidence.Medium, DecisionRule,
+                        [new("cited-decision", $"{f.Module}/{f.FeatureKey}", group.Key, f.SourceSnapshotId)],
+                        $"spec.md of \"{f.Title}\" cites {group.Key} but the feature does not declare it: citing a decision does not by itself make the feature part of that change — confirm or reject."));
+                else if (shared.Count >= 2 && shared.All(TitleTerms(f.Title).Contains))
+                    relation(new(FeatureFact(f).Key, capability.Key, CanonicalRelationType.Implements, RelationResolution.Candidate, CorrelationConfidence.Low, DecisionRule,
+                        [new("title-terms", $"{f.Module}/{f.FeatureKey}", string.Join(',', shared), f.SourceSnapshotId)],
+                        $"\"{f.Title}\" shares the terms {string.Join(", ", shared)} with the features declaring {group.Key}, without any {group.Key} reference. Wording alone never decides membership: confirm or reject."));
+            }
+        }
+    }
+
+    /// <summary>Significant title terms in title order (no stories): the words the declaring titles have in common name the change intent.</summary>
+    static IReadOnlyList<string> TitleTerms(string title) =>
+        [.. IntentTerms(new WorkItemIntentInput("", "", title, [], null)).OrderBy(t => title.IndexOf(t, StringComparison.OrdinalIgnoreCase) is var i and >= 0 ? i : int.MaxValue).ThenBy(t => t, StringComparer.Ordinal)];
+
+    /// <summary>The canonical Feature identity of a Delivery feature (module + feature folder key), as stored by case G.</summary>
+    public static string FeatureIdentity(string module, string featureKey) => $"{CanonicalKeys.Normalize(module)}/{CanonicalKeys.Normalize(featureKey)}";
+
     static CanonicalEntityFact FeatureFact(WorkItemIntentInput f) =>
-        new(CanonicalEntityType.Feature, $"{CanonicalKeys.Normalize(f.Module)}/{CanonicalKeys.Normalize(f.FeatureKey)}", f.Title, $"{f.Module}/{f.FeatureKey}",
+        new(CanonicalEntityType.Feature, FeatureIdentity(f.Module, f.FeatureKey), f.Title, $"{f.Module}/{f.FeatureKey}",
             "module + feature folder key", [new("feature", f.Path ?? f.FeatureKey, null, f.SourceSnapshotId)]);
 
     static string ModuleKey(string module) => CanonicalKeys.EntityKey(CanonicalEntityType.Module, CanonicalKeys.Normalize(module));

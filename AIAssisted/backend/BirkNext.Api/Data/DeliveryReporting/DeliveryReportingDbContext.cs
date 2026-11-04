@@ -125,6 +125,7 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.Property(x => x.TaskCompleted).HasColumnName("task_completed");
             e.Property(x => x.UntrackedTaskCount).HasColumnName("untracked_task_count");
             e.Property(x => x.RequirementsJson).HasColumnName("requirements").HasColumnType("jsonb").HasDefaultValue("[]");
+            e.Property(x => x.DecisionReferencesJson).HasColumnName("decision_references").HasColumnType("jsonb");
             e.Property(x => x.HierarchyCaptured).HasColumnName("hierarchy_captured").HasDefaultValue(false);
             e.Property(x => x.Status).HasColumnName("status").HasMaxLength(40);
             e.Property(x => x.StatusReason).HasColumnName("status_reason").HasMaxLength(1000);
