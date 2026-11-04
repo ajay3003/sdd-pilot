@@ -108,4 +108,41 @@ public sealed class StatusSemanticsConsistencyTests
         DeliveryReportingPresentation.MovementTone(BirkNext.DeliveryReporting.DeliveryMovement.Removed).Should().Be("dlr-tone-neutral");
         DeliveryDashboard.Change(null).Label.Should().Be("—");
     }
+
+    [Theory]
+    [InlineData("Blocked — provider", PtTone.Attention, SemanticStatus.Blocked, "sd-pill-attention")]
+    [InlineData("Blocked", PtTone.Blocked, SemanticStatus.Blocked, "sd-pill-attention")]
+    [InlineData("Draft", PtTone.Attention, SemanticStatus.Draft, "sd-pill-muted")]
+    [InlineData("Unsaved changes", PtTone.Attention, SemanticStatus.Draft, "sd-pill-muted")]
+    [InlineData("Not ready", PtTone.Attention, SemanticStatus.Warning, "sd-pill-partial")]
+    [InlineData("Ready", PtTone.Ready, SemanticStatus.Ready, "sd-pill-complete")]
+    [InlineData("Running", PtTone.Running, SemanticStatus.Assessing, "sd-pill-info")]
+    [InlineData("Unknown", PtTone.Neutral, SemanticStatus.Unknown, "sd-pill-muted")]
+    public void Performance_statuses_use_the_shared_vocabulary(string label, PtTone tone, SemanticStatus semantic, string pill)
+    {
+        var status = new PtStatus(label, "!", tone);
+        status.Semantic.Should().Be(semantic);
+        status.PillClass.Should().Be(pill, "Blocked is always danger, Draft neutral, Running a lifecycle state");
+    }
+
+    [Theory]
+    [InlineData(BirkNext.CriticalE2E.CriticalE2EStatus.NotRun, SemanticStatus.NotRun, "neutral")]
+    [InlineData(BirkNext.CriticalE2E.CriticalE2EStatus.Cancelled, SemanticStatus.Cancelled, "neutral")]
+    [InlineData(BirkNext.CriticalE2E.CriticalE2EStatus.Blocked, SemanticStatus.Blocked, "bad")]
+    [InlineData(BirkNext.CriticalE2E.CriticalE2EStatus.Failed, SemanticStatus.Failed, "bad")]
+    [InlineData(BirkNext.CriticalE2E.CriticalE2EStatus.Inconclusive, SemanticStatus.Warning, "warning")]
+    [InlineData(BirkNext.CriticalE2E.CriticalE2EStatus.Passed, SemanticStatus.Verified, "good")]
+    public void Critical_E2E_outcomes_keep_distinct_meanings(BirkNext.CriticalE2E.CriticalE2EStatus status, SemanticStatus semantic, string tone)
+    {
+        CriticalE2EPresentation.Semantic(status).Should().Be(semantic);
+        CriticalE2EPresentation.Tone(status).Should().Be(tone, "Cancelled is neither failed nor blocked; Not run is never a failure");
+    }
+
+    [Fact]
+    public void Not_run_and_not_assessed_stay_distinct()
+    {
+        StatusVocabulary.Label(SemanticStatus.NotRun).Should().Be("Not run");
+        StatusVocabulary.Label(SemanticStatus.NotAssessed).Should().Be("Not assessed");
+        StatusVocabulary.Tooltip(SemanticStatus.NotRun).Should().NotBe(StatusVocabulary.Tooltip(SemanticStatus.NotAssessed));
+    }
 }

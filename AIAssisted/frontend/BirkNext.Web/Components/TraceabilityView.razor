@@ -127,9 +127,7 @@ else
                             {
                                 <span class="tv-fr-badge tv-fr-lg">@sel.FrId</span>
                             }
-                            <span class="tv-status-badge tv-status-@sel.Status.ToString().ToLowerInvariant() tv-status-right">
-                                @StatusLabel(sel.Status)
-                            </span>
+                            <span class="tv-status-right"><SemanticStatusBadge Status="Semantic(sel.Status)" QualifiedLabel="@StatusLabel(sel.Status)" TestId="tv-status" /></span>
                         </div>
 
                         <div class="tv-det-title" title="@sel.Title">@sel.Title</div>
@@ -623,13 +621,24 @@ else
         _                => key,
     };
 
+    // Shared vocabulary (icon + text from the badge, no emoji): coverage found is Confirmed, missing tests are Missing (neutral, not a failure),
+    // an orphaned link is Unresolved, and a requirement outside coverage is Not applicable.
     private static string StatusLabel(TraceCoverageStatus s) => s switch
     {
-        TraceCoverageStatus.Covered      => "✅ Covered",
-        TraceCoverageStatus.MissingTests => "⚠️ Missing Tests",
-        TraceCoverageStatus.Orphaned     => "🔶 Orphaned",
-        TraceCoverageStatus.NotEligible  => "—",
+        TraceCoverageStatus.Covered      => "Covered",
+        TraceCoverageStatus.MissingTests => "Missing tests",
+        TraceCoverageStatus.Orphaned     => "Orphaned",
+        TraceCoverageStatus.NotEligible  => "Not applicable",
         _                                => s.ToString(),
+    };
+
+    private static SemanticStatus Semantic(TraceCoverageStatus s) => s switch
+    {
+        TraceCoverageStatus.Covered      => SemanticStatus.Confirmed,
+        TraceCoverageStatus.MissingTests => SemanticStatus.Missing,
+        TraceCoverageStatus.Orphaned     => SemanticStatus.Unresolved,
+        TraceCoverageStatus.NotEligible  => SemanticStatus.NotApplicable,
+        _                                => SemanticStatus.Unknown,
     };
 
 }

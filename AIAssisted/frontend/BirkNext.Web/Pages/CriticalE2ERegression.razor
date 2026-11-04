@@ -263,7 +263,7 @@
             <section class="e2e-result e2e-tone-@ResultTone(run.Status)" data-testid="e2e-last-run" aria-labelledby="e2e-last-run-heading" role="status">
                 <div class="e2e-section-head">
                     <h2 id="e2e-last-run-heading">@run.FlowName</h2>
-                    <span class="e2e-pill e2e-tone-@ResultTone(run.Status)" data-testid="e2e-last-run-status">@CriticalE2EPresentation.RunLabel(run)</span>
+                    <span class="e2e-pill e2e-tone-@ResultTone(run.Status)" data-testid="e2e-last-run-status" data-semantic="@CriticalE2EPresentation.Semantic(run.Status)" title="@StatusVocabulary.Tooltip(CriticalE2EPresentation.Semantic(run.Status))">@CriticalE2EPresentation.RunLabel(run)</span>
                 </div>
                 @{ var layers = CriticalE2EPresentation.Layers(run); }
                 <ul class="e2e-layers" data-testid="e2e-last-run-layers">
@@ -428,7 +428,7 @@
                                             <td data-label="Result" data-testid="e2e-run-result-@past.RunId">
                                                 @* Archived is shown beside the recorded result, never instead of it. *@
                                                 @if (h.Archived) { <span class="e2e-badge e2e-badge-archived" data-testid="e2e-run-archived-@past.RunId" title="@past.ArchiveReason">Archived ·</span>@(" ") }
-                                                <span class="e2e-pill e2e-tone-@ResultTone(past.Status)">@CriticalE2EPresentation.RunLabel(past)</span>
+                                                <span class="e2e-pill e2e-tone-@ResultTone(past.Status)" data-semantic="@CriticalE2EPresentation.Semantic(past.Status)" title="@StatusVocabulary.Tooltip(CriticalE2EPresentation.Semantic(past.Status))">@CriticalE2EPresentation.RunLabel(past)</span>
                                             </td>
                                             <td data-label="Steps">@past.PassedSteps / @past.TotalSteps</td>
                                             <td data-label="Duration">@CriticalE2EPresentation.Duration(past.DurationMs)</td>
@@ -919,13 +919,7 @@
         finally { _historyBusy = false; }
     }
 
-    private static string ResultTone(CriticalE2EStatus status) => status switch
-    {
-        CriticalE2EStatus.Passed => "good",
-        CriticalE2EStatus.Failed or CriticalE2EStatus.Blocked => "bad",
-        CriticalE2EStatus.Inconclusive => "warning",
-        _ => "neutral",
-    };
+    private static string ResultTone(CriticalE2EStatus status) => CriticalE2EPresentation.Tone(status);
 
     private static string Slug(CriticalE2EExecutionMode mode) =>
         mode == CriticalE2EExecutionMode.CompanionBrowser ? "browser" : "integration";

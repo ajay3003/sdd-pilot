@@ -323,7 +323,7 @@
     /// <summary>Status pill: decorative glyph + text; <paramref name="subject"/> prefixes the spoken text ("Readiness status: Needs configuration").</summary>
     private static RenderFragment Pill(PtStatus status, string? subject) => __builder =>
     {
-        <span class="sd-pill @status.PillClass ptc-pill ptc-tone-@status.ToneClass" data-status="@status.Label">@if (subject is not null) {<span class="visually-hidden">@subject status: </span>}<span class="ptc-glyph" aria-hidden="true">@status.Glyph</span> @status.Label</span>
+        <span class="sd-pill @status.PillClass ptc-pill ptc-tone-@status.ToneClass" data-status="@status.Label" data-semantic="@status.Semantic" title="@(status.Reason ?? StatusVocabulary.Tooltip(status.Semantic))">@if (subject is not null) {<span class="visually-hidden">@subject status: </span>}<span class="ptc-glyph" aria-hidden="true">@status.Glyph</span> @status.Label</span>
     };
 
     private RenderFragment Timeline(PerformanceWorkload w) => __builder =>

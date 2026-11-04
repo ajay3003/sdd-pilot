@@ -372,7 +372,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         // The single blocker's explanation is stated once, in the blocker panel; the list item names it and points there.
         cut.Find("[data-testid=pt-readiness-item][data-key=provider]").TextContent.Should().Contain("Provider unavailable").And.Contain("See the blocker above");
         cut.Find("[data-testid=pt-blocker-detail]").TextContent.Should().Contain("not installed");
-        cut.FindAll(".sd-pill-attention").Should().BeEmpty("a missing provider is not shown with the failure tone");
+        // Blocked is danger everywhere (shared vocabulary); a missing provider is Blocked — never Failed — and its text says it is a tool limitation.
+        cut.FindAll("[data-semantic=Blocked]").Should().NotBeEmpty();
+        cut.FindAll("[data-semantic=Failed]").Should().BeEmpty("a missing provider is not a failure");
     }
 
     [Fact]
@@ -662,7 +664,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         AddManualStep(cut);
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft"));
 
-        cut.Find("[data-testid=pt-status] .sd-pill").ClassList.Should().Contain("sd-pill-partial").And.NotContain("sd-pill-attention", "an unsaved draft is not a failure");
+        cut.Find("[data-testid=pt-status] .sd-pill").ClassList.Should().Contain("sd-pill-muted").And.NotContain("sd-pill-attention", "a draft is a neutral editor state (shared vocabulary), never a failure");
         Status(cut, "pt-definition-state").Should().Be("Draft · will be saved automatically before readiness check");
         cut.Find("[data-testid=pt-primary-action]").TextContent.Should().Be("Check readiness");
         cut.Find("[data-testid=pt-primary-action]").ClassList.Should().Contain("btn-primary");
@@ -879,7 +881,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
 
         cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().StartWith("A tool limitation, not a performance result");
         cut.Find("[data-testid=pt-open-engines]").GetAttribute("href").Should().Be("admin/system-settings?section=performance-test-engines");
-        cut.FindAll(".sd-pill-attention").Should().BeEmpty();
+        cut.Find("[data-testid=pt-status] .sd-pill").GetAttribute("data-semantic").Should().Be("Blocked", "Blocked has one meaning (danger); the reason says tool limitation");
+        cut.FindAll("[data-semantic=Failed]").Should().BeEmpty();
     }
 
     [Fact]

@@ -272,7 +272,7 @@
                             {
                                 <li data-testid="at-transition" data-key="@t.Key" data-assessed="@(t.Assessed ? "true" : "false")">
                                     <span class="at-transition-name">@t.Name</span>
-                                    <span class="at-status-badge @(t.Assessed ? "at-status-assessed" : "at-status-notassessed")">@(t.Assessed ? "Assessed" : "Not assessed")</span>
+                                    <SemanticStatusBadge Status="@(t.Assessed ? SemanticStatus.Completed : SemanticStatus.NotAssessed)" QualifiedLabel="@(t.Assessed ? "Assessed" : "Not assessed")" />
                                     <span class="at-transition-detail">@t.Detail</span>
                                 </li>
                             }

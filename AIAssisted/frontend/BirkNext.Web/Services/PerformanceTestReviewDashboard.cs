@@ -7,12 +7,36 @@ public enum PtTone { Ready, Attention, Blocked, Info, Running, Baseline, Neutral
 
 public sealed record PtStatus(string Label, string Glyph, PtTone Tone, string? Reason = null)
 {
-    /// <summary>Shared <c>sd-pill</c> tone (Technology Coverage / Source Analysis / Pipeline Review).</summary>
-    public string PillClass => Tone switch
+    /// <summary>
+    /// The shared semantic status this element expresses (label stays domain wording: "Blocked — container TLS trust", "Saved · v3"). Running and
+    /// Cancelling are execution lifecycle states (shown as in progress), not readiness. Draft / unsaved changes are neutral editor states.
+    /// </summary>
+    public SemanticStatus Semantic => Label switch
     {
-        PtTone.Ready => "sd-pill-complete",
-        PtTone.Attention => "sd-pill-partial",
-        PtTone.Blocked => "sd-pill-attention",
+        _ when Label.StartsWith("Blocked", StringComparison.Ordinal) => SemanticStatus.Blocked,
+        _ when Label.StartsWith("Draft", StringComparison.Ordinal) || Label.StartsWith("Unsaved", StringComparison.Ordinal) => SemanticStatus.Draft,
+        "Ready" => SemanticStatus.Ready,
+        "Not ready" => SemanticStatus.Warning,
+        "Running" or "Cancelling" => SemanticStatus.Assessing,
+        "Unknown" => SemanticStatus.Unknown,
+        _ => Tone switch
+        {
+            PtTone.Ready => SemanticStatus.Ready,
+            PtTone.Blocked => SemanticStatus.Blocked,
+            PtTone.Attention => SemanticStatus.Warning,
+            PtTone.Running => SemanticStatus.Assessing,
+            PtTone.Info => SemanticStatus.Configured,
+            _ => SemanticStatus.Unknown,
+        },
+    };
+
+    /// <summary>Shared <c>sd-pill</c> tone derived from the vocabulary intent (Blocked is always danger, Draft neutral, never colour alone).</summary>
+    public string PillClass => StatusVocabulary.Intent(Semantic) switch
+    {
+        StatusIntent.Positive => "sd-pill-complete",
+        StatusIntent.Warning => "sd-pill-partial",
+        StatusIntent.Danger => "sd-pill-attention",
+        StatusIntent.Info or StatusIntent.Active => "sd-pill-info",
         _ => "sd-pill-muted",
     };
 

@@ -333,6 +333,29 @@ public static class CriticalE2EPresentation
         return $"Step {index + 1} · {step.Description}" + (string.IsNullOrWhiteSpace(why) ? "" : $" — {why}");
     }
 
+    /// <summary>The shared semantic status of a run outcome: Not run is neutral (not failed), Cancelled is its own neutral outcome (neither failed
+    /// nor blocked), Blocked is danger, Inconclusive a warning.</summary>
+    public static SemanticStatus Semantic(CriticalE2EStatus status) => status switch
+    {
+        CriticalE2EStatus.NotRun => SemanticStatus.NotRun,
+        CriticalE2EStatus.Running => SemanticStatus.Assessing,
+        CriticalE2EStatus.Passed => SemanticStatus.Verified,
+        CriticalE2EStatus.Failed => SemanticStatus.Failed,
+        CriticalE2EStatus.Blocked => SemanticStatus.Blocked,
+        CriticalE2EStatus.Cancelled => SemanticStatus.Cancelled,
+        CriticalE2EStatus.Inconclusive => SemanticStatus.Warning,
+        _ => SemanticStatus.Unknown,
+    };
+
+    /// <summary>The page tone (e2e-tone-*) from the shared intent: one meaning per status across BirkNext.</summary>
+    public static string Tone(CriticalE2EStatus status) => StatusVocabulary.Intent(Semantic(status)) switch
+    {
+        StatusIntent.Positive => "good",
+        StatusIntent.Danger => "bad",
+        StatusIntent.Warning => "warning",
+        _ => "neutral",
+    };
+
     public static string StatusLabel(CriticalE2EStatus status) => status switch
     {
         CriticalE2EStatus.NotRun => "Not run",
