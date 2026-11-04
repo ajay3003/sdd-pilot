@@ -592,6 +592,11 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.AzureEnvironment.IAzureMana
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentCollector, BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentCollector>();
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>();
+// Git Sources: Azure DevOps over the same Microsoft sign-in (delegated, memory-only tokens); remote calls only on explicit actions.
+builder.Services.AddSingleton(new BirkNext.Api.Services.GitSources.GitSourceSettingsStore(builder.Configuration["GitSources:SettingsDirectory"] is { Length: > 0 } gitDir ? gitDir : null));
+builder.Services.AddHttpClient<BirkNext.Api.Services.GitSources.IAzureDevOpsGitClient, BirkNext.Api.Services.GitSources.AzureDevOpsGitClient>(client => client.Timeout = TimeSpan.FromMinutes(5))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddSingleton<BirkNext.Api.Services.GitSources.GitSourcesService>();
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentEvidenceProvider>(sp => BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentEvidenceProvider.FromConfiguration(
     sp.GetRequiredService<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>(), sp.GetRequiredService<IConfiguration>()));
 // Pipeline Review: delivery-flow interpretation over Source Analysis CI/CD evidence (no YAML parsing here); optional read-only Azure DevOps metadata.

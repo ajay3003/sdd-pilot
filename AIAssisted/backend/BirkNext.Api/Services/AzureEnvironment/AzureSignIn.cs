@@ -20,6 +20,12 @@ public interface IAzureTokenBroker
     /// <summary>A token from the in-memory cache; <paramref name="forceRefresh"/> asks Entra for a new one (after a PIM activation). Null when sign-in is needed again.</summary>
     Task<AzureToken?> SilentAsync(bool forceRefresh, CancellationToken ct);
     Task SignOutAsync();
+
+    /// <summary>Interactive sign-in for other resources of the same app registration (e.g. Azure DevOps for Git Sources). Same account cache, memory only.</summary>
+    Task<AzureToken> InteractiveForAsync(IReadOnlyList<string> scopes, Func<Uri, Task> openBrowser, CancellationToken ct) =>
+        throw new NotSupportedException("This token broker signs in for Azure Resource Manager only.");
+    /// <summary>A token for other resources from the in-memory cache; null when sign-in (or consent) is needed.</summary>
+    Task<AzureToken?> SilentForAsync(IReadOnlyList<string> scopes, CancellationToken ct) => Task.FromResult<AzureToken?>(null);
 }
 
 public sealed class MsalAzureTokenBroker : IAzureTokenBroker
@@ -66,6 +72,30 @@ public sealed class MsalAzureTokenBroker : IAzureTokenBroker
         var account = (await App.GetAccountsAsync()).FirstOrDefault();
         if (account is null) return null;
         try { return From(await App.AcquireTokenSilent(Scopes, account).WithForceRefresh(forceRefresh).ExecuteAsync(ct)); }
+        catch (MsalUiRequiredException) { return null; }
+    }
+
+    public async Task<AzureToken> InteractiveForAsync(IReadOnlyList<string> scopes, Func<Uri, Task> openBrowser, CancellationToken ct)
+    {
+        var result = await App.AcquireTokenInteractive(scopes)
+            .WithPrompt(Prompt.SelectAccount)
+            .WithUseEmbeddedWebView(false)
+            .WithSystemWebViewOptions(new SystemWebViewOptions
+            {
+                OpenBrowserAsync = openBrowser,
+                HtmlMessageSuccess = "Signed in to BirkNext. You can close this tab and return to BirkNext.",
+                HtmlMessageError = "Sign-in did not complete. Return to BirkNext for details.",
+            })
+            .ExecuteAsync(ct);
+        return From(result);
+    }
+
+    public async Task<AzureToken?> SilentForAsync(IReadOnlyList<string> scopes, CancellationToken ct)
+    {
+        if (_app is null) return null;
+        var account = (await _app.GetAccountsAsync()).FirstOrDefault();
+        if (account is null) return null;
+        try { return From(await _app.AcquireTokenSilent(scopes, account).ExecuteAsync(ct)); }
         catch (MsalUiRequiredException) { return null; }
     }
 

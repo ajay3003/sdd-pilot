@@ -819,6 +819,11 @@ else if (_settings is not null)
                 </div>
             }
 
+            @if (_activeSection == "git-sources")
+            {
+                <GitSourcesSettingsCard />
+            }
+
             @if (_activeSection == "ai")
             {
                 <div class="settings-card settings-card-full-width">

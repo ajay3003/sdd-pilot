@@ -17,6 +17,8 @@ public sealed record ProjectImportProvenance
     public string ArchiveFileName { get; init; } = "";
     public string ArchiveSha256 { get; init; } = "";
     public DateTimeOffset ImportedAt { get; init; }
+    /// <summary>The Git revision the archive was retrieved from (Git Sources import); null for a chosen ZIP. The commit SHA is the identity, not the branch.</summary>
+    public BirkNext.GitSources.GitSourceRevision? Git { get; init; }
 }
 
 /// <summary>How the project display name was derived. Never hardcoded: the single archive root folder, else the archive file name.</summary>

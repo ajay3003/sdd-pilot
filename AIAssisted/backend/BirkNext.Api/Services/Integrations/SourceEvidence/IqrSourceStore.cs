@@ -230,7 +230,10 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
             ApplicationMessagingEvidence = ApplicationMessaging.ApplicationMessagingStore.ExtractSnapshotEvidence(environmentId, name, bytes),
             ScimEvidence = Scim.ScimEvidenceService.ExtractSnapshotEvidence(environmentId, name, bytes),
         };
-        snapshot = snapshot with { ProjectImport = projectImport };
+        // A Git Sources import knows its exact revision: the commit SHA and branch come from the provider, never guessed from the archive.
+        snapshot = projectImport?.Git is { } git
+            ? snapshot with { ProjectImport = projectImport, Commit = git.CommitSha, Branch = git.Branch }
+            : snapshot with { ProjectImport = projectImport };
         // Generated documentation (its own evidence type): detection, provenance, module-scoped freshness and generated-vs-source comparisons over
         // the same workspace and the models above. A failure never fails the snapshot; it is recorded as a limitation.
         await ReportProgressAsync("Analyzing generated documentation", "Comparing generated documentation evidence with the source snapshot.");

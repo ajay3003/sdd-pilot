@@ -49,6 +49,12 @@ public sealed class ProjectImportStagingStore
     private readonly string? _directory;
     private readonly ILogger? _logger;
     private readonly Dictionary<Guid, StagedProjectImport> _staged = [];
+    // The Git revision of a Git Sources import (memory only: a stage restored after a restart imports as a plain archive and says so).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, BirkNext.GitSources.GitSourceRevision> _git = new();
+
+    public void SetGitRevision(Guid stagingId, BirkNext.GitSources.GitSourceRevision revision) => _git[stagingId] = revision;
+
+    public BirkNext.GitSources.GitSourceRevision? GitRevisionOf(Guid stagingId) => _git.TryGetValue(stagingId, out var r) ? r : null;
     private readonly object _gate = new();
 
     public ProjectImportStagingStore(TimeProvider? time = null, string? directory = null, ILogger<ProjectImportStagingStore>? logger = null)
@@ -113,6 +119,7 @@ public sealed class ProjectImportStagingStore
 
     public bool Remove(Guid stagingId)
     {
+        _git.TryRemove(stagingId, out _);
         lock (_gate)
         {
             var known = _staged.ContainsKey(stagingId) || (_directory is not null && File.Exists(RecordPath(stagingId)));

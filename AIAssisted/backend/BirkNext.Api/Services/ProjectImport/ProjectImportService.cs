@@ -101,7 +101,7 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             var provenance = new ProjectImportProvenance
             {
                 ImportId = staged.ImportId, ArchiveFileName = staged.Workspace.Archive.FileName, ArchiveSha256 = staged.Workspace.Archive.Sha256,
-                ImportedAt = staging.Now,
+                ImportedAt = staging.Now, Git = staging.GitRevisionOf(stagingId),
             };
             var source = await SourceAsync(staged, provenance, ct, reportProgress);
             var settled = !source.CanRetry;

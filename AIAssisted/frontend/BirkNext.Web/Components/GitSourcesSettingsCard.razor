@@ -1,0 +1,165 @@
+@using BirkNext.GitSources
+@inject IGitSourcesApiService Git
+
+@* System Settings → Git Sources. Opening this section reads only the local sign-in state; Azure DevOps is contacted only by Sign in, Test Git
+   connection, Refresh repositories / branches and Track. Configured is not verified: only the explicit test verifies the chain. *@
+<section class="settings-card settings-card-full-width gss" aria-labelledby="gss-title" data-testid="gss">
+    <div class="settings-card-title" id="gss-title">Git Sources</div>
+    <p class="settings-card-note">Import projects straight from Azure DevOps Git: BirkNext signs in with Microsoft Entra ID on your behalf (MFA and Conditional Access
+        apply), reads only what your account can read and never writes to a repository. No password, PAT or token is stored.</p>
+
+    @if (_status is null) { <p class="gss-muted" role="status">@(_error ?? "Reading the sign-in state…")</p> }
+    else
+    {
+        <dl class="gss-facts" data-testid="gss-connection">
+            <div><dt>Provider</dt><dd>Azure DevOps</dd></div>
+            <div><dt>Authentication</dt><dd>Microsoft Entra ID (delegated)</dd></div>
+            <div><dt>Status</dt><dd data-testid="gss-state" data-state="@_status.State"><strong>@StateLabel(_status.State)</strong> — @_status.Message</dd></div>
+            @if (_status.Account is not null) { <div><dt>Signed-in account</dt><dd data-testid="gss-account">@_status.Account</dd></div> }
+            <div><dt>Last Git test</dt><dd data-testid="gss-last-test">@(_status.LastTest is { } t ? $"{(t.Ready ? "Ready" : "Not ready")} · {t.TestedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "Not tested")</dd></div>
+        </dl>
+        @if (_status.Requirements.Count > 0)
+        {
+            <ul class="gss-list" data-testid="gss-requirements">@foreach (var r in _status.Requirements) { <li>@r</li> }</ul>
+        }
+        <div class="gss-row">
+            <label class="gss-grow">Azure DevOps organization URL
+                <input class="form-control" @bind="_organization" @bind:event="oninput" placeholder="https://dev.azure.com/your-organization" data-testid="gss-org" />
+            </label>
+            <button type="button" class="btn-secondary" disabled="@_busy" @onclick="SaveAsync" data-testid="gss-save">Save</button>
+        </div>
+        <div class="gss-row">
+            @if (_status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed)
+            {
+                <button type="button" class="btn-primary" disabled="@(_busy || !_status.SignInAvailable)" @onclick="SignInAsync" data-testid="gss-sign-in">@(_status.State == GitConnectionState.ReconnectRequired ? "Reconnect" : "Sign in")</button>
+            }
+            @if (_status.State == GitConnectionState.SigningIn) { <button type="button" class="btn-secondary" @onclick="RefreshAsync" data-testid="gss-refresh-status">I have signed in — refresh</button> }
+            <button type="button" class="btn-secondary" disabled="@(_busy || _status.State == GitConnectionState.NotConfigured)" @onclick="TestAsync" data-testid="gss-test">Test Git connection</button>
+            @if (_status.State == GitConnectionState.Connected)
+            {
+                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadRepositoriesAsync" data-testid="gss-load-repos">@(_repos.Count == 0 ? "Load repositories" : "Refresh repositories")</button>
+                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DisconnectAsync" data-testid="gss-disconnect">Disconnect</button>
+            }
+        </div>
+        @if (_status.State == GitConnectionState.Connected) { <p class="gss-muted gss-small">Disconnect signs this BirkNext instance out of Microsoft (Azure Environment Analysis too). Settings, tracked branches, imported projects and snapshots stay.</p> }
+        @if (_error is not null) { <p class="gss-error" role="alert" data-testid="gss-error">@_error</p> }
+
+        @if ((_test ?? _status.LastTest) is { } test)
+        {
+            <div class="gss-test" data-testid="gss-test-result" data-ready="@(test.Ready ? "true" : "false")">
+                <p><strong>@(test.Ready ? "✓ Ready" : "✕ Not ready")</strong> — @test.Summary</p>
+                <table class="settings-table">
+                    <thead><tr><th scope="col">Step</th><th scope="col">Result</th><th scope="col">Details</th><th scope="col">Duration</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in test.Steps)
+                        {
+                            <tr data-testid="gss-test-step" data-state="@s.State"><td>@s.Name</td><td>@(s.State switch { GitTestStepState.Verified => "✓ Verified", GitTestStepState.Failed => "✕ Failed", _ => "– Skipped" })</td><td>@s.Message</td><td>@s.DurationMs ms</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (_repos.Count > 0)
+        {
+            <div class="gss-row">
+                <label>Repository
+                    <select data-testid="gss-repo" value="@_repoId" @onchange="RepositoryChangedAsync">
+                        <option value="">Choose…</option>
+                        @foreach (var r in _repos) { <option value="@r.Id" disabled="@r.IsDisabled">@r.Project / @r.Name@(r.IsDisabled ? " (disabled)" : "")</option> }
+                    </select>
+                </label>
+            </div>
+            @if (_branches.Count > 0)
+            {
+                <ul class="gss-list" data-testid="gss-branches">
+                    @foreach (var b in _branches.Take(50))
+                    {
+                        var tracked = _tracked.Any(t => t.RepositoryId == _repoId && t.Branch == b.Name);
+                        <li data-testid="gss-branch"><strong>@b.Name</strong>@(b.IsDefault ? " (default)" : "")
+                            <span class="gss-muted"> · @(b.CommitSha.Length >= 8 ? b.CommitSha[..8] : b.CommitSha)@(b.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")</span>
+                            <button type="button" class="btn-secondary gss-small" @onclick="() => TrackAsync(b.Name, !tracked)">@(tracked ? "Untrack" : "Track")</button></li>
+                    }
+                </ul>
+            }
+        }
+        @if (_tracked.Count > 0)
+        {
+            <p class="gss-small"><strong>Tracked branches:</strong> @string.Join(" · ", _tracked.Select(t => $"{t.Repository} @ {t.Branch}"))</p>
+        }
+    }
+</section>
+
+@code {
+    private GitConnectionStatus? _status;
+    private GitTestResult? _test;
+    private IReadOnlyList<GitRepository> _repos = [];
+    private IReadOnlyList<GitBranch> _branches = [];
+    private List<GitTrackedBranch> _tracked = [];
+    private string? _organization, _repoId, _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        (_status, _error) = await Git.StatusAsync();
+        _organization ??= _status?.OrganizationUrl;
+        if (_status is not null) _tracked = [.. _status.TrackedBranches];
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        (_busy, _error) = (true, null);
+        try { await action(); }
+        finally { _busy = false; }
+    }
+
+    private Task SaveAsync() => Run(async () =>
+    {
+        var (status, error) = await Git.SaveSettingsAsync(new() { OrganizationUrl = string.IsNullOrWhiteSpace(_organization) ? null : _organization.Trim(), TrackedBranches = _tracked });
+        _error = error;
+        if (status is not null) { _test = null; await RefreshAsync(); }
+    });
+
+    private Task SignInAsync() => Run(async () => { var (s, e) = await Git.SignInAsync(); (_status, _error) = (s ?? _status, e); });
+
+    private Task DisconnectAsync() => Run(async () =>
+    {
+        var (s, e) = await Git.DisconnectAsync();
+        (_status, _error, _repos, _branches, _repoId) = (s ?? _status, e, [], [], null);
+    });
+
+    private Task TestAsync() => Run(async () =>
+    {
+        (_test, _error) = await Git.TestAsync();
+        await RefreshAsync();
+    });
+
+    private Task LoadRepositoriesAsync() => Run(async () => (_repos, _error) = await Git.RepositoriesAsync());
+
+    private Task RepositoryChangedAsync(ChangeEventArgs e) => Run(async () =>
+    {
+        (_repoId, _branches) = (e.Value?.ToString(), []);
+        if (!string.IsNullOrEmpty(_repoId)) (_branches, _error) = await Git.BranchesAsync(_repoId);
+    });
+
+    private Task TrackAsync(string branch, bool track) => Run(async () =>
+    {
+        var repo = _repos.FirstOrDefault(r => r.Id == _repoId);
+        if (repo is null) return;
+        _tracked = track ? [.. _tracked, new(repo.Id, repo.Name, repo.Project, branch)] : [.. _tracked.Where(t => !(t.RepositoryId == repo.Id && t.Branch == branch))];
+        var (_, error) = await Git.SaveSettingsAsync(new() { OrganizationUrl = _status?.OrganizationUrl, TrackedBranches = _tracked });
+        _error = error;
+    });
+
+    private static string StateLabel(GitConnectionState s) => s switch
+    {
+        GitConnectionState.NotConfigured => "Not configured",
+        GitConnectionState.NotConnected => "Not connected",
+        GitConnectionState.SigningIn => "Signing in",
+        GitConnectionState.ReconnectRequired => "Reconnect required",
+        GitConnectionState.Failed => "Connection failed",
+        _ => "Connected",
+    };
+}

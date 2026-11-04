@@ -315,6 +315,8 @@ builder.Services.AddHttpClient<IFunctionalQualityScopeApiService, FunctionalQual
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ICanonicalInterpretationApiService, CanonicalInterpretationApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<IGitSourcesApiService, GitSourcesApiService>(client =>
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISnapshotRegistryApiService, SnapshotRegistryApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IDeliveryAzureDevOpsApiService, DeliveryAzureDevOpsApiService>(client =>

@@ -80,7 +80,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         if (IsBusy && _running is { } running) return running;
         // A new archive starts a new import session: nothing of the previous result (commit, warnings, duplicate choice) carries over.
         Commit = null; SaveWarning = false; Duplicate = null; ImportAgain = false; Failure = null; KeptSelectionNote = null;
-        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = size;
+        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = size; GitRevision = null;
         FileName = fileName;
         Phase = ProjectImportPhase.Validating;
         Progress = new ProjectImportCommitEvent { Stage = "Uploading and validating the archive", Detail = "Reading the ZIP and checking its entries." };
@@ -109,23 +109,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             });
             var (preview, error) = await api.PreviewAsync(fileName, counted, ct);
             if (preview is null) return Fail(error ?? new("IMPORT_PREVIEW_FAILED", "validation", "The archive could not be previewed. Nothing was imported."));
-            Preview = preview;
-            Phase = ProjectImportPhase.Classifying;
-            ClassifyTotal = preview.Documents.Count;
-            progress.Stage("Detecting document roles", null, 0, ClassifyTotal, "documents");
-            Notify();
-            Duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, activation.Imports, activation.Current?.ImportId, setup);
-            Discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
-            {
-                Classified = p.Done; ClassifyTotal = p.Total;
-                progress.Stage("Detecting document roles", null, p.Done, p.Total, "documents");
-                Notify();
-            }));
-            ct.ThrowIfCancellationRequested();
-            Phase = ProjectImportPhase.Preview;
-            StartedAt = null;
-            Notify();
-            return OperationOutcome.Success(Route, "Review the import");
+            return await AdoptAsync(preview, setup, progress, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -153,6 +137,79 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             Notify();
             return OperationOutcome.Failure(failure.Message, canRetry: false);
         }
+    }
+
+    /// <summary>The staged preview (from a chosen ZIP or a Git revision) continues identically: document roles, duplicate check, review.</summary>
+    private async Task<OperationOutcome> AdoptAsync(ProjectImportPreview preview, SourceSetupView? setup, IOperationProgress progress, CancellationToken ct)
+    {
+        Preview = preview;
+        Phase = ProjectImportPhase.Classifying;
+        ClassifyTotal = preview.Documents.Count;
+        progress.Stage("Detecting document roles", null, 0, ClassifyTotal, "documents");
+        Notify();
+        Duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, activation.Imports, activation.Current?.ImportId, setup);
+        Discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
+        {
+            Classified = p.Done; ClassifyTotal = p.Total;
+            progress.Stage("Detecting document roles", null, p.Done, p.Total, "documents");
+            Notify();
+        }));
+        ct.ThrowIfCancellationRequested();
+        Phase = ProjectImportPhase.Preview;
+        StartedAt = null;
+        Notify();
+        return OperationOutcome.Success(Route, "Review the import");
+    }
+
+    /// <summary>The Git revision of the current preview (Git Sources import), shown as provenance; null for a chosen ZIP.</summary>
+    public BirkNext.GitSources.GitSourceRevision? GitRevision { get; private set; }
+
+    /// <summary>
+    /// Git mode: the backend downloads one branch's current commit and stages it through the same preview; from there the import is exactly a
+    /// ZIP import (roles, duplicates, commit, activation). Started only by the person's explicit choice.
+    /// </summary>
+    public Task<OperationSnapshot> StartGitPreviewAsync(string label, Func<CancellationToken, Task<(BirkNext.GitSources.GitImportResult? Result, string? Error)>> fetch,
+        SourceSetupView? setup)
+    {
+        if (IsBusy && _running is { } running) return running;
+        Commit = null; SaveWarning = false; Duplicate = null; ImportAgain = false; Failure = null; KeptSelectionNote = null;
+        Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; GitRevision = null;
+        FileName = label;
+        Phase = ProjectImportPhase.Validating;
+        Progress = new ProjectImportCommitEvent { Stage = "Downloading the commit from Azure DevOps", Detail = "Resolving the branch to its commit and validating the archive." };
+        StartedAt = DateTimeOffset.UtcNow;
+        Notify();
+        var run = operations.Start(new OperationRequest(OperationKind.ProjectImportUpload, $"Checking {label}", new OperationContext(label, "project-import:git"), Route)
+        {
+            IdempotencyKey = "project-import", Cancellable = true,
+        }, async (progress, ct) =>
+        {
+            progress.Stage("Downloading the commit from Azure DevOps", label, 0, 1, "steps");
+            try
+            {
+                var (result, error) = await fetch(ct);
+                if (result?.Preview is not { } preview)
+                {
+                    StartedAt = null; Phase = ProjectImportPhase.Choose; ShowUpload = true; InputGeneration++;
+                    Failure = new("GIT_IMPORT_FAILED", "git", (result?.Failure ?? error ?? "The commit could not be imported.") + " Nothing was imported.");
+                    Notify();
+                    return OperationOutcome.Failure(Failure.Message, canRetry: false);
+                }
+                GitRevision = result.Revision;
+                FileName = preview.Archive.FileName;
+                return await AdoptAsync(preview, setup, progress, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                if (Preview is { } staged) _ = DiscardQuietlyAsync(staged.StagingId);
+                Reset();
+                ShowUpload = true;
+                Notify();
+                throw;
+            }
+        });
+        OperationId = run.Operation.Id;
+        return _running = run.Completion;
     }
 
     /// <summary>Commit the staged archive and activate its documents. Repeated calls while it runs return the running import (no duplicate).</summary>
@@ -300,7 +357,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     public void Reset()
     {
         if (Phase is ProjectImportPhase.Importing) return;
-        Preview = null; Discovery = null; Commit = null; Failure = null; SaveWarning = false; Duplicate = null; ImportAgain = false; KeptSelectionNote = null;
+        Preview = null; Discovery = null; Commit = null; Failure = null; SaveWarning = false; Duplicate = null; ImportAgain = false; KeptSelectionNote = null; GitRevision = null;
         ResultSummary = null; Progress = null; FileName = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; StartedAt = null; ResultSeen = false;
         InputGeneration++;
         Phase = ProjectImportPhase.Choose;

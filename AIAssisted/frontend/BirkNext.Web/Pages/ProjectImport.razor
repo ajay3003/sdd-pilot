@@ -342,6 +342,7 @@
                 <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
                 @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
             </div>
+            @if (GitSources is not null) { <BirkNext.Web.Components.GitImportPicker OnImport="StartGitAsync" /> }
             <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
         </section>
         }
@@ -401,6 +402,10 @@
     {
         <section class="pi-card pi-archive" aria-labelledby="pi-archive-heading" data-testid="pi-preview">
             <h2 id="pi-archive-heading" tabindex="-1">@preview.Archive.FileName</h2>
+            @if (Session.GitRevision is { } git)
+            {
+                <p class="pi-muted" data-testid="pi-git-revision">From Azure DevOps: @git.Project / @git.Repository · branch @git.Branch · commit <code>@git.ShortSha</code>@(git.CommittedAt is { } at ? $" ({at.UtcDateTime:yyyy-MM-dd HH:mm} UTC)" : "") · retrieved @git.RetrievedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC. The commit, not the branch, is what is imported.</p>
+            }
             <dl class="pi-facts">
                 <div><dt>Project name</dt><dd data-testid="pi-project-name">@preview.ProjectName <span class="pi-muted">(@ProjectImportPresentation.NameBasis(preview.ProjectNameBasis))</span></dd></div>
                 <div><dt>Size</dt><dd>@ProjectImportPresentation.Size(preview.Archive.SizeBytes) · @preview.Archive.EntryCount.ToString("N0") entries</dd></div>
@@ -824,6 +829,17 @@
         StartElapsedTimer();
         // The page starts the work and does not wait for it: the session owns it (the page may be left at any time).
         _ = Session.StartPreviewAsync(file.Name, file.Size, open, _setup);
+    }
+
+    private IGitSourcesApiService? GitSources => ServiceProvider.GetService(typeof(IGitSourcesApiService)) as IGitSourcesApiService;
+
+    /// <summary>Git mode: the session stages the branch's current commit through the same preview (started only by the person's choice).</summary>
+    private void StartGitAsync((BirkNext.GitSources.GitImportRequest Request, string Label) choice)
+    {
+        _retrying = false; _currentRetryMessage = null; _useMessage = null;
+        StartElapsedTimer();
+        if (GitSources is not { } git) return;
+        _ = Session.StartGitPreviewAsync(choice.Label, ct => git.ImportAsync(choice.Request, ct), _setup);
     }
 
     /// <summary>Starts the import of the staged archive. A repeated click while it runs returns the running import; no second one starts.</summary>
