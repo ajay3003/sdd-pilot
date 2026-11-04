@@ -679,6 +679,9 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataConsumerDe
 // Immutable TestDataAssetIds (identities.json): assigned once, alias history kept, legacy alias-derived ids still resolve.
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataIdentityStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataSchemaAssociationStore>();
+// Performance / Critical E2E references: alias-only references are migrated to stable ids once (never guessed for reused aliases).
+builder.Services.AddScoped<BirkNext.Api.Services.TestDataConsumers.TestDataConsumerReferenceMigration>();
+builder.Services.AddHostedService<BirkNext.Api.Services.TestDataConsumers.TestDataConsumerReferenceMigrationHostedService>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null,
     sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(), sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>(),
     sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataIdentityStore>()));

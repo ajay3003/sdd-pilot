@@ -44,8 +44,16 @@ public sealed class PerformanceTestStore(AppDbContext db)
         var previous = row is null ? null : JsonSerializer.Deserialize<PerformanceTestDefinition>(row.DocumentJson, Json);
         var normalized = definition with { EnvironmentId = environmentId, Archived = previous?.Archived ?? false, Fingerprint = "", ComparisonFingerprint = "", Version = 0,
             CreatedAt = previous?.CreatedAt ?? now, UpdatedAt = now };
-        var fingerprint = Fingerprint(normalized with { UpdatedAt = default, CreatedAt = default });
-        if (previous is not null && previous.Fingerprint == fingerprint) return previous;
+        var fingerprint = Fingerprint(WithoutReferenceIds(normalized) with { UpdatedAt = default, CreatedAt = default });
+        if (previous is not null && previous.Fingerprint == fingerprint)
+        {
+            // Only stable Test Data ids changed (migration or re-selection of the same asset): stored on the same version, never a new one.
+            if (JsonSerializer.Serialize(previous.Scenario, Json) == JsonSerializer.Serialize(normalized.Scenario, Json)) return previous;
+            var updated = previous with { Scenario = normalized.Scenario };
+            row!.DocumentJson = JsonSerializer.Serialize(updated, Json);
+            await db.SaveChangesAsync(ct);
+            return updated;
+        }
         var saved = normalized with { Fingerprint = fingerprint, ComparisonFingerprint = ComparisonFingerprint(normalized), Version = (previous?.Version ?? 0) + 1 };
         if (row is null) db.PerformanceTestDefinitions.Add(row = new PerformanceTestDefinitionRecord { Id = saved.Id, EnvironmentId = environmentId });
         row.Version = saved.Version; row.Archived = saved.Archived; row.UpdatedAt = now; row.DocumentJson = JsonSerializer.Serialize(saved, Json);
@@ -70,12 +78,23 @@ public sealed class PerformanceTestStore(AppDbContext db)
         return "Deleted";
     }
 
+    /// <summary>The definition without stable Test Data ids: ids are reference bookkeeping, not part of what the definition is or measures.</summary>
+    public static PerformanceTestDefinition WithoutReferenceIds(PerformanceTestDefinition d) => d with
+    {
+        Scenario = d.Scenario with
+        {
+            Steps = [.. d.Scenario.Steps.Select(s => s.DataMappings is null ? s : s with { DataMappings = [.. s.DataMappings.Select(m => m with { AssetIds = null })] })],
+            Variables = d.Scenario.Variables is null ? null : [.. d.Scenario.Variables.Select(v => v with { AssetId = null })],
+        },
+    };
+
     public static string Fingerprint(object value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json)))).ToLowerInvariant()[..32];
 
     /// <summary>What makes runs comparable: target, type, executed steps (their data mappings included, their provenance and discovery bookkeeping excluded), workload,
     /// environment class, test data profile and selection. Not thresholds, drift policies or names. A legacy definition keeps its exact value.</summary>
     public static string ComparisonFingerprint(PerformanceTestDefinition d)
     {
+        d = WithoutReferenceIds(d); // runs stay comparable when only stable Test Data ids were recorded
         var legacy = Fingerprint(new
         {
             Target = d.TargetOrigin.TrimEnd('/').ToLowerInvariant(), d.TargetType, Steps = d.Scenario.Steps.Where(s => !s.Disabled).Select(s => s with { Source = null, Discovery = null }).ToList(), d.Workload,

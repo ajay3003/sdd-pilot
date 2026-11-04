@@ -21,12 +21,13 @@ public sealed class PerformanceTestDataReferences(PerformanceTestStore store, Ti
             for (var i = 0; i < steps.Count; i++)
                 foreach (var mapping in steps[i].DataMappings ?? [])
                     if (mapping.Source == RuntimeValueSource.TestData)
-                        foreach (var alias in mapping.AssetAliases.Distinct(StringComparer.Ordinal))
-                            usages.Add(new(alias, Consumer, definition.Id, definition.Name,
-                                $"Step {i + 1}{(steps[i].Name is { Length: > 0 } name ? $" ({name})" : "")} · {mapping.Variable}") { EnvironmentId = definition.EnvironmentId });
+                        for (var a = 0; a < mapping.AssetAliases.Count; a++)
+                            usages.Add(new(mapping.AssetAliases[a], Consumer, definition.Id, definition.Name,
+                                $"Step {i + 1}{(steps[i].Name is { Length: > 0 } name ? $" ({name})" : "")} · {mapping.Variable}")
+                                { EnvironmentId = definition.EnvironmentId, AssetId = TestDataReferenceText.IdAt(mapping.AssetIds, a) });
             foreach (var variable in definition.Scenario.Variables ?? [])
                 if (variable is { Source: RuntimeValueSource.TestData, AssetAlias: { Length: > 0 } alias })
-                    usages.Add(new(alias, Consumer, definition.Id, definition.Name, $"Scenario variable · {variable.Name}") { EnvironmentId = definition.EnvironmentId });
+                    usages.Add(new(alias, Consumer, definition.Id, definition.Name, $"Scenario variable · {variable.Name}") { EnvironmentId = definition.EnvironmentId, AssetId = variable.AssetId });
         }
         return usages;
     }
@@ -48,10 +49,11 @@ public sealed class PerformanceTestDataReferences(PerformanceTestStore store, Ti
                 {
                     Steps = [.. scenario.Steps.Select(s => s.DataMappings is null ? s : s with
                     {
-                        DataMappings = [.. s.DataMappings.Select(m => m.Source == RuntimeValueSource.TestData && m.AssetAliases.Contains(fromAlias) ? m with { AssetAliases = Swap(m.AssetAliases) } : m)],
+                        // Replaced references drop their stable ids; the migration records the replacement's id (never the old asset's).
+                        DataMappings = [.. s.DataMappings.Select(m => m.Source == RuntimeValueSource.TestData && m.AssetAliases.Contains(fromAlias) ? m with { AssetAliases = Swap(m.AssetAliases), AssetIds = null } : m)],
                     })],
                     Variables = scenario.Variables is null ? null
-                        : [.. scenario.Variables.Select(v => v.Source == RuntimeValueSource.TestData && v.AssetAlias == fromAlias ? v with { AssetAlias = toAlias } : v)],
+                        : [.. scenario.Variables.Select(v => v.Source == RuntimeValueSource.TestData && v.AssetAlias == fromAlias ? v with { AssetAlias = toAlias, AssetId = null } : v)],
                 },
             }, time.GetUtcNow(), ct);
             changed++;

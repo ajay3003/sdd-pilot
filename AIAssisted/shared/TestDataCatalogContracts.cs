@@ -311,6 +311,9 @@ public sealed record TestDataAssetUsage(string Alias, string ConsumerType, strin
 {
     /// <summary>The stable asset id the consumer persisted, when it records one (authoritative over <see cref="Alias"/>).</summary>
     public string? AssetId { get; init; }
+    /// <summary>A legacy alias-only reference that cannot be mapped to one asset identity safely (the alias was reused or is ambiguous):
+    /// shown as "Legacy Test Data reference · Needs review", never attached to today's asset.</summary>
+    public bool NeedsReview { get; init; }
     public string? EnvironmentId { get; init; }
     /// <summary>A safe environment display name (no secrets), when the consumer knows it.</summary>
     public string? EnvironmentName { get; init; }

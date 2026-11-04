@@ -438,6 +438,8 @@ public sealed record CriticalE2EFlowDefinition
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EAutomationBoundary? Boundary { get; init; }
     /// <summary>Central Test Data assets this flow uses (aliases only; values stay in Test Data). <see cref="TestDataPolicy"/> is a legacy note.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? TestDataAliases { get; init; }
+    /// <summary>Stable TestDataAssetIds, position-aligned with <see cref="TestDataAliases"/> (null entry = legacy alias-only reference).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string?>? TestDataAssetIds { get; init; }
     /// <summary>Placeholders (${data:variable}) in step values, routes or the outcome mapped to central Test Data aliases.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<CriticalE2EDataMapping>? DataMappings { get; init; }
     /// <summary>Provenance only — never execution truth.</summary>
@@ -559,6 +561,9 @@ public sealed record CriticalE2ERunResult
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EAutomationBoundary? Boundary { get; init; }
     /// <summary>Central Test Data aliases used (references only, never values).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? TestDataAliases { get; init; }
+    /// <summary>The stable TestDataAssetIds the run actually used. Null in runs recorded before stable ids: their identity is "not recorded" and is
+    /// never inferred from today's asset with the same alias.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? TestDataAssetIds { get; init; }
     /// <summary>The Companion page the run was bound to (identity only).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CompanionPageId { get; init; }
 

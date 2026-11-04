@@ -59,7 +59,11 @@ public sealed record CriticalE2EAutomationBoundary
 
 /// <summary>A step placeholder or form value mapped to central Test Data assets (aliases). Values stay in Test Data; the backend
 /// resolves them only while the run executes.</summary>
-public sealed record CriticalE2EDataMapping(string Variable, List<string> AssetAliases, TestDataDataType DataType, string Target);
+public sealed record CriticalE2EDataMapping(string Variable, List<string> AssetAliases, TestDataDataType DataType, string Target)
+{
+    /// <summary>Stable TestDataAssetIds, position-aligned with <see cref="AssetAliases"/> (null entry = legacy alias-only reference).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public List<string?>? AssetIds { get; init; }
+}
 
 /// <summary>A release-readiness blocker with the action that resolves it.</summary>
 public sealed record CriticalE2EReleaseBlocker(string Key, string Text);

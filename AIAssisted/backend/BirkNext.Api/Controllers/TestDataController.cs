@@ -87,6 +87,10 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
         return await catalog.ValidateAndRecordAsync(target with { AssetId = asset.AssetId }, clock, ct) is { } evidence ? Ok(evidence) : BadRequest(new { message = "The asset declares no XSD." });
     }
 
+    /// <summary>Records stable ids on Performance / Critical E2E references that still hold aliases (idempotent; ambiguous aliases are left for review).</summary>
+    [HttpPost("consumer-references/migrate")]
+    public Task<Services.TestDataConsumers.TestDataReferenceMigrationResult> MigrateReferences([FromServices] Services.TestDataConsumers.TestDataConsumerReferenceMigration migration, CancellationToken ct) => migration.MigrateAsync(ct);
+
     [HttpGet("schema-associations")]
     public ActionResult<IReadOnlyList<TestDataSchemaAssociationView>> Associations([FromServices] TestDataSchemaAssociationStore store) =>
         Ok(store.All().Select(TestDataSchemaAssociationStore.View).ToList());

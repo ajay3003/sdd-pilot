@@ -20,26 +20,34 @@ public static class CriticalE2ETestData
     /// <summary>Problems of the referenced aliases: unmapped placeholder, unknown, not approved (expired/disabled), wrong data type, other environment.</summary>
     public static List<string> Issues(CriticalE2EFlowDefinition flow, TestDataCatalog catalog, DateTimeOffset now, string? environmentName = null, string? environmentType = null)
     {
-        var assets = catalog.ByAlias();
+        var all = catalog.Assets();
+        var identities = catalog.Identities?.Identities() ?? [];
         var issues = new List<string>();
         foreach (var mapping in flow.DataMappings ?? [])
         {
             if (mapping.AssetAliases.Count == 0) { issues.Add($"Test Data missing for ${{data:{mapping.Variable}}} ({mapping.Target})."); continue; }
-            foreach (var alias in mapping.AssetAliases)
-                if (Problem(alias, assets, now, flow, environmentName, environmentType, mapping.DataType) is { } problem) issues.Add(problem);
+            for (var i = 0; i < mapping.AssetAliases.Count; i++)
+                if (Problem(TestDataReferenceResolver.Resolve(all, identities, mapping.AssetAliases[i], TestDataReferenceText.IdAt(mapping.AssetIds, i)), all, now, flow,
+                        environmentName, environmentType, mapping.DataType) is { } problem) issues.Add(problem);
         }
-        foreach (var alias in flow.TestDataAliases ?? [])
-            if (Problem(alias, assets, now, flow, environmentName, environmentType, null) is { } problem && !issues.Contains(problem)) issues.Add(problem);
+        var aliases = flow.TestDataAliases ?? [];
+        for (var i = 0; i < aliases.Count; i++)
+            if (Problem(TestDataReferenceResolver.Resolve(all, identities, aliases[i], TestDataReferenceText.IdAt(flow.TestDataAssetIds, i)), all, now, flow, environmentName, environmentType, null)
+                    is { } problem && !issues.Contains(problem)) issues.Add(problem);
         // A placeholder used in the flow but mapped to nothing would reach the page literally.
         foreach (var variable in Placeholders(flow).Where(v => !(flow.DataMappings ?? []).Any(m => string.Equals(m.Variable, v, StringComparison.Ordinal))))
             issues.Add($"Test Data missing for ${{data:{variable}}} (no Test Data asset is mapped).");
         return issues;
     }
 
-    private static string? Problem(string alias, IReadOnlyDictionary<string, TestDataAsset> assets, DateTimeOffset now, CriticalE2EFlowDefinition flow,
+    private static string? Problem(TestDataReferenceResolution reference, IReadOnlyList<TestDataAsset> assets, DateTimeOffset now, CriticalE2EFlowDefinition flow,
         string? environmentName, string? environmentType, TestDataDataType? required)
     {
-        if (!assets.TryGetValue(alias, out var asset)) return $"Test Data review required: {alias} no longer exists in Test Data.";
+        if (TestDataReferenceResolver.AssetIn(assets, reference) is not { } asset)
+            return reference.State == TestDataReferenceState.LegacyNeedsReview
+                ? $"Test Data review required: {reference.StoredAlias} is a legacy reference that needs review. {reference.Detail}"
+                : $"Test Data review required: {reference.StoredAlias} no longer exists in Test Data.";
+        var alias = asset.Alias;
         var approval = TestDataResolver.EffectiveApproval(asset, now);
         if (approval != TestDataApproval.Approved) return $"Test Data review required: {alias} is {approval.ToString().ToLowerInvariant()}.";
         var type = TestDataDataTypes.Of(asset.Kind, asset.MediaType);
@@ -60,9 +68,23 @@ public static class CriticalE2ETestData
     /// <summary>Values for one run (variable → value, first mapped alias). Transient: held by the run context only.</summary>
     public static Dictionary<string, string> Resolve(CriticalE2EFlowDefinition flow, TestDataCatalog catalog)
     {
+        var all = catalog.Assets();
+        var identities = catalog.Identities?.Identities() ?? [];
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var mapping in flow.DataMappings ?? [])
-            if (mapping.AssetAliases.Select(catalog.Reveal).FirstOrDefault(v => v is not null) is { } value) values[mapping.Variable] = value;
+            if (mapping.AssetAliases.Select((alias, i) => TestDataReferenceResolver.RevealIn(all, TestDataReferenceResolver.Resolve(all, identities, alias, TestDataReferenceText.IdAt(mapping.AssetIds, i))))
+                    .FirstOrDefault(v => v is not null) is { } value) values[mapping.Variable] = value;
         return values;
+    }
+
+    /// <summary>The stable ids of every reference a run uses (recorded in run history; never inferred later from an alias).</summary>
+    public static List<string> AssetIds(CriticalE2EFlowDefinition flow, TestDataCatalog catalog)
+    {
+        var all = catalog.Assets();
+        var identities = catalog.Identities?.Identities() ?? [];
+        var refs = (flow.DataMappings ?? []).SelectMany(m => m.AssetAliases.Select((alias, i) => (alias, TestDataReferenceText.IdAt(m.AssetIds, i))))
+            .Concat((flow.TestDataAliases ?? []).Select((alias, i) => (alias, TestDataReferenceText.IdAt(flow.TestDataAssetIds, i))));
+        return [.. refs.Select(r => TestDataReferenceResolver.Resolve(all, identities, r.alias, r.Item2)).Where(r => r.Usable && r.AssetId is not null)
+            .Select(r => r.AssetId!).Distinct(StringComparer.Ordinal)];
     }
 }

@@ -129,7 +129,10 @@
             <p class="tda-muted" data-testid="tda-unused">No consumer references this asset.</p>
             return;
         }
-        <p class="tda-muted" data-testid="tda-usage-count">Used by @usages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count() consumer@(usages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count() == 1 ? "" : "s") · @usages.Count reference@(usages.Count == 1 ? "" : "s")</p>
+        var resolvedUsages = usages.Where(u => !u.Unresolved).ToList();
+        var consumers = resolvedUsages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count();
+        @* Counts come from references that resolve to this asset (stable ids); legacy or missing references are listed but never counted as use. *@
+        <p class="tda-muted" data-testid="tda-usage-count">Used by @consumers consumer@(consumers == 1 ? "" : "s") · @resolvedUsages.Count reference@(resolvedUsages.Count == 1 ? "" : "s")@(usages.Count > resolvedUsages.Count ? $" · {usages.Count - resolvedUsages.Count} unresolved" : "")</p>
         <ul class="tda-usages" data-testid="tda-usages">
             @foreach (var usage in usages)
             {
@@ -139,7 +142,9 @@
                     <span data-testid="tda-usage-requirement"><span class="tda-muted">Requirement:</span> @usage.Location</span>
                     @if ((usage.EnvironmentName ?? usage.EnvironmentId) is { } environment) { <span data-testid="tda-usage-environment"><span class="tda-muted">Environment:</span> @environment</span> }
                     @* Status in text, never colour only. *@
-                    @if (usage.Unresolved) { <span class="tda-badge tda-badge-attention" data-testid="tda-usage-status">Test Data reference missing</span> }
+                    @if (usage.NeedsReview) { <SemanticStatusBadge Status="SemanticStatus.NeedsReview" QualifiedLabel="Legacy Test Data reference · Needs review" TestId="tda-usage-status"
+                        Explanation="Saved before stable Test Data ids, and the alias was reused or is ambiguous. It is not attached to this asset until someone chooses the asset again." /> }
+                    else if (usage.Unresolved) { <span class="tda-badge tda-badge-attention" data-testid="tda-usage-status">Test Data reference missing</span> }
                     else { <span class="tda-badge" data-testid="tda-usage-status">Resolved</span> }
                     @if (TestDataAssetWorkspace.Href(usage) is { } href) { <a href="@href" class="tda-link">@TestDataAssetWorkspace.OpenLabel(usage)<span class="visually-hidden"> @usage.ConsumerName</span></a> }
                 </li>

@@ -200,6 +200,9 @@ public sealed record ScenarioParameterShape(string Name, string? Type)
 /// </remarks>
 public sealed record ScenarioDataMapping(string Variable, List<string> AssetAliases, TestDataDataType DataType, string In)
 {
+    /// <summary>Stable TestDataAssetIds, position-aligned with <see cref="AssetAliases"/> (null entry = legacy alias-only reference). Authoritative
+    /// over the alias, which stays as display/history. Excluded from version and comparison fingerprints (a migration never creates a version).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string?>? AssetIds { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public RuntimeValueSource Source { get; init; }
     /// <summary>Previous step output: the producing step's id and output name.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FromStepId { get; init; }
@@ -260,6 +263,8 @@ public sealed record ScenarioVariable(string Name, RuntimeValueSource Source)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Value { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AssetAlias { get; init; }
+    /// <summary>Stable TestDataAssetId of <see cref="AssetAlias"/> (null = legacy alias-only reference).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AssetId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GeneratedValueKind? Generator { get; init; }
 }
 

@@ -94,15 +94,25 @@ public static class PerformanceCentralTestData
     /// <summary>Problems of the mapped aliases: unknown, not approved (or expired/disabled), wrong data type, or for another environment.</summary>
     public static List<string> Issues(PerformanceTestDefinition d, TestDataCatalog catalog, DateTimeOffset now)
     {
-        var assets = catalog.ByAlias();
+        var all = catalog.Assets();
+        var identities = catalog.Identities?.Identities() ?? [];
         var issues = new List<string>();
         foreach (var (step, mapping) in Mappings(d).Concat(Variables(d).Select(v => (Step: new HttpPerformanceStep { Name = $"scenario variable {v.Name}" },
-            Mapping: new ScenarioDataMapping(v.Name, [v.AssetAlias!], TestDataDataType.SimpleValues, "variable")))))
+            Mapping: new ScenarioDataMapping(v.Name, [v.AssetAlias!], TestDataDataType.SimpleValues, "variable") { AssetIds = [v.AssetId] }))))
         {
             if (mapping.AssetAliases.Count == 0) { issues.Add($"Test Data missing for {Label(mapping)} (step '{step.Name}')."); continue; }
-            foreach (var alias in mapping.AssetAliases)
+            for (var index = 0; index < mapping.AssetAliases.Count; index++)
             {
-                if (!assets.TryGetValue(alias, out var asset)) { issues.Add($"Test Data review required: {alias} (for {Label(mapping)}) no longer exists in Test Data."); continue; }
+                // The stored stable id is authoritative; a legacy alias resolves only when it provably maps to one identity (never a reused alias).
+                var reference = TestDataReferenceResolver.Resolve(all, identities, mapping.AssetAliases[index], TestDataReferenceText.IdAt(mapping.AssetIds, index));
+                if (TestDataReferenceResolver.AssetIn(all, reference) is not { } asset)
+                {
+                    issues.Add(reference.State == TestDataReferenceState.LegacyNeedsReview
+                        ? $"Test Data review required: {reference.StoredAlias} (for {Label(mapping)}) is a legacy reference that needs review. {reference.Detail}"
+                        : $"Test Data review required: {reference.StoredAlias} (for {Label(mapping)}) no longer exists in Test Data.");
+                    continue;
+                }
+                var alias = asset.Alias;
                 var approval = TestDataResolver.EffectiveApproval(asset, now);
                 if (approval != TestDataApproval.Approved) issues.Add($"Test Data review required: {alias} (for {Label(mapping)}) is {approval.ToString().ToLowerInvariant()}.");
                 else if (TestDataDataTypes.Of(asset.Kind, asset.MediaType) != mapping.DataType)
@@ -121,9 +131,13 @@ public static class PerformanceCentralTestData
     /// <summary>A transient profile for one run: one column per mapped variable, row i = the i-th value of each (cycled). Never stored.</summary>
     public static PerformanceTestDataProfile? Resolve(PerformanceTestDefinition d, TestDataCatalog catalog)
     {
+        var all = catalog.Assets();
+        var identities = catalog.Identities?.Identities() ?? [];
+        string? Reveal(string alias, string? id) => TestDataReferenceResolver.RevealIn(all, TestDataReferenceResolver.Resolve(all, identities, alias, id));
         var columns = Mappings(d).GroupBy(x => x.Mapping.Variable, StringComparer.Ordinal)
-            .Select(g => (Variable: g.Key, Values: g.SelectMany(x => x.Mapping.AssetAliases).Distinct(StringComparer.Ordinal).Select(catalog.Reveal).OfType<string>().ToList()))
-            .Concat(Variables(d).Select(v => (Variable: VariableColumn(v.Name), Values: new[] { catalog.Reveal(v.AssetAlias!) }.OfType<string>().ToList())))
+            .Select(g => (Variable: g.Key, Values: g.SelectMany(x => x.Mapping.AssetAliases.Select((alias, i) => Reveal(alias, TestDataReferenceText.IdAt(x.Mapping.AssetIds, i))))
+                .OfType<string>().Distinct(StringComparer.Ordinal).ToList()))
+            .Concat(Variables(d).Select(v => (Variable: VariableColumn(v.Name), Values: new[] { Reveal(v.AssetAlias!, v.AssetId) }.OfType<string>().ToList())))
             .Where(c => c.Values.Count > 0).ToList();
         if (columns.Count == 0) return null;
         var rows = Enumerable.Range(0, columns.Max(c => c.Values.Count)).Select(i => columns.Select(c => c.Values[i % c.Values.Count]).ToList()).ToList();

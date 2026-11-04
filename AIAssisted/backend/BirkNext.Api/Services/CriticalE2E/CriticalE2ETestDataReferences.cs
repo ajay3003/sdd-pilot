@@ -15,13 +15,17 @@ public sealed class CriticalE2ETestDataReferences(ICriticalE2EStore store) : ITe
         {
             var mapped = new HashSet<string>(StringComparer.Ordinal);
             foreach (var mapping in flow.DataMappings ?? [])
-                foreach (var alias in mapping.AssetAliases.Distinct(StringComparer.Ordinal))
+                for (var i = 0; i < mapping.AssetAliases.Count; i++)
                 {
-                    mapped.Add(alias);
-                    usages.Add(new(alias, Consumer, flow.Id, flow.Name, $"Placeholder · {mapping.Variable}") { EnvironmentId = flow.EnvironmentId });
+                    if (!mapped.Add(mapping.AssetAliases[i])) continue;
+                    usages.Add(new(mapping.AssetAliases[i], Consumer, flow.Id, flow.Name, $"Placeholder · {mapping.Variable}")
+                        { EnvironmentId = flow.EnvironmentId, AssetId = BirkNext.TestData.TestDataReferenceText.IdAt(mapping.AssetIds, i) });
                 }
-            foreach (var alias in (flow.TestDataAliases ?? []).Where(a => !mapped.Contains(a)).Distinct(StringComparer.Ordinal))
-                usages.Add(new(alias, Consumer, flow.Id, flow.Name, "Flow Test Data") { EnvironmentId = flow.EnvironmentId });
+            var aliases = flow.TestDataAliases ?? [];
+            for (var i = 0; i < aliases.Count; i++)
+                if (mapped.Add(aliases[i]))
+                    usages.Add(new(aliases[i], Consumer, flow.Id, flow.Name, "Flow Test Data")
+                        { EnvironmentId = flow.EnvironmentId, AssetId = BirkNext.TestData.TestDataReferenceText.IdAt(flow.TestDataAssetIds, i) });
         }
         return Task.FromResult<IReadOnlyList<TestDataAssetUsage>>(usages);
     }
@@ -35,8 +39,8 @@ public sealed class CriticalE2ETestDataReferences(ICriticalE2EStore store) : ITe
             if (!(flow.TestDataAliases ?? []).Contains(fromAlias) && !(flow.DataMappings ?? []).Any(m => m.AssetAliases.Contains(fromAlias))) continue;
             store.Save(flow with
             {
-                TestDataAliases = flow.TestDataAliases is null ? null : Swap(flow.TestDataAliases),
-                DataMappings = flow.DataMappings is null ? null : [.. flow.DataMappings.Select(m => m.AssetAliases.Contains(fromAlias) ? m with { AssetAliases = Swap(m.AssetAliases) } : m)],
+                TestDataAliases = flow.TestDataAliases is null ? null : Swap(flow.TestDataAliases), TestDataAssetIds = null,
+                DataMappings = flow.DataMappings is null ? null : [.. flow.DataMappings.Select(m => m.AssetAliases.Contains(fromAlias) ? m with { AssetAliases = Swap(m.AssetAliases), AssetIds = null } : m)],
             });
             changed++;
         }

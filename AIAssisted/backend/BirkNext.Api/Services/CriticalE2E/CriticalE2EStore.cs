@@ -112,7 +112,12 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
     }
 
     /// <summary>The definition without its bookkeeping (version, timestamp): what makes two saves the same definition.</summary>
-    private static string Material(CriticalE2EFlowDefinition flow) => JsonSerializer.Serialize(flow with { Version = 0, UpdatedAt = null }, Json);
+    private static string Material(CriticalE2EFlowDefinition flow) => JsonSerializer.Serialize(flow with
+    {
+        Version = 0, UpdatedAt = null, TestDataAssetIds = null,
+        // Recording stable Test Data ids is not a definition change: no new version.
+        DataMappings = flow.DataMappings is null ? null : [.. flow.DataMappings.Select(m => m with { AssetIds = null })],
+    }, Json);
 
     private static List<CriticalE2EStepDefinition> Number(List<CriticalE2EStepDefinition> steps)
     {

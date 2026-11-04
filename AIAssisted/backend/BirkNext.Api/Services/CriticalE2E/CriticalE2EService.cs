@@ -420,6 +420,8 @@ public sealed class CriticalE2EService(
                 TestDataProblem = usesData && issues.Count > 0 ? issues[0] : null,
                 Data = usesData && issues.Count == 0 && catalog is not null ? CriticalE2ETestData.Resolve(flow, catalog) : null,
             }, cancellationToken).ConfigureAwait(false);
+            // The run records the stable ids it used; older runs without them stay "identity not recorded".
+            if (catalog is not null && CriticalE2ETestData.Aliases(flow).Count > 0) result = result with { TestDataAssetIds = CriticalE2ETestData.AssetIds(flow, catalog) };
             store.Record(result);
             runs.Add(result);
             // A cancelled run ends the batch: the user asked for it to stop, not for the next flow to start.

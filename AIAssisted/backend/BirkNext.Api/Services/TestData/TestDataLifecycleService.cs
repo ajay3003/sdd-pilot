@@ -62,15 +62,26 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
     public async Task<IReadOnlyList<TestDataAssetUsage>> UsagesAsync(CancellationToken ct)
     {
         var assets = catalog.Assets();
+        var identities = catalog.Identities?.Identities() ?? [];
         var aliases = assets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal);
-        var byId = assets.ToDictionary(a => a.Id, a => a.Alias, StringComparer.Ordinal);
+        var byId = assets.GroupBy(a => a.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Alias, StringComparer.Ordinal);
+        foreach (var asset in assets.Where(a => a.AssetId is not null)) byId.TryAdd(asset.AssetId!, asset.Alias);
         var usages = new List<TestDataAssetUsage>();
-        // A consumer that persisted the stable asset id is resolved by it (the alias it recorded may be older); an id that no longer resolves is
-        // unresolved, never matched to an asset that merely has the same alias.
+        // A consumer that persisted the stable asset id (or a legacy id) is resolved by it (the alias it recorded may be older); an id that no longer
+        // resolves is unresolved, never matched to an asset that merely has the same alias. A legacy alias-only reference counts only when it maps
+        // to exactly one identity; a reused or ambiguous alias is "Needs review" and attached to no asset.
         foreach (var source in _references)
-            usages.AddRange((await source.UsagesAsync(ct)).Select(u => u.AssetId is { Length: > 0 } id
-                ? byId.TryGetValue(id, out var current) ? u with { Alias = current } : u with { Unresolved = true }
-                : u));
+            usages.AddRange((await source.UsagesAsync(ct)).Select(u =>
+            {
+                if (u.AssetId is { Length: > 0 } id) return byId.TryGetValue(id, out var current) ? u with { Alias = current } : u with { Unresolved = true };
+                var reference = TestDataReferenceResolver.Resolve(assets, identities, u.Alias, null);
+                return reference.State switch
+                {
+                    TestDataReferenceState.LegacyUnique => u with { Alias = reference.CurrentAlias ?? u.Alias },
+                    TestDataReferenceState.LegacyNeedsReview => u with { NeedsReview = true, Unresolved = true },
+                    _ => u with { Unresolved = true },
+                };
+            }));
         foreach (var usage in registry.Usages())
             usages.Add(new(byId.GetValueOrDefault(usage.AssetId) ?? AliasOf(usage.AssetId), BindingConsumer, usage.Consumer.Key, usage.Consumer.DisplayName, usage.Usage)
                 { EnvironmentId = usage.EnvironmentId });
