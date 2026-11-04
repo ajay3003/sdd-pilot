@@ -125,8 +125,10 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
             MetadataJson = JsonSerializer.Serialize(new { wrapperFolder = snapshot.WrapperFolder, suggestedEffectiveAt = snapshot.SuggestedEffectiveAt, archiveRetained = false,
                 azureDevOps = snapshot.AzureDevOps }, Json),
         };
+        // A neutral name (the source), never "{role} {date}": the role is metadata that changes meaning when a later snapshot arrives, and the date is
+        // shown from EffectiveAt. Snapshots are identified by their id, never by this name.
         var label = string.IsNullOrWhiteSpace(request.Label)
-            ? $"{DeliveryReportingText.Role(request.Role)} {request.EffectiveAt:yyyy-MM-dd}"
+            ? (snapshot.AzureDevOps is { } ado && !string.IsNullOrWhiteSpace(ado.Branch) ? $"{ado.Repository} · {ado.Branch}" : System.IO.Path.GetFileNameWithoutExtension(snapshot.FileName))
             : request.Label.Trim();
         var record = new DeliverySnapshotRecord
         {

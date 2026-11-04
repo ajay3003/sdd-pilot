@@ -45,7 +45,8 @@ public sealed class DeliverySnapshotStore(DeliveryReportingDbContext db, TimePro
         var rows = await (from s in db.Snapshots.AsNoTracking()
                           join src in db.ReportSources.AsNoTracking() on s.ReportSourceId equals src.Id
                           where s.ProjectId == projectId
-                          orderby s.EffectiveAt descending, s.ImportedAt descending
+                          orderby s.EffectiveAt descending, s.ImportedAt descending, s.Id
+                          // same effective date and import instant: the id breaks the tie (stable order, never list order)
                           select new { s, src }).ToListAsync(ct);
         var ids = rows.Select(r => r.s.Id).ToList();
         var reportCounts = await db.WeeklyReports.AsNoTracking()

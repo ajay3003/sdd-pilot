@@ -139,6 +139,24 @@ public static class WeeklyReportBuilder
     /// The comparison preview shown before generation: inventories, deltas, direction and coverage. Fewer features/tasks in the current snapshot
     /// is a possible scope reduction, rollback or reversed pair — it needs explicit confirmation, it is never reversed automatically.
     /// </summary>
+    /// <summary>
+    /// Same effective date: source order cannot be confirmed from the dates. Azure DevOps commit times (recorded at import) can clarify it; otherwise only
+    /// BirkNext's import order is known, and that is said as import order — never as a newer source revision.
+    /// </summary>
+    public static string SameEffectiveDateWarning(DeliveryReportSnapshotRef baseline, DeliveryReportSnapshotRef current)
+    {
+        var text = "Same effective date. Source revision order cannot be confirmed from the effective dates.";
+        if (baseline.AzureDevOps is { } b && current.AzureDevOps is { } c && string.Equals(b.Repository, c.Repository, StringComparison.OrdinalIgnoreCase) && b.CommitAt != c.CommitAt)
+            return text + (c.CommitAt > b.CommitAt
+                ? $" Azure DevOps commit times show the current snapshot's commit ({c.ShortCommit}) is later than the baseline's ({b.ShortCommit})."
+                : $" Azure DevOps commit times show the current snapshot's commit ({c.ShortCommit}) is earlier than the baseline's ({b.ShortCommit}): check the direction.");
+        if (current.ImportedAt != baseline.ImportedAt)
+            return text + (current.ImportedAt > baseline.ImportedAt
+                ? " The current snapshot was imported later in BirkNext; import order is not proof of a newer source revision."
+                : " The current snapshot was imported earlier in BirkNext than the baseline; import order is not proof of source order.");
+        return text;
+    }
+
     public static DeliveryComparisonPreview Preview(DeliverySnapshotContent baseline, DeliverySnapshotContent current, TimeZoneInfo zone)
     {
         var baselineLocal = TimeZoneInfo.ConvertTime(baseline.Ref.EffectiveAt, zone);
@@ -157,8 +175,9 @@ public static class WeeklyReportBuilder
         if (reduced)
             warnings.Insert(0, $"Current snapshot contains fewer {(cInv.Features < bInv.Features && cInv.Tasks < bInv.Tasks ? "features and tasks" : cInv.Features < bInv.Features ? "features" : "tasks")} than Baseline. "
                 + "This may be a legitimate scope reduction, a rollback, or a reversed pair. Verify that snapshot direction is correct.");
-        if (state == DeliveryDirectionState.SameEffectiveDate)
-            warnings.Add("Both snapshots have the same effective date: their order cannot be confirmed from the dates.");
+        // Same effective date matters whatever else the direction says (a same-day pair can also be a reduced inventory).
+        if (bDate == cDate && state != DeliveryDirectionState.BaselineLater)
+            warnings.Add(SameEffectiveDateWarning(baseline.Ref, current.Ref));
         var bKeys = baseline.Features.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
         var cKeys = current.Features.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
         var (coverage, text) = PeriodCoverage(kind, bDate, cDate, weekStart);
