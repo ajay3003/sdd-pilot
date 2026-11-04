@@ -23,7 +23,8 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
     IApplicationMessagingStore? messaging = null, BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null,
     SourceAnalysis.IReviewSourceEvidenceProvider? source = null, AzureEnvironment.IAzureEnvironmentEvidenceProvider? azure = null,
     IntegrationJourneys.IIntegrationJourneyService? journeys = null, SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null,
-    IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null, IIntegrationReviewEvidenceSources? evidence = null) : IIntegrationReviewService
+    IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null, IIntegrationReviewEvidenceSources? evidence = null,
+    CanonicalInterpretation.CanonicalAliasSource? canonicalAliases = null) : IIntegrationReviewService
 {
     /// <summary>The one evidence composition readiness and run share: catalog + Integration Topology + Connected Systems. Reviewable discovered
     /// integrations join the catalog for this evaluation only; nothing is written to the Integration Catalog.</summary>
@@ -38,6 +39,14 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
 
     private IReadOnlyList<IntegrationAlias> Aliases => [.. (packs ?? []).SelectMany(pack => pack.Aliases)];
 
+    /// <summary>Pack aliases plus the project's shared canonical aliases (explicit or reviewer-confirmed; proposals never apply). One alias
+    /// registry for Topology and IQR: IQR keeps no alias logic of its own.</summary>
+    private async Task<IReadOnlyList<IntegrationAlias>> AliasesAsync(string environmentId, CancellationToken ct) =>
+        canonicalAliases is null ? Aliases
+        : [.. Aliases, .. (await canonicalAliases.AliasesAsync(environmentId, ct)).Select(a => new IntegrationAlias(a.Canonical, a.Alias,
+            a.State == BirkNext.Interpretation.AliasState.Confirmed ? IntegrationAliasProvenance.Confirmed : IntegrationAliasProvenance.SourceDiscovered,
+            $"Canonical alias ({a.State})"))];
+
     /// <summary>The catalog seen by a scoped review: only the selected integration and the platform it uses. Unrelated transports contribute no
     /// review area, limitation or reason.</summary>
     internal static IntegrationCatalog Scope(IntegrationCatalog catalog, string? integrationId) =>
@@ -50,6 +59,7 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
     {
         if (source is null || !source.SourceAnalysisEnabled || bindings is null) return ([], []);
         var bound = await bindings.ListAsync(environmentId, ct);
+        var aliases = await AliasesAsync(environmentId, ct);
         var snapshots = new List<IqrSourceSnapshot>();
         var scopes = new List<IntegrationSourceEvidenceScope>();
         foreach (var integration in integrations)
@@ -65,7 +75,7 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
                     Summary = $"The bound snapshot {binding.ArchiveName} is no longer stored in Source Analysis; nothing is substituted." });
                 continue;
             }
-            var (scoped, scope) = SourceEvidence.IntegrationSourceCorrelation.Correlate(integration, snapshot with { IntegrationId = integration.Id }, Aliases);
+            var (scoped, scope) = SourceEvidence.IntegrationSourceCorrelation.Correlate(integration, snapshot with { IntegrationId = integration.Id }, aliases);
             snapshots.Add(scoped);
             scopes.Add(scope);
         }
@@ -167,9 +177,10 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
         request = request with { EnvironmentType = environmentType ?? request.EnvironmentType };
         var result = await engine.RunAsync(configured, request, new IntegrationContractSet(await contracts.LoadAsync(request.EnvironmentId, ct)), previousContracts,
             messaging is null ? null : await messaging.GetAsync(request.EnvironmentId, ct), ct, await FactsAsync(request.EnvironmentId, ct));
+        var aliases = await AliasesAsync(request.EnvironmentId, ct);
         // Integration-specific evidence: each selected snapshot correlated with the integration it was chosen for.
         var correlated = selected.Select(snapshot => configured.Integrations.FirstOrDefault(item => item.Id == snapshot.IntegrationId) is { } owner
-            ? SourceEvidence.IntegrationSourceCorrelation.Correlate(owner, snapshot, Aliases) : (snapshot, new IntegrationSourceEvidenceScope(snapshot.IntegrationId))).ToList();
+            ? SourceEvidence.IntegrationSourceCorrelation.Correlate(owner, snapshot, aliases) : (snapshot, new IntegrationSourceEvidenceScope(snapshot.IntegrationId))).ToList();
         result = SourceEvidence.IqrSourceReview.Augment(result, [.. correlated.Select(item => item.Item1)]) with
         {
             ScopeIntegrationId = request.IntegrationId, SourceScopes = [.. correlated.Select(item => item.Item2)],

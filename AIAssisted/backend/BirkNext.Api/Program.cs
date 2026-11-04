@@ -114,6 +114,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // AppDbContext, so reports are built from Delivery Reporting snapshots only.
 builder.Services.AddDbContext<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>(options =>
     BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext.Configure(options, databaseConnectionString));
+// Canonical interpretation: its own context and schema (canonical_interpretation) on the same database; reads Source Analysis / Delivery
+// snapshots through narrow readers and never writes to another domain's tables.
+builder.Services.AddDbContext<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>(options =>
+    BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanonicalSourceReader, BirkNext.Api.Services.CanonicalInterpretation.IqrCanonicalSourceReader>();
+builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanonicalWorkItemReader, BirkNext.Api.Services.CanonicalInterpretation.DeliveryCanonicalWorkItemReader>();
+builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationService>();
+builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationDataReset>();
+builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalAliasSource>();
 builder.Services.AddSingleton<BirkNext.Api.Services.DeliveryReporting.DeliveryImportStagingStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliverySnapshotStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingImportService>();
@@ -613,6 +622,7 @@ builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.Integrat
 // integration catalog, Altinn metadata, explicit OpenAPI discovery and supplied runtime observations. Rebuilt on every read; nothing stored.
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProfile, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerTopologyProfile>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.ProfileTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.CanonicalAliasTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.TargetEnvironmentTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.SourceArchitectureTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.AltinnTesting.AltinnTopologyProvider>();
@@ -834,6 +844,7 @@ try
         await DatabaseMigrationLock.MigrateAsync(db);
         // Skipped with the main context when a test host swaps it for a non-relational provider (no database to migrate).
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>());
+        await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>());
     }
     // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
     await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();

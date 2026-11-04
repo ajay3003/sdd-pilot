@@ -133,6 +133,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Diagnostic, reachability and review caches",
         "Project Import archives staged for commit (memory and staging directory)",
         "Delivery Management: reporting projects, delivery snapshots, comparisons and saved Delivery Reports (report history)",
+        "Canonical interpretation: canonical entities, aliases, relations, interpretation snapshots and the shared review decisions made on them",
     ];
 
     public static readonly IReadOnlyList<string> Preserved =
@@ -202,6 +203,12 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 using var scope = services.CreateScope();
                 if (scope.ServiceProvider.GetService<BirkNext.Api.Services.DeliveryReporting.DeliveryReportingDataReset>() is { } delivery) await delivery.ResetAsync(ct);
             }, domains, "Delivery Management");
+            // Canonical interpretation keeps its own schema too; it is derived from Source Analysis plus review decisions, so it goes with them.
+            await Step(warnings, "Canonical interpretation data", async () =>
+            {
+                using var scope = services.CreateScope();
+                if (scope.ServiceProvider.GetService<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationDataReset>() is { } canonical) await canonical.ResetAsync(ct);
+            }, domains, "Canonical interpretation");
 
             logger.LogWarning("Local data reset {Epoch} completed: {Deleted} database rows, {Warnings} warning(s)", epoch, deleted, warnings.Count);
             return new()
