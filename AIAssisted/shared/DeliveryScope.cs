@@ -40,6 +40,32 @@ public sealed partial record DeliverySourceIdentity(string Id, string Name, stri
     private static partial Regex CopySuffix();
 }
 
+/// <summary>Work type: Non-technical (functional and quality value) or Technical (migrations, refactoring, infrastructure, translation,
+/// pipelines, developer tooling); Delivery Overview defaults to Non-technical.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryWorkType { All, NonTechnical, Technical }
+
+/// <summary>The second-level filter: work type, then (for non-technical work) one quality category. Classification is the shared
+/// <see cref="FunctionalQualityClassifier.ClassifyFeature"/> plus canonical technical change intents — never a Delivery-only rule.</summary>
+public sealed record DeliveryWorkFilter(DeliveryWorkType WorkType = DeliveryWorkType.All, QualityCategory? Quality = null)
+{
+    [JsonIgnore] public bool IsActive => WorkType != DeliveryWorkType.All || Quality is not null;
+
+    public bool Includes(QualityCategory category) =>
+        (WorkType switch
+        {
+            DeliveryWorkType.NonTechnical => category != QualityCategory.Technical,
+            DeliveryWorkType.Technical => category == QualityCategory.Technical,
+            _ => true,
+        }) && (Quality is null || Quality == category);
+}
+
+/// <summary>One feature's work classification and why ("fq.technical.change-intent" = member of a technical change intent).</summary>
+public sealed record DeliveryFeatureWork(string FeatureKey, QualityCategory Category, string Rule);
+
+/// <summary>Work type distribution of the features selected by Source + Functional scope (before the work filter): "21 of 38 features".</summary>
+public sealed record DeliveryWorkSummary(int Total, int NonTechnical, int Technical, Dictionary<QualityCategory, int> ByCategory, int Shown);
+
 public sealed record DeliveryScopeSourceOption(string Id, string Name, string Provenance, int CurrentFeatures, int BaselineFeatures);
 
 public sealed record DeliveryFunctionalScopeOption(string Id, string Name, FunctionalScopeKind Kind, string Detail, int CurrentFeatures, int BaselineFeatures,
@@ -63,8 +89,17 @@ public sealed record DeliveryReportScope
     public List<string> BaselineFeatureKeys { get; init; } = [];
     public bool SourceInBaseline { get; init; } = true;
     public bool ScopeInBaseline { get; init; } = true;
+    /// <summary>Work type / quality category the report covers (null = all work).</summary>
+    public DeliveryWorkType? WorkType { get; init; }
+    public QualityCategory? Quality { get; init; }
+    public string? ClassificationRuleSet { get; init; }
 
-    [JsonIgnore] public string Label => string.Join(" · ", new[] { SourceName, FunctionalScopeName }.Where(x => !string.IsNullOrEmpty(x)));
+    [JsonIgnore] public string Label => string.Join(" · ", new[]
+    {
+        SourceName, FunctionalScopeName,
+        WorkType switch { DeliveryWorkType.NonTechnical => "Non-technical", DeliveryWorkType.Technical => "Technical", _ => null },
+        Quality is { } q ? FunctionalQualityClassifier.Label(q) : null,
+    }.Where(x => !string.IsNullOrEmpty(x)));
 }
 
 /// <summary>The scoped Delivery view: options with scoped counts, the applied selection and its notices, and the scoped projection.</summary>
@@ -86,6 +121,10 @@ public sealed record DeliveryScopeView
     public DeliverySnapshotDetail? Snapshot { get; init; }
     public string? CanonicalScope { get; init; }
     public string? InterpretationNote { get; init; }
+    public DeliveryWorkFilter Work { get; init; } = new();
+    public DeliveryWorkSummary? WorkSummary { get; init; }
+    /// <summary>Work classification of every feature selected by Source + Functional scope.</summary>
+    public List<DeliveryFeatureWork> Classifications { get; init; } = [];
 }
 
 /// <summary>

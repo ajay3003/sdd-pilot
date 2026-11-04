@@ -222,5 +222,46 @@ public sealed class DeliveryScopeTests
             "the scoped projection uses the report builder's rule for every metric, so an unscoped projection changes nothing");
     }
 
+    // ---- Work type: shared feature classification + canonical technical change intents ----
+
+    [Fact]
+    public void FeatureClassification_IsShared_TechnicalWorkFirst()
+    {
+        FunctionalQualityClassifier.ClassifyFeature("Translate Frontend to English (ADR-029)").Category.Should().Be(QualityCategory.Technical);
+        FunctionalQualityClassifier.ClassifyFeature("Developer Mode Settings Panel").Category.Should().Be(QualityCategory.Technical, "developer tooling");
+        FunctionalQualityClassifier.ClassifyFeature("Children in Placements per Period").Category.Should().Be(QualityCategory.Functional);
+        FunctionalQualityClassifier.ClassifyFeature("Access Administration Panel (Tilgangsadministrasjon)").Category.Should().Be(QualityCategory.Security);
+        FunctionalQualityClassifier.ClassifyFeature("English labels for the dashboard").Category.Should().Be(QualityCategory.Functional, "English wording is not translation work");
+        FunctionalQualityClassifier.ClassifyFeature("Case overview", ["Retry delivery when the queue is down", "Messages are not lost when the service restarts"]).Should()
+            .Be((QualityCategory.Reliability, "fq.feature.stories-majority"));
+    }
+
+    [Fact]
+    public async Task NonTechnical_HidesTechnicalWork_IncludingAConfirmedChangeIntentMember_AndEveryNumberFollows()
+    {
+        var report = Report();
+        var (service, db, result) = await ScopedAsync(report);
+        var canonical = new CanonicalInterpretationService(db, new NoSources(), TimeProvider.System);
+        // "Translate the Tjeneste module to English" has no technical wording rule of its own: it becomes technical by joining ADR-029 (reviewed).
+        FunctionalQualityClassifier.ClassifyFeature("Translate the Tjeneste module to English").Category.Should().Be(QualityCategory.Functional);
+        var tjeneste = result.Relations.Single(r => r.RuleId == CorrelationRules.DecisionRule && r.SourceKey.EndsWith(TjenesteKey, StringComparison.Ordinal)).Key;
+        await canonical.DecideAsync("proj", new(ReviewTargetKind.Relation, tjeneste, ReviewDecisionOutcome.Confirmed, "tester"), null, default);
+
+        var view = await service.ForReportAsync(report.ProjectId, report, new(), [], default, new(DeliveryWorkType.NonTechnical));
+        view.Classifications.Single(c => c.FeatureKey == TjenesteKey).Should().Match<DeliveryFeatureWork>(c => c.Category == QualityCategory.Technical && c.Rule == DeliveryScopeService.TechnicalIntentRule);
+        view.Report!.Stories.Select(s => s.FeatureKey).Should().BeEquivalentTo([PlacementsKey, PolishKey, LabelsKey], "translation and decision-record work is technical");
+        Metric(view.Report, "inventory-features").Should().Be(3);
+        view.WorkSummary!.Should().Match<DeliveryWorkSummary>(w => w.Total == 9 && w.Technical == 6 && w.NonTechnical == 3 && w.Shown == 3);
+        view.Scope!.WorkType.Should().Be(DeliveryWorkType.NonTechnical);
+        view.Scope.Label.Should().Be("Non-technical");
+
+        var technical = await service.ForReportAsync(report.ProjectId, report, new(), [], default, new(DeliveryWorkType.Technical));
+        technical.Report!.Stories.Should().HaveCount(6);
+        var functional = await service.ForReportAsync(report.ProjectId, report, new(), [], default, new(DeliveryWorkType.NonTechnical, QualityCategory.Functional));
+        functional.Report!.Stories.Select(s => s.FeatureKey).Should().BeEquivalentTo([PlacementsKey, PolishKey, LabelsKey]);
+        var all = await service.ForReportAsync(report.ProjectId, report, new(), [], default);
+        all.Scope.Should().BeNull("All work, no scope = the frozen report unchanged");
+    }
+
     private static int Metric(WeeklyDeliveryReport report, string key) => report.Metrics.Single(m => m.Key == key).Value;
 }

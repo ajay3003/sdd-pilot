@@ -93,6 +93,20 @@
                             }
                             @if (_scope is { } sc && ScopeOptions.All(o => o.Id != sc)) { <option value="@sc">Unavailable scope</option> }
                         </select></label>
+                    <label class="do-field"><span>Work type <span class="dd-info" tabindex="0" title="@WorkHelp" aria-label="@WorkHelp">ⓘ</span></span>
+                        <select data-testid="do-work" value="@_work" @onchange="OnWorkChanged">
+                            <option value="@nameof(DeliveryWorkType.NonTechnical)">Non-technical</option>
+                            <option value="@nameof(DeliveryWorkType.Technical)">Technical</option>
+                            <option value="@nameof(DeliveryWorkType.All)">All work</option>
+                        </select></label>
+                    @if (_work != nameof(DeliveryWorkType.Technical))
+                    {
+                        <label class="do-field"><span>Quality category</span>
+                            <select data-testid="do-quality" value="@(_quality ?? "")" @onchange="OnQualityChanged">
+                                <option value="">All categories</option>
+                                @foreach (var q in FunctionalQualityClassifier.NonTechnicalCategories) { <option value="@q">@FunctionalQualityClassifier.Label(q)@QualityCount(q)</option> }
+                            </select></label>
+                    }
                     @if (Modules.Count > 1 || _module.Length > 0)
                     {
                         <label class="do-field"><span>Module</span>
@@ -114,7 +128,18 @@
                         </select></label>
                     <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" @bind:after="WriteUrl" placeholder="Feature or module" /></label>
                 </div>
-                <p class="do-muted do-filter-note">Source, Functional scope and Module recalculate the whole overview; State, Attention and Search narrow the feature list.</p>
+                <p class="do-muted do-filter-note">Source, Functional scope, Work type, Quality category and Module recalculate the whole overview; State, Attention and Search narrow the feature list.</p>
+                @if (_scopeView?.WorkSummary is { } ws)
+                {
+                    <p class="do-showing" role="status" data-testid="do-showing">
+                        <strong>Showing: @WorkLabel delivery · @ws.Shown of @ws.Total features</strong>
+                        @if (_work != nameof(DeliveryWorkType.Technical) && ws.ByCategory.Where(c => c.Key != QualityCategory.Technical).OrderByDescending(c => c.Value).ToList() is { Count: > 0 } cats)
+                        {
+                            <span class="do-muted" data-testid="do-categories"> · @string.Join(" · ", cats.Select(c => $"{FunctionalQualityClassifier.Label(c.Key)} {c.Value}"))</span>
+                        }
+                        @if (_work == nameof(DeliveryWorkType.NonTechnical) && ws.Technical > 0) { <span class="do-muted"> · @ws.Technical technical feature@(ws.Technical == 1 ? "" : "s") hidden</span> }
+                    </p>
+                }
                 @if (AnyFilter)
                 {
                     <p class="do-chips" data-testid="do-chips">
@@ -138,7 +163,7 @@
                 @if (_scopeView?.InterpretationNote is { } interpretationNote) { <p class="do-muted" data-testid="do-interpretation-note">@interpretationNote</p> }
             </section>
 
-            @if (Scoped && view.Items.Count == 0)
+            @if ((Scoped || Work.IsActive) && view.Items.Count == 0)
             {
                 <section class="do-card do-empty-scope" data-testid="do-empty-scope" role="status">
                     <h3 class="dd-card-h">No Delivery features match this Source + Functional scope.</h3>
@@ -146,6 +171,10 @@
                         @if (_scope is not null) { <button type="button" class="do-clear" data-testid="do-clear-scope" @onclick="ClearScope">Clear functional scope</button> }
                         @if (_source is not null) { <button type="button" class="do-clear" data-testid="do-clear-source" @onclick="ClearSource">Clear source</button> }
                         @if (_module.Length > 0) { <button type="button" class="do-clear" @onclick="ClearModule">Clear module</button> }
+                        @if (_work == nameof(DeliveryWorkType.NonTechnical) && _scopeView?.WorkSummary is { Technical: > 0 } hidden)
+                        {
+                            <button type="button" class="do-clear" data-testid="do-show-all-work" @onclick="ShowAllWork">Show all work (@hidden.Technical technical)</button>
+                        }
                     </p>
                 </section>
             }
@@ -294,6 +323,9 @@
     [SupplyParameterFromQuery(Name = "state")] public string? StateQuery { get; set; }
     [SupplyParameterFromQuery(Name = "attention")] public string? AttentionQuery { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? SearchQuery { get; set; }
+    /// <summary>Work type: absent = Non-technical (the overview's default: functional and quality value), "All", "Technical".</summary>
+    [SupplyParameterFromQuery(Name = "work")] public string? WorkQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "quality")] public string? QualityQuery { get; set; }
 
     private bool _loaded, _loadingProject;
     private string? _error, _scopeError;
@@ -305,12 +337,22 @@
     private DeliveryScopeView? _scopeView;
     private WeeklyDeliveryReport? _scopedReport;
     private DeliverySnapshotDetail? _scopedSnapshot;
-    private (string? Source, string? Scope)? _loadedFilter;
-    private string? _source, _scope;
+    private (string? Source, string? Scope, string Work, string? Quality)? _loadedFilter;
+    private string? _source, _scope, _quality;
+    private string _work = nameof(DeliveryWorkType.NonTechnical);
     private string _status = AllFilter, _module = "", _search = "", _attention = AllFilter;
 
-    private bool Scoped => _source is not null || _scope is not null || _module.Length > 0;
-    private bool AnyFilter => Scoped || _status != AllFilter || _attention != AllFilter || _search.Length > 0;
+    /// <summary>A selection other than the default view (all sources and scopes, Non-technical delivery).</summary>
+    private bool Scoped => _source is not null || _scope is not null || _module.Length > 0 || _quality is not null || _work != nameof(DeliveryWorkType.NonTechnical);
+    private bool AnyFilter => _source is not null || _scope is not null || _module.Length > 0 || _quality is not null || _work != nameof(DeliveryWorkType.NonTechnical)
+        || _status != AllFilter || _attention != AllFilter || _search.Length > 0;
+    private DeliveryWorkFilter Work => new(Enum.TryParse<DeliveryWorkType>(_work, out var w) ? w : DeliveryWorkType.NonTechnical,
+        _work != nameof(DeliveryWorkType.Technical) && Enum.TryParse<QualityCategory>(_quality, out var q) ? q : null);
+    private const string WorkHelp = "Non-technical = functional and quality value (functional, security, privacy, performance, reliability, data quality, compliance). " +
+        "Technical = migrations, refactoring, infrastructure, translation, pipelines, developer tooling. Same classification as Functional Quality Scope.";
+    private string WorkLabel => _work switch { nameof(DeliveryWorkType.Technical) => "Technical", nameof(DeliveryWorkType.All) => "All", _ => "Non-technical" }
+        + (Work.Quality is { } q ? $" · {FunctionalQualityClassifier.Label(q)}" : "");
+    private string QualityCount(QualityCategory q) => _scopeView?.WorkSummary?.ByCategory.GetValueOrDefault(q) is int n and > 0 ? $" ({n})" : "";
     private IReadOnlyList<DeliveryScopeSourceOption> SourceOptions => _scopeView?.Sources ?? [];
     private IReadOnlyList<DeliveryFunctionalScopeOption> ScopeOptions => _scopeView?.Scopes ?? [];
 
@@ -328,10 +370,12 @@
         _status = Blank(StateQuery) ?? AllFilter;
         _attention = Blank(AttentionQuery) ?? AllFilter;
         _search = SearchQuery ?? "";
+        _work = Enum.TryParse<DeliveryWorkType>(WorkQuery, true, out var w) ? w.ToString() : nameof(DeliveryWorkType.NonTechnical);
+        _quality = Blank(QualityQuery);
         var module = ModuleQuery ?? "";
         var requested = Guid.TryParse(ProjectQuery, out var p) && _projects.Any(x => x.Id == p) ? p : _projects.FirstOrDefault()?.Id;
         if (requested != _projectId) { _projectId = requested; _module = module; await LoadAsync(); }
-        else if (_loadedFilter != (_source, _scope)) { _module = module; await LoadScopeAsync(); }
+        else if (_loadedFilter != (_source, _scope, _work, _quality)) { _module = module; await LoadScopeAsync(); }
         else if (module != _module) { _module = module; ApplyModule(); }
     }
 
@@ -358,9 +402,9 @@
     private async Task LoadScopeAsync()
     {
         _scopeError = null;
-        _loadedFilter = (_source, _scope);
+        _loadedFilter = (_source, _scope, _work, _quality);
         if (_projectId is not { } id || _reportId is null && _snapshotId is null) { _scopedReport = null; _scopedSnapshot = null; ApplyModule(); return; }
-        var view = await Api.ScopeAsync(id, _reportId, _reportId is null ? _snapshotId : null, new CanonicalScopeFilter(_source, _scope));
+        var view = await Api.ScopeAsync(id, _reportId, _reportId is null ? _snapshotId : null, new CanonicalScopeFilter(_source, _scope), default, Work);
         _scopeView = view;
         if (view is not null && (view.Report is not null || view.Snapshot is not null))
         {
@@ -371,7 +415,7 @@
         {
             _scopedReport = _reportId is { } reportId && await Api.ReportAsync(id, reportId) is { } report && report.ProjectId == id ? report : null;
             _scopedSnapshot = _scopedReport is null && _snapshotId is { } snapshotId ? await Api.SnapshotAsync(id, snapshotId) : null;
-            if (_source is not null || _scope is not null) _scopeError = "Source and Functional scope could not be read; the whole project is shown.";
+            if (_source is not null || _scope is not null || Work.IsActive) _scopeError = "Source, Functional scope and Work type could not be applied; the whole project is shown.";
         }
         ApplyModule();
     }
@@ -455,6 +499,8 @@
         Add("source", keep ? source ?? _source : source);
         Add("scope", keep ? scope ?? _scope : scope);
         Add("module", keep ? module ?? _module : module);
+        if (keep && _work != nameof(DeliveryWorkType.NonTechnical)) Add("work", _work);
+        if (keep && _quality is not null && _work != nameof(DeliveryWorkType.Technical)) Add("quality", _quality);
         var st = keep ? state ?? _status : state;
         if (st != AllFilter) Add("state", st);
         var at = keep ? attention ?? _attention : attention;
@@ -470,12 +516,16 @@
     private void OnScopeChanged(ChangeEventArgs e) => Go(string.IsNullOrEmpty(e.Value?.ToString()) ? UrlWithout("scope") : Url(scope: e.Value!.ToString()));
     private void OnModuleChanged(ChangeEventArgs e) => Go(string.IsNullOrEmpty(e.Value?.ToString()) ? UrlWithout("module") : Url(module: e.Value!.ToString()));
     private void OnStateChanged(ChangeEventArgs e) => Go(Url(state: e.Value?.ToString() ?? AllFilter));
+    private void OnWorkChanged(ChangeEventArgs e) { (_work, _quality) = (e.Value?.ToString() ?? nameof(DeliveryWorkType.NonTechnical), e.Value?.ToString() == nameof(DeliveryWorkType.Technical) ? null : _quality); Go(Url()); }
+    private void ShowAllWork() { (_work, _quality) = (nameof(DeliveryWorkType.All), null); Go(Url()); }
+    private void OnQualityChanged(ChangeEventArgs e) { _quality = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString(); Go(Url()); }
     private void OnAttentionChanged(ChangeEventArgs e) => Go(Url(attention: e.Value?.ToString() ?? AllFilter));
     private void WriteUrl() => Go(Url());
 
     private void ClearSource() => Go(UrlWithout("source"));
     private void ClearScope() => Go(UrlWithout("scope"));
     private void ClearModule() => Go(UrlWithout("module"));
+    /// <summary>Back to the default view: all sources and scopes, Non-technical work (the overview's default), no list filters.</summary>
     private void ClearFilters() { _search = ""; Go(Url(keep: false)); }
 
     /// <summary>The current URL without one scope dimension (the others stay).</summary>

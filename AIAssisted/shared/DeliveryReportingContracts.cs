@@ -282,6 +282,9 @@ public sealed record GenerateWeeklyReportRequest(Guid ProjectId, Guid BaselineSn
     /// <summary>Optional Source (stable source id) and Functional scope (stable scope id) the report covers; both null = the whole comparison.</summary>
     public string? SourceId { get; init; }
     public string? FunctionalScopeId { get; init; }
+    /// <summary>Optional work type / quality category the report covers (shared feature classification).</summary>
+    public DeliveryWorkType? WorkType { get; init; }
+    public QualityCategory? Quality { get; init; }
 }
 
 /// <summary>Full-period: the baseline covers the reporting week. Partial-period: part of it. Same-day: both snapshots on one day — a change report,

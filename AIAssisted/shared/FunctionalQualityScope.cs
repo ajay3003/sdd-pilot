@@ -79,7 +79,36 @@ public sealed record ScopeSnapshotView(Guid Id, Guid? ScopeId, string ScopeName,
 /// </summary>
 public static partial class FunctionalQualityClassifier
 {
-    public const string RuleSetVersion = "functional-quality/1";
+    /// <remarks>functional-quality/2: feature-level work type (<see cref="ClassifyFeature"/>) shared by Delivery, Functional Quality Scope,
+    /// Test Coverage and Traceability; developer tooling is technical work.</remarks>
+    public const string RuleSetVersion = "functional-quality/2";
+
+    /// <summary>The non-technical quality categories (second level under Work type = Non-technical).</summary>
+    public static readonly QualityCategory[] NonTechnicalCategories =
+    [
+        QualityCategory.Functional, QualityCategory.Security, QualityCategory.Privacy, QualityCategory.Performance, QualityCategory.Reliability,
+        QualityCategory.DataQuality, QualityCategory.Compliance, QualityCategory.Availability,
+    ];
+
+    /// <summary>
+    /// One feature's work type and primary quality category, from its title and its user stories: a technical title (migration, refactoring,
+    /// infrastructure, pipelines, decision-record work such as translation, developer tooling) makes the feature Technical; otherwise the title's
+    /// quality wording, else the quality category most of its stories state (more than half), else Functional. Same rules as <see cref="Classify"/>.
+    /// A consumer with canonical evidence may additionally mark a feature Technical when it belongs to a technical change intent.
+    /// </summary>
+    public static (QualityCategory Category, string Rule) ClassifyFeature(string title, IEnumerable<string>? storyTitles = null)
+    {
+        if (TechnicalRe().IsMatch(title)) return (QualityCategory.Technical, "fq.technical.feature");
+        var (category, rule) = Classify(title);
+        if (category is not (QualityCategory.Functional or QualityCategory.Unclassified)) return (category, rule);
+        var stories = (storyTitles ?? []).Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => Classify(t).Category).ToList();
+        if (stories.Count > 0 && stories.Where(c => c is not (QualityCategory.Functional or QualityCategory.Unclassified))
+                .GroupBy(c => c).OrderByDescending(g => g.Count()).FirstOrDefault() is { } top && top.Count() * 2 > stories.Count)
+            return (top.Key, "fq.feature.stories-majority");
+        return (QualityCategory.Functional, "fq.functional.behaviour");
+    }
+
+    public static bool IsTechnical(QualityCategory category) => category == QualityCategory.Technical;
 
     private static readonly (QualityCategory Category, string Rule, Regex Pattern)[] Rules =
     [
@@ -116,7 +145,7 @@ public static partial class FunctionalQualityClassifier
         QualityCategory.DataQuality, QualityCategory.Compliance, QualityCategory.Availability, QualityCategory.Unclassified,
     ];
 
-    [GeneratedRegex(@"(?i)\b(migrat\w*|migrer\w*|refactor\w*|refaktor\w*|upgrade\w*|oppgrader\w*|rename (?:namespaces?|projects?)|ADR-\d+|terraform|pipeline\w*|ci/cd|framework|mediatr|wolverine|shouldly|fluentassertions|nuget|translate (?:the )?source|oversett\w*|source[- ]code translation|kildekode)\b")]
+    [GeneratedRegex(@"(?i)\b(migrat\w*|migrer\w*|refactor\w*|refaktor\w*|upgrade\w*|oppgrader\w*|rename (?:namespaces?|projects?)|ADR-\d+|terraform|pipeline\w*|ci/cd|framework|mediatr|wolverine\w*|shouldly|testcontainers|fluentassertions|nuget|translate (?:the )?source|oversett\w*|source[- ]code translation|kildekode|developer mode|devmode|developer tool\w*|utviklermodus)\b")]
     private static partial Regex TechnicalRe();
 
     [GeneratedRegex(@"(?i)\b(personvern|privacy|gdpr|kode\s?[67]|code\s?[67]|skjerm\w*|fortrolig\w*|sensitive personal|protected identit\w*|diskresjon\w*|sperret adresse)\b")]

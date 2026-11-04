@@ -86,12 +86,15 @@ public sealed class DeliveryReportingPageTests : BunitContext
         }
         public Task<string?> DeleteReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default) => Task.FromResult<string?>(null);
         /// <summary>The server's Source + Functional scope answer (null = endpoint not available).</summary>
-        public Func<BirkNext.Interpretation.CanonicalScopeFilter, DeliveryScopeView?>? Scope { get; set; }
+        public Func<BirkNext.Interpretation.CanonicalScopeFilter, DeliveryWorkFilter, DeliveryScopeView?>? Scope { get; set; }
         public List<BirkNext.Interpretation.CanonicalScopeFilter> ScopeRequests { get; } = [];
-        public Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default)
+        public List<DeliveryWorkFilter> WorkRequests { get; } = [];
+        public Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default,
+            DeliveryWorkFilter? work = null)
         {
             ScopeRequests.Add(filter);
-            return Task.FromResult(Scope?.Invoke(filter));
+            WorkRequests.Add(work ?? new());
+            return Task.FromResult(Scope?.Invoke(filter, work ?? new()));
         }
     }
 
@@ -298,7 +301,7 @@ public sealed class DeliveryReportingPageTests : BunitContext
     public void A_scoped_report_is_generated_with_exact_scope_ids_and_its_frozen_scope_is_shown()
     {
         const string adr = "capability:decision:adr-029";
-        _api.Scope = _ => new DeliveryScopeView
+        _api.Scope = (_, _) => new DeliveryScopeView
         {
             Sources = [new("package:m2lb", "m2lb", "Imported from m2lb.zip", 2, 0), new("package:m2lb-mon", "m2lb-mon", "Imported from m2lb-mon.zip", 0, 2)],
             Scopes = [new(adr, "ADR-029: Translate English", BirkNext.Interpretation.FunctionalScopeKind.ChangeIntent, "Change intent from ADR-029", 1, 0, 0)],

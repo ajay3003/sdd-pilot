@@ -17,27 +17,34 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
 
     private sealed record Side(DeliverySourceIdentity Source, IReadOnlyList<(string Module, string FeatureKey, string Title)> Features);
 
+    public const string TechnicalIntentRule = "fq.technical.change-intent";
+
     /// <summary>A frozen report: current side = its current features; baseline side = the baseline's features (retained and removed).</summary>
-    public async Task<DeliveryScopeView> ForReportAsync(Guid projectId, WeeklyDeliveryReport report, CanonicalScopeFilter filter, IReadOnlyList<Guid> projectSnapshots, CancellationToken ct)
+    public async Task<DeliveryScopeView> ForReportAsync(Guid projectId, WeeklyDeliveryReport report, CanonicalScopeFilter filter, IReadOnlyList<Guid> projectSnapshots, CancellationToken ct,
+        DeliveryWorkFilter? work = null)
     {
         var current = new Side(DeliverySourceIdentity.Of(report.Current), [.. report.Stories.Where(s => !s.RemovedFeature).Select(s => (s.Module, s.FeatureKey, s.Title))]);
         var baseline = new Side(DeliverySourceIdentity.Of(report.Baseline), [.. report.Stories.Where(s => !s.NewFeature).Select(s => (s.Module, s.FeatureKey, s.Title))]);
-        var view = await ResolveAsync(projectId, current, baseline, filter, [report.Current.SnapshotId, report.Baseline.SnapshotId, .. projectSnapshots], ct);
+        var stories = report.Stories.GroupBy(s => s.FeatureKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)[.. g.SelectMany(s => s.Hierarchy?.Stories ?? []).Select(x => x.Title)], StringComparer.Ordinal);
+        var view = await ResolveAsync(projectId, current, baseline, filter, [report.Current.SnapshotId, report.Baseline.SnapshotId, .. projectSnapshots], ct, work ?? new(), stories);
         if (view.Scope is null) return view with { Report = report };
         return view with { Report = DeliveryReportScoping.Project(report, view.Scope.CurrentFeatureKeys.ToHashSet(StringComparer.Ordinal), view.Scope.BaselineFeatureKeys.ToHashSet(StringComparer.Ordinal), view.Scope) };
     }
 
     /// <summary>A snapshot without a report: one side only (no baseline, so nothing is said about it).</summary>
-    public async Task<DeliveryScopeView> ForSnapshotAsync(Guid projectId, DeliverySnapshotDetail detail, CanonicalScopeFilter filter, IReadOnlyList<Guid> projectSnapshots, CancellationToken ct)
+    public async Task<DeliveryScopeView> ForSnapshotAsync(Guid projectId, DeliverySnapshotDetail detail, CanonicalScopeFilter filter, IReadOnlyList<Guid> projectSnapshots, CancellationToken ct,
+        DeliveryWorkFilter? work = null)
     {
         var current = new Side(DeliverySourceIdentity.Of(detail.Summary), [.. detail.Features.Select(f => (f.Module, f.Key, f.Title))]);
-        var view = await ResolveAsync(projectId, current, null, filter, [detail.Summary.Id, .. projectSnapshots], ct);
+        var view = await ResolveAsync(projectId, current, null, filter, [detail.Summary.Id, .. projectSnapshots], ct, work ?? new(), null);
         if (view.Scope is null) return view with { Snapshot = detail };
         var keys = view.Scope.CurrentFeatureKeys.ToHashSet(StringComparer.Ordinal);
         return view with { Snapshot = detail with { Features = [.. detail.Features.Where(f => keys.Contains(f.Key))] } };
     }
 
-    private async Task<DeliveryScopeView> ResolveAsync(Guid projectId, Side current, Side? baseline, CanonicalScopeFilter filter, IReadOnlyList<Guid> snapshotOrder, CancellationToken ct)
+    private async Task<DeliveryScopeView> ResolveAsync(Guid projectId, Side current, Side? baseline, CanonicalScopeFilter filter, IReadOnlyList<Guid> snapshotOrder, CancellationToken ct,
+        DeliveryWorkFilter work, IReadOnlyDictionary<string, IReadOnlyList<string>>? storyTitles)
     {
         // Every feature that can be in a scope: the current side and the baseline side (a removed feature only exists in the baseline).
         var all = current.Features.Concat(baseline?.Features ?? []).DistinctBy(f => f.FeatureKey).ToList();
@@ -92,7 +99,14 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
         var sourceIds = new[] { current.Source }.Concat(baseline is null ? [] : [baseline.Source]).DistinctBy(s => s.Id).ToList();
         if (filter.SourceId is not null && sourceIds.All(s => s.Id != filter.SourceId)) invalid.Add(SourceUnavailable);
 
-        bool InScope(string key) => selectedScope.Option is null ? filter.FunctionalScopeId is null : selectedScope.Members.ContainsKey(key);
+        // Work type: the shared feature classification, plus canonical evidence — every member of a change intent most of whose members are
+        // technical work is technical work too ("Translate the Tjeneste module to English" joins ADR-029 by review, not by its wording).
+        var classes = all.ToDictionary(f => f.FeatureKey, f => FunctionalQualityClassifier.ClassifyFeature(f.Title, storyTitles?.GetValueOrDefault(f.FeatureKey)), StringComparer.Ordinal);
+        foreach (var intent in scopes.Where(s => s.Option.Kind == FunctionalScopeKind.ChangeIntent))
+            if (intent.Members.Keys.Count(k => classes.TryGetValue(k, out var c) && c.Category == QualityCategory.Technical) * 2 > intent.Members.Count)
+                foreach (var key in intent.Members.Keys.Where(classes.ContainsKey)) classes[key] = (QualityCategory.Technical, TechnicalIntentRule);
+        bool SourceScope(string key) => selectedScope.Option is null ? filter.FunctionalScopeId is null : selectedScope.Members.ContainsKey(key);
+        bool InScope(string key) => SourceScope(key) && work.Includes(classes[key].Category);
         IEnumerable<string> SideKeys(Side? side, string? sourceId, Func<string, bool> scopeTest) =>
             side is null || sourceId is not null && side.Source.Id != sourceId ? [] : side.Features.Select(f => f.FeatureKey).Where(scopeTest);
 
@@ -104,8 +118,16 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
             BaselineFeatures = SideKeys(baseline, filter.SourceId, s.Members.ContainsKey).Count(),
         }).OrderBy(o => o.Kind).ThenBy(o => o.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
-        var view = new DeliveryScopeView { Filter = filter, Sources = sources, Scopes = options, InvalidFilters = invalid, CanonicalScope = canonicalScope, InterpretationNote = note };
-        if (!filter.IsScoped) return view;
+        List<string> selected = invalid.Count > 0 ? [] : [.. SideKeys(current, filter.SourceId, SourceScope)];
+        var byCategory = selected.GroupBy(k => classes[k].Category).ToDictionary(g => g.Key, g => g.Count());
+        var workSummary = new DeliveryWorkSummary(selected.Count, selected.Count(k => classes[k].Category != QualityCategory.Technical),
+            selected.Count(k => classes[k].Category == QualityCategory.Technical), byCategory, selected.Count(k => work.Includes(classes[k].Category)));
+        var view = new DeliveryScopeView
+        {
+            Filter = filter, Sources = sources, Scopes = options, InvalidFilters = invalid, CanonicalScope = canonicalScope, InterpretationNote = note,
+            Work = work, WorkSummary = workSummary, Classifications = [.. selected.Select(k => new DeliveryFeatureWork(k, classes[k].Category, classes[k].Rule))],
+        };
+        if (!filter.IsScoped && !work.IsActive) return view;
 
         var applied = invalid.Count == 0;
         var currentKeys = applied ? SideKeys(current, filter.SourceId, InScope).ToList() : [];
@@ -133,6 +155,8 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
             SourceId = filter.SourceId, SourceName = source?.Name, FunctionalScopeId = filter.FunctionalScopeId, FunctionalScopeName = selectedScope.Option?.Name,
             FunctionalScopeKind = selectedScope.Option?.Kind, CanonicalScope = canonicalScope, RuleSetVersion = canonicalScope is null ? null : CorrelationRules.RuleSetVersion,
             CurrentFeatureKeys = currentKeys, BaselineFeatureKeys = baselineKeys, SourceInBaseline = sourceInBaseline, ScopeInBaseline = scopeInBaseline,
+            WorkType = work.WorkType == DeliveryWorkType.All ? null : work.WorkType, Quality = work.Quality,
+            ClassificationRuleSet = work.IsActive ? FunctionalQualityClassifier.RuleSetVersion : null,
         };
         return view with
         {

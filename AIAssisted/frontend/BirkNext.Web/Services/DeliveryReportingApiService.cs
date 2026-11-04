@@ -30,7 +30,8 @@ public interface IDeliveryReportingApiService
     Task<string?> DeleteReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default);
     /// <summary>Source + Functional scope over a report (or a snapshot without a report): options, notices and the scoped projection. Null when
     /// the scope cannot be read (the page then shows the unscoped view and says so).</summary>
-    Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default) =>
+    Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default,
+        DeliveryWorkFilter? work = null) =>
         Task.FromResult<DeliveryScopeView?>(null);
 }
 
@@ -159,13 +160,16 @@ public sealed class DeliveryReportingApiService(HttpClient http) : IDeliveryRepo
         { return (null, BackendRequestClassifier.FromException(DeliveryReportingText.Title, e, $"GET {Base}/projects/{{projectId}}/comparison-preview", ct).UserMessage); }
     }
 
-    public async Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default)
+    public async Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default,
+        DeliveryWorkFilter? work = null)
     {
         var query = new List<string>();
         if (reportId is { } r) query.Add($"report={r}");
         if (snapshotId is { } sn) query.Add($"snapshot={sn}");
         if (filter.SourceId is { } source) query.Add($"source={Uri.EscapeDataString(source)}");
         if (filter.FunctionalScopeId is { } scope) query.Add($"scope={Uri.EscapeDataString(scope)}");
+        if (work is { WorkType: not DeliveryWorkType.All } w) query.Add($"work={w.WorkType}");
+        if (work?.Quality is { } quality) query.Add($"quality={quality}");
         try { return await http.GetFromJsonAsync<DeliveryScopeView>($"{Base}/projects/{projectId}/scope?{string.Join('&', query)}", Json, ct); }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { return null; }
     }

@@ -58,10 +58,13 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         Metrics = [new("new-features", "New features", 2), new("tasks-completed", "Tasks completed this period", 0), new("inventory-features", "Features", 4) { Group = DeliveryMetricGroups.Inventory }],
     };
 
-    /// <summary>The server's answer: membership by id (translation features implement the ADR-029 change intent), projected with the shared rule.</summary>
-    private DeliveryScopeView Server(CanonicalScopeFilter f)
+    /// <summary>The server's answer: membership by id (translation features implement the ADR-029 change intent), work type from the shared
+    /// feature classifier, projected with the shared rule.</summary>
+    private DeliveryScopeView Server(CanonicalScopeFilter f, DeliveryWorkFilter work)
     {
         var report = _api.Report;
+        var classes = report.Stories.ToDictionary(s => s.FeatureKey, s => FunctionalQualityClassifier.ClassifyFeature(s.Title).Category);
+        var selected = report.Stories.Select(x => x.FeatureKey).Where(k => f.SourceId is null || f.SourceId == Language).Where(k => f.FunctionalScopeId is null || Translation.Contains(k)).ToList();
         var view = new DeliveryScopeView
         {
             Filter = f,
@@ -69,17 +72,23 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
             Scopes = [new(Adr, "ADR-029: Translate English", FunctionalScopeKind.ChangeIntent, "Change intent from ADR-029", 2, 0, 1)],
             Candidates = f.FunctionalScopeId == Adr ? [new("tjenesteservice::005-translate-source-english", "Translate the Tjeneste module to English", "Implements → ADR-029 (candidate — awaiting review)")] : [],
         };
-        if (!f.IsScoped) return view with { Report = report };
+        view = view with
+        {
+            Work = work,
+            WorkSummary = new(selected.Count, selected.Count(k => classes[k] != QualityCategory.Technical), selected.Count(k => classes[k] == QualityCategory.Technical),
+                selected.GroupBy(k => classes[k]).ToDictionary(g => g.Key, g => g.Count()), selected.Count(k => work.Includes(classes[k]))),
+        };
+        if (!f.IsScoped && !work.IsActive) return view with { Report = report };
         var invalid = f.FunctionalScopeId is { } s && s != Adr ? new List<string> { "Selected functional scope is not available in this snapshot." } : [];
         var keys = invalid.Count > 0 ? [] : report.Stories.Select(x => x.FeatureKey)
-            .Where(k => f.SourceId is null || f.SourceId == Language).Where(k => f.FunctionalScopeId is null || Translation.Contains(k)).ToHashSet();
+            .Where(k => f.SourceId is null || f.SourceId == Language).Where(k => f.FunctionalScopeId is null || Translation.Contains(k)).Where(k => work.Includes(classes[k])).ToHashSet();
         var scope = new DeliveryReportScope { SourceId = f.SourceId, SourceName = f.SourceId == Language ? "M2LB-language" : null, FunctionalScopeId = f.FunctionalScopeId,
             FunctionalScopeName = invalid.Count == 0 && f.FunctionalScopeId is not null ? "ADR-029: Translate English" : null, SourceInBaseline = f.SourceId is null or Main,
             CurrentFeatureKeys = [.. keys] };
         return view with
         {
             InvalidFilters = invalid, Scope = scope, Report = DeliveryReportScoping.Project(report, keys, new HashSet<string>(), scope),
-            Members = [.. keys.Select(k => new DeliveryScopeMember(k, k, "Implements → ADR-029: Translate English (declared in the feature)"))],
+            Members = f.FunctionalScopeId is null ? [] : [.. keys.Select(k => new DeliveryScopeMember(k, k, "Implements → ADR-029: Translate English (declared in the feature)"))],
         };
     }
 
@@ -95,9 +104,9 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         page.Find($"[data-testid=dd-kpi][data-key={key}] .dd-kpi-value").TextContent;
 
     [Fact]
-    public void Default_IsTheWholeProject_WithEverySourceAndScopeOffered()
+    public void AllWork_IsTheWholeProject_WithEverySourceAndScopeOffered()
     {
-        var page = Open();
+        var page = Open("&work=All");
 
         page.FindAll("[data-testid=do-item]").Should().HaveCount(4);
         Kpi(page, "features").Should().Be("4");
@@ -106,14 +115,15 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         page.FindAll("[data-testid=do-source-filter] option").Select(o => o.GetAttribute("value")).Should().Equal("", Language, Main);
         page.FindAll("[data-testid=do-scope-filter] option").Select(o => o.GetAttribute("value")).Should().Equal("", Adr);
         page.Find("[data-testid=do-scope-filter] optgroup").GetAttribute("label").Should().Be("Change intent");
-        page.FindAll("[data-testid=do-chips]").Should().BeEmpty();
+        page.FindAll("[data-testid=do-chip-source]").Should().BeEmpty();
+        page.FindAll("[data-testid=do-chip-scope]").Should().BeEmpty();
         page.FindAll("[data-testid=do-why]").Should().BeEmpty();
     }
 
     [Fact]
     public void FunctionalScope_RecalculatesTheWholeOverview_AndExplainsEachFeature()
     {
-        var page = Open($"&scope={Uri.EscapeDataString(Adr)}");
+        var page = Open($"&work=All&scope={Uri.EscapeDataString(Adr)}");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
         _api.ScopeRequests[^1].FunctionalScopeId.Should().Be(Adr, "the scope id — never its label — is sent");
@@ -137,7 +147,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     [Fact]
     public void SourceAbsentFromTheBaseline_SaysChangeIsNotComparable_InsteadOfZeros()
     {
-        var page = Open($"&source={Uri.EscapeDataString(Language)}");
+        var page = Open($"&work=All&source={Uri.EscapeDataString(Language)}");
 
         page.WaitForAssertion(() => page.Find("[data-testid=dd-change-not-comparable]").TextContent.Should().Contain("M2LB-language is not present in the baseline"));
         page.FindAll("[data-testid=dd-change-features]").Should().BeEmpty();
@@ -148,7 +158,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     [Fact]
     public void Module_NarrowsTheScopedOverview_WithTheSameProjection()
     {
-        var page = Open($"&scope={Uri.EscapeDataString(Adr)}&module=Frontend");
+        var page = Open($"&work=All&scope={Uri.EscapeDataString(Adr)}&module=Frontend");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().ContainSingle());
         Kpi(page, "features").Should().Be("1");
@@ -159,7 +169,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     [Fact]
     public void UnknownScope_IsReportedExplicitly_WithClearActions_NeverSwitched()
     {
-        var page = Open("&scope=capability%3Adecision%3Aadr-999");
+        var page = Open("&work=All&scope=capability%3Adecision%3Aadr-999");
 
         page.WaitForAssertion(() => page.Find("[data-testid=do-invalid-filter]").TextContent.Should().Be("Selected functional scope is not available in this snapshot."));
         page.Find("[data-testid=do-empty-scope]").TextContent.Should().Contain("No Delivery features match this Source + Functional scope.");
@@ -172,9 +182,9 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     }
 
     [Fact]
-    public void Selection_IsKeptInTheUrlById_AndClearFiltersReturnsTheGlobalView()
+    public void Selection_IsKeptInTheUrlById_AndClearFiltersReturnsTheDefaultView()
     {
-        var page = Open();
+        var page = Open("&work=All");
 
         page.Find("[data-testid=do-scope-filter]").Change(Adr);
         Nav.Uri.Should().Contain($"scope={Uri.EscapeDataString(Adr)}");
@@ -184,17 +194,68 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
 
         page.Find("[data-testid=do-clear-filters]").Click();
         Nav.Uri.Should().EndWith($"delivery-overview?project={ProjectId}");
-        page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(4));
-        Kpi(page, "features").Should().Be("4");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2, "the default view is Non-technical delivery"));
+        Kpi(page, "features").Should().Be("2");
     }
 
     [Fact]
     public void WithoutTheScopeEndpoint_TheRequestedScopeIsSaidToBeUnapplied()
     {
         _api.Scope = null;
+        var page = Open($"&work=All&scope={Uri.EscapeDataString(Adr)}");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=do-scope-error]").TextContent.Should().Contain("could not be applied"));
+        page.FindAll("[data-testid=do-item]").Should().HaveCount(4);
+    }
+
+    // ---- Work type (shared feature classification): Non-technical by default ----
+
+    [Fact]
+    public void Default_IsNonTechnicalDelivery_AndEveryNumberFollowsIt()
+    {
+        var page = Open();
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
+        page.FindAll("[data-testid=do-item]").Select(i => i.TextContent).Should().NotContain(t => t.Contains("ADR-029"), "translation work is technical");
+        _api.WorkRequests[^1].WorkType.Should().Be(DeliveryWorkType.NonTechnical);
+        Kpi(page, "features").Should().Be("2");
+        page.Find("[data-testid=dd-checklist] svg").GetAttribute("aria-label").Should().Be("8 of 12 tasks checked, 4 open", "the checklist leaves out technical work");
+        page.Find("[data-testid=do-showing]").TextContent.Should().Contain("Showing: Non-technical delivery · 2 of 4 features").And.Contain("2 technical features hidden");
+        page.Find("[data-testid=do-work]").GetAttribute("value").Should().Be(nameof(DeliveryWorkType.NonTechnical));
+    }
+
+    [Fact]
+    public void Technical_ShowsOnlyTechnicalWork_AndHidesTheQualityLevel()
+    {
+        var page = Open("&work=Technical");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
+        page.FindAll("[data-testid=do-item]").Should().OnlyContain(i => i.TextContent.Contains("ADR-029"));
+        page.FindAll("[data-testid=do-quality]").Should().BeEmpty("quality categories are the second level of non-technical work");
+        Kpi(page, "features").Should().Be("2");
+    }
+
+    [Fact]
+    public void QualityCategory_IsTheSecondLevel_KeptInTheUrl()
+    {
+        var page = Open();
+
+        page.Find("[data-testid=do-quality]").Change(nameof(QualityCategory.Functional));
+        Nav.Uri.Should().Contain("quality=Functional").And.NotContain("work=", "Non-technical is the default and not written");
+        page.WaitForAssertion(() => _api.WorkRequests[^1].Quality.Should().Be(QualityCategory.Functional));
+        page.Find("[data-testid=do-work]").Change(nameof(DeliveryWorkType.Technical));
+        Nav.Uri.Should().Contain("work=Technical").And.NotContain("quality=", "a quality category never applies to technical work");
+    }
+
+    [Fact]
+    public void ATechnicalScope_UnderTheNonTechnicalDefault_IsEmpty_AndOffersAllWork_NeverSwitches()
+    {
         var page = Open($"&scope={Uri.EscapeDataString(Adr)}");
 
-        page.WaitForAssertion(() => page.Find("[data-testid=do-scope-error]").TextContent.Should().Contain("could not be read"));
-        page.FindAll("[data-testid=do-item]").Should().HaveCount(4);
+        page.WaitForAssertion(() => page.Find("[data-testid=do-empty-scope]"));
+        page.Find("[data-testid=do-show-all-work]").TextContent.Should().Contain("2 technical");
+        page.Find("[data-testid=do-show-all-work]").Click();
+        Nav.Uri.Should().Contain("work=All");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
     }
 }

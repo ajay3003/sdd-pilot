@@ -93,10 +93,11 @@ public sealed class DeliveryReportingController(DeliverySnapshotStore store, Del
     public async Task<IActionResult> Generate(GenerateWeeklyReportRequest request, [FromServices] DeliveryScopeService? scopes, CancellationToken ct)
     {
         var filter = new BirkNext.Interpretation.CanonicalScopeFilter(Blank(request.SourceId), Blank(request.FunctionalScopeId));
-        var outcome = await reports.GenerateAsync(request, ct, filter.IsScoped && scopes is not null ? async (report, token) =>
+        var work = new DeliveryWorkFilter(request.WorkType ?? DeliveryWorkType.All, request.Quality);
+        var outcome = await reports.GenerateAsync(request, ct, (filter.IsScoped || work.IsActive) && scopes is not null ? async (report, token) =>
         {
             // A scoped report freezes exactly the ids it was generated for; an id unknown in this comparison is refused, never substituted.
-            var view = await scopes.ForReportAsync(request.ProjectId, report, filter, await SnapshotIdsAsync(request.ProjectId, token), token);
+            var view = await scopes.ForReportAsync(request.ProjectId, report, filter, await SnapshotIdsAsync(request.ProjectId, token), token, work);
             return view.InvalidFilters.Count > 0 ? (null, string.Join(" ", view.InvalidFilters)) : (view.Report, null);
         } : null);
         return outcome.Report is null ? StatusCode(outcome.StatusCode, new { message = outcome.Error }) : Ok(outcome.Report);
@@ -108,14 +109,15 @@ public sealed class DeliveryReportingController(DeliverySnapshotStore store, Del
     /// </summary>
     [HttpGet("projects/{projectId:guid}/scope")]
     public async Task<IActionResult> Scope(Guid projectId, [FromServices] DeliveryScopeService scopes, [FromQuery] Guid? report, [FromQuery] Guid? snapshot,
-        [FromQuery] string? source, [FromQuery] string? scope, CancellationToken ct)
+        [FromQuery] string? source, [FromQuery] string? scope, CancellationToken ct, [FromQuery] DeliveryWorkType? work = null, [FromQuery] QualityCategory? quality = null)
     {
         var filter = new BirkNext.Interpretation.CanonicalScopeFilter(Blank(source), Blank(scope));
+        var workFilter = new DeliveryWorkFilter(work ?? DeliveryWorkType.All, quality);
         var order = await SnapshotIdsAsync(projectId, ct);
         if (report is { } reportId)
-            return await reports.GetAsync(projectId, reportId, ct) is { } frozen ? Ok(await scopes.ForReportAsync(projectId, frozen, filter, order, ct)) : NotFound();
+            return await reports.GetAsync(projectId, reportId, ct) is { } frozen ? Ok(await scopes.ForReportAsync(projectId, frozen, filter, order, ct, workFilter)) : NotFound();
         if (snapshot is { } snapshotId)
-            return await store.SnapshotAsync(projectId, snapshotId, ct) is { } detail ? Ok(await scopes.ForSnapshotAsync(projectId, detail, filter, order, ct)) : NotFound();
+            return await store.SnapshotAsync(projectId, snapshotId, ct) is { } detail ? Ok(await scopes.ForSnapshotAsync(projectId, detail, filter, order, ct, workFilter)) : NotFound();
         return BadRequest(new { message = "Choose a report or a snapshot." });
     }
 
