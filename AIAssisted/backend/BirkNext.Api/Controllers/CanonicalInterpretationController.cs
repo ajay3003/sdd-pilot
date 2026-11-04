@@ -37,6 +37,31 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     public Task<ActionResult<BirkNext.Governance.GateResult>> Governance(string scope, [FromQuery] BirkNext.Governance.GateAction action = BirkNext.Governance.GateAction.ReleaseReadiness,
         [FromQuery] string[]? module = null, CancellationToken ct = default) => Run(() => service.GovernanceAsync(scope, action, module, ct));
 
+    /// <summary>Release readiness (release/1) of the project or some of its modules, as of now (not stored).</summary>
+    [HttpGet("release-readiness")]
+    public Task<ActionResult<BirkNext.Governance.ReleaseReadinessAssessment>> ReleaseReadiness(string scope, [FromQuery] string[]? module = null, [FromQuery] string? name = null,
+        CancellationToken ct = default) => Run(() => service.AssessReleaseAsync(scope, module, name, ct));
+
+    /// <summary>Freezes the current assessment as an immutable report.</summary>
+    [HttpPost("release-readiness/reports")]
+    public Task<ActionResult<BirkNext.Governance.ReleaseReadinessReport>> FreezeRelease(string scope, [FromBody] BirkNext.Governance.FreezeReleaseReadinessRequest request,
+        CancellationToken ct) => Run(() => service.FreezeReleaseAsync(scope, request, ct));
+
+    [HttpGet("release-readiness/reports")]
+    public Task<ActionResult<IReadOnlyList<BirkNext.Governance.ReleaseReadinessReportSummary>>> ReleaseReports(string scope, [FromQuery] int take = 20, CancellationToken ct = default) =>
+        Run(() => service.ReleaseReportsAsync(scope, take, ct));
+
+    /// <summary>Exactly one frozen report (404 when it does not exist — never the latest instead).</summary>
+    [HttpGet("release-readiness/reports/{id:guid}")]
+    public Task<ActionResult<BirkNext.Governance.ReleaseReadinessReport>> ReleaseReport(string scope, Guid id, CancellationToken ct) =>
+        RunOrNotFound(() => service.ReleaseReportAsync(scope, id, ct));
+
+    /// <summary>Records a sign-off next to a frozen report; the report's evidence and decision never change.</summary>
+    [HttpPost("release-readiness/reports/{id:guid}/sign-off")]
+    public Task<ActionResult<BirkNext.Governance.ReleaseReadinessReport>> SignOffRelease(string scope, Guid id, [FromBody] BirkNext.Governance.ReleaseSignOffRequest request,
+        CancellationToken ct) =>
+        RunOrNotFound(() => service.SignOffReleaseAsync(scope, id, request, User.Identity?.IsAuthenticated == true ? User.Identity.Name : null, ct));
+
     [HttpGet("trace/features")]
     public Task<ActionResult<IReadOnlyList<TraceFeatureRow>>> TraceFeatures(string scope, [FromQuery] string? module, CancellationToken ct) =>
         Run(() => service.TraceFeaturesAsync(scope, module, ct));

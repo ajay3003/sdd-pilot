@@ -235,6 +235,7 @@ public static class DocumentationCatalog
             ("documentation-drift","Documentation Drift","/documentation-drift","documentation-drift","Document Review",null,null),
             ("impact-analysis","Impact Analysis","/impact-analysis","traceability","Analysis",null,null),
             ("correlation-review","Correlation Review","/correlation-review","traceability","Traceability",null,null),
+            ("release-readiness","Release Readiness","/release-readiness","traceability","Traceability",null,null),
             ("snapshots","Snapshots","/snapshots","traceability","Traceability",null,null),
             ("traceability","Traceability & Coverage","/traceability","traceability","Traceability",null,null),
             ("traceability/suggestions","Traceability Suggestions","/traceability/suggestions","traceability","Traceability",null,null),

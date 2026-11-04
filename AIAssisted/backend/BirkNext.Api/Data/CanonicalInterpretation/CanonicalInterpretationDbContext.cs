@@ -22,6 +22,8 @@ public sealed class CanonicalInterpretationDbContext(DbContextOptions<CanonicalI
     public DbSet<InterpretationSnapshotRecord> Snapshots => Set<InterpretationSnapshotRecord>();
     public DbSet<InterpretationSnapshotEntityRecord> SnapshotEntities => Set<InterpretationSnapshotEntityRecord>();
     public DbSet<InterpretationSnapshotRelationRecord> SnapshotRelations => Set<InterpretationSnapshotRelationRecord>();
+    public DbSet<ReleaseReadinessReportRecord> ReleaseReports => Set<ReleaseReadinessReportRecord>();
+    public DbSet<ReleaseSignOffRecord> ReleaseSignOffs => Set<ReleaseSignOffRecord>();
 
     public static void Configure(DbContextOptionsBuilder builder, string connectionString) =>
         builder.UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable(HistoryTable, Schema));
@@ -137,6 +139,37 @@ public sealed class CanonicalInterpretationDbContext(DbContextOptions<CanonicalI
             e.Property(x => x.SupersededById).HasColumnName("superseded_by_id");
             e.HasIndex(x => new { x.Scope, x.TargetKey });
             e.HasIndex(x => new { x.Scope, x.Sequence }).IsUnique();
+        });
+
+        modelBuilder.Entity<ReleaseReadinessReportRecord>(e =>
+        {
+            e.ToTable("release_readiness_report");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Scope).HasColumnName("scope").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(300).IsRequired();
+            e.Property(x => x.FrozenAt).HasColumnName("frozen_at");
+            e.Property(x => x.Decision).HasColumnName("decision").HasMaxLength(40);
+            e.Property(x => x.ModulesJson).HasColumnName("modules").HasColumnType("jsonb");
+            e.Property(x => x.InterpretationId).HasColumnName("interpretation_id");
+            e.Property(x => x.RuleSetVersion).HasColumnName("rule_set_version").HasMaxLength(40);
+            e.Property(x => x.PolicySetVersion).HasColumnName("policy_set_version").HasMaxLength(40);
+            e.Property(x => x.AssessmentJson).HasColumnName("assessment").HasColumnType("jsonb");
+            e.HasIndex(x => new { x.Scope, x.FrozenAt });
+        });
+
+        modelBuilder.Entity<ReleaseSignOffRecord>(e =>
+        {
+            e.ToTable("release_sign_off");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ReportId).HasColumnName("report_id");
+            e.Property(x => x.Scope).HasColumnName("scope").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Outcome).HasColumnName("outcome").HasMaxLength(40);
+            e.Property(x => x.By).HasColumnName("signed_by").HasMaxLength(200);
+            e.Property(x => x.At).HasColumnName("signed_at");
+            e.Property(x => x.Note).HasColumnName("note").HasMaxLength(2000);
+            e.HasIndex(x => new { x.Scope, x.ReportId, x.At });
         });
 
         modelBuilder.Entity<InterpretationSnapshotRecord>(e =>

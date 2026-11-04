@@ -92,6 +92,7 @@
     <Compile Include="../../shared/CanonicalScope.cs" Link="Models/CanonicalScope.cs" />
     <Compile Include="../../shared/CanonicalImpact.cs" Link="Models/CanonicalImpact.cs" />
     <Compile Include="../../shared/Governance.cs" Link="Models/Governance.cs" />
+    <Compile Include="../../shared/ReleaseReadiness.cs" Link="Models/ReleaseReadiness.cs" />
     <Compile Include="../../shared/DeliveryScope.cs" Link="Models/DeliveryScope.cs" />
     <Compile Include="../../shared/CanonicalCorrelation.cs" Link="Models/CanonicalCorrelation.cs" />
     <Compile Include="../../shared/CorrelationRules.cs" Link="Models/CorrelationRules.cs" />

@@ -129,6 +129,7 @@ builder.Services.AddDbContext<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistr
 builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.SourceAnalysisSnapshotSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.DeliverySnapshotSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.InterpretationSnapshotSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.ReleaseReadinessSnapshotSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.ReviewRunSnapshotSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.ISnapshotSource, BirkNext.Api.Services.Snapshots.ExecutionSnapshotSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Snapshots.SnapshotRegistryService>();

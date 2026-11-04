@@ -146,6 +146,29 @@ public sealed class InterpretationSnapshotSource(CanonicalInterpretationDbContex
     }
 }
 
+/// <summary>Frozen release readiness reports: generated from exactly the interpretation they were assessed on; frozen and never changed.</summary>
+public sealed class ReleaseReadinessSnapshotSource(CanonicalInterpretationDbContext db) : ISnapshotSource
+{
+    public string Name => "Release readiness";
+
+    public async Task<IReadOnlyList<Item>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct)
+    {
+        var rows = await db.ReleaseReports.AsNoTracking().Select(r => new { r.Id, r.Scope, r.Name, r.FrozenAt, r.Decision, r.InterpretationId, r.RuleSetVersion, r.PolicySetVersion })
+            .ToListAsync(ct);
+        var items = new List<Item>();
+        foreach (var r in rows.Where(r => !registered.Contains($"{SnapshotType.GeneratedReport}|{r.Id}")))
+        {
+            var me = new SnapshotReference(SnapshotType.GeneratedReport, r.Id.ToString(), $"Release readiness · {r.Name}");
+            IReadOnlyList<SnapshotLineageEdge> edges = r.InterpretationId is { } i
+                ? [new(me, SnapshotLineageKind.GeneratedReportFrom, new(SnapshotType.Interpretation, i.ToString()), Name)] : [];
+            items.Add((new SnapshotMetadata(SnapshotType.GeneratedReport, r.Id.ToString(), r.Scope, "release-readiness", me.Label!, r.FrozenAt, null, null,
+                $"{r.RuleSetVersion}, {r.PolicySetVersion}", $"canonical_interpretation.release_readiness_report:{r.Id}", null, SnapshotProcessingStatus.Completed,
+                SnapshotRetentionClass.FrozenReportEvidence, Frozen: true, SnapshotRegistryService.MetadataVersion), edges));
+        }
+        return items;
+    }
+}
+
 /// <summary>Review runs that record source snapshot ids in columns (Impact Analysis, Code Risk, Test Coverage) or in their result (IQR).</summary>
 public sealed class ReviewRunSnapshotSource(AppDbContext db) : ISnapshotSource
 {

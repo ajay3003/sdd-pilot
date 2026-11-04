@@ -40,6 +40,18 @@ public interface ICanonicalInterpretationApiService
     Task<(BirkNext.Governance.GateResult? Result, string? Error)> GovernanceAsync(string scope, BirkNext.Governance.GateAction action, IReadOnlyList<string>? modules = null,
         CancellationToken ct = default) =>
         Task.FromResult<(BirkNext.Governance.GateResult?, string?)>((null, "Governance is not available."));
+    /// <summary>Release readiness (release/1) as of now, for the project or some of its modules.</summary>
+    Task<(BirkNext.Governance.ReleaseReadinessAssessment? Assessment, string? Error)> ReleaseReadinessAsync(string scope, IReadOnlyList<string>? modules, string? name,
+        CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessAssessment?, string?)>((null, "Release readiness is not available."));
+    Task<(BirkNext.Governance.ReleaseReadinessReport? Report, string? Error)> FreezeReleaseAsync(string scope, BirkNext.Governance.FreezeReleaseReadinessRequest request,
+        CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessReport?, string?)>((null, "Release readiness is not available."));
+    Task<(IReadOnlyList<BirkNext.Governance.ReleaseReadinessReportSummary> Items, string? Error)> ReleaseReportsAsync(string scope, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<BirkNext.Governance.ReleaseReadinessReportSummary>, string?)>(([], null));
+    /// <summary>Exactly one frozen report; a missing report is an error, never the latest instead.</summary>
+    Task<(BirkNext.Governance.ReleaseReadinessReport? Report, string? Error)> ReleaseReportAsync(string scope, Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(BirkNext.Governance.ReleaseReadinessReport?, string?)>((null, "Release readiness is not available."));
+    Task<(BirkNext.Governance.ReleaseReadinessReport? Report, string? Error)> SignOffReleaseAsync(string scope, Guid id, BirkNext.Governance.ReleaseSignOffRequest request,
+        CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessReport?, string?)>((null, "Release readiness is not available."));
 }
 
 public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanonicalInterpretationApiService
@@ -72,6 +84,32 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
 
     public Task<(CanonicalImpactView?, string?)> ImpactAsync(string scope, string entityKey, CancellationToken ct = default) =>
         GetAsync<CanonicalImpactView>($"{Base(scope)}/impact?entity={Uri.EscapeDataString(entityKey)}", ct);
+
+    public Task<(BirkNext.Governance.ReleaseReadinessAssessment?, string?)> ReleaseReadinessAsync(string scope, IReadOnlyList<string>? modules, string? name,
+        CancellationToken ct = default) =>
+        GetAsync<BirkNext.Governance.ReleaseReadinessAssessment>($"{Base(scope)}/release-readiness{Query(modules, name)}", ct);
+
+    private static string Query(IReadOnlyList<string>? modules, string? name)
+    {
+        var parts = (modules ?? []).Select(m => $"module={Uri.EscapeDataString(m)}").ToList();
+        if (!string.IsNullOrWhiteSpace(name)) parts.Add($"name={Uri.EscapeDataString(name)}");
+        return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
+    }
+
+    public Task<(BirkNext.Governance.ReleaseReadinessReport?, string?)> FreezeReleaseAsync(string scope, BirkNext.Governance.FreezeReleaseReadinessRequest request,
+        CancellationToken ct = default) => PostAsync<BirkNext.Governance.ReleaseReadinessReport>($"{Base(scope)}/release-readiness/reports", request, ct);
+
+    public async Task<(IReadOnlyList<BirkNext.Governance.ReleaseReadinessReportSummary>, string?)> ReleaseReportsAsync(string scope, CancellationToken ct = default)
+    {
+        var (items, error) = await GetAsync<List<BirkNext.Governance.ReleaseReadinessReportSummary>>($"{Base(scope)}/release-readiness/reports?take=20", ct);
+        return (items ?? [], error);
+    }
+
+    public Task<(BirkNext.Governance.ReleaseReadinessReport?, string?)> ReleaseReportAsync(string scope, Guid id, CancellationToken ct = default) =>
+        GetAsync<BirkNext.Governance.ReleaseReadinessReport>($"{Base(scope)}/release-readiness/reports/{id}", ct);
+
+    public Task<(BirkNext.Governance.ReleaseReadinessReport?, string?)> SignOffReleaseAsync(string scope, Guid id, BirkNext.Governance.ReleaseSignOffRequest request,
+        CancellationToken ct = default) => PostAsync<BirkNext.Governance.ReleaseReadinessReport>($"{Base(scope)}/release-readiness/reports/{id}/sign-off", request, ct);
 
     public Task<(BirkNext.Governance.GateResult?, string?)> GovernanceAsync(string scope, BirkNext.Governance.GateAction action, IReadOnlyList<string>? modules = null,
         CancellationToken ct = default) =>

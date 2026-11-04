@@ -74,6 +74,33 @@ public sealed class CanonicalRelationRecord
 }
 
 /// <summary>An append-only human decision. A correction inserts a new row and links the old one through <see cref="SupersededById"/>.</summary>
+/// <summary>A frozen release readiness report: its scope references, versions and the computed assessment, immutable once written.</summary>
+public sealed class ReleaseReadinessReportRecord
+{
+    public Guid Id { get; set; }
+    public string Scope { get; set; } = "";
+    public string Name { get; set; } = "";
+    public DateTimeOffset FrozenAt { get; set; }
+    public string Decision { get; set; } = "";
+    public string ModulesJson { get; set; } = "[]";
+    public Guid? InterpretationId { get; set; }
+    public string RuleSetVersion { get; set; } = "";
+    public string PolicySetVersion { get; set; } = "";
+    public string AssessmentJson { get; set; } = "{}";
+}
+
+/// <summary>A sign-off on a frozen report (append-only; the report itself never changes).</summary>
+public sealed class ReleaseSignOffRecord
+{
+    public Guid Id { get; set; }
+    public Guid ReportId { get; set; }
+    public string Scope { get; set; } = "";
+    public string Outcome { get; set; } = "";
+    public string By { get; set; } = "";
+    public DateTimeOffset At { get; set; }
+    public string? Note { get; set; }
+}
+
 public sealed class ReviewDecisionRecord
 {
     public Guid Id { get; set; }

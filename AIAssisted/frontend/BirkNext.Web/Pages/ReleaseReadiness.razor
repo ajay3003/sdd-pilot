@@ -1,0 +1,259 @@
+@page "/release-readiness"
+@using BirkNext.Governance
+@using BirkNext.Interpretation
+@using BirkNext.Web.Components
+@inject ICanonicalInterpretationApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject NavigationManager Nav
+
+<PageTitle>Release Readiness</PageTitle>
+
+@* The test lead's release decision for a scope (release/1): one decision with reasons, separate dimensions, blockers and next actions. Live assessments
+   are recomputed; frozen reports are opened by id and never fall back to the latest. A sign-off is recorded next to a report and never changes it. *@
+<div class="rr" data-testid="release-readiness">
+    <header class="rr-head">
+        <h1>Release Readiness</h1>
+        <p class="rr-lead">Ready, Ready with limitations, Blocked or Not assessed for a release scope — from requirements, traceability, test design, governance and
+            open decisions, never from how many tasks are checked. Freeze a report to keep exactly what was known, then sign it off.</p>
+    </header>
+
+    @if (_initialising)
+    {
+        <p class="rr-muted" role="status">Loading the active project…</p>
+    }
+    else if (_scope is null)
+    {
+        <p class="rr-muted" data-testid="rr-no-scope">Select a project (Target Environment) first. Release readiness is always scoped to one project.</p>
+    }
+    else if (ReportId is not null)
+    {
+        <p><a href="release-readiness" data-testid="rr-back">← Current readiness</a></p>
+        @if (_reportError is not null) { <p class="rr-error" role="alert" data-testid="rr-report-error">@_reportError</p> }
+        else if (_report is null) { <p class="rr-muted" role="status">Loading the report…</p> }
+        else
+        {
+            <section class="rr-card" aria-labelledby="rr-report-h" data-testid="rr-report">
+                <h2 id="rr-report-h">@_report.Name</h2>
+                <p class="rr-muted" data-testid="rr-report-frozen">Frozen @_report.FrozenAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · scope @Scope(_report.Assessment.ScopeReference)
+                    · rules @_report.Assessment.RuleSetVersion, @_report.Assessment.PolicySetVersion
+                    @if (_report.Assessment.ScopeReference.InterpretationId is { } i) { <span> · interpretation @i.ToString("D")[..8]</span> }
+                    · this report never changes.</p>
+            </section>
+            @Assessment(_report.Assessment)
+            <section class="rr-card" aria-labelledby="rr-signoff-h" data-testid="rr-signoff">
+                <h2 id="rr-signoff-h">Sign-off</h2>
+                <p class="rr-muted">A sign-off records a person's decision about this report. It never changes the report's evidence or computed decision.</p>
+                @if (_report.SignOffs.Count > 0)
+                {
+                    <ul class="rr-list">
+                        @foreach (var s in _report.SignOffs)
+                        {
+                            <li data-testid="rr-signoff-entry"><strong>@OutcomeLabel(s.Outcome)</strong> by @s.By · @s.At.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(s.Note is null ? "" : $" — {s.Note}")</li>
+                        }
+                    </ul>
+                }
+                <div class="rr-form">
+                    <label>Decision
+                        <select @bind="_signOutcome" data-testid="rr-signoff-outcome">
+                            @foreach (var o in Enum.GetValues<SignOffOutcome>()) { <option value="@o">@OutcomeLabel(o)</option> }
+                        </select>
+                    </label>
+                    <label class="rr-grow">Note (required unless accepting a plain Ready report)
+                        <input class="form-control" @bind="_signNote" data-testid="rr-signoff-note" placeholder="Accepted risk, limitation or reason" />
+                    </label>
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SignOffAsync" data-testid="rr-signoff-submit">Record sign-off</button>
+                </div>
+                @if (_signError is not null) { <p class="rr-error" role="alert" data-testid="rr-signoff-error">@_signError</p> }
+            </section>
+        }
+    }
+    else
+    {
+        <section class="rr-card" aria-labelledby="rr-scope-h" data-testid="rr-scope">
+            <h2 id="rr-scope-h">Release scope</h2>
+            <p class="rr-muted">Project <strong>@_projectName</strong>. Choose modules for a release of part of the project; with none chosen, the whole project is assessed.
+                Findings of other modules never weigh on the chosen ones.</p>
+            @if (_modules.Count > 0)
+            {
+                <fieldset class="rr-modules" aria-label="Modules">
+                    @foreach (var m in _modules)
+                    {
+                        <label><input type="checkbox" checked="@_selected.Contains(m)" @onchange="e => ToggleAsync(m, (bool)e.Value!)" data-testid="rr-module" data-module="@m" /> @m</label>
+                    }
+                </fieldset>
+            }
+            <div class="rr-form">
+                <label class="rr-grow">Report name
+                    <input class="form-control" @bind="_name" @bind:event="oninput" data-testid="rr-name" placeholder="e.g. Skolenærvær 1.4 or Sprint 47" />
+                </label>
+                <button type="button" class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_name) || _assessment is null)" @onclick="FreezeAsync" data-testid="rr-freeze">Freeze report</button>
+            </div>
+            @if (_freezeError is not null) { <p class="rr-error" role="alert" data-testid="rr-freeze-error">@_freezeError</p> }
+        </section>
+        @if (_error is not null) { <p class="rr-error" role="alert" data-testid="rr-error">@_error</p> }
+        else if (_assessment is null) { <p class="rr-muted" role="status">Assessing…</p> }
+        else { @Assessment(_assessment) }
+
+        @if (_reports.Count > 0)
+        {
+            <section class="rr-card" aria-labelledby="rr-reports-h" data-testid="rr-reports">
+                <h2 id="rr-reports-h">Frozen reports</h2>
+                <ul class="rr-list">
+                    @foreach (var r in _reports)
+                    {
+                        <li data-testid="rr-report-row"><a href="@($"release-readiness?report={r.Id}")">@r.Name</a>
+                            <span class="rr-muted"> · @r.FrozenAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · @(r.Modules.Count == 0 ? "whole project" : string.Join(", ", r.Modules))</span>
+                            · <strong>@GovernancePolicies.DecisionLabel(r.Decision)</strong>@(r.LatestSignOff is { } o ? $" · signed off: {OutcomeLabel(o)}" : " · not signed off")</li>
+                    }
+                </ul>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "report")] public Guid? ReportId { get; set; }
+
+    private bool _initialising = true, _busy;
+    private string? _scope, _projectName, _error, _freezeError, _reportError, _signError, _name, _signNote;
+    private SignOffOutcome _signOutcome = SignOffOutcome.Accepted;
+    private List<string> _modules = [];
+    private readonly SortedSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private ReleaseReadinessAssessment? _assessment;
+    private ReleaseReadinessReport? _report;
+    private IReadOnlyList<ReleaseReadinessReportSummary> _reports = [];
+    private Guid? _loadedReport;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
+        _scope = CorrelationPresentation.Scope(profile?.Id);
+        _projectName = profile?.Name;
+        _initialising = false;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_scope is null) return;
+        if (ReportId is { } id)
+        {
+            if (_loadedReport == id) return;
+            (_loadedReport, _report, _reportError) = (id, null, null);
+            var (report, error) = await Api.ReleaseReportAsync(_scope, id);
+            _report = report;
+            _reportError = report is null ? error ?? "This report does not exist in this project." : null;
+            return;
+        }
+        _loadedReport = null;
+        await Task.WhenAll(AssessAsync(), LoadReportsAsync());
+    }
+
+    private async Task ToggleAsync(string module, bool on)
+    {
+        if (on) _selected.Add(module); else _selected.Remove(module);
+        await AssessAsync();
+    }
+
+    private async Task AssessAsync()
+    {
+        if (_scope is null) return;
+        (_assessment, _error) = (null, null);
+        (_assessment, _error) = await Api.ReleaseReadinessAsync(_scope, [.. _selected], _name);
+        if (_assessment is { AvailableModules.Count: > 0 } a) _modules = [.. a.AvailableModules];
+    }
+
+    private async Task LoadReportsAsync()
+    {
+        if (_scope is null) return;
+        _reports = (await Api.ReleaseReportsAsync(_scope)).Items;
+    }
+
+    private async Task FreezeAsync()
+    {
+        if (_scope is null || string.IsNullOrWhiteSpace(_name)) return;
+        (_busy, _freezeError) = (true, null);
+        var (report, error) = await Api.FreezeReleaseAsync(_scope, new(_name.Trim(), [.. _selected]));
+        _busy = false;
+        if (report is null) { _freezeError = error ?? "The report could not be frozen."; return; }
+        Nav.NavigateTo($"release-readiness?report={report.Id}");
+    }
+
+    private async Task SignOffAsync()
+    {
+        if (_scope is null || _report is null) return;
+        (_busy, _signError) = (true, null);
+        var (report, error) = await Api.SignOffReleaseAsync(_scope, _report.Id, new(_signOutcome, _signNote));
+        _busy = false;
+        if (report is null) { _signError = error ?? "The sign-off could not be recorded."; return; }
+        (_report, _signNote) = (report, null);
+    }
+
+    /// <summary>The page a dimension links to, by its own name.</summary>
+    private static string PageLabel(string href) => href.Split('?')[0] switch
+    {
+        "correlation-review" => "Correlation Review",
+        "traceability" => "Traceability",
+        "delivery-reporting" => "Functional Quality Scope",
+        "specification-explorer" => "Specification Explorer",
+        "api-quality-review" => "API Quality Review",
+        "integration-quality-review" => "Integration Quality Review",
+        "frontend-quality-review" => "Frontend Quality Review",
+        "performance-test-review" => "Performance Test Review",
+        "critical-e2e-regression" => "Critical E2E Regression",
+        var other => other,
+    };
+
+    private static string Scope(ReleaseScopeReference s) => s.Modules.Count == 0 ? "whole project" : string.Join(", ", s.Modules);
+
+    private static string OutcomeLabel(SignOffOutcome o) => o switch
+    {
+        SignOffOutcome.AcceptedWithRisk => "Accepted with risk",
+        _ => o.ToString(),
+    };
+
+    private static string Icon(GateDecision d) => d switch
+    {
+        GateDecision.Ready => "✓",
+        GateDecision.ReadyWithLimitations => "!",
+        GateDecision.PassedWithException => "✓!",
+        GateDecision.Blocked => "✕",
+        _ => "?",
+    };
+
+    private RenderFragment Assessment(ReleaseReadinessAssessment a) => __builder =>
+    {
+        <section class="rr-card rr-decision rr-@a.Decision.ToString().ToLowerInvariant()" aria-labelledby="rr-decision-h" data-testid="rr-decision" data-decision="@a.Decision">
+            <h2 id="rr-decision-h"><span class="rr-icon" aria-hidden="true">@Icon(a.Decision)</span> @GovernancePolicies.DecisionLabel(a.Decision)</h2>
+            <p data-testid="rr-reason">@a.Reason</p>
+            @if (a.Blockers.Count > 0)
+            {
+                <h3 class="rr-sub">Must happen before release</h3>
+                <ul class="rr-list" data-testid="rr-blockers">@foreach (var b in a.Blockers) { <li>@b</li> }</ul>
+            }
+            @if (a.NextActions.Count > 0)
+            {
+                <h3 class="rr-sub">Next actions</h3>
+                <ul class="rr-list" data-testid="rr-next">@foreach (var n in a.NextActions) { <li>@n</li> }</ul>
+            }
+        </section>
+        <div class="rr-dims">
+            @foreach (var d in a.Dimensions)
+            {
+                <article class="rr-dim" data-testid="rr-dimension" data-key="@d.Key" data-state="@d.State" data-applicability="@d.Applicability">
+                    <header class="rr-dim-head">
+                        <h3>@d.Title</h3>
+                        <span class="rr-badge">@ReleaseReadinessRules.ApplicabilityLabel(d.Applicability)</span>
+                    </header>
+                    <p class="rr-state"><span aria-hidden="true">@Icon(d.State)</span> @GovernancePolicies.DecisionLabel(d.State)</p>
+                    <p class="rr-summary">@d.Summary</p>
+                    @if (d.Evidence.Count > 0)
+                    {
+                        <details><summary>Evidence (@d.Evidence.Count)</summary><ul class="rr-list rr-small">@foreach (var e in d.Evidence) { <li>@e</li> }</ul></details>
+                    }
+                    @if (d.NextAction is not null) { <p class="rr-small"><strong>Next:</strong> @d.NextAction</p> }
+                    @if (d.Href is not null) { <a class="rr-small" href="@d.Href" data-testid="rr-dimension-link">Open @PageLabel(d.Href)</a> }
+                </article>
+            }
+        </div>
+    };
+}

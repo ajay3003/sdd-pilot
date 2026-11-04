@@ -478,6 +478,113 @@ namespace BirkNext.Api.Data.CanonicalInterpretation.Migrations
                     b.ToTable("interpretation_snapshot_relation", "canonical_interpretation");
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Data.CanonicalInterpretation.ReleaseReadinessReportRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AssessmentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("assessment");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("decision");
+
+                    b.Property<DateTimeOffset>("FrozenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("frozen_at");
+
+                    b.Property<Guid?>("InterpretationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("interpretation_id");
+
+                    b.Property<string>("ModulesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("modules");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("PolicySetVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("policy_set_version");
+
+                    b.Property<string>("RuleSetVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("rule_set_version");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("scope");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Scope", "FrozenAt");
+
+                    b.ToTable("release_readiness_report", "canonical_interpretation");
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.CanonicalInterpretation.ReleaseSignOffRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("signed_at");
+
+                    b.Property<string>("By")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("signed_by");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("outcome");
+
+                    b.Property<Guid>("ReportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("report_id");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("scope");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Scope", "ReportId", "At");
+
+                    b.ToTable("release_sign_off", "canonical_interpretation");
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.CanonicalInterpretation.ReviewDecisionRecord", b =>
                 {
                     b.Property<Guid>("Id")
