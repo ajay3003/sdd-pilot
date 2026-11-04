@@ -96,6 +96,27 @@ public sealed class SnapshotRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_registered_entry_whose_payload_is_gone_is_marked_unavailable_never_deleted_and_never_listed_for_selection()
+    {
+        var kept = SourceAnalysis("M2LB.zip", DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var gone = SourceAnalysis("shop.zip", DateTimeOffset.Parse("2026-11-03T10:00:00Z"));
+        var registry = Registry();
+        await registry.SyncAsync(true, default);
+        (await registry.SourceAnalysisSummariesAsync(50, default))!.Select(s => s.Id).Should().BeEquivalentTo([kept, gone]);
+
+        // The payload disappears outside the registry (e.g. a registry row written for a store it does not describe).
+        _app.IqrSourceSnapshots.Remove(_app.IqrSourceSnapshots.Single(r => r.Id == gone));
+        _app.SaveChanges();
+        var sync = await registry.SyncAsync(true, default);
+
+        sync.Problems.Should().ContainSingle(p => p.Contains("shop.zip") && p.Contains("marked unavailable"));
+        (await registry.SourceAnalysisSummariesAsync(50, default))!.Select(s => s.Id).Should().Equal([kept], "an entry without a payload is never offered for selection");
+        var metadata = (await registry.GetAsync(SnapshotType.SourceAnalysis, gone.ToString(), default))!;
+        metadata.PayloadAvailable.Should().BeFalse("the metadata and lineage stay; only availability changes");
+        (await registry.SyncAsync(true, default)).Problems.Should().BeEmpty("already reconciled entries are not reported again");
+    }
+
+    [Fact]
     public async Task Listing_is_metadata_only_paged_filtered_and_marks_latest_and_current_pointers()
     {
         var older = SourceAnalysis("M2LB.zip", DateTimeOffset.Parse("2026-11-01T09:00:00Z"));

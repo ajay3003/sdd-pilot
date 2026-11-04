@@ -118,7 +118,8 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         [FromServices] Services.Snapshots.SnapshotRegistryService? registry = null)
     {
         IReadOnlyList<IqrSourceSnapshotSummary>? fromRegistry = null;
-        try { if (registry is not null) fromRegistry = await registry.SourceAnalysisSummariesAsync(50, ct); }
+        // The registry describes the configured relational store only; a store swapped for another provider (test hosts) is listed directly.
+        try { if (registry is not null && store.IsRelational) fromRegistry = await registry.SourceAnalysisSummariesAsync(50, ct); }
         catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { fromRegistry = null; }
         if (fromRegistry is null) return Ok((await store.ListAsync(environmentId ?? "", ct)).Select(IqrSourceSnapshotSummary.From).ToList());
         var legacy = string.IsNullOrWhiteSpace(environmentId) ? [] : (await store.ListLegacyAsync(environmentId, ct)).Select(IqrSourceSnapshotSummary.From);

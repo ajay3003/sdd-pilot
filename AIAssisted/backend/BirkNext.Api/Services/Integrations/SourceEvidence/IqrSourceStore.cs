@@ -52,6 +52,10 @@ public sealed class SourceSnapshotPersistenceException(string reason, string? sq
 
 public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? logger = null)
 {
+    /// <summary>False when a test host swapped the store for a non-relational provider: then the shared Snapshot Registry (a relational schema in the
+    /// configured database) does not describe this store's payloads and must not be read or written for it.</summary>
+    public bool IsRelational => db.Database.IsRelational();
+
     /// <summary>The owner id of snapshots ingested by Source Analysis (the one source-upload entry point). Other owner ids are snapshots an
     /// earlier version uploaded per integration in Integration Quality Review: kept and readable, never offered for new review scopes.</summary>
     public const string SourceAnalysisOwner = "source-analysis";

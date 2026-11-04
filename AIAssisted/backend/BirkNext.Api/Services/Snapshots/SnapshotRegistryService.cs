@@ -15,6 +15,13 @@ public interface ISnapshotSource
     /// <summary>Snapshots not yet registered, and registered ones to refresh (still Running, or registered before their summary was stored),
     /// with the lineage edges their owner stored.</summary>
     Task<IReadOnlyList<(SnapshotMetadata Metadata, IReadOnlyList<SnapshotLineageEdge> Edges)>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct);
+
+    /// <summary>
+    /// The registry keys ("Type|Id") whose payloads this source currently holds, for the snapshot types it is authoritative for (ids only, never a
+    /// payload). Null when the source cannot enumerate them cheaply; then payload availability of its entries is left as registered.
+    /// </summary>
+    Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct) =>
+        Task.FromResult<(IReadOnlySet<string>, IReadOnlySet<string>)?>(null);
 }
 
 /// <summary>
@@ -62,6 +69,23 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
                     continue;
                 }
                 names.Add(source.Name);
+                // A registered entry whose payload its owner no longer holds is marked unavailable (never deleted: its metadata and lineage stay, and
+                // a frozen report that references it shows "historical evidence unavailable" instead of the latest snapshot).
+                try
+                {
+                    if (await source.InventoryAsync(ct) is { } inventory)
+                        foreach (var row in existing.Where(e => inventory.Types.Contains(e.Type) && e.PayloadAvailable && !inventory.Keys.Contains($"{e.Type}|{e.Id}")))
+                        {
+                            row.PayloadAvailable = false;
+                            row.UpdatedAt = now;
+                            updated++;
+                            problems.Add($"{source.Name}: {row.Label} ({row.Id}) is registered but its payload is no longer stored; marked unavailable.");
+                        }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger?.LogWarning(ex, "Snapshot registry: source {Source} inventory could not be read", source.Name);
+                }
                 foreach (var (m, lineage) in items)
                 {
                     var key = Key(m.Type, m.Id);

@@ -44,6 +44,14 @@ public sealed class SourceAnalysisSnapshotSource(AppDbContext db) : ISnapshotSou
         }
         return items;
     }
+
+    public async Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct)
+    {
+        const string owner = Integrations.SourceEvidence.IqrSourceStore.SourceAnalysisOwner;
+        var ids = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == owner).Select(r => r.Id).ToListAsync(ct);
+        return (new HashSet<string>(StringComparer.Ordinal) { nameof(SnapshotType.SourceAnalysis) },
+            ids.Select(id => $"{SnapshotType.SourceAnalysis}|{id}").ToHashSet(StringComparer.Ordinal));
+    }
 }
 
 /// <summary>Delivery snapshots, comparisons and frozen weekly reports, with the exact baseline/current ids each report recorded.</summary>
