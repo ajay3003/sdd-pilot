@@ -86,6 +86,7 @@
     {
         @Summary(r)
         @if (r.RelatedModules.Count > 0) { @Related(r) }
+        @Scenarios(r)
         @foreach (var limitation in r.Limitations) { <p class="fqs-limit" data-testid="fqs-limitation">@limitation</p> }
         @if (_editing && _custom is not null) { @Builder(r) }
         @Filters(r)
@@ -214,6 +215,36 @@
                     </li>
                 }
             </ul>
+        </details>
+    };
+
+    // ── Scenario candidates (scenarios/1): drafts for criteria no test automates; never run, never coverage ─────────────────
+
+    private RenderFragment Scenarios(ScopeResolution r) => __builder =>
+    {
+        var drafts = TestScenarioIntelligence.Drafts(r);
+        if (drafts.Count == 0) return;
+        var shown = drafts.Where(d => d.DuplicateOf is null).ToList();
+        <details class="fqs-card fqs-scenarios" data-testid="fqs-scenarios">
+            <summary>Scenario candidates (@shown.Count draft@(shown.Count == 1 ? "" : "s") · @shown.Count(d => d.Priority == ScenarioPriority.High) high priority)</summary>
+            <p class="fqs-muted fqs-small">Drafts for acceptance criteria with no automated test. @TestScenarioDraft.Status. Review, then write the test where your team keeps tests.</p>
+            @if (drafts.Count > shown.Count) { <p class="fqs-muted fqs-small" data-testid="fqs-scenario-duplicates">@(drafts.Count - shown.Count) duplicate criterion/criteria (same feature, same expected outcome) folded into the first.</p> }
+            <ol class="fqs-scenario-list">
+                @foreach (var d in shown.OrderBy(d => d.Priority).Take(100))
+                {
+                    <li data-testid="fqs-scenario" data-priority="@d.Priority">
+                        <strong>@d.Scenario</strong> <MetaBadge Kind="BadgeKind.Type" Text="@($"{d.Priority} priority")" /> <MetaBadge Kind="BadgeKind.Provenance" Text="Draft" />
+                        <div class="fqs-muted fqs-small">@d.Purpose @d.PriorityReason. @d.Coverage.</div>
+                        <dl class="fqs-gwt">
+                            @if (d.Given is not null) { <div><dt>Given</dt><dd>@d.Given</dd></div> }
+                            @if (d.When is not null) { <div><dt>When</dt><dd>@d.When</dd></div> }
+                            <div><dt>@(d.Given is null ? "Expected" : "Then")</dt><dd>@d.Then</dd></div>
+                        </dl>
+                        <div class="fqs-muted fqs-small" data-testid="fqs-scenario-source">Derived from @d.DerivedFrom</div>
+                    </li>
+                }
+            </ol>
+            @if (shown.Count > 100) { <p class="fqs-muted fqs-small">Showing the 100 highest-priority drafts; narrow the scope to see the rest.</p> }
         </details>
     };
 

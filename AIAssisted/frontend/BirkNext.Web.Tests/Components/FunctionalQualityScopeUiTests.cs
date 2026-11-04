@@ -193,4 +193,51 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
         api.Verify(a => a.AssessAsync(Project, It.Is<TestDesignAssessmentView>(v => v.ItemKey == Story.Key && v.Testability == TestabilityClassification.Manual
             && v.RequiredTestDataAssetIds.SequenceEqual(new[] { "td-1", "td-2" })), It.IsAny<CancellationToken>()), Times.Once());
     }
+
+    // ── Scenario candidates (scenarios/1) ────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Scenario_drafts_cover_only_criteria_without_automated_tests_with_explainable_priority()
+    {
+        var gwt = I("ac:SkoleService/001-rapport/AC-2", ScopeArtifactType.AcceptanceCriterion, "AC-2", "**Given** a valid report, **When** it is received, **Then** it is stored.", parent: Story.Key);
+        var duplicate = I("ac:SkoleService/001-rapport/AC-3", ScopeArtifactType.AcceptanceCriterion, "AC-3", "It is  STORED.", parent: Story.Key);
+        var privacy = I("ac:SkoleService/001-rapport/AC-4", ScopeArtifactType.AcceptanceCriterion, "AC-4", "Kode 6 is hidden", category: QualityCategory.Privacy, parent: Story.Key);
+        var automated = I("ac:SkoleService/001-rapport/AC-5", ScopeArtifactType.AcceptanceCriterion, "AC-5", "Automated", parent: Story.Key, coverage: ScopeCoverage.AutomatedCoverage);
+        var gone = I("ac:SkoleService/001-rapport/AC-6", ScopeArtifactType.AcceptanceCriterion, "AC-6", "Gone", parent: Story.Key, unavailable: true);
+
+        var drafts = TestScenarioIntelligence.Drafts(Resolution(new ScopeDefinition { Name = "S" }, Story, Criterion, gwt, duplicate, privacy, automated, gone));
+
+        drafts.Select(d => d.Key).Should().Equal(["draft:" + Criterion.Key, "draft:" + gwt.Key, "draft:" + duplicate.Key, "draft:" + privacy.Key],
+            "automated and unavailable criteria get no draft");
+        var g = drafts[1];
+        (g.Given, g.When, g.Then).Should().Be(("a valid report", "it is received", "it is stored."), "Given / When / Then only as the criterion states it");
+        (g.Priority, g.PriorityReason).Should().Be((ScenarioPriority.High, "P1 user story with no known coverage"));
+        g.DerivedFrom.Should().Be("SkoleService / 001-rapport / US1 / AC-2");
+        drafts[0].Given.Should().BeNull("no Given/When/Then is invented");
+        drafts[0].Priority.Should().Be(ScenarioPriority.Medium, "a candidate test may already cover it");
+        drafts[0].Coverage.Should().StartWith("Candidate coverage only");
+        drafts[2].DuplicateOf.Should().Be(g.Key, "same feature and same expected outcome");
+        drafts[3].PriorityReason.Should().Be("Privacy criterion with no known coverage");
+
+        var lowStory = Story with { Key = "story:x/US9", Priority = null };
+        var reliability = I("ac:x/AC-9", ScopeArtifactType.AcceptanceCriterion, "AC-9", "Retries", category: QualityCategory.Reliability, parent: lowStory.Key);
+        var plain = reliability with { Key = "ac:x/AC-10", Category = QualityCategory.Functional, Title = "A very long and complex criterion " + new string('x', 400) };
+        TestScenarioIntelligence.Priority(reliability, lowStory).Should().Be((ScenarioPriority.Medium, "Reliability criterion"));
+        TestScenarioIntelligence.Priority(plain, lowStory).Should().Be((ScenarioPriority.Low, "No story priority stated"), "length or complexity never raises priority");
+    }
+
+    [Fact]
+    public void The_panel_shows_scenario_candidates_as_drafts_with_their_source()
+    {
+        var gwt = I("ac:SkoleService/001-rapport/AC-2", ScopeArtifactType.AcceptanceCriterion, "AC-2", "Given a valid report, when it is received, then it is stored.", parent: Story.Key);
+        Api(Resolution(new ScopeDefinition { Name = "Skolenærvær", BuiltIn = true }, Story, Criterion, gwt, Privacy), new AvailableScope("module:SkoleService", "SkoleService", "Module", "1"));
+        var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project).Add(x => x.InitialScope, "module:SkoleService"));
+
+        cut.WaitForElement("[data-testid=fqs-scenarios]");
+        cut.Find("[data-testid=fqs-scenarios] summary").TextContent.Should().Contain("2 drafts").And.Contain("1 high priority");
+        cut.Find("[data-testid=fqs-scenarios]").TextContent.Should().Contain("not coverage");
+        var items = cut.FindAll("[data-testid=fqs-scenario]");
+        items[0].GetAttribute("data-priority").Should().Be("High");
+        items[0].TextContent.Should().Contain("Given").And.Contain("a valid report").And.Contain("Derived from SkoleService / 001-rapport / US1 / AC-2");
+    }
 }
