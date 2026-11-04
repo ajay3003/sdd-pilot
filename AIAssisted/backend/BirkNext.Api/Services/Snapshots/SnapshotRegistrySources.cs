@@ -96,6 +96,20 @@ public sealed class DeliverySnapshotSource(DeliveryReportingDbContext db) : ISna
                 versions.Length > 0 ? versions : $"content {r.ContentVersion}", $"delivery_reporting.weekly_report:{r.Id}", null, SnapshotProcessingStatus.Completed,
                 SnapshotRetentionClass.FrozenReportEvidence, Frozen: true, SnapshotRegistryService.MetadataVersion), edges));
         }
+
+        // Frozen Functional Quality Scope membership: derived from the Delivery snapshot it was resolved over.
+        var scopes = await db.ScopeSnapshots.AsNoTracking()
+            .Select(s => new { s.Id, s.ProjectId, s.ScopeName, s.ScopeVersion, s.DeliverySnapshotId, s.RuleSetVersion, s.ItemCount, s.CreatedAt }).ToListAsync(ct);
+        foreach (var s in scopes.Where(s => !registered.Contains($"{SnapshotType.Delivery}|{s.Id}")))
+        {
+            var label = $"Scope {s.ScopeName} v{s.ScopeVersion} · {s.ItemCount} items";
+            var edges = s.DeliverySnapshotId is { } d
+                ? new List<SnapshotLineageEdge> { new(new(SnapshotType.Delivery, s.Id.ToString(), label), SnapshotLineageKind.DerivedFrom, new(SnapshotType.Delivery, d.ToString()), Name) }
+                : [];
+            items.Add((new SnapshotMetadata(SnapshotType.Delivery, s.Id.ToString(), s.ProjectId.ToString(), "functional-scope-snapshot", label, s.CreatedAt, null, null,
+                s.RuleSetVersion, $"delivery_reporting.functional_scope_snapshot:{s.Id}", null, SnapshotProcessingStatus.Completed,
+                SnapshotRetentionClass.FrozenReportEvidence, Frozen: true, SnapshotRegistryService.MetadataVersion), edges));
+        }
         return items;
     }
 }

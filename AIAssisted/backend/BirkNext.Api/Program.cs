@@ -146,6 +146,12 @@ builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.Azu
     BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsGitClient.DevelopmentBaseUri(builder.Environment, builder.Configuration)));
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.DeliveryAzureDevOpsImportService>();
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.WeeklyReportService>();
+// Functional Quality Scope: projection over Delivery snapshots + canonical relations + declared domain-profile flows (stores references only).
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.FunctionalQualityScopeService(
+    sp.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>(), TimeProvider.System,
+    sp.GetServices<BirkNext.Api.Services.IntegrationTopology.ITopologyProfile>(),
+    sp.GetService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>(),
+    sp.GetService<BirkNext.Api.Services.TestData.TestDataCatalog>()));
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
