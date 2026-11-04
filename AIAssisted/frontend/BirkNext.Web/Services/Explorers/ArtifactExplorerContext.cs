@@ -112,7 +112,33 @@ public enum ExplorerSelectionReason
 }
 
 /// <summary>One imported package whose documents the explorers read (provenance; the import id is the canonical identity).</summary>
-public sealed record ExplorerEvidenceSource(string ImportId, string Name, string ArchiveFileName, DateTimeOffset ImportedAt, bool IsMainProject);
+public sealed record ExplorerEvidenceSource(string ImportId, string Name, string ArchiveFileName, DateTimeOffset ImportedAt, bool IsMainProject,
+    ExplorerSourceAssociation Association = ExplorerSourceAssociation.Documentation);
+
+/// <summary>
+/// Why an imported source is part of the project's document corpus, strongest first: bound to the project's documentation role (a person's
+/// decision), the project's own main package, bound to another project role, or imported for the same application (automatic). A source with
+/// none of these is not the project's and is only read in Single source view.
+/// </summary>
+public enum ExplorerSourceAssociation { Documentation, MainProject, ProjectRole, SameApplication }
+
+/// <summary>Project view (the project's corpus, the default) or Single source view (one imported source: provenance, inspection).</summary>
+public enum ExplorerViewMode { Project, SingleSource }
+
+/// <summary>One imported source's count of a role's documents (manifest only, nothing parsed); <see cref="Association"/> null = not the project's.</summary>
+public sealed record ExplorerSourceCount(string ImportId, string Name, string ArchiveFileName, int Artifacts, ExplorerSourceAssociation? Association);
+
+/// <summary>
+/// The project's corpus of one role: distinct items (module + path), their occurrences across sources, modules, conflicts (same module and path,
+/// different content: never merged) and the contributing sources. Counted from the lifecycle manifest — no document body is read.
+/// </summary>
+public sealed record ExplorerCorpusSummary(string ProjectName, int Artifacts, int Occurrences, int Modules, int Conflicts,
+    IReadOnlyList<ExplorerSourceCount> Contributing, IReadOnlyList<ExplorerSourceCount> Sources)
+{
+    /// <summary>Some of the corpus comes from sources that are not bound as the project's documentation evidence.</summary>
+    public bool OutsideDocumentationEvidence => Contributing.Any(c => c.Association is not ExplorerSourceAssociation.Documentation);
+    public ExplorerSourceCount? Source(string? importId) => Sources.FirstOrDefault(s => s.ImportId == importId);
+}
 
 /// <summary>
 /// Which project evidence the explorers read and on what basis. <see cref="FromEnvironment"/>: the active Target Environment's Project bindings
@@ -188,16 +214,23 @@ public interface IArtifactExplorerContext
     /// <summary>Raised when artifacts, selection, authority or the selected project change, and after a reset.</summary>
     event EventHandler? Changed;
 
-    /// <summary>The explicitly chosen Explorer source (import id or <see cref="ExplorerSources.ProjectEvidence"/>), or null for the default.</summary>
+    /// <summary>The explicitly chosen single source (an import id), or null for Project view.</summary>
     string? ExplorerSource => null;
+
+    /// <summary>Project view unless a recorded import is explicitly chosen as the single source.</summary>
+    ExplorerViewMode ViewMode => ExplorerViewMode.Project;
+
+    /// <summary>The project's corpus of <paramref name="role"/> with per-source counts (null without an imported project).</summary>
+    ExplorerCorpusSummary? GetCorpusSummary(WorkspaceArtifactType role) => null;
 
     /// <summary>The explicit choice names an import that is no longer recorded in this workspace (the default applies; the user is told).</summary>
     bool ExplorerSourceUnavailable => false;
 
-    /// <summary>Every source an Explorer can read: Project evidence (when configured) and each imported package, grouped by application.</summary>
+    /// <summary>Every imported source an Explorer can read in Single source view, grouped (project sources first). Never the project itself.</summary>
     IReadOnlyList<ExplorerSourceOption> Sources => [];
 
-    /// <summary>Chooses the Explorer source for every Explorer (null = default). Navigation only: nothing is imported, bound or reviewed.</summary>
+    /// <summary>Chooses Single source view on an import id for every Explorer; null returns to Project view. Navigation only: nothing is imported,
+    /// bound or reviewed.</summary>
     void SelectSource(string? source) { }
 
     /// <summary>The other imported sources holding at least one artifact of <paramref name="role"/> (for an empty state's "Open …").</summary>
@@ -262,7 +295,7 @@ public interface IArtifactExplorerContext
 /// <summary>Explorer source values that are not an import id.</summary>
 public static class ExplorerSources
 {
-    /// <summary>The Target Environment's aggregated Project evidence (its documentation sources together).</summary>
+    /// <summary>Legacy saved value of the former "aggregated project evidence" entry: read as Project view, never offered or saved again.</summary>
     public const string ProjectEvidence = "project-evidence";
 }
 
@@ -373,24 +406,26 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         _workspace.SddLifecycle.ExplorerSource is { Length: > 0 } source && source != ExplorerSources.ProjectEvidence
         && _workspace.SddLifecycle.ProjectImports.Any(i => i.ImportId == source) ? source : null;
 
-    public string? ExplorerSource => _workspace.SddLifecycle.ExplorerSource;
+    public string? ExplorerSource => ExplicitImport();
 
+    public ExplorerViewMode ViewMode => ExplicitImport() is null ? ExplorerViewMode.Project : ExplorerViewMode.SingleSource;
+
+    /// <remarks>Only once imports are recorded: while a saved workspace is still being restored there are none, and its saved source is not "removed".</remarks>
     public bool ExplorerSourceUnavailable => _workspace.SddLifecycle.ExplorerSource is { Length: > 0 } source && source != ExplorerSources.ProjectEvidence
-        && _workspace.SddLifecycle.ProjectImports.All(i => i.ImportId != source);
+        && _workspace.SddLifecycle.ProjectImports.Count > 0 && _workspace.SddLifecycle.ProjectImports.All(i => i.ImportId != source);
 
     public IReadOnlyList<ExplorerSourceOption> Sources
     {
         get
         {
             var lifecycle = _workspace.SddLifecycle;
+            var project = ProjectAssociations();
             var options = new List<ExplorerSourceOption>();
-            if (EnvironmentProject() is { } bound)
-                options.Add(new(ExplorerSources.ProjectEvidence, $"{bound.Project.ProjectName} — aggregated project evidence", "Project evidence", null));
-            foreach (var record in lifecycle.ProjectImports.OrderBy(i => i.ImportedAt))
+            foreach (var record in lifecycle.ProjectImports.OrderBy(i => project.ContainsKey(i.ImportId) ? (int)project[i.ImportId] : 9).ThenBy(i => i.ImportedAt))
             {
                 var application = ProjectImport.ApplicationContexts.Find(lifecycle, record.ApplicationId)?.Name;
-                options.Add(new(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName,
-                    application is null ? "Imported sources" : $"Imported for {application}", record.ArchiveFileName));
+                var group = project.ContainsKey(record.ImportId) ? "Project sources" : application is null ? "Other imported sources" : $"Imported for {application}";
+                options.Add(new(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName, group, record.ArchiveFileName));
             }
             return options;
         }
@@ -399,7 +434,9 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     public void SelectSource(string? source)
     {
         var lifecycle = _workspace.SddLifecycle;
-        if (source is { Length: > 0 } s && s != ExplorerSources.ProjectEvidence && lifecycle.ProjectImports.All(i => i.ImportId != s)) return;
+        // Project view is the absence of a single source: the former "project-evidence" value is never saved as if it were a source.
+        if (source == ExplorerSources.ProjectEvidence) source = null;
+        if (source is { Length: > 0 } s && lifecycle.ProjectImports.All(i => i.ImportId != s)) return;
         if (string.Equals(lifecycle.ExplorerSource, source, StringComparison.Ordinal)) return;
         lifecycle.ExplorerSource = string.IsNullOrWhiteSpace(source) ? null : source;
         // A different source changes which revisions are the session's artifacts; the change is saved with the workspace like a module focus.
@@ -415,7 +452,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var roleName = role.ToString();
         var holding = lifecycle.Revisions.Where(r => r.Role == roleName && !string.IsNullOrWhiteSpace(r.Content) && ProjectImportScope.IsImport(r.WorkspaceScope))
             .Select(r => ProjectImportScope.ImportIdOf(r.WorkspaceScope)).OfType<string>().ToHashSet(StringComparer.Ordinal);
-        return [.. Sources.Where(o => o.Value != ExplorerSources.ProjectEvidence && o.Value != current && holding.Contains(o.Value))];
+        return [.. Sources.Where(o => o.Value != current && holding.Contains(o.Value))];
     }
 
     /// <summary>One artifact-revision scope the explorers read, with its provenance. Only the primary scope's id format is unprefixed.</summary>
@@ -431,20 +468,70 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         if (!ProjectImportScope.IsImport(scope) || ExplicitImport() is not null || EnvironmentProject() is not { } bound || ProjectImportScope.For(bound.Main.ImportId) != scope)
             return [new EvidenceScope(scope, null, true, false)];
         var lifecycle = _workspace.SddLifecycle;
-        var documentation = ProjectEvidenceResolver.DocumentationImports(bound.Project, lifecycle);
-        var scopes = new List<EvidenceScope>
-        {
-            // The main project's own imported documents count only when bound as documentation; documents added in an explorer always do.
-            new(scope, Source(bound.Main, true), true, !documentation.Contains(bound.Main.ImportId, StringComparer.Ordinal)),
-        };
-        foreach (var importId in documentation.Where(id => id != bound.Main.ImportId))
+        var associations = ProjectAssociations();
+        // Project view = the project's corpus. Before, the main package's own documents counted only when it was bound as documentation, so a
+        // project whose specifications live in its main package read as empty ("No Specification artifacts found across 2 sources").
+        var scopes = new List<EvidenceScope> { new(scope, Source(bound.Main, true, associations[bound.Main.ImportId]), true, false) };
+        foreach (var (importId, association) in associations.Where(a => a.Key != bound.Main.ImportId).OrderBy(a => a.Value))
             if (lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is { } record)
-                scopes.Add(new(ProjectImportScope.For(importId), Source(record, false), false, false));
+                scopes.Add(new(ProjectImportScope.For(importId), Source(record, false, association), false, false));
         return scopes;
     }
 
-    private static ExplorerEvidenceSource Source(SddProjectImportRecord record, bool main) =>
-        new(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName, record.ArchiveFileName, record.ImportedAt, main);
+    private static ExplorerEvidenceSource Source(SddProjectImportRecord record, bool main, ExplorerSourceAssociation association = ExplorerSourceAssociation.Documentation) =>
+        new(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName, record.ArchiveFileName, record.ImportedAt, main, association);
+
+    /// <summary>
+    /// The imports that make up the active Target Environment Project's corpus and why (strongest association wins): its documentation bindings,
+    /// its main package, packages bound to any other role, and packages imported for the same application. Empty without a bound project.
+    /// </summary>
+    private Dictionary<string, ExplorerSourceAssociation> ProjectAssociations()
+    {
+        var result = new Dictionary<string, ExplorerSourceAssociation>(StringComparer.Ordinal);
+        if (EnvironmentProject() is not { } bound) return result;
+        var lifecycle = _workspace.SddLifecycle;
+        void Add(string? importId, ExplorerSourceAssociation association)
+        {
+            if (importId is null || lifecycle.ProjectImports.All(i => i.ImportId != importId)) return;
+            if (!result.TryGetValue(importId, out var existing) || association < existing) result[importId] = association;
+        }
+        foreach (var id in ProjectEvidenceResolver.DocumentationImports(bound.Project, lifecycle)) Add(id, ExplorerSourceAssociation.Documentation);
+        Add(bound.Main.ImportId, ExplorerSourceAssociation.MainProject);
+        foreach (var source in bound.Project.Evidence.SelectMany(r => r.Sources))
+            Add((lifecycle.ProjectImports.FirstOrDefault(i => source.ImportId is not null && i.ImportId == source.ImportId)
+                 ?? lifecycle.ProjectImports.FirstOrDefault(i => !string.IsNullOrEmpty(source.ArchiveSha256) && i.ArchiveSha256 == source.ArchiveSha256))?.ImportId,
+                ExplorerSourceAssociation.ProjectRole);
+        if (bound.Main.ApplicationId is { Length: > 0 } application)
+            foreach (var record in lifecycle.ProjectImports.Where(i => i.ApplicationId == application)) Add(record.ImportId, ExplorerSourceAssociation.SameApplication);
+        return result;
+    }
+
+    /// <summary>
+    /// The project's corpus of a role, independent of the current view: per source, distinct documents by path (manifest only); project items are
+    /// (module, path) across the project's sources — the same content in several sources is one item with several occurrences, different content
+    /// at the same module and path is a conflict (kept apart, never merged by source order).
+    /// </summary>
+    public ExplorerCorpusSummary? GetCorpusSummary(WorkspaceArtifactType role)
+    {
+        if (EnvironmentProject() is not { } bound) return null;
+        var lifecycle = _workspace.SddLifecycle;
+        var associations = ProjectAssociations();
+        var roleName = role.ToString();
+        var rows = lifecycle.Revisions.Where(r => r.Role == roleName && r.HasDocument && ProjectImportScope.IsImport(r.WorkspaceScope))
+            .GroupBy(r => (Scope: r.WorkspaceScope, r.FileName))
+            .Select(g => (ImportId: ProjectImportScope.ImportIdOf(g.Key.Scope)!, Path: g.Key.FileName,
+                Fingerprint: (g.FirstOrDefault(r => r.IsCurrentSelection) ?? g.MaxBy(r => r.Revision)!).Fingerprint))
+            .ToList();
+        var sources = lifecycle.ProjectImports.Select(i => new ExplorerSourceCount(i.ImportId, string.IsNullOrWhiteSpace(i.ProjectName) ? i.ArchiveFileName : i.ProjectName,
+                i.ArchiveFileName, rows.Count(r => r.ImportId == i.ImportId), associations.TryGetValue(i.ImportId, out var a) ? a : null))
+            .OrderBy(s => s.Association is null ? 9 : (int)s.Association).ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var corpus = rows.Where(r => associations.ContainsKey(r.ImportId)).ToList();
+        var roots = ArtifactModules.RootsOf(corpus.Select(r => (string?)r.Path));
+        var items = corpus.GroupBy(r => (Module: ArtifactModules.ModuleOf(r.Path, roots), r.Path)).ToList();
+        return new ExplorerCorpusSummary(bound.Project.ProjectName, items.Count, corpus.Count, items.Select(i => i.Key.Module).Distinct(StringComparer.Ordinal).Count(),
+            items.Count(i => i.Select(r => r.Fingerprint).Where(f => f.Length > 0).Distinct(StringComparer.Ordinal).Count() > 1),
+            [.. sources.Where(s => s.Association is not null && s.Artifacts > 0)], sources);
+    }
 
     /// <summary>The project-evidence basis the explorers read, or null for a Sample Project or the manual workspace.</summary>
     private ExplorerProjectEvidence? EvidenceOf(string? scope)
@@ -462,7 +549,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             var sources = scopes.Where(s => !s.ManualOnly && s.Source is not null).Select(s => s.Source!).ToList();
             var role = bound.Project.Evidence.FirstOrDefault(r => r.RoleKey == ProjectEvidenceRoles.Documentation);
             return new ExplorerProjectEvidence(true, bound.Profile.Id, bound.Profile.Name, bound.Project.ProjectName, sources,
-                DocumentationUnresolved: role is not null && sources.Count == 0, unbound);
+                DocumentationUnresolved: role is not null && sources.All(x => x.Association != ExplorerSourceAssociation.Documentation), unbound);
         }
         var importId = ProjectImportScope.ImportIdOf(scope);
         var record = lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId);

@@ -12,7 +12,7 @@
             @if (_view?.IsConfigured == true)
             {
                 <a href="@ProjectEvidenceResolver.ProjectTabHref(_view.EnvironmentId)" data-testid="project-context-project" aria-label="@($"Project {_view.ProjectName}: open Project setup")">@_view.ProjectName</a>
-                <a class="pcs-state" href="@ProjectEvidenceResolver.ProjectTabHref(_view.EnvironmentId)" data-testid="project-context-evidence" title="Required evidence roles ready. Open Project Evidence to see which roles are partial or missing.">@(_view.RequiredReadyAll ? "Evidence ready" : $"Evidence {_view.RequiredReady} / {_view.RequiredTotal} ready")</a>
+                <a class="pcs-state" href="@ProjectEvidenceResolver.ProjectTabHref(_view.EnvironmentId)" data-testid="project-context-evidence" title="Required Project Evidence roles that are ready. This is evidence readiness, not whether specifications or other documents exist. Open Project Evidence to see which roles are partial or missing.">@(_view.RequiredReadyAll ? "All required evidence roles ready" : $"{_view.RequiredReady} of {_view.RequiredTotal} required evidence roles ready")</a>
             }
             else if (_view?.EnvironmentId is { Length: > 0 } env)
             {

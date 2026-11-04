@@ -81,8 +81,13 @@ public sealed class ExplorerSourceSelectionTests : BunitContext
         var cut = Render<PlanExplorer>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer-empty]"));
         cut.Find(".axh-title").TextContent.Should().Contain("No Plan artifact was detected in the selected source: Tiltak 2 - Sikkert digitalt økosystem");
+        // View and source are separate controls: the source list appears only in Single source view and never offers the project as a source.
+        cut.FindAll("[data-testid=artifact-explorer-source-selector]").Should().BeEmpty("Project view is the default");
+        cut.Find("[data-testid=artifact-explorer-view-project]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=artifact-explorer-view-single]").Click();
         var selector = cut.Find("[data-testid=artifact-explorer-source-selector]");
-        selector.QuerySelectorAll("option").Select(o => o.TextContent.Trim()).Should().Contain(["M2LB", "M2LB.Common", "Tiltak 2 - Sikkert digitalt økosystem"]);
+        selector.QuerySelectorAll("option").Select(o => o.TextContent.Trim()).Should().Contain(o => o.StartsWith("M2LB.Common")).And.Contain(o => o.StartsWith("Tiltak 2 - Sikkert digitalt økosystem"))
+            .And.NotContain(o => o.Contains("aggregated"));
         cut.Find("[for$=-source]").TextContent.Should().Be("Source", "an imported package is a source, not \"the project\"");
         _explorer.CurrentScope.Should().Be("import:import-tiltak", "nothing switches until the tester chooses");
 
@@ -97,6 +102,7 @@ public sealed class ExplorerSourceSelectionTests : BunitContext
         _explorer.SelectSource("import-m2lb");
         var tasks = Render<TaskExplorer>();
         tasks.WaitForAssertion(() => tasks.Find("[data-testid=artifact-explorer]").GetAttribute("data-status").Should().Be("Loaded"));
+        tasks.Find("[data-testid=artifact-explorer-view-single]").GetAttribute("aria-pressed").Should().Be("true");
         tasks.Find("[data-testid=artifact-explorer-source-selector]").GetAttribute("value").Should().Be("import-m2lb");
 
         // A new package arrives (and becomes the shown package of the application): the Explorer source stays as chosen.
@@ -112,8 +118,10 @@ public sealed class ExplorerSourceSelectionTests : BunitContext
         _workspace.SddLifecycle.ExplorerSource = "import-deleted";
         _explorer.ExplorerSourceUnavailable.Should().BeTrue();
         var cut = Render<PlanExplorer>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer-source-unavailable]").TextContent.Should().Contain("no longer imported"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=artifact-explorer-source-unavailable]").TextContent.Should().Contain("no longer imported").And.Contain("project view"));
+        _workspace.SddLifecycle.ExplorerSource.Should().BeNull("a removed source falls back to Project view; no stale source id is kept");
+        _explorer.ViewMode.Should().Be(ExplorerViewMode.Project);
         _explorer.SelectSource("not-an-import");
-        _workspace.SddLifecycle.ExplorerSource.Should().Be("import-deleted", "an unknown source is never stored");
+        _workspace.SddLifecycle.ExplorerSource.Should().BeNull("an unknown source is never stored");
     }
 }

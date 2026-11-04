@@ -311,7 +311,8 @@ public sealed class ProjectEvidenceBindingTests
         state.Selected.EvidenceImportId.Should().Be("b");
         state.Evidence!.FromEnvironment.Should().BeTrue();
         state.Evidence.ProjectName.Should().Be("M2LB");
-        state.Evidence.Sources.Select(s => s.ArchiveFileName).Should().Equal("M2LB-docs.zip");
+        // The project's corpus: its main package (no documents here) and the bound documentation package, each with why it belongs.
+        state.Evidence.Sources.Select(s => (s.ArchiveFileName, s.Association)).Should().Equal(("M2LB.zip", ExplorerSourceAssociation.MainProject), ("M2LB-docs.zip", ExplorerSourceAssociation.Documentation));
     }
 
     [Theory]
@@ -353,7 +354,50 @@ public sealed class ProjectEvidenceBindingTests
 
         plan.Status.Should().Be(ExplorerArtifactStatus.Empty);
         plan.SourceUnresolved.Should().BeFalse("the documentation source is bound; it just holds no Plan");
-        plan.Evidence!.SourceCount.Should().Be(1);
+        plan.Evidence!.SourceCount.Should().Be(2, "the main package and the documentation package make up the project");
+        _explorers.GetCorpusSummary(WorkspaceArtifactType.Plan)!.Artifacts.Should().Be(0, "a true project-level empty: no project source holds a Plan");
+    }
+
+    // ---- Specification Explorer project scope (Project view = the project's corpus, not only documentation-bound packages) ----
+
+    [Fact]
+    public async Task ProjectView_IncludesTheMainPackagesSpecifications_EvenWhenDocumentationIsBoundElsewhere()
+    {
+        // Case A/D: the specifications live in the main package; documentation is bound to another package without any. Before, Project view was empty.
+        var app = Import("a", "M2LB Skole.zip", 0, (WorkspaceArtifactType.Specification, "Skole/specs/001-x/spec.md", Spec), (WorkspaceArtifactType.Specification, "Person/specs/002-y/spec.md", Spec + " more"));
+        var docs = Import("b", "M2LB.Common.zip", 1, (WorkspaceArtifactType.Constitution, "constitution.md", Constitution));
+        var project = ProjectEvidenceResolver.CreateProject(Package(app), T0);
+        project.Evidence.Single(r => r.RoleKey == ProjectEvidenceRoles.Documentation).Sources.Clear();
+        ProjectEvidenceResolver.Bind(project, ProjectEvidenceRoles.Documentation, Package(docs), T0);
+        Dev.Project = project;
+
+        var spec = await _explorers.GetStateAsync(WorkspaceArtifactType.Specification);
+        spec.Artifacts.Should().HaveCount(2, "valid project specifications are never hidden by an incomplete documentation association");
+        var corpus = _explorers.GetCorpusSummary(WorkspaceArtifactType.Specification)!;
+        corpus.Should().Match<ExplorerCorpusSummary>(c => c.Artifacts == 2 && c.Modules == 2 && c.Contributing.Count == 1 && c.OutsideDocumentationEvidence);
+        corpus.Source("b")!.Artifacts.Should().Be(0);
+        corpus.Source("b")!.Association.Should().Be(ExplorerSourceAssociation.Documentation);
+        _explorers.ViewMode.Should().Be(ExplorerViewMode.Project);
+
+        // Case E: an infrastructure package without specifications changes nothing in the project corpus.
+        Import("t", "Terraform-iac-m2lb.zip", 2, App("Terraform-iac-m2lb.zip"));
+        _explorers.GetCorpusSummary(WorkspaceArtifactType.Specification)!.Artifacts.Should().Be(2);
+        (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Artifacts.Should().HaveCount(2);
+        _explorers.ViewMode.Should().Be(ExplorerViewMode.Project, "importing another package never switches the view");
+    }
+
+    [Fact]
+    public void ProjectCorpus_SameDocumentInTwoSources_IsOneItem_DifferentContentIsAConflict()
+    {
+        // Case H/I: identical content at the same module and path = one item with two occurrences; different content = a conflict, never merged.
+        var app = Import("a", "M2LB.zip", 0, (WorkspaceArtifactType.Specification, "Skole/specs/001-x/spec.md", Spec), (WorkspaceArtifactType.Specification, "Person/specs/002-y/spec.md", Spec));
+        var docs = Import("b", "M2LB-docs.zip", 1, (WorkspaceArtifactType.Specification, "Skole/specs/001-x/spec.md", Spec), (WorkspaceArtifactType.Specification, "Person/specs/002-y/spec.md", Spec + " changed"));
+        var project = ProjectEvidenceResolver.CreateProject(Package(app), T0);
+        ProjectEvidenceResolver.Bind(project, ProjectEvidenceRoles.Documentation, Package(docs), T0);
+        Dev.Project = project;
+
+        var corpus = _explorers.GetCorpusSummary(WorkspaceArtifactType.Specification)!;
+        corpus.Should().Match<ExplorerCorpusSummary>(c => c.Artifacts == 2 && c.Occurrences == 4 && c.Conflicts == 1 && c.Contributing.Count == 2);
     }
 
     [Fact]

@@ -408,7 +408,21 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         var docs = ProjectEvidencePackages.Of(_repository.SddLifecycle.ProjectImports[1], _repository.SddLifecycle, null);
         ProjectEvidenceResolver.Bind(project, ProjectEvidenceRoles.Documentation, docs, DateTimeOffset.UtcNow);
         var missing = Render<BirkNext.Web.Components.Explorers.ArtifactExplorerHost>(p => p.Add(x => x.Role, WorkspaceArtifactType.Plan));
-        missing.WaitForAssertion(() => missing.Find("[data-testid=artifact-explorer-empty]").GetAttribute("data-state").Should().Be("NotFoundInBoundEvidence"));
-        missing.Find("[data-testid=artifact-explorer-not-found]").TextContent.Should().Contain("No supported Plan artifact was found across the 1 source bound to");
+        // Every project source (main package and bound documentation) holds no Plan: the one true project-level empty state.
+        missing.WaitForAssertion(() => missing.Find("[data-testid=artifact-explorer-empty]").GetAttribute("data-state").Should().Be("NotInProject"));
+        missing.Find(".axh-title").TextContent.Should().Be("No plans found for this project");
+        missing.Find("[data-testid=artifact-explorer-not-found]").TextContent.Should().Contain("No recognized Plan artifacts are currently associated with or available for");
+
+        // Single source without specifications (Case B/C): a neutral, source-specific state that points back to the project's specifications.
+        Services.GetRequiredService<IArtifactExplorerContext>().SelectSource(_repository.SddLifecycle.ProjectImports[0].ImportId);
+        var single = Render<BirkNext.Web.Components.Explorers.ArtifactExplorerHost>(p => p.Add(x => x.Role, WorkspaceArtifactType.Specification));
+        single.WaitForAssertion(() => single.Find("[data-testid=artifact-explorer-empty]").GetAttribute("data-state").Should().Be("NotInSource"));
+        single.Find(".axh-title").TextContent.Should().StartWith("No specifications in ");
+        single.Find("[data-testid=artifact-explorer-project-available]").TextContent.Should().Contain("1 Specification artifact");
+        single.FindAll("[data-testid=artifact-explorer-import-toggle]").Should().BeEmpty("the project already has specifications; the source is just scoped");
+        single.Markup.Should().NotContain("aggregated project evidence");
+        single.Find("[data-testid=artifact-explorer-view-project-specs]").Click();
+        single.WaitForAssertion(() => single.Find("[data-testid=artifact-explorer]").GetAttribute("data-status").Should().NotBe("Empty"));
+        Services.GetRequiredService<IArtifactExplorerContext>().ViewMode.Should().Be(ExplorerViewMode.Project);
     }
 }

@@ -22,27 +22,37 @@
     {
         @if (ShowSourceBar)
         {
-            @* Which imported source (or the aggregated Project evidence) every Explorer reads — chosen here, shared by all Explorers, saved with
-               the workspace. An imported package is a source, not "the project"; importing another package never changes this choice. *@
+            @* View: the project's corpus (default) or one imported source (provenance, inspection). The project is never offered as if it were a
+               source, and choosing a mode never changes what is imported, bound or reviewed. Shared by every Explorer and saved with the workspace. *@
             <div class="axh-module-bar axh-source-bar" data-testid="artifact-explorer-source-bar">
-                <label class="axh-select-label" for="@($"{_id}-source")">Source</label>
-                <select id="@($"{_id}-source")" class="axh-select" data-testid="artifact-explorer-source-selector" value="@SelectedSource" @onchange="OnSourceChanged"
-                        aria-describedby="@($"{_id}-source-note")">
-                    @foreach (var group in Explorer.Sources.GroupBy(o => o.Group))
-                    {
-                        <optgroup label="@group.Key">
-                            @foreach (var option in group)
-                            {
-                                <option value="@option.Value" selected="@(option.Value == SelectedSource)">@option.Label@(option.ArchiveFileName is { } archive && !string.Equals(archive, option.Label + ".zip", StringComparison.OrdinalIgnoreCase) ? $" ({archive})" : "")</option>
-                            }
-                        </optgroup>
-                    }
-                </select>
-                <span id="@($"{_id}-source-note")" class="axh-module-note" data-testid="artifact-explorer-source-note">@SourceNote</span>
+                <span class="axh-select-label" id="@($"{_id}-view")">View</span>
+                <div class="axh-segmented" role="group" aria-labelledby="@($"{_id}-view")" data-testid="artifact-explorer-view">
+                    <button type="button" class="axh-segment @(SingleSourceView ? "" : "is-active")" aria-pressed="@(SingleSourceView ? "false" : "true")"
+                            data-testid="artifact-explorer-view-project" @onclick="ShowProjectView">Project</button>
+                    <button type="button" class="axh-segment @(SingleSourceView ? "is-active" : "")" aria-pressed="@(SingleSourceView ? "true" : "false")"
+                            data-testid="artifact-explorer-view-single" @onclick="ShowSingleSourceView">Single source</button>
+                </div>
+                @if (SingleSourceView)
+                {
+                    <label class="axh-select-label" for="@($"{_id}-source")">Source</label>
+                    <select id="@($"{_id}-source")" class="axh-select" data-testid="artifact-explorer-source-selector" value="@(Explorer.ExplorerSource ?? "")" @onchange="OnSourceChanged">
+                        @if (Explorer.ExplorerSource is null) { <option value="">Choose a source…</option> }
+                        @foreach (var group in Explorer.Sources.GroupBy(o => o.Group))
+                        {
+                            <optgroup label="@group.Key">
+                                @foreach (var option in group)
+                                {
+                                    <option value="@option.Value">@option.Label@(option.ArchiveFileName is { } archive && !string.Equals(archive, option.Label + ".zip", StringComparison.OrdinalIgnoreCase) ? $" ({archive})" : "")@SourceCountText(option.Value)</option>
+                                }
+                            </optgroup>
+                        }
+                    </select>
+                }
+                <span class="axh-module-note" data-testid="artifact-explorer-source-note">@ViewNote</span>
             </div>
-            @if (Explorer.ExplorerSourceUnavailable)
+            @if (_sourceRemoved)
             {
-                <p class="axh-evidence-line" role="status" data-testid="artifact-explorer-source-unavailable">The previously selected source is no longer imported in this workspace. Choose a source above; nothing was switched to another import silently.</p>
+                <p class="axh-evidence-line" role="status" data-testid="artifact-explorer-source-unavailable">The previously selected source is no longer imported in this workspace. Showing the project view instead; no other source was chosen for you.</p>
             }
         }
         @if (_state.HasModules && !_state.ModuleRequired && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
@@ -76,15 +86,45 @@
                     <span class="visually-hidden">Documents from other feature packs are never mixed automatically.</span></span>
             </div>
         }
-        @if (_state.Evidence is { FromEnvironment: true } evidence && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
+        @if (Corpus is { } corpus && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
         {
-            @* One logical project, several packages: which project and how many bound documentation sources the explorer reads. *@
-            <p class="axh-evidence-line" data-testid="artifact-explorer-evidence" data-sources="@evidence.SourceCount">
-                Project <strong>@evidence.ProjectName</strong> · Target Environment @evidence.EnvironmentName ·
-                @(evidence.SourceCount == 0 ? "documentation source unresolved"
-                    : _state.Artifacts.Count > 0 ? $"{_state.Artifacts.Count} {Label} artifact{(_state.Artifacts.Count == 1 ? "" : "s")} found across {evidence.SourceCount} project source{(evidence.SourceCount == 1 ? "" : "s")}"
-                    : $"{evidence.SourceCount} project documentation source{(evidence.SourceCount == 1 ? "" : "s")}")
-            </p>
+            @if (SingleSourceView && corpus.Source(Explorer.ExplorerSource) is { } single)
+            {
+                <p class="axh-evidence-line" data-testid="artifact-explorer-evidence" data-view="SingleSource">
+                    Viewing single source: <strong>@single.Name</strong> · @Count(single.Artifacts)@(single.Association is null ? " · not part of project " + corpus.ProjectName : "")
+                </p>
+            }
+            else if (!SingleSourceView)
+            {
+                @* The project's corpus, counted once for every Explorer from the manifest: what the project has, not what one package holds. *@
+                <p class="axh-evidence-line" data-testid="artifact-explorer-evidence" data-view="Project" data-artifacts="@corpus.Artifacts">
+                    <strong>@corpus.ProjectName</strong> · @corpus.Modules module@(corpus.Modules == 1 ? "" : "s") · @Count(corpus.Artifacts) ·
+                    @corpus.Contributing.Count contributing source@(corpus.Contributing.Count == 1 ? "" : "s")@(corpus.Occurrences > corpus.Artifacts ? $" · {corpus.Occurrences} occurrences" : "")
+                    @if (corpus.Contributing.Count > 0)
+                    {
+                        <details class="axh-provenance" data-testid="artifact-explorer-corpus-sources">
+                            <summary>Sources</summary>
+                            <ul>@foreach (var c in corpus.Contributing) { <li>@c.Name — @Count(c.Artifacts) · @AssociationText(c.Association)</li> }</ul>
+                        </details>
+                    }
+                </p>
+                @if (corpus.Conflicts > 0)
+                {
+                    <p class="axh-evidence-line axh-notice" role="status" data-testid="artifact-explorer-corpus-conflicts">
+                        Needs review: @corpus.Conflicts @Label artifact@(corpus.Conflicts == 1 ? "" : "s") differ between sources at the same module and path. Both are kept; none is chosen by source order.
+                    </p>
+                }
+                @if (corpus.OutsideDocumentationEvidence && corpus.Artifacts > 0)
+                {
+                    <p class="axh-evidence-line axh-notice" role="status" data-testid="artifact-explorer-association-notice">
+                        Some @PluralLower come from imported sources not currently marked as project documentation evidence.
+                        @if (_state.Evidence?.EnvironmentId is { } envId)
+                        {
+                            <a href="@ProjectEvidenceResolver.ProjectTabHref(envId, ProjectEvidenceRoles.Documentation)" data-testid="artifact-explorer-review-associations">Review source associations</a>
+                        }
+                    </p>
+                }
+            }
         }
         switch (_state.Status)
         {
@@ -149,18 +189,45 @@
                 </div>
                 break;
 
-            case ExplorerArtifactStatus.Empty when _state.Evidence is { FromEnvironment: true } boundEvidence && _state.PackSummary is null:
-                @* The documentation sources are bound and none holds this role: a missing artifact across the project's evidence, stated with the count. *@
-                <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="NotFoundInBoundEvidence">
+            case ExplorerArtifactStatus.Empty when Explorer.ViewMode == ExplorerViewMode.SingleSource && _state.PackSummary is null:
+                @* One imported source holds none of this role: normal for infrastructure or shared code, never an error, never "the project has none". *@
+                <div class="axh-card axh-empty axh-neutral" role="status" data-testid="artifact-explorer-empty" data-state="NotInSource">
                     <div class="axh-icon" aria-hidden="true">@Icon</div>
-                    <h2 class="axh-title">No @Label artifacts found across @boundEvidence.SourceCount project evidence source@(boundEvidence.SourceCount == 1 ? "" : "s")</h2>
+                    <h2 class="axh-title">No @PluralLower in @SingleSourceName</h2>
+                    <p class="axh-text">This source contains no recognized @Label artifacts.@(SingleSourceRole is { } sourceRole ? $" It is {sourceRole}." : "")</p>
+                    @if (Corpus is { Artifacts: > 0 } projectCorpus)
+                    {
+                        <p class="axh-text" data-testid="artifact-explorer-project-available">Project <strong>@projectCorpus.ProjectName</strong> has @Count(projectCorpus.Artifacts) available in other source@(projectCorpus.Contributing.Count == 1 ? "" : "s").</p>
+                    }
+                    <div class="axh-actions">
+                        @if (Corpus is { Artifacts: > 0 })
+                        {
+                            <button type="button" class="btn-primary" data-testid="artifact-explorer-view-project-specs" @onclick="ShowProjectView">View project @PluralLower</button>
+                        }
+                        <a class="btn-secondary axh-link-button" href="@SourceClassificationHref" data-testid="artifact-explorer-review-classification">Review source classification</a>
+                    </div>
+                    <details class="axh-why"><summary>Why?</summary>
+                        <p class="axh-text">Documents are classified by their content in any folder; none in this source was recognised as a @Label artifact. Every artifact role is optional.</p>
+                    </details>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.Empty when !SingleSourceView && Corpus is { Artifacts: 0 } && _state.Evidence is { FromEnvironment: true } boundEvidence && _state.PackSummary is null:
+                @* The project's whole corpus (every associated source) holds none of this role: the one true project-level empty state. *@
+                <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="NotInProject">
+                    <div class="axh-icon" aria-hidden="true">@Icon</div>
+                    <h2 class="axh-title">No @PluralLower found for this project</h2>
                     <p class="axh-text" data-testid="artifact-explorer-not-found">
-                        No supported @Label artifact was found across the @boundEvidence.SourceCount source@(boundEvidence.SourceCount == 1 ? "" : "s") bound to
-                        <strong>@boundEvidence.ProjectName</strong> as project documentation (@boundEvidence.SourceNames). Every artifact role is optional.
+                        No recognized @Label artifacts are currently associated with or available for <strong>@boundEvidence.ProjectName</strong>. Every artifact role is optional.
                     </p>
+                    @if (Explorer.SourcesWith(Role) is { Count: > 0 } outside)
+                    {
+                        <p class="axh-text" data-testid="artifact-explorer-alternative-sources">@Label artifacts exist in imported sources that are not part of this project: <strong>@string.Join(", ", outside.Select(e => e.Label))</strong>.</p>
+                    }
                     <div class="axh-actions">
                         <a class="btn-secondary axh-link-button" href="@ProjectEvidenceResolver.ProjectTabHref(boundEvidence.EnvironmentId, ProjectEvidenceRoles.Documentation)"
                            data-testid="artifact-explorer-open-project-setup">Review project evidence</a>
+                        <a class="btn-secondary axh-link-button" href="project-import" data-testid="artifact-explorer-import-project">Import source</a>
                         <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
                                 data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
                             Import @Label.ToLowerInvariant() only
@@ -195,13 +262,13 @@
                     }
                     @if (Explorer.SourcesWith(Role) is { Count: > 0 } elsewhere)
                     {
-                        @* Never an automatic switch: the tester opens the source that holds the artifact. *@
+                        @* Never an automatic switch: the tester decides to inspect the source that holds the artifact. *@
                         <div class="axh-alternatives" data-testid="artifact-explorer-alternative-sources">
                             <p class="axh-text">@(Label) artifacts are available in another imported source: <strong>@string.Join(", ", elsewhere.Select(e => e.Label))</strong>.</p>
                             <div class="axh-actions">
                                 @foreach (var option in elsewhere.Take(3))
                                 {
-                                    <button type="button" class="btn-primary" data-testid="artifact-explorer-open-source" data-source="@option.Value" @onclick="() => Explorer.SelectSource(option.Value)">Open @option.Label</button>
+                                    <button type="button" class="btn-primary" data-testid="artifact-explorer-open-source" data-source="@option.Value" @onclick="() => Explorer.SelectSource(option.Value)">Inspect source @option.Label</button>
                                 }
                             </div>
                         </div>
@@ -209,16 +276,19 @@
                     <p class="axh-text">
                         @(Origin == WorkspaceArtifactOrigin.ManualWorkspace
                             ? $"The documents imported into the workspace do not include a {Label} artifact. Every artifact role is optional."
-                            : $"The project's documents are classified by content in any folder, and none was recognised as a {Label} artifact. Every artifact role is optional.")
+                            : $"None of the project's documents was recognised as a {Label} artifact. Every artifact role is optional.")
                     </p>
                     <div class="axh-actions">
-                        <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
-                                data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
-                            Import @Label.ToLowerInvariant() only
-                        </button>
+                        @if (Corpus is not { Artifacts: > 0 })
+                        {
+                            <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
+                                    data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
+                                Import @Label.ToLowerInvariant() only
+                            </button>
+                        }
                         @if (WorkspaceArtifactStates.ReviewArtifactsRoute(Origin) is { } review)
                         {
-                            <a class="btn-secondary axh-link-button" href="@review" data-testid="artifact-explorer-review-artifacts">Review project artifacts</a>
+                            <a class="btn-secondary axh-link-button" href="@review" data-testid="artifact-explorer-review-artifacts">Review source classification</a>
                         }
                     </div>
                 </div>
@@ -379,7 +449,7 @@
                         <div class="axh-context-actions">
                             @if (_state.Artifacts.Count > 1)
                             {
-                                <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label documents@(_state.PackSummary is { } p ? $" for this feature" : _state.ModuleLabel is { } m ? $" in {m}" : "")</label>
+                                <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts@(_state.PackSummary is { } p ? $" for this feature" : _state.ModuleLabel is { } m ? $" in {m}" : "")</label>
                                 <select id="@($"{_id}-select")" class="axh-select" data-testid="artifact-explorer-selector"
                                         value="@selected.Id" @onchange="OnSelectorChanged">
                                     @foreach (var artifact in _state.Artifacts)
@@ -463,27 +533,69 @@
     protected override async Task OnInitializedAsync()
     {
         Explorer.Changed += OnExplorerChanged;
-        // ?source=<import id> (e.g. "Open specifications in M2LB" from Recommended Workflow): an explicit choice, validated against this workspace.
-        if (Services.GetService(typeof(NavigationManager)) is NavigationManager navigation
-            && Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(navigation.Uri).Query).TryGetValue("source", out var requested)
-            && requested.ToString() is { Length: > 0 } source && Explorer.Sources.Any(o => o.Value == source))
-            Explorer.SelectSource(source);
+        // Deep links: ?view=project returns to Project view; ?source=<import id> (e.g. from Recommended Workflow) opens that single source, validated
+        // against this workspace. A saved single source that is no longer imported falls back to Project view and says so.
+        if (Services.GetService(typeof(NavigationManager)) is NavigationManager navigation)
+        {
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(navigation.Uri).Query);
+            if (query.TryGetValue("view", out var view) && view.ToString() == "project") Explorer.SelectSource(null);
+            else if (query.TryGetValue("source", out var requested) && requested.ToString() is { Length: > 0 } source && Explorer.Sources.Any(o => o.Value == source))
+                Explorer.SelectSource(source);
+        }
+        if (Explorer.ExplorerSourceUnavailable) { _sourceRemoved = true; Explorer.SelectSource(null); }
         await LoadAsync();
     }
 
-    /// <summary>A source choice only matters with several sources, and never over a selected Demo Project (built-in demos stay a separate category).</summary>
+    /// <summary>A view choice only matters with several imported sources, and never over a selected Demo Project (built-in demos stay a separate category).</summary>
     private bool ShowSourceBar => Explorer.Sources.Count >= 2 && (_state?.ProjectSlug is null || ProjectImportScope.IsImport(_state.ProjectSlug));
 
-    /// <summary>The source the Explorer reads now: the explicit choice, else Project evidence when configured, else the application's documents.</summary>
-    private string? SelectedSource => Explorer.ExplorerSource is { Length: > 0 } explicitSource && !Explorer.ExplorerSourceUnavailable ? explicitSource
-        : _state?.Evidence is { FromEnvironment: true } ? ExplorerSources.ProjectEvidence
-        : ProjectImportScope.ImportIdOf(_state?.ProjectSlug);
+    /// <summary>Single source view: a source is chosen, or the person switched to Single source and has not chosen one yet.</summary>
+    private bool SingleSourceView => Explorer.ViewMode == ExplorerViewMode.SingleSource || _choosingSource;
+    private bool _choosingSource, _sourceRemoved;
 
-    private string SourceNote => SelectedSource == ExplorerSources.ProjectEvidence
-        ? "All Explorers read the project's associated documentation sources together."
-        : $"All Explorers read {Explorer.Sources.Count(o => o.Value != ExplorerSources.ProjectEvidence)} imported sources one at a time; this choice is kept when you navigate or import another package.";
+    private ExplorerCorpusSummary? Corpus => Explorer.GetCorpusSummary(Role);
 
-    private void OnSourceChanged(ChangeEventArgs e) => Explorer.SelectSource(e.Value?.ToString());
+    private string ViewNote => SingleSourceView
+        ? "Single source shows one imported source for provenance and inspection; this choice is kept for every Explorer until you return to Project view."
+        : Corpus is { } corpus ? $"Project view combines the {PluralLower} of {corpus.ProjectName}. Use Single source to inspect one imported source."
+        : "Project view shows the project's documents. Use Single source to inspect one imported source.";
+
+    private string PluralLower => Label.ToLowerInvariant() + "s";
+
+    /// <summary>"38 Specification artifacts": the one counting word for a role across the Explorer (artifact = the domain item; document = its file).</summary>
+    private string Count(int artifacts) => $"{artifacts} {Label} artifact{(artifacts == 1 ? "" : "s")}";
+
+    private string SourceCountText(string importId) => Corpus?.Source(importId) is { } c ? $" — {Count(c.Artifacts)}" : "";
+
+    private string SingleSourceName => Corpus?.Source(Explorer.ExplorerSource)?.Name ?? Explorer.Sources.FirstOrDefault(o => o.Value == Explorer.ExplorerSource)?.Label ?? "this source";
+
+    /// <summary>How the single source relates to the project, so an empty source reads as normal (e.g. an infrastructure package).</summary>
+    private string? SingleSourceRole => Corpus?.Source(Explorer.ExplorerSource) is { } c
+        ? c.Association is null ? $"not part of project {Corpus.ProjectName}" : $"a {AssociationText(c.Association).ToLowerInvariant()} of {Corpus.ProjectName}" : null;
+
+    private static string AssociationText(ExplorerSourceAssociation? association) => association switch
+    {
+        ExplorerSourceAssociation.Documentation => "Project documentation evidence",
+        ExplorerSourceAssociation.MainProject => "Main project package",
+        ExplorerSourceAssociation.ProjectRole => "Project evidence source (another role)",
+        ExplorerSourceAssociation.SameApplication => "Source imported for the same application",
+        _ => "Not part of the project",
+    };
+
+    /// <summary>The selected source in Project setup (its evidence roles), where its classification is reviewed.</summary>
+    private string SourceClassificationHref => _state?.Evidence?.EnvironmentId is { } env ? ProjectEvidenceResolver.ProjectTabHref(env) : "project-import";
+
+    private void ShowProjectView() { _choosingSource = false; _sourceRemoved = false; Explorer.SelectSource(null); StateHasChanged(); }
+
+    private void ShowSingleSourceView() { _choosingSource = true; StateHasChanged(); }
+
+    private void OnSourceChanged(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is not { Length: > 0 } source) return;
+        _choosingSource = false;
+        _sourceRemoved = false;
+        Explorer.SelectSource(source);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -646,7 +758,7 @@
     {
         { Candidates: 0 } => $"no {Label} artifact",
         { Packs: > 1, AmbiguousInPack: true } => $"{module.Packs} features · a feature requires clarification",
-        { Packs: > 1 } => $"{module.Packs} features · {module.Candidates} {Label} documents",
+        { Packs: > 1 } => $"{module.Packs} features · {module.Candidates} {Label} artifact{(module.Candidates == 1 ? "" : "s")}",
         { SelectedId: not null, Candidates: 1 } => $"1 {Label} artifact",
         { SelectedId: not null } => $"{module.Candidates} {Label} artifacts · selected",
         _ => $"{module.Candidates} {Label} artifacts · needs selection",

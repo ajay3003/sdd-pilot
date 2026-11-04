@@ -361,3 +361,16 @@
     color: var(--text-secondary, #4a5568);
     overflow-wrap: anywhere;
 }
+
+/* View: Project (the project's corpus) | Single source (one imported source). Two plain buttons with aria-pressed; wraps on narrow screens. */
+.axh-segmented { display: inline-flex; border: 1px solid var(--clr-border-input, #cbd5e1); border-radius: 6px; overflow: hidden; }
+.axh-segment { border: 0; background: var(--clr-surface-white, #fff); color: var(--clr-text-body, #1f2937); padding: .3rem .8rem; font-size: .875rem; cursor: pointer; }
+.axh-segment + .axh-segment { border-left: 1px solid var(--clr-border-input, #cbd5e1); }
+.axh-segment.is-active { background: var(--clr-primary, #1d4ed8); color: #fff; font-weight: 600; }
+.axh-segment:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: -2px; }
+.axh-notice { border: 1px solid rgba(180, 83, 9, .35); background: rgba(217, 119, 6, .08); border-radius: 6px; padding: .35rem .6rem; }
+.axh-provenance { display: inline-block; margin-left: .35rem; font-size: .85rem; }
+.axh-provenance summary { cursor: pointer; color: var(--clr-link, #1d4ed8); }
+.axh-provenance ul { margin: .25rem 0 0; padding-left: 1.1rem; }
+.axh-why { margin-top: .5rem; font-size: .85rem; }
+.axh-why summary { cursor: pointer; color: var(--clr-text-muted); }
