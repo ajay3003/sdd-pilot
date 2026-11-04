@@ -21,6 +21,9 @@ public interface ICanonicalInterpretationApiService
     Task<(IReadOnlyList<CanonicalEntityDetail> Items, string? Error)> OperationsAsync(string scope, string method, string path, CancellationToken ct = default);
     Task<(IReadOnlyList<ReviewDecisionView> Items, string? Error)> DecisionsAsync(string scope, string? target = null, CancellationToken ct = default);
     Task<(ReviewDecisionView? Decision, string? Error)> DecideAsync(string scope, ReviewDecisionRequest request, CancellationToken ct = default);
+    /// <summary>Summary-first counts of the latest interpretation (the same numbers every consumer shows).</summary>
+    Task<(CanonicalSummaryView? Summary, string? Error)> SummaryAsync(string scope, CancellationToken ct = default) =>
+        Task.FromResult<(CanonicalSummaryView?, string?)>((null, null));
 }
 
 public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanonicalInterpretationApiService
@@ -48,6 +51,8 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
     public Task<(CanonicalEntityDetail?, string?)> EntityAsync(string scope, Guid id, CancellationToken ct = default) => GetAsync<CanonicalEntityDetail>($"{Base(scope)}/entities/{id}", ct);
 
     public Task<(CorrelationChainView?, string?)> ChainAsync(string scope, Guid id, CancellationToken ct = default) => GetAsync<CorrelationChainView>($"{Base(scope)}/entities/{id}/chain", ct);
+
+    public Task<(CanonicalSummaryView?, string?)> SummaryAsync(string scope, CancellationToken ct = default) => GetAsync<CanonicalSummaryView>($"{Base(scope)}/summary", ct);
 
     public Task<(CanonicalPage<CanonicalRelationView>?, string?)> ReviewQueueAsync(string scope, string? rule, int skip = 0, int take = 25, CancellationToken ct = default) =>
         GetAsync<CanonicalPage<CanonicalRelationView>>($"{Base(scope)}/relations?needsReview=true&skip={skip}&take={take}{(string.IsNullOrWhiteSpace(rule) ? "" : $"&rule={Uri.EscapeDataString(rule)}")}", ct);

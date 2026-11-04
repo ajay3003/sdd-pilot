@@ -9,6 +9,14 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class CorrelationPresentation
 {
+    /// <summary>A package evidence capability in tester wording (a type label, never a status).</summary>
+    public static string CapabilityLabel(string capability) => capability switch
+    {
+        "ApplicationSource" => "Application source",
+        "SharedSource" => "Shared libraries",
+        _ => capability,
+    };
+
     public static (SemanticStatus Status, string Label, string Explanation) Status(CanonicalRelationView r) => r.ReviewState switch
     {
         RelationReviewState.Conflict => (SemanticStatus.Conflict, "Conflict",

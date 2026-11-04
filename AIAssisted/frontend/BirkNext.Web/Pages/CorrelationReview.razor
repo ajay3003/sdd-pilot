@@ -28,6 +28,32 @@
     }
     else
     {
+        @if (_summary is { InterpretationId: not null } sum)
+        {
+            <section class="cr-card" aria-labelledby="cr-summary-h" data-testid="cr-summary">
+                <h2 id="cr-summary-h">Latest interpretation</h2>
+                <p class="cr-muted">@sum.InterpretedAt!.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · rules @string.Join(", ", sum.RuleSetVersions)</p>
+                <dl class="cr-counts">
+                    <div><dt>Established relations</dt><dd data-testid="cr-sum-established">@sum.EstablishedRelations</dd></div>
+                    <div><dt>Candidates (not counted)</dt><dd data-testid="cr-sum-candidates">@sum.CandidateRelations</dd></div>
+                    <div><dt>Decisions needed</dt><dd data-testid="cr-sum-review">@sum.NeedsReview</dd></div>
+                    <div><dt>Conflicts</dt><dd data-testid="cr-sum-conflicts">@sum.Conflicts</dd></div>
+                </dl>
+                <p class="cr-muted" data-testid="cr-sum-contracts">Contracts: @sum.Contracts.LogicalContracts logical · @sum.Contracts.Versions versions · @sum.Contracts.DistinctContents distinct contents · @sum.Contracts.Occurrences occurrences in packages</p>
+                @if (sum.Packages.Count > 0)
+                {
+                    <ul class="cr-packages" aria-label="Packages and what they provide">
+                        @foreach (var p in sum.Packages)
+                        {
+                            <li data-testid="cr-sum-package"><strong>@p.Name</strong>
+                                @foreach (var c in p.Capabilities) { <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.CapabilityLabel(c)" /> }
+                                @if (p.Libraries.Count > 0) { <span class="cr-muted"> · @p.Libraries.Count shared librar@(p.Libraries.Count == 1 ? "y" : "ies")</span> }
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
         <section class="cr-card" aria-labelledby="cr-interpret-h" data-testid="cr-interpret">
             <h2 id="cr-interpret-h">Interpret source evidence</h2>
             <p class="cr-muted">Reads stored Source Analysis snapshots only (no archive is parsed again). Each run creates a new, frozen interpretation; an unchanged
@@ -163,6 +189,7 @@
     [
         (CorrelationRules.IntentRule, "Shared intent / capability candidates (G, H)"), (CorrelationRules.ContractVersionConflictRule, "Contract version conflicts (J)"),
         (CorrelationRules.SymbolNameRule, "Symbol name candidates (L)"), (CorrelationRules.TestCandidateRule, "Candidate test links (M)"),
+        (CorrelationRules.TaskSymbolRule, "Task → class references to confirm (L/M)"), (CorrelationRules.AliasConflictRule, "Conflicting alias declarations (K)"),
     ];
     private static readonly (string, string)[] InterpretStages = [("interpret", "Correlating stored evidence"), ("refresh", "Refreshing the review queue")];
 
@@ -177,6 +204,7 @@
     private List<InterpretationSnapshotView> _snapshots = [];
     private List<ReviewDecisionView> _decisions = [];
     private InterpretationComparison? _comparison;
+    private CanonicalSummaryView? _summary;
     private readonly Dictionary<Guid, string?> _notes = [];
 
     private CanonicalEntityType? ExploreType => Enum.TryParse<CanonicalEntityType>(_exploreType, out var t) ? t : null;
@@ -225,6 +253,7 @@
     {
         if (_scope is null) return;
         _snapshots = [.. (await Api.SnapshotsAsync(_scope)).Items];
+        _summary = (await Api.SummaryAsync(_scope)).Summary;
         _decisions = [.. (await Api.DecisionsAsync(_scope)).Items];
         StateHasChanged();
     }

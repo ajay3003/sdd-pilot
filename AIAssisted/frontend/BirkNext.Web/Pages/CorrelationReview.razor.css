@@ -17,3 +17,12 @@
 .cr-evidence { font-size: 0.8125rem; }
 .cr-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; display: block; overflow-x: auto; }
 .cr-table th, .cr-table td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--clr-border-subtle); }
+.cr-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; margin: .5rem 0; }
+.cr-counts dt { font-size: .75rem; color: var(--clr-text-muted); }
+.cr-counts dd { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.cr-packages { margin: .5rem 0 0; padding-left: 1.25rem; display: grid; gap: .375rem; font-size: .875rem; }
+.cr-packages li { overflow-wrap: anywhere; }
+/* Grid children may shrink below their content width (long identity keys, the history table); wide content scrolls inside its card. */
+.cr > * { min-width: 0; }
+.cr-card table { display: block; max-width: 100%; overflow-x: auto; }
+.cr-card code, .cr-relation { overflow-wrap: anywhere; }

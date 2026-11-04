@@ -1,0 +1,43 @@
+@using BirkNext.Interpretation
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+
+@* Dashboard: the latest canonical interpretation's counts (summary endpoint only; the graph is never loaded here). Renders nothing when the project
+   has no scope or the canonical service is not available, so the dashboard never shows a broken card. *@
+
+@if (_summary is { } s)
+{
+    <section class="cst" aria-labelledby="cst-heading" data-testid="db-canonical-summary">
+        <h2 id="cst-heading">Shared identities and relations</h2>
+        @if (s.InterpretationId is null)
+        {
+            <p class="cst-muted" data-testid="cst-empty">Not interpreted yet. <a href="correlation-review">Interpret the project's source evidence</a> to connect requirements, code, contracts and tests.</p>
+        }
+        else
+        {
+            <p class="cst-muted">Latest interpretation @s.InterpretedAt!.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @string.Join(", ", s.RuleSetVersions)</p>
+            <ul class="cst-counts">
+                <li><strong data-testid="cst-established">@s.EstablishedRelations</strong> established relations</li>
+                <li><strong data-testid="cst-review">@s.NeedsReview</strong> decisions needed</li>
+                @if (s.Conflicts > 0) { <li><strong data-testid="cst-conflicts">@s.Conflicts</strong> conflicts</li> }
+                <li><strong>@s.Contracts.LogicalContracts</strong> logical contracts (@s.Contracts.Occurrences occurrences)</li>
+            </ul>
+            @if (s.NeedsReview > 0) { <a class="btn-secondary" href="correlation-review" data-testid="cst-open-review">Open Correlation Review</a> }
+        }
+    </section>
+}
+
+@code {
+    private CanonicalSummaryView? _summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Services.GetService<ICanonicalInterpretationApiService>() is not { } api || Services.GetService<IFrontendAnalysisContextFactory>() is not { } contexts) return;
+        try
+        {
+            var scope = CorrelationPresentation.Scope((await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id);
+            if (scope is not null) (_summary, _) = await api.SummaryAsync(scope);
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _summary = null; }
+    }
+}

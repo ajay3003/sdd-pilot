@@ -140,6 +140,9 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
             .ReturnsAsync((new CanonicalPage<CanonicalRelationView>([candidate], 1, 0, 20), (string?)null));
         api.Setup(a => a.SnapshotsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
         api.Setup(a => a.DecisionsAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
+        api.Setup(a => a.SummaryAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalSummaryView("dev", Guid.NewGuid(), DateTimeOffset.UnixEpoch, ["correlation/2"],
+            new Dictionary<string, int>(), new Dictionary<string, int>(), 10, 1, 1, 0, new(70, 84, 81, 88, 14),
+            [new(Guid.NewGuid(), "Terraform-iac-meldingsutveksler", ["Infrastructure", "Contracts"], [])], []), (string?)null));
         Services.AddSingleton(api.Object);
 
         var cut = Render<CorrelationReview>();
@@ -149,5 +152,8 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         cut.FindAll("[data-testid=cr-source]").Should().ContainSingle();
         cut.Find("[data-testid=cr-queue-item]").GetAttribute("data-rule").Should().Be(CorrelationRules.IntentRule);
         cut.Find("[data-testid=cr-queue-item] .ssb-label").TextContent.Should().Be("Candidate");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-sum-contracts]").TextContent.Should()
+            .Contain("70 logical").And.Contain("84 versions").And.Contain("81 distinct contents").And.Contain("88 occurrences"));
+        cut.Find("[data-testid=cr-sum-package]").TextContent.Should().Contain("Infrastructure").And.Contain("Contracts");
     }
 }
