@@ -1,3 +1,5 @@
+/* No dark-mode text recolouring here: BirkNext surfaces stay light in every OS colour scheme (no global dark theme), so lightened text
+   on light cards lost contrast (browser acceptance 2026-11-04). */
 /* Work-item workspace: compact master/detail split; stacks on narrow screens. Data density over decoration. */
 .dws { display: grid; gap: 0.75rem; }
 .dws-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
@@ -64,7 +66,4 @@
 .dws-legend-list { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 0.75rem; margin: 0.5rem 0 0; }
 .dws-legend-list > div { display: contents; }
 .dws-legend-list dd { margin: 0; color: var(--clr-text-muted, #475569); }
-@media (prefers-color-scheme: dark) {
-    .dws-badge-derived { color: #c4b5fd; } .dws-badge-shared { color: #cbd5e1; } .dws-badge-review { color: #fcd34d; }
-}
 @media (max-width: 640px) { .dws-legend-list { grid-template-columns: 1fr; } }

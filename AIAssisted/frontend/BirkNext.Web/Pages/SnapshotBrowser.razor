@@ -29,6 +29,9 @@
         </select></label>
     </section>
 
+    <p class="sb-muted sb-legend" data-testid="sb-pointer-legend"><strong>Latest</strong> = newest stored · <strong>Latest completed</strong> = newest that finished completely
+        (never a partial or failed one) · <strong>Current</strong> and <strong>Approved</strong> = chosen by a person. Latest is never assumed to be approved.</p>
+
     @if (_loading is { } run) { <ReviewStageList Stages="run.Stages" TestId="sb-stages" StageTestId="sb-stage" /> }
     else if (_error is not null) { <p class="sb-error" role="alert" data-testid="sb-error">@_error <button type="button" class="btn btn-secondary btn-sm" @onclick="ReloadAsync">Retry</button></p> }
     else if (_page is { Items.Count: 0 }) { <p class="sb-muted" data-testid="sb-empty">No snapshots match these filters.</p> }
@@ -68,12 +71,20 @@
         <section class="sb-detail" aria-labelledby="sb-detail-h" data-testid="sb-detail">
             <h2 id="sb-detail-h">@s.Label</h2>
             <dl class="sb-facts">
-                <div><dt>Snapshot id</dt><dd class="sb-mono">@s.Id</dd></div>
-                <div><dt>Module</dt><dd>@s.Module</dd></div>
+                <div><dt>Type</dt><dd>@SnapshotPresentation.Type(s.Type)</dd></div>
+                <div><dt>Created</dt><dd>@s.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
                 <div><dt>Analysis / rule set</dt><dd>@(s.AnalysisVersion ?? "Not recorded")</dd></div>
-                <div><dt>Fingerprint</dt><dd class="sb-mono">@(s.ContentFingerprint ?? "Not recorded")</dd></div>
-                <div><dt>Stored in</dt><dd class="sb-mono">@s.StorageReference</dd></div>
+                <div><dt>Retention</dt><dd>@SnapshotPresentation.Retention(s.Retention)@(s.Frozen ? " · frozen" : "")</dd></div>
             </dl>
+            @* Identifiers and storage are diagnostics, not tester information: collapsed by default. *@
+            <details class="sb-technical" data-testid="sb-technical"><summary>Technical details</summary>
+                <dl class="sb-facts">
+                    <div><dt>Snapshot id</dt><dd class="sb-mono">@s.Id</dd></div>
+                    <div><dt>Module</dt><dd>@s.Module</dd></div>
+                    <div><dt>Fingerprint</dt><dd class="sb-mono">@(s.ContentFingerprint ?? "Not recorded")</dd></div>
+                    <div><dt>Stored in</dt><dd class="sb-mono">@s.StorageReference</dd></div>
+                </dl>
+            </details>
             <h3>Built from</h3>
             @if (lineage.Upstream.Count == 0) { <p class="sb-muted">No upstream snapshot is recorded.</p> }
             else { <ul data-testid="sb-upstream">@foreach (var e in lineage.Upstream) { <li>@Name(e.From) <span class="sb-muted">@SnapshotPresentation.Lineage(e.Kind)</span> @Name(e.To)</li> }</ul> }
@@ -168,7 +179,8 @@
     }
 
     private string Name(SnapshotReference r) =>
-        _selected?.Related.FirstOrDefault(m => m.Type == r.Type && m.Id == r.Id)?.Label ?? r.Label ?? $"{SnapshotPresentation.Type(r.Type)} {r.Id[..Math.Min(8, r.Id.Length)]}";
+        (_selected?.Snapshot is { } self && self.Type == r.Type && self.Id == r.Id ? $"this snapshot ({self.Label})" : null)
+        ?? _selected?.Related.FirstOrDefault(m => m.Type == r.Type && m.Id == r.Id)?.Label ?? r.Label ?? $"{SnapshotPresentation.Type(r.Type)} {r.Id[..Math.Min(8, r.Id.Length)]}";
 
     public void Dispose() => _loading?.Dispose();
 }

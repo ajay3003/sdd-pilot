@@ -1,3 +1,5 @@
+/* No dark-mode text recolouring here: BirkNext surfaces stay light in every OS colour scheme (no global dark theme), so lightened text
+   on light cards lost contrast (browser acceptance 2026-11-04). */
 .tep { display: grid; gap: 1rem; min-width: 0; }
 .tep-head { display: grid; gap: 0.25rem; }
 .tep-title { margin: 0; font-size: 1.15rem; }
@@ -67,7 +69,6 @@
 .tep-change-preview h5 { margin: 0; }
 @media (prefers-color-scheme: dark) {
     .tep-problems, .tep-change-preview { background: rgba(217, 119, 6, .12); }
-    .tep-partial-detail { color: #fcd34d; }
 }
 .tep-sources { margin: .75rem 0; }
 .tep-sources-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
@@ -108,7 +109,6 @@
 .tep-bound { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; overflow-wrap: anywhere; }
 .tep-optional { margin-top: .25rem; }
 .tep-optional .tep-role-card { opacity: .92; }
-@media (prefers-color-scheme: dark) { .tep-role-reason { color: #fcd34d; } }
 
 .tep-tone-info { border-left-color: var(--clr-info); }
 .tep-tone-neutral { border-left-color: var(--clr-border-hover); }

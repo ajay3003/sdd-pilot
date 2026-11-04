@@ -288,3 +288,6 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 .sd-source-contracts li { overflow-wrap: anywhere; }
 
 .sd-pill-info { border-color: var(--clr-info-border); background: var(--clr-info-bg-light); color: var(--clr-info); }
+
+/* Status pills keep canonical casing even inside uppercase labels (e.g. a <dt>). */
+.sd-pill { text-transform: none; letter-spacing: normal; }

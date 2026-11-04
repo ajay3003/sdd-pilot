@@ -1,3 +1,5 @@
+/* No dark-mode text recolouring here: BirkNext surfaces stay light in every OS colour scheme (no global dark theme), so lightened text
+   on light cards lost contrast (browser acceptance 2026-11-04). */
 /* Documentation Drift. Shared tokens only; long paths and fingerprints wrap, wide tables scroll inside their own region. */
 .dd { display: grid; gap: .85rem; min-width: 0; }
 .dd h3 { margin: 0 0 .35rem; font-size: 1rem; }
@@ -78,9 +80,6 @@
 .dd-status-red { background: rgba(220, 38, 38, .1); color: #991b1b; border-color: rgba(220, 38, 38, .35); }
 .dd-status-blue { background: rgba(37, 99, 235, .1); color: #1e40af; border-color: rgba(37, 99, 235, .35); }
 .dd-status-grey { background: rgba(100, 116, 139, .12); color: #334155; border-color: rgba(100, 116, 139, .35); }
-@media (prefers-color-scheme: dark) {
-  .dd-status-green { color: #86efac; } .dd-status-amber { color: #fcd34d; } .dd-status-red { color: #fca5a5; } .dd-status-blue { color: #93c5fd; } .dd-status-grey { color: #cbd5e1; }
-}
 .dd-status-summary { display: flex; flex-wrap: wrap; gap: .4rem; }
 .dd-result-tools { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; }
 .dd-filters { display: flex; flex-wrap: wrap; gap: .35rem; }

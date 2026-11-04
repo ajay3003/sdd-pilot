@@ -1,3 +1,5 @@
+/* No dark-mode text recolouring here: BirkNext surfaces stay light in every OS colour scheme (no global dark theme), so lightened text
+   on light cards lost contrast (browser acceptance 2026-11-04). */
 .do-page { max-width: 88rem; }
 .do-lead, .do-muted { color: var(--clr-text-muted); }
 .do-muted { font-size: .85rem; }
@@ -48,10 +50,6 @@
 .dd-tone-review { --tone: #b45309; --tone-bg: rgba(217, 119, 6, .12); }
 .dd-tone-blocker { --tone: #b91c1c; --tone-bg: rgba(185, 28, 28, .1); }
 .dd-tone-neutral { --tone: #475569; --tone-bg: rgba(100, 116, 139, .12); }
-@media (prefers-color-scheme: dark) {
-    .dd-tone-ready { --tone: #4ade80; } .dd-tone-progress { --tone: #93c5fd; } .dd-tone-change { --tone: #c4b5fd; }
-    .dd-tone-review { --tone: #fcd34d; } .dd-tone-blocker { --tone: #fca5a5; } .dd-tone-neutral { --tone: #cbd5e1; }
-}
 .dd-header { display: grid; gap: .35rem; padding: 1rem 1.1rem; border: 1px solid var(--clr-border-subtle, #e2e8f0); border-radius: 10px; background: var(--clr-surface-white, #fff); }
 .dd-title { margin: 0; font-size: 1.35rem; }
 .dd-context { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; margin: 0; font-size: .9rem; }

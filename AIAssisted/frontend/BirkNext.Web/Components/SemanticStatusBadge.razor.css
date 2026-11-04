@@ -1,13 +1,14 @@
 /* One intent → token mapping for every semantic status badge. Strong colour is reserved for decision-relevant intents (positive, warning, danger);
    info and neutral are quiet. Sentence-case text, no uppercase transform. */
 .ssb { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid; font-size: .74rem; font-weight: 600;
-    line-height: 1.4; white-space: nowrap; max-width: 100%; }
+    line-height: 1.4; white-space: nowrap; max-width: 100%; text-transform: none; letter-spacing: normal; /* never inherit a label's uppercase */ }
 .ssb-icon { font-size: .72rem; }
 .ssb-label { overflow: hidden; text-overflow: ellipsis; }
 .ssb-scope { font-weight: 400; }
 .ssb-positive { color: var(--clr-success); background: var(--clr-success-bg-light); border-color: var(--clr-success-border); }
 .ssb-info { color: var(--clr-info); background: var(--clr-info-bg-light); border-color: var(--clr-info-border); }
 .ssb-warning { color: var(--clr-warning); background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
-.ssb-danger { color: var(--clr-danger); background: var(--clr-danger-bg); border-color: var(--clr-danger-border); }
+/* #b91c1c (not --clr-danger #dc2626): 4.41:1 on the danger background was below WCAG AA for small text. */
+.ssb-danger { color: #b91c1c; background: var(--clr-danger-bg); border-color: var(--clr-danger-border); }
 .ssb-active { color: var(--clr-accent); background: var(--clr-accent-bg); border-color: var(--clr-accent-border); }
 .ssb-neutral { color: var(--clr-text-muted); background: var(--clr-surface-white); border-color: var(--clr-border); }

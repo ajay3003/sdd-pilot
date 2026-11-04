@@ -17,3 +17,6 @@
 .sb-facts dt { color: var(--clr-text-muted); font-size: 0.75rem; }
 .sb-facts dd { margin: 0; }
 .sb-deletion { margin-top: 0.5rem; }
+.sb-technical { margin-top: .5rem; font-size: .875rem; }
+.sb-technical summary { cursor: pointer; color: var(--clr-text-muted); }
+.sb-legend { margin: 0; }

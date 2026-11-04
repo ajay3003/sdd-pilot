@@ -1,3 +1,5 @@
+/* No dark-mode text recolouring here: BirkNext surfaces stay light in every OS colour scheme (no global dark theme), so lightened text
+   on light cards lost contrast (browser acceptance 2026-11-04). */
 /* Scenario steps: the main working area once operations are added. Status is always text + tone, never colour only. */
 .pss { display: grid; gap: .75rem; margin-top: 1rem; }
 .pss-header { border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 8px); padding: .75rem 1rem; background: var(--clr-surface, #fff); }
@@ -84,20 +86,6 @@
 .pss-panel-warn { border-color: #d97706; background: #fffbeb; }
 .pss-add { justify-self: start; }
 
-@media (prefers-color-scheme: dark) {
-    .pss-status-ready { color: #86efac; background: rgba(22, 163, 74, .15); }
-    .pss-status-attention { color: #fcd34d; background: rgba(217, 119, 6, .15); }
-    .pss-status-blocked { color: #fca5a5; background: rgba(220, 38, 38, .15); }
-    .pss-status-disabled { color: #cbd5e1; background: rgba(148, 163, 184, .12); }
-    .pss-status-discovered { color: #fcd34d; background: rgba(245, 158, 11, .15); border-color: #b45309; }
-    .pss-tone-discovered { background: rgba(245, 158, 11, .08); }
-    .pss-panel-conflict { background: rgba(220, 38, 38, .12); }
-    .pss-panel-warn { background: rgba(217, 119, 6, .12); }
-    .pss-suggestion-row td { background: rgba(37, 99, 235, .12); }
-    .pss-warn { color: #fcd34d; }
-    .pss-ok { color: #86efac; }
-    .pss-danger { color: #fca5a5; }
-}
 
 /* Request → Response pair: two compact cards side by side (stacked on narrow screens). */
 .pss-rr { display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; align-items: start; margin-top: .5rem; }

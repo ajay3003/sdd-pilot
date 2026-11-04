@@ -1,3 +1,5 @@
+/* No dark-mode text recolouring here: BirkNext surfaces stay light in every OS colour scheme (no global dark theme), so lightened text
+   on light cards lost contrast (browser acceptance 2026-11-04). */
 /* Azure Environment Analysis. Builds on the shared source-evidence look (sd-*); only the connection card and scope controls are specific.
    Status is never colour-only: every pill carries its text. */
 .az-page { max-width: 80rem; }
@@ -25,4 +27,3 @@
 .az-states dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
 .az-states dd { margin: 0; font-weight: 700; }
 .az-capabilities { margin: .4rem 0 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
-@media (prefers-color-scheme: dark) { .az-unavailable { background: rgba(185, 28, 28, .15); color: #fecaca; } }
