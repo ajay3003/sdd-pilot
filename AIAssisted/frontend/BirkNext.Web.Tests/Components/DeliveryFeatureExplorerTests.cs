@@ -65,6 +65,30 @@ public sealed class DeliveryFeatureExplorerTests : BunitContext
     private IRenderedComponent<DeliveryFeatureExplorer> Render(WeeklyDeliveryReport? report = null) =>
         Render<DeliveryFeatureExplorer>(p => p.Add(x => x.Report, report ?? Report()).Add(x => x.ProjectName, "M2LB"));
 
+    [Fact]
+    public void WorkType_DefaultsToNonTechnical_AndTheListStaysBesideTheOpenFeature()
+    {
+        var report = Report();
+        report = report with
+        {
+            Stories = [.. report.Stories, new DeliveryStoryRow { FeatureKey = "frontend::007-translate-adr-029", Title = "Translate Frontend to English (ADR-029)", Module = "Frontend",
+                Movement = DeliveryMovement.Progressed, CurrentTaskCompleted = 2, CurrentTaskTotal = 4 }],
+        };
+        var cut = Render(report);
+
+        cut.FindAll("[data-testid=dlr-story-row]").Should().NotContain(r => r.GetAttribute("data-feature") == "frontend::007-translate-adr-029", "technical work is hidden by default");
+        cut.Find("[data-testid=dlr-story-count]").TextContent.Should().Contain("Non-technical");
+        cut.Find("[data-testid=dlr-story-work]").Change(nameof(DeliveryWorkType.Technical));
+        cut.FindAll("[data-testid=dlr-story-row]").Select(r => r.GetAttribute("data-feature")).Should().Equal("frontend::007-translate-adr-029");
+        cut.FindAll("[data-testid=dlr-story-quality]").Should().BeEmpty();
+        cut.Find("[data-testid=dlr-feature-work]").TextContent.Should().Be("Technical");
+
+        cut.Find("[data-testid=dlr-feature-open]").Click();
+        cut.Find("[data-testid=dfx-split]").ClassList.Should().Contain("has-detail");
+        cut.Find("[data-testid=dfx-list]").Should().NotBeNull("the list stays beside the opened feature (stacked on narrow screens by CSS)");
+        cut.Find("[data-testid=dfx-detail-pane]").Should().NotBeNull();
+    }
+
     private static void Tab(IRenderedComponent<DeliveryFeatureExplorer> cut, string tab) => cut.FindAll("[data-testid=dlr-feature-tab]").Single(t => t.GetAttribute("data-tab") == tab).Click();
 
     [Fact]

@@ -1,6 +1,7 @@
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation
+@inject IServiceProvider Services
 
 @* Delivery Reporting → Stories: the business-facing view of one frozen weekly report. Feature is the parent; explicit phases (only when the
    task lists declare them) sit between feature and user story; acceptance criteria belong to their story or stay feature-level; tasks attach
@@ -11,13 +12,23 @@
         <p class="dfx-muted">Baseline @Report.Baseline.Label → current @Report.Current.Label. Task progress is not delivery status.</p>
     </div>
 
-    @if (_open is { } open)
-    {
-        @Detail(open)
-    }
-    else
-    {
+    <div class="dfx-split @(_open is null ? "" : "has-detail")" data-testid="dfx-split">
+    <div class="dfx-list" data-testid="dfx-list">
         <div class="dfx-filters" role="group" aria-label="Filter features">
+            <label class="dfx-field"><span>Work type</span>
+                <select data-testid="dlr-story-work" @bind="_work">
+                    <option value="@nameof(DeliveryWorkType.NonTechnical)">Non-technical</option>
+                    <option value="@nameof(DeliveryWorkType.Technical)">Technical</option>
+                    <option value="@nameof(DeliveryWorkType.All)">All work</option>
+                </select></label>
+            @if (_work != nameof(DeliveryWorkType.Technical))
+            {
+                <label class="dfx-field"><span>Quality</span>
+                    <select data-testid="dlr-story-quality" @bind="_quality">
+                        <option value="">All categories</option>
+                        @foreach (var q in FunctionalQualityClassifier.NonTechnicalCategories) { <option value="@q">@FunctionalQualityClassifier.Label(q)</option> }
+                    </select></label>
+            }
             <label class="dfx-field"><span>Search</span><input type="search" data-testid="dlr-story-search" @bind="_search" @bind:event="oninput" placeholder="Feature, user story or module" /></label>
             <label class="dfx-field"><span>Show</span>
                 <select data-testid="dlr-story-filter" @bind="_filter">
@@ -60,11 +71,11 @@
             </section>
         }
 
-        var rows = Rows();
-        <p class="dfx-muted" role="status" data-testid="dlr-story-count">@rows.Count of @Report.Stories.Count features shown@(_filter == "default" ? " (changed this week or needing attention)" : "")</p>
+        @{ var rows = Rows(); }
+        <p class="dfx-muted" role="status" data-testid="dlr-story-count">@rows.Count of @Report.Stories.Count features shown@(_filter == "default" ? " (changed this week or needing attention)" : "")@(_work == nameof(DeliveryWorkType.All) ? "" : $" · {WorkLabel}")</p>
         @if (rows.Count == 0)
         {
-            <p data-testid="dlr-stories-none">No features match. Choose “All” to see unchanged features.</p>
+            <p data-testid="dlr-stories-none">No features match. Choose “All” to see unchanged features@(_work == nameof(DeliveryWorkType.All) ? "" : ", or “All work” in Work type")</p>
         }
         @foreach (var group in rows.GroupBy(r => r.Module).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
@@ -75,7 +86,12 @@
                 </ul>
             </section>
         }
+    </div>
+    @if (_open is { } open)
+    {
+        <div class="dfx-detail-pane" data-testid="dfx-detail-pane">@Detail(open)</div>
     }
+    </div>
 </section>
 
 @code {
@@ -83,6 +99,32 @@
     [Parameter] public string ProjectName { get; set; } = "";
 
     private string _search = "", _filter = "default", _module = "", _phase = "", _tab = "overview";
+    /// <summary>Work type (Non-technical by default) and quality category, from the server's canonical classification when available (shared
+    /// classifier + technical change intents), else the shared feature classifier.</summary>
+    private string _work = nameof(DeliveryWorkType.NonTechnical), _quality = "";
+    private Dictionary<string, QualityCategory>? _classes;
+    private Guid? _classesFor;
+    private string WorkLabel => (_work == nameof(DeliveryWorkType.Technical) ? "Technical" : "Non-technical") + (_quality.Length > 0 && Enum.TryParse<QualityCategory>(_quality, out var q) ? $" · {FunctionalQualityClassifier.Label(q)}" : "");
+
+    private QualityCategory Category(DeliveryStoryRow s) => _classes?.GetValueOrDefault(s.FeatureKey) is { } c && _classes.ContainsKey(s.FeatureKey) ? c
+        : FunctionalQualityClassifier.ClassifyFeature(s.Title, s.Hierarchy?.Stories.Select(x => x.Title)).Category;
+
+    private bool WorkIncludes(DeliveryStoryRow s)
+    {
+        var work = new DeliveryWorkFilter(Enum.TryParse<DeliveryWorkType>(_work, out var w) ? w : DeliveryWorkType.NonTechnical,
+            _work != nameof(DeliveryWorkType.Technical) && Enum.TryParse<QualityCategory>(_quality, out var q) ? q : null);
+        return work.Includes(Category(s));
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_classesFor == Report.ReportId) return;
+        _classesFor = Report.ReportId;
+        // Optional: without the API (embedded/offline) the shared feature classifier applies.
+        if (Services.GetService(typeof(IDeliveryReportingApiService)) is IDeliveryReportingApiService api
+            && await api.ScopeAsync(Report.ProjectId, Report.ReportId, null, new BirkNext.Interpretation.CanonicalScopeFilter()) is { Classifications.Count: > 0 } view)
+            _classes = view.Classifications.ToDictionary(c => c.FeatureKey, c => c.Category, StringComparer.Ordinal);
+    }
     private DeliveryStoryRow? _open;
     private string? _openStory;
     private string _taskFilter = "all", _taskSearch = "", _taskPhase = "", _taskStory = "", _phaseFilter = "all";
@@ -111,7 +153,7 @@
     private void OpenStory(string key) { _tab = "stories"; _openStory = key; }
 
     private List<DeliveryStoryRow> Rows() => [.. P.Filter(Report, _filter, _search, _module)
-        .Where(s => _phase.Length == 0 || s.Hierarchy?.Phases.Any(p => p.Key == _phase) == true)];
+        .Where(s => _phase.Length == 0 || s.Hierarchy?.Phases.Any(p => p.Key == _phase) == true).Where(WorkIncludes)];
 
     private static string Id(string text) => string.Concat(text.Where(char.IsLetterOrDigit)).ToLowerInvariant() is { Length: > 0 } id ? id : "project";
 
@@ -169,10 +211,10 @@
         var headingId = $"dfx-card-{Id(s.FeatureKey)}";
         <li class="dfx-card" data-testid="dlr-story-row" data-feature="@s.FeatureKey" data-change="@(s.RemovedFeature ? "Removed" : s.NewFeature ? "Added" : s.Movement.ToString())" aria-labelledby="@headingId">
             <div class="dfx-card-top">
-                <h4 class="dfx-card-title" id="@headingId">@s.Title</h4>
+                <h4 class="dfx-card-title" id="@headingId"><MetaBadge Kind="BadgeKind.Type" Text="Feature" /> @s.Title</h4>
                 <span class="dfx-badges"><span class="dfx-badge @ChangeTone(s)" data-testid="dlr-feature-change">@ChangeBadge(s)</span>@if (ExtraSpecBadge(s)) { <span class="dfx-badge dfx-warn" data-testid="dlr-feature-spec-changed">Specification changed</span> }</span>
             </div>
-            <p class="dfx-muted">@Folder(s.FeatureKey) · @(s.Module.Length == 0 ? "Project" : s.Module) · @(s.RemovedFeature ? $"Baseline {DeliveryReportStories.StatusOrDash(s.BaselineStatus)}" : $"Current {DeliveryReportStories.StatusOrDash(s.CurrentStatus)}")</p>
+            <p class="dfx-muted"><span class="dfx-work" data-testid="dlr-feature-work">@FunctionalQualityClassifier.Label(Category(s))</span> · @Folder(s.FeatureKey) · @(s.Module.Length == 0 ? "Project" : s.Module) · @(s.RemovedFeature ? $"Baseline {DeliveryReportStories.StatusOrDash(s.BaselineStatus)}" : $"Current {DeliveryReportStories.StatusOrDash(s.CurrentStatus)}")</p>
             <dl class="dfx-facts">
                 @if (h is { Captured: true })
                 {
