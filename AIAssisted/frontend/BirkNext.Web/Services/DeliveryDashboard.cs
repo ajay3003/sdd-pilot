@@ -119,17 +119,28 @@ public static class DeliveryDashboard
         ];
     }
 
-    /// <summary>Genuine issues only, grouped: scope changes, traceability, quality gaps, snapshot/comparison warnings. Shared work is never here.</summary>
+    public const string ComparisonLevelLabel = "Comparison-level warnings", SnapshotLevelLabel = "Snapshot-level items (not scoped)";
+
+    /// <summary>Genuine issues only, grouped: scope changes, traceability, quality gaps, comparison-level warnings. Shared work is never here. In a
+    /// scoped report, items that belong to no feature (an unmapped task file, a duplicate number) are kept apart as snapshot-level — never presented
+    /// as an issue of the selected scope; comparison warnings are always comparison-level.</summary>
     public static IReadOnlyList<DeliveryAttentionGroupRow> Attention(WeeklyDeliveryReport? report)
     {
         if (report is null) return [];
-        var groups = report.Attention.GroupBy(a => DeliveryAttentionCategories.Of(a.Kind))
+        var scoped = report.Scope is not null;
+        var groups = report.Attention.Where(a => !scoped || !DeliveryReportScoping.IsReportLevel(a)).GroupBy(a => DeliveryAttentionCategories.Of(a.Kind))
             .Select(g => new DeliveryAttentionGroupRow(g.Key, DeliveryAttentionCategories.Label(g.Key), [.. g])).ToList();
+        if (scoped && report.Attention.Where(DeliveryReportScoping.IsReportLevel).ToList() is { Count: > 0 } snapshotLevel)
+            groups.Add(new(DeliveryAttentionCategory.DataQuality, SnapshotLevelLabel, snapshotLevel));
         if (report.ComparisonWarnings.Count > 0)
-            groups.Add(new(DeliveryAttentionCategory.DeliverySignal, "Snapshot and comparison warnings",
-                [.. report.ComparisonWarnings.Select(w => new DeliveryAttentionItem(DeliveryAttentionKind.UnmappedArtifact, DeliveryAttentionSeverity.Review, "Comparison", w))]));
+            groups.Add(new(DeliveryAttentionCategory.DeliverySignal, ComparisonLevelLabel,
+                [.. report.ComparisonWarnings.Select(w => new DeliveryAttentionItem(DeliveryAttentionKind.UnmappedArtifact, DeliveryAttentionSeverity.Review, "Comparison-level warning", w))]));
         return groups;
     }
+
+    /// <summary>Change this period is meaningful only when the selected source exists on both sides; otherwise the reason is stated instead.</summary>
+    public static string? ChangeNotComparable(WeeklyDeliveryReport? report) =>
+        report?.Scope is { SourceInBaseline: false } s ? $"Not comparable: {s.SourceName ?? "the selected source"} is not present in the baseline (“{report.Baseline.Label}”)." : null;
 
     public static (string Label, DeliveryDashboardTone Tone) Change(DeliveryStoryRow? row) => row switch
     {

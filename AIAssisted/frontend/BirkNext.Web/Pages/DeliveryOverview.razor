@@ -3,6 +3,7 @@
 @attribute [BirkNext.Web.Services.WorkspaceDocumentsNotRead]
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
+@using BirkNext.Interpretation
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation
 @inject IDeliveryReportingApiService Api
 @inject NavigationManager Nav
@@ -56,6 +57,9 @@
             <section class="dd-header" data-testid="dd-header" aria-label="Comparison context">
                 <h2 class="dd-title">@header.Title</h2>
                 <dl class="dd-context">
+                    <div><dt>Source</dt><dd data-testid="dd-scope-source">@SourceSummary()</dd></div>
+                    <div><dt>Functional scope</dt><dd data-testid="dd-scope-scope">@(SelectedScopeName() ?? "All functional scopes")</dd></div>
+                    @if (_module.Length > 0) { <div><dt>Module</dt><dd data-testid="dd-scope-module">@ModuleLabel(_module)</dd></div> }
                     <div><dt>Current snapshot</dt><dd data-testid="dd-current-label">@header.CurrentLabel</dd></div>
                     @if (header.BaselineLabel is { } baseline) { <div><dt>Baseline</dt><dd>@baseline</dd></div> }
                     <div><dt>Coverage</dt><dd data-testid="dd-coverage">@header.Coverage</dd></div>
@@ -70,6 +74,81 @@
                 </p>
             </section>
 
+            <section class="do-filters" aria-label="Scope and filters" data-testid="do-filters">
+                <div class="do-toolbar" role="group" aria-label="Scope the overview">
+                    <label class="do-field"><span>Source <span class="dd-info" tabindex="0" title="@CanonicalScopeText.SourceHelp" aria-label="@CanonicalScopeText.SourceHelp">ⓘ</span></span>
+                        <select data-testid="do-source-filter" value="@(_source ?? "")" @onchange="OnSourceChanged">
+                            <option value="">All sources@(SourceOptions.Count > 1 ? $" ({SourceOptions.Count} evidence sources)" : "")</option>
+                            @foreach (var s in SourceOptions) { <option value="@s.Id" title="@s.Provenance">@s.Name (@SourceCount(s))</option> }
+                            @if (_source is { } src && SourceOptions.All(o => o.Id != src)) { <option value="@src">Unavailable source</option> }
+                        </select></label>
+                    <label class="do-field"><span>Functional scope <span class="dd-info" tabindex="0" title="@CanonicalScopeText.FunctionalScopeHelp" aria-label="@CanonicalScopeText.FunctionalScopeHelp">ⓘ</span></span>
+                        <select data-testid="do-scope-filter" value="@(_scope ?? "")" @onchange="OnScopeChanged">
+                            <option value="">All functional scopes</option>
+                            @foreach (var g in ScopeOptions.GroupBy(o => o.Kind))
+                            {
+                                <optgroup label="@CanonicalScopeText.KindLabel(g.Key)">
+                                    @foreach (var o in g) { <option value="@o.Id" title="@o.Detail">@o.Name (@o.CurrentFeatures)</option> }
+                                </optgroup>
+                            }
+                            @if (_scope is { } sc && ScopeOptions.All(o => o.Id != sc)) { <option value="@sc">Unavailable scope</option> }
+                        </select></label>
+                    @if (Modules.Count > 1 || _module.Length > 0)
+                    {
+                        <label class="do-field"><span>Module</span>
+                            <select data-testid="do-module" value="@_module" @onchange="OnModuleChanged">
+                                <option value="">All modules</option>
+                                @foreach (var m in Modules) { <option value="@m">@ModuleLabel(m)</option> }
+                            </select></label>
+                    }
+                    <label class="do-field"><span>State</span>
+                        <select data-testid="do-filter" value="@_status" @onchange="OnStateChanged">
+                            <option value="@AllFilter">All states</option>
+                            @foreach (var st in Enum.GetValues<BacklogStatus>().Where(x => !DeliveryBacklog.NotFromSnapshots(x))) { <option value="@st">@DeliveryBacklog.Label(st)</option> }
+                        </select></label>
+                    <label class="do-field"><span>Attention</span>
+                        <select data-testid="do-attention" value="@_attention" @onchange="OnAttentionChanged">
+                            <option value="@AllFilter">All features</option>
+                            <option value="attention">Needs attention</option>
+                            <option value="open">Has open tasks</option>
+                        </select></label>
+                    <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" @bind:after="WriteUrl" placeholder="Feature or module" /></label>
+                </div>
+                <p class="do-muted do-filter-note">Source, Functional scope and Module recalculate the whole overview; State, Attention and Search narrow the feature list.</p>
+                @if (AnyFilter)
+                {
+                    <p class="do-chips" data-testid="do-chips">
+                        @if (_source is not null) { <button type="button" class="do-chip" data-testid="do-chip-source" aria-label="Clear source" @onclick="ClearSource">Source: @SourceName() <span aria-hidden="true">×</span></button> }
+                        @if (_scope is not null) { <button type="button" class="do-chip" data-testid="do-chip-scope" aria-label="Clear functional scope" @onclick="ClearScope">Scope: @(SelectedScopeName() ?? "unavailable") <span aria-hidden="true">×</span></button> }
+                        @if (_module.Length > 0) { <button type="button" class="do-chip" aria-label="Clear module" @onclick="ClearModule">Module: @ModuleLabel(_module) <span aria-hidden="true">×</span></button> }
+                        <button type="button" class="do-clear" data-testid="do-clear-filters" @onclick="ClearFilters">Clear filters</button>
+                    </p>
+                }
+                @foreach (var invalid in _scopeView?.InvalidFilters ?? []) { <p class="do-notice" role="alert" data-testid="do-invalid-filter">@invalid</p> }
+                @foreach (var notice in _scopeView?.Notices ?? []) { <p class="do-notice" role="status" data-testid="do-scope-notice">@notice</p> }
+                @if (_scopeError is { } scopeError) { <p class="do-notice" role="alert" data-testid="do-scope-error">@scopeError</p> }
+                @if (_scope is not null && _scopeView?.Candidates is { Count: > 0 } candidates)
+                {
+                    <details class="do-candidates" data-testid="do-scope-candidates">
+                        <summary>@candidates.Count more feature@(candidates.Count == 1 ? "" : "s") may belong to this scope — awaiting review, not counted</summary>
+                        <ul>@foreach (var c in candidates) { <li><strong>@c.Title</strong> — @c.Why</li> }</ul>
+                        <p><a href="correlation-review">Confirm or reject them in Correlation Review</a></p>
+                    </details>
+                }
+                @if (_scopeView?.InterpretationNote is { } interpretationNote) { <p class="do-muted" data-testid="do-interpretation-note">@interpretationNote</p> }
+            </section>
+
+            @if (Scoped && view.Items.Count == 0)
+            {
+                <section class="do-card do-empty-scope" data-testid="do-empty-scope" role="status">
+                    <h3 class="dd-card-h">No Delivery features match this Source + Functional scope.</h3>
+                    <p class="do-chips">
+                        @if (_scope is not null) { <button type="button" class="do-clear" data-testid="do-clear-scope" @onclick="ClearScope">Clear functional scope</button> }
+                        @if (_source is not null) { <button type="button" class="do-clear" data-testid="do-clear-source" @onclick="ClearSource">Clear source</button> }
+                        @if (_module.Length > 0) { <button type="button" class="do-clear" @onclick="ClearModule">Clear module</button> }
+                    </p>
+                </section>
+            }
             <h3 class="dd-h" id="dd-current-h">Current delivery state</h3>
             <ul class="dd-kpis" aria-labelledby="dd-current-h" data-testid="dd-current">
                 @foreach (var k in DeliveryDashboard.Current(view))
@@ -113,11 +192,18 @@
 
             @if (_report is not null)
             {
-                <h3 class="dd-h" id="dd-change-h">Change this period <span class="do-muted">compared with the baseline</span></h3>
-                <div class="dd-grid">
-                    <section class="dd-card" aria-label="Feature changes" data-testid="dd-change-features"><h3 class="dd-card-h">Features</h3>@Bars(DeliveryDashboard.FeatureChanges(_report), "dd-change-bar")</section>
-                    <section class="dd-card" aria-label="Task changes" data-testid="dd-change-tasks"><h3 class="dd-card-h">Tasks</h3>@Bars(DeliveryDashboard.TaskChanges(_report), "dd-change-bar")</section>
-                </div>
+                <h3 class="dd-h" id="dd-change-h">Change this period <span class="do-muted">compared with the baseline@(Scoped ? ", same scope on both sides" : "")</span></h3>
+                @if (DeliveryDashboard.ChangeNotComparable(_report) is { } notComparable)
+                {
+                    <p class="do-card do-muted" data-testid="dd-change-not-comparable">@notComparable</p>
+                }
+                else
+                {
+                    <div class="dd-grid">
+                        <section class="dd-card" aria-label="Feature changes" data-testid="dd-change-features"><h3 class="dd-card-h">Features</h3>@Bars(DeliveryDashboard.FeatureChanges(_report), "dd-change-bar")</section>
+                        <section class="dd-card" aria-label="Task changes" data-testid="dd-change-tasks"><h3 class="dd-card-h">Tasks</h3>@Bars(DeliveryDashboard.TaskChanges(_report), "dd-change-bar")</section>
+                    </div>
+                }
             }
 
             <div class="dd-grid">
@@ -154,32 +240,9 @@
             </div>
             <p class="do-muted dd-trend" data-testid="dd-trend">Trend available after more delivery snapshots — a baseline and a current snapshot are two points, not a trend.</p>
 
-            <div class="do-toolbar" role="group" aria-label="Filter features">
-                <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" placeholder="Feature or module" /></label>
-                @if (view.Items.Select(i => i.Module).Distinct().Count() > 1)
-                {
-                    <label class="do-field"><span>Module</span>
-                        <select data-testid="do-module" @bind="_module">
-                            <option value="">All modules</option>
-                            @foreach (var m in view.Items.Select(i => i.Module).Distinct().Order(StringComparer.OrdinalIgnoreCase)) { <option value="@m">@(m.Length == 0 ? "Project" : m)</option> }
-                        </select></label>
-                }
-                <label class="do-field"><span>State</span>
-                    <select data-testid="do-filter" @bind="_status">
-                        <option value="@AllFilter">All states</option>
-                        @foreach (var st in Enum.GetValues<BacklogStatus>().Where(x => !DeliveryBacklog.NotFromSnapshots(x))) { <option value="@st">@DeliveryBacklog.Label(st)</option> }
-                    </select></label>
-                <label class="do-field"><span>Attention</span>
-                    <select data-testid="do-attention" @bind="_attention">
-                        <option value="@AllFilter">All features</option>
-                        <option value="attention">Needs attention</option>
-                        <option value="open">Has open tasks</option>
-                    </select></label>
-            </div>
-
             var keys = Filtered(view).Select(i => i.FeatureKey).ToHashSet(StringComparer.Ordinal);
             var rows = DeliveryDashboard.Rows(view, _report).Where(r => keys.Contains(r.Item.FeatureKey)).ToList();
-            <p class="do-muted" role="status" data-testid="do-count">@rows.Count of @view.Items.Count features shown · blocked, needs review, new and changed first</p>
+            <p class="do-muted" role="status" data-testid="do-count">@rows.Count of @view.Items.Count features @(Scoped ? "in this scope " : "")shown · blocked, needs review, new and changed first</p>
             <ul class="dd-features" data-testid="do-backlog" aria-label="Features">
                 @foreach (var r in rows)
                 {
@@ -188,7 +251,8 @@
                     var pct = item.TasksTotal == 0 ? 0 : 100 * item.TasksCompleted / item.TasksTotal;
                     <li data-testid="do-item" data-status="@item.Status">
                         <button type="button" class="dd-feature" data-testid="do-feature-open" disabled="@(_report is null)" @onclick="() => OpenFeature(key)">
-                            <span class="dd-f-title"><strong>@item.Title</strong><span class="dd-f-id">@DeliveryWorkItems.FeatureSourceId(key) · @(item.Module.Length == 0 ? "Project" : item.Module)</span></span>
+                            <span class="dd-f-title"><strong>@item.Title</strong><span class="dd-f-id">@DeliveryWorkItems.FeatureSourceId(key) · @(item.Module.Length == 0 ? "Project" : item.Module)</span>
+                                @if (Why(key) is { Length: > 0 } why) { <span class="dd-f-why" data-testid="do-why" title="@why">Why included: @why</span> }</span>
                             <span class="dd-f-progress" title="Task checklist only">
                                 @if (item.TasksTotal == 0) { <span class="do-muted">No tasks</span> }
                                 else
@@ -204,7 +268,7 @@
                     </li>
                 }
             </ul>
-            @if (rows.Count == 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
+            @if (rows.Count == 0 && view.Items.Count > 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
             @if (view.RemovedFeatures.Count > 0)
             {
                 <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
@@ -224,14 +288,31 @@
     private const string AllFilter = "all";
     [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
     [SupplyParameterFromQuery(Name = "feature")] public string? FeatureQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "source")] public string? SourceQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "scope")] public string? ScopeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "module")] public string? ModuleQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "state")] public string? StateQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "attention")] public string? AttentionQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? SearchQuery { get; set; }
 
     private bool _loaded, _loadingProject;
-    private string? _error;
+    private string? _error, _scopeError;
     private List<DeliveryProject> _projects = [];
-    private Guid? _projectId;
+    private Guid? _projectId, _reportId, _snapshotId;
     private DeliveryBacklogView? _view;
     private WeeklyDeliveryReport? _report;
+    // What the server returned for the selected Source + Functional scope; Module narrows it further on the page with the same projection.
+    private DeliveryScopeView? _scopeView;
+    private WeeklyDeliveryReport? _scopedReport;
+    private DeliverySnapshotDetail? _scopedSnapshot;
+    private (string? Source, string? Scope)? _loadedFilter;
+    private string? _source, _scope;
     private string _status = AllFilter, _module = "", _search = "", _attention = AllFilter;
+
+    private bool Scoped => _source is not null || _scope is not null || _module.Length > 0;
+    private bool AnyFilter => Scoped || _status != AllFilter || _attention != AllFilter || _search.Length > 0;
+    private IReadOnlyList<DeliveryScopeSourceOption> SourceOptions => _scopeView?.Sources ?? [];
+    private IReadOnlyList<DeliveryFunctionalScopeOption> ScopeOptions => _scopeView?.Scopes ?? [];
 
     protected override async Task OnParametersSetAsync()
     {
@@ -242,43 +323,111 @@
             _error = error;
             _loaded = true;
         }
+        _source = Blank(SourceQuery);
+        _scope = Blank(ScopeQuery);
+        _status = Blank(StateQuery) ?? AllFilter;
+        _attention = Blank(AttentionQuery) ?? AllFilter;
+        _search = SearchQuery ?? "";
+        var module = ModuleQuery ?? "";
         var requested = Guid.TryParse(ProjectQuery, out var p) && _projects.Any(x => x.Id == p) ? p : _projects.FirstOrDefault()?.Id;
-        if (requested != _projectId) { _projectId = requested; await LoadAsync(); }
+        if (requested != _projectId) { _projectId = requested; _module = module; await LoadAsync(); }
+        else if (_loadedFilter != (_source, _scope)) { _module = module; await LoadScopeAsync(); }
+        else if (module != _module) { _module = module; ApplyModule(); }
     }
 
     /// <summary>The backlog of the chosen delivery project only: its newest report, else its newest snapshot. Never another project's data.</summary>
     private async Task LoadAsync()
     {
-        _view = null; _report = null;
+        _view = null; _report = null; _reportId = null; _snapshotId = null; _scopeView = null; _loadedFilter = null;
         if (_projectId is not { } id) return;
         _loadingProject = true;
         try
         {
-            var reports = await Api.ReportsAsync(id);
-            if (reports.OrderByDescending(r => r.GeneratedAt).FirstOrDefault() is { } newest && await Api.ReportAsync(id, newest.Id) is { } report && report.ProjectId == id)
-            {
-                _report = report;
-                _view = DeliveryBacklog.FromReport(report);
-            }
-            else if ((await Api.SnapshotsAsync(id)).OrderByDescending(s => s.EffectiveAt).FirstOrDefault() is { } snapshot && await Api.SnapshotAsync(id, snapshot.Id) is { } detail)
-                _view = DeliveryBacklog.FromSnapshot(detail);
+            // A scoped report covers part of the project only: the overview starts from the newest whole-comparison report and scopes it here.
+            if ((await Api.ReportsAsync(id)).Where(r => r.ScopeLabel.Length == 0).OrderByDescending(r => r.GeneratedAt).FirstOrDefault() is { } newest) _reportId = newest.Id;
+            else if ((await Api.SnapshotsAsync(id)).OrderByDescending(s => s.EffectiveAt).FirstOrDefault() is { } snapshot) _snapshotId = snapshot.Id;
+            await LoadScopeAsync();
         }
         finally { _loadingProject = false; }
     }
+
+    /// <summary>
+    /// Reads the overview for the selected Source + Functional scope from the server (membership by canonical ids; the report projected onto it).
+    /// Without the scope endpoint the whole report is shown and a requested scope is reported as not applied — never silently ignored.
+    /// </summary>
+    private async Task LoadScopeAsync()
+    {
+        _scopeError = null;
+        _loadedFilter = (_source, _scope);
+        if (_projectId is not { } id || _reportId is null && _snapshotId is null) { _scopedReport = null; _scopedSnapshot = null; ApplyModule(); return; }
+        var view = await Api.ScopeAsync(id, _reportId, _reportId is null ? _snapshotId : null, new CanonicalScopeFilter(_source, _scope));
+        _scopeView = view;
+        if (view is not null && (view.Report is not null || view.Snapshot is not null))
+        {
+            _scopedReport = view.Report is { } r && r.ProjectId == id ? r : null;
+            _scopedSnapshot = view.Snapshot;
+        }
+        else
+        {
+            _scopedReport = _reportId is { } reportId && await Api.ReportAsync(id, reportId) is { } report && report.ProjectId == id ? report : null;
+            _scopedSnapshot = _scopedReport is null && _snapshotId is { } snapshotId ? await Api.SnapshotAsync(id, snapshotId) : null;
+            if (_source is not null || _scope is not null) _scopeError = "Source and Functional scope could not be read; the whole project is shown.";
+        }
+        ApplyModule();
+    }
+
+    /// <summary>Module narrows the server-scoped rows with the same projection, so every number on the page stays scoped.</summary>
+    private void ApplyModule()
+    {
+        if (_scopedReport is { } report)
+        {
+            _report = _module.Length == 0 ? report : DeliveryReportScoping.Project(report,
+                report.Stories.Where(s => !s.RemovedFeature && s.Module == _module).Select(s => s.FeatureKey).ToHashSet(StringComparer.Ordinal),
+                report.Stories.Where(s => s.RemovedFeature && s.Module == _module).Select(s => s.FeatureKey).ToHashSet(StringComparer.Ordinal),
+                report.Scope ?? new DeliveryReportScope());
+            _view = DeliveryBacklog.FromReport(_report);
+        }
+        else if (_scopedSnapshot is { } detail)
+        {
+            _report = null;
+            _view = DeliveryBacklog.FromSnapshot(_module.Length == 0 ? detail : detail with { Features = [.. detail.Features.Where(f => f.Module == _module)] });
+        }
+        else { _report = null; _view = null; }
+    }
+
+    private IReadOnlyList<string> Modules =>
+        [.. (_scopedReport?.Stories.Where(s => !s.RemovedFeature).Select(s => s.Module) ?? _scopedSnapshot?.Features.Select(f => f.Module) ?? [])
+            .Distinct().Order(StringComparer.OrdinalIgnoreCase)];
 
     private IReadOnlyList<BacklogItem> Filtered(DeliveryBacklogView view)
     {
         IEnumerable<BacklogItem> items = view.Items;
         if (Enum.TryParse<BacklogStatus>(_status, out var status)) items = items.Where(i => i.Status == status);
-        if (_module.Length > 0) items = items.Where(i => i.Module == _module);
         if (_search.Length > 0) items = items.Where(i => i.Title.Contains(_search, StringComparison.OrdinalIgnoreCase) || i.Module.Contains(_search, StringComparison.OrdinalIgnoreCase));
         if (_attention == "attention") items = items.Where(i => i.Attention > 0);
         else if (_attention == "open") items = items.Where(i => i.OpenTasks > 0);
         // Order is the dashboard priority (DeliveryDashboard.Rows): blocked, needs review, new, changed, in progress, then the rest.
-        var list = items.ToList();
-        return list;
+        return items.ToList();
     }
 
+    private string? Why(string featureKey) => _scopeView?.Members.FirstOrDefault(m => m.FeatureKey == featureKey)?.Why;
+
+    private string SourceName() => SourceOptions.FirstOrDefault(o => o.Id == _source)?.Name ?? "Unavailable source";
+
+    private string SourceSummary() => _source is not null ? SourceName() : SourceOptions.Count switch
+    {
+        0 => "All sources",
+        1 => $"{SourceOptions[0].Name} (the only source)",
+        var n => $"All sources · {n} evidence sources",
+    };
+
+    private string? SelectedScopeName() => _scope is null ? null : ScopeOptions.FirstOrDefault(o => o.Id == _scope)?.Name ?? _scopeView?.Scope?.FunctionalScopeName;
+
+    private static string SourceCount(DeliveryScopeSourceOption s) => s.CurrentFeatures == 0 && s.BaselineFeatures > 0 ? "baseline only" : s.CurrentFeatures.ToString();
+
+    private static string ModuleLabel(string module) => module.Length == 0 ? "Project" : module;
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     /// <summary>Horizontal bars of one unit (features or tasks), each with a label, count and its meaning as tooltip; scaled within the group.</summary>
     private static RenderFragment Bars(IReadOnlyList<DeliveryBar> bars, string testId) => __builder =>
@@ -296,14 +445,55 @@
         </ul>
     };
 
-    private void ToggleStatus(BacklogStatus status) => _status = _status == status.ToString() ? AllFilter : status.ToString();
+    // ── URL state: every filter lives in the query, so refresh and back keep the scope (ids only, never display names) ──
 
-    private void OpenFeature(string key) => Nav.NavigateTo($"delivery-overview?project={_projectId}&feature={Uri.EscapeDataString(key)}");
+    private string Url(string? feature = null, string? source = null, string? scope = null, string? module = null, string? state = null, string? attention = null,
+        bool keep = true)
+    {
+        var parts = new List<string> { $"project={_projectId}" };
+        void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) parts.Add($"{key}={Uri.EscapeDataString(value)}"); }
+        Add("source", keep ? source ?? _source : source);
+        Add("scope", keep ? scope ?? _scope : scope);
+        Add("module", keep ? module ?? _module : module);
+        var st = keep ? state ?? _status : state;
+        if (st != AllFilter) Add("state", st);
+        var at = keep ? attention ?? _attention : attention;
+        if (at != AllFilter) Add("attention", at);
+        if (keep) Add("q", _search);
+        Add("feature", feature);
+        return "delivery-overview?" + string.Join('&', parts);
+    }
 
-    private void CloseFeature() => Nav.NavigateTo($"delivery-overview?project={_projectId}");
+    private void Go(string url) => Nav.NavigateTo(url, replace: true);
+
+    private void OnSourceChanged(ChangeEventArgs e) => Go(string.IsNullOrEmpty(e.Value?.ToString()) ? UrlWithout("source") : Url(source: e.Value!.ToString()));
+    private void OnScopeChanged(ChangeEventArgs e) => Go(string.IsNullOrEmpty(e.Value?.ToString()) ? UrlWithout("scope") : Url(scope: e.Value!.ToString()));
+    private void OnModuleChanged(ChangeEventArgs e) => Go(string.IsNullOrEmpty(e.Value?.ToString()) ? UrlWithout("module") : Url(module: e.Value!.ToString()));
+    private void OnStateChanged(ChangeEventArgs e) => Go(Url(state: e.Value?.ToString() ?? AllFilter));
+    private void OnAttentionChanged(ChangeEventArgs e) => Go(Url(attention: e.Value?.ToString() ?? AllFilter));
+    private void WriteUrl() => Go(Url());
+
+    private void ClearSource() => Go(UrlWithout("source"));
+    private void ClearScope() => Go(UrlWithout("scope"));
+    private void ClearModule() => Go(UrlWithout("module"));
+    private void ClearFilters() { _search = ""; Go(Url(keep: false)); }
+
+    /// <summary>The current URL without one scope dimension (the others stay).</summary>
+    private string UrlWithout(string key)
+    {
+        var (source, scope, module) = (_source, _scope, _module);
+        (_source, _scope, _module) = (key == "source" ? null : source, key == "scope" ? null : scope, key == "module" ? "" : module);
+        try { return Url(); }
+        finally { (_source, _scope, _module) = (source, scope, module); }
+    }
+
+    private void OpenFeature(string key) => Nav.NavigateTo(Url(feature: key));
+
+    private void CloseFeature() => Nav.NavigateTo(Url());
 
     private void OnProjectChanged(ChangeEventArgs e)
     {
+        // Source and scope ids belong to one project: a project change starts unscoped.
         if (Guid.TryParse(e.Value?.ToString(), out var id)) Nav.NavigateTo($"delivery-overview?project={id}");
     }
 }

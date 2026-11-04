@@ -85,6 +85,14 @@ public sealed class DeliveryReportingPageTests : BunitContext
             return Task.FromResult<(DeliveryReportExport?, string?)>((new("M2LB-Weekly-Delivery-Report-2026-W44.md", "text/markdown", "# report"), null));
         }
         public Task<string?> DeleteReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        /// <summary>The server's Source + Functional scope answer (null = endpoint not available).</summary>
+        public Func<BirkNext.Interpretation.CanonicalScopeFilter, DeliveryScopeView?>? Scope { get; set; }
+        public List<BirkNext.Interpretation.CanonicalScopeFilter> ScopeRequests { get; } = [];
+        public Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default)
+        {
+            ScopeRequests.Add(filter);
+            return Task.FromResult(Scope?.Invoke(filter));
+        }
     }
 
     internal static WeeklyDeliveryReport SampleReport() => new()
@@ -284,6 +292,26 @@ public sealed class DeliveryReportingPageTests : BunitContext
         page.Find("[data-testid=dlr-generate-run]").TextContent.Should().Be("Generate anyway");
         page.Find("[data-testid=dlr-generate-run]").Click();
         page.WaitForAssertion(() => _api.LastGenerate!.ConfirmDirection.Should().BeTrue("the confirmation is sent and recorded in the frozen report"));
+    }
+
+    [Fact]
+    public void A_scoped_report_is_generated_with_exact_scope_ids_and_its_frozen_scope_is_shown()
+    {
+        const string adr = "capability:decision:adr-029";
+        _api.Scope = _ => new DeliveryScopeView
+        {
+            Sources = [new("package:m2lb", "m2lb", "Imported from m2lb.zip", 2, 0), new("package:m2lb-mon", "m2lb-mon", "Imported from m2lb-mon.zip", 0, 2)],
+            Scopes = [new(adr, "ADR-029: Translate English", BirkNext.Interpretation.FunctionalScopeKind.ChangeIntent, "Change intent from ADR-029", 1, 0, 0)],
+        };
+        _api.Report = SampleReport() with { Scope = new DeliveryReportScope { FunctionalScopeId = adr, FunctionalScopeName = "ADR-029: Translate English", CurrentFeatureKeys = ["frontend::001-child-search"], ScopeInBaseline = false } };
+        var page = RenderAt($"?project={ProjectId}&tab=overview");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-generate-scope]"));
+        page.Find("[data-testid=dlr-generate-scope]").Change(adr);
+        page.Find("[data-testid=dlr-generate-run]").Click();
+        page.WaitForAssertion(() => _api.LastGenerate.Should().Match<GenerateWeeklyReportRequest>(g => g.FunctionalScopeId == adr && g.SourceId == null));
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-report-scope]").TextContent.Should().Contain("Functional scope: ADR-029: Translate English")
+            .And.Contain("not present in the baseline"));
     }
 
     // ---- Snapshot identity: two "Current 2026-11-04" snapshots of the same day stay individually selectable ----
