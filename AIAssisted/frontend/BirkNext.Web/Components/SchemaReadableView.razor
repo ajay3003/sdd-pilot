@@ -137,9 +137,11 @@
                 default:
                     <p class="sr-note">The resolved structure with types, occurrence and origin. Inherited fields are shown where they actually occur.</p>
                     @TreeToolbar
-                    <ul class="sr-tree" data-testid="sr-structure" @key="_treeGeneration">
-                        <li><span class="sr-name">@root.Name</span> <small>Top-level message element · @(root.Type ?? "inline") · declared in @S.FileName(root.DeclaredIn)</small>@StructureTree((root, 0))</li>
-                    </ul>
+                    <div class="sr-tree sr-treetable" data-testid="sr-structure" @key="_treeGeneration" role="region" aria-label="Effective structure">
+                        <p class="sr-tt-root"><span class="sr-name">@root.Name</span> <small>Top-level message element · @(root.Type ?? "inline") · declared in @S.FileName(root.DeclaredIn)</small></p>
+                        <div class="sr-tt-row sr-tt-head" aria-hidden="true"><span>Structure</span><span>Type</span><span>Occurrence</span><span>Rules</span><span>Declared in</span></div>
+                        @StructureTree((root, 0))
+                    </div>
                     break;
             }
         }
@@ -231,7 +233,8 @@
                     @if (child.Children.Count > 0)
                     {
                         <details class="sr-node sr-section-card" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
-                            <summary><span class="sr-name">@child.Name</span> @Badges(child) <small class="sr-count">@S.Count(child.Children.Count, "field", "fields")</small></summary>
+                            <summary><span class="sr-chevron" aria-hidden="true"></span><span class="sr-kind sr-kind-group" data-testid="sr-node-kind">Group</span>
+                                <span class="sr-name">@child.Name</span> @Badges(child) <small class="sr-count" data-testid="sr-child-count">@ChildSummary(child)</small></summary>
                             @if (child.Documentation is { Length: > 0 } doc) { @DocBlock(P.Normalize(doc), "Show full description") }
                             @BusinessTree((child, context.Path + "/" + child.Name, context.Depth + 1))
                         </details>
@@ -239,6 +242,7 @@
                     else
                     {
                         <div class="sr-field-row">
+                            <span class="sr-leaf" aria-hidden="true">•</span><span class="sr-kind" data-testid="sr-node-kind">Field</span>
                             <span class="sr-name">@child.Name</span> @Badges(child)
                             @if (SchemaStudioVisuals.PlainRules(child) is { Count: > 0 } rules) { <span class="sr-plain-rules" data-testid="sr-plain-rules">@string.Join(" · ", rules)</span> }
                         </div>
@@ -258,28 +262,44 @@
         </span>
     };
 
+    /// <summary>Effective structure as a tree-table: the first column is the expandable tree, the others line up for scanning.</summary>
     private RenderFragment StructureTree((EffectiveMember Member, int Depth) context) =>
-        @<ul>
+        @<div class="sr-tt-level">
             @foreach (var child in context.Member.Children.Take(500).Where(c => SchemaTreeFilter.Keep(c, _filter, _treeSearch)))
             {
-                <li>
-                    @if (child.Children.Count > 0)
-                    {
-                        <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
-                            <summary><span class="sr-name">@child.Name</span> <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)</small></summary>
-                            <small class="sr-sub">declared in @S.FileName(child.DeclaredIn)@(child.InheritedFrom is { } inherited ? $" · inherited from {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type in {S.FileName(typeFile)}" : "")@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
-                            @StructureTree((child, context.Depth + 1))
-                        </details>
-                    }
-                    else
-                    {
-                        <span class="sr-name">@child.Name</span>
-                        <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
-                        <small class="sr-sub">declared in @S.FileName(child.DeclaredIn)@(child.InheritedFrom is { } inherited ? $" · inherited from {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type in {S.FileName(typeFile)}" : "")</small>
-                    }
-                </li>
+                @if (child.Children.Count > 0)
+                {
+                    <details class="sr-node sr-tt-group" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)" data-testid="sr-tt-group">
+                        <summary class="sr-tt-row" style="--sr-depth:@context.Depth">@StructureCells(child, true)</summary>
+                        @StructureTree((child, context.Depth + 1))
+                    </details>
+                }
+                else
+                {
+                    <div class="sr-tt-row" style="--sr-depth:@context.Depth" data-testid="sr-tt-field">@StructureCells(child, false)</div>
+                }
             }
-        </ul>;
+        </div>;
+
+    private RenderFragment StructureCells(EffectiveMember member, bool group) => __builder =>
+    {
+        <span class="sr-tt-name">@if (group) { <span class="sr-chevron" aria-hidden="true"></span> } else { <span class="sr-leaf" aria-hidden="true">•</span> }<span class="sr-name">@member.Name</span>@if (group) { <small class="sr-count"> · @ChildSummary(member)</small> }</span>
+        <span class="sr-tt-type">@(group ? "Group" : P.TypeLabel(member)) <small class="sr-sub sr-mono">@P.RawType(member)</small></span>
+        <span class="sr-tt-occ">@P.ExactCardinality(member)@(P.CompositorLabel(member.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</span>
+        <span class="sr-tt-rules">@(SchemaStudioVisuals.PlainRules(member) is { Count: > 0 } rules ? string.Join(" · ", rules) : "—")</span>
+        <span class="sr-tt-origin">@S.FileName(member.DeclaredIn)@if (member.InheritedFrom is { } inherited) { <small class="sr-sub">inherited from @inherited</small> }@if (member.TypeDeclaredIn is { } typeFile && typeFile != member.DeclaredIn) { <small class="sr-sub">type in @S.FileName(typeFile)</small> }</span>
+    };
+
+    /// <summary>"4 children · 9 fields": direct children and every field below, so depth is visible before a group is opened.</summary>
+    private static string ChildSummary(EffectiveMember member)
+    {
+        var direct = member.Children.Count;
+        var fields = Leaves(member, 0);
+        return $"{direct} {(direct == 1 ? "child" : "children")}" + (fields != direct ? $" · {fields} {(fields == 1 ? "field" : "fields")}" : "");
+    }
+
+    private static int Leaves(EffectiveMember member, int depth) =>
+        depth > 30 ? 0 : member.Children.Sum(c => c.Children.Count == 0 ? 1 : Leaves(c, depth + 1));
 
     private RenderFragment RulesCell(EffectiveMember member) => FacetCell(member.Facets);
 

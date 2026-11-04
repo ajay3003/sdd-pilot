@@ -136,6 +136,32 @@ public sealed class SchemaReadableViewTests : BunitContext
     }
 
     [Fact]
+    public void Business_ShowsWhichNodesHaveChildren_BeforeAnyClick()
+    {
+        var view = Render<SchemaReadableView>(p => p.Add(x => x.Package, Import((Skolenaervaer, RealSchema(Skolenaervaer)))).Add(x => x.View, "Forretning"));
+        var business = view.Find("[data-testid=sr-business]");
+        var groups = business.QuerySelectorAll(".sr-section-card > summary");
+        groups.Should().NotBeEmpty();
+        groups.Should().OnlyContain(g => g.QuerySelector(".sr-chevron") != null, "every expandable node has a visible chevron");
+        groups.Should().OnlyContain(g => g.QuerySelector("[data-testid=sr-node-kind]")!.TextContent == "Group");
+        var header = groups.First(g => g.QuerySelector(".sr-name")!.TextContent == "Meldingshode");
+        header.QuerySelector("[data-testid=sr-child-count]")!.TextContent.Should().MatchRegex(@"^\d+ children", "child count is visible without opening the group");
+        business.QuerySelectorAll(".sr-field-row [data-testid=sr-node-kind]").Should().OnlyContain(k => k.TextContent == "Field", "leaves are marked as fields");
+    }
+
+    [Fact]
+    public void EffectiveStructure_IsATreeTable_WithTypeOccurrenceRulesAndOrigin()
+    {
+        var view = Render<SchemaReadableView>(p => p.Add(x => x.Package, Import((Skolenaervaer, RealSchema(Skolenaervaer)))).Add(x => x.View, "Struktur"));
+        var table = view.Find("[data-testid=sr-structure]");
+        table.QuerySelector(".sr-tt-head")!.TextContent.Should().Contain("Structure").And.Contain("Type").And.Contain("Occurrence").And.Contain("Rules").And.Contain("Declared in");
+        var group = table.QuerySelectorAll("[data-testid=sr-tt-group] > summary").First(s => s.QuerySelector(".sr-name")!.TextContent == "Meldingshode");
+        group.QuerySelector(".sr-tt-type")!.TextContent.Should().StartWith("Group");
+        group.QuerySelector(".sr-count")!.TextContent.Should().Contain("children");
+        table.QuerySelectorAll("[data-testid=sr-tt-field]").Should().NotBeEmpty();
+    }
+
+    [Fact]
     public void MultipleRoots_RequireExplicitSelection()
     {
         const string xsd = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="A" type="xs:string"/><xs:element name="B"><xs:complexType><xs:sequence><xs:element name="C" type="xs:int"/></xs:sequence></xs:complexType></xs:element></xs:schema>""";

@@ -111,10 +111,16 @@
                     @{ var origin = SchemaStudioVisuals.Origin(package, SavedReference(package) is not null); }
                     <p class="ss-origin" data-testid="ss-evidence-origin"><span class="ss-chip ss-chip-@origin.Tone" data-testid="ss-evidence-origin-label">@origin.Label</span> <span class="ss-muted">@origin.Detail</span></p>
                     <p class="ss-scope-line" data-testid="ss-validity-scope">@(package.Validation == "Valid" ? SchemaStudioPresentation.ValidityScope : "Schema validation reported problems; see the details below. Business rules and runtime integration behavior are not verified here.")</p>
-                    <dl class="ss-verification" data-testid="ss-verification">
-                        <div><dt>Verified here</dt><dd data-testid="ss-verified">@string.Join(" · ", SchemaStudioPresentation.VerifiedHere)</dd></div>
-                        <div><dt>Not verified here</dt><dd data-testid="ss-not-verified">@string.Join(" · ", SchemaStudioPresentation.NotVerifiedHere)</dd></div>
-                    </dl>
+                    <div class="ss-verification" data-testid="ss-verification">
+                        <section class="ss-verify-panel ss-verify-yes" aria-labelledby="ss-verified-h">
+                            <h4 id="ss-verified-h"><span aria-hidden="true">✓ </span>Verified here</h4>
+                            <ul data-testid="ss-verified">@foreach (var item in SchemaStudioPresentation.VerifiedHere) { <li>@item</li> }</ul>
+                        </section>
+                        <section class="ss-verify-panel ss-verify-no" aria-labelledby="ss-not-verified-h">
+                            <h4 id="ss-not-verified-h"><span aria-hidden="true">○ </span>Not verified here</h4>
+                            <ul data-testid="ss-not-verified">@foreach (var item in SchemaStudioPresentation.NotVerifiedHere) { <li>@item</li> }</ul>
+                        </section>
+                    </div>
                     @if (Studio.Packages.Count > 1)
                     {
                         <div class="ss-switcher" data-testid="ss-package-switcher">
@@ -195,19 +201,19 @@
             {
                 case "Overview":
                     var rootFile = package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"));
-                    <h3 class="ss-section-title">Schema package summary</h3>
-                    <dl class="ss-stats" data-testid="ss-overview-stats">
-                        <div><dt>Schema status</dt><dd><span data-testid="ss-overview-status">@SchemaStudioPresentation.ValidityHeadline(package.Validation)</span><small class="ss-muted ss-tech-term">Technical: @package.Validation (XSD validation only)</small></dd></div>
-                        <div><dt>Files</dt><dd>@SchemaStudioPresentation.Count(package.Files.Count, "XSD file", "XSD files")</dd></div>
-                        <div><dt>Top-level message</dt><dd data-testid="ss-root-element">@SchemaStudioPresentation.MessageRoot(package)</dd></div>
-                        <div><dt>Entry schema</dt><dd data-testid="ss-root-xsd"><span title="@rootFile?.Name">@(rootFile is null ? (library ? "Not defined" : "Not identified") : SchemaStudioPresentation.FileName(rootFile.Name))</span><small class="ss-muted ss-tech-term">Technical: the file declaring the global message element</small></dd></div>
-                        <div><dt>Supporting schemas</dt><dd data-testid="ss-overview-supporting">@SchemaStudioPresentation.SupportingSchemas(package)<small class="ss-muted ss-tech-term">Imported or included reusable schemas</small></dd></div>
-                        @{ var namespaces = SchemaStudioPresentation.Namespaces(package); }
-                        <div><dt>Namespaces</dt><dd data-testid="ss-overview-namespaces">@namespaces.Count@if (namespaces.Count > 0) { <small class="ss-muted ss-overview-primary-ns" title="@namespaces[0]">Primary: @SchemaStudioPresentation.ShortNamespace(namespaces[0])</small> }<button type="button" class="ss-text-button" data-testid="ss-overview-view-namespaces" @onclick='() => _tab = "Namespaces"'>View namespaces</button></dd></div>
-                        <div><dt>Schema dependencies</dt><dd data-testid="ss-overview-dependencies">@SchemaStudioPresentation.Dependencies(package)<small class="ss-muted ss-tech-term">@SchemaStudioPresentation.DependencyDetail(package)</small></dd></div>
-                        <div><dt>Contract evidence</dt><dd data-testid="ss-overview-contract">@SchemaStudioPresentation.ContractEvidence(package)<small class="ss-muted ss-tech-term">Shared contract evidence (the same model Source Analysis, Integrations and Impact Analysis read)</small></dd></div>
-                        <div><dt>Reusable definitions</dt><dd data-testid="ss-overview-definitions">@SchemaStudioPresentation.Definitions(package)<small class="ss-muted ss-tech-term">Technical: global declarations</small></dd></div>
-                    </dl>
+                    <h3 class="ss-section-title">Start here</h3>
+                    <div class="ss-shortcuts ss-shortcuts-primary" data-testid="ss-shortcuts">
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-business" @onclick='() => _tab = "Forretning"'><strong>Understand structure</strong><span>@(library ? "What the library defines and where to start" : "Elements, groups and nesting")</span></button>
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-fields" @onclick='() => _tab = library ? "Types" : "Felt og regler"'><strong>@(library ? "Review reusable types" : "Review fields and rules")</strong><span>@(library ? "Types, their base and their rules" : "Required fields, allowed values, patterns and lengths")</span></button>
+                        @if (package.GeneratedTests.Count > 0)
+                        {
+                            <button type="button" class="ss-shortcut" data-testid="ss-shortcut-tests" @onclick='() => _tab = "Generated Tests"'><strong>Run generated tests</strong><span>@SchemaStudioPresentation.Count(package.GeneratedTests.Count, "schema-derived case", "schema-derived cases") to validate locally</span></button>
+                        }
+                        else
+                        {
+                            <button type="button" class="ss-shortcut" data-testid="ss-shortcut-rules" @onclick='() => _tab = "Constraints"'><strong>Review schema rules</strong><span>Lengths, patterns, allowed values and occurrence</span></button>
+                        }
+                    </div>
                     <section class="ss-meaning" aria-labelledby="ss-meaning-title" data-testid="ss-meaning">
                         <h3 id="ss-meaning-title" class="ss-section-title">What this means</h3>
                         @if (library)
@@ -224,19 +230,19 @@
                             <p>This package defines @package.EffectiveSchema.Count top-level messages. Choose the message you want to review in Business structure.</p>
                         }
                     </section>
-                    <h3 class="ss-section-title">Start here</h3>
-                    <div class="ss-shortcuts" data-testid="ss-shortcuts">
-                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-business" @onclick='() => _tab = "Forretning"'><strong>Understand structure</strong><span>@(library ? "What the library defines and where to start" : "Elements, groups and nesting")</span></button>
-                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-fields" @onclick='() => _tab = library ? "Types" : "Felt og regler"'><strong>@(library ? "Review reusable types" : "Review fields and rules")</strong><span>@(library ? "Types, their base and their rules" : "Required fields, allowed values, patterns and lengths")</span></button>
-                        @if (package.GeneratedTests.Count > 0)
-                        {
-                            <button type="button" class="ss-shortcut" data-testid="ss-shortcut-tests" @onclick='() => _tab = "Generated Tests"'><strong>Run generated tests</strong><span>@SchemaStudioPresentation.Count(package.GeneratedTests.Count, "schema-derived case", "schema-derived cases") to validate locally</span></button>
-                        }
-                        else
-                        {
-                            <button type="button" class="ss-shortcut" data-testid="ss-shortcut-rules" @onclick='() => _tab = "Constraints"'><strong>Review schema rules</strong><span>Lengths, patterns, allowed values and occurrence</span></button>
-                        }
-                    </div>
+                    <h3 class="ss-section-title">Package figures</h3>
+                    <dl class="ss-stats" data-testid="ss-overview-stats">
+                        <div><dt>Schema status</dt><dd><span data-testid="ss-overview-status">@SchemaStudioPresentation.ValidityHeadline(package.Validation)</span><small class="ss-muted ss-tech-term">Technical: @package.Validation (XSD validation only)</small></dd></div>
+                        <div><dt>Files</dt><dd>@SchemaStudioPresentation.Count(package.Files.Count, "XSD file", "XSD files")</dd></div>
+                        <div><dt>Top-level message</dt><dd data-testid="ss-root-element">@SchemaStudioPresentation.MessageRoot(package)</dd></div>
+                        <div><dt>Entry schema</dt><dd data-testid="ss-root-xsd"><span title="@rootFile?.Name">@(rootFile is null ? (library ? "Not defined" : "Not identified") : SchemaStudioPresentation.FileName(rootFile.Name))</span><small class="ss-muted ss-tech-term">Technical: the file declaring the global message element</small></dd></div>
+                        <div><dt>Supporting schemas</dt><dd data-testid="ss-overview-supporting">@SchemaStudioPresentation.SupportingSchemas(package)<small class="ss-muted ss-tech-term">Imported or included reusable schemas</small></dd></div>
+                        @{ var namespaces = SchemaStudioPresentation.Namespaces(package); }
+                        <div><dt>Namespaces</dt><dd data-testid="ss-overview-namespaces">@namespaces.Count@if (namespaces.Count > 0) { <small class="ss-muted ss-overview-primary-ns" title="@namespaces[0]">Primary: @SchemaStudioPresentation.ShortNamespace(namespaces[0])</small> }<button type="button" class="ss-text-button" data-testid="ss-overview-view-namespaces" @onclick='() => _tab = "Namespaces"'>View namespaces</button></dd></div>
+                        <div><dt>Schema dependencies</dt><dd data-testid="ss-overview-dependencies">@SchemaStudioPresentation.Dependencies(package)<small class="ss-muted ss-tech-term">@SchemaStudioPresentation.DependencyDetail(package)</small></dd></div>
+                        <div><dt>Contract evidence</dt><dd data-testid="ss-overview-contract">@SchemaStudioPresentation.ContractEvidence(package)<small class="ss-muted ss-tech-term">Shared contract evidence (the same model Source Analysis, Integrations and Impact Analysis read)</small></dd></div>
+                        <div><dt>Reusable definitions</dt><dd data-testid="ss-overview-definitions">@SchemaStudioPresentation.Definitions(package)<small class="ss-muted ss-tech-term">Technical: global declarations</small></dd></div>
+                    </dl>
                     <p class="ss-expert">Technical views:
                         <button type="button" class="ss-text-button" @onclick='() => _tab = "Raw XSD"'>Raw XSD</button> ·
                         <button type="button" class="ss-text-button" @onclick='() => _tab = "Designer"'>Designer</button> ·

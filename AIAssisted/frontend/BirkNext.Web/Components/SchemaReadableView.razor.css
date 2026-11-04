@@ -87,3 +87,24 @@
 .sr-chip-optional { background: #f2f4f7; color: #344054; border-color: #e4e7ec; }
 .sr-chip-repeating { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
 .sr-chip-choice { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+/* Hierarchy visible before interaction: a chevron on every expandable node, Group vs Field, and child counts. */
+.sr-node > summary { list-style: none; }
+.sr-node > summary::-webkit-details-marker { display: none; }
+.sr-chevron { display: inline-block; width: 1rem; color: var(--clr-primary, #1d4ed8); font-weight: 700; }
+.sr-chevron::before { content: '\25B8'; }
+.sr-node[open] > summary .sr-chevron::before { content: '\25BE'; }
+.sr-leaf { display: inline-block; width: 1rem; text-align: center; color: var(--clr-text-muted); }
+.sr-kind { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); border: 1px solid var(--clr-border, #e4e7ec); border-radius: 999px; padding: 0 .4rem; }
+.sr-kind-group { color: var(--clr-text-body); font-weight: 700; }
+/* Effective structure tree-table. */
+.sr-treetable { border-left: 0; padding-left: 0; }
+.sr-tt-root { margin: 0 0 .4rem; }
+.sr-tt-row { display: grid; grid-template-columns: minmax(12rem, 2.2fr) minmax(7rem, 1.2fr) minmax(6rem, 1fr) minmax(8rem, 1.5fr) minmax(7rem, 1fr); gap: .5rem;
+    align-items: baseline; padding: .3rem .5rem; border-bottom: 1px solid var(--clr-border-subtle, #eef2f6); font-size: .88rem; }
+.sr-tt-row .sr-tt-name { padding-left: calc(var(--sr-depth, 0) * 1.1rem); overflow-wrap: anywhere; }
+.sr-tt-row > span { min-width: 0; overflow-wrap: anywhere; }
+.sr-tt-head { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); border-bottom: 1px solid var(--clr-border, #e4e7ec); }
+summary.sr-tt-row { cursor: pointer; }
+summary.sr-tt-row:hover { background: var(--clr-surface-alt, #f8fafc); }
+@media (max-width: 760px) { .sr-tt-row { grid-template-columns: minmax(0, 1fr); gap: .1rem; } .sr-tt-head { display: none; }
+    .sr-tt-row > span:not(.sr-tt-name) { padding-left: calc(var(--sr-depth, 0) * 1.1rem + 1rem); font-size: .8rem; color: var(--clr-text-muted); } }

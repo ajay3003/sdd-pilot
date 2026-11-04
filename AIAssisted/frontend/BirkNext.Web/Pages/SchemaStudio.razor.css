@@ -300,3 +300,13 @@ small.ss-tech-term.ss-inline, .ss-inline .ss-tech-term { display: inline; }
 .ss-overview-wide { grid-column: 1 / -1; }
 .ss-overview-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--clr-text-muted); font-weight: 600; }
 .ss-page tr.is-current td { background: var(--clr-surface); }
+/* Overview as a guided landing: identity, then confidence (two panels), then the three start tasks first. */
+.ss-verification { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .75rem; margin: .6rem 0 0; }
+.ss-verify-panel { border-radius: 10px; padding: .6rem .8rem; background: var(--clr-surface-alt, #f8fafc); }
+.ss-verify-panel h4 { margin: 0 0 .3rem; font-size: .85rem; }
+.ss-verify-panel ul { margin: 0; padding-left: 1.1rem; font-size: .88rem; display: grid; gap: .1rem; }
+.ss-verify-yes { box-shadow: inset 3px 0 0 #15803d; }
+.ss-verify-no { box-shadow: inset 3px 0 0 #94a3b8; }
+.ss-shortcuts-primary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .75rem; }
+.ss-shortcuts-primary .ss-shortcut { padding: .9rem 1rem; border-radius: 12px; box-shadow: var(--shadow-sm); text-align: left; }
+.ss-shortcuts-primary .ss-shortcut strong { font-size: 1.02rem; color: var(--clr-primary, #1d4ed8); }

@@ -5,7 +5,7 @@
 .ss-graph-heading label { display: inline-flex; flex-direction: column; gap: .3rem; }
 .ss-graph-heading input[type="search"],.ss-graph-heading select { min-width: 10rem; max-width: 100%; padding: .45rem; }
 .ss-graph-heading input[type="range"] { width: 8rem; }
-.ss-graph-frame { width: 100%; max-height: 36rem; overflow: auto; border: 1px solid #cbd5e1; border-radius: .4rem; background: white; touch-action: pan-x pan-y; }
+.ss-graph-frame { width: 100%; max-height: max(36rem, 65vh); overflow: auto; border: 1px solid #cbd5e1; border-radius: .4rem; background: white; touch-action: pan-x pan-y; }
 .ss-graph-frame:focus-visible,.ss-graph-node:focus-visible { outline: 3px solid #b45309; outline-offset: 2px; }
 .ss-graph-svg { display: block; min-width: 100%; }
 .ss-graph-svg marker path { fill: #536174; }
@@ -28,3 +28,5 @@
 .ss-graph-focus { margin: .25rem 0; }
 .ss-text-button { color: #1558a6; border: 0; background: transparent; text-decoration: underline; cursor: pointer; font: inherit; padding: .25rem 0; }
 .ss-text-button:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+.ss-graph-full { position: fixed; inset: 0; z-index: 60; margin: 0; border-radius: 0; overflow: auto; }
+.ss-graph-full .ss-graph-frame { max-height: calc(100vh - 11rem); }

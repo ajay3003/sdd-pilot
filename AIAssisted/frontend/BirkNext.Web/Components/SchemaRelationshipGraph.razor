@@ -2,7 +2,7 @@
 @using BirkNext.Web.Services.SchemaStudio
 @using Microsoft.AspNetCore.Components.Web
 
-<section class="ss-graph" aria-labelledby="ss-graph-title">
+<section class="ss-graph @(_full ? "ss-graph-full" : "")" aria-labelledby="ss-graph-title" data-testid="ss-graph">
     <div class="ss-graph-heading">
         <div>
             <h3 id="ss-graph-title">Relationship graph</h3>
@@ -20,10 +20,11 @@
                 <option value="@FilesLevel">Files + namespaces</option><option value="@DeclarationsLevel">Files + declarations</option>
             </select>
         </label>
-        <label>Zoom <input type="range" min="0.6" max="1.6" step="0.1" @bind="_zoom" @bind:after="() => _fit = false" aria-label="Graph zoom" /> <span>@(_fit ? "Fit" : _zoom.ToString("P0"))</span></label>
+        <label>Zoom <input type="range" min="0.6" max="2.5" step="0.1" @bind="_zoom" @bind:after="() => _fit = false" aria-label="Graph zoom" /> <span>@(_fit ? "Fit" : _zoom.ToString("P0"))</span></label>
         <div class="ss-graph-buttons">
             <button type="button" class="ss-text-button" data-testid="ss-graph-fit" @onclick="() => _fit = true">Fit to screen</button>
             <button type="button" class="ss-text-button" data-testid="ss-graph-reset" @onclick="Reset">Reset view</button>
+            <button type="button" class="ss-text-button" data-testid="ss-graph-fullscreen" aria-pressed="@(_full ? "true" : "false")" @onclick="() => _full = !_full">@(_full ? "Exit full screen" : "Full screen")</button>
         </div>
     </div>
     @if (_declarationsFor is { } focused) { <p class="ss-graph-focus" role="status">Showing declarations of <strong>@focused</strong> only. <button type="button" class="ss-text-button" @onclick="() => _declarationsFor = null">Back to files and namespaces</button></p> }
@@ -84,12 +85,14 @@
 
     private const int MaxNodes = 200;
     private const int MaxEdges = 1000;
-    private const int NodeWidth = 196;
+    private const int NodeWidth = 236;
     private const int NodeHeight = 78;
     private string _filter = "All";
     private string _search = "";
     private string? _selectedNodeId;
     private double _zoom = 1;
+    /// <summary>Full-screen graph mode (the page behind stays; Escape-free: the same button exits).</summary>
+    private bool _full;
     private const string FilesLevel = "files", DeclarationsLevel = "declarations";
     /// <summary>Default aggregate level: files and namespaces only. Declarations are drill-down, never the default spaghetti.</summary>
     private string _level = FilesLevel;
@@ -217,7 +220,8 @@
     private static string DeclarationId(string file, SchemaDeclaration declaration) =>
         "declaration:" + file + ":" + declaration.Kind + ":" + declaration.Name + ":" + declaration.Path;
     private static string NodeDescription(GraphNode node) => node.IsUnresolved ? $"Unresolved: {node.Label}" : $"{node.Kind}: {node.Label}; {node.FileName}; namespace {node.Namespace ?? "none"}";
-    private static string ShortLabel(string value) => value.Length > 27 ? value[..24] + "…" : value;
+    /// <summary>Labels fit the wider node; the full name is the node's tooltip and in the details panel.</summary>
+    private static string ShortLabel(string value) => value.Length > 33 ? value[..30] + "…" : value;
 
     /// <summary>A readable node label: a file by its own name without folders and ".xsd" ("applikasjonskvittering v2 schema"), a namespace by its
     /// short name. The full identifier stays in the node's tooltip and details.</summary>
