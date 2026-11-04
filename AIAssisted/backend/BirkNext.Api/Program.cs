@@ -667,10 +667,16 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerCanonicalFixtures>();
 // Consumers that declare the Test Data they consume: their requirements and deterministic bindings are persisted (usage by stable asset id).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataConsumerDeclarations, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerTestDataConsumers>();
+// Immutable TestDataAssetIds (identities.json): assigned once, alias history kept, legacy alias-derived ids still resolve.
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataIdentityStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataSchemaAssociationStore>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null,
-    sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(), sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>()));
+    sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(), sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>(),
+    sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataIdentityStore>()));
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCatalogService>();
-builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataSchemaSource, BirkNext.Api.Services.TestData.SourceAnalysisTestDataSchemaSource>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.SourceAnalysisTestDataSchemaSource>();
+// Schema evidence: stored Source Analysis snapshots first (verified), then explicit server-side associations (explicit reference).
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataSchemaSource, BirkNext.Api.Services.TestData.CompositeTestDataSchemaSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataSchemaValidationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCandidateService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataLifecycleService>();

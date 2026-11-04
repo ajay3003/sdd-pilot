@@ -19,7 +19,10 @@ public sealed class TestDataValue(string value)
 /// </summary>
 public sealed record TestDataAsset
 {
+    /// <summary>Legacy alias-derived id (<c>{provider}:{alias}</c>), kept for compatibility.</summary>
     public string Id { get; init; } = "";
+    /// <summary>Immutable TestDataAssetId, set by the catalog from <see cref="TestDataIdentityStore"/> (null without an identity store).</summary>
+    public string? AssetId { get; init; }
     public string Alias { get; init; } = "";
     public string? Label { get; init; }
     public TestDataKind Kind { get; init; }

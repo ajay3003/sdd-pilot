@@ -7,7 +7,11 @@ namespace BirkNext.Api.Services.TestData;
 
 /// <summary>An XSD package found for a <see cref="TestDataSchemaReference"/>: the exact snapshot it came from and its retained XSD files.
 /// <see cref="DistinctVersions"/> &gt; 1: an unpinned reference matched several snapshots holding DIFFERENT content for the path — none is used.</summary>
-public sealed record TestDataSchemaPackage(Guid SnapshotId, IReadOnlyDictionary<string, string> Files, bool IsComplete, int DistinctVersions = 1);
+public sealed record TestDataSchemaPackage(Guid SnapshotId, IReadOnlyDictionary<string, string> Files, bool IsComplete, int DistinctVersions = 1)
+{
+    public TestDataSchemaOrigin Origin { get; init; } = TestDataSchemaOrigin.SourceSnapshot;
+    public string? AssociationId { get; init; }
+}
 
 /// <summary>Where Test Data finds XSD packages. The default reads Source Analysis' retained schema artifacts; nothing is fetched.</summary>
 public interface ITestDataSchemaSource
@@ -62,6 +66,15 @@ public static class TestDataSchemaValidator
 {
     public static TestDataSchemaCheck? Check(TestDataAsset asset, TestDataSchemaPackage? package)
     {
+        var check = CheckCore(asset, package);
+        if (check is null || package is null) return check;
+        return package.Origin == TestDataSchemaOrigin.ExplicitAssociation
+            ? check with { Origin = package.Origin, AssociationId = package.AssociationId, SourceSnapshotId = null }
+            : check with { Origin = package.Origin };
+    }
+
+    private static TestDataSchemaCheck? CheckCore(TestDataAsset asset, TestDataSchemaPackage? package)
+    {
         if (asset.Schema is not { } reference) return null;
         var label = reference.Label ?? reference.SchemaPath;
         if (!TestDataValidator.MediaType(asset.MediaType).EndsWith("xml", StringComparison.Ordinal))
@@ -89,11 +102,12 @@ public static class TestDataSchemaValidator
             return new(TestDataSchemaStatus.SchemaUnavailable, label,
                 $"Schema unavailable: the XSD in snapshot {package.SnapshotId:D} has fingerprint {fingerprint[..12]}, not the declared {expected[..Math.Min(12, expected.Length)]}.",
                 [], package.SnapshotId, fingerprint);
-        string? version = null, rules = null;
+        string? version = null, rules = null, targetNamespace = null;
         try
         {
             var analysis = XmlSchemaPackageAnalyzer.Analyze(closure);
-            version = analysis.Files.FirstOrDefault(f => string.Equals(f.Name, reference.SchemaPath, StringComparison.OrdinalIgnoreCase))?.Version;
+            var primary = analysis.Files.FirstOrDefault(f => string.Equals(f.Name, reference.SchemaPath, StringComparison.OrdinalIgnoreCase));
+            (version, targetNamespace) = (primary?.Version, primary?.TargetNamespace);
             rules = ContractRules(reference.SchemaPath, package.SnapshotId, analysis);
         }
         catch (Exception e) when (e is InvalidDataException or System.Xml.XmlException) { }
@@ -115,7 +129,7 @@ public static class TestDataSchemaValidator
         };
         if (!package.IsComplete && status is not (TestDataSchemaStatus.Validated or TestDataSchemaStatus.Invalid))
             detail += " The snapshot retained only part of its XSD files.";
-        return new(status, label, detail, [.. result.Issues.Take(10)], package.SnapshotId, fingerprint, version) { ContractRules = rules };
+        return new(status, label, detail, [.. result.Issues.Take(10)], package.SnapshotId, fingerprint, version) { ContractRules = rules, TargetNamespace = targetNamespace };
     }
 
     /// <summary>The schema's declared rules as normalized contract constraints (the shared contract evidence model) — what generated or
@@ -144,7 +158,11 @@ public static class TestDataSchemaValidator
             _ => TestDataValidation.NeedsValidation,
         };
         var detail = summary.Validation == TestDataValidation.Invalid ? summary.ValidationDetail : $"{check.Schema}: {check.Detail}";
-        return summary with { Validation = validation, ValidationDetail = detail, SchemaCheck = check };
+        // Trust: the server check wins; a browser-recorded "Valid" without a server check is only ever "Client-reported only".
+        var trust = check.Status is TestDataSchemaStatus.Validated or TestDataSchemaStatus.Invalid ? TestDataValidationTrusts.Of(check, null)
+            : summary.ValidationTrust is TestDataValidationTrust.ClientReportedOnly or TestDataValidationTrust.ValidationFailed ? summary.ValidationTrust.Value
+            : TestDataValidationTrusts.Of(check, null);
+        return summary with { Validation = validation, ValidationDetail = detail, SchemaCheck = check, ValidationTrust = trust };
     }
 }
 
@@ -164,9 +182,25 @@ public sealed class TestDataSchemaValidationService(TestDataCatalog catalog, ITe
 
     public async Task<TestDataAssetDetail?> DetailAsync(string id, CancellationToken ct)
     {
-        if (catalog.Detail(id) is not { } detail) return null;
-        var asset = catalog.Assets().First(a => a.Id == id);
+        if (catalog.ResolveReference(id) is not { } resolved || catalog.Detail(resolved.Id) is not { } detail) return null;
+        var asset = resolved;
         return detail with { Asset = await CheckAsync(detail.Asset, asset, ct) };
+    }
+
+    /// <summary>
+    /// Validates one asset version on the server and appends the evidence (schema identity, engine, timestamp, result, trust) to the asset's
+    /// identity history. Never stores the XML value. Null when the asset declares no schema.
+    /// </summary>
+    public async Task<TestDataValidationEvidence?> ValidateAndRecordAsync(TestDataAsset asset, TimeProvider clock, CancellationToken ct)
+    {
+        if (asset.Schema is null) return null;
+        var check = await CheckAsync(asset, ct);
+        var trust = TestDataValidationTrusts.Of(check, asset.RecordedValidation);
+        var evidence = new TestDataValidationEvidence(trust, check?.Status, asset.Version, asset.Schema.SchemaPath, check?.SourceSnapshotId, check?.AssociationId,
+            check?.SchemaFingerprint, check?.TargetNamespace, check?.SchemaVersion, TestDataValidationTrusts.Engine, TestDataValidationTrusts.EngineVersion, clock.GetUtcNow(),
+            check is null ? "Not evaluated." : check.Detail);
+        if (asset.AssetId is { } id) catalog.Identities?.RecordValidation(id, evidence);
+        return evidence;
     }
 
     /// <summary>The shared XSD check of one asset (or one version of it) against its exact declared schema; null when it declares none.</summary>

@@ -173,8 +173,10 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
     /// </summary>
     public async Task<string?> ApproveAsync(string assetId, int? version, CancellationToken ct)
     {
-        if (catalog.Assets().FirstOrDefault(a => a.Id == assetId) is not { } asset) return "Unknown asset.";
+        if (catalog.Assets().FirstOrDefault(a => a.Id == assetId || a.AssetId == assetId) is not { } asset) return "Unknown asset.";
         if (catalog.VersionOf(asset, version) is not { } target) return $"{asset.Alias} has no version {version}.";
+        // Every approval attempt of an XML version leaves server-side validation evidence (trust level, exact schema identity), never the value.
+        if (target.Schema is not null) await validation.ValidateAndRecordAsync(target with { AssetId = asset.AssetId }, TimeProvider.System, ct);
         var negative = target.Capabilities.Contains(TestDataProtection.NegativeTest, StringComparer.Ordinal);
         if (!negative && target.Schema is not null && TestDataValidator.MediaType(target.MediaType).EndsWith("xml", StringComparison.Ordinal))
         {
@@ -194,7 +196,7 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
 
     /// <summary>Explicit approval of the asset's current version (fingerprint). A deprecated asset is not approved for new usage.</summary>
     public string? Approve(string assetId) =>
-        catalog.Assets().FirstOrDefault(a => a.Id == assetId) is { } asset ? Approve(asset, asset) : "Unknown asset.";
+        catalog.Assets().FirstOrDefault(a => a.Id == assetId || a.AssetId == assetId) is { } asset ? Approve(asset, asset) : "Unknown asset.";
 
     private string? Approve(TestDataAsset asset, TestDataAsset version)
     {

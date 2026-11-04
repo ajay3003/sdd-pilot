@@ -9,6 +9,25 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class TestDataPresentation
 {
+    /// <summary>
+    /// Validation trust through the shared vocabulary: only the server's own check is Verified; a client-reported result is Not verified (never
+    /// shown as server-confirmed); a missing XSD is Unavailable, never a failure.
+    /// </summary>
+    public static (SemanticStatus Status, string Label, string Explanation) Trust(TestDataValidationTrust trust) => trust switch
+    {
+        TestDataValidationTrust.ServerVerifiedSchema => (SemanticStatus.Verified, TestDataValidationTrusts.Label(trust),
+            "The backend validated the XML against the XSD retained in a stored Source Analysis snapshot."),
+        TestDataValidationTrust.ServerExplicitSchemaReference => (SemanticStatus.Verified, TestDataValidationTrusts.Label(trust),
+            "The backend validated the XML against an XSD a user explicitly associated (stored server-side with its fingerprint)."),
+        TestDataValidationTrust.ClientReportedOnly => (SemanticStatus.NotVerified, TestDataValidationTrusts.Label(trust),
+            "Only the browser reported a result when the XML was generated. The backend has no XSD to confirm it."),
+        TestDataValidationTrust.SchemaUnavailable => (SemanticStatus.Unavailable, TestDataValidationTrusts.Label(trust),
+            "No XSD is available to the backend and no result was reported. Associate the schema or import a package that contains it."),
+        TestDataValidationTrust.ValidationFailed => (SemanticStatus.VerificationFailed, TestDataValidationTrusts.Label(trust),
+            "The XML is invalid against its XSD."),
+        _ => (SemanticStatus.NotAssessed, TestDataValidationTrusts.Label(trust), "Validation does not apply or has not been performed."),
+    };
+
     public const string NegativeTestCapability = "negative-test";
     public const string UserGuideHref = "user-guide#test-data";
     public const string SchemaStudioHref = "schema-studio";

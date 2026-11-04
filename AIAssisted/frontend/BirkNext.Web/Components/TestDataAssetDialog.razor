@@ -155,7 +155,23 @@
         var usageCount = Usages.Select(u => $"{u.ConsumerType}|{u.ConsumerId}").Distinct().Count();
         <dl class="tda-facts" data-testid="tda-facts">
             <div><dt>Asset</dt><dd>@(view.Asset.Label ?? view.Asset.Alias)</dd></div>
-            <div><dt>Canonical ID</dt><dd class="tda-mono" data-testid="tda-id">@view.Asset.Id</dd></div>
+            <div><dt>Asset ID</dt><dd class="tda-mono" data-testid="tda-asset-id" title="Immutable TestDataAssetId: independent of the alias and the source label">@(view.Asset.AssetId ?? "Not assigned")</dd></div>
+            <div><dt>Canonical ID</dt><dd class="tda-mono" data-testid="tda-id" title="Alias-derived id kept for compatibility; it changes when the alias is renamed">@view.Asset.Id</dd></div>
+            @if (view.Asset.PreviousAliases is { Count: > 0 } previous) { <div><dt>Previously known as</dt><dd data-testid="tda-previous-aliases">@string.Join(", ", previous)</dd></div> }
+            @if (view.Asset.IdentityReview is { } review) { <div><dt>Identity</dt><dd data-testid="tda-identity-review"><SemanticStatusBadge Status="SemanticStatus.NeedsReview" Explanation="@review" /> @review</dd></div> }
+            @if (view.Asset.ValidationTrust is { } trust)
+            {
+                var (trustStatus, trustLabel, trustExplanation) = TestDataPresentation.Trust(trust);
+                <div><dt>Validation trust</dt><dd data-testid="tda-validation-trust"><SemanticStatusBadge Status="trustStatus" QualifiedLabel="@trustLabel" Explanation="@trustExplanation" /></dd></div>
+            }
+            @if (view.Asset.Ownership == TestDataOwnership.Registered)
+            {
+                <div><dt>Alias</dt><dd class="tda-rename" data-testid="tda-rename">
+                    <input class="form-control form-control-sm" aria-label="New alias" value="@_newAlias" @onchange="e => _newAlias = (string?)e.Value" data-testid="tda-rename-input" placeholder="@view.Asset.Alias" />
+                    <button type="button" class="btn-secondary" disabled="@(_busy || string.IsNullOrWhiteSpace(_newAlias) || _newAlias == view.Asset.Alias)" @onclick="RenameAsync" data-testid="tda-rename-button">Rename alias</button>
+                    <span class="tda-hint">The asset ID and every reference stay the same; the old alias is kept as history.</span>
+                </dd></div>
+            }
             <div><dt>Type</dt><dd data-testid="tda-type">@TestDataDataTypes.Label(view.Asset.DataType ?? TestDataDataTypes.Of(view.Asset.Kind, view.Asset.MediaType))</dd></div>
             @if (view.Role is { } role) { <div><dt>Role</dt><dd data-testid="tda-role">@role</dd></div> }
             <div><dt>Semantic role</dt><dd data-testid="tda-semantic-role">@TestDataSemanticRoles.Label(view.Asset.SemanticRole)@(view.MetadataEditable ? "" : " · declared by its source")</dd></div>
@@ -275,6 +291,20 @@
             if (result is { Updated: false, AffectedUsages.Count: > 0 } && roleChanged && !confirmRole) { _roleImpact = result.Message; return; }
             if (result is not { Updated: true }) { _error = error ?? result?.Message ?? "The asset was not updated."; _confirmImpact = false; _roleImpact = null; return; }
             await OnClose.InvokeAsync(await Feedback("Test Data asset updated.", result.ValueChanged));
+        }
+        finally { _busy = false; }
+    }
+
+    private string? _newAlias;
+
+    private async Task RenameAsync()
+    {
+        if (Api is not { } api || string.IsNullOrWhiteSpace(_newAlias)) return;
+        _busy = true; _error = null;
+        try
+        {
+            if (await api.RenameAsync(Asset.AssetId ?? Asset.Id, _newAlias.Trim()) is { } error) { _error = error; return; }
+            await OnClose.InvokeAsync($"Alias renamed to {_newAlias.Trim()}. The asset ID and its references are unchanged.");
         }
         finally { _busy = false; }
     }

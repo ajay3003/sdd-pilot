@@ -10,8 +10,10 @@ namespace BirkNext.Api.Services.TestData;
 /// sensitive value never leaves this class except through <see cref="Reveal"/>, which execution code uses transiently.
 /// </summary>
 public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, TimeProvider? clock = null, TestDataRegistryStore? registry = null,
-    IEnumerable<ITestDataCanonicalFixtures>? canonical = null)
+    IEnumerable<ITestDataCanonicalFixtures>? canonical = null, TestDataIdentityStore? identities = null)
 {
+    public TestDataIdentityStore? Identities => identities;
+
     private readonly IReadOnlyList<TestDataCanonicalFixture> _canonical = [.. (canonical ?? []).SelectMany(c => c.Fixtures)];
     private readonly IReadOnlyList<TestDataFixtureMetadata> _metadata = [.. (canonical ?? []).SelectMany(c => c.Metadata)];
     private const int PreviewLimit = 16 * 1024;
@@ -28,11 +30,31 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
     private IReadOnlyList<TestDataAsset> Protect(IReadOnlyList<TestDataAsset> unique)
     {
         var assets = unique.Select(a => TestDataProtection.Describe(a, _metadata)).ToList();
-        if (registry is null) return [.. assets.Select(a => TestDataProtection.Apply(a, []))];
+        if (registry is null) return Identify([.. assets.Select(a => TestDataProtection.Apply(a, []))]);
         // Canonical fixtures resolve once to a stable asset id (idempotent; existing installations migrate here); protection is read from the record.
         if (_canonical.Count > 0) TestDataProtection.Ensure(registry, _canonical, assets, _clock.GetUtcNow());
         var recorded = registry.ProtectedAssets();
-        return [.. assets.Select(a => TestDataProtection.Apply(a, recorded))];
+        return Identify([.. assets.Select(a => TestDataProtection.Apply(a, recorded))]);
+    }
+
+    /// <summary>Immutable TestDataAssetIds (assigned once, idempotent; the first pass migrates existing assets). Never merges shared legacy ids.</summary>
+    private IReadOnlyList<TestDataAsset> Identify(IReadOnlyList<TestDataAsset> assets)
+    {
+        if (identities is null) return assets;
+        var map = identities.Assign(assets, _clock.GetUtcNow());
+        return [.. assets.Select(a => a with { AssetId = map[a].AssetId })];
+    }
+
+    /// <summary>
+    /// Compatibility resolver for any stored reference: a TestDataAssetId, a legacy id the asset ever had, or an alias (current, or one it was
+    /// renamed from while no other asset uses it). A removed asset resolves to null: its reused alias never inherits it.
+    /// </summary>
+    public TestDataAsset? ResolveReference(string reference)
+    {
+        var assets = Assets();
+        if (assets.FirstOrDefault(a => a.Id == reference || a.AssetId == reference) is { } direct) return direct;
+        if (assets.FirstOrDefault(a => a.Alias == reference) is { } byAlias) return byAlias;
+        return identities?.Resolve(reference) is { Status: TestDataIdentityStatus.Active } identity ? assets.FirstOrDefault(a => a.AssetId == identity.AssetId) : null;
     }
 
     public TestDataRegistryStore? Registry => registry;
@@ -98,7 +120,8 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
 
     /// <summary>The value behind an asset alias, for execution only (never returned to a client, logged or stored).</summary>
     /// <summary>The value behind an alias for a run — never of a disabled asset (a duplicated alias disables every copy until it is unique).</summary>
-    public string? Reveal(string alias) => Assets().FirstOrDefault(asset => string.Equals(asset.Alias, alias, StringComparison.Ordinal)) is { Approval: not TestDataApproval.Disabled } asset
+    public string? Reveal(string alias) => (Assets().FirstOrDefault(asset => string.Equals(asset.Alias, alias, StringComparison.Ordinal))
+        ?? (identities is null ? null : ByAlias().GetValueOrDefault(alias))) is { Approval: not TestDataApproval.Disabled } asset
         ? asset.Value?.Reveal() : null;
 
     /// <summary>
@@ -113,8 +136,18 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
         return view.Assets.FirstOrDefault(a => a.Id == assetId) is { } summary && TestDataValueVersions.Changed(summary, view.Assets).Count > 0;
     }
 
-    public IReadOnlyDictionary<string, TestDataAsset> ByAlias() =>
-        Assets().GroupBy(asset => asset.Alias, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+    /// <summary>One asset per alias (current aliases first); an alias an asset was renamed from still resolves to it while no asset uses it now,
+    /// so alias-based consumers (Performance, Critical E2E) keep working after a rename.</summary>
+    public IReadOnlyDictionary<string, TestDataAsset> ByAlias()
+    {
+        var assets = Assets();
+        var map = assets.GroupBy(asset => asset.Alias, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        if (identities is null) return map;
+        foreach (var identity in identities.Identities().Where(i => i.Status == TestDataIdentityStatus.Active))
+            foreach (var old in identity.Aliases.Where(a => a.EndedBy == "Renamed" && !map.ContainsKey(a.Alias)))
+                if (assets.FirstOrDefault(a => a.AssetId == identity.AssetId) is { } renamed) map[old.Alias] = renamed;
+        return map;
+    }
 
     /// <summary>
     /// The page view. Each provider is read on its own: one that fails is reported as an unavailable source with a scoped problem, and
@@ -174,8 +207,12 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
         var (validation, detail) = TestDataValidator.Validate(asset);
         var approval = TestDataResolver.EffectiveApproval(asset, _clock.GetUtcNow());
         var structured = asset.Kind is not (TestDataKind.Scalar or TestDataKind.EntityReference) && asset.Value is not null;
+        var identity = asset.AssetId is { } assetId ? identities?.Resolve(assetId) : null;
         return new TestDataAssetSummary
         {
+            AssetId = asset.AssetId, IdentityReview = identity?.Review,
+            PreviousAliases = identity?.Aliases.Where(a => a.Until is not null).Select(a => a.Alias).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } previous ? previous : null,
+            ValidationTrust = asset.Schema is null ? null : TestDataValidationTrusts.Of(null, asset.RecordedValidation),
             Id = asset.Id, Alias = asset.Alias, Label = asset.Label, Kind = asset.Kind, ValueType = asset.ValueType, MediaType = asset.MediaType, EntityType = asset.EntityType,
             // Approval and validation stay separate facts: an approval reason never replaces the validation detail.
             Environment = asset.Environment, Approval = approval, Validation = validation, ValidationDetail = detail,

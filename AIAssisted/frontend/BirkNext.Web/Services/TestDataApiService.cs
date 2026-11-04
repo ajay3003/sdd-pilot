@@ -21,6 +21,8 @@ public interface ITestDataApiService
     /// <summary>Approves one version of a versioned payload (a regenerated draft). Refused for XML that is invalid against its XSD.</summary>
     Task<string?> ApproveVersionAsync(string assetId, int version, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
     Task<string?> DeprecateAsync(string assetId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
+    /// <summary>Renames a registered asset's alias; its TestDataAssetId and references are kept (POST api/test-data/assets/{id}/rename).</summary>
+    Task<string?> RenameAsync(string assetId, string alias, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
     Task<(ConsumerTestDataRequirement? Requirement, string? Error)> AddRequirementAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) =>
         Task.FromResult<(ConsumerTestDataRequirement?, string?)>((null, Unavailable));
     Task<(List<TestDataMatch>? Matches, string? Error)> MatchesAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) => Task.FromResult<(List<TestDataMatch>?, string?)>((null, Unavailable));
@@ -140,6 +142,9 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
 
     public async Task<string?> DeprecateAsync(string assetId, CancellationToken ct = default) =>
         (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/deprecate", new { }, ct)).Error;
+
+    public async Task<string?> RenameAsync(string assetId, string alias, CancellationToken ct = default) =>
+        (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/rename", new { alias }, ct)).Error;
 
     public async Task<(ConsumerTestDataRequirement? Requirement, string? Error)> AddRequirementAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default)
     {

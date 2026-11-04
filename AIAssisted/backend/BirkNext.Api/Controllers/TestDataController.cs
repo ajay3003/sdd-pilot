@@ -66,6 +66,40 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
     public async Task<IActionResult> Approve(string id, [FromQuery] int? version, CancellationToken ct) =>
         await service.ApproveAsync(id, version, ct) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id, version });
 
+    /// <summary>Renames a registered asset's alias; its TestDataAssetId and references are kept, the old alias stays as history.</summary>
+    [HttpPost("assets/{id}/rename")]
+    public ActionResult<TestDataAssetSummary> Rename([FromServices] TestDataLifecycleService lifecycle, string id, [FromBody] TestDataRenameRequest request)
+    {
+        var (asset, error) = lifecycle.RenameAlias(id, request.Alias);
+        return asset is not null ? Ok(asset) : error == "Unknown asset." ? NotFound(new { message = error }) : Conflict(new { message = error });
+    }
+
+    /// <summary>The stable identity of an asset: TestDataAssetId, legacy ids, alias history and persisted validation evidence (no values).</summary>
+    [HttpGet("identities/{reference}")]
+    public ActionResult<TestDataAssetIdentity> Identity([FromServices] TestDataCatalog testData, string reference) =>
+        testData.Identities?.Resolve(reference) is { } identity ? Ok(identity) : NotFound();
+
+    /// <summary>Validates an asset version on the server and records the evidence (trust level, schema identity, engine, timestamp).</summary>
+    [HttpPost("assets/{id}/validate")]
+    public async Task<ActionResult<TestDataValidationEvidence>> Validate([FromServices] TestDataCatalog testData, [FromServices] TimeProvider clock, string id, [FromQuery] int? version, CancellationToken ct)
+    {
+        if (testData.ResolveReference(id) is not { } asset || testData.VersionOf(asset, version) is not { } target) return NotFound();
+        return await catalog.ValidateAndRecordAsync(target with { AssetId = asset.AssetId }, clock, ct) is { } evidence ? Ok(evidence) : BadRequest(new { message = "The asset declares no XSD." });
+    }
+
+    [HttpGet("schema-associations")]
+    public ActionResult<IReadOnlyList<TestDataSchemaAssociationView>> Associations([FromServices] TestDataSchemaAssociationStore store) =>
+        Ok(store.All().Select(TestDataSchemaAssociationStore.View).ToList());
+
+    /// <summary>Explicitly associates an XSD package (text files) with a schema path, stored server-side with fingerprints. Used only when no stored
+    /// Source Analysis snapshot retains the schema; results are labelled "explicit schema reference", never "verified schema".</summary>
+    [HttpPost("schema-associations")]
+    public ActionResult<TestDataSchemaAssociationView> Associate([FromServices] TestDataSchemaAssociationStore store, [FromServices] TimeProvider clock, [FromBody] TestDataSchemaAssociationRequest request)
+    {
+        var (association, error) = store.Associate(request, User.Identity?.IsAuthenticated == true ? User.Identity.Name ?? "an authenticated user" : "the local tester", clock.GetUtcNow());
+        return association is null ? BadRequest(new { message = error }) : Ok(TestDataSchemaAssociationStore.View(association));
+    }
+
     [HttpPost("assets/{id}/deprecate")]
     public IActionResult Deprecate(string id) => service.Deprecate(id) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id });
 

@@ -168,6 +168,30 @@ public sealed class TestDataRegistryStore
         }
     }
 
+    /// <summary>
+    /// Renames a registered asset's alias. The asset keeps its stable TestDataAssetId (the identity store records the rename); here the alias,
+    /// the lifecycle record (approval re-keyed via <paramref name="rekeyApproval"/>), usage references and protection records follow the new
+    /// legacy id. Refused (null) when the new alias is taken or the asset is unknown.
+    /// </summary>
+    public (string OldId, string NewId)? RenameAlias(string alias, string newAlias, Func<TestDataLifecycleRecord, TestDataLifecycleRecord>? rekeyApproval = null)
+    {
+        lock (_gate)
+        {
+            if (_registry.Assets.FirstOrDefault(a => a.Alias == alias) is not { } asset || _registry.Assets.Any(a => a.Alias == newAlias)) return null;
+            var renamed = asset with { Alias = newAlias };
+            var (oldId, newId) = (asset.Id, renamed.Id);
+            _registry = _registry with
+            {
+                Assets = [.. _registry.Assets.Select(a => a.Alias == alias ? renamed : a)],
+                Lifecycle = [.. _registry.Lifecycle.Select(l => l.AssetId == oldId ? (rekeyApproval?.Invoke(l) ?? l) with { AssetId = newId } : l)],
+                Usages = [.. _registry.Usages.Select(u => u.AssetId == oldId ? u with { AssetId = newId } : u)],
+                Protected = [.. _registry.Protected.Select(p => p.AssetId == oldId ? p with { AssetId = newId } : p)],
+            };
+            Write();
+            return (oldId, newId);
+        }
+    }
+
     /// <summary>Changes a registered asset's label (metadata only; registered assets hold no value). False when no such asset.</summary>
     /// <summary>Changes the semantic role / "Applies to" of a registered asset (metadata only; bindings are never changed here).</summary>
     public bool UpdateMetadata(string alias, string? role, List<string>? appliesTo)

@@ -84,12 +84,96 @@ public sealed record TestDataSchemaCheck(TestDataSchemaStatus Status, string Sch
 {
     /// <summary>Declared rules from the shared contract evidence ("Derived from contract …: 12 required field(s) · 3 allowed-value list(s)").</summary>
     public string? ContractRules { get; init; }
+    /// <summary>Where the server found the XSD: a stored Source Analysis snapshot, or an explicitly associated schema artifact. Null: none found.</summary>
+    public TestDataSchemaOrigin? Origin { get; init; }
+    /// <summary>Explicit association id when <see cref="Origin"/> is <see cref="TestDataSchemaOrigin.ExplicitAssociation"/>.</summary>
+    public string? AssociationId { get; init; }
+    public string? TargetNamespace { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataSchemaOrigin { SourceSnapshot, ExplicitAssociation }
+
+/// <summary>
+/// How much a validation result can be trusted. Only the two Server* levels mean the backend itself validated the XML against an XSD it holds;
+/// a client-reported "Valid" is never shown or counted as server-confirmed.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataValidationTrust
+{
+    /// <summary>The backend validated against the XSD retained in a stored Source Analysis snapshot (pinned or unambiguous, fingerprint-checked).</summary>
+    ServerVerifiedSchema,
+    /// <summary>The backend validated against an XSD a user explicitly associated (stored server-side with its hash).</summary>
+    ServerExplicitSchemaReference,
+    /// <summary>Only the browser reported a result when the XML was generated; the backend could not validate it.</summary>
+    ClientReportedOnly,
+    /// <summary>No XSD is available to the backend and nothing was reported.</summary>
+    SchemaUnavailable,
+    /// <summary>The XML is invalid against its XSD (server-checked, or reported invalid at generation).</summary>
+    ValidationFailed,
+    /// <summary>Not an XML asset, no value available, or no schema declared.</summary>
+    NotPerformed,
+}
+
+/// <summary>One persisted validation of one asset version: the exact schema identity, engine and result. Never the XML value.</summary>
+public sealed record TestDataValidationEvidence(
+    TestDataValidationTrust Trust, TestDataSchemaStatus? Result, int? AssetVersion, string? SchemaPath, Guid? SourceSnapshotId, string? AssociationId,
+    string? SchemaFingerprint, string? TargetNamespace, string? DeclaredVersion, string Engine, string EngineVersion, DateTimeOffset ValidatedAt, string Detail);
+
+public static class TestDataValidationTrusts
+{
+    public const string Engine = "BirkNext.Schemas.XmlSchemaPackageAnalyzer", EngineVersion = "1";
+
+    /// <summary>
+    /// Trust from the server check and the browser's recorded result. The server result always wins; a recorded "Valid" without a server check
+    /// is ClientReportedOnly (never verified); a recorded failure is ValidationFailed.
+    /// </summary>
+    public static TestDataValidationTrust Of(TestDataSchemaCheck? check, string? recordedValidation) => check?.Status switch
+    {
+        TestDataSchemaStatus.Validated => check.Origin == TestDataSchemaOrigin.ExplicitAssociation
+            ? TestDataValidationTrust.ServerExplicitSchemaReference : TestDataValidationTrust.ServerVerifiedSchema,
+        TestDataSchemaStatus.Invalid => TestDataValidationTrust.ValidationFailed,
+        TestDataSchemaStatus.SchemaUnavailable or TestDataSchemaStatus.DependencyUnresolved => recordedValidation switch
+        {
+            null => TestDataValidationTrust.SchemaUnavailable,
+            "Valid" => TestDataValidationTrust.ClientReportedOnly,
+            _ => TestDataValidationTrust.ValidationFailed,
+        },
+        _ => recordedValidation switch
+        {
+            "Valid" => TestDataValidationTrust.ClientReportedOnly,
+            null => TestDataValidationTrust.NotPerformed,
+            _ => TestDataValidationTrust.ValidationFailed,
+        },
+    };
+
+    public static string Label(TestDataValidationTrust trust) => trust switch
+    {
+        TestDataValidationTrust.ServerVerifiedSchema => "Server-validated (verified schema)",
+        TestDataValidationTrust.ServerExplicitSchemaReference => "Server-validated (explicit schema reference)",
+        TestDataValidationTrust.ClientReportedOnly => "Client-reported only",
+        TestDataValidationTrust.SchemaUnavailable => "Schema unavailable",
+        TestDataValidationTrust.ValidationFailed => "Validation failed",
+        _ => "Validation not performed",
+    };
+
+    public static bool ServerConfirmed(TestDataValidationTrust trust) =>
+        trust is TestDataValidationTrust.ServerVerifiedSchema or TestDataValidationTrust.ServerExplicitSchemaReference;
 }
 
 /// <summary>One asset as the browser sees it: alias and metadata. <see cref="DisplayValue"/> is set only for a non-sensitive scalar.</summary>
 public sealed record TestDataAssetSummary
 {
+    /// <summary>Legacy, alias-derived id (<c>{provider}:{alias}</c>): kept for compatibility; it changes when the alias is renamed.</summary>
     public string Id { get; init; } = "";
+    /// <summary>Immutable TestDataAssetId: generated once, independent of alias and provider label; what new references store.</summary>
+    public string? AssetId { get; init; }
+    /// <summary>Aliases this asset was known by before (historical lookup); never re-used by another asset's history.</summary>
+    public List<string>? PreviousAliases { get; init; }
+    /// <summary>Set when the legacy id could not be mapped unambiguously (several assets shared it): kept separate, needs review.</summary>
+    public string? IdentityReview { get; init; }
+    /// <summary>Trust of the current version's validation (server-confirmed vs client-reported vs unavailable).</summary>
+    public TestDataValidationTrust? ValidationTrust { get; init; }
     public string Alias { get; init; } = "";
     public string? Label { get; init; }
     public TestDataKind Kind { get; init; }

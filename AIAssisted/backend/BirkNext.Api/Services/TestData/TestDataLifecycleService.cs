@@ -45,7 +45,7 @@ public interface ITestDataReferenceSource
 /// (each consumer shows its own missing state) unless the tester chose Replace references, which only accepts a compatible approved asset.
 /// </summary>
 public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRegistryStore registry, IEnumerable<ITestDataAssetEditor> editors,
-    IEnumerable<ITestDataReferenceSource> references, TimeProvider time, CanonicalFixtureStore? canonical = null)
+    IEnumerable<ITestDataReferenceSource> references, TimeProvider time, CanonicalFixtureStore? canonical = null, TestDataSchemaAssociationStore? associations = null)
 {
     public const string BindingConsumer = "Consumer binding";
     private readonly IReadOnlyList<ITestDataAssetEditor> _editors = [.. editors];
@@ -82,7 +82,28 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
 
     private static string AliasOf(string assetId) => assetId.Contains(':') ? assetId[(assetId.LastIndexOf(':') + 1)..] : assetId;
 
-    private TestDataAsset? Asset(string assetId) => catalog.Assets().FirstOrDefault(a => a.Id == assetId);
+    private TestDataAsset? Asset(string assetId) => catalog.Assets().FirstOrDefault(a => a.Id == assetId || a.AssetId == assetId);
+
+    /// <summary>
+    /// Renames a registered asset's alias. The TestDataAssetId never changes; the old alias stays resolvable as history (until another asset
+    /// takes it), id-based references follow automatically and an approval for the unchanged content is kept. Only registered assets have an
+    /// alias Test Data owns; others are renamed at their source.
+    /// </summary>
+    public (TestDataAssetSummary? Asset, string? Error) RenameAlias(string assetId, string newAlias)
+    {
+        if (Asset(assetId) is not { } asset) return (null, "Unknown asset.");
+        if (asset.Ownership != TestDataOwnership.Registered) return (null, $"{asset.Alias} is owned by {asset.Source}; rename it there.");
+        if (!TestDataCatalogRules.AliasPattern.IsMatch(newAlias ?? "")) return (null, "Aliases are lower-case letters, digits and hyphens (max 64).");
+        if (newAlias == asset.Alias) return (catalog.Summary(asset), null);
+        if (catalog.Assets().Any(a => a.Alias == newAlias)) return (null, $"The alias {newAlias} is already used by another asset.");
+        var approvedBefore = registry.Lifecycle(asset.Id)?.ApprovedFingerprint == TestDataCatalog.ApprovalFingerprint(asset);
+        var renamed = registry.RenameAlias(asset.Alias, newAlias!, record => approvedBefore
+            ? record with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(asset with { Alias = newAlias!, Id = $"{RegisteredTestDataProvider.ProviderId}:{newAlias}" }) }
+            : record);
+        if (renamed is null) return (null, $"The alias {newAlias} is already registered.");
+        if (asset.AssetId is { } id) catalog.Identities?.Rename(id, newAlias!, renamed.Value.NewId, time.GetUtcNow());
+        return (catalog.Assets().FirstOrDefault(a => a.Alias == newAlias) is { } now ? catalog.Summary(now) : null, null);
+    }
 
     // ── Edit ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -210,6 +231,8 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
                 ? "A generated fixture is removed from its saved XML in the browser workspace."
                 : "The asset could not be deleted.", []), 409);
         registry.ForgetLifecycle(asset.Id);
+        // The identity is kept as Removed: references to it stay unresolved, and a later asset with the same alias gets a NEW id.
+        catalog.Identities?.MarkRemoved(asset.Id, time.GetUtcNow());
         return (new(asset.Id, asset.Alias, true, usages.Count == 0 ? $"Deleted {asset.Alias}."
             : $"Deleted {asset.Alias}. {usages.Count} reference{(usages.Count == 1 ? " is" : "s are")} now unresolved and require remapping.",
             [.. usages.Select(u => u with { Unresolved = true })]), 200);
@@ -313,6 +336,8 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         var reset = _editors.Sum(e => e.ResetProtectedToProduct());
         var fixtures = canonical?.ClearAllForFullReset() ?? 0;
         var removed = registry.ClearAll(clearProtection: true) + _editors.Sum(e => e.ClearLocal());
+        catalog.Identities?.RetainOnly(catalog.Assets().Select(a => a.Id), time.GetUtcNow());
+        associations?.Clear(); // explicitly associated XSD packages are local data too ("Reset everything")
         var unresolved = (await UsagesAsync(ct)).Count(u => u.Unresolved);
         return new TestDataResetSummary
         {
@@ -330,6 +355,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
     public async Task<TestDataResetSummary> CompleteFullResetAsync(TestDataResetPreview before, CancellationToken ct)
     {
         var removed = ClearLocal();
+        catalog.Identities?.RetainOnly(catalog.Assets().Select(a => a.Id), time.GetUtcNow());
         var unresolved = (await UsagesAsync(ct)).Count(u => u.Unresolved);
         return new TestDataResetSummary
         {
