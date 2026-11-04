@@ -138,3 +138,7 @@
 .dlr-limitations { margin-top: .75rem; border: 1px solid var(--clr-border); border-radius: .5rem; padding: .5rem .75rem; }
 .dlr-limitations summary { cursor: pointer; font-weight: 600; }
 .dlr-headline-apart { margin: .5rem 0 0; font-size: .8125rem; }
+.dlr-list-toolbar { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: flex-end; margin: .5rem 0; }
+.dlr-small { font-size: .8125rem; }
+.dlr-history-table th[scope=row] { font-weight: 400; }
+.dlr-history-table tr.is-open { background: var(--clr-surface-alt, rgba(127,127,127,.08)); }

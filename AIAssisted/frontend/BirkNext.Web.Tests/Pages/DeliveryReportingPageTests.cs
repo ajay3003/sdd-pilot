@@ -199,6 +199,12 @@ public sealed class DeliveryReportingPageTests : BunitContext
         var page = RenderAt($"?project={ProjectId}&tab=snapshots");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-snapshot-row]").Should().HaveCount(2));
+        page.FindAll("[data-testid=dlr-snapshot-row]").Count(r => r.GetAttribute("data-latest") == "true").Should().Be(1, "one snapshot has the newest effective date");
+        page.Find("[data-testid=dlr-snapshot-count]").TextContent.Should().Be("2 of 2 snapshots");
+        page.Find("[data-testid=dlr-snapshot-search]").Input("no such snapshot");
+        page.FindAll("[data-testid=dlr-snapshot-row]").Should().BeEmpty();
+        page.Find("[data-testid=dlr-snapshots-none]");
+        page.Find("[data-testid=dlr-snapshot-search]").Input("");
         page.Find("[data-testid=dlr-snapshot-table] thead").TextContent.Should().ContainAll("Snapshot", "Effective date", "Imported", "Source", "Features", "Tasks", "Role", "Coverage", "Actions");
         page.FindAll("[data-testid=dlr-snapshot-delete]")[1].Click();
         var dialog = page.Find("[data-testid=dlr-confirm]");
@@ -323,7 +329,7 @@ public sealed class DeliveryReportingPageTests : BunitContext
     }
 
     [Fact]
-    public void Redesign_SummaryFirst_HygieneApart_ActionsInMenus_HistoryAsCards()
+    public void Redesign_SummaryFirst_HygieneApart_ActionsInMenus_HistoryAsTable()
     {
         _api.Report = SampleReport() with
         {
@@ -358,8 +364,12 @@ public sealed class DeliveryReportingPageTests : BunitContext
         page.FindAll("[data-testid=dlr-snapshot-row]")[0].QuerySelector("[data-testid=dlr-snapshot-view]")!.Closest("details").Should().BeNull("View stays inline");
 
         Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting?project={ProjectId}&tab=history");
-        page.WaitForAssertion(() => page.Find("[data-testid=dlr-history-row]").TagName.Should().Be("LI"));
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-history-row]").TagName.Should().Be("TR", "saved reports are one table row each"));
+        page.Find("[data-testid=dlr-history-table] thead").TextContent.Should().ContainAll("Report", "Baseline → current", "Coverage", "Generated", "Key changes");
+        page.Find("[data-testid=dlr-history-count]").TextContent.Should().Be("1 of 1 reports");
         page.Find("[data-testid=dlr-history-pair]").TextContent.Should().Contain("Baseline").And.Contain("Current");
+        page.Find("[data-testid=dlr-history-search]").Input("no such report");
+        page.FindAll("[data-testid=dlr-history-row]").Should().BeEmpty();
     }
 
     // ---- Snapshot identity: two "Current 2026-11-04" snapshots of the same day stay individually selectable ----
