@@ -233,7 +233,7 @@
                 @foreach (var d in shown.OrderBy(d => d.Priority).Take(100))
                 {
                     <li data-testid="fqs-scenario" data-priority="@d.Priority">
-                        <strong>@d.Scenario</strong> <MetaBadge Kind="BadgeKind.Type" Text="@($"{d.Priority} priority")" /> <MetaBadge Kind="BadgeKind.Provenance" Text="Draft" />
+                        <strong>@d.Scenario</strong> <MetaBadge Kind="BadgeKind.Type" Text="@($"{d.Priority} priority")" /> <MetaBadge Kind="BadgeKind.Type" Text="Draft" />
                         <div class="fqs-muted fqs-small">@d.Purpose @d.PriorityReason. @d.Coverage.</div>
                         <dl class="fqs-gwt">
                             @if (d.Given is not null) { <div><dt>Given</dt><dd>@d.Given</dd></div> }
