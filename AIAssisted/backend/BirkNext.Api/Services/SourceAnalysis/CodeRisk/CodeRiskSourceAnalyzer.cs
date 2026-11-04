@@ -26,9 +26,11 @@ public interface IAiCodeRiskAnalyzer
 public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
 {
     /// <summary>2: endpoint authorization carries literal policy/role names and route templates.</summary>
-    public const int Version = 2;
+    /// <summary>3: declared production type symbols (<see cref="CodeRiskSourceEvidence.Symbols"/>).</summary>
+    public const int Version = 3;
     public const int MaxObservationsPerKind = 2_000;
     public const int MaxFiles = 20_000;
+    public const int MaxSymbols = 20_000;
 
     public string Language => "C#";
     public string AnalyzerId => "dotnet-roslyn-syntax";
@@ -98,6 +100,7 @@ public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
         }
 
         var endpoints = new List<CodeEndpointAuthorization>();
+        var symbols = new List<CodeSymbol>();
         var configReads = new List<CodeLocation>();
         var dtoShapes = new Dictionary<string, List<CodeLocation>>(StringComparer.Ordinal);
         var methodBodies = new Dictionary<string, List<CodeLocation>>(StringComparer.Ordinal);
@@ -138,6 +141,7 @@ public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
                 }
 
                 if (!unit.Test) Endpoints(unit, type, typeName, endpoints);
+                if (!unit.Test && symbols.Count < MaxSymbols) symbols.Add(Symbol(type, unit.Path));
 
                 // Unused private methods: name never referenced elsewhere in the (non-partial) type. Attributes may mean reflection: skipped.
                 // Interfaces declare members without bodies (no modifier ≠ private); partial types may reference members from another file.
@@ -151,6 +155,10 @@ public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
                             Observe(CodeRiskObservationKind.UnusedPrivateMethod, unit, method, $"{typeName}.{method.Identifier.Text}", "Private method is not referenced within its type.");
                 }
             }
+
+            if (!unit.Test)
+                foreach (var e in root.DescendantNodes().OfType<EnumDeclarationSyntax>().Where(_ => symbols.Count < MaxSymbols))
+                    symbols.Add(new(e.Identifier.Text, Namespace(e), "Enum", unit.Path, e.GetLocation().GetLineSpan().StartLinePosition.Line + 1));
 
             foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
@@ -259,6 +267,7 @@ public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
                 "Methods with an identical normalized syntax tree (identifiers of locals and parameters normalized) in the same project.", g.Value.Take(10).ToList())))
             .OrderBy(d => d.Locations[0].File, StringComparer.Ordinal).ThenBy(d => d.Locations[0].Line).Take(MaxObservationsPerKind).ToList();
 
+        if (symbols.Count >= MaxSymbols) limitations.Add($"Only the first {MaxSymbols:N0} declared types are recorded as source symbols.");
         var languages = new List<CodeRiskLanguageCoverage> { new(analyzer.Language, analyzer.AnalyzerId, true, csFiles.Count) };
         foreach (var group in allPaths.Select(p => (Path: p, Lang: UnsupportedLanguages.FirstOrDefault(l => p.EndsWith(l.Extension, StringComparison.OrdinalIgnoreCase)).Language))
                      .Where(x => x.Lang is not null && !x.Path.Contains("/node_modules/", StringComparison.Ordinal) && !x.Path.Contains("/wwwroot/lib/", StringComparison.Ordinal))
@@ -271,6 +280,7 @@ public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
             ProductionFiles = units.Count(u => !u.Test), TestFiles = units.Count(u => u.Test),
             Observations = observations.OrderBy(o => o.File, StringComparer.Ordinal).ThenBy(o => o.Line).ThenBy(o => o.Kind).ToList(),
             Endpoints = endpoints.OrderBy(e => e.Key, StringComparer.Ordinal).ToList(), Duplicates = duplicates,
+            Symbols = symbols.OrderBy(x => x.File, StringComparer.Ordinal).ThenBy(x => x.Line).ToList(),
             ProjectUsage = usage.OrderBy(u => u.Key, StringComparer.Ordinal).Select(u => new CodeProjectUsage(u.Key, u.Value.Order(StringComparer.Ordinal).ToList())).ToList(),
             ConfigurationKeyReads = configReads.DistinctBy(c => (c.File, c.Symbol)).Take(MaxObservationsPerKind).ToList(),
             Truncated = truncated, Limitations = limitations,
@@ -303,6 +313,16 @@ public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
     }
 
     private static int Line(SyntaxNode node) => node.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+
+    /// <summary>A type's symbol: nested types carry their outer type in the name ("Outer.Inner"); the namespace stays separate.</summary>
+    private static CodeSymbol Symbol(TypeDeclarationSyntax type, string path)
+    {
+        var outer = string.Join('.', type.Ancestors().OfType<TypeDeclarationSyntax>().Reverse().Select(t => t.Identifier.Text));
+        var kind = type switch { RecordDeclarationSyntax => "Record", InterfaceDeclarationSyntax => "Interface", StructDeclarationSyntax => "Struct", _ => "Class" };
+        return new(outer.Length == 0 ? type.Identifier.Text : $"{outer}.{type.Identifier.Text}", Namespace(type), kind, path, type.GetLocation().GetLineSpan().StartLinePosition.Line + 1);
+    }
+
+    private static string? Namespace(SyntaxNode node) => node.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault()?.Name.ToString();
 
     private static string Qualified(TypeDeclarationSyntax? type)
     {

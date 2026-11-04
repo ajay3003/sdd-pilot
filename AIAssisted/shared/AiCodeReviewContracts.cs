@@ -71,6 +71,10 @@ public sealed record CodeDuplicateGroup(string Kind, string Fingerprint, string 
 
 public sealed record CodeLocation(string File, int Line, string Symbol);
 
+/// <summary>A declared production type (class, record, struct, interface, enum) as the source states it: the source-symbol table the canonical engine
+/// correlates against. Names only, never member bodies. Empty in snapshots analyzed before code-risk analyzer v3.</summary>
+public sealed record CodeSymbol(string Name, string? Namespace, string Kind, string File, int Line);
+
 /// <summary>Namespaces imported per project folder: the usage evidence an introduced-dependency rule checks a package against.</summary>
 public sealed record CodeProjectUsage(string ProjectPath, List<string> ImportedNamespaces);
 
@@ -88,6 +92,8 @@ public sealed record CodeRiskSourceEvidence
     public List<CodeEndpointAuthorization> Endpoints { get; init; } = [];
     public List<CodeDuplicateGroup> Duplicates { get; init; } = [];
     public List<CodeProjectUsage> ProjectUsage { get; init; } = [];
+    /// <summary>Declared production types (v3+; bounded by <c>MaxSymbols</c>, truncation is a limitation).</summary>
+    public List<CodeSymbol> Symbols { get; init; } = [];
     /// <summary>Configuration keys read by source as literal strings (key paths only; "may come from environment" is a limitation).</summary>
     public List<CodeLocation> ConfigurationKeyReads { get; init; } = [];
     public bool Truncated { get; init; }
