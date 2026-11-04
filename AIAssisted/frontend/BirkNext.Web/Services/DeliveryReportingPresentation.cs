@@ -9,7 +9,7 @@ public static class DeliveryReportingPresentation
     public const string Route = "delivery-reporting";
 
     public static readonly IReadOnlyList<(string Id, string Label)> Tabs =
-        [("overview", "Overview"), ("stories", "Stories"), ("snapshots", "Snapshots"), ("history", "Report history")];
+        [("overview", "Overview"), ("stories", "Stories"), ("snapshots", "Snapshots"), ("history", "Report history"), ("scope", "Functional Quality Scope")];
 
     public static string TabOrDefault(string? tab) => Tabs.Any(t => t.Id == tab) ? tab! : "overview";
 

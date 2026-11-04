@@ -1,0 +1,568 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.FunctionalQualityScopePresentation
+@using T = BirkNext.DeliveryReporting.FunctionalQualityScopeText
+@inject IFunctionalQualityScopeApiService Api
+
+@* Functional Quality Scope: choose a scope (domain flow, module or custom) and see its user stories, acceptance scenarios, acceptance criteria and
+   requirements, each with its quality category, why it is in scope, coverage, Test Data and testability. A projection over the newest Delivery
+   snapshot — custom scopes hold references only. *@
+
+<section class="fqs" data-testid="fqs">
+    <header class="fqs-head">
+        <div>
+            <h2 class="fqs-h2">Functional Quality Scope</h2>
+            <p class="fqs-muted">Testable behaviour for one scope. Technical work (migrations, framework or pipeline changes) is excluded unless you include it.</p>
+        </div>
+        <div class="fqs-controls">
+            <label class="fqs-field">
+                <span>Scope</span>
+                <select data-testid="fqs-scope" value="@_scopeKey" @onchange="OnScopeChanged">
+                    @if (_available.Count == 0) { <option value="">No scopes yet</option> }
+                    @foreach (var group in _available.GroupBy(a => a.Kind))
+                    {
+                        <optgroup label="@P.KindHeading(group.Key)">
+                            @foreach (var scope in group) { <option value="@scope.Key" title="@scope.Detail">@scope.Name</option> }
+                        </optgroup>
+                    }
+                </select>
+            </label>
+            <fieldset class="fqs-toggle" data-testid="fqs-relation-mode">
+                <legend>Membership</legend>
+                <label><input type="radio" name="fqs-mode" checked="@(!_includeRelated)" @onchange="() => SetRelated(false)" data-testid="fqs-mode-direct" /> Direct only</label>
+                <label><input type="radio" name="fqs-mode" checked="@_includeRelated" @onchange="() => SetRelated(true)" data-testid="fqs-mode-related" /> Include related</label>
+            </fieldset>
+            <label class="fqs-check"><input type="checkbox" checked="@_includeTechnical" @onchange="ToggleTechnical" data-testid="fqs-technical" /> Include technical work</label>
+        </div>
+        <div class="fqs-actions">
+            <button type="button" class="btn-secondary" data-testid="fqs-new" @onclick="StartNew">+ Custom scope</button>
+            @if (_custom is not null)
+            {
+                <button type="button" class="btn-secondary" data-testid="fqs-edit" aria-pressed="@(_editing ? "true" : "false")" @onclick="ToggleEdit">@(_editing ? "Done editing" : "Edit scope")</button>
+                <button type="button" class="btn-secondary" data-testid="fqs-clone" @onclick="Clone">Clone</button>
+                <button type="button" class="btn-secondary" data-testid="fqs-delete" @onclick="() => _confirmDelete = true">Delete</button>
+            }
+            <button type="button" class="btn-secondary" data-testid="fqs-freeze" disabled="@(_resolution?.SnapshotId is null)" @onclick="Freeze"
+                    title="Store this scope's exact membership now, for a report or a finalized review.">Freeze scope snapshot</button>
+        </div>
+    </header>
+
+    @if (_newOpen)
+    {
+        <form class="fqs-card fqs-inline" data-testid="fqs-new-form" @onsubmit="CreateScope" @onsubmit:preventDefault>
+            <label class="fqs-field"><span>Name</span><input data-testid="fqs-new-name" @bind="_newName" maxlength="200" required /></label>
+            <label class="fqs-field"><span>Start from</span>
+                <select data-testid="fqs-new-root" @bind="_newRoot">
+                    <option value="">Empty (manual scope)</option>
+                    @foreach (var scope in _available.Where(a => a.CustomId is null)) { <option value="@scope.Key">@scope.Name</option> }
+                </select>
+            </label>
+            <div class="fqs-actions">
+                <button type="submit" class="btn-primary" data-testid="fqs-new-save">Create scope</button>
+                <button type="button" class="btn-secondary" @onclick="() => _newOpen = false">Cancel</button>
+            </div>
+        </form>
+    }
+
+    @if (_confirmDelete && _custom is not null)
+    {
+        <div class="fqs-card fqs-confirm" role="alertdialog" aria-labelledby="fqs-confirm-title" data-testid="fqs-delete-confirm">
+            <p id="fqs-confirm-title"><strong>Delete the scope “@_custom.Name”?</strong> Its items are not touched. Frozen scope snapshots keep their membership.</p>
+            <div class="fqs-actions">
+                <button type="button" class="btn-primary" data-testid="fqs-delete-yes" @onclick="Delete">Delete scope</button>
+                <button type="button" class="btn-secondary" @onclick="() => _confirmDelete = false">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (_error is not null) { <p class="fqs-error" role="alert" data-testid="fqs-error">@_error</p> }
+    @if (_notice is not null) { <p class="fqs-notice" role="status" data-testid="fqs-notice">@_notice</p> }
+
+    @if (_loading && _resolution is null)
+    {
+        <div class="fqs-skeleton" role="status" aria-label="Loading scope"><span></span><span></span></div>
+    }
+    else if (_resolution is { } r)
+    {
+        @Summary(r)
+        @if (r.RelatedModules.Count > 0) { @Related(r) }
+        @foreach (var limitation in r.Limitations) { <p class="fqs-limit" data-testid="fqs-limitation">@limitation</p> }
+        @if (_editing && _custom is not null) { @Builder(r) }
+        @Filters(r)
+        @if (_editing && _custom is not null)
+        {
+            @* The drop zone exists even when the scope is still empty, so the first item can be dragged in. *@
+            <div class="fqs-dropzone @(_dragKey is null ? "" : "is-dragging")" data-testid="fqs-dropzone" @ondragenter:preventDefault="true" @ondragover:preventDefault="true" @ondrop="DropIntoScope">
+                <p class="fqs-drop-hint">Drop items here to add them to “@_custom.Name” — or use Add.</p>
+                @Items(r)
+            </div>
+        }
+        else { @Items(r) }
+        @if (_snapshots.Count > 0) { @Snapshots() }
+    }
+
+    @if (_detail is not null) { @Detail(_detail) }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid ProjectId { get; set; }
+    /// <summary>Scope key from the URL (?scope=profile:skolenaervaer | module:Person | custom:{id}).</summary>
+    [Parameter] public string? InitialScope { get; set; }
+
+    private Guid _loadedProject;
+    private IReadOnlyList<AvailableScope> _available = [];
+    private string _scopeKey = "";
+    private bool _includeRelated, _includeTechnical, _loading, _editing, _newOpen, _confirmDelete;
+    private string? _error, _notice;
+    private ScopeResolution? _resolution;
+    private ScopeDefinition? _custom;
+    private ScopeFilter _filter = new();
+    private ScopeResolution? _all;
+    private string? _builderSearch, _dragKey;
+    private string _newName = "", _newRoot = "";
+    private ScopeItemDetail? _detail;
+    private TestDesignAssessmentView? _assessment;
+    private string _assessmentData = "";
+    private IReadOnlyList<ScopeSnapshotView> _snapshots = [];
+    private readonly HashSet<string> _why = new(StringComparer.Ordinal);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedProject == ProjectId) return;
+        _loadedProject = ProjectId;
+        _loading = true;
+        (_available, _error) = await Api.AvailableAsync(ProjectId);
+        _scopeKey = InitialScope is { Length: > 0 } wanted && _available.Any(a => a.Key == wanted) ? wanted : _available.FirstOrDefault()?.Key ?? "";
+        if (InitialScope is { Length: > 0 } missing && _scopeKey != missing && _available.Count > 0)
+            _notice = $"The scope “{missing}” is not available in this project; showing “{_available.First().Name}”.";
+        _snapshots = await Api.SnapshotsAsync(ProjectId);
+        await ResolveAsync();
+    }
+
+    private Guid? CustomId => _available.FirstOrDefault(a => a.Key == _scopeKey)?.CustomId;
+
+    private async Task ResolveAsync()
+    {
+        if (_scopeKey.Length == 0) { _resolution = null; _loading = false; return; }
+        _loading = true;
+        var (resolution, error) = await Api.ResolveAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical));
+        _loading = false;
+        _error = error;
+        if (resolution is null) return;
+        _resolution = resolution;
+        _custom = resolution.Scope.Id is not null && !resolution.Scope.BuiltIn ? resolution.Scope : null;
+        if (_custom is null) _editing = false;
+    }
+
+    private async Task OnScopeChanged(ChangeEventArgs e)
+    {
+        _scopeKey = e.Value?.ToString() ?? "";
+        _filter = new();
+        _notice = null;
+        _editing = false;
+        await ResolveAsync();
+    }
+
+    private async Task SetRelated(bool related) { _includeRelated = related; await ResolveAsync(); }
+    private async Task ToggleTechnical() { _includeTechnical = !_includeTechnical; await ResolveAsync(); if (_editing) await LoadAllAsync(); }
+
+    // ── Summary and relations ────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Summary(ScopeResolution r) => __builder =>
+    {
+        var s = r.Summary;
+        <div class="fqs-card fqs-summary" data-testid="fqs-summary">
+            <div class="fqs-scope-line">
+                <strong data-testid="fqs-scope-name">@r.Scope.Name</strong>
+                @if (r.Scope.Id is not null && !r.Scope.BuiltIn) { <MetaBadge Kind="BadgeKind.Type" Text="@($"Custom · v{r.Scope.Version}")" /> }
+                @if (r.SnapshotLabel is { } label) { <MetaBadge Kind="BadgeKind.Provenance" Text="@($"Delivery snapshot {label}")" TestId="fqs-snapshot" /> }
+            </div>
+            <dl class="fqs-counts">
+                <div><dt>User stories</dt><dd data-testid="fqs-count-stories">@s.UserStories</dd></div>
+                <div><dt>Acceptance scenarios</dt><dd data-testid="fqs-count-scenarios">@s.Scenarios</dd></div>
+                <div><dt>Acceptance criteria</dt><dd data-testid="fqs-count-criteria">@s.AcceptanceCriteria</dd></div>
+                <div><dt>Requirements</dt><dd data-testid="fqs-count-requirements">@s.Requirements</dd></div>
+                <div><dt>Formal test cases</dt><dd data-testid="fqs-count-testcases">@(s.FormalTestCases == 0 ? "None recorded" : s.FormalTestCases.ToString())</dd></div>
+            </dl>
+            <div class="fqs-chips" aria-label="Quality categories">
+                @foreach (var (category, count) in s.ByCategory.OrderByDescending(c => c.Value))
+                {
+                    var active = _filter.Category == category;
+                    <button type="button" class="fqs-chip @(active ? "is-active" : "")" aria-pressed="@(active ? "true" : "false")" data-testid="fqs-category-@category"
+                            @onclick="() => _filter = _filter with { Category = active ? null : category }">@FunctionalQualityClassifier.Label(category) · @count</button>
+                }
+            </div>
+            <p class="fqs-muted fqs-small">
+                Coverage: @string.Join(" · ", s.ByCoverage.OrderBy(c => c.Key).Select(c => $"{T.CoverageLabel(c.Key)} {c.Value}"))
+                @if (s.TechnicalExcluded > 0) { <span data-testid="fqs-technical-excluded"> · @s.TechnicalExcluded technical item(s) excluded</span> }
+                @if (s.Unavailable > 0) { <span data-testid="fqs-unavailable-count"> · @s.Unavailable unavailable</span> }
+            </p>
+        </div>
+    };
+
+    private RenderFragment Related(ScopeResolution r) => __builder =>
+    {
+        <details class="fqs-card fqs-related" data-testid="fqs-related" open="@_includeRelated">
+            <summary>Related modules (@r.RelatedModules.Count(m => m.Included) related, @r.RelatedModules.Count(m => !m.Included) suggested)</summary>
+            <ul>
+                @foreach (var m in r.RelatedModules)
+                {
+                    <li data-testid="fqs-related-module">
+                        <strong>@m.Module</strong> <MetaBadge Kind="BadgeKind.Scope" Text="@(m.Included ? T.RelationLabel(m.Relation) : "Suggested")" />
+                        <span class="fqs-muted">@m.Reason</span>
+                        @if (m.Included && !_includeRelated) { <span class="fqs-muted fqs-small"> — shown with “Include related”.</span> }
+                    </li>
+                }
+            </ul>
+        </details>
+    };
+
+    // ── Filters and items ────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Filters(ScopeResolution r) => __builder =>
+    {
+        var modules = r.Items.Select(i => i.Module).Where(m => m.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        var priorities = r.Items.Select(i => i.Priority).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).Order().ToList();
+        <div class="fqs-filters" data-testid="fqs-filters">
+            <label class="fqs-field"><span>Search</span><input type="search" data-testid="fqs-search" value="@_filter.Search" @oninput="e => _filter = _filter with { Search = e.Value?.ToString() }" /></label>
+            <label class="fqs-field"><span>Type</span>
+                <select data-testid="fqs-filter-type" @onchange="e => _filter = _filter with { Type = Parse<ScopeArtifactType>(e) }">
+                    <option value="">All types</option>
+                    @foreach (var t in Enum.GetValues<ScopeArtifactType>()) { <option value="@t" selected="@(_filter.Type == t)">@T.TypeLabel(t)</option> }
+                </select>
+            </label>
+            <label class="fqs-field"><span>Quality</span>
+                <select data-testid="fqs-filter-category" @onchange="e => _filter = _filter with { Category = Parse<QualityCategory>(e) }">
+                    <option value="">All categories</option>
+                    @foreach (var c in Enum.GetValues<QualityCategory>()) { <option value="@c" selected="@(_filter.Category == c)">@FunctionalQualityClassifier.Label(c)</option> }
+                </select>
+            </label>
+            <label class="fqs-field"><span>Module</span>
+                <select data-testid="fqs-filter-module" @onchange="e => _filter = _filter with { Module = e.Value?.ToString() is { Length: > 0 } m ? m : null }">
+                    <option value="">All modules</option>
+                    @foreach (var m in modules) { <option value="@m" selected="@(_filter.Module == m)">@m</option> }
+                </select>
+            </label>
+            <label class="fqs-field"><span>Relation</span>
+                <select data-testid="fqs-filter-relation" @onchange="e => _filter = _filter with { Relation = Parse<ScopeRelation>(e) }">
+                    <option value="">All</option>
+                    @foreach (var rel in Enum.GetValues<ScopeRelation>()) { <option value="@rel" selected="@(_filter.Relation == rel)">@T.RelationLabel(rel)</option> }
+                </select>
+            </label>
+            <label class="fqs-field"><span>Coverage</span>
+                <select data-testid="fqs-filter-coverage" @onchange="e => _filter = _filter with { Coverage = Parse<ScopeCoverage>(e) }">
+                    <option value="">All</option>
+                    @foreach (var c in Enum.GetValues<ScopeCoverage>()) { <option value="@c" selected="@(_filter.Coverage == c)">@T.CoverageLabel(c)</option> }
+                </select>
+            </label>
+            <label class="fqs-field"><span>Test Data</span>
+                <select data-testid="fqs-filter-testdata" @onchange="e => _filter = _filter with { TestData = Parse<ScopeTestDataState>(e) }">
+                    <option value="">All</option>
+                    @foreach (var d in Enum.GetValues<ScopeTestDataState>()) { <option value="@d" selected="@(_filter.TestData == d)">@T.TestDataLabel(d)</option> }
+                </select>
+            </label>
+            <label class="fqs-field"><span>Testability</span>
+                <select data-testid="fqs-filter-testability" @onchange="e => _filter = _filter with { Testability = Parse<TestabilityClassification>(e) }">
+                    <option value="">All</option>
+                    @foreach (var t in Enum.GetValues<TestabilityClassification>()) { <option value="@t" selected="@(_filter.Testability == t)">@T.TestabilityLabel(t)</option> }
+                </select>
+            </label>
+            @if (priorities.Count > 0)
+            {
+                <label class="fqs-field"><span>Priority</span>
+                    <select data-testid="fqs-filter-priority" @onchange="e => _filter = _filter with { Priority = e.Value?.ToString() is { Length: > 0 } p ? p : null }">
+                        <option value="">All</option>
+                        @foreach (var p in priorities) { <option value="@p" selected="@(_filter.Priority == p)">@p</option> }
+                    </select>
+                </label>
+            }
+            @if (_filter != new ScopeFilter()) { <button type="button" class="btn-secondary" data-testid="fqs-clear-filters" @onclick="() => _filter = new()">Clear filters</button> }
+        </div>
+    };
+
+    private RenderFragment Items(ScopeResolution r) => __builder =>
+    {
+        var shown = P.Apply(r.Items, _filter);
+        <p class="fqs-muted fqs-small" data-testid="fqs-shown">Showing @shown.Count of @r.Items.Count items · @r.PrecedenceNote</p>
+        if (shown.Count == 0)
+        {
+            <p class="fqs-card fqs-empty" data-testid="fqs-empty">@(r.Items.Count == 0 ? "Nothing is in this scope yet." : "No item matches these filters.")</p>
+            return;
+        }
+        <div class="fqs-groups" data-testid="fqs-items">
+            @foreach (var group in P.Group(shown))
+            {
+                <section class="fqs-group" data-testid="fqs-group">
+                    <h3 class="fqs-h3"><span class="fqs-module">@group.Module</span> @group.FeatureKey — @group.FeatureTitle
+                        <MetaBadge Kind="BadgeKind.Scope" Text="@T.RelationLabel(group.Relation)" /></h3>
+                    <ul class="fqs-list">
+                        @foreach (var item in group.Items) { @Row(item) }
+                    </ul>
+                </section>
+            }
+        </div>
+    };
+
+    private RenderFragment Row(ScopeItem item) => __builder =>
+    {
+        var whyOpen = _why.Contains(item.Key);
+        <li class="fqs-item @(item.ParentKey is null ? "" : "is-child") @(item.Unavailable ? "is-unavailable" : "")" data-testid="fqs-item" data-key="@item.Key" data-type="@item.Type">
+            <div class="fqs-item-main">
+                <span class="fqs-icon" aria-hidden="true">@T.Icon(item.Type)</span>
+                <span class="fqs-type">@T.TypeLabel(item.Type)</span>
+                <span class="fqs-id">@item.DisplayId</span>
+                <button type="button" class="fqs-title" data-testid="fqs-open" @onclick="() => OpenDetail(item.Key)" disabled="@item.Unavailable">@item.Title</button>
+            </div>
+            <div class="fqs-item-meta">
+                <MetaBadge Kind="BadgeKind.Type" Text="@FunctionalQualityClassifier.Label(item.Category)" Title="@($"Rule {item.CategoryRule}")" TestId="fqs-category" />
+                @if (item.Unavailable) { <SemanticStatusBadge Status="SemanticStatus.Unresolved" QualifiedLabel="Unavailable in current source" TestId="fqs-unavailable" /> }
+                else
+                {
+                    <SemanticStatusBadge Status="@P.CoverageStatus(item.Coverage)" QualifiedLabel="@T.CoverageLabel(item.Coverage)" Explanation="@item.CoverageDetail" TestId="fqs-coverage" />
+                    <SemanticStatusBadge Status="@P.TestDataStatus(item.TestData)" QualifiedLabel="@T.TestDataLabel(item.TestData)" TestId="fqs-testdata" />
+                    @if (item.Testability != TestabilityClassification.Unclassified) { <MetaBadge Kind="BadgeKind.Type" Text="@T.TestabilityLabel(item.Testability)" /> }
+                    @if (item.Priority is { Length: > 0 } priority) { <MetaBadge Kind="BadgeKind.Count" Text="@($"Priority {priority}")" /> }
+                }
+                <button type="button" class="fqs-why" aria-expanded="@(whyOpen ? "true" : "false")" data-testid="fqs-why"
+                        @onclick="() => { if (!_why.Remove(item.Key)) _why.Add(item.Key); }">Why included</button>
+                @if (_editing && _custom is not null)
+                {
+                    @if (item.Inclusion == ScopeInclusion.ExplicitInclude)
+                    { <button type="button" class="btn-secondary fqs-small-btn" data-testid="fqs-remove" @onclick="() => RemoveReference(item.Key)">Remove</button> }
+                    else
+                    { <button type="button" class="btn-secondary fqs-small-btn" data-testid="fqs-exclude" @onclick="() => AddReference(item.Key, ScopeInclusion.ExplicitExclude)">Exclude</button> }
+                }
+            </div>
+            @if (whyOpen)
+            {
+                <p class="fqs-why-text" data-testid="fqs-why-text">
+                    <strong>@T.RelationLabel(item.Relation)@(item.Inclusion == ScopeInclusion.ExplicitInclude ? " · explicitly included" : "")</strong> — @item.Reason
+                    <br /><span class="fqs-muted">Category @FunctionalQualityClassifier.Label(item.Category) by rule <code>@item.CategoryRule</code>.</span>
+                </p>
+            }
+        </li>
+    };
+
+    private static T2? Parse<T2>(ChangeEventArgs e) where T2 : struct, Enum => Enum.TryParse<T2>(e.Value?.ToString(), out var v) ? v : null;
+
+    // ── Custom scope builder: drag/drop with Add / Remove fallback ───────────────────────────────────────────────────
+
+    private RenderFragment Builder(ScopeResolution r) => __builder =>
+    {
+        var inScope = r.Items.Select(i => i.Key).ToHashSet(StringComparer.Ordinal);
+        var excluded = _custom!.ExplicitExcludes.ToHashSet(StringComparer.Ordinal);
+        // The server filters and bounds the list (search + take); only items already in the scope are removed here.
+        var candidates = (_all?.Items ?? []).Where(i => !inScope.Contains(i.Key) && i.ParentKey is null).Take(60).ToList();
+        <section class="fqs-card fqs-builder" data-testid="fqs-builder">
+            <h3 class="fqs-h3">Add items to “@_custom.Name”</h3>
+            <p class="fqs-muted fqs-small">Drag an item onto the scope list below, or use Add. Added items stay referenced by their stable key across re-imports.
+                @if (excluded.Count > 0) { <span> @excluded.Count item(s) explicitly excluded.</span> }</p>
+            <label class="fqs-field"><span>Find items in the project</span><input type="search" data-testid="fqs-builder-search" value="@_builderSearch" @onchange="SearchCandidates" /></label>
+            @if (_all is null) { <p class="fqs-muted">Loading items…</p> }
+            else if (candidates.Count == 0) { <p class="fqs-muted">No other items match.</p> }
+            else
+            {
+                <ul class="fqs-list fqs-candidates" data-testid="fqs-candidates">
+                    @foreach (var c in candidates)
+                    {
+                        <li class="fqs-item fqs-candidate" draggable="true" data-testid="fqs-candidate" data-key="@c.Key" @ondragstart="() => _dragKey = c.Key">
+                            <span class="fqs-icon" aria-hidden="true">@T.Icon(c.Type)</span>
+                            <span class="fqs-type">@T.TypeLabel(c.Type)</span> <span class="fqs-id">@c.DisplayId</span> <span>@c.Title</span>
+                            <span class="fqs-module">@c.Module</span>
+                            <button type="button" class="btn-secondary fqs-small-btn" data-testid="fqs-add" @onclick="() => AddReference(c.Key, ScopeInclusion.ExplicitInclude)">
+                                @(excluded.Contains(c.Key) ? "Include again" : "Add")</button>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    };
+
+    private async Task ToggleEdit()
+    {
+        _editing = !_editing;
+        if (_editing) await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync() => (_all, _) = await Api.AllItemsAsync(ProjectId, _includeTechnical, _builderSearch);
+
+    private async Task SearchCandidates(ChangeEventArgs e)
+    {
+        _builderSearch = e.Value?.ToString();
+        await LoadAllAsync();
+    }
+
+    private async Task DropIntoScope()
+    {
+        if (_dragKey is { } key && _editing) await AddReference(key, ScopeInclusion.ExplicitInclude);
+        _dragKey = null;
+    }
+
+    private async Task AddReference(string key, ScopeInclusion mode)
+    {
+        if (_custom?.Id is not { } id) return;
+        var (scope, error) = await Api.ReferenceAsync(ProjectId, id, key, mode);
+        await AfterChange(scope, error, mode == ScopeInclusion.ExplicitExclude ? "Item excluded from the scope." : "Item added to the scope.");
+    }
+
+    private async Task RemoveReference(string key)
+    {
+        if (_custom?.Id is not { } id) return;
+        var (scope, error) = await Api.RemoveReferenceAsync(ProjectId, id, key);
+        await AfterChange(scope, error, "Explicit reference removed.");
+    }
+
+    private async Task AfterChange(ScopeDefinition? scope, string? error, string notice)
+    {
+        _error = error;
+        if (scope is null) return;
+        _notice = $"{notice} Scope version {scope.Version}.";
+        await ResolveAsync();
+    }
+
+    private void StartNew() { _newOpen = true; _newName = ""; _newRoot = ""; }
+
+    private async Task CreateScope()
+    {
+        var roots = _newRoot.Length == 0 ? new List<string>() : [_newRoot];
+        var (scope, error) = await Api.SaveAsync(ProjectId, new ScopeDefinition { Name = _newName, Roots = roots, IncludeRelated = _includeRelated });
+        _error = error;
+        if (scope?.Id is not { } id) return;
+        _newOpen = false;
+        await ReloadAvailable($"custom:{id}");
+        _editing = true;
+        await LoadAllAsync();
+        _notice = $"Scope “{scope.Name}” created. Add items below.";
+    }
+
+    private async Task Clone()
+    {
+        if (_custom?.Id is not { } id) return;
+        var (scope, error) = await Api.CloneAsync(ProjectId, id);
+        _error = error;
+        if (scope?.Id is { } cloned) { await ReloadAvailable($"custom:{cloned}"); _notice = $"Cloned as “{scope.Name}”."; }
+    }
+
+    private async Task Delete()
+    {
+        _confirmDelete = false;
+        if (_custom?.Id is not { } id) return;
+        _error = await Api.DeleteAsync(ProjectId, id);
+        if (_error is null) { var name = _custom.Name; await ReloadAvailable(null); _notice = $"Scope “{name}” deleted."; }
+    }
+
+    private async Task ReloadAvailable(string? select)
+    {
+        (_available, _error) = await Api.AvailableAsync(ProjectId);
+        _scopeKey = select is not null && _available.Any(a => a.Key == select) ? select : _available.FirstOrDefault()?.Key ?? "";
+        _editing = false;
+        await ResolveAsync();
+    }
+
+    private async Task Freeze()
+    {
+        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical));
+        _error = error;
+        if (snapshot is null) return;
+        _notice = $"Scope snapshot frozen: {snapshot.ItemCount} items (scope version {snapshot.ScopeVersion}).";
+        _snapshots = await Api.SnapshotsAsync(ProjectId);
+    }
+
+    private RenderFragment Snapshots() => __builder =>
+    {
+        <details class="fqs-card fqs-snapshots" data-testid="fqs-snapshots">
+            <summary>Frozen scope snapshots (@_snapshots.Count)</summary>
+            <ul>
+                @foreach (var s in _snapshots)
+                {
+                    <li data-testid="fqs-snapshot-row">@s.ScopeName v@(s.ScopeVersion) · @s.ItemCount items · @s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                        <span class="fqs-muted fqs-small">@s.RuleSetVersion</span></li>
+                }
+            </ul>
+            <a href="snapshots?module=functional-scope-snapshot" class="fqs-link">Open in Snapshots</a>
+        </details>
+    };
+
+    // ── Lazy detail and test-design assessment ──────────────────────────────────────────────────────────────────────
+
+    private async Task OpenDetail(string key)
+    {
+        _detail = await Api.DetailAsync(ProjectId, key);
+        if (_detail is null) { _error = "The item could not be loaded."; return; }
+        _assessment = _detail.Assessment ?? new TestDesignAssessmentView(key, TestabilityClassification.Unclassified, [], [], null, null);
+        _assessmentData = string.Join(", ", _assessment.RequiredTestDataAssetIds);
+    }
+
+    private RenderFragment Detail(ScopeItemDetail d) => __builder =>
+    {
+        var item = d.Item;
+        <aside class="fqs-detail" role="dialog" aria-modal="false" aria-labelledby="fqs-detail-title" data-testid="fqs-detail">
+            <header class="fqs-detail-head">
+                <h3 id="fqs-detail-title" class="fqs-h3">@T.TypeLabel(item.Type) @item.DisplayId</h3>
+                <button type="button" class="btn-secondary fqs-small-btn" data-testid="fqs-detail-close" @onclick="() => _detail = null">Close</button>
+            </header>
+            <p class="fqs-detail-text">@d.FullText</p>
+            <dl class="fqs-facts">
+                <div><dt>Feature</dt><dd>@item.Module / @item.FeatureKey — @item.FeatureTitle</dd></div>
+                <div><dt>Quality</dt><dd>@FunctionalQualityClassifier.Label(item.Category) <span class="fqs-muted">(rule @item.CategoryRule)</span></dd></div>
+                <div><dt>Why included</dt><dd>@T.RelationLabel(item.Relation) — @item.Reason</dd></div>
+                <div><dt>Coverage</dt><dd>@T.CoverageLabel(item.Coverage)@(d.CoverageEvidence.Count > 0 ? $" — {string.Join(" ", d.CoverageEvidence)}" : "")</dd></div>
+                @if (P.SourceRef(item) is { Length: > 0 } source) { <div><dt>Source</dt><dd><code>@source</code></dd></div> }
+                <div><dt>Stable key</dt><dd><code>@item.Key</code></dd></div>
+            </dl>
+            @if (d.Children.Count > 0)
+            {
+                <h4 class="fqs-h4">Acceptance criteria (@d.Children.Count)</h4>
+                <ul class="fqs-children">@foreach (var c in d.Children) { <li>@c.DisplayId — @c.Title</li> }</ul>
+            }
+            <nav class="fqs-links" aria-label="Related views">
+                <a href="artifact-traceability?q=@Uri.EscapeDataString(item.DisplayId)" data-testid="fqs-link-traceability">Traceability</a>
+                <a href="test-coverage-review?q=@Uri.EscapeDataString(item.DisplayId)" data-testid="fqs-link-coverage">Test coverage</a>
+                <a href="correlation-review" data-testid="fqs-link-correlation">Correlation Review</a>
+                <a href="test-data" data-testid="fqs-link-testdata">Test Data</a>
+            </nav>
+            @if (_assessment is { } a)
+            {
+                <form class="fqs-assessment" data-testid="fqs-assessment" @onsubmit="SaveAssessment" @onsubmit:preventDefault>
+                    <h4 class="fqs-h4">Test design</h4>
+                    <label class="fqs-field"><span>Testability</span>
+                        <select data-testid="fqs-testability" @onchange="e => _assessment = a with { Testability = Parse<TestabilityClassification>(e) ?? TestabilityClassification.Unclassified }">
+                            @foreach (var t in Enum.GetValues<TestabilityClassification>()) { <option value="@t" selected="@(a.Testability == t)">@T.TestabilityLabel(t)</option> }
+                        </select>
+                    </label>
+                    <fieldset class="fqs-toggle"><legend>Verification</legend>
+                        @foreach (var v in P.VerificationTypes)
+                        {
+                            <label><input type="checkbox" checked="@a.VerificationTypes.Contains(v)" @onchange="() => ToggleVerification(v)" /> @v</label>
+                        }
+                    </fieldset>
+                    <label class="fqs-field"><span>Required Test Data (stable asset ids, comma-separated)</span>
+                        <input data-testid="fqs-required-data" @bind="_assessmentData" placeholder="td-…" /></label>
+                    <label class="fqs-field"><span>Comment</span><input data-testid="fqs-assessment-comment" value="@a.Comment" @onchange="e => _assessment = a with { Comment = e.Value?.ToString() }" maxlength="2000" /></label>
+                    <div class="fqs-actions"><button type="submit" class="btn-primary" data-testid="fqs-assessment-save">Save test design</button>
+                        @if (a.ReviewedAt is { } at) { <span class="fqs-muted fqs-small">Last saved @at.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span> }</div>
+                </form>
+            }
+        </aside>
+    };
+
+    private void ToggleVerification(string type)
+    {
+        if (_assessment is null) return;
+        var list = _assessment.VerificationTypes.ToList();
+        if (!list.Remove(type)) list.Add(type);
+        _assessment = _assessment with { VerificationTypes = list };
+    }
+
+    private async Task SaveAssessment()
+    {
+        if (_assessment is null) return;
+        var ids = _assessmentData.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        var (saved, error) = await Api.AssessAsync(ProjectId, _assessment with { RequiredTestDataAssetIds = ids });
+        _error = error;
+        if (saved is null) return;
+        _assessment = saved;
+        _notice = "Test design saved.";
+        await ResolveAsync();
+    }
+}

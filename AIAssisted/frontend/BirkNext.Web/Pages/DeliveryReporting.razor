@@ -4,6 +4,7 @@
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
 @using BirkNext.Web.Shared.Components.Common
+@using BirkNext.Web.Components
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation
 @inject IDeliveryReportingApiService Api
 @inject NavigationManager Nav
@@ -84,6 +85,7 @@
         @if (_tab == "overview") { @Overview() }
         else if (_tab == "stories") { @Stories() }
         else if (_tab == "snapshots") { @Snapshots() }
+        else if (_tab == "scope") { <FunctionalQualityScopePanel ProjectId="_projectId.Value" InitialScope="@ScopeKeyQuery" /> }
         else { @History() }
     }
 
@@ -547,6 +549,7 @@
     [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
     [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
     [SupplyParameterFromQuery(Name = "report")] public string? ReportQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "scope")] public string? ScopeKeyQuery { get; set; }
     /// <summary>Deep link to one work item of the Stories workspace (browser back/forward move between selections).</summary>
     [SupplyParameterFromQuery(Name = "item")] public string? ItemQuery { get; set; }
     private bool _drillDown;

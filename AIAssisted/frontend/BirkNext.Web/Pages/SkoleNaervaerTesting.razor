@@ -75,6 +75,8 @@
                 <div><dt>Target environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
                 @if (Workspace.ProjectName is { } project) { <div><dt>Project workspace</dt><dd data-testid="snt-workspace">@project</dd></div> }
                 <div><dt>Source evidence</dt><dd data-testid="snt-source">Provided by Integration Quality Review bindings · @_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=setup-evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
+                <div><dt>Functional scope</dt><dd>User stories, scenarios and acceptance criteria on the Skolenærvær flow ·
+                    <a href="@FunctionalQualityScopePresentation.Href(FunctionalQualityScopePresentation.SkolenaervaerScope)" class="snt-inline-link" data-testid="snt-functional-scope">Open Functional Quality Scope</a></dd></div>
                 @if (_profile is not null && _pack is not null)
                 {
                     <div><dt>Active execution</dt><dd data-testid="snt-active-execution">@TestPackPresentation.ActiveExecution(_pack)

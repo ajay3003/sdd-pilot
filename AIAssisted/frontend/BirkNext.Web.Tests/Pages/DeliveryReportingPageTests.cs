@@ -5,6 +5,7 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -110,6 +111,25 @@ public sealed class DeliveryReportingPageTests : BunitContext
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting{query}");
         return Render<DeliveryReportingPage>();
+    }
+
+    [Fact]
+    public void ScopeTab_RendersTheFunctionalQualityScopePanel_WithTheDeepLinkedScope()
+    {
+        var scopes = new Moq.Mock<IFunctionalQualityScopeApiService>();
+        scopes.Setup(a => a.AvailableAsync(ProjectId, Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<AvailableScope>)[new AvailableScope("profile:skolenaervaer", "Skolenærvær", "Domain flow", "2 module(s)")], (string?)null));
+        scopes.Setup(a => a.ResolveAsync(ProjectId, Moq.It.IsAny<ScopeQuery>(), Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ScopeResolution(new ScopeDefinition { Name = "Skolenærvær", BuiltIn = true }, null, null, FunctionalQualityClassifier.RuleSetVersion, [],
+                new(0, 0, 0, 0, 0, new Dictionary<QualityCategory, int>(), new Dictionary<ScopeCoverage, int>(), 0, 0), [], [], FunctionalQualityScopeText.Precedence), (string?)null));
+        scopes.Setup(a => a.SnapshotsAsync(ProjectId, Moq.It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        Services.AddSingleton(scopes.Object);
+
+        var page = RenderAt($"?project={ProjectId}&tab=scope&scope=profile%3Askolenaervaer");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=fqs-scope-name]").TextContent.Should().Be("Skolenærvær"));
+        page.Find("[data-testid=dlr-tab-scope]").ClassList.Should().Contain("active");
+        page.Markup.Should().NotContain("<functionalqualityscopepanel", "the panel is a component, never an unknown HTML element");
     }
 
     [Fact]
