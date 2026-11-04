@@ -86,6 +86,7 @@
     <Compile Include="../../shared/DeliveryReportingContracts.cs" Link="Models/DeliveryReportingContracts.cs" />
     <Compile Include="../../shared/WorkItemInterpretation.cs" Link="Models/WorkItemInterpretation.cs" />
     <Compile Include="../../shared/SnapshotContracts.cs" Link="Models/SnapshotContracts.cs" />
+    <Compile Include="../../shared/FunctionalQualityScope.cs" Link="Models/FunctionalQualityScope.cs" />
     <Compile Include="../../shared/CanonicalCorrelation.cs" Link="Models/CanonicalCorrelation.cs" />
     <Compile Include="../../shared/CorrelationRules.cs" Link="Models/CorrelationRules.cs" />
     <Compile Include="../../shared/DataResetContracts.cs" Link="Models/DataResetContracts.cs" />

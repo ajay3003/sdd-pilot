@@ -28,6 +28,10 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
     public DbSet<DeliveryStatusEventRecord> StatusEvents => Set<DeliveryStatusEventRecord>();
     public DbSet<DeliveryWeeklyReportRecord> WeeklyReports => Set<DeliveryWeeklyReportRecord>();
     public DbSet<DeliveryWeeklyReportItemRecord> WeeklyReportItems => Set<DeliveryWeeklyReportItemRecord>();
+    public DbSet<DeliveryScopeRecord> Scopes => Set<DeliveryScopeRecord>();
+    public DbSet<DeliveryScopeReferenceRecord> ScopeReferences => Set<DeliveryScopeReferenceRecord>();
+    public DbSet<DeliveryTestDesignAssessmentRecord> TestDesignAssessments => Set<DeliveryTestDesignAssessmentRecord>();
+    public DbSet<DeliveryScopeSnapshotRecord> ScopeSnapshots => Set<DeliveryScopeSnapshotRecord>();
 
     /// <summary>Npgsql options for this context: the shared connection string, history table inside <see cref="Schema"/>.</summary>
     public static void Configure(DbContextOptionsBuilder builder, string connectionString) =>
@@ -314,6 +318,71 @@ public sealed class DeliveryReportingDbContext(DbContextOptions<DeliveryReportin
             e.HasOne<DeliverySnapshotRecord>().WithMany().HasForeignKey(x => x.BaselineSnapshotId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne<DeliverySnapshotRecord>().WithMany().HasForeignKey(x => x.CurrentSnapshotId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => new { x.ProjectId, x.GeneratedAt });
+        });
+
+        modelBuilder.Entity<DeliveryScopeRecord>(e =>
+        {
+            e.ToTable("functional_scope");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProjectId).HasColumnName("project_id");
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnName("description").HasMaxLength(2000);
+            e.Property(x => x.RootsJson).HasColumnName("roots").HasColumnType("jsonb");
+            e.Property(x => x.IncludeRelated).HasColumnName("include_related");
+            e.Property(x => x.Version).HasColumnName("version");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasOne<DeliveryProjectRecord>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ProjectId, x.Name }).IsUnique();
+        });
+
+        modelBuilder.Entity<DeliveryScopeReferenceRecord>(e =>
+        {
+            e.ToTable("functional_scope_reference");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeId).HasColumnName("scope_id");
+            e.Property(x => x.ItemKey).HasColumnName("item_key").HasMaxLength(600).IsRequired();
+            e.Property(x => x.Mode).HasColumnName("mode").HasMaxLength(20);
+            e.Property(x => x.AddedAt).HasColumnName("added_at");
+            e.HasOne<DeliveryScopeRecord>().WithMany().HasForeignKey(x => x.ScopeId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ScopeId, x.ItemKey }).IsUnique();
+        });
+
+        modelBuilder.Entity<DeliveryTestDesignAssessmentRecord>(e =>
+        {
+            e.ToTable("test_design_assessment");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProjectId).HasColumnName("project_id");
+            e.Property(x => x.ItemKey).HasColumnName("item_key").HasMaxLength(600).IsRequired();
+            e.Property(x => x.Testability).HasColumnName("testability").HasMaxLength(30);
+            e.Property(x => x.VerificationTypesJson).HasColumnName("verification_types").HasColumnType("jsonb");
+            e.Property(x => x.RequiredTestDataJson).HasColumnName("required_test_data").HasColumnType("jsonb");
+            e.Property(x => x.Comment).HasColumnName("comment").HasMaxLength(2000);
+            e.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
+            e.HasOne<DeliveryProjectRecord>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ProjectId, x.ItemKey }).IsUnique();
+        });
+
+        modelBuilder.Entity<DeliveryScopeSnapshotRecord>(e =>
+        {
+            e.ToTable("functional_scope_snapshot");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProjectId).HasColumnName("project_id");
+            e.Property(x => x.ScopeId).HasColumnName("scope_id");
+            e.Property(x => x.ScopeName).HasColumnName("scope_name").HasMaxLength(200);
+            e.Property(x => x.ScopeVersion).HasColumnName("scope_version");
+            e.Property(x => x.DeliverySnapshotId).HasColumnName("delivery_snapshot_id");
+            e.Property(x => x.RuleSetVersion).HasColumnName("rule_set_version").HasMaxLength(100);
+            e.Property(x => x.ItemsJson).HasColumnName("items").HasColumnType("jsonb");
+            e.Property(x => x.ItemCount).HasColumnName("item_count");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne<DeliveryProjectRecord>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<DeliveryScopeRecord>().WithMany().HasForeignKey(x => x.ScopeId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => new { x.ProjectId, x.CreatedAt });
         });
 
         modelBuilder.Entity<DeliveryWeeklyReportItemRecord>(e =>

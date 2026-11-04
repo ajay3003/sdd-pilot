@@ -249,3 +249,57 @@ public sealed class DeliveryWeeklyReportItemRecord
     public string? Kind { get; set; }
     public string Text { get; set; } = "";
 }
+
+// ── Functional Quality Scope: definitions and references only (stable item keys), never copies of specification content ──
+
+/// <summary>A saved functional quality scope: smart roots (modules / domain profiles), relation policy and explicit references.</summary>
+public sealed class DeliveryScopeRecord
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+    public string RootsJson { get; set; } = "[]";
+    public bool IncludeRelated { get; set; }
+    public int Version { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>An explicit include or exclude of one item (stable key "story:Module/Feature/US1", "ac:…", "req:…") in a saved scope.</summary>
+public sealed class DeliveryScopeReferenceRecord
+{
+    public Guid Id { get; set; }
+    public Guid ScopeId { get; set; }
+    public string ItemKey { get; set; } = "";
+    public string Mode { get; set; } = "";
+    public DateTimeOffset AddedAt { get; set; }
+}
+
+/// <summary>A test-design assessment of one item (by stable key): a separate decision, never part of the item's identity or text.</summary>
+public sealed class DeliveryTestDesignAssessmentRecord
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public string ItemKey { get; set; } = "";
+    public string Testability { get; set; } = "";
+    public string VerificationTypesJson { get; set; } = "[]";
+    public string RequiredTestDataJson { get; set; } = "[]";
+    public string? Comment { get; set; }
+    public DateTimeOffset ReviewedAt { get; set; }
+}
+
+/// <summary>Frozen membership of a scope at one moment (report/review reproducibility). The live scope keeps evolving.</summary>
+public sealed class DeliveryScopeSnapshotRecord
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid? ScopeId { get; set; }
+    public string ScopeName { get; set; } = "";
+    public int ScopeVersion { get; set; }
+    public Guid? DeliverySnapshotId { get; set; }
+    public string RuleSetVersion { get; set; } = "";
+    public string ItemsJson { get; set; } = "[]";
+    public int ItemCount { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}

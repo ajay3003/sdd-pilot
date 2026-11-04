@@ -529,6 +529,149 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.ToTable("report_source", "delivery_reporting");
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IncludeRelated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("include_related");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("RootsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("roots");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("functional_scope", "delivery_reporting");
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeReferenceRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("added_at");
+
+                    b.Property<string>("ItemKey")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("item_key");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("mode");
+
+                    b.Property<Guid>("ScopeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scope_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScopeId", "ItemKey")
+                        .IsUnique();
+
+                    b.ToTable("functional_scope_reference", "delivery_reporting");
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeSnapshotRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("DeliverySnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("delivery_snapshot_id");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("item_count");
+
+                    b.Property<string>("ItemsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("items");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("RuleSetVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_set_version");
+
+                    b.Property<Guid?>("ScopeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scope_id");
+
+                    b.Property<string>("ScopeName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("scope_name");
+
+                    b.Property<int>("ScopeVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("scope_version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScopeId");
+
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.ToTable("functional_scope_snapshot", "delivery_reporting");
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliverySnapshotComparisonRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -803,6 +946,56 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.ToTable("task_snapshot", "delivery_reporting");
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryTestDesignAssessmentRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("comment");
+
+                    b.Property<string>("ItemKey")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("item_key");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("RequiredTestDataJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("required_test_data");
+
+                    b.Property<DateTimeOffset>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<string>("Testability")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("testability");
+
+                    b.Property<string>("VerificationTypesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("verification_types");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "ItemKey")
+                        .IsUnique();
+
+                    b.ToTable("test_design_assessment", "delivery_reporting");
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryUserStorySnapshotRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1067,6 +1260,38 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryProjectRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeReferenceRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ScopeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeSnapshotRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryProjectRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryScopeRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ScopeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliverySnapshotComparisonRecord", b =>
                 {
                     b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliverySnapshotRecord", null)
@@ -1115,6 +1340,15 @@ namespace BirkNext.Api.Data.DeliveryReporting.Migrations
                     b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryFeatureSnapshotRecord", null)
                         .WithMany()
                         .HasForeignKey("FeatureSnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.DeliveryReporting.DeliveryTestDesignAssessmentRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.DeliveryReporting.DeliveryProjectRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
