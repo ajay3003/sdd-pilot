@@ -24,8 +24,9 @@ public sealed partial class CanonicalInterpretationService
         if (gate.InterpretationId is not { } latest)
         {
             dims.Add(new(ReadinessDimensionKey.ScopeClarity, "Scope", DimensionApplicability.Required, GateDecision.NotAssessed,
-                "Nothing is interpreted for this project yet, so the release scope is unknown.", [], "Interpret the project's Delivery and source snapshots in Relationship Review.", "correlation-review"));
-            return Assessment(scopeRef, dims, gate, []);
+                "Required relationship evidence has not been prepared: no relationship analysis exists for this project yet, so the release scope is unknown.", [],
+                "Analyze relationships in Relationship Review (the project's Delivery and source snapshots).", "correlation-review"));
+            return Assessment(scopeRef, dims, gate, [], null);
         }
 
         var members = await (from m in db.SnapshotEntities.AsNoTracking()
@@ -114,9 +115,13 @@ public sealed partial class CanonicalInterpretationService
             (ReadinessDimensionKey.CriticalE2E, "Critical E2E", "critical-e2e-regression"),
         })
             dims.Add(new(key, title, DimensionApplicability.Optional, GateDecision.NotAssessed,
-                href is null ? "BirkNext records no functional test execution results for this scope." : $"Not read into release readiness yet: open {title} for its own readiness and results.",
-                [], null, href));
-        return Assessment(scopeRef, dims, gate, available);
+                href is null ? "Test execution evidence is not read into release readiness: a linked test is not an executed or passed test. Functional Quality Scope shows each requirement's imported results."
+                    : $"Not read into release readiness yet: open {title} for its own readiness and results.",
+                [], null, href ?? "delivery-reporting?tab=scope"));
+        var facts = new ReleaseReadinessFacts(features.Count, requirements.Count, requirements.Count - untested - suggestedOnly, suggestedOnly, untested, tasks.Count, withCode,
+            gate.Findings.Where(f => f.Level == FindingLevel.Blocking && f.Waiver is null).Sum(f => f.Finding.Count),
+            gate.Findings.Where(f => f.Level == FindingLevel.Warning).Sum(f => f.Finding.Count), decisions);
+        return Assessment(scopeRef, dims, gate, available, facts);
     }
 
     // ---------------------------------------------------------------- frozen reports
@@ -131,10 +136,21 @@ public sealed partial class CanonicalInterpretationService
     {
         if (string.IsNullOrWhiteSpace(request.Name)) throw new CanonicalRequestException("Name the release readiness report (for example the release or sprint).");
         var assessment = await AssessReleaseAsync(scope, request.Modules, request.Name, ct);
+        // One frozen report per name and exact evidence: freezing the same name over the same interpretation, modules, policy and evaluated dimensions
+        // again (a double click, a second reviewer) would only duplicate it. A new interpretation, scope, policy version or changed evidence (a review
+        // decision since) is a new report.
+        var modulesJson = System.Text.Json.JsonSerializer.Serialize(assessment.ScopeReference.Modules, ReportJson);
+        var name = request.Name.Trim();
+        var dimensions = System.Text.Json.JsonSerializer.Serialize(assessment.Dimensions, ReportJson);
+        var sameEvidence = await db.ReleaseReports.AsNoTracking().Where(r => r.Scope == assessment.ScopeReference.Scope && r.Name == name && r.ModulesJson == modulesJson
+                && r.InterpretationId == assessment.ScopeReference.InterpretationId && r.PolicySetVersion == assessment.PolicySetVersion && r.Decision == assessment.Decision.ToString())
+            .Select(r => r.AssessmentJson).ToListAsync(ct);
+        if (sameEvidence.Any(json => System.Text.Json.JsonSerializer.Serialize(System.Text.Json.JsonSerializer.Deserialize<ReleaseReadinessAssessment>(json, ReportJson)!.Dimensions, ReportJson) == dimensions))
+            throw new CanonicalRequestException($"A report named \"{name}\" already freezes this scope with the same analysis and policy version. Open it from the history, or use another name.");
         var record = new Data.CanonicalInterpretation.ReleaseReadinessReportRecord
         {
             Id = Guid.NewGuid(), Scope = assessment.ScopeReference.Scope, Name = request.Name.Trim(), FrozenAt = assessment.EvaluatedAt, Decision = assessment.Decision.ToString(),
-            ModulesJson = System.Text.Json.JsonSerializer.Serialize(assessment.ScopeReference.Modules, ReportJson), InterpretationId = assessment.ScopeReference.InterpretationId,
+            ModulesJson = modulesJson, InterpretationId = assessment.ScopeReference.InterpretationId,
             RuleSetVersion = assessment.RuleSetVersion, PolicySetVersion = assessment.PolicySetVersion,
             AssessmentJson = System.Text.Json.JsonSerializer.Serialize(assessment, ReportJson),
         };
@@ -188,7 +204,7 @@ public sealed partial class CanonicalInterpretationService
         return await ReleaseReportAsync(scope, id, ct);
     }
 
-    ReleaseReadinessAssessment Assessment(ReleaseScopeReference scopeRef, List<ReadinessDimension> dims, GateResult gate, IReadOnlyList<string> available)
+    ReleaseReadinessAssessment Assessment(ReleaseScopeReference scopeRef, List<ReadinessDimension> dims, GateResult gate, IReadOnlyList<string> available, ReleaseReadinessFacts? facts)
     {
         var (decision, reason) = ReleaseReadinessRules.Decide(dims);
         var blockers = gate.Findings.Where(f => f.Level == FindingLevel.Blocking && f.Waiver is null).Select(f => $"{f.Finding.Title}: {f.Finding.Resolution}")
@@ -196,6 +212,6 @@ public sealed partial class CanonicalInterpretationService
             .ToList();
         var next = dims.Where(d => d.Applicability == DimensionApplicability.Required && d.NextAction is not null && d.State != GateDecision.Ready)
             .OrderBy(d => d.State == GateDecision.Blocked ? 0 : d.State == GateDecision.NotAssessed ? 1 : 2).Select(d => $"{d.Title}: {d.NextAction}").Distinct().Take(8).ToList();
-        return new(scopeRef, decision, reason, dims, blockers, next, ReleaseReadinessRules.RuleSetVersion, gate.PolicySetVersion, clock.GetUtcNow()) { AvailableModules = available };
+        return new(scopeRef, decision, reason, dims, blockers, next, ReleaseReadinessRules.RuleSetVersion, gate.PolicySetVersion, clock.GetUtcNow()) { AvailableModules = available, Facts = facts };
     }
 }

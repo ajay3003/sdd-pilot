@@ -28,15 +28,16 @@ public sealed class ReleaseReadinessPageTests : BunitContext
                 "Not read into release readiness yet: open Performance for its own readiness and results.", [], null, "performance-test-review"),
         ],
         decision == GateDecision.Blocked ? ["Identity conflict: Confirm the correct identity in Relationship Review."] : [], ["Governance: Open the governance findings in Relationship Review."],
-        "release/1", "governance/1", Now) { AvailableModules = ["SkoleAdapter"] };
+        "release/1", "governance/1", Now) { AvailableModules = ["SkoleAdapter"], Facts = new(1, 4, 3, 1, 0, 6, 5, 1, 0, 2) };
 
-    private async Task<Mock<ICanonicalInterpretationApiService>> Setup()
+    private async Task<Mock<ICanonicalInterpretationApiService>> Setup(string? application = null)
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         var storage = new ActiveTargetEnvironmentTests.Storage();
         var settings = new FrontendAnalysisSettingsService();
         await settings.LoadAsync(storage);
         settings.Settings.ActiveProfileId = "dev";
+        if (application is not null) settings.Settings.Profiles.Single(p => p.Id == "dev").TargetApplication = new BirkNext.Web.Models.TargetApplicationIdentity { Name = application };
         Services.AddSingleton<IJSRuntime>(storage);
         Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
         Services.AddSingleton<IFrontendAnalysisContextFactory>(ActiveTargetEnvironmentTests.Factory(settings, storage));
@@ -60,12 +61,28 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.Find("[data-testid=rr-decision]").TextContent.Should().Contain("!").And.Contain("Ready with limitations");
         var perf = cut.FindAll("[data-testid=rr-dimension]").Single(d => d.GetAttribute("data-key") == "Performance");
         perf.TextContent.Should().Contain("Optional").And.Contain("Not assessed").And.Contain("Open Performance Test Review");
+        cut.Find("[data-testid=rr-fact-requirements]").TextContent.Should().Be("4");
+        cut.Find("[data-testid=rr-fact-tested]").TextContent.Should().Be("3");
+        cut.Find("[data-testid=rr-fact-executed]").TextContent.Should().Be("Not assessed", "a linked test is never counted as executed");
+        cut.Find("[data-testid=rr-fact-decisions]").TextContent.Should().Be("2");
 
+        cut.Find("[data-testid=rr-tab-scope]").Click();
+        cut.FindAll("[data-testid=rr-module]").Should().BeEmpty("the entire project is the default; modules are an explicit choice");
+        cut.Find("[data-testid=rr-scope-selected]").Change(true);
+        cut.Find("[data-testid=rr-module-search]").Input("skole");
         cut.Find("[data-testid=rr-module][data-module=SkoleAdapter]").Change(true);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").GetAttribute("data-decision").Should().Be("Blocked"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-scope-label]").TextContent.Should().Be("SkoleAdapter"));
         api.Verify(a => a.ReleaseReadinessAsync("dev", It.Is<IReadOnlyList<string>>(m => m.SequenceEqual(new[] { "SkoleAdapter" })), It.IsAny<string?>(), It.IsAny<CancellationToken>()));
+        cut.Find("[data-testid=rr-tab-overview]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").GetAttribute("data-decision").Should().Be("Blocked"));
         cut.Find("[data-testid=rr-blockers]").TextContent.Should().Contain("Identity conflict");
+        cut.Find("[data-testid=rr-tab-history]").Click();
         cut.Find("[data-testid=rr-freeze]").HasAttribute("disabled").Should().BeTrue("a report needs a name");
+
+        cut.Find("[data-testid=rr-tab-scope]").Click();
+        cut.Find("[data-testid=rr-scope-entire]").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-scope-label]").TextContent.Should().Be("Entire project"));
+        api.Verify(a => a.ReleaseReadinessAsync("dev", It.Is<IReadOnlyList<string>>(m => m.Count == 0), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
     }
 
     [Fact]
@@ -81,6 +98,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
 
         var cut = Render<ReleaseReadiness>();
         cut.WaitForElement("[data-testid=rr-decision]");
+        cut.Find("[data-testid=rr-tab-history]").Click();
         cut.Find("[data-testid=rr-name]").Input("Skolenærvær 1.4");
         cut.Find("[data-testid=rr-freeze]").Click();
         var nav = Services.GetRequiredService<NavigationManager>();
@@ -106,5 +124,52 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-report-error]").TextContent.Should().Contain("404"));
         cut.FindAll("[data-testid=rr-decision]").Should().BeEmpty();
         api.Verify(a => a.ReleaseReadinessAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task Without_a_relationship_analysis_nothing_is_assessed_and_the_next_step_is_Relationship_Review()
+    {
+        var api = await Setup("M2LB");
+        var unprepared = new ReleaseReadinessAssessment(new("dev", "Whole project", [], null), GateDecision.NotAssessed, "Required evidence not assessed: scope.",
+            [new(ReadinessDimensionKey.ScopeClarity, "Scope", DimensionApplicability.Required, GateDecision.NotAssessed,
+                "Required relationship evidence has not been prepared: no relationship analysis exists for this project yet, so the release scope is unknown.", [],
+                "Analyze relationships in Relationship Review.", "correlation-review")],
+            [], ["Scope: Analyze relationships in Relationship Review."], "release/1", "governance/1", Now);
+        api.Setup(a => a.ReleaseReadinessAsync("dev", It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((unprepared, (string?)null));
+
+        var cut = Render<ReleaseReadiness>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").TextContent.Should().Contain("Release Readiness — Not assessed")
+            .And.Contain("Required relationship evidence has not been prepared."));
+        cut.Find("[data-testid=rr-application]").TextContent.Should().Be("M2LB", "the release is about the Target Application, not the environment name");
+        cut.Find("[data-testid=rr-intro]").TextContent.Should().Contain("Assess whether a release is ready");
+        cut.Find("[data-testid=rr-analyze]").GetAttribute("href").Should().Be("correlation-review");
+        cut.FindAll("[data-testid=rr-facts]").Should().BeEmpty("no count is shown before anything is assessed");
+        cut.Find("[data-testid=rr-prerequisites]").Click();
+        cut.Find("[data-testid=rr-missing]").TextContent.Should().Contain("Scope").And.Contain("has not been prepared");
+        cut.Find("[data-testid=rr-evidence-analysis]").TextContent.Should().Contain("Not prepared");
+        cut.Find("[data-testid=rr-scope-selected]").Change(true);
+        cut.Find("[data-testid=rr-no-modules]").TextContent.Should().Contain("has not been prepared yet");
+        cut.Find("[data-testid=rr-tab-findings]").Click();
+        cut.Find("[data-testid=rr-findings-not-assessed]").TextContent.Should().Contain("Governance not assessed");
+        api.Verify(a => a.GovernanceAsync(It.IsAny<string>(), It.IsAny<GateAction>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()), Times.Never());
+        cut.Find("[data-testid=rr-tab-history]").Click();
+        cut.Find("[data-testid=rr-freeze]").TextContent.Should().Contain("Freeze incomplete assessment");
+        cut.Find("[data-testid=rr-freeze-incomplete]").TextContent.Should().Contain("labelled incomplete");
+    }
+
+    [Fact]
+    public async Task Findings_follow_the_chosen_modules()
+    {
+        var api = await Setup();
+        var cut = Render<ReleaseReadiness>();
+        cut.WaitForElement("[data-testid=rr-decision]");
+        cut.Find("[data-testid=rr-tab-scope]").Click();
+        cut.Find("[data-testid=rr-scope-selected]").Change(true);
+        cut.Find("[data-testid=rr-module][data-module=SkoleAdapter]").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-scope-label]").TextContent.Should().Be("SkoleAdapter"));
+        cut.Find("[data-testid=rr-tab-findings]").Click();
+        cut.WaitForAssertion(() => api.Verify(a => a.GovernanceAsync("dev", GateAction.ReleaseReadiness,
+            It.Is<IReadOnlyList<string>?>(m => m != null && m.SequenceEqual(new[] { "SkoleAdapter" })), It.IsAny<CancellationToken>()), Times.Once()));
     }
 }

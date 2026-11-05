@@ -25,3 +25,28 @@
 .rr-grow { flex: 1 1 min(20rem, 100%); }
 .rr-error { color: var(--clr-danger); }
 details summary { cursor: pointer; font-size: .8125rem; }
+.rr-panel { display: grid; gap: 1rem; min-width: 0; }
+.rr-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--clr-border); padding-bottom: .5rem; }
+.rr-tab { border: 1px solid var(--clr-border); background: transparent; color: inherit; border-radius: 6px; padding: .25rem .75rem; font-size: .875rem; cursor: pointer; }
+.rr-tab.is-active { border-color: var(--clr-primary); background: var(--clr-surface-selected); font-weight: 600; }
+.rr-context { margin: .25rem 0 0; }
+.rr-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.rr-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); gap: .5rem; margin: .75rem 0 0; }
+.rr-facts dt { font-size: .75rem; color: var(--clr-text-muted); }
+.rr-facts dd { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.rr-na, .rr-facts dd.rr-na { color: var(--clr-text-muted); font-size: .9375rem; font-weight: 500; }
+/* The frame is positioned so visually-hidden text inside cells never widens the page. */
+.rr-table-wrap { position: relative; max-width: 100%; overflow-x: auto; }
+.rr-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.rr-table th, .rr-table td { text-align: left; vertical-align: top; padding: .375rem .5rem; border-bottom: 1px solid var(--clr-border); }
+.rr-table th[scope=row] { font-weight: 600; min-width: 10rem; }
+.rr-table .rr-badge { display: inline-block; margin-left: .25rem; font-weight: 400; }
+.rr-scope-mode { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; border: 0; padding: 0; margin: 0 0 .5rem; }
+.rr-scope-mode legend { width: 100%; margin-bottom: .25rem; }
+.rr-module-search { max-width: 24rem; }
+.rr-evidence-list { display: grid; gap: .375rem; margin: 0; }
+.rr-evidence-list div { display: flex; flex-wrap: wrap; gap: .25rem .75rem; }
+.rr-evidence-list dt { min-width: 10rem; color: var(--clr-text-muted); font-size: .875rem; }
+.rr-evidence-list dd { margin: 0; }
+.rr-warning { color: var(--clr-warning-text, var(--clr-text)); border-left: 3px solid var(--clr-warning); padding-left: .5rem; }
+@media (max-width: 40rem) { .rr-table thead { display: none; } .rr-table tr { display: grid; border-bottom: 1px solid var(--clr-border); padding: .25rem 0; } .rr-table th, .rr-table td { border: 0; padding: .125rem .25rem; } }

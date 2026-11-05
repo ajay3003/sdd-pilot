@@ -65,6 +65,8 @@
     [Parameter] public GateAction Action { get; set; } = GateAction.ReleaseReadiness;
     [Parameter] public int MaxFindings { get; set; } = 20;
     [Parameter] public string TestId { get; set; } = "ggp";
+    /// <summary>Evaluate only these modules' findings (a release scope); null or empty = the whole project.</summary>
+    [Parameter] public IReadOnlyList<string>? Modules { get; set; }
 
     private GateAction _action;
     private GateResult? _result;
@@ -74,7 +76,7 @@
     protected override async Task OnParametersSetAsync()
     {
         if (!_actionSet) { _action = Action; _actionSet = true; }
-        var key = $"{Scope}|{Version}|{_action}";
+        var key = Key();
         if (key == _key) return;
         _key = key;
         await LoadAsync();
@@ -84,15 +86,17 @@
     {
         if (!Enum.TryParse<GateAction>(e.Value?.ToString(), out var action)) return;
         _action = action;
-        _key = $"{Scope}|{Version}|{_action}";
+        _key = Key();
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
         _result = null;
-        (_result, _error) = await Api.GovernanceAsync(Scope, _action);
+        (_result, _error) = await Api.GovernanceAsync(Scope, _action, Modules is { Count: > 0 } ? Modules : null);
     }
+
+    private string Key() => $"{Scope}|{Version}|{_action}|{string.Join(",", Modules ?? [])}";
 
     private static string Icon(GateDecision d) => d switch
     {

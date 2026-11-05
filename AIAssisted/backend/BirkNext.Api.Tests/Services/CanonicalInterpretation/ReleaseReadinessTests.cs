@@ -100,6 +100,10 @@ public sealed class ReleaseReadinessTests
         skole.Blockers.Should().ContainSingle(b => b.StartsWith("Identity conflict"));
         skole.RuleSetVersion.Should().Be("release/1");
         skole.AvailableModules.Should().Equal(["SkoleService"], "declared module names, for modules with feature packs (PersonService has no Module entity here)");
+        skole.Facts.Should().BeEquivalentTo(new ReleaseReadinessFacts(1, 2, 1, 0, 1, 2, 1, skole.Facts!.BlockingFindings, skole.Facts.Warnings, skole.Facts.OpenDecisions),
+            "the counts behind the dimensions: 2 requirements (1 confirmed test, 1 none), 2 tasks (1 names code)");
+        skole.Facts.BlockingFindings.Should().BeGreaterThan(0, "the identity conflict is a blocking finding");
+        dims[ReadinessDimensionKey.FunctionalExecution].Summary.Should().Contain("a linked test is not an executed or passed test");
 
         var person = await service.AssessReleaseAsync("proj", ["PersonService"], null, default);
         person.Decision.Should().Be(GateDecision.ReadyWithLimitations, "SkoleService's conflict and story references never block the PersonService release");
@@ -111,7 +115,10 @@ public sealed class ReleaseReadinessTests
     {
         var empty = new CanonicalInterpretationService(new CanonicalInterpretationDbContext(new DbContextOptionsBuilder<CanonicalInterpretationDbContext>()
             .UseInMemoryDatabase($"rel-empty-{Guid.NewGuid():N}").Options), new NoSources(), TimeProvider.System);
-        (await empty.AssessReleaseAsync("proj", null, null, default)).Decision.Should().Be(GateDecision.NotAssessed);
+        var nothing = await empty.AssessReleaseAsync("proj", null, null, default);
+        nothing.Decision.Should().Be(GateDecision.NotAssessed);
+        nothing.Facts.Should().BeNull("without an analysis no count is known — never shown as 0");
+        nothing.Dimensions.Should().ContainSingle().Which.Summary.Should().StartWith("Required relationship evidence has not been prepared");
         var (_, service, _) = await Project();
         var none = await service.AssessReleaseAsync("proj", ["NoSuchModule"], null, default);
         none.Decision.Should().Be(GateDecision.NotAssessed);
@@ -124,6 +131,9 @@ public sealed class ReleaseReadinessTests
         var (db, service, ids) = await Project();
         var frozen = await service.FreezeReleaseAsync("proj", new("Skolenærvær 1.4", ["SkoleService"]), default);
         frozen.Assessment.Decision.Should().Be(GateDecision.Blocked);
+        // Freezing the same name over the same evidence again (double click, second reviewer) is refused.
+        var duplicate = () => service.FreezeReleaseAsync("proj", new("Skolenærvær 1.4", ["SkoleService"]), default);
+        await duplicate.Should().ThrowAsync<CanonicalRequestException>().WithMessage("*already freezes this scope*");
 
         // Later evidence: the conflict is resolved (a reviewer confirmed it) — the live assessment changes, the frozen report does not.
         var conflict = await db.Relations.SingleAsync(r => r.RuleId == CorrelationRules.AliasConflictRule);
@@ -146,6 +156,11 @@ public sealed class ReleaseReadinessTests
         (await service.ReleaseReportAsync("other", frozen.Id, default)).Should().BeNull("reports are project-scoped");
         var unnamed = () => service.FreezeReleaseAsync("proj", new(" ", null), default);
         await unnamed.Should().ThrowAsync<CanonicalRequestException>();
+
+        // Changed evidence (the conflict was confirmed since) or another scope is a new report under the same name.
+        (await service.FreezeReleaseAsync("proj", new("Skolenærvær 1.4", ["SkoleService"]), default)).Assessment.Decision.Should().NotBe(GateDecision.Blocked);
+        (await service.FreezeReleaseAsync("proj", new("Skolenærvær 1.4", null), default)).Assessment.ScopeReference.Modules.Should().BeEmpty();
+        (await service.ReleaseReportsAsync("proj", 20, default)).Should().HaveCount(3);
         _ = ids;
     }
 }

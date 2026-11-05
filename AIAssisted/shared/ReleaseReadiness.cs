@@ -31,7 +31,19 @@ public sealed record ReleaseReadinessAssessment(
 {
     /// <summary>The modules of the interpreted project that have feature packs (declared names), for choosing a scope.</summary>
     public IReadOnlyList<string> AvailableModules { get; init; } = [];
+
+    /// <summary>The counts behind the dimensions for the scope. Null when nothing is analyzed (and in reports frozen before release/1 recorded them):
+    /// an unknown count is never shown as 0.</summary>
+    public ReleaseReadinessFacts? Facts { get; init; }
 }
+
+/// <summary>
+/// The scope's counts as evaluated: requirements, how many have a confirmed (explicit, derived or human-confirmed) VERIFIES test, how many only a
+/// suggested one (never counted), tasks and those that name existing code, governance findings and open review decisions. Test execution is not a
+/// count here: it is owned by the execution evidence, never inferred from a link.
+/// </summary>
+public sealed record ReleaseReadinessFacts(int FeaturePacks, int Requirements, int RequirementsWithConfirmedTest, int RequirementsWithSuggestedTestOnly,
+    int RequirementsWithoutTest, int Tasks, int TasksWithCode, int BlockingFindings, int Warnings, int OpenDecisions);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SignOffOutcome { Accepted, AcceptedWithRisk, Rejected }
