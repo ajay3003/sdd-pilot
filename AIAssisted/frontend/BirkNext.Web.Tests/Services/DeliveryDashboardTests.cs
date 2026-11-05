@@ -47,6 +47,11 @@ public sealed class DeliveryDashboardTests
         q.Values.Should().OnlyContain(x => !x.State.Contains('%'), "a category is never turned into a percentage");
         DeliveryBacklog.Label(BacklogStatus.Accepted).Should().Be("Stated done", "a Done status line is a statement, not a recorded acceptance");
         DeliveryDashboard.Current(view).Should().NotContain(k => k.Label.Contains("On track"));
+        // NEXT52 G3: a checklist percentage is never delivery completion; without verification evidence the verified KPI is Not assessed.
+        var verified = DeliveryDashboard.Current(view).Single(k => k.Key == "verified");
+        verified.Label.Should().Be("Completed with verified evidence");
+        verified.Value.Should().Be("Not assessed", "no implementation or QA verification is linked — never the checklist percentage, never 0");
+        DeliveryDashboard.Current(view).Select(k => k.Key).Should().StartWith(["features", "verified"], "verified completion leads; the checklist follows as progress");
     }
 
     [Fact]

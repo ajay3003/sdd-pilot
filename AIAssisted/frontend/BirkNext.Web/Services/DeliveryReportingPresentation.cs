@@ -16,7 +16,7 @@ public static class DeliveryReportingPresentation
     /// <summary>Story filters. The default is "changed this week + active attention"; unchanged old stories only appear under All.</summary>
     public static readonly IReadOnlyList<(string Id, string Label)> StoryFilters =
     [
-        ("default", "Changed + attention"), ("all", "All"), ("progressed", "Progressed"), ("new", "New"), ("removed", "Removed"), ("completed", "All tasks completed"),
+        ("default", "Changed + attention"), ("all", "All"), ("progressed", "Progressed"), ("new", "New"), ("removed", "Removed"), ("completed", "All tasks checked"),
         ("blocked", "Blocked"), ("clarification", "Needs clarification"), ("specification", "Changed specification"), ("stories", "User stories changed"),
         ("criteria", "Acceptance criteria changed"), ("attention", "Needs attention"),
     ];

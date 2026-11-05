@@ -46,14 +46,23 @@ public static class DeliveryDashboard
     private static bool Has(WeeklyDeliveryReport? r, string key) => r?.Metrics.Any(m => m.Key == key) == true;
 
     /// <summary>Current delivery state: the current snapshot's inventory.</summary>
+    public const string VerifiedInfo = "Counts only features with implementation or QA verification evidence. A task checklist at 94% (or 100%) and an authored “Status: Done” are progress and declarations, not delivery completion.";
+
     public static IReadOnlyList<DeliveryKpi> Current(DeliveryBacklogView view)
     {
         var tasks = view.Items.Sum(i => i.TasksTotal);
         var done = view.Items.Sum(i => i.TasksCompleted);
         var review = view.Items.Count(i => i.Attention > 0 || i.Status == BacklogStatus.NeedsClarification);
+        var verified = view.Count(BacklogStatus.ImplementationVerified) + view.Count(BacklogStatus.QaVerified);
         return
         [
             new("features", view.Items.Count.ToString(), "Features", $"{view.Items.Select(i => i.Module).Distinct().Count()} modules", DeliveryDashboardTone.Progress),
+            // Delivery completion needs verification evidence. A complete task checklist or a stated "Status: Done" is never counted here; without any
+            // linked verification the value is Not assessed — never the checklist percentage, never 0.
+            new("verified", verified == 0 ? "Not assessed" : verified.ToString(), "Completed with verified evidence",
+                verified == 0 ? "No implementation or QA verification is linked; checked tasks and stated status are not verification"
+                    : $"Implementation or QA verified · {view.Count(BacklogStatus.ChecklistComplete)} more have only a complete checklist",
+                verified == 0 ? DeliveryDashboardTone.Neutral : DeliveryDashboardTone.Ready, VerifiedInfo),
             new("checklist", tasks == 0 ? "–" : $"{100 * done / tasks}%", "Task checklist", tasks == 0 ? "No tasks.md checkboxes" : $"{done} / {tasks} checked", DeliveryDashboardTone.Progress, ChecklistInfo),
             new("open", (tasks - done).ToString(), "Open tasks", "Unchecked checkboxes in tasks.md", DeliveryDashboardTone.Neutral),
             new("in-progress", view.Count(BacklogStatus.InProgress).ToString(), "Checklist in progress", "Features with some tasks checked — not a schedule claim", DeliveryDashboardTone.Progress),
