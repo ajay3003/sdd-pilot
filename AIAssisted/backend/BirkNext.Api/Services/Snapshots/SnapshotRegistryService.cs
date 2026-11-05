@@ -32,7 +32,9 @@ public interface ISnapshotSource
 /// </summary>
 public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnumerable<ISnapshotSource> sources, TimeProvider clock, ILogger<SnapshotRegistryService>? logger = null)
 {
-    public const int MetadataVersion = 1;
+    /// <summary>2: a Source Analysis entry's status is the outcome over the areas the package contains (see SourceSetupAreas.Overall); entries of
+    /// an earlier version are re-read once, metadata only — payloads, identities, timestamps and retention never change.</summary>
+    public const int MetadataVersion = 2;
     private static readonly SemaphoreSlim SyncGate = new(1, 1);
     private static DateTimeOffset _lastSync = DateTimeOffset.MinValue;
     private static readonly TimeSpan SyncInterval = TimeSpan.FromSeconds(30);
@@ -49,7 +51,7 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
             var existing = await db.Entries.ToListAsync(ct);
             var registered = existing.Select(e => $"{e.Type}|{e.Id}").ToHashSet(StringComparer.Ordinal);
             var running = existing.Where(e => e.Status == nameof(SnapshotProcessingStatus.Running)
-                    || (e.Type == nameof(SnapshotType.SourceAnalysis) && e.SummaryJson is null && e.PayloadAvailable))
+                    || (e.Type == nameof(SnapshotType.SourceAnalysis) && e.PayloadAvailable && (e.SummaryJson is null || e.MetadataVersion < MetadataVersion)))
                 .Select(e => $"{e.Type}|{e.Id}").ToHashSet(StringComparer.Ordinal);
             var byKey = existing.ToDictionary(e => $"{e.Type}|{e.Id}", StringComparer.Ordinal);
             var edgeKeys = (await db.Edges.Select(e => new { e.FromType, e.FromId, e.Kind, e.ToType, e.ToId }).ToListAsync(ct))
@@ -95,6 +97,7 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
                         // retention never do.
                         if (row.Status != m.Status.ToString()) { row.Status = m.Status.ToString(); row.UpdatedAt = now; updated++; }
                         if (row.SummaryJson is null && m.SummaryJson is not null) { row.SummaryJson = m.SummaryJson; row.UpdatedAt = now; updated++; }
+                        if (row.MetadataVersion < m.MetadataVersion) { row.MetadataVersion = m.MetadataVersion; row.UpdatedAt = now; }
                     }
                     else
                     {
@@ -154,8 +157,9 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
     internal static void ResetThrottle() => _lastSync = DateTimeOffset.MinValue;
 
     /// <summary>Metadata-only listing with filters, paging, sorting and the pointers each row currently holds. No payload is read.</summary>
+    /// <param name="search">Case-insensitive part of the label (archive or report name), applied before paging so counts stay true.</param>
     public async Task<SnapshotListPage> ListAsync(string? project, SnapshotType? type, string? module, SnapshotProcessingStatus? status, DateTimeOffset? from, DateTimeOffset? to,
-        string? sort, int skip, int take, CancellationToken ct)
+        string? sort, int skip, int take, CancellationToken ct, string? search = null)
     {
         await SyncAsync(false, ct);
         var q = db.Entries.AsNoTracking().AsQueryable();
@@ -165,13 +169,17 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
         if (status is { } s) q = q.Where(e => e.Status == s.ToString());
         if (from is { } f) q = q.Where(e => e.CreatedAt >= f);
         if (to is { } u) q = q.Where(e => e.CreatedAt <= u);
+        if (!string.IsNullOrWhiteSpace(search)) { var term = search.Trim().ToLower(); q = q.Where(e => e.Label.ToLower().Contains(term)); }
         var total = await q.CountAsync(ct);
+        // A stable secondary order (type, id), so equal timestamps or labels never reorder between pages.
         q = sort switch
         {
-            "created" => q.OrderBy(e => e.CreatedAt),
-            "effective" => q.OrderByDescending(e => e.EffectiveAt ?? e.CreatedAt),
-            "label" => q.OrderBy(e => e.Label),
-            _ => q.OrderByDescending(e => e.CreatedAt),
+            "created" => q.OrderBy(e => e.CreatedAt).ThenBy(e => e.Type).ThenBy(e => e.Id),
+            "effective" => q.OrderByDescending(e => e.EffectiveAt ?? e.CreatedAt).ThenBy(e => e.Type).ThenBy(e => e.Id),
+            "label" => q.OrderBy(e => e.Label).ThenByDescending(e => e.CreatedAt).ThenBy(e => e.Id),
+            "status" => q.OrderBy(e => e.Status).ThenByDescending(e => e.CreatedAt).ThenBy(e => e.Id),
+            "project" => q.OrderBy(e => e.Project).ThenByDescending(e => e.CreatedAt).ThenBy(e => e.Id),
+            _ => q.OrderByDescending(e => e.CreatedAt).ThenBy(e => e.Type).ThenBy(e => e.Id),
         };
         var rows = await q.Skip(Math.Max(0, skip)).Take(Math.Clamp(take, 1, 200)).ToListAsync(ct);
         var pointers = await PointerMapAsync(rows.Select(r => (r.Project ?? "", r.Type, r.Module)).Distinct().ToList(), ct);

@@ -20,7 +20,7 @@
 .tep-tone-partial { border-left-color: #b7791f; }
 .tep-tone-rejected { border-left-color: #c53030; }
 .tep-tone-neutral { border-left-color: #a0aec0; }
-.tep-table-wrap { overflow-x: auto; }
+.tep-table-wrap { overflow-x: auto; position: relative; } /* containing block of visually-hidden cell text */
 .tep-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .tep-table th, .tep-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.5rem; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; }
 .tep-table thead th { font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary, #4a5568); }

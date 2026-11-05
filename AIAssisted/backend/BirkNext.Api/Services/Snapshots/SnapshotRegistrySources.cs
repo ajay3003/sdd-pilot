@@ -24,19 +24,20 @@ public sealed class SourceAnalysisSnapshotSource(AppDbContext db) : ISnapshotSou
         {
             var row = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.Id == id).Select(r => new { r.AnalyzedAt, r.EvidenceJson }).FirstAsync(ct);
             // Read once: the selector summary is computed here and stored with the entry, so listing never loads the payload again.
-            var summary = System.Text.Json.JsonSerializer.Serialize(BirkNext.Integrations.IqrSourceSnapshotSummary.From(
-                System.Text.Json.JsonSerializer.Deserialize<BirkNext.Integrations.IqrSourceSnapshot>(row.EvidenceJson, Web)!), Web);
+            var snapshot = System.Text.Json.JsonSerializer.Deserialize<BirkNext.Integrations.IqrSourceSnapshot>(row.EvidenceJson, Web)!;
+            var summary = System.Text.Json.JsonSerializer.Serialize(BirkNext.Integrations.IqrSourceSnapshotSummary.From(snapshot), Web);
             using var doc = JsonDocument.Parse(row.EvidenceJson);
             var root = doc.RootElement;
             var commit = JsonMetadata.String(root, "commit");
             var import = JsonMetadata.String(root, "projectImport", "importId");
-            var status = JsonMetadata.String(root, "status");
             var me = new SnapshotReference(SnapshotType.SourceAnalysis, id.ToString(), JsonMetadata.String(root, "archive", "fileName"));
             var metadata = new SnapshotMetadata(SnapshotType.SourceAnalysis, id.ToString(), null, "source-analysis",
                 JsonMetadata.String(root, "archive", "fileName") ?? id.ToString(), row.AnalyzedAt, null,
                 string.IsNullOrWhiteSpace(commit) || commit == "Unknown" ? null : commit, JsonMetadata.String(root, "analyzerVersion") is { } v ? $"analyzer {v}" : null,
                 $"public.iqr_source_snapshots:{id}", JsonMetadata.String(root, "archive", "sha256"),
-                status is "Partial" ? SnapshotProcessingStatus.Partial : status is "Failed" ? SnapshotProcessingStatus.Failed : SnapshotProcessingStatus.Completed,
+                // The analysis outcome over the areas the package contains — not the snapshot's own status, which is the application-code
+                // analyzer's alone (an infrastructure-only package read "Failed" there while its infrastructure analysis completed).
+                IntegrationJourneys.SourceSetupAreas.Overall(IntegrationJourneys.SourceSetupAreas.Of(snapshot)),
                 SnapshotRetentionClass.Working, Frozen: true, SnapshotRegistryService.MetadataVersion) { SummaryJson = summary };
             IReadOnlyList<SnapshotLineageEdge> edges = string.IsNullOrWhiteSpace(import) ? []
                 : [new(me, SnapshotLineageKind.ImportedFrom, new(SnapshotType.SourceImport, import, JsonMetadata.String(root, "projectImport", "archiveFileName")), Name)];

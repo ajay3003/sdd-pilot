@@ -3,7 +3,7 @@
 .sm-muted { color: var(--clr-text-muted); }
 .sm-small { font-size: .8125rem; }
 .sm-error { color: var(--clr-danger); }
-.sm-table-wrap { overflow-x: auto; }
+.sm-table-wrap { overflow-x: auto; position: relative; } /* containing block of visually-hidden cell text */
 .sm-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
 .sm-table th, .sm-table td { text-align: left; padding: .5rem; border-bottom: 1px solid var(--clr-border); vertical-align: top; }
 .sm-actions { display: flex; flex-wrap: wrap; gap: .25rem; }

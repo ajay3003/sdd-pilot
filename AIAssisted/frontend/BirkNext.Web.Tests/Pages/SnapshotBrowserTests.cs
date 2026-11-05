@@ -1,62 +1,159 @@
+using BirkNext.Integrations;
 using BirkNext.Snapshots;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 namespace BirkNext.Web.Tests.Pages;
 
-/// <summary>The shared snapshot browser: metadata only, status through the shared vocabulary, unknown revision/effective date shown as such,
-/// lineage on demand, and pointers changed only by an explicit action.</summary>
+/// <summary>
+/// The shared snapshot browser: metadata only; statuses labelled by dimension (Analysis, Storage, Immutability, Retention, Project); a Source
+/// Analysis snapshot's stages are the areas it contains; KPIs and filters come from the registry (true counts); filters and the open snapshot
+/// live in the URL; references and lineage on demand; pointers change only by an explicit action.
+/// </summary>
 public sealed class SnapshotBrowserTests : BunitContext
 {
+    private static readonly Guid Terraform = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
+    private readonly Mock<ISnapshotRegistryApiService> _api = new();
+
     private static SnapshotMetadata Meta(SnapshotType type, string id, string label, SnapshotProcessingStatus status = SnapshotProcessingStatus.Completed,
-        SnapshotRetentionClass retention = SnapshotRetentionClass.Working, string? revision = null, DateTimeOffset? effective = null) =>
-        new(type, id, null, "source-analysis", label, DateTimeOffset.Parse("2026-11-03T09:00:00Z"), effective, revision, "analyzer 2", $"store:{id}", "sha", status, retention, true, 1);
+        SnapshotRetentionClass retention = SnapshotRetentionClass.Working, string? revision = null, DateTimeOffset? effective = null, string? project = null) =>
+        new(type, id, project, "source-analysis", label, DateTimeOffset.Parse("2026-11-03T09:00:00Z"), effective, revision, "analyzer 2", $"store:{id}", "sha", status, retention, true, 2);
+
+    private readonly SnapshotMetadata _terraform = Meta(SnapshotType.SourceAnalysis, Terraform.ToString(), "Terraform-iac-meldingsutveksler.zip", SnapshotProcessingStatus.Partial);
+    private readonly SnapshotMetadata _report = Meta(SnapshotType.GeneratedReport, "r-1", "Week 44 report", retention: SnapshotRetentionClass.FrozenReportEvidence, revision: "abc123",
+        effective: DateTimeOffset.Parse("2026-10-31T00:00:00Z"), project: "M2LB");
+
+    public SnapshotBrowserTests()
+    {
+        _api.Setup(a => a.QueryAsync(It.IsAny<SnapshotQuery>(), It.IsAny<CancellationToken>())).ReturnsAsync((SnapshotQuery q, CancellationToken _) =>
+        {
+            var items = new List<SnapshotListItem> { new(_terraform, [SnapshotPointerKind.LatestCreated], 0), new(_report, [], 2) }
+                .Where(i => q.Status is null || i.Metadata.Status == q.Status).Where(i => q.Search is null || i.Metadata.Label.Contains(q.Search, StringComparison.OrdinalIgnoreCase)).ToList();
+            return (new SnapshotListPage([.. items.Take(q.Take)], items.Count, q.Skip, q.Take), (string?)null);
+        });
+        _api.Setup(a => a.LineageAsync(SnapshotType.SourceAnalysis, Terraform.ToString(), It.IsAny<CancellationToken>())).ReturnsAsync((new SnapshotLineageView(_terraform,
+            [new(_terraform.Reference, SnapshotLineageKind.ImportedFrom, new(SnapshotType.SourceImport, "import-1", "Terraform-iac-meldingsutveksler.zip"), "Source Analysis")],
+            [new(new(SnapshotType.Interpretation, "i-1", "Interpretation"), SnapshotLineageKind.InterpretedUsing, _terraform.Reference, "Canonical interpretation")], []), (string?)null));
+        _api.Setup(a => a.SourceAnalysisReferencesAsync(Terraform, It.IsAny<CancellationToken>())).ReturnsAsync((new SnapshotReferenceReport(_terraform.Reference, true,
+            [new(new(SnapshotType.Review, "run-1", "API Quality Review run"), SnapshotReferenceRole.Current, "API Quality Review", DateTimeOffset.Parse("2026-11-04T10:00:00Z"))],
+            ["Browser-held Project Evidence"]), (string?)null));
+        _api.Setup(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        var journeys = new Mock<IIntegrationJourneysApiService>();
+        journeys.Setup(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<SourceSetupView>(new SourceSetupView
+        {
+            Snapshots = [new SourceSetupSnapshot(Terraform, "Terraform-iac-meldingsutveksler.zip", "sha", DateTimeOffset.UtcNow, "Failed")
+            {
+                ImportId = "import-1",
+                Areas = [new("Application code", "NotDetected"), new("Architecture", "Unsupported"), new("Infrastructure as Code", "Complete"), new("Configuration", "Complete"),
+                    new("CI/CD", "Partial"), new("Contracts", "Partial")],
+            }],
+        }, null));
+        Services.AddSingleton(_api.Object);
+        Services.AddSingleton(journeys.Object);
+    }
+
+    private string Location => Services.GetRequiredService<NavigationManager>().Uri;
 
     [Fact]
-    public void Lists_metadata_with_shared_status_and_honest_unknowns_and_opens_lineage()
+    public void Rows_label_statuses_by_dimension_and_show_honest_unknowns_projects_and_references()
     {
-        var sa = Meta(SnapshotType.SourceAnalysis, "sa-1", "M2LB.zip", SnapshotProcessingStatus.Failed);
-        var report = Meta(SnapshotType.GeneratedReport, "r-1", "Week 44 report", retention: SnapshotRetentionClass.FrozenReportEvidence, revision: "abc123", effective: DateTimeOffset.Parse("2026-10-31T00:00:00Z"));
-        var api = new Mock<ISnapshotRegistryApiService>();
-        api.Setup(a => a.ListAsync(null, null, null, null, null, 0, 25, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new SnapshotListPage([new(sa, [SnapshotPointerKind.LatestCreated], 2), new(report, [], 0)], 2, 0, 25), (string?)null));
-        api.Setup(a => a.LineageAsync(SnapshotType.SourceAnalysis, "sa-1", It.IsAny<CancellationToken>())).ReturnsAsync((new SnapshotLineageView(sa,
-            [new(sa.Reference, SnapshotLineageKind.ImportedFrom, new(SnapshotType.SourceImport, "import-1", "M2LB.zip"), "Source Analysis")],
-            [new(new(SnapshotType.Interpretation, "i-1", "Interpretation"), SnapshotLineageKind.InterpretedUsing, sa.Reference, "Canonical interpretation")], []), (string?)null));
-        api.Setup(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
-        Services.AddSingleton(api.Object);
-
         var cut = Render<SnapshotBrowser>();
 
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-row]").Should().HaveCount(2));
-        var first = cut.FindAll("[data-testid=sb-row]")[0];
-        first.QuerySelector(".ssb")!.GetAttribute("data-status").Should().Be(nameof(SemanticStatus.Failed));
-        first.TextContent.Should().Contain("Unknown").And.Contain("Not recorded", "no revision or effective date is invented");
-        first.TextContent.Should().Contain("Latest");
-        cut.FindAll("[data-testid=sb-row]")[1].TextContent.Should().Contain("Frozen report evidence").And.Contain("abc123");
+        var terraform = cut.FindAll("[data-testid=sb-row]")[0];
+        terraform.QuerySelector(".ssb")!.GetAttribute("data-status").Should().Be(nameof(SemanticStatus.Partial));
+        terraform.TextContent.Should().Contain("Analysis: Partial", "a dimension-labelled status, never a bare Failed").And.Contain("Latest");
+        terraform.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("Unassigned", "imported, but no Project Evidence associates it — never guessed from its name");
+        terraform.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("No saved references");
+        var report = cut.FindAll("[data-testid=sb-row]")[1];
+        report.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("M2LB");
+        report.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("2 saved references");
+        cut.FindAll("[data-testid=sb-table] thead th").Select(t => t.TextContent.Trim()).Should().Equal("Snapshot / source", "Type", "Project", "Created", "Analysis", "References", "Actions");
+    }
 
-        first.QuerySelector("[data-testid=sb-open]")!.Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-upstream]").TextContent.Should().Contain("imported from"));
+    [Fact]
+    public void KPIs_are_registry_counts_and_filter_by_status_and_filters_are_chips_in_the_url()
+    {
+        var cut = Render<SnapshotBrowser>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-kpi]").Should().HaveCount(5));
+        cut.Find("[data-testid=sb-kpi][data-kpi=total]").TextContent.Should().Contain("2");
+        cut.Find("[data-testid=sb-kpi][data-kpi=partial]").TextContent.Should().Contain("1").And.Contain("analysis partial");
+
+        cut.Find("[data-testid=sb-kpi][data-kpi=partial]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-row]").Should().ContainSingle());
+        cut.Find("[data-testid=sb-chip]").TextContent.Should().Contain("Analysis: Partial");
+        Location.Should().Contain("status=Partial");
+
+        cut.Find("[data-testid=sb-search]").Change("week");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-empty]"));
+        Location.Should().Contain("q=week");
+        cut.Find("[data-testid=sb-clear]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-row]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=sb-chip]").Should().BeEmpty();
+        _api.Verify(a => a.QueryAsync(It.Is<SnapshotQuery>(q => q.Search == "week" && q.Status == SnapshotProcessingStatus.Partial), It.IsAny<CancellationToken>()), Times.AtLeastOnce,
+            "search and status are applied by the registry before paging (true counts)");
+    }
+
+    [Fact]
+    public void The_detail_shows_dimensions_area_stages_references_lineage_and_diagnostics_and_viewing_never_moves_a_pointer()
+    {
+        var cut = Render<SnapshotBrowser>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-open]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=sb-open]")[0].Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-detail]"));
+        cut.Find("[data-testid=sb-dimensions]").TextContent.Should().Contain("Analysis: Partial").And.Contain("Storage: available").And.Contain("Immutable")
+            .And.Contain("Retention: Working").And.Contain("Project: Unassigned");
+        cut.Find("[data-testid=sb-set-approved]").HasAttribute("disabled").Should().BeTrue("only a completed analysis can be approved");
+        Location.Should().Contain($"open=SourceAnalysis%3A{Terraform}");
+
+        cut.Find("[data-testid=sb-tab][data-tab=processing]").Click();
+        cut.FindAll("[data-testid=sb-processing-stage]").Select(s => s.TextContent).Should().Contain(["Infrastructure as Code: completed", "Application code: not present in this package",
+            "Architecture: not supported by the analyzer (a BirkNext limitation)"]);
+        cut.Find("[data-testid=sb-processing-summary]").TextContent.Should().Contain("Completed: Infrastructure as Code, Configuration").And.Contain("Not complete: Architecture, CI/CD, Contracts");
+
+        cut.Find("[data-testid=sb-tab][data-tab=references]").Click();
+        cut.Find("[data-testid=sb-reference-list]").TextContent.Should().Contain("API Quality Review run").And.Contain("current");
+        cut.Find("[data-testid=sb-not-checked]").TextContent.Should().Contain("Browser-held Project Evidence");
+
+        cut.Find("[data-testid=sb-tab][data-tab=lineage]").Click();
+        cut.Find("[data-testid=sb-upstream]").TextContent.Should().Contain("imported from");
         cut.Find("[data-testid=sb-downstream]").TextContent.Should().Contain("interpreted from");
-        api.Verify(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>()), Times.Never, "viewing never moves a pointer");
-        cut.Find("[data-testid=sb-set-approved]").HasAttribute("disabled").Should().BeTrue("a failed snapshot cannot be approved as current");
 
+        cut.Find("[data-testid=sb-tab][data-tab=evidence]").Click();
+        cut.Find("[data-testid=sb-open-source-analysis]").GetAttribute("href").Should().Be($"source-analysis?snapshot={Terraform}");
+        cut.Find("[data-testid=sb-tab][data-tab=diagnostics]").Click();
+        cut.Find("[data-testid=sb-diagnostics]").TextContent.Should().Contain(Terraform.ToString()).And.Contain("Stored by its owner");
+
+        _api.Verify(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>()), Times.Never, "viewing never moves a pointer");
+        cut.Find("[data-testid=sb-tab][data-tab=overview]").Click();
         cut.Find("[data-testid=sb-set-current]").Click();
-        api.Verify(a => a.SetPointerAsync(It.Is<SnapshotPointerRequest>(r => r.Kind == SnapshotPointerKind.CurrentSelected && r.SnapshotId == "sa-1"), It.IsAny<CancellationToken>()), Times.Once);
+        _api.Verify(a => a.SetPointerAsync(It.Is<SnapshotPointerRequest>(r => r.Kind == SnapshotPointerKind.CurrentSelected && r.SnapshotId == Terraform.ToString()), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void Returning_with_the_url_restores_filters_and_the_open_snapshot_and_tab()
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"snapshots?status=Partial&open=SourceAnalysis:{Terraform}&tab=processing");
+        var cut = Render<SnapshotBrowser>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-detail]").GetAttribute("data-id").Should().Be(Terraform.ToString()));
+        cut.Find("[data-testid=sb-tabpanel]").GetAttribute("data-tab").Should().Be("processing");
+        cut.Find("[data-testid=sb-chip]").TextContent.Should().Contain("Analysis: Partial");
+        cut.FindAll("[data-testid=sb-row]").Should().ContainSingle();
     }
 
     [Fact]
     public void A_backend_error_is_shown_with_retry()
     {
-        var api = new Mock<ISnapshotRegistryApiService>();
-        api.Setup(a => a.ListAsync(It.IsAny<string?>(), It.IsAny<SnapshotType?>(), It.IsAny<string?>(), It.IsAny<SnapshotProcessingStatus?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(((SnapshotListPage?)null, "Snapshots request failed (500)."));
-        Services.AddSingleton(api.Object);
+        _api.Setup(a => a.QueryAsync(It.IsAny<SnapshotQuery>(), It.IsAny<CancellationToken>())).ReturnsAsync(((SnapshotListPage?)null, "Snapshots request failed (500)."));
         var cut = Render<SnapshotBrowser>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=sb-error]").TextContent.Should().Contain("500"));
+        cut.FindAll("[data-testid=sb-kpis]").Should().BeEmpty("no count is shown that the registry did not answer");
     }
 }

@@ -76,7 +76,8 @@ public sealed class ActivityCenterTests : BunitContext
         cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-open]").GetAttribute("href").Should().Be("project-import?done");
         cut.Find("[data-testid=activity-live]").TextContent.Should().Contain("Completed");
         cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-dismiss]").Click();
-        cut.FindAll("[data-testid=activity-item][data-status=Completed]").Should().BeEmpty();
+        // Dismiss re-renders through the operations' Changed event (InvokeAsync): wait for it like the assertions above, never assume it is synchronous.
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=activity-item][data-status=Completed]").Should().BeEmpty(), TimeSpan.FromSeconds(10));
     }
 
     [Fact]

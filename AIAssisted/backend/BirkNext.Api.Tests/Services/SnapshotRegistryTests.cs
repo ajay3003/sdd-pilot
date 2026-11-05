@@ -38,14 +38,22 @@ public sealed class SnapshotRegistryTests : IDisposable
         [new SourceAnalysisSnapshotSource(_app), new DeliverySnapshotSource(_delivery), new InterpretationSnapshotSource(_canonical), new ReviewRunSnapshotSource(_app), new ExecutionSnapshotSource(_app)],
         TimeProvider.System);
 
-    private Guid SourceAnalysis(string archive, DateTimeOffset at, string commit = "Unknown", string? importId = null, string status = "Ready")
+    /// <param name="status">The application-code analyzer's outcome. "Failed" is a genuinely failed analysis: production projects that could not be read.</param>
+    /// <param name="extra">Further snapshot JSON members (e.g. evidence domains), starting with a comma.</param>
+    /// <param name="productionProjects">Whether the package has a production project (as every analyzed application package does). With status
+    /// Failed it could not be read — a real failure; without one (an infrastructure-only package) the application-code analyzer still says Failed,
+    /// but there is no application code to analyze.</param>
+    private Guid SourceAnalysis(string archive, DateTimeOffset at, string commit = "Unknown", string? importId = null, string status = "Ready", string extra = "",
+        bool productionProjects = true)
     {
         var id = Guid.NewGuid();
         var import = importId is null ? "" : $$""","projectImport":{"importId":"{{importId}}","archiveFileName":"{{archive}}"}""";
+        var projects = productionProjects
+            ? ""","projects":[{"name":"Api","path":"src/Api/Api.csproj","isTest":false,"classification":"Application/service","confidence":"Confirmed"}]""" : "";
         _app.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord
         {
             Id = id, IntegrationId = "source-analysis", AnalyzedAt = at,
-            EvidenceJson = $$"""{"id":"{{id}}","commit":"{{commit}}","analyzerVersion":2,"status":"{{status}}","archive":{"fileName":"{{archive}}","sha256":"sha-{{archive}}","filesAnalyzed":3}{{import}}}""",
+            EvidenceJson = $$"""{"id":"{{id}}","commit":"{{commit}}","analyzerVersion":2,"status":"{{status}}","archive":{"fileName":"{{archive}}","sha256":"sha-{{archive}}","filesAnalyzed":3}{{import}}{{projects}}{{extra}}}""",
         });
         _app.SaveChanges();
         return id;
@@ -114,6 +122,60 @@ public sealed class SnapshotRegistryTests : IDisposable
         var metadata = (await registry.GetAsync(SnapshotType.SourceAnalysis, gone.ToString(), default))!;
         metadata.PayloadAvailable.Should().BeFalse("the metadata and lineage stay; only availability changes");
         (await registry.SyncAsync(true, default)).Problems.Should().BeEmpty("already reconciled entries are not reported again");
+    }
+
+    private const string InfrastructureDomains = ""","evidenceDomains":{"infrastructure":{"status":"Complete"},"configuration":{"status":"Complete"},"ciCd":{"status":"Partial"}}""";
+
+    [Fact]
+    public async Task An_infrastructure_only_package_is_not_a_failed_analysis_its_status_is_the_outcome_of_the_areas_it_contains()
+    {
+        // The application-code analyzer says Failed (no production project); Infrastructure as Code and Configuration completed, CI/CD partly.
+        var terraform = SourceAnalysis("Terraform-iac-m2lb.zip", DateTimeOffset.Parse("2026-11-03T09:15:00Z"), status: "Failed", extra: InfrastructureDomains, productionProjects: false);
+        var complete = SourceAnalysis("Terraform-complete.zip", DateTimeOffset.Parse("2026-11-03T09:16:00Z"), status: "Failed", productionProjects: false,
+            extra: ""","evidenceDomains":{"infrastructure":{"status":"Complete"},"configuration":{"status":"Complete"}}""");
+        var failed = SourceAnalysis("Broken.zip", DateTimeOffset.Parse("2026-11-03T09:17:00Z"), status: "Failed");
+        var registry = Registry();
+        await registry.SyncAsync(true, default);
+
+        (await registry.GetAsync(SnapshotType.SourceAnalysis, terraform.ToString(), default))!.Status.Should().Be(SnapshotProcessingStatus.Partial,
+            "infrastructure and configuration completed, CI/CD partly — never Failed for missing application code, never rounded up to Completed");
+        (await registry.GetAsync(SnapshotType.SourceAnalysis, complete.ToString(), default))!.Status.Should().Be(SnapshotProcessingStatus.Completed);
+        (await registry.GetAsync(SnapshotType.SourceAnalysis, failed.ToString(), default))!.Status.Should().Be(SnapshotProcessingStatus.Failed,
+            "production projects that could not be read: a real failure stays a failure");
+    }
+
+    [Theory]
+    [InlineData(new[] { "NotDetected", "Unsupported", "Complete", "Complete", "Partial", "NotDetected" }, SnapshotProcessingStatus.Partial)]
+    [InlineData(new[] { "NotDetected", "NotAnalyzed", "Complete", "Complete", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Completed)]
+    [InlineData(new[] { "Failed", "NotAnalyzed", "NotDetected", "NotDetected", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Failed)]
+    [InlineData(new[] { "Partial", "Complete", "NotDetected", "Partial", "Partial", "NotDetected" }, SnapshotProcessingStatus.Partial)]
+    [InlineData(new[] { "NotDetected", "NotAnalyzed", "NotDetected", "NotDetected", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Unknown)]
+    public void The_analysis_outcome_counts_only_the_areas_the_package_contains(string[] statuses, SnapshotProcessingStatus expected)
+    {
+        string[] names = ["Application code", "Architecture", "Infrastructure as Code", "Configuration", "CI/CD", "Contracts"];
+        BirkNext.Api.Services.IntegrationJourneys.SourceSetupAreas.Overall([.. names.Zip(statuses, (n, st) => new BirkNext.Integrations.SourceSetupArea(n, st))])
+            .Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task Entries_registered_with_the_old_rule_are_re_read_once_metadata_only()
+    {
+        const string domains = ""","evidenceDomains":{"infrastructure":{"status":"Complete"},"configuration":{"status":"Complete"},"ciCd":{"status":"Partial"}}""";
+        var id = SourceAnalysis("Terraform-BasicOpsInfra.zip", DateTimeOffset.Parse("2026-11-03T09:15:00Z"), status: "Failed", extra: domains, productionProjects: false);
+        var registry = Registry();
+        await registry.SyncAsync(true, default);
+        var row = _registry.Entries.Single(e => e.Id == id.ToString());
+        (row.Status, row.MetadataVersion) = (nameof(SnapshotProcessingStatus.Failed), 1);   // as registered before this rule
+        var created = row.CreatedAt;
+        _registry.SaveChanges();
+
+        var sync = await registry.SyncAsync(true, default);
+
+        var metadata = (await registry.GetAsync(SnapshotType.SourceAnalysis, id.ToString(), default))!;
+        metadata.Status.Should().Be(SnapshotProcessingStatus.Partial, "infrastructure completed, CI/CD partly; no application code is not a failure");
+        (metadata.MetadataVersion, metadata.CreatedAt, metadata.Frozen).Should().Be((2, created, true), "identity, timestamps and immutability never change");
+        sync.Updated.Should().BeGreaterThan(0);
+        (await registry.SyncAsync(true, default)).Updated.Should().Be(0, "re-read once");
     }
 
     [Fact]

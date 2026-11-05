@@ -9,6 +9,12 @@ public interface ISnapshotRegistryApiService
 {
     Task<(SnapshotListPage? Page, string? Error)> ListAsync(string? project, SnapshotType? type, string? module, SnapshotProcessingStatus? status, string? sort, int skip, int take, CancellationToken ct = default);
     Task<(SnapshotLineageView? Lineage, string? Error)> LineageAsync(SnapshotType type, string id, CancellationToken ct = default);
+    /// <summary>The listing with every filter the registry supports (search by label, created date range) — paged on the server, counts true.</summary>
+    Task<(SnapshotListPage? Page, string? Error)> QueryAsync(SnapshotQuery query, CancellationToken ct = default) =>
+        ListAsync(query.Project, query.Type, null, query.Status, query.Sort, query.Skip, query.Take, ct);
+    /// <summary>What references a Source Analysis snapshot (checked stores; <see cref="SnapshotReferenceReport.NotChecked"/> names the others).</summary>
+    Task<(SnapshotReferenceReport? Report, string? Error)> SourceAnalysisReferencesAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(SnapshotReferenceReport?, string?)>((null, "Not available."));
     Task<(IReadOnlyList<SnapshotPointerView> Pointers, string? Error)> PointersAsync(string? project, SnapshotType type, string module, CancellationToken ct = default);
     Task<(SnapshotDeletionCheck? Check, string? Error)> DeletionCheckAsync(SnapshotType type, string id, CancellationToken ct = default);
     Task<string?> SetPointerAsync(SnapshotPointerRequest request, CancellationToken ct = default);
@@ -26,6 +32,17 @@ public sealed class SnapshotRegistryApiService(HttpClient http) : ISnapshotRegis
             $"skip={skip}", $"take={take}", project is null ? null : $"project={Uri.EscapeDataString(project)}", type is null ? null : $"type={type}",
             module is null ? null : $"module={Uri.EscapeDataString(module)}", status is null ? null : $"status={status}", sort is null ? null : $"sort={sort}",
         }.OfType<string>()), ct);
+
+    public Task<(SnapshotListPage?, string?)> QueryAsync(SnapshotQuery q, CancellationToken ct = default) =>
+        GetAsync<SnapshotListPage>("api/snapshots?" + string.Join("&", new[]
+        {
+            $"skip={q.Skip}", $"take={q.Take}", q.Project is null ? null : $"project={Uri.EscapeDataString(q.Project)}", q.Type is null ? null : $"type={q.Type}",
+            q.Status is null ? null : $"status={q.Status}", q.Sort is null ? null : $"sort={q.Sort}", q.Search is null ? null : $"search={Uri.EscapeDataString(q.Search)}",
+            q.From is null ? null : $"from={Uri.EscapeDataString(q.From.Value.ToString("O"))}", q.To is null ? null : $"to={Uri.EscapeDataString(q.To.Value.ToString("O"))}",
+        }.OfType<string>()), ct);
+
+    public Task<(SnapshotReferenceReport?, string?)> SourceAnalysisReferencesAsync(Guid id, CancellationToken ct = default) =>
+        GetAsync<SnapshotReferenceReport>($"api/snapshots/source-analysis/{id:D}/references", ct);
 
     public Task<(SnapshotLineageView?, string?)> LineageAsync(SnapshotType type, string id, CancellationToken ct = default) =>
         GetAsync<SnapshotLineageView>($"api/snapshots/{type}/{Uri.EscapeDataString(id)}/lineage?depth=3", ct);
@@ -80,6 +97,10 @@ public sealed class SnapshotRegistryApiService(HttpClient http) : ISnapshotRegis
 }
 
 /// <summary>Snapshot metadata through the shared vocabulary: processing status as a status, type/retention/pointers as MetaBadges.</summary>
+/// <summary>One listing request: every filter is applied by the registry before paging.</summary>
+public sealed record SnapshotQuery(string? Project, SnapshotType? Type, SnapshotProcessingStatus? Status, string? Search, DateTimeOffset? From, DateTimeOffset? To,
+    string? Sort, int Skip, int Take);
+
 public static class SnapshotPresentation
 {
     public static SemanticStatus Status(SnapshotProcessingStatus status) => status switch

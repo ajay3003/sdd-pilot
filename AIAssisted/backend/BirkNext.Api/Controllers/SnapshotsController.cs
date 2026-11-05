@@ -23,8 +23,9 @@ public sealed class SnapshotsController(SnapshotReferenceIndex index, SnapshotRe
     /// <summary>Metadata-only listing (filters, paging, sorting, pointers held). Never deserializes a payload.</summary>
     [HttpGet]
     public Task<SnapshotListPage> List([FromQuery] string? project, [FromQuery] SnapshotType? type, [FromQuery] string? module, [FromQuery] SnapshotProcessingStatus? status,
-        [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, [FromQuery] string? sort, [FromQuery] int skip = 0, [FromQuery] int take = 25, CancellationToken ct = default) =>
-        registry.ListAsync(project, type, module, status, from, to, sort, skip, take, ct);
+        [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, [FromQuery] string? sort, [FromQuery] int skip = 0, [FromQuery] int take = 25,
+        [FromQuery] string? search = null, CancellationToken ct = default) =>
+        registry.ListAsync(project, type, module, status, from, to, sort, skip, take, ct, search);
 
     /// <summary>Registers what is new in every owner store (idempotent; also runs automatically, throttled).</summary>
     [HttpPost("sync")]
