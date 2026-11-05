@@ -122,6 +122,9 @@ public sealed class PipelineEvidenceFreshnessTests : IDisposable
         var service = new PipelineReviewService(new ReviewSourceEvidenceProvider(new IqrSourceStore(_db)), Mock.Of<IPipelineMetadataSource>(),
             new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
         var sources = await service.SourcesAsync("env");
-        sources.Snapshots.Should().ContainSingle().Which.Should().Match<PipelineReviewSource>(s => s.Status == snapshot.Status.ToString() && s.CiCdStatus == snapshot.EvidenceDomains.CiCd.Status.ToString());
+        // The listed status is the outcome over the areas the snapshot contains (the Snapshot Registry's), never the code analyzer's alone.
+        var outcome = BirkNext.Api.Services.IntegrationJourneys.SourceSetupAreas.Overall(BirkNext.Api.Services.IntegrationJourneys.SourceSetupAreas.Of(snapshot));
+        sources.Snapshots.Should().ContainSingle().Which.Should().Match<PipelineReviewSource>(s => s.Status == outcome.ToString() && s.CiCdStatus == snapshot.EvidenceDomains.CiCd.Status.ToString());
+        BirkNext.Api.Services.IntegrationJourneys.SourceSetupAreas.Summary(snapshot).Outcome.Should().Be(outcome, "snapshot pickers carry the same outcome");
     }
 }

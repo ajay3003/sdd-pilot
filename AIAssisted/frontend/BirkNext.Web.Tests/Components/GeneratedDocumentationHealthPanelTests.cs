@@ -94,9 +94,10 @@ public sealed class GeneratedDocumentationHealthPanelTests : BunitContext
     {
         var cut = RenderWith(ReadyRun(), out _);
         cut.Find("[data-testid=gdh-run]").Click();
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gdh-card]").Should().HaveCount(14));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gdh-card]").Should().HaveCount(15));
         // Health and consistency counters are separate groups, never one combined alarm.
-        cut.FindAll("[data-testid=gdh-summary-health] [data-testid=gdh-card]").Should().HaveCount(8);
+        cut.FindAll("[data-testid=gdh-summary-health] [data-testid=gdh-card]").Should().HaveCount(9, "fresh, stale, unknown and not applicable account for every module");
+        cut.Find("[data-testid=gdh-summary-health] [data-metric=freshness-na] dt").TextContent.Should().Be("Freshness not applicable");
         cut.FindAll("[data-testid=gdh-summary-consistency] [data-testid=gdh-card]").Should().HaveCount(6);
         cut.Find("[data-testid=gdh-summary-health] [data-metric=stale] dd").TextContent.Should().Be("1");
         cut.Find("[data-testid=gdh-summary-health] [data-metric=missing] dt").TextContent.Should().Be("Required docs missing");

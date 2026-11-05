@@ -34,7 +34,7 @@ public static class SourceAnalysisOverview
     public static string OptionLabel(IqrSourceSnapshotSummary s) => string.Join(" · ", new[]
     {
         System.IO.Path.GetFileNameWithoutExtension(s.Archive.FileName) is { Length: > 0 } name ? name : s.Archive.FileName,
-        Utc(s.AnalyzedAt), SourceEvidence(s.Status), s.Archive.FilesAnalyzed > 0 ? $"{s.Archive.FilesAnalyzed} files" : null,
+        Utc(s.AnalyzedAt), s.Outcome is { } outcome ? Outcome(outcome) : SourceEvidence(s.Status), s.Archive.FilesAnalyzed > 0 ? $"{s.Archive.FilesAnalyzed} files" : null,
     }.Concat((s.RegistryPointers ?? []).Select(PointerLabel)).Append(ShortFingerprint(s.Archive.Sha256)).OfType<string>()); // fingerprint last: tells same-name archives apart
 
     public static string PointerLabel(string pointer) => pointer switch
@@ -48,7 +48,17 @@ public static class SourceAnalysisOverview
 
     public static string Utc(DateTimeOffset at) => at.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") + " UTC";
 
-    /// <summary>The snapshot's own source-evidence status (Failed means the analyzer found no production project in the archive).</summary>
+    /// <summary>The snapshot's outcome over the areas it contains — the Snapshot Registry's status, so pickers and the Snapshots page agree. An
+    /// infrastructure-only source is not failed for lacking application code.</summary>
+    public static string Outcome(BirkNext.Snapshots.SnapshotProcessingStatus outcome) => outcome switch
+    {
+        BirkNext.Snapshots.SnapshotProcessingStatus.Completed => "Analyzed",
+        BirkNext.Snapshots.SnapshotProcessingStatus.Partial => "Partial",
+        BirkNext.Snapshots.SnapshotProcessingStatus.Failed => "Failed",
+        _ => "Nothing analyzed",
+    };
+
+    /// <summary>The application-code analyzer's own status (older backends without an outcome; Failed means it found no production project).</summary>
     public static string SourceEvidence(SourceAnalysisStatus status) => status switch
     {
         SourceAnalysisStatus.Ready => "Ready",

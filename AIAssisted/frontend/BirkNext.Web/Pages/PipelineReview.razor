@@ -11,6 +11,7 @@
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 
 <PageTitle>Pipeline Review</PageTitle>
 
@@ -282,7 +283,13 @@
         // Pipelines are source evidence: they are reviewed from the current source snapshot with or without a Target Environment.
         _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
         _sources = await Api.SourcesAsync(EnvironmentId);
-        _snapshotId = _sources.DefaultSnapshotId ?? _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
+        // The Target Application's own source (Project Evidence's main package) when it has pipelines; otherwise the newest snapshot with pipelines.
+        // Never simply the package imported last (a shared library or infrastructure repository).
+        Guid? main = null;
+        try { main = Services.GetService<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>()?.Peek(_profile?.Id).Main?.SnapshotId; }
+        catch (InvalidOperationException) { main = null; }
+        _snapshotId = _sources.Snapshots.FirstOrDefault(s => s.Id == main && s.Pipelines > 0)?.Id
+            ?? _sources.DefaultSnapshotId ?? _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
         if (_snapshotId is not null) await Load();
         _loaded = true;
     }
@@ -634,7 +641,7 @@
                         <span class="prv-pipeline-name">@p.Name</span>
                         <span class="prv-pipeline-facts">
                             <span><span class="prv-fact-label">Trigger</span> @string.Join(", ", G.TriggerLabels(p))</span>
-                            <span><span class="prv-fact-label">Stages / jobs</span> @p.Stages / @p.Jobs</span>
+                            <span><span class="prv-fact-label">Structure</span> @P.Structure(p.Stages, p.Jobs)</span>
                             <span><span class="prv-fact-label">Tests</span> @tests</span>
                             <span><span class="prv-fact-label">Artifacts</span> @p.Artifacts.Count</span>
                             <span><span class="prv-fact-label">Deploys to</span> @(p.Environments.Count == 0 ? "—" : string.Join(", ", p.Environments))</span>
@@ -649,7 +656,7 @@
                         @if (stages.Count == 0)
                         {
                             var steps = D.Steps(r, p.Id);
-                            <p class="sd-muted">Single job (no stages).@(steps.Count > 0 ? " Its validation steps in definition order:" : "")</p>
+                            <p class="sd-muted">@P.Structure(p.Stages, p.Jobs).@(steps.Count > 0 ? " Its validation steps in definition order:" : "")</p>
                             @if (steps.Count > 0)
                             {
                                 <ol class="prv-flow" aria-label="@($"Validation steps of {p.Name} in definition order")" data-testid="pr-step-flow">

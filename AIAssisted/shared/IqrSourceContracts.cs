@@ -129,6 +129,10 @@ public sealed record IqrSourceSnapshotSummary
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? RegistryPointers { get; init; }
 
+    /// <summary>The analysis outcome over the areas the snapshot contains (the shared <see cref="SourceSetupOutcome.Overall"/> rule, the Snapshot
+    /// Registry's status). <see cref="Status"/> stays the application-code analyzer's own result. Null from older backends.</summary>
+    public BirkNext.Snapshots.SnapshotProcessingStatus? Outcome { get; init; }
+
     public static IqrSourceSnapshotSummary From(IqrSourceSnapshot s) => new()
     {
         RepositoryKey = s.Repository?.Key, ProjectImportId = s.ProjectImport?.ImportId, HasArchitecture = s.Architecture is not null,

@@ -355,6 +355,8 @@ public sealed record GeneratedDocumentationSummary
     public int Fresh { get; init; }
     public int PotentiallyStale { get; init; }
     public int FreshnessUnknown { get; init; }
+    /// <summary>Modules whose freshness does not apply (no generated output to date). Fresh + stale + unknown + not applicable = the modules assessed.</summary>
+    public int FreshnessNotApplicable { get; init; }
     /// <summary>Required (or profile-expected) documents missing — established requirement/applicability only.</summary>
     public int MissingExpectedDocs { get; init; }
     public int ApplicabilityUnresolved { get; init; }
@@ -458,6 +460,10 @@ public sealed record AutodocDiagnostics
     public int Fresh { get; init; }
     public int PotentiallyStale { get; init; }
     public int FreshnessUnknown { get; init; }
+    public int FreshnessNotApplicable { get; init; }
+    /// <summary>The freshness denominator: modules with module-specific generated output (not every detected module). Fresh + potentially stale +
+    /// unknown + not applicable = this.</summary>
+    public int ModulesWithGeneratedOutput { get; init; }
     public int MissingExpectedDocs { get; init; }
     public int DiscrepancyCandidates { get; init; }
     public int ParseErrors { get; init; }

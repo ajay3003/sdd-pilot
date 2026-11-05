@@ -9,6 +9,12 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class PipelineReviewPresentation
 {
+    /// <summary>A pipeline's structure with units: "2 stages · 5 jobs", or "14 jobs without explicit stages" (never a unitless "0 / 14", never
+    /// "single job" for several).</summary>
+    public static string Structure(int stages, int jobs) => stages == 0
+        ? jobs switch { 0 => "No explicit stages or jobs (steps only)", 1 => "1 job without explicit stages", _ => $"{jobs} jobs without explicit stages" }
+        : $"{stages} stage{(stages == 1 ? "" : "s")} · {jobs} job{(jobs == 1 ? "" : "s")}";
+
     public static readonly PipelineFindingSeverity[] SeverityOrder = [PipelineFindingSeverity.High, PipelineFindingSeverity.Medium, PipelineFindingSeverity.Low, PipelineFindingSeverity.Info];
 
     public static string SeverityCss(PipelineFindingSeverity s) => s switch

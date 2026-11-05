@@ -34,7 +34,7 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
     {
         MaintainDocsWorkflowDetected = true, WorkflowSources = [".claude/skills/maintain-docs/SKILL.md"], InventoryBasis = "Source Analysis architecture components",
         DetectedModules = 5, ApiModules = 3, ModulesUsingAutodoc = 3, ModulesWithoutAutodoc = 2, ModulesPartial = 0, ApisUsingAutodoc = 2, ApisWithoutAutodoc = 1,
-        GeneratedArtifacts = 9, FreshnessUnknown = 2, PotentiallyStale = 1, ParseErrors = 1,
+        GeneratedArtifacts = 9, FreshnessUnknown = 2, PotentiallyStale = 1, ParseErrors = 1, ModulesWithGeneratedOutput = 3,
         Modules =
         [
             Configured("Persons", api: true),
@@ -75,6 +75,16 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
         cut.Find("[data-testid=gdh-autodoc-errors]").TextContent.Should().Be("1");
         cut.Find("[data-testid=gdh-autodoc-snapshot]").TextContent.Should().Contain("M2LB.zip").And.Contain(SnapshotId.ToString()).And.Contain("Repository-level workflow ≠ module usage");
         cut.Markup.Should().NotContain("score", "counts and states only");
+    }
+
+    [Fact]
+    public void Freshness_names_its_denominator_and_its_categories_add_up_to_it()
+    {
+        var cut = Section();
+        var d = Diagnostics();
+        (d.Fresh + d.PotentiallyStale + d.FreshnessUnknown + d.FreshnessNotApplicable).Should().Be(d.ModulesWithGeneratedOutput);
+        cut.Find("[data-testid=gdh-autodoc-freshness-scope]").TextContent.Should()
+            .Contain("Freshness covers the 3 modules with generated output (of 5 detected)").And.Contain("A timestamp alone never makes a document stale");
     }
 
     [Fact]

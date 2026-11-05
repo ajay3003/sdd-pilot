@@ -142,12 +142,14 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
         await SyncAsync(true, ct); // a snapshot uploaded a moment ago must be listed at once (sync reads ids; only new payloads, once)
         var type = nameof(SnapshotType.SourceAnalysis);
         var rows = await db.Entries.AsNoTracking().Where(e => e.Type == type && e.PayloadAvailable)
-            .OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id).Take(Math.Clamp(take, 1, 200)).Select(e => new { e.Id, e.Project, e.Module, e.SummaryJson }).ToListAsync(ct);
+            .OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id).Take(Math.Clamp(take, 1, 200)).Select(e => new { e.Id, e.Project, e.Module, e.SummaryJson, e.Status }).ToListAsync(ct);
         if (rows.Any(r => r.SummaryJson is null)) return null;
         var pointers = await PointerMapAsync(rows.Select(r => (r.Project ?? "", type, r.Module)).Distinct().ToList(), ct);
         return [.. rows.Select(r => System.Text.Json.JsonSerializer.Deserialize<BirkNext.Integrations.IqrSourceSnapshotSummary>(r.SummaryJson!, SummaryJson)! with
         {
             RegistryPointers = [.. pointers.Where(p => p.Key.Type == type && p.Key.Module == r.Module && p.Key.Project == (r.Project ?? "") && p.Value == r.Id).Select(p => p.Key.Kind.ToString())],
+            // The registry's own outcome (the shared area rule), so pickers agree with the Snapshots page.
+            Outcome = Enum.TryParse<SnapshotProcessingStatus>(r.Status, out var outcome) ? outcome : null,
         })];
     }
 

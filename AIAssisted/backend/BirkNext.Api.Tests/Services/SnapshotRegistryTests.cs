@@ -350,6 +350,7 @@ public sealed class SnapshotRegistryTests : IDisposable
             "a Failed snapshot is never latest completed");
         list.Single(s => s.Id == partial).RegistryPointers.Should().Contain("CurrentSelected").And.NotContain("LatestCompleted", "Partial is not completed either: no fallback");
         list.Single(s => s.Id == partial).Status.Should().Be(BirkNext.Integrations.SourceAnalysisStatus.Partial);
+        list.Should().OnlyContain(s => s.Outcome != null, "every listed summary carries the registry's own outcome (what pickers show)");
     }
 
     [Fact]

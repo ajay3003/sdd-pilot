@@ -72,16 +72,43 @@
         if (Evidence is { } evidence) evidence.Changed += OnChanged;
         if (Settings is { } settings) settings.Changed += OnChanged;
         Load();
-        // Peek reads only what this session has already resolved. A page that never resolved Project Evidence (Import) would otherwise say
-        // "Not configured" while Recommended Workflow says the project is set: resolve once through the shared, cached service.
-        if (_view?.IsConfigured != true && Evidence is { } resolve) _ = ResolveAsync(resolve);
+        ResolveIfNeeded();
+        // Project Evidence counts the workspace's imported packages. A page that never reads the current workspace (Source Analysis) would
+        // count none ("0 of 2 roles") while Workflow, which reads it, shows the real count: read the shared, cached projection once.
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace && workspace.Current is null) _ = WorkspaceAsync(workspace);
+    }
+
+    private async Task WorkspaceAsync(ICurrentWorkspaceProjection workspace)
+    {
+        try { await workspace.GetAsync(); }
+        catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex)) { return; }
+        await InvokeAsync(() => { Load(); StateHasChanged(); });
+    }
+
+    private bool _resolving, _unclassifiable;
+
+    /// <summary>
+    /// Peek reads only what this session has already resolved. A page that never resolved Project Evidence (Import) would otherwise say "Not
+    /// configured" while Recommended Workflow shows the project, and a view without the Source Analysis classification (after a page invalidated
+    /// the cache) would count fewer ready roles than other pages. Resolve through the shared, cached service — once at a time.
+    /// </summary>
+    private void ResolveIfNeeded()
+    {
+        if (_resolving || _unclassifiable || (_view?.IsConfigured == true && _view.Classified) || Evidence is not { } evidence) return;
+        _resolving = true;
+        _ = ResolveAsync(evidence);
     }
 
     private async Task ResolveAsync(IProjectEvidenceService evidence)
     {
-        try { await evidence.GetAsync(EnvironmentId); }
-        catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex)) { return; }
+        try
+        {
+            // The backend could not classify (Source Analysis unavailable): the view stays as it is and is not requested again on every change.
+            if (await evidence.GetAsync(EnvironmentId) is not { Classified: true }) _unclassifiable = true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex)) { _resolving = false; _unclassifiable = true; return; }
         await InvokeAsync(() => { Load(); StateHasChanged(); });
+        _resolving = false;
     }
 
     private void Load()
@@ -96,7 +123,7 @@
         catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException) { _view = null; }
     }
 
-    private void OnChanged() => _ = InvokeAsync(() => { Load(); StateHasChanged(); });
+    private void OnChanged() => _ = InvokeAsync(() => { Load(); StateHasChanged(); ResolveIfNeeded(); });
 
     public void Dispose()
     {

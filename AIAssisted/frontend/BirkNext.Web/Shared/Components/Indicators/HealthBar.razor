@@ -6,7 +6,7 @@
     <span class="health-bar-label">@Label</span>
     <div class="progress-bar">
         <div class="progress-fill progress-fill-@(Variant ?? _autoVariant)"
-             style="width:@(_pct.ToString("F1"))%">
+             style="width:@(BirkNext.Web.Services.CssUnits.Percent(_pct))">
         </div>
     </div>
     <span class="health-bar-value">@(ValueLabel ?? Value.ToString("F0"))</span>

@@ -43,6 +43,9 @@ public static class SourceSetupAreas
         ];
     }
 
+    /// <summary>A snapshot summary with its outcome over the areas it contains (what every snapshot picker shows).</summary>
+    public static IqrSourceSnapshotSummary Summary(IqrSourceSnapshot snapshot) => IqrSourceSnapshotSummary.From(snapshot) with { Outcome = Overall(Of(snapshot)) };
+
     /// <summary>The snapshot's analysis outcome over the areas it contains: the shared <see cref="SourceSetupOutcome.Overall"/> rule.</summary>
     public static BirkNext.Snapshots.SnapshotProcessingStatus Overall(IReadOnlyList<SourceSetupArea> areas) => SourceSetupOutcome.Overall(areas);
 

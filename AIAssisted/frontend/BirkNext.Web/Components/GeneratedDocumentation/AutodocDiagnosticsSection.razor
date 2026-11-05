@@ -145,6 +145,11 @@
             <div class="gdh-card" data-metric="fresh" title="Generated evidence is not older than relevant same-scope source evidence."><dt>Fresh</dt><dd>@Diagnostics.Fresh</dd></div>
             <div class="gdh-card" data-metric="stale" title="Relevant source evidence is newer than the generated documentation."><dt>Potentially stale</dt><dd>@Diagnostics.PotentiallyStale</dd></div>
             <div class="gdh-card" data-metric="unknown" title="Not enough dated evidence to decide freshness."><dt>Freshness unknown</dt><dd>@Diagnostics.FreshnessUnknown</dd></div>
+            @if (Diagnostics.FreshnessNotApplicable > 0)
+            {
+                <div class="gdh-card" data-metric="freshness-na" title="No generated output to date, so freshness does not apply."><dt>Freshness not applicable</dt><dd>@Diagnostics.FreshnessNotApplicable</dd></div>
+            }
+            <p class="gdh-card-note" data-testid="gdh-autodoc-freshness-scope">Freshness covers the @Diagnostics.ModulesWithGeneratedOutput module@(Diagnostics.ModulesWithGeneratedOutput == 1 ? "" : "s") with generated output (of @Diagnostics.DetectedModules detected): fresh, potentially stale, unknown and not applicable add up to it. A timestamp alone never makes a document stale.</p>
             <div class="gdh-card" data-metric="missing" title="Outputs a generator declares as required but which are absent."><dt>Required generated docs missing</dt><dd>@Diagnostics.MissingExpectedDocs</dd></div>
             <div class="gdh-card" data-metric="discrepancies" title="Comparable conflicting claims between generated docs and source — review candidates, not defects."><dt>Source consistency candidates</dt><dd>@Diagnostics.DiscrepancyCandidates</dd></div>
             <div class="gdh-card" data-metric="errors" title="Generated contracts that do not parse."><dt>Parser errors</dt><dd data-testid="gdh-autodoc-errors">@Diagnostics.ParseErrors</dd></div>

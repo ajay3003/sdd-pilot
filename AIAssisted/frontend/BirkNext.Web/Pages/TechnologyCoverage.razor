@@ -63,7 +63,7 @@
                     <div><dt>Source snapshot</dt><dd class="tc-small" data-testid="tc-snapshot" title="@coverage?.SourceArchive">@(coverage?.SourceArchive ?? "None")</dd></div>
                 </dl>
             </div>
-            <p class="sd-muted" data-testid="tc-source-principle">Scope: source technology comes from the most recently analyzed source snapshot (@(coverage?.SourceArchive ?? "none")) only — other imported packages are not added in. Runtime reviews may also depend on the selected Target Environment.</p>
+            <p class="sd-muted" data-testid="tc-source-principle">Scope: one source snapshot (@(coverage?.SourceArchive ?? "none")) — the Target Application's main package when Project Evidence names one, otherwise the most recently analyzed snapshot. Other imported packages are not added in. Runtime reviews may also depend on the selected Target Environment.</p>
             @if (coverage?.SourceSnapshotId is { } snapshotId)
             {
                 <details class="tc-provenance" data-testid="tc-provenance"><summary>Snapshot provenance</summary>

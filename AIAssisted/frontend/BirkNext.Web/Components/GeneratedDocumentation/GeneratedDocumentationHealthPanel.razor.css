@@ -115,3 +115,4 @@
 .gdh ::deep .gdh-overview { margin-bottom: .5rem; }
 .gdh ::deep .gdh-actions { white-space: nowrap; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
 .gdh ::deep .disclosure { margin: .75rem 0; }
+.gdh ::deep .gdh-card-note { grid-column: 1 / -1; margin: 0; font-size: .8125rem; color: var(--clr-text-muted, #475569); }
