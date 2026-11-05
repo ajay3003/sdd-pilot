@@ -132,8 +132,14 @@ public static partial class GeneratedDiagrams
             [.. groups.Select(g => (g.Name, (IReadOnlyList<string>)[.. g.Members.Select(m => nodes.GetValueOrDefault(m, m))]))]);
     }
 
-    /// <summary>Plain text for a label: quotes, HTML line breaks and markup characters removed (never interpreted).</summary>
-    private static string Clean(string value) => HtmlBreak().Replace(value.Trim().Trim('"'), " ").Replace("<", "‹").Replace(">", "›").Trim();
+    /// <summary>Plain text for a label: quotes, HTML line breaks, Mermaid's literal "\n" breaks and HTML entities (&amp;quot; &amp;amp; …) turned into
+    /// text, then markup characters neutralised — never interpreted. Escaped text rendered raw ("Validate\nreport") was the visible defect.</summary>
+    internal static string Clean(string value)
+    {
+        var text = HtmlBreak().Replace(value.Trim().Trim('"'), " ").Replace("\\n", " ").Replace("\n", " ");
+        text = System.Net.WebUtility.HtmlDecode(text);
+        return MultiSpace().Replace(text.Replace("<", "‹").Replace(">", "›"), " ").Trim();
+    }
 
     [GeneratedRegex(@"^(participant|actor)\s+(?<id>[^\s]+)(\s+as\s+(?<alias>.+))?$", RegexOptions.CultureInvariant, 200)]
     private static partial Regex Participant();
@@ -149,4 +155,6 @@ public static partial class GeneratedDiagrams
     private static partial Regex Subgraph();
     [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 200)]
     private static partial Regex HtmlBreak();
+    [GeneratedRegex(@"\s{2,}", RegexOptions.CultureInvariant, 200)]
+    private static partial Regex MultiSpace();
 }
