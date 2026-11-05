@@ -1,15 +1,29 @@
-using BirkNext.Web.Services.ProjectEvidence;
+using BirkNext.Integrations;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>How far a source's contained evidence was analyzed (from Project Evidence capabilities, never the snapshot's code-analyzer outcome).</summary>
-public enum SourceAnalysisBucket { Analyzed, Partial, NotAnalyzed, NotImported }
+/// <summary>
+/// A source snapshot's analysis outcome — the shared <see cref="SourceSetupOutcome.Overall"/> over the areas the package contains, the same rule
+/// the Snapshot Registry, Relationship Review and every snapshot picker use (never a page-local definition, never the code analyzer's own
+/// status). <see cref="NotAnalyzed"/>: no snapshot (or its areas could not be read); <see cref="NothingAnalyzable"/>: no area present.
+/// </summary>
+public enum SourceAnalysisBucket { Analyzed, Partial, Failed, NothingAnalyzable, NotAnalyzed, NotImported }
 
-/// <summary>One analysis dimension of a source as a chip: "Docs · Analyzed". The tone is never the only signal — the text says the state.</summary>
-public sealed record SourceAnalysisChip(string Dimension, PackageCapabilityStatus Status)
+/// <summary>One analysis area of a snapshot as a chip: "CI/CD · Partial". The tone is never the only signal — the text says the state. An
+/// Unsupported area is a BirkNext analyzer limitation, not a defect of the source.</summary>
+public sealed record SourceAnalysisChip(string Dimension, string Status)
 {
-    public string StatusText => Status switch { PackageCapabilityStatus.Ready => "Analyzed", PackageCapabilityStatus.Partial => "Partial", _ => "Failed" };
-    public string Tone => Status switch { PackageCapabilityStatus.Ready => "ok", PackageCapabilityStatus.Partial => "partial", _ => "failed" };
+    public string StatusText => Status switch { "Complete" => "Analyzed", "Partial" => "Partial", "Failed" => "Failed", "Unsupported" => "Not supported", var s => s };
+    public string Tone => Status switch { "Complete" => "ok", "Partial" => "partial", "Failed" => "failed", _ => "unsupported" };
+
+    public string Meaning => Status switch
+    {
+        "Complete" => "Analyzed completely.",
+        "Partial" => "Analyzed in part — some files or constructs could not be read; Source Analysis lists them.",
+        "Failed" => "Present but could not be analyzed.",
+        "Unsupported" => "Present, but BirkNext cannot analyze this technology yet (a BirkNext limitation, not a defect of the source).",
+        _ => Status,
+    };
 }
 
 /// <summary>
@@ -27,21 +41,33 @@ public sealed record SourceListFilter(string Search = "", string Origin = "", st
     public bool IsActive => Search.Length > 0 || Origin.Length > 0 || Capability.Length > 0 || Analysis.Length > 0 || ReviewOnly;
 }
 
-/// <summary>Summary over the sources. <see cref="Applications"/> counts distinct applications (several sources can serve one application).</summary>
-public sealed record SourceSummary(int Total, int Zip, int Git, int NeedsReview, int Analyzed, int Partial, int NotAnalyzed, int Applications);
+/// <summary>Summary over the sources. <see cref="Applications"/> counts distinct applications (several sources can serve one application).
+/// <see cref="NotAnalyzed"/> includes sources with nothing analyzable and linked repositories not imported yet.</summary>
+public sealed record SourceSummary(int Total, int Zip, int Git, int NeedsReview, int Analyzed, int Partial, int Failed, int NotAnalyzed, int Applications);
 
 public static class SourceManagementPresentation
 {
-    public static SourceAnalysisBucket Bucket(bool imported, IReadOnlyList<SourceAnalysisChip> analysis) =>
+    /// <summary>The areas present in the snapshot (not detected / not run are not shown).</summary>
+    public static IReadOnlyList<SourceAnalysisChip> Chips(IReadOnlyList<SourceSetupArea>? areas) =>
+        areas is null ? [] : [.. areas.Where(a => a.Status is not ("NotDetected" or "NotAnalyzed")).Select(a => new SourceAnalysisChip(a.Area, a.Status))];
+
+    public static SourceAnalysisBucket Bucket(bool imported, IReadOnlyList<SourceSetupArea>? areas) =>
         !imported ? SourceAnalysisBucket.NotImported
-        : analysis.Count == 0 ? SourceAnalysisBucket.NotAnalyzed
-        : analysis.All(a => a.Status == PackageCapabilityStatus.Ready) ? SourceAnalysisBucket.Analyzed
-        : SourceAnalysisBucket.Partial;
+        : areas is null ? SourceAnalysisBucket.NotAnalyzed
+        : SourceSetupOutcome.Overall(areas) switch
+        {
+            BirkNext.Snapshots.SnapshotProcessingStatus.Completed => SourceAnalysisBucket.Analyzed,
+            BirkNext.Snapshots.SnapshotProcessingStatus.Failed => SourceAnalysisBucket.Failed,
+            BirkNext.Snapshots.SnapshotProcessingStatus.Partial => SourceAnalysisBucket.Partial,
+            _ => SourceAnalysisBucket.NothingAnalyzable,
+        };
 
     public static string BucketLabel(SourceAnalysisBucket bucket) => bucket switch
     {
         SourceAnalysisBucket.Analyzed => "Analyzed",
         SourceAnalysisBucket.Partial => "Partly analyzed",
+        SourceAnalysisBucket.Failed => "Analysis failed",
+        SourceAnalysisBucket.NothingAnalyzable => "Nothing analyzable",
         SourceAnalysisBucket.NotAnalyzed => "Not analyzed",
         _ => "Not imported",
     };
@@ -53,7 +79,8 @@ public static class SourceManagementPresentation
         rows.Count(r => r.NeedsReview),
         rows.Count(r => r.Bucket == SourceAnalysisBucket.Analyzed),
         rows.Count(r => r.Bucket == SourceAnalysisBucket.Partial),
-        rows.Count(r => r.Bucket is SourceAnalysisBucket.NotAnalyzed or SourceAnalysisBucket.NotImported),
+        rows.Count(r => r.Bucket == SourceAnalysisBucket.Failed),
+        rows.Count(r => r.Bucket is SourceAnalysisBucket.NotAnalyzed or SourceAnalysisBucket.NotImported or SourceAnalysisBucket.NothingAnalyzable),
         rows.SelectMany(r => r.Applications.Select(a => a.Application)).Distinct(StringComparer.OrdinalIgnoreCase).Count());
 
     /// <summary>Capabilities present on any row (the capability filter offers only these).</summary>
@@ -68,7 +95,7 @@ public static class SourceManagementPresentation
             && (filter.Origin.Length == 0 || r.Origin == filter.Origin)
             && (filter.Capability.Length == 0 || r.Capabilities.Contains(filter.Capability, StringComparer.Ordinal))
             && (filter.Analysis.Length == 0 || r.Bucket.ToString() == filter.Analysis
-                || filter.Analysis == nameof(SourceAnalysisBucket.NotAnalyzed) && r.Bucket == SourceAnalysisBucket.NotImported)
+                || filter.Analysis == nameof(SourceAnalysisBucket.NotAnalyzed) && r.Bucket is SourceAnalysisBucket.NotImported or SourceAnalysisBucket.NothingAnalyzable)
             && (!filter.ReviewOnly || r.NeedsReview));
         // Review-required rows first within every sort: an open decision is what the person has to act on.
         return filter.Sort switch

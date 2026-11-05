@@ -40,3 +40,43 @@
 .sb-tab { padding: .35rem .6rem; border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: .875rem; }
 .sb-tab[aria-selected="true"] { border-bottom-color: var(--clr-primary, #2563eb); font-weight: 600; }
 .sb-stages { margin: .25rem 0; padding-left: 1.1rem; }
+
+/* NEXT47: header actions, defined KPIs, list + inspector, confirmations, area states, provenance chain */
+.sb-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .75rem 1.5rem; }
+.sb-head-text { flex: 1 1 28rem; min-width: 0; }
+.sb-head-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sb-head-actions a { text-decoration: none; }
+.sb-kpi { display: grid; gap: .1rem; text-align: left; }
+.sb-kpi-def { color: var(--clr-text-muted); font-size: .75rem; font-weight: 400; }
+.sb-kpi.is-attention { border-color: var(--clr-warning, #b45309); background: var(--clr-warning-bg, #fef3c7); }
+.sb-small { font-size: .8125rem; }
+.sb-workspace { display: grid; gap: 1rem; min-width: 0; }
+.sb-list-col { display: grid; gap: .5rem; min-width: 0; }
+@media (min-width: 80rem) {
+    .sb-workspace.has-inspector { grid-template-columns: minmax(0, 1fr) minmax(26rem, 34rem); align-items: start; }
+    .sb-workspace.has-inspector .sb-detail { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; }
+}
+.sb-close { padding: 0 .4rem; border: 0; background: none; color: var(--clr-text-muted); font-size: 1.4rem; line-height: 1; cursor: pointer; border-radius: 4px; }
+.sb-close:hover, .sb-close:focus-visible { color: var(--clr-text); background: var(--clr-surface-muted, #f1f5f9); }
+.sb-tab:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--clr-primary)); outline-offset: -2px; }
+.sb-facet-label { color: var(--clr-text-muted); font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-right: .3rem; }
+.sb-pointers { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: .5rem 0; }
+.sb-confirm { display: grid; gap: .4rem; margin: .5rem 0; padding: .7rem .8rem; border: 1px solid var(--clr-primary); border-radius: var(--radius-md, 6px); background: var(--clr-surface); }
+.sb-confirm p { margin: 0; }
+.sb-notice { margin: .4rem 0; padding: .4rem .6rem; border-left: 3px solid var(--clr-success); background: var(--clr-surface); }
+.sb-area { padding: .15rem 0 .15rem .5rem; border-left: 3px solid var(--clr-border); }
+.sb-area-complete { border-left-color: var(--clr-success); }
+.sb-area-partial { border-left-color: var(--clr-warning, #b45309); }
+.sb-area-failed { border-left-color: var(--clr-danger); }
+.sb-area-unsupported { border-left-style: dashed; }
+.sb-next { margin: .4rem 0 0; font-weight: 600; }
+.sb-chain { display: flex; flex-wrap: wrap; gap: .3rem .6rem; margin: 0 0 .5rem; padding: 0; list-style: none; }
+.sb-chain li { padding: .2rem .6rem; border: 1px solid var(--clr-border); border-radius: 999px; font-size: .8125rem; }
+.sb-chain li + li::before { content: "→"; margin: 0 .5rem 0 -.35rem; color: var(--clr-text-muted); }
+/* With the inspector open, the table keeps what identifies and qualifies a row; type and project are in the inspector. */
+@media (min-width: 80rem) {
+    .sb-workspace.has-inspector .sb-table th:nth-child(2), .sb-workspace.has-inspector .sb-table td:nth-child(2),
+    .sb-workspace.has-inspector .sb-table th:nth-child(3), .sb-workspace.has-inspector .sb-table td:nth-child(3),
+    .sb-workspace.has-inspector .sb-table th:nth-child(7), .sb-workspace.has-inspector .sb-table td:nth-child(7) { display: none; }
+}
+.sb-table td:nth-child(4) { white-space: nowrap; }

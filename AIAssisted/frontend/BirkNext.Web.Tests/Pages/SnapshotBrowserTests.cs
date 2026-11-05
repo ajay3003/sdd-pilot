@@ -69,7 +69,9 @@ public sealed class SnapshotBrowserTests : BunitContext
         terraform.QuerySelector(".ssb")!.GetAttribute("data-status").Should().Be(nameof(SemanticStatus.Partial));
         terraform.TextContent.Should().Contain("Analysis: Partial", "a dimension-labelled status, never a bare Failed").And.Contain("Latest");
         terraform.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("Unassigned", "imported, but no Project Evidence associates it — never guessed from its name");
-        terraform.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("No saved references");
+        terraform.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("None recorded · not all stores checked",
+            "zero recorded references is not 'nothing uses it' while payload and browser stores are unchecked");
+        terraform.QuerySelector("[data-testid=sb-references]")!.GetAttribute("data-state").Should().Be("partially-assessed");
         var report = cut.FindAll("[data-testid=sb-row]")[1];
         report.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("M2LB");
         report.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("2 saved references");
@@ -80,7 +82,9 @@ public sealed class SnapshotBrowserTests : BunitContext
     public void KPIs_are_registry_counts_and_filter_by_status_and_filters_are_chips_in_the_url()
     {
         var cut = Render<SnapshotBrowser>();
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-kpi]").Should().HaveCount(5));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-kpi]").Should().HaveCount(6));
+        cut.Find("[data-testid=sb-kpi][data-kpi=attention]").TextContent.Should().Contain("0").And.Contain("No source snapshot has a failed area");
+        cut.Find("[data-testid=sb-kpi][data-kpi=partial]").TextContent.Should().Contain("Some areas partial or not supported", "every KPI states its definition");
         cut.Find("[data-testid=sb-kpi][data-kpi=total]").TextContent.Should().Contain("2");
         cut.Find("[data-testid=sb-kpi][data-kpi=partial]").TextContent.Should().Contain("1").And.Contain("analysis partial");
 
@@ -121,7 +125,11 @@ public sealed class SnapshotBrowserTests : BunitContext
         cut.Find("[data-testid=sb-reference-list]").TextContent.Should().Contain("API Quality Review run").And.Contain("current");
         cut.Find("[data-testid=sb-not-checked]").TextContent.Should().Contain("Browser-held Project Evidence");
 
+        cut.Find("[data-testid=sb-tab][data-tab=processing]").Click();
+        cut.Find("[data-testid=sb-processing-next]").TextContent.Should().Contain("usable now");
         cut.Find("[data-testid=sb-tab][data-tab=lineage]").Click();
+        cut.FindAll("[data-testid=sb-chain] li").Select(l => l.TextContent).Should().Equal("Imported: Terraform-iac-meldingsutveksler.zip", "This snapshot · Source Analysis",
+            "Used by 1 recorded result");
         cut.Find("[data-testid=sb-upstream]").TextContent.Should().Contain("imported from");
         cut.Find("[data-testid=sb-downstream]").TextContent.Should().Contain("interpreted from");
 
@@ -133,7 +141,14 @@ public sealed class SnapshotBrowserTests : BunitContext
         _api.Verify(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>()), Times.Never, "viewing never moves a pointer");
         cut.Find("[data-testid=sb-tab][data-tab=overview]").Click();
         cut.Find("[data-testid=sb-set-current]").Click();
-        _api.Verify(a => a.SetPointerAsync(It.Is<SnapshotPointerRequest>(r => r.Kind == SnapshotPointerKind.CurrentSelected && r.SnapshotId == Terraform.ToString()), It.IsAny<CancellationToken>()), Times.Once);
+        cut.Find("[data-testid=sb-confirm]").TextContent.Should().Contain("the snapshot itself and earlier results are unchanged");
+        _api.Verify(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>()), Times.Never, "the first click only explains the effect");
+        cut.Find("[data-testid=sb-confirm-cancel]").Click();
+        cut.FindAll("[data-testid=sb-confirm]").Should().BeEmpty();
+        cut.Find("[data-testid=sb-set-current]").Click();
+        cut.Find("[data-testid=sb-confirm-apply]").Click();
+        cut.WaitForAssertion(() => _api.Verify(a => a.SetPointerAsync(It.Is<SnapshotPointerRequest>(r => r.Kind == SnapshotPointerKind.CurrentSelected && r.SnapshotId == Terraform.ToString()), It.IsAny<CancellationToken>()), Times.Once));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-notice]").TextContent.Should().Contain("Make current"));
     }
 
     [Fact]
@@ -155,5 +170,38 @@ public sealed class SnapshotBrowserTests : BunitContext
         var cut = Render<SnapshotBrowser>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=sb-error]").TextContent.Should().Contain("500"));
         cut.FindAll("[data-testid=sb-kpis]").Should().BeEmpty("no count is shown that the registry did not answer");
+    }
+
+    [Fact]
+    public void A_slower_lineage_for_an_earlier_selection_never_replaces_the_newer_one()
+    {
+        var slow = new TaskCompletionSource<(SnapshotLineageView?, string?)>();
+        _api.Setup(a => a.LineageAsync(SnapshotType.SourceAnalysis, Terraform.ToString(), It.IsAny<CancellationToken>())).Returns(slow.Task);
+        _api.Setup(a => a.LineageAsync(SnapshotType.GeneratedReport, "r-1", It.IsAny<CancellationToken>())).ReturnsAsync((new SnapshotLineageView(_report, [], [], []), (string?)null));
+        var cut = Render<SnapshotBrowser>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-open]").Should().HaveCount(2));
+
+        cut.FindAll("[data-testid=sb-open]")[0].Click();
+        cut.Find("[data-testid=sb-detail-loading]");
+        cut.FindAll("[data-testid=sb-open]")[1].Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-detail]").GetAttribute("data-id").Should().Be("r-1"));
+
+        slow.SetResult((new SnapshotLineageView(_terraform, [], [], []), null));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-detail]").GetAttribute("data-id").Should().Be("r-1", "the stale response is ignored"));
+        cut.FindAll("[data-testid=sb-detail-loading]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Tabs_move_by_keyboard()
+    {
+        var cut = Render<SnapshotBrowser>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-open]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=sb-open]")[0].Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-detail]"));
+        cut.FindAll("[data-testid=sb-tab]").Select(t => t.TextContent).Should().Equal("Overview", "Analysis coverage", "Evidence", "References & consumers", "Lineage & revisions", "Technical diagnostics");
+        cut.Find("[data-testid=sb-tab][data-tab=overview]").KeyDown("ArrowLeft");
+        cut.Find("[data-testid=sb-tabpanel]").GetAttribute("data-tab").Should().Be("diagnostics");
+        cut.Find("[data-testid=sb-tab][data-tab=diagnostics]").GetAttribute("tabindex").Should().Be("0");
+        cut.Find("[data-testid=sb-diagnostics]").TextContent.Should().Contain("re-analysis creates a new snapshot");
     }
 }

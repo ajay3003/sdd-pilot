@@ -7,6 +7,7 @@
 @inject ISnapshotRegistryApiService Api
 @inject NavigationManager Navigation
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Snapshots</PageTitle>
@@ -17,9 +18,15 @@
    the URL, so returning from Source Analysis or reloading restores them. Selecting a snapshot never changes it or any pointer. *@
 <div class="sb" data-testid="snapshot-browser">
     <header class="sb-head">
-        <h1>Snapshots</h1>
-        <p class="sb-lead">Explore source snapshots, analysis results, report evidence and historical revisions across BirkNext.</p>
-        <p class="sb-muted">Snapshots preserve their original evidence and interpretation context. Selecting a snapshot does not change its contents.</p>
+        <div class="sb-head-text">
+            <h1>Snapshots</h1>
+            <p class="sb-lead">Manage source revisions, analysis evidence, comparisons and historical results.</p>
+            <p class="sb-muted">Every snapshot is immutable: it keeps its original evidence and interpretation context. Viewing one never changes it or which snapshot is current.</p>
+        </div>
+        <div class="sb-head-actions">
+            <a class="btn-secondary" href="sources" data-testid="sb-source-management">Source Management</a>
+            <a class="btn-primary" href="project-import?import=1" data-testid="sb-import">Import source</a>
+        </div>
     </header>
 
     @if (_kpis is { } kpis)
@@ -29,9 +36,14 @@
             {
                 var active = status is not null && _status == status.ToString();
                 <li><button type="button" class="sb-kpi @(active ? "is-active" : null)" data-testid="sb-kpi" data-kpi="@key" aria-pressed="@(active ? "true" : "false")"
-                            @onclick="() => FilterStatusAsync(status)"><strong>@count</strong> <span>@label</span></button></li>
+                            @onclick="() => FilterStatusAsync(status)"><strong>@count</strong> <span>@label</span><small class="sb-kpi-def">@KpiDefinition(key)</small></button></li>
             }
+            @{ var attention = Attention; }
+            <li><div class="sb-kpi @(attention.Count > 0 ? "is-attention" : null)" data-testid="sb-kpi" data-kpi="attention" title="@(attention.Count > 0 ? string.Join(", ", attention) : null)">
+                <strong>@attention.Count</strong> <span>requiring attention</span>
+                <small class="sb-kpi-def">@(attention.Count == 0 ? "No source snapshot has a failed area" : $"Source snapshots with a failed area: {string.Join(", ", attention.Take(3))}{(attention.Count > 3 ? "…" : "")}")</small></div></li>
         </ul>
+        <p class="sb-muted sb-small" data-testid="sb-kpi-note">Processing status says whether a snapshot's analysis ran to completion over the areas it contains — not how much of the application it covers.</p>
     }
 
     <section class="sb-filters" aria-label="Filters">
@@ -70,6 +82,8 @@
     else if (_page is { } pg)
     {
         <p class="sb-muted sb-count" data-testid="sb-count" role="status">@pg.Total snapshot@(pg.Total == 1 ? "" : "s")@(Chips.Count > 0 ? " match these filters" : "")</p>
+        <div class="sb-workspace @(_selected is not null || _selecting ? "has-inspector" : null)">
+        <div class="sb-list-col">
         <div class="sb-table-wrap">
             <table class="sb-table" data-testid="sb-table">
                 <thead><tr><th scope="col">Snapshot / source</th><th scope="col">Type</th><th scope="col">Project</th><th scope="col">Created</th><th scope="col">Analysis</th><th scope="col">References</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
@@ -86,7 +100,7 @@
                             <td>@m.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
                             <td><SemanticStatusBadge Status="SnapshotPresentation.Status(m.Status)" QualifiedLabel="@($"Analysis: {StatusLabel(m.Status)}")" />
                                 @if (!m.PayloadAvailable) { <MetaBadge Kind="BadgeKind.Type" Text="Storage: payload not stored" /> }</td>
-                            <td data-testid="sb-references">@(item.ReferencedBy == 0 ? "No saved references" : $"{item.ReferencedBy} saved reference{(item.ReferencedBy == 1 ? "" : "s")}")</td>
+                            <td data-testid="sb-references" data-state="@ReferenceState(item)">@ReferenceText(item)</td>
                             <td><button type="button" class="btn btn-link btn-sm" @onclick="() => SelectAsync(m)" data-testid="sb-details">Details<span class="visually-hidden"> of @m.Label</span></button></td>
                         </tr>
                     }
@@ -98,14 +112,20 @@
             <span class="sb-muted">@(pg.Skip + 1)–@(pg.Skip + pg.Items.Count) of @pg.Total</span>
             <button type="button" class="btn btn-secondary btn-sm" disabled="@(pg.Skip + pg.Items.Count >= pg.Total)" @onclick="() => PageAsync(1)">Next</button>
         </div>
+        </div>
+        @if (_selected is { } lineage)
+        {
+            @Detail(lineage)
+        }
+        else if (_selecting)
+        {
+            <section class="sb-detail" data-testid="sb-detail-loading"><LoadingSkeleton Lines="6" Text="Loading snapshot details…" /></section>
+        }
+        </div>
     }
     <p class="sb-muted sb-legend" data-testid="sb-pointer-legend"><strong>Latest</strong> = newest stored · <strong>Latest completed</strong> = newest whose analysis completed
         (never a partial or failed one) · <strong>Current</strong> and <strong>Approved</strong> = chosen by a person. Latest is never assumed to be approved.</p>
 
-    @if (_selected is { } lineage)
-    {
-        @Detail(lineage)
-    }
 </div>
 
 @code {
@@ -124,6 +144,11 @@
     private IReadOnlyList<(string Key, string Label, int Count, SnapshotProcessingStatus? Status)>? _kpis;
     private IReadOnlyList<SourceSetupSnapshot> _setup = [];
     private (SnapshotType Type, string Id)? _selectedFromUrl;
+    /// <summary>Selection loads: a slower lineage response for an earlier selection never replaces the newer one.</summary>
+    private readonly LoadSequence _selection = new();
+    private bool _selecting, _copied;
+    /// <summary>A lifecycle change waiting for confirmation (its effect is explained first; nothing changes on the first click).</summary>
+    private (string Key, string Title, string Effect, Func<Task> Apply)? _confirm;
 
     protected override async Task OnInitializedAsync()
     {
@@ -231,12 +256,38 @@
 
     private async Task SelectAsync(SnapshotType type, string id, bool updateUrl)
     {
-        (_deletion, _actionError, _references, _referencesError) = (null, null, null, null);
+        var load = _selection.Begin();
+        (_deletion, _actionError, _references, _referencesError, _confirm, _copied) = (null, null, null, null, null, false);
         if (updateUrl) _tab = "overview";
-        var (lineage, error) = await Api.LineageAsync(type, id);
-        (_selected, _actionError) = (lineage, error);
-        if (type == SnapshotType.SourceAnalysis && Guid.TryParse(id, out var guid)) (_references, _referencesError) = await Api.SourceAnalysisReferencesAsync(guid);
-        if (updateUrl) WriteUrl();
+        if (_selected is not { } current || current.Snapshot.Type != type || current.Snapshot.Id != id) (_selected, _selecting) = (null, true);
+        try
+        {
+            var (lineage, error) = await Api.LineageAsync(type, id, load.Token);
+            if (!load.IsCurrent) return;
+            (_selected, _actionError) = (lineage, error);
+            if (type == SnapshotType.SourceAnalysis && Guid.TryParse(id, out var guid))
+            {
+                var references = await Api.SourceAnalysisReferencesAsync(guid, load.Token);
+                if (!load.IsCurrent) return;
+                (_references, _referencesError) = references;
+            }
+            if (updateUrl) WriteUrl();
+        }
+        catch (OperationCanceledException) when (!load.IsCurrent) { }
+        finally { if (_selection.End(load)) _selecting = false; }
+    }
+
+    private void TabKey(KeyboardEventArgs e)
+    {
+        var index = Array.FindIndex(Tabs, t => t.Key == _tab);
+        var next = e.Key switch { "ArrowRight" => (index + 1) % Tabs.Length, "ArrowLeft" => (index + Tabs.Length - 1) % Tabs.Length, "Home" => 0, "End" => Tabs.Length - 1, _ => -1 };
+        if (next >= 0) SelectTab(Tabs[next].Key);
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _copied = true; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { _copied = false; }
     }
 
     private void SelectTab(string tab)
@@ -247,16 +298,29 @@
 
     private void CloseDetail()
     {
-        _selected = null;
+        _selection.Begin();
+        (_selected, _selecting, _confirm) = (null, false, null);
         WriteUrl();
     }
+
+    /// <summary>Lifecycle changes are explained and confirmed first: the first click only shows what will change.</summary>
+    private void Ask(string key, string title, string effect, Func<Task> apply) => _confirm = (key, title, effect, apply);
+
+    private async Task ConfirmAsync()
+    {
+        if (_confirm is not { } pending) return;
+        await pending.Apply();
+        if (_actionError is null) { _confirm = null; _notice = $"{pending.Title}: done."; }
+    }
+
+    private string? _notice;
 
     private async Task PointAsync(SnapshotPointerKind kind)
     {
         if (_selected?.Snapshot is not { } s) return;
         _busy = true;
-        _actionError = await Api.SetPointerAsync(new(s.Project, s.Type, s.Module, kind, s.Id));
-        _busy = false;
+        try { _actionError = await Api.SetPointerAsync(new(s.Project, s.Type, s.Module, kind, s.Id)); }
+        finally { _busy = false; }
         if (_actionError is null) await LoadAsync();
     }
 
@@ -264,8 +328,8 @@
     {
         if (_selected?.Snapshot is not { } s) return;
         _busy = true;
-        _actionError = await Api.SetRetentionAsync(s.Type, s.Id, retention);
-        _busy = false;
+        try { _actionError = await Api.SetRetentionAsync(s.Type, s.Id, retention); }
+        finally { _busy = false; }
         if (_actionError is null) { await LoadAsync(); await SelectAsync(s.Type, s.Id, updateUrl: false); }
     }
 
@@ -285,6 +349,28 @@
         SnapshotProcessingStatus.Running => "Running",
         _ => "Nothing analyzable",
     };
+
+    private static string KpiDefinition(string key) => key switch
+    {
+        "total" => "Every snapshot type in the registry",
+        "completed" => "Analysis completed over every area present",
+        "partial" => "Some areas partial or not supported",
+        "failed" => "No present area could be analyzed",
+        _ => "No analyzable area present",
+    };
+
+    /// <summary>Source snapshots with at least one area whose analysis failed — deterministic, from the stored per-area outcomes.</summary>
+    private IReadOnlyList<string> Attention => [.. _setup.Where(s => s.Areas.Any(a => a.Status == "Failed")).Select(s => s.ArchiveFileName).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>
+    /// What the list can say about references: the registry's own recorded references. For a Source Analysis snapshot some stores (payloads,
+    /// browser-held Project Evidence) are only checked in the References tab, so zero here is "none recorded", never "nothing uses it".
+    /// </summary>
+    private static string ReferenceState(SnapshotListItem item) => item.ReferencedBy > 0 ? "found" : item.Metadata.Type == SnapshotType.SourceAnalysis ? "partially-assessed" : "none";
+
+    private static string ReferenceText(SnapshotListItem item) => item.ReferencedBy > 0
+        ? $"{item.ReferencedBy} saved reference{(item.ReferencedBy == 1 ? "" : "s")}"
+        : item.Metadata.Type == SnapshotType.SourceAnalysis ? "None recorded · not all stores checked" : "No saved references";
 
     private SourceSetupSnapshot? SetupOf(SnapshotMetadata m) =>
         m.Type == SnapshotType.SourceAnalysis && Guid.TryParse(m.Id, out var id) ? _setup.FirstOrDefault(s => s.SnapshotId == id) : null;
@@ -315,7 +401,8 @@
     };
 
     private static readonly (string Key, string Label)[] Tabs =
-        [("overview", "Overview"), ("processing", "Processing"), ("evidence", "Evidence"), ("references", "References"), ("lineage", "Lineage"), ("diagnostics", "Diagnostics")];
+        [("overview", "Overview"), ("processing", "Analysis coverage"), ("evidence", "Evidence"), ("references", "References & consumers"), ("lineage", "Lineage & revisions"),
+         ("diagnostics", "Technical diagnostics")];
 
     private RenderFragment Detail(SnapshotLineageView lineage) => __builder =>
     {
@@ -324,7 +411,7 @@
         <section class="sb-detail" aria-labelledby="sb-detail-h" data-testid="sb-detail" data-id="@s.Id">
             <header class="sb-detail-head">
                 <h2 id="sb-detail-h">@s.Label</h2>
-                <button type="button" class="btn btn-link btn-sm" data-testid="sb-close" @onclick="CloseDetail">Close</button>
+                <button type="button" class="sb-close" aria-label="Close details" data-testid="sb-close" @onclick="CloseDetail">×</button>
             </header>
             <p class="sb-dimensions" data-testid="sb-dimensions">
                 <SemanticStatusBadge Status="SnapshotPresentation.Status(s.Status)" QualifiedLabel="@($"Analysis: {StatusLabel(s.Status)}")" />
@@ -337,7 +424,7 @@
                 @foreach (var (key, label) in Tabs)
                 {
                     <button type="button" role="tab" id="@($"sb-tab-{key}")" class="sb-tab" aria-selected="@(_tab == key ? "true" : "false")" aria-controls="sb-tabpanel"
-                            data-testid="sb-tab" data-tab="@key" @onclick="() => SelectTab(key)">@label</button>
+                            tabindex="@(_tab == key ? "0" : "-1")" data-testid="sb-tab" data-tab="@key" @onclick="() => SelectTab(key)" @onkeydown="TabKey">@label</button>
                 }
             </div>
             <div id="sb-tabpanel" role="tabpanel" aria-labelledby="@($"sb-tab-{_tab}")" class="sb-tabpanel" data-testid="sb-tabpanel" data-tab="@_tab">
@@ -350,9 +437,10 @@
                             <ul class="sb-stages" data-testid="sb-processing">
                                 @foreach (var area in setup.Areas)
                                 {
-                                    <li data-testid="sb-processing-stage" data-area="@area.Area" data-status="@area.Status"><strong>@area.Area</strong>: @AreaWords(area.Status)</li>
+                                    <li data-testid="sb-processing-stage" data-area="@area.Area" data-status="@area.Status" class="sb-area sb-area-@area.Status.ToLowerInvariant()"><strong>@area.Area</strong>: @AreaWords(area.Status)</li>
                                 }
                             </ul>
+                            <p class="sb-next" data-testid="sb-processing-next">@NextAction(s, setup)</p>
                             @if (s.Status is SnapshotProcessingStatus.Partial or SnapshotProcessingStatus.Failed)
                             {
                                 var incomplete = setup.Areas.Where(a => a.Status is "Partial" or "Failed" or "Unsupported").Select(a => a.Area).ToList();
@@ -391,6 +479,12 @@
                         else { <p data-testid="sb-no-references">No saved references.</p> }
                         break;
                     case "lineage":
+                        <ol class="sb-chain" data-testid="sb-chain" aria-label="Provenance">
+                            <li>@(lineage.Upstream.FirstOrDefault(u => u.Kind == SnapshotLineageKind.ImportedFrom) is { } origin ? $"Imported: {Name(origin.To)}" : "Origin not recorded")</li>
+                            <li><strong>This snapshot</strong> · @SnapshotPresentation.Type(s.Type)</li>
+                            <li>@(lineage.Downstream.Count == 0 ? "No recorded consumer" : $"Used by {lineage.Downstream.Count} recorded result{(lineage.Downstream.Count == 1 ? "" : "s")}")</li>
+                        </ol>
+                        <p class="sb-muted sb-small">Only recorded relations are shown; snapshots of unrelated sources are never linked as parent and child.</p>
                         <h3>Built from</h3>
                         @if (lineage.Upstream.Count == 0) { <p class="sb-muted">No upstream snapshot is recorded.</p> }
                         else { <ul data-testid="sb-upstream">@foreach (var e in lineage.Upstream) { <li>@Name(e.From) <span class="sb-muted">@SnapshotPresentation.Lineage(e.Kind)</span> @Name(e.To)</li> }</ul> }
@@ -400,7 +494,8 @@
                         break;
                     case "diagnostics":
                         <dl class="sb-facts" data-testid="sb-diagnostics">
-                            <div><dt>Snapshot id</dt><dd class="sb-mono">@s.Id</dd></div>
+                            <div><dt>Snapshot id</dt><dd class="sb-mono">@s.Id <button type="button" class="btn btn-secondary btn-sm" data-testid="sb-copy-id" @onclick="() => CopyAsync(s.Id)">@(_copied ? "Copied" : "Copy")</button></dd></div>
+                            <div><dt>Immutability</dt><dd>@(s.Frozen ? "Immutable — re-analysis creates a new snapshot" : "Mutable working record")</dd></div>
                             <div><dt>Module</dt><dd>@s.Module</dd></div>
                             <div><dt>Analysis / rule set</dt><dd>@(s.AnalysisVersion ?? "Not recorded")</dd></div>
                             <div><dt>Fingerprint</dt><dd class="sb-mono">@(s.ContentFingerprint ?? "Not recorded")</dd></div>
@@ -418,16 +513,38 @@
                             <div><dt>Revision</dt><dd class="sb-mono">@(s.SourceRevision ?? "Unknown")</dd></div>
                             <div><dt>Origin</dt><dd>@(lineage.Upstream.FirstOrDefault(u => u.Kind == SnapshotLineageKind.ImportedFrom) is { } imported ? $"Imported from {Name(imported.To)}" : "Not recorded")</dd></div>
                         </dl>
-                        <div class="sb-actions">
-                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => PointAsync(SnapshotPointerKind.CurrentSelected)" data-testid="sb-set-current">Make current</button>
-                            <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || s.Status != SnapshotProcessingStatus.Completed)" title="@(s.Status != SnapshotProcessingStatus.Completed ? "Only a snapshot whose analysis completed can be approved" : null)"
-                                    @onclick="() => PointAsync(SnapshotPointerKind.CurrentApproved)" data-testid="sb-set-approved">Approve as current</button>
-                            @if (s.Retention == SnapshotRetentionClass.Protected)
-                            { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => RetainAsync(s.Type is SnapshotType.SourceAnalysis or SnapshotType.Delivery ? SnapshotRetentionClass.Working : SnapshotRetentionClass.Historical)" data-testid="sb-unprotect">Remove protection</button> }
-                            else if (s.Retention != SnapshotRetentionClass.FrozenReportEvidence)
-                            { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => RetainAsync(SnapshotRetentionClass.Protected)" data-testid="sb-protect">Protect</button> }
-                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="CheckDeletionAsync" data-testid="sb-deletion-check">Can it be deleted?</button>
+                        <div class="sb-pointers" data-testid="sb-lifecycle">
+                            <span class="sb-facet-label">Lifecycle</span>
+                            @{ var pointers = _page?.Items.FirstOrDefault(i => i.Metadata.Type == s.Type && i.Metadata.Id == s.Id)?.Pointers ?? []; }
+                            @if (pointers.Count == 0) { <span class="sb-muted">Historical — not latest, current or approved</span> }
+                            @foreach (var p in pointers) { <MetaBadge Kind="BadgeKind.Scope" Text="@SnapshotPresentation.Pointer(p)" /> }
+                            @if (s.Retention == SnapshotRetentionClass.Protected) { <MetaBadge Kind="BadgeKind.Scope" Text="Protected" /> }
                         </div>
+                        <div class="sb-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-set-current"
+                                    @onclick='() => Ask("current", "Make current", $"Makes this the current {SnapshotPresentation.Type(s.Type)} snapshot of {s.Module} for {s.Project ?? "this workspace"}. Reviews that follow the current snapshot read it from now on; the snapshot itself and earlier results are unchanged.", () => PointAsync(SnapshotPointerKind.CurrentSelected))'>Make current</button>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || s.Status != SnapshotProcessingStatus.Completed)" title="@(s.Status != SnapshotProcessingStatus.Completed ? "Only a snapshot whose analysis completed can be approved" : null)"
+                                    @onclick='() => Ask("approved", "Approve as current", "Records your approval of this snapshot as the current one. Latest is never assumed to be approved; the approval is recorded with who and when.", () => PointAsync(SnapshotPointerKind.CurrentApproved))' data-testid="sb-set-approved">Approve as current</button>
+                            @if (s.Retention == SnapshotRetentionClass.Protected)
+                            { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-unprotect"
+                                      @onclick='() => Ask("unprotect", "Remove protection", "Returns the snapshot to its normal retention class. It can then be deleted by its owning module if nothing references it.", () => RetainAsync(s.Type is SnapshotType.SourceAnalysis or SnapshotType.Delivery ? SnapshotRetentionClass.Working : SnapshotRetentionClass.Historical))'>Remove protection</button> }
+                            else if (s.Retention != SnapshotRetentionClass.FrozenReportEvidence)
+                            { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-protect"
+                                      @onclick='() => Ask("protect", "Protect", "Blocks deletion of this snapshot in every owning module until protection is removed. Its contents are not changed.", () => RetainAsync(SnapshotRetentionClass.Protected))'>Protect</button> }
+                            <BusyButton Class="btn btn-secondary btn-sm" Text="Can it be deleted?" BusyText="Checking…" Disabled="_busy" OnClick="CheckDeletionAsync" TestId="sb-deletion-check" />
+                        </div>
+                        @if (_confirm is { } pending)
+                        {
+                            <div class="sb-confirm" role="alertdialog" aria-labelledby="sb-confirm-title" data-testid="sb-confirm" data-action="@pending.Key">
+                                <strong id="sb-confirm-title">@pending.Title?</strong>
+                                <p>@pending.Effect</p>
+                                <div class="sb-actions">
+                                    <BusyButton Class="btn btn-primary btn-sm" Text="@($"Confirm: {pending.Title}")" BusyText="Saving…" Busy="_busy" OnClick="ConfirmAsync" TestId="sb-confirm-apply" />
+                                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _confirm = null" data-testid="sb-confirm-cancel">Cancel</button>
+                                </div>
+                            </div>
+                        }
+                        @if (_notice is not null && _confirm is null) { <p class="sb-notice" role="status" data-testid="sb-notice">@_notice</p> }
                         @if (_deletion is { } d)
                         {
                             <div class="sb-deletion" role="status" data-testid="sb-deletion">
@@ -448,5 +565,18 @@
         (_selected?.Snapshot is { } self && self.Type == r.Type && self.Id == r.Id ? $"this snapshot ({self.Label})" : null)
         ?? _selected?.Related.FirstOrDefault(m => m.Type == r.Type && m.Id == r.Id)?.Label ?? r.Label ?? $"{SnapshotPresentation.Type(r.Type)} {r.Id[..Math.Min(8, r.Id.Length)]}";
 
-    public void Dispose() => _loading?.Dispose();
+    /// <summary>What to do about the analysis outcome — a fact-based next step, never a re-analysis in place.</summary>
+    private static string NextAction(SnapshotMetadata s, SourceSetupSnapshot setup)
+    {
+        if (setup.Areas.Any(a => a.Status == "Failed")) return "Next: open Source Analysis to see why the failed area could not be read; import a corrected source to create a new snapshot.";
+        if (setup.Areas.Any(a => a.Status == "Partial")) return "Next: the evidence of the analyzed areas is usable now; Source Analysis lists what was skipped in each partial area.";
+        if (setup.Areas.Any(a => a.Status == "Unsupported")) return "Not supported areas are a BirkNext limitation; nothing to fix in the source.";
+        return s.Status == SnapshotProcessingStatus.Completed ? "Every area present was analyzed completely." : "No analyzable area is present in this package.";
+    }
+
+    public void Dispose()
+    {
+        _loading?.Dispose();
+        _selection.Dispose();
+    }
 }

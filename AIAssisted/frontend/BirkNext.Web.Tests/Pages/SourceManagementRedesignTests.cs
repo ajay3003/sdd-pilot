@@ -2,7 +2,6 @@ using BirkNext.GitSources;
 using BirkNext.Integrations;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
-using BirkNext.Web.Services.ProjectEvidence;
 using BirkNext.Web.Services.ProjectImport;
 using BirkNext.Web.Tests.Services;
 using Bunit;
@@ -25,8 +24,8 @@ public sealed class SourceManagementRedesignTests : BunitContext
     {
         IReadOnlyList<SourceAnalysisChip> analysis = bucket switch
         {
-            SourceAnalysisBucket.Analyzed => [new("Docs", PackageCapabilityStatus.Ready)],
-            SourceAnalysisBucket.Partial => [new("Docs", PackageCapabilityStatus.Ready), new("Source", PackageCapabilityStatus.Partial)],
+            SourceAnalysisBucket.Analyzed => [new("Configuration", "Complete")],
+            SourceAnalysisBucket.Partial => [new("Configuration", "Complete"), new("CI/CD", "Partial")],
             _ => [],
         };
         return new(name, name, origin, bucket != SourceAnalysisBucket.NotImported, capabilities ?? ["Documentation"], analysis, bucket, null, review, review ? "No role" : null, [],
@@ -34,13 +33,23 @@ public sealed class SourceManagementRedesignTests : BunitContext
     }
 
     [Fact]
-    public void Analysis_bucket_comes_from_the_dimensions_the_source_contains()
+    public void Analysis_bucket_is_the_shared_registry_rule_over_the_areas_the_snapshot_contains()
     {
-        SourceManagementPresentation.Bucket(false, []).Should().Be(SourceAnalysisBucket.NotImported);
-        SourceManagementPresentation.Bucket(true, []).Should().Be(SourceAnalysisBucket.NotAnalyzed);
-        SourceManagementPresentation.Bucket(true, [new("Docs", PackageCapabilityStatus.Ready)]).Should().Be(SourceAnalysisBucket.Analyzed);
-        SourceManagementPresentation.Bucket(true, [new("Docs", PackageCapabilityStatus.Ready), new("Source", PackageCapabilityStatus.Failed)]).Should().Be(SourceAnalysisBucket.Partial);
-        new SourceAnalysisChip("Source", PackageCapabilityStatus.Partial).StatusText.Should().Be("Partial", "the state is in the text, not only the colour");
+        // The Terraform-BasicOpsInfra_M2LBM01 snapshot of the M2LB copy: the Snapshot Registry says Partial, so Source Management must too.
+        IReadOnlyList<SourceSetupArea> terraform = [new("Application code", "NotDetected"), new("Architecture", "Unsupported"), new("Infrastructure as Code", "Complete"),
+            new("Configuration", "Complete"), new("CI/CD", "Partial"), new("Contracts", "NotDetected")];
+        SourceManagementPresentation.Bucket(true, terraform).Should().Be(SourceAnalysisBucket.Partial);
+        SourceManagementPresentation.Bucket(true, terraform).Should().Be(SourceSetupOutcome.Overall(terraform) == BirkNext.Snapshots.SnapshotProcessingStatus.Partial
+            ? SourceAnalysisBucket.Partial : SourceAnalysisBucket.Analyzed, "one definition, never a page-local one");
+        SourceManagementPresentation.Chips(terraform).Select(c => c.Dimension).Should().Equal("Architecture", "Infrastructure as Code", "Configuration", "CI/CD");
+
+        SourceManagementPresentation.Bucket(false, null).Should().Be(SourceAnalysisBucket.NotImported);
+        SourceManagementPresentation.Bucket(true, null).Should().Be(SourceAnalysisBucket.NotAnalyzed);
+        SourceManagementPresentation.Bucket(true, [new("Configuration", "Complete")]).Should().Be(SourceAnalysisBucket.Analyzed);
+        SourceManagementPresentation.Bucket(true, [new("Application code", "Failed"), new("Architecture", "Unsupported")]).Should().Be(SourceAnalysisBucket.Failed);
+        SourceManagementPresentation.Bucket(true, [new("Application code", "NotDetected")]).Should().Be(SourceAnalysisBucket.NothingAnalyzable);
+        new SourceAnalysisChip("CI/CD", "Partial").StatusText.Should().Be("Partial", "the state is in the text, not only the colour");
+        new SourceAnalysisChip("Architecture", "Unsupported").Meaning.Should().Contain("BirkNext limitation");
     }
 
     [Fact]
@@ -51,7 +60,7 @@ public sealed class SourceManagementRedesignTests : BunitContext
             Row("M2LB", apps: ["M2LB"]), Row("M2LB-language", apps: ["M2LB"]), Row("Infra", "Git", SourceAnalysisBucket.Partial, review: true, apps: ["M2LB", "Skole"]),
             Row("New", "Git", SourceAnalysisBucket.NotImported),
         };
-        SourceManagementPresentation.Summary(rows).Should().Be(new SourceSummary(4, 2, 2, 1, 2, 1, 1, 2));
+        SourceManagementPresentation.Summary(rows).Should().Be(new SourceSummary(4, 2, 2, 1, 2, 1, 0, 1, 2));
     }
 
     [Fact]

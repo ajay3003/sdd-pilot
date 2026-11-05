@@ -1,4 +1,5 @@
 @page "/sources"
+@using BirkNext.Integrations
 @using BirkNext.GitSources
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services.ProjectImport
@@ -68,10 +69,14 @@
             <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git", null, () => _filter = new() { Sort = _filter.Sort })</li>
             <li>@Tile("sm-summary-review", summary.NeedsReview, "requiring review", summary.NeedsReview == 0 ? "No open decisions" : "Role or association to decide",
                 summary.NeedsReview > 0 ? "attention" : null, () => _filter = _filter with { ReviewOnly = true })</li>
-            <li>@Tile("sm-summary-analyzed", summary.Analyzed, "analyzed", "Every contained dimension", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Analyzed) })</li>
-            <li>@Tile("sm-summary-partial", summary.Partial, "partly analyzed", "Some dimensions partial or failed", summary.Partial > 0 ? "partial" : null,
+            <li>@Tile("sm-summary-analyzed", summary.Analyzed, "analyzed", "Every area present analyzed completely", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Analyzed) })</li>
+            <li>@Tile("sm-summary-partial", summary.Partial, "partly analyzed", "Some areas partial or not supported", summary.Partial > 0 ? "partial" : null,
                 () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Partial) })</li>
-            <li>@Tile("sm-summary-not-analyzed", summary.NotAnalyzed, "not analyzed", "Nothing analyzed yet", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.NotAnalyzed) })</li>
+            @if (summary.Failed > 0)
+            {
+                <li>@Tile("sm-summary-failed", summary.Failed, "analysis failed", "No present area could be read", "attention", () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Failed) })</li>
+            }
+            <li>@Tile("sm-summary-not-analyzed", summary.NotAnalyzed, "not analyzed", "No snapshot, or nothing analyzable", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.NotAnalyzed) })</li>
             <li>@Tile("sm-summary-applications", summary.Applications, summary.Applications == 1 ? "application" : "applications", "Distinct applications these sources serve", null, null)</li>
         </ul>
         <span class="visually-hidden" data-testid="sm-summary-zip">@summary.Zip ZIP</span>
@@ -106,6 +111,7 @@
                             <option value="">Any analysis status</option>
                             <option value="@nameof(SourceAnalysisBucket.Analyzed)">Analyzed</option>
                             <option value="@nameof(SourceAnalysisBucket.Partial)">Partly analyzed</option>
+                            <option value="@nameof(SourceAnalysisBucket.Failed)">Analysis failed</option>
                             <option value="@nameof(SourceAnalysisBucket.NotAnalyzed)">Not analyzed</option>
                         </select></label>
                     <label class="sm-toggle"><input type="checkbox" checked="@_filter.ReviewOnly" @onchange="e => _filter = _filter with { ReviewOnly = (bool)e.Value! }" data-testid="sm-filter-review" /> Requires review</label>
@@ -174,6 +180,8 @@
     private string _tab = "overview";
     private SourceListFilter _filter = new();
     private ProjectEvidenceView? _evidence;
+    /// <summary>Per-area analysis outcomes of the stored snapshots (the shared source setup read the Snapshot Registry uses too).</summary>
+    private IReadOnlyList<SourceSetupSnapshot> _setup = [];
     private bool _loaded, _copied;
     private readonly LoadSequence _loads = new();
     private IProjectEvidenceService? Evidence => Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
@@ -219,6 +227,12 @@
         {
             try { _evidence = await evidence.GetAsync(_environmentId); }
             catch (Exception ex) when (ex is not OutOfMemoryException) { _evidence = null; }
+            if (!load.IsCurrent) return;
+        }
+        if (Services.GetService(typeof(IIntegrationJourneysApiService)) is IIntegrationJourneysApiService journeys)
+        {
+            try { _setup = (await journeys.SourceSetupAsync(_environmentId))?.Value?.Snapshots ?? []; }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { _setup = []; }
             if (!load.IsCurrent) return;
         }
         Build();
@@ -270,22 +284,25 @@
         : null;
 
     /// <summary>
-    /// Analysis per dimension the package actually contains — the same reading as Project Evidence. The snapshot's own status is the
-    /// application-code analyzer's outcome only (a Terraform package without application code reads "Failed" there), so it is never shown as
-    /// the package's analysis.
+    /// Analysis per area the snapshot contains, with the outcome from the shared rule (SourceSetupOutcome.Overall) — exactly what the Snapshot
+    /// Registry shows for the same snapshot. The snapshot's own status is the application-code analyzer's outcome only (a Terraform package
+    /// without application code reads "Failed" there), so it is never shown as the package's analysis. Capabilities (what the content shows)
+    /// come from Project Evidence and carry no analysis status here.
     /// </summary>
     private SourceRowFacts Facts(Row row)
     {
         var package = PackageOf(row);
-        IReadOnlyList<SourceAnalysisChip> analysis = package is null ? []
-            : [.. BirkNext.Web.Components.TargetEnvironmentProjectPane.AnalysisDimensions(package).Select(d => new SourceAnalysisChip(d.Label, d.Status))];
+        var areas = row.Record?.SourceSnapshotId is { } snapshotId ? _setup.FirstOrDefault(s => s.SnapshotId == snapshotId)?.Areas : null;
+        var analysis = SourceManagementPresentation.Chips(areas);
+        var bucket = SourceManagementPresentation.Bucket(row.Record is not null, areas);
         string? note = row.Record is null ? "Not imported"
-            : package is null ? row.Record.SourceSnapshotId is null ? "Not analyzed" : "Analysis not loaded"
-            : analysis.Count == 0 ? package.SnapshotId is null ? "Not analyzed" : "Nothing analyzable detected" : null;
+            : row.Record.SourceSnapshotId is null ? "Not analyzed"
+            : areas is null ? "Analysis not loaded"
+            : analysis.Count == 0 ? "Nothing analyzable detected" : null;
         var reason = ReviewReason(row);
         return new(row.Key, row.Name, row.Origin, row.Record is not null,
             package is { Capabilities.Count: > 0 } p ? [.. p.Capabilities.Select(c => ProjectEvidencePackages.CapabilityLabel(c.Capability))] : [],
-            analysis, SourceManagementPresentation.Bucket(row.Record is not null, analysis), note, reason is not null, reason, SavedRoles(row),
+            analysis, bucket, note, reason is not null, reason, SavedRoles(row),
             AssociatedApplications(row), row.Record?.ImportedAt, row.Record?.SourceSnapshotId, row.Record?.Git?.ShortSha);
     }
 
@@ -321,7 +338,7 @@
         if (f.Analysis.Count == 0) { <span class="sm-quiet">@f.AnalysisNote</span> return; }
         foreach (var chip in f.Analysis)
         {
-            <span class="sm-chip sm-status sm-status-@chip.Tone" data-status="@chip.Status"><span class="sm-status-dot" aria-hidden="true"></span>@chip.Dimension · @chip.StatusText</span>
+            <span class="sm-chip sm-status sm-status-@chip.Tone" data-status="@chip.Status" title="@chip.Meaning"><span class="sm-status-dot" aria-hidden="true"></span>@chip.Dimension · @chip.StatusText</span>
         }
     };
 
@@ -406,14 +423,15 @@
                         break;
                     case "evidence":
                         <div class="sm-card" data-testid="sm-analysis-detail">
-                            <span class="sm-facet-label">Analysis by dimension</span>
+                            <span class="sm-facet-label">Analysis by area</span>
+                            <span class="sm-quiet">@SourceManagementPresentation.BucketLabel(facts.Bucket) — the same outcome the Snapshot Registry shows for this snapshot.</span>
                             @if (facts.Analysis.Count == 0) { <span class="sm-quiet">@facts.AnalysisNote</span> }
                             else
                             {
                                 <ul class="sm-dim-list">
                                     @foreach (var chip in facts.Analysis)
                                     {
-                                        <li><span>@chip.Dimension</span><span class="sm-chip sm-status sm-status-@chip.Tone"><span class="sm-status-dot" aria-hidden="true"></span>@chip.StatusText</span></li>
+                                        <li><span>@chip.Dimension <span class="sm-quiet sm-small">@chip.Meaning</span></span><span class="sm-chip sm-status sm-status-@chip.Tone"><span class="sm-status-dot" aria-hidden="true"></span>@chip.StatusText</span></li>
                                     }
                                 </ul>
                             }

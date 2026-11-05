@@ -78,6 +78,7 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-status-ok { border-color: var(--clr-success); color: var(--clr-success); }
 .sm-status-partial { border-color: var(--clr-warning, #b45309); color: var(--clr-warning, #92400e); }
 .sm-status-failed { border-color: var(--clr-danger); color: var(--clr-danger); }
+.sm-status-unsupported { border-style: dashed; color: var(--clr-text-muted); }
 
 /* Inspector */
 .sm-detail { display: grid; gap: .75rem; padding: 1rem 1.1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-lg, 8px); background: var(--clr-surface); min-width: 0; }
