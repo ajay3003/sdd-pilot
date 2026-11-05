@@ -43,3 +43,25 @@
 .cr-chips { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .5rem; }
 .cr-chip { border: 1px solid var(--clr-border); background: transparent; color: inherit; border-radius: 999px; padding: .125rem .625rem; font-size: .8125rem; cursor: pointer; }
 .cr-chip.is-active { border-color: var(--clr-primary); background: var(--clr-surface-selected); font-weight: 600; }
+
+/* NEXT48: governance metrics, attention, identity-conflict workflow */
+.cr-context { display: block; }
+.cr-small { font-size: .8125rem; }
+.cr-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .6rem; margin: 0 0 .5rem; padding: 0; list-style: none; }
+.cr-metric { display: grid; gap: .1rem; width: 100%; height: 100%; padding: .7rem .85rem; text-align: left; border: 1px solid var(--clr-border); border-radius: var(--radius-lg, 8px);
+    background: var(--clr-surface); color: inherit; font: inherit; }
+button.cr-metric { cursor: pointer; }
+button.cr-metric:hover { border-color: var(--clr-primary); }
+button.cr-metric:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--clr-primary)); outline-offset: 2px; }
+.cr-metric strong { font-size: 1.5rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cr-metric-label { font-weight: 600; }
+.cr-metric small { color: var(--clr-text-muted); font-size: .75rem; }
+.cr-metric.is-attention { border-color: var(--clr-warning, #b45309); background: var(--clr-warning-bg, #fef3c7); }
+.cr-metric.is-blocking { border-color: var(--clr-danger); border-left-width: 3px; }
+.cr-attention { border-left: 3px solid var(--clr-warning, #b45309); }
+.cr-conflict { display: grid; gap: .5rem; margin-top: .4rem; }
+.cr-conflict-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem; }
+.cr-conflict-side { display: grid; gap: .2rem; padding: .6rem .7rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md, 6px); min-width: 0; overflow-wrap: anywhere; }
+.cr-conflict-options { margin: 0; padding-left: 1.1rem; }
+.cr-rationale { display: grid; gap: .25rem; }
+.cr-rationale textarea { width: 100%; padding: .4rem .5rem; border: 1px solid var(--clr-border); border-radius: 6px; font: inherit; background: var(--clr-surface); color: inherit; }

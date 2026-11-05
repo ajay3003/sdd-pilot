@@ -108,7 +108,7 @@ public sealed class RelationshipReviewTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=cr-not-analyzed]").TextContent.Should().Contain("Not analyzed").And.Contain("M2LB"));
         cut.Find("[data-testid=cr-not-analyzed]").TextContent.Should().NotContain("0", "no count is shown as zero before an analysis");
         cut.Find("[data-testid=cr-application]").TextContent.Should().Be("M2LB", "the context is the Target Application, not the environment name");
-        cut.Find("[data-testid=cr-intro]").TextContent.Should().Contain("Your decisions are shared across");
+        cut.Find("[data-testid=cr-intro]").TextContent.Should().Be("Discover, validate and govern relationships across project evidence.");
         cut.WaitForAssertion(() => cut.Find("[data-testid=cr-source-outcomes]").TextContent.Should().Contain("1 analyzed").And.Contain("1 analysis failed"));
         cut.Find("[data-testid=cr-source-summary]").TextContent.Should().StartWith("1 of 2 sources selected");
         cut.Find("[data-testid=cr-customize]").Click();
@@ -175,5 +175,90 @@ public sealed class RelationshipReviewTests : BunitContext
         var cut = Render<CorrelationReview>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=cr-tab-history]").GetAttribute("aria-selected").Should().Be("true"));
         cut.FindAll("[data-testid=cr-history]").Should().ContainSingle();
+    }
+
+    // ── NEXT48: governance dashboard + identity-conflict workflow (the M2LB Utdanning ↔ SkoleAdapter case) ──────────────────────────
+
+    static CanonicalEntityView System(string id, string name) =>
+        new(Guid.NewGuid(), CanonicalEntityType.System, id, name, name, "declared alias", null, new Dictionary<string, string>(), DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
+
+    async Task<Mock<ICanonicalInterpretationApiService>> AnalyzedM2lb()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        var storage = new ActiveTargetEnvironmentTests.Storage();
+        var settings = new FrontendAnalysisSettingsService();
+        await settings.LoadAsync(storage);
+        settings.Settings.ActiveProfileId = "dev";
+        Services.AddSingleton<IJSRuntime>(storage);
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
+        Services.AddSingleton<IFrontendAnalysisContextFactory>(ActiveTargetEnvironmentTests.Factory(settings, storage));
+        Services.AddSingleton(Mock.Of<IIntegrationCatalogApiService>());
+        var api = new Mock<ICanonicalInterpretationApiService>();
+        api.Setup(a => a.SnapshotsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
+        api.Setup(a => a.DecisionsAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
+        api.Setup(a => a.SummaryAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalSummaryView("dev", Guid.NewGuid(), DateTimeOffset.UnixEpoch, ["correlation/4"],
+            new Dictionary<string, int> { ["Test"] = 1822, ["Requirement"] = 54 }, new Dictionary<string, int> { ["Verifies"] = 1382, ["Contains"] = 1862, ["CandidateSameAs"] = 1 },
+            1881, 1361, 1362, 1, new(0, 0, 0, 0, 0), [], [], Decisions: 1, Suggestions: 1361) { NotCounted = 3 }, (string?)null));
+        var conflict = new CanonicalRelationView(Guid.NewGuid(), "rel-1", System("utdanning", "Utdanning"), System("skoleadapter", "SkoleAdapter"), CanonicalRelationType.CandidateSameAs,
+            RelationResolution.Ambiguous, RelationResolution.Ambiguous, CorrelationConfidence.Low, CorrelationRules.AliasConflictRule, "correlation/4", [], "fp",
+            "Alias declared for two entities", RelationReviewState.NotReviewed, null, true);
+        var item = new ReviewItemView("item-1", ReviewItemKind.Decision, ReviewItemType.IdentityConflict, 1, "\"M2LB.SkoleAdapter.Worker\" is declared as an alias of more than one entity.",
+            ReviewTargetKind.Relation, "rel-1", conflict, null, null, ["Integration Topology"], CorrelationRules.AliasConflictRule, "correlation/4", "Ambiguous", null, DateTimeOffset.UnixEpoch, null);
+        api.Setup(a => a.ReviewItemsAsync("dev", It.IsAny<ReviewItemKind>(), It.IsAny<ReviewItemType?>(), 0, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ReviewQueueView(1, 1361, new Dictionary<ReviewItemType, int> { [ReviewItemType.IdentityConflict] = 1 }, new Dictionary<ReviewItemType, int> { [ReviewItemType.TestLink] = 1361 },
+                new CanonicalPage<ReviewItemView>([item], 1, 0, 20), null), (string?)null));
+        api.Setup(a => a.DecideAsync("dev", It.IsAny<ReviewDecisionRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(((ReviewDecisionView?)null, (string?)null));
+        Services.AddSingleton(api.Object);
+        return api;
+    }
+
+    [Fact]
+    public async Task The_overview_reconciles_relationship_counts_and_leads_to_the_identity_conflict()
+    {
+        await AnalyzedM2lb();
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-sum-conflicts]").TextContent.Should().Be("1", "the conflict governance blocks on is never 0 here"));
+        cut.Find("[data-testid=cr-sum-entities]").TextContent.Should().Be("1876");
+        cut.Find("[data-testid=cr-accounting]").TextContent.Should().Contain("3245 relationships = 1881 established + 1361 candidates + 3 not counted")
+            .And.Contain("Identity conflicts are part of the decisions");
+        cut.Find("[data-testid=cr-attention]");
+        cut.Find("[data-testid=cr-overview-review]").TextContent.Trim().Should().Be("Resolve 1 identity conflict");
+        cut.Find("[data-testid=cr-overview-review]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-tab-review]").GetAttribute("aria-selected").Should().Be("true"));
+        cut.Find("[data-testid=cr-kind-decisions]").TextContent.Should().StartWith("Required decisions");
+        cut.Find("[data-testid=cr-kind-suggestions]").TextContent.Should().StartWith("Optional suggestions");
+    }
+
+    [Fact]
+    public async Task An_identity_conflict_shows_both_entities_and_needs_a_rationale_to_confirm_or_reject()
+    {
+        var api = await AnalyzedM2lb();
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tab"] = "review", ["type"] = "IdentityConflict" }));
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-conflict-side]").Select(s => s.QuerySelector("strong")!.TextContent).Should().Equal("Utdanning", "SkoleAdapter"));
+        api.Verify(a => a.ReviewItemsAsync("dev", ReviewItemKind.Decision, ReviewItemType.IdentityConflict, 0, 20, It.IsAny<CancellationToken>()), Times.AtLeastOnce, "the deep link opens the conflict filter");
+        cut.Find("[data-testid=cr-conflict-same]").HasAttribute("disabled").Should().BeTrue("no rationale yet");
+        cut.Find("[data-testid=cr-conflict-separate]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=cr-defer]").HasAttribute("disabled").Should().BeFalse("deferring needs no rationale");
+
+        cut.Find("[data-testid=cr-rationale]").Input("Utdanning is the external system; SkoleAdapter is our adapter.");
+        cut.Find("[data-testid=cr-conflict-separate]").Click();
+
+        cut.WaitForAssertion(() => api.Verify(a => a.DecideAsync("dev", It.Is<ReviewDecisionRequest>(r => r.TargetKey == "rel-1" && r.Outcome == ReviewDecisionOutcome.Rejected
+            && r.Notes == "Utdanning is the external system; SkoleAdapter is our adapter."), It.IsAny<CancellationToken>()), Times.Once));
+    }
+
+    [Fact]
+    public async Task Page_tabs_move_by_keyboard()
+    {
+        await AnalyzedM2lb();
+        var cut = Render<CorrelationReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-tab-overview]"));
+        cut.Find("[data-testid=cr-tab-overview]").KeyDown("End");
+        cut.Find("[data-testid=cr-tab-history]").GetAttribute("aria-selected").Should().Be("true");
+        cut.Find("[data-testid=cr-tab-history]").GetAttribute("tabindex").Should().Be("0");
     }
 }

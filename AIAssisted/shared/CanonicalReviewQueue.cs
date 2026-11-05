@@ -90,24 +90,42 @@ public static class CanonicalReviewQueue
     /// <summary>Decisions and suggestions over a set of relations, counting one decision per ambiguity group (the same rule the queue uses).</summary>
     public static (int Decisions, int Suggestions) Count(IEnumerable<(string RuleId, RelationResolution Resolution, RelationReviewState Review, Guid Source, Guid Target)> relations)
     {
+        var items = Items(relations).ToList();
+        return (items.Count(i => i.Kind == ReviewItemKind.Decision), items.Count(i => i.Kind == ReviewItemKind.Suggestion));
+    }
+
+    /// <summary>
+    /// Identity conflicts over a set of relations: the decisions the queue classifies as <see cref="ReviewItemType.IdentityConflict"/> (a decision
+    /// contradicted by evidence, or one alias declared for several entities), one per question. The Overview, the queue and the governance gate count the
+    /// same thing — an identity conflict never disappears from one surface because it is stored as an ambiguous relation rather than a Conflict state.
+    /// A subset of the decisions, not an addition to them.
+    /// </summary>
+    public static int IdentityConflicts(IEnumerable<(string RuleId, RelationResolution Resolution, RelationReviewState Review, Guid Source, Guid Target)> relations) =>
+        Items(relations).Count(i => i.Kind == ReviewItemKind.Decision && i.Type == ReviewItemType.IdentityConflict);
+
+    /// <summary>One entry per review question (ambiguous alternatives grouped; a group closed by a confirmed alternative is no longer asked).</summary>
+    private static IEnumerable<(ReviewItemKind Kind, ReviewItemType Type)> Items(IEnumerable<(string RuleId, RelationResolution Resolution, RelationReviewState Review, Guid Source, Guid Target)> relations)
+    {
         var list = relations.ToList();
         var closed = list.Where(r => r.Resolution == RelationResolution.Ambiguous && r.Review == RelationReviewState.Confirmed)
             .Select(r => AmbiguityGroup(r.RuleId, r.Source, r.Target)).ToHashSet(StringComparer.Ordinal);
-        int decisions = 0, suggestions = 0;
         var groups = new HashSet<string>(StringComparer.Ordinal);
         foreach (var r in list)
         {
             if (Classify(r.RuleId, r.Resolution, r.Review, true) is not { } c) continue;
-            if (c.Kind == ReviewItemKind.Suggestion) { suggestions++; continue; }
-            if (r.Resolution == RelationResolution.Ambiguous && r.Review is RelationReviewState.NotReviewed or RelationReviewState.Deferred)
+            if (c.Kind == ReviewItemKind.Decision && r.Resolution == RelationResolution.Ambiguous && r.Review is RelationReviewState.NotReviewed or RelationReviewState.Deferred)
             {
                 var g = AmbiguityGroup(r.RuleId, r.Source, r.Target);
                 if (closed.Contains(g) || !groups.Add(g)) continue;
             }
-            decisions++;
+            yield return (c.Kind, c.Type);
         }
-        return (decisions, suggestions);
     }
+
+    /// <summary>A decision on an identity conflict changes what something is for every consumer (and can unblock a release gate): Confirm and Reject
+    /// need a written rationale. Deferring does not.</summary>
+    public static bool NeedsRationale(string ruleId, RelationReviewState review, ReviewDecisionOutcome outcome) =>
+        outcome is ReviewDecisionOutcome.Confirmed or ReviewDecisionOutcome.Rejected && (ruleId == CorrelationRules.AliasConflictRule || review == RelationReviewState.Conflict);
 
     public static ReviewItemType TypeOf(string ruleId) => ruleId switch
     {

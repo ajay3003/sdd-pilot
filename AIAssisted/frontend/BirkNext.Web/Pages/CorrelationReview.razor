@@ -15,13 +15,19 @@
 <div class="cr" data-testid="correlation-review">
     <header class="cr-head">
         <h1>Relationship Review</h1>
-        <p class="cr-lead" data-testid="cr-intro">Review and confirm relationships between requirements, user stories, source code, APIs, contracts and tests. Your decisions are shared across
-            BirkNext so the same relationship does not need to be reviewed multiple times.</p>
-        <p class="cr-muted cr-lead">BirkNext discovers possible relationships from imported evidence. Confirm, reject or defer uncertain matches before they are treated as verified associations.</p>
+        <p class="cr-lead" data-testid="cr-intro">Discover, validate and govern relationships across project evidence.</p>
+        <p class="cr-muted cr-lead">Requirements, user stories, source code, APIs, contracts and tests — decisions made here are shared by every BirkNext module, so a relationship is reviewed once.
+            A suggestion is never treated as established, and a confirmed relationship is not proof that anything was implemented, executed or passed.</p>
         @if (_scope is not null)
         {
-            <p class="cr-muted" data-testid="cr-scope">Target Application: <strong data-testid="cr-application">@(_applicationName ?? "not set")</strong>
-                · Environment: <span data-testid="cr-environment">@_environmentName</span></p>
+            <p class="cr-muted cr-context" data-testid="cr-scope">Target Application: <strong data-testid="cr-application">@(_applicationName ?? "not set")</strong>
+                · Environment: <span data-testid="cr-environment">@_environmentName</span>
+                @if (_summary is { InterpretationId: not null } ctx)
+                {
+                    <span data-testid="cr-context-analysis"> · Last analyzed @ctx.InterpretedAt!.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · rules @string.Join(", ", ctx.RuleSetVersions)
+                        · @_rows.Count(r => _selected.Contains(r.Id)) of @_rows.Count sources</span>
+                }
+            </p>
         }
     </header>
 
@@ -39,6 +45,7 @@
             @foreach (var (key, label) in Tabs)
             {
                 <button type="button" role="tab" id="@($"cr-tab-{key}")" class="cr-tab @(_tab == key ? "is-active" : "")" aria-selected="@(_tab == key ? "true" : "false")"
+                        tabindex="@(_tab == key ? "0" : "-1")" @onkeydown="TabKey"
                         aria-controls="cr-tabpanel" data-testid="@($"cr-tab-{key}")" @onclick="() => _tab = key">@label@(key == "review" && _queue is { } tq ? $" ({tq.Decisions})" : "")</button>
             }
         </div>
@@ -63,6 +70,8 @@
 
     /// <summary>Opens a tab directly (?tab=review|relationships|history), e.g. from Release Readiness.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    /// <summary>Opens the queue on one item type (?tab=review&amp;type=IdentityConflict), e.g. from a blocked governance gate.</summary>
+    [SupplyParameterFromQuery(Name = "type")] public string? QueueType { get; set; }
 
     private string _tab = "overview";
     private string? _applicationName, _environmentName;
@@ -77,20 +86,31 @@
         if (!_historyLoaded) { <InlineLoading Text="Loading the latest analysis…" Class="cr-muted" /> }
         else if (_summary is { InterpretationId: not null } sum)
         {
+            var totalRelations = sum.RelationsByType.Values.Sum();
+            <ul class="cr-metrics" data-testid="cr-metrics" aria-label="Relationship governance metrics">
+                <li>@Metric("cr-sum-entities", sum.EntitiesByType.Values.Sum(), "Entities", "Distinct canonical entities in the latest analysis", null, () => _tab = "relationships")</li>
+                <li>@Metric("cr-sum-established", sum.EstablishedRelations, "Established", "Explicit, derived or confirmed relationships", null, () => _tab = "relationships")</li>
+                <li>@Metric("cr-sum-suggestions", sum.Suggestions, "Suggested", "Optional proposals — never counted until confirmed", null, () => OpenQueueAsync(ReviewItemKind.Suggestion, null))</li>
+                <li>@Metric("cr-sum-review", sum.Decisions, "Decisions required", "Questions someone must answer", sum.Decisions > 0 ? "attention" : null, () => OpenQueueAsync(ReviewItemKind.Decision, null))</li>
+                <li>@Metric("cr-sum-conflicts", sum.Conflicts, "Identity conflicts", "Part of the decisions; can block release readiness", sum.Conflicts > 0 ? "blocking" : null,
+                    () => OpenQueueAsync(ReviewItemKind.Decision, ReviewItemType.IdentityConflict))</li>
+                <li>@Metric("cr-sum-not-counted", sum.NotCounted, "Not counted", "Ambiguous alternatives, unresolved references or rejected", null, (Action?)null)</li>
+            </ul>
+            <p class="cr-muted cr-small" data-testid="cr-accounting">@totalRelations relationships = @sum.EstablishedRelations established + @sum.CandidateRelations candidates + @sum.NotCounted not counted. Identity conflicts are part of the decisions, not an addition to them.</p>
+            @if (sum.Conflicts > 0 || sum.Decisions > 0)
+            {
+                <section class="cr-card cr-attention" aria-labelledby="cr-attention-h" data-testid="cr-attention">
+                    <h2 id="cr-attention-h">Governance attention</h2>
+                    <GovernanceGatePanel Scope="@(_scope!)" Version="_governanceVersion" MaxFindings="3" TestId="cr-overview-governance" />
+                    <p><button type="button" class="btn btn-primary btn-sm" data-testid="cr-overview-review"
+                               @onclick="() => OpenQueueAsync(ReviewItemKind.Decision, sum.Conflicts > 0 ? ReviewItemType.IdentityConflict : null)">
+                        @(sum.Conflicts > 0 ? $"Resolve {sum.Conflicts} identity conflict{(sum.Conflicts == 1 ? "" : "s")}" : $"Review {sum.Decisions} decision{(sum.Decisions == 1 ? "" : "s")}")</button></p>
+                </section>
+            }
             <section class="cr-card" aria-labelledby="cr-summary-h" data-testid="cr-summary">
                 <h2 id="cr-summary-h">Latest analysis</h2>
-                <p class="cr-muted">@sum.InterpretedAt!.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · rules @string.Join(", ", sum.RuleSetVersions)</p>
-                <dl class="cr-counts">
-                    <div><dt>Established relationships</dt><dd data-testid="cr-sum-established">@sum.EstablishedRelations</dd></div>
-                    <div><dt>Candidates (not counted)</dt><dd data-testid="cr-sum-candidates">@sum.CandidateRelations</dd></div>
-                    <div><dt>Decisions needed</dt><dd data-testid="cr-sum-review">@sum.Decisions</dd></div>
-                    <div><dt>Optional suggestions</dt><dd data-testid="cr-sum-suggestions">@sum.Suggestions</dd></div>
-                    <div><dt>Conflicts</dt><dd data-testid="cr-sum-conflicts">@sum.Conflicts</dd></div>
-                </dl>
-                @if (sum.Decisions > 0)
-                {
-                    <p><button type="button" class="btn btn-secondary btn-sm" data-testid="cr-overview-review" @onclick="@(() => _tab = "review")">Review @sum.Decisions decision@(sum.Decisions == 1 ? "" : "s")</button></p>
-                }
+                <p class="cr-muted">@sum.InterpretedAt!.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · rules @string.Join(", ", sum.RuleSetVersions)
+                    · <span data-testid="cr-sum-candidates">@sum.CandidateRelations</span> candidate relationships (not counted)</p>
                 <p class="cr-muted" data-testid="cr-sum-contracts">Contracts: @sum.Contracts.LogicalContracts logical · @sum.Contracts.Versions versions · @sum.Contracts.DistinctContents distinct contents · @sum.Contracts.Occurrences occurrences in packages</p>
                 @if (sum.Packages.Count > 0)
                 {
@@ -200,12 +220,13 @@
         <section class="cr-card" aria-labelledby="cr-queue-h" data-testid="cr-queue">
             <h2 id="cr-queue-h">Needs review <span class="cr-count" data-testid="cr-decision-count">@(_queue?.Decisions ?? 0) decision@(_queue?.Decisions == 1 ? "" : "s")</span></h2>
             <p class="cr-muted">One shared queue for every surface: a question answered here is answered for Delivery, Traceability, Topology, IQR, AQR and Project Evidence.
-                Decisions are conflicts, ambiguities, decisions to recheck and story references; suggestions are optional naming-only proposals that nothing counts until confirmed.</p>
+                <strong>Required decisions</strong> are identity conflicts, ambiguities, decisions to recheck and story references — they block or change an interpretation.
+                <strong>Optional suggestions</strong> are low-confidence proposals (for example a requirement id only mentioned near a test); nothing counts them until confirmed.</p>
             <div class="cr-tabs" role="tablist" aria-label="Review items">
                 <button type="button" role="tab" class="cr-tab @(_kind == ReviewItemKind.Decision ? "is-active" : "")" aria-selected="@(_kind == ReviewItemKind.Decision ? "true" : "false")"
-                        data-testid="cr-kind-decisions" @onclick="() => KindAsync(ReviewItemKind.Decision)">Decisions (@(_queue?.Decisions ?? 0))</button>
+                        data-testid="cr-kind-decisions" @onclick="() => KindAsync(ReviewItemKind.Decision)">Required decisions (@(_queue?.Decisions ?? 0))</button>
                 <button type="button" role="tab" class="cr-tab @(_kind == ReviewItemKind.Suggestion ? "is-active" : "")" aria-selected="@(_kind == ReviewItemKind.Suggestion ? "true" : "false")"
-                        data-testid="cr-kind-suggestions" @onclick="() => KindAsync(ReviewItemKind.Suggestion)">Suggestions (@(_queue?.Suggestions ?? 0))</button>
+                        data-testid="cr-kind-suggestions" @onclick="() => KindAsync(ReviewItemKind.Suggestion)">Optional suggestions (@(_queue?.Suggestions ?? 0))</button>
             </div>
             @if (_queue is { } counts && (_kind == ReviewItemKind.Decision ? counts.DecisionsByType : counts.SuggestionsByType) is { Count: > 0 } byType)
             {
@@ -272,6 +293,10 @@
                             else if (item.TargetKey is null)
                             {
                                 <p class="cr-muted" data-testid="cr-resolve-in-source">@item.Resolution</p>
+                            }
+                            else if (item.Type == ReviewItemType.IdentityConflict && item.Relation is { } conflict)
+                            {
+                                @IdentityConflict(item, conflict)
                             }
                             else
                             {
@@ -369,6 +394,70 @@
     };
 
 
+    private RenderFragment Metric(string testId, int value, string label, string detail, string? tone, Func<Task>? open) => __builder =>
+    {
+        if (open is null)
+        {
+            <div class="cr-metric @(tone is null ? null : $"is-{tone}")" data-testid="@($"{testId}-tile")"><strong data-testid="@testId">@value</strong><span class="cr-metric-label">@label</span><small>@detail</small></div>
+        }
+        else
+        {
+            <button type="button" class="cr-metric @(tone is null ? null : $"is-{tone}")" data-testid="@($"{testId}-tile")" @onclick="open"><strong data-testid="@testId">@value</strong><span class="cr-metric-label">@label</span><small>@detail</small></button>
+        }
+    };
+
+    private RenderFragment Metric(string testId, int value, string label, string detail, string? tone, Action? open) =>
+        Metric(testId, value, label, detail, tone, open is null ? null : () => { open(); return Task.CompletedTask; });
+
+    /// <summary>
+    /// An identity conflict: the two entities side by side, what each option means, and a written rationale before Confirm or Reject (the backend
+    /// refuses either without one). Deferring needs none and changes nothing: the release block stays until a reviewer decides.
+    /// </summary>
+    private RenderFragment IdentityConflict(ReviewItemView item, CanonicalRelationView conflict) => __builder =>
+    {
+        var rationale = _notes.GetValueOrDefault(item.ReviewItemId);
+        var hasRationale = !string.IsNullOrWhiteSpace(rationale);
+        <div class="cr-conflict" data-testid="cr-conflict">
+            <div class="cr-conflict-sides">
+                @foreach (var side in new[] { conflict.Source, conflict.Target })
+                {
+                    <div class="cr-conflict-side" data-testid="cr-conflict-side">
+                        <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(side.Type)" />
+                        <strong>@side.DisplayName</strong>
+                        <span class="cr-muted cr-small" title="Canonical identity">@side.IdentityKey</span>
+                        @if (!string.IsNullOrWhiteSpace(side.SourceIdentity)) { <span class="cr-muted cr-small">@side.SourceIdentity</span> }
+                    </div>
+                }
+            </div>
+            <ul class="cr-conflict-options cr-small">
+                <li><strong>Same entity</strong> — the alias is valid; both names mean one thing. Consumers merge them.</li>
+                <li><strong>Separate entities</strong> — the alias declaration is wrong or ambiguous; they stay apart.</li>
+                <li><strong>Defer</strong> — decide later. Nothing changes and release readiness stays blocked.</li>
+            </ul>
+            <label class="cr-rationale">Rationale <span class="cr-muted cr-small">(required to confirm or reject — recorded with your name and the time)</span>
+                <textarea rows="2" data-testid="cr-rationale" value="@rationale" @oninput="e => _notes[item.ReviewItemId] = e.Value?.ToString()"
+                          placeholder="Why these are, or are not, the same entity"></textarea></label>
+            <div class="cr-actions">
+                <button type="button" class="btn btn-primary btn-sm" disabled="@(_saving || !hasRationale)" data-testid="cr-conflict-same" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Confirmed)">Same entity</button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@(_saving || !hasRationale)" data-testid="cr-conflict-separate" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Rejected)">Separate entities</button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" data-testid="cr-defer" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Deferred)">Defer</button>
+            </div>
+        </div>
+    };
+
+    private async Task OpenQueueAsync(ReviewItemKind kind, ReviewItemType? type)
+    {
+        (_tab, _kind, _type, _skip) = ("review", kind, type, 0);
+        await LoadQueueAsync();
+    }
+
+    private void TabKey(KeyboardEventArgs e)
+    {
+        var index = Array.FindIndex(Tabs, t => t.Key == _tab);
+        var next = e.Key switch { "ArrowRight" => (index + 1) % Tabs.Length, "ArrowLeft" => (index + Tabs.Length - 1) % Tabs.Length, "Home" => 0, "End" => Tabs.Length - 1, _ => -1 };
+        if (next >= 0) _tab = Tabs[next].Key;
+    }
+
     private bool _initialising = true, _queueLoading, _saving;
     /// <summary>Bumped after every decision or interpretation: the governance gate is evaluated again (one fact, recomputed).</summary>
     private int _governanceVersion;
@@ -397,6 +486,8 @@
         var saved = profile is null ? null : Services.GetService<IFrontendAnalysisSettingsService>()?.Settings.Profiles.FirstOrDefault(p => p.Id == profile.Id);
         (_applicationName, _environmentName) = (TargetApplications.Of(saved)?.Name, profile?.Name);
         if (Tab is "review" or "relationships" or "history") _tab = Tab;
+        if (Enum.TryParse<ReviewItemType>(QueueType, out var queueType))
+            (_type, _kind) = (queueType, queueType is ReviewItemType.TestLink or ReviewItemType.CapabilityRelation or ReviewItemType.SourceSymbol ? ReviewItemKind.Suggestion : ReviewItemKind.Decision);
         _initialising = false;
         if (_scope is null) return;
         _governanceVersion++;
@@ -480,9 +571,11 @@
     {
         if (_scope is null || item.TargetKind is not { } kind || item.TargetKey is null) return;
         (_saving, _decisionError) = (true, null);
-        var (_, error) = await Api.DecideAsync(_scope, new(kind, item.TargetKey, outcome, null, _notes.GetValueOrDefault(item.ReviewItemId)));
-        _saving = false;
+        string? error;
+        try { (_, error) = await Api.DecideAsync(_scope, new(kind, item.TargetKey, outcome, null, _notes.GetValueOrDefault(item.ReviewItemId))); }
+        finally { _saving = false; }
         if (error is not null) { _decisionError = error; return; }
+        _notes.Remove(item.ReviewItemId);
         _governanceVersion++;
         await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
     }

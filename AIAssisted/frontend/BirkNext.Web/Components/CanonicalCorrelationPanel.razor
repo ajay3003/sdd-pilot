@@ -38,7 +38,7 @@
                     <strong>@d.Entity.DisplayName</strong>
                     <span class="ccp-identity" title="Canonical identity — independent of display names, aliases and file locations">@d.Entity.IdentityKey</span>
                     <button type="button" class="btn btn-secondary btn-sm ccp-impact-btn" data-testid="@($"{TestId}-impact")" aria-expanded="@(_impact.ContainsKey(d.Entity.Key) ? "true" : "false")"
-                            @onclick="() => ToggleImpactAsync(d.Entity.Key)">If this changes…</button>
+                            @onclick="() => ToggleImpactAsync(d.Entity.Key)" title="What depends on this entity: confirmed, potential (candidate) and unverified dependents">Impact preview</button>
                 </div>
                 @if (_impact.TryGetValue(d.Entity.Key, out var impact)) { <CanonicalImpactSummary Impact="impact.View" Error="@impact.Error" TestId="@($"{TestId}-impact-view")" /> }
                 @if (d.Aliases.Count > 0)

@@ -224,7 +224,12 @@ public sealed record ReviewDecisionRequest(ReviewTargetKind TargetKind, string T
 public sealed record CanonicalSummaryView(string Scope, Guid? InterpretationId, DateTimeOffset? InterpretedAt, IReadOnlyList<string> RuleSetVersions,
     IReadOnlyDictionary<string, int> EntitiesByType, IReadOnlyDictionary<string, int> RelationsByType, int EstablishedRelations, int CandidateRelations,
     int NeedsReview, int Conflicts, CanonicalContractCounts Contracts, IReadOnlyList<CanonicalPackageSummary> Packages, IReadOnlyList<string> Limitations,
-    int Decisions = 0, int Suggestions = 0);
+    int Decisions = 0, int Suggestions = 0)
+{
+    /// <summary>Relations neither established nor a candidate: ambiguous alternatives, unresolved references and rejected relations. Established +
+    /// candidates + not counted = every relation of the interpretation (mutually exclusive buckets).</summary>
+    public int NotCounted { get; init; }
+}
 
 /// <summary>Logical contracts (declared identity), versions (content + version context), distinct contents (hashes) and source occurrences, kept apart.</summary>
 public sealed record CanonicalContractCounts(int LogicalContracts, int Versions, int DistinctContents, int Occurrences, int VersionsWithoutLogicalIdentity);

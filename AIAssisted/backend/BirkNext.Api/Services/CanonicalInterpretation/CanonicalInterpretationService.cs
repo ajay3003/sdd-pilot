@@ -320,6 +320,8 @@ public sealed partial class CanonicalInterpretationService(
         {
             relation = await db.Relations.FirstOrDefaultAsync(r => r.Scope == scope && r.RelationKey == request.TargetKey, ct)
                 ?? throw new CanonicalRequestException("That relation is not part of this project's interpretation.");
+            if (CanonicalReviewQueue.NeedsRationale(relation.RuleId, Enum.Parse<RelationReviewState>(relation.ReviewState), request.Outcome) && string.IsNullOrWhiteSpace(request.Notes))
+                throw new CanonicalRequestException("An identity conflict decision needs a rationale: say why these are (or are not) the same entity. It changes every consumer and can unblock the release gate.");
             proposed = JsonSerializer.Serialize(new { relation.RelationType, relation.Resolution, relation.Confidence, relation.RuleId, relation.Explanation }, Json);
             (fingerprint, ruleSet) = (relation.EvidenceFingerprint, relation.RuleSetVersion);
         }
@@ -499,7 +501,13 @@ public sealed partial class CanonicalInterpretationService(
                                select new { r.RelationType, r.SourceEntityId, r.TargetEntityId, m.Resolution, m.ReviewState, m.RuleId }).ToListAsync(ct);
         var (decisionCount, suggestionCount) = CanonicalReviewQueue.Count(relations.Select(r =>
             (r.RuleId, Enum.Parse<RelationResolution>(r.Resolution), Enum.Parse<RelationReviewState>(r.ReviewState), r.SourceEntityId, r.TargetEntityId)));
-        var established = relations.Count(r => CorrelationPrecedence.Counts(Enum.Parse<RelationResolution>(r.Resolution)) || r.ReviewState == nameof(RelationReviewState.Confirmed));
+        var reviewTuples = relations.Select(r => (r.RuleId, Enum.Parse<RelationResolution>(r.Resolution), Enum.Parse<RelationReviewState>(r.ReviewState), r.SourceEntityId, r.TargetEntityId)).ToList();
+        bool IsEstablished(string resolution, string review) => CorrelationPrecedence.Counts(Enum.Parse<RelationResolution>(resolution)) || review == nameof(RelationReviewState.Confirmed);
+        // A rejected candidate is no longer a candidate (it was answered); it is counted under "not counted".
+        bool IsCandidate(string resolution, string review) => resolution == nameof(RelationResolution.Candidate)
+            && review is not (nameof(RelationReviewState.Confirmed) or nameof(RelationReviewState.Rejected));
+        var established = relations.Count(r => IsEstablished(r.Resolution, r.ReviewState));
+        var candidates = relations.Count(r => !IsEstablished(r.Resolution, r.ReviewState) && IsCandidate(r.Resolution, r.ReviewState));
         var needsReview = relations.Count(r => r.ReviewState is nameof(RelationReviewState.RevalidationRequired) or nameof(RelationReviewState.Conflict)
             || (r.ReviewState is nameof(RelationReviewState.NotReviewed) or nameof(RelationReviewState.Deferred) && r.Resolution is nameof(RelationResolution.Candidate) or nameof(RelationResolution.Ambiguous)));
         var versions = entities.Where(e => e.EntityType == nameof(CanonicalEntityType.ContractVersion)).ToList();
@@ -515,12 +523,13 @@ public sealed partial class CanonicalInterpretationService(
         return new(scope, latest.Id, latest.CreatedAt, [.. latest.RuleSetVersions.Split(';', StringSplitOptions.RemoveEmptyEntries)],
             entities.GroupBy(e => e.EntityType).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
             relations.GroupBy(r => r.RelationType).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
-            established, relations.Count(r => r.Resolution == nameof(RelationResolution.Candidate) && r.ReviewState != nameof(RelationReviewState.Confirmed)),
-            needsReview, relations.Count(r => r.ReviewState == nameof(RelationReviewState.Conflict)),
+            established, candidates,
+            needsReview, CanonicalReviewQueue.IdentityConflicts(reviewTuples),
             new(entities.Count(e => e.EntityType == nameof(CanonicalEntityType.Contract)), versions.Count, versions.Select(v => v.SourceIdentity.ToLowerInvariant()).Distinct().Count(),
                 entities.Count(e => e.EntityType == nameof(CanonicalEntityType.ContractOccurrence)), versions.Count(v => !withIdentity.Contains(v.Id))),
             packages, JsonSerializer.Deserialize<List<string>>(latest.LimitationsJson, Json) ?? [])
         {
+            NotCounted = relations.Count - established - candidates,
             // The same classification as the shared review queue: decisions are questions someone must answer; suggestions are optional proposals.
             Decisions = decisionCount
                 + entities.Count(e => e.EntityType == nameof(CanonicalEntityType.Task) && Attr(e.AttributesJson, "relationship") == "UnresolvedReference"),

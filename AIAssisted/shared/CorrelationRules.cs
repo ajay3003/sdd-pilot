@@ -854,13 +854,13 @@ public static partial class CorrelationRules
                     // A naming-only guess is proposed only when the test's own module narrows it to one pack; otherwise it is not proposed at all.
                     if (scopedCandidate.Chosen is { } one)
                         relation(new(fact.Key, one.Key, CanonicalRelationType.Verifies, RelationResolution.Candidate, CorrelationConfidence.Low, TestCandidateRule, [evidence],
-                            $"The test looks related to {target.Id} by naming only ({scopedCandidate.Why}). A candidate is never counted as traceability until confirmed."));
+                            $"{target.Id} is only mentioned near the test (a class comment, a prose comment or a string such as an assertion message), not declared as what it verifies ({scopedCandidate.Why}). A candidate is never counted as traceability or coverage until confirmed."));
                     else scopeDropped++;
                     continue;
                 }
                 if (!known.ContainsKey(target.Key)) entity(RequirementFact(target.Id!, "candidate test reference", t.SourceSnapshotId));
                 relation(new(fact.Key, target.Key, CanonicalRelationType.Verifies, RelationResolution.Candidate, CorrelationConfidence.Low, TestCandidateRule, [evidence],
-                    $"The test looks related to {target.Id} by naming only. A candidate is never counted as traceability until confirmed."));
+                    $"{target.Id} is only mentioned near the test (a class comment, a prose comment or a string such as an assertion message), not declared as what it verifies. A candidate is never counted as traceability or coverage until confirmed."));
             }
         }
         if (unresolved > 0)
