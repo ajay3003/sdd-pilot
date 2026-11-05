@@ -168,10 +168,16 @@ public sealed class SourceManagementTests : BunitContext
     {
         var cut = Render<SourceManagementPage>();
         cut.WaitForElement("[data-testid=sm-summary]");
-        cut.Find("[data-testid=sm-summary-total]").TextContent.Should().Be("1 source");
+        cut.Find("[data-testid=sm-summary-total] .sm-tile-value").TextContent.Should().Be("1");
+        cut.Find("[data-testid=sm-summary-total] .sm-tile-label").TextContent.Should().Be("source");
+        cut.Find("[data-testid=sm-summary-total] .sm-tile-detail").TextContent.Should().Be("0 ZIP · 1 Git");
         cut.Find("[data-testid=sm-summary-git]").TextContent.Should().Be("1 Git");
-        cut.FindAll("[data-testid=sm-table] thead th").Select(t => t.TextContent).Should().Equal(
-            "Source", "Origin", "Capabilities", "Associated applications", "Current snapshot", "Analysis status", "Last updated");
+        cut.Find("[data-testid=sm-summary-applications] .sm-tile-detail").TextContent.Should().Contain("Distinct applications", "the metric says it counts applications, not sources");
+        var row = cut.Find("[data-testid=sm-row]");
+        row.QuerySelector("[data-testid=sm-origin]")!.TextContent.Should().Be("Git");
+        row.QuerySelector("[data-testid=sm-analysis]")!.TextContent.Should().Be("Not imported");
+        row.QuerySelector("[data-testid=sm-associated]")!.TextContent.Should().Be("No application yet");
+        cut.Markup.Should().NotContain("<table", "a scannable list, not a text-heavy table");
         cut.FindAll("[data-testid=sm-detail]").Should().BeEmpty();
 
         cut.Find("[data-testid=sm-open]").Click();

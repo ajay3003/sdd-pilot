@@ -7,73 +7,157 @@
 @inject IFrontendAnalysisContextFactory Contexts
 @inject IServiceProvider Services
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @using BirkNext.Web.Services.ProjectEvidence
+@implements IDisposable
 
 <PageTitle>Source Management</PageTitle>
 
 @* One view of every imported source package, whatever its origin (a chosen ZIP or an Azure DevOps repository): its evidence capabilities
    (what its content shows), its roles (the person's confirmed decision — the canonical role Project Evidence and every consumer reads;
-   several allowed), the applications it is associated with (Target Environment → Project Evidence), its snapshots and analysis. A compact
-   grid; a row opens its detail panel, where the actions are. Nothing here deletes a snapshot or a frozen report. *@
+   several allowed), the applications it is associated with (Target Environment → Project Evidence), its snapshots and analysis.
+   Summary tiles (they filter the list), a toolbar, a scannable list and an inspector with the actions. Nothing here deletes a snapshot or a
+   frozen report. *@
 <div class="sm" data-testid="source-management">
     <header class="sm-head">
-        <h1>Source Management</h1>
-        <p class="sm-muted">Manage imported ZIP and connected Git sources, their evidence capabilities, revisions and associations.
-            <a href="project-import?import=1" data-testid="sm-import">Import source</a></p>
+        <div class="sm-head-text">
+            <h1>Source Management</h1>
+            <p class="sm-lead">Imported ZIP archives and linked Azure DevOps repositories: what each contains, the role it plays, the applications it is evidence for, and how it is updated.</p>
+        </div>
+        <div class="sm-head-actions" role="group" aria-label="Source actions">
+            @if (_links.Count > 0)
+            {
+                <BusyButton Class="btn-secondary" Text="@($"Check all linked repositories ({_links.Count})")" BusyText="Checking linked repositories…" Busy="_checkingAll"
+                            Disabled="_busy" OnClick="CheckAllAsync" TestId="sm-check-all" title="Read-only: compares each branch's remote commit with the last imported one. Nothing is imported." />
+            }
+            <a class="btn-secondary" href="snapshots" data-testid="sm-registry">Snapshot Registry</a>
+            <a class="btn-primary" href="project-import?import=1" data-testid="sm-import">Import source</a>
+        </div>
     </header>
-    @if (_error is not null) { <p class="sm-error" role="alert" data-testid="sm-error">@_error</p> }
+
+    <details class="sm-origins" data-testid="sm-origin-help">
+        <summary>ZIP or Git — how sources are updated</summary>
+        <dl>
+            <dt><span class="sm-chip sm-chip-zip">ZIP</span></dt>
+            <dd>An archive you uploaded. It never changes by itself; upload a newer ZIP to add a revision. Earlier revisions and their snapshots are kept.</dd>
+            <dt><span class="sm-chip sm-chip-git">Git</span></dt>
+            <dd>A linked Azure DevOps repository and branch (or pinned commit). <em>Check for updates</em> only compares the remote commit with the imported one; a new revision is imported only when you choose <em>Import revision</em>, through the normal import review.</dd>
+        </dl>
+    </details>
+
+    @if (_error is not null) { <LoadError Title="Something could not be completed" Message="@_error" TestId="sm-error" /> }
+    @if (_linksError is not null) { <LoadError Title="Linked repositories could not be read" Message="@_linksError" OnRetry="ReloadAsync" TestId="sm-links-error" /> }
     @if (_notice is not null) { <p class="sm-notice" role="status" data-testid="sm-notice">@_notice</p> }
-    @if (_rows.Count == 0)
+
+    @if (!_loaded)
     {
-        <p class="sm-muted" data-testid="sm-empty">No source packages yet. <a href="project-import?import=1">Import a ZIP or an Azure DevOps repository</a>.</p>
+        <LoadingSkeleton Lines="5" Text="Loading sources…" TestId="sm-loading" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <section class="sm-empty" data-testid="sm-empty">
+            <h2>No sources yet</h2>
+            <p>Import a project ZIP, or link an Azure DevOps repository, to see its capabilities, roles and analysis here.</p>
+            <a class="btn-primary" href="project-import?import=1">Import source</a>
+        </section>
     }
     else
     {
-        <ul class="sm-summary" data-testid="sm-summary" aria-label="Source summary">
-            <li data-testid="sm-summary-total"><strong>@_rows.Count</strong> source@(_rows.Count == 1 ? "" : "s")</li>
-            <li data-testid="sm-summary-zip"><strong>@_rows.Count(r => r.Origin == "ZIP")</strong> ZIP</li>
-            <li data-testid="sm-summary-git"><strong>@_rows.Count(r => r.Origin == "Git")</strong> Git</li>
-            <li data-testid="sm-summary-review"><strong>@_rows.Count(NeedsReview)</strong> requiring review</li>
-            <li data-testid="sm-summary-applications"><strong>@_rows.SelectMany(r => AssociatedApplications(r).Select(a => a.Application)).Distinct(StringComparer.OrdinalIgnoreCase).Count()</strong> associated application@(_rows.SelectMany(r => AssociatedApplications(r).Select(a => a.Application)).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 ? "" : "s")</li>
-            @foreach (var group in _rows.GroupBy(AnalysisSummary).OrderBy(g => g.Key, StringComparer.Ordinal))
-            {
-                <li data-testid="sm-summary-analysis" data-status="@group.Key"><strong>@group.Count()</strong> @group.Key.ToLowerInvariant()</li>
-            }
+        var summary = SourceManagementPresentation.Summary(_facts);
+        <ul class="sm-tiles" data-testid="sm-summary" aria-label="Source summary — choose a tile to filter the list">
+            <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git", null, () => _filter = new() { Sort = _filter.Sort })</li>
+            <li>@Tile("sm-summary-review", summary.NeedsReview, "requiring review", summary.NeedsReview == 0 ? "No open decisions" : "Role or association to decide",
+                summary.NeedsReview > 0 ? "attention" : null, () => _filter = _filter with { ReviewOnly = true })</li>
+            <li>@Tile("sm-summary-analyzed", summary.Analyzed, "analyzed", "Every contained dimension", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Analyzed) })</li>
+            <li>@Tile("sm-summary-partial", summary.Partial, "partly analyzed", "Some dimensions partial or failed", summary.Partial > 0 ? "partial" : null,
+                () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Partial) })</li>
+            <li>@Tile("sm-summary-not-analyzed", summary.NotAnalyzed, "not analyzed", "Nothing analyzed yet", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.NotAnalyzed) })</li>
+            <li>@Tile("sm-summary-applications", summary.Applications, summary.Applications == 1 ? "application" : "applications", "Distinct applications these sources serve", null, null)</li>
         </ul>
-        @if (_links.Count > 0)
-        {
-            <p class="sm-bulk-actions"><button type="button" class="btn-secondary btn-sm" disabled="@(_checkingAll || _busy)" data-testid="sm-check-all" @onclick="CheckAllAsync">
-                @(_checkingAll ? "Checking…" : $"Check all linked repositories ({_links.Count})")</button>
-                <span class="sm-muted sm-small">Read-only: compares each branch's remote commit with the last imported one. Nothing is imported.</span></p>
-            @if (_bulkCheck is not null) { @BulkCheckTable() }
-        }
-        <div class="sm-table-wrap">
-            <table class="sm-table" data-testid="sm-table">
-                <thead><tr><th scope="col">Source</th><th scope="col">Origin</th><th scope="col">Capabilities</th><th scope="col">Associated applications</th><th scope="col">Current snapshot</th><th scope="col">Analysis status</th><th scope="col">Last updated</th></tr></thead>
-                <tbody>
-                    @foreach (var row in _rows)
+        <span class="visually-hidden" data-testid="sm-summary-zip">@summary.Zip ZIP</span>
+        <span class="visually-hidden" data-testid="sm-summary-git">@summary.Git Git</span>
+
+        @if (_bulkCheck is not null) { @BulkCheckTable() }
+
+        var shown = SourceManagementPresentation.Apply(_facts, _filter);
+        <div class="sm-workspace @(SelectedFacts is not null ? "has-inspector" : null)">
+            <section class="sm-list-panel" aria-labelledby="sm-list-heading">
+                <h2 id="sm-list-heading" class="visually-hidden">Sources</h2>
+                <div class="sm-toolbar" role="search" data-testid="sm-toolbar">
+                    <label class="sm-search"><span class="visually-hidden">Search sources by name</span>
+                        <input type="search" placeholder="Search by name" value="@_filter.Search" @oninput="e => _filter = _filter with { Search = e.Value?.ToString() ?? string.Empty }" data-testid="sm-search" /></label>
+                    @if (_facts.Any(f => f.Origin == "ZIP") && _facts.Any(f => f.Origin == "Git"))
                     {
-                        var selected = _selectedKey == row.Key;
-                        <tr data-testid="sm-row" data-origin="@row.Origin" data-key="@row.Key" class="@(selected ? "sm-row-selected" : null)" aria-selected="@(selected ? "true" : "false")">
-                            <th scope="row">
-                                <button type="button" class="sm-open" data-testid="sm-open" aria-expanded="@(selected ? "true" : "false")" aria-controls="sm-detail" @onclick="() => Open(row)">@row.Name</button>
-                                <div class="sm-muted sm-small" data-testid="sm-roles">@Roles(row)</div>
-                            </th>
-                            <td><span class="sm-badge sm-badge-@row.Origin.ToLowerInvariant()">@row.Origin</span>@if (row.Link is { } l) { <div class="sm-muted sm-small">@l.Organization / @l.Project · @(l.PinnedCommit is { } p ? $"commit {p[..8]}" : l.Branch)</div> }</td>
-                            <td data-testid="sm-capabilities">@CapabilityText(row)</td>
-                            <td data-testid="sm-associated">@(AssociatedApplications(row) is { Count: > 0 } apps ? string.Join(", ", apps.Select(a => $"{a.Application} ({a.Environment})")) : "—")</td>
-                            <td>@(row.Record?.SourceSnapshotId is { } snap ? snap.ToString()[..8] : "—")@if (row.Record?.Git is { } g) { <div class="sm-muted sm-small">commit @g.ShortSha</div> }</td>
-                            <td data-testid="sm-analysis">@AnalysisStatus(row)</td>
-                            <td>@(row.Record is { } r ? r.ImportedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") + " UTC" : "Not imported")</td>
-                        </tr>
+                        <label><span class="visually-hidden">Origin</span>
+                            <select value="@_filter.Origin" @onchange="e => _filter = _filter with { Origin = e.Value?.ToString() ?? string.Empty }" data-testid="sm-filter-origin">
+                                <option value="">All origins</option><option value="ZIP">ZIP</option><option value="Git">Git</option>
+                            </select></label>
                     }
-                </tbody>
-            </table>
+                    @if (SourceManagementPresentation.CapabilityOptions(_facts) is { Count: > 1 } capabilities)
+                    {
+                        <label><span class="visually-hidden">Capability</span>
+                            <select value="@_filter.Capability" @onchange="e => _filter = _filter with { Capability = e.Value?.ToString() ?? string.Empty }" data-testid="sm-filter-capability">
+                                <option value="">All capabilities</option>
+                                @foreach (var capability in capabilities) { <option value="@capability">@capability</option> }
+                            </select></label>
+                    }
+                    <label><span class="visually-hidden">Analysis status</span>
+                        <select value="@_filter.Analysis" @onchange="e => _filter = _filter with { Analysis = e.Value?.ToString() ?? string.Empty }" data-testid="sm-filter-analysis">
+                            <option value="">Any analysis status</option>
+                            <option value="@nameof(SourceAnalysisBucket.Analyzed)">Analyzed</option>
+                            <option value="@nameof(SourceAnalysisBucket.Partial)">Partly analyzed</option>
+                            <option value="@nameof(SourceAnalysisBucket.NotAnalyzed)">Not analyzed</option>
+                        </select></label>
+                    <label class="sm-toggle"><input type="checkbox" checked="@_filter.ReviewOnly" @onchange="e => _filter = _filter with { ReviewOnly = (bool)e.Value! }" data-testid="sm-filter-review" /> Requires review</label>
+                    <label><span class="visually-hidden">Sort</span>
+                        <select value="@_filter.Sort" @onchange="SetSort" data-testid="sm-sort">
+                            <option value="name">Sort: name</option><option value="updated">Sort: last updated</option><option value="analysis">Sort: analysis</option>
+                        </select></label>
+                    <span class="sm-count" role="status" data-testid="sm-count">@(_filter.IsActive ? $"{shown.Count} of {_facts.Count}" : $"{_facts.Count}") shown</span>
+                    @if (_filter.IsActive) { <button type="button" class="btn-link" @onclick="() => _filter = new() { Sort = _filter.Sort }" data-testid="sm-clear-filters">Clear filters</button> }
+                </div>
+
+                @if (shown.Count == 0)
+                {
+                    <p class="sm-empty-inline" data-testid="sm-no-match">No source matches these filters. <button type="button" class="btn-link" @onclick="() => _filter = new() { Sort = _filter.Sort }">Clear filters</button></p>
+                }
+                <ul class="sm-list" data-testid="sm-table" aria-label="Sources">
+                    @foreach (var f in shown)
+                    {
+                        var selected = _selectedKey == f.Key;
+                        <li class="sm-item @(selected ? "is-selected" : null) @(f.NeedsReview ? "needs-review" : null)" data-testid="sm-row" data-origin="@f.Origin" data-key="@f.Key"
+                            aria-current="@(selected ? "true" : null)">
+                            <div class="sm-item-main">
+                                <button type="button" class="sm-open" data-testid="sm-open" aria-expanded="@(selected ? "true" : "false")" aria-controls="sm-detail" @onclick="() => Open(f.Key)">@f.Name</button>
+                                <span class="sm-chip sm-chip-@f.Origin.ToLowerInvariant()" data-testid="sm-origin">@f.Origin</span>
+                                @if (f.NeedsReview) { <span class="sm-chip sm-chip-attention" data-testid="sm-review-flag" title="@f.ReviewReason">Requires review</span> }
+                            </div>
+                            <div class="sm-item-roles" data-testid="sm-roles">@RoleLine(f)</div>
+                            <div class="sm-item-facts">
+                                <div class="sm-facet"><span class="sm-facet-label">Capabilities</span>
+                                    <span class="sm-chips" data-testid="sm-capabilities">
+                                        @if (f.Capabilities.Count == 0) { <span class="sm-quiet">@(f.Imported ? "None detected" : "Not imported")</span> }
+                                        @foreach (var c in f.Capabilities.Take(4)) { <span class="sm-chip">@c</span> }
+                                        @if (f.Capabilities.Count > 4) { <span class="sm-chip sm-chip-more" title="@string.Join(", ", f.Capabilities.Skip(4))">+@(f.Capabilities.Count - 4)</span> }
+                                    </span></div>
+                                <div class="sm-facet"><span class="sm-facet-label">Analysis</span>
+                                    <span class="sm-chips" data-testid="sm-analysis" data-bucket="@f.Bucket">@AnalysisChips(f)</span></div>
+                            </div>
+                            <div class="sm-item-meta">
+                                <span data-testid="sm-associated">@(f.Applications.Count > 0 ? string.Join(", ", f.Applications.Select(a => $"{a.Application} ({a.Environment})")) : "No application yet")</span>
+                                @if (f.SnapshotId is { } snap) { <span>Snapshot <code>@snap.ToString()[..8]</code></span> }
+                                @if (f.Commit is { } commit) { <span>Commit <code>@commit</code></span> }
+                                <span>@SourceManagementPresentation.Updated(f.UpdatedAt)</span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </section>
+            @if (SelectedRow is { } open && SelectedFacts is { } openFacts)
+            {
+                @Detail(open, openFacts)
+            }
         </div>
-        @if (_rows.FirstOrDefault(r => r.Key == _selectedKey) is { } open)
-        {
-            @Detail(open)
-        }
     }
 </div>
 
@@ -83,16 +167,23 @@
     private static readonly PackageEvidenceRole[] RoleChoices = [.. Enum.GetValues<PackageEvidenceRole>().Where(r => r != PackageEvidenceRole.NotClassified)];
     private SddApplicationContext? _application;
     private List<Row> _rows = [];
+    private List<SourceRowFacts> _facts = [];
     private IReadOnlyList<GitSourceLink> _links = [];
     private readonly Dictionary<string, IReadOnlyList<GitSourceMatch>> _matches = new(StringComparer.Ordinal);
-    private string? _environmentId, _error, _editing, _notice, _selectedKey;
+    private string? _environmentId, _error, _linksError, _editing, _notice, _selectedKey;
     private string _tab = "overview";
+    private SourceListFilter _filter = new();
     private ProjectEvidenceView? _evidence;
+    private bool _loaded, _copied;
+    private readonly LoadSequence _loads = new();
     private IProjectEvidenceService? Evidence => Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
     private IFrontendAnalysisSettingsService? Settings => Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService;
     private bool _busy;
     // The roles being edited: kept across renders (a set built inside the fragment would be rebuilt, and a ticked role lost, on every re-render).
     private HashSet<string> _draftRoles = new(StringComparer.Ordinal);
+
+    private Row? SelectedRow => _rows.FirstOrDefault(r => r.Key == _selectedKey);
+    private SourceRowFacts? SelectedFacts => _facts.FirstOrDefault(f => f.Key == _selectedKey);
 
     private void ToggleRoleEditor(Row row, bool open = false)
     {
@@ -106,34 +197,63 @@
 
     private IGitSourcesApiService? Git => Services.GetService(typeof(IGitSourcesApiService)) as IGitSourcesApiService;
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    /// <summary>Initial load and Retry: import records at once, then linked repositories and Project Evidence. "No sources" is shown only
+    /// after the load — never while it runs.</summary>
+    private async Task ReloadAsync()
     {
+        var load = _loads.Begin();
+        _linksError = null;
         try { _environmentId = (await Contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
-        if (_environmentId is not null && Git is { } git) _links = (await git.LinksAsync(_environmentId)).Items;
-        Build();
+        if (!load.IsCurrent) return;
+        if (_environmentId is not null && Git is { } git)
+        {
+            var (items, error) = await git.LinksAsync(_environmentId, load.Token);
+            if (!load.IsCurrent) return;
+            _links = items;
+            _linksError = error;
+        }
         // Capabilities and the active environment's associations come from the shared Project Evidence read (no inference on this page).
         if (Evidence is { } evidence)
         {
             try { _evidence = await evidence.GetAsync(_environmentId); }
             catch (Exception ex) when (ex is not OutOfMemoryException) { _evidence = null; }
+            if (!load.IsCurrent) return;
         }
+        Build();
+        _loaded = true;
+        _loads.End(load);
     }
 
-    private void Open(Row row)
+    public void Dispose() => _loads.Dispose();
+
+    private ElementReference _detailHeading;
+    private bool _focusDetail;
+
+    /// <summary>Opening a source moves focus to its inspector: announced to screen readers, and on a narrow screen (inspector below the list)
+    /// scrolled into view instead of opening out of sight.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _selectedKey = _selectedKey == row.Key ? null : row.Key;
+        if (!_focusDetail) return;
+        _focusDetail = false;
+        try { await _detailHeading.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+
+    private void Open(string key)
+    {
+        _selectedKey = _selectedKey == key ? null : key;
         _tab = "overview";
         _notice = null;
-        if (_selectedKey is not null) ToggleRoleEditor(row, open: true);
+        _copied = false;
+        _focusDetail = _selectedKey is not null;
+        if (SelectedRow is { } row) ToggleRoleEditor(row, open: true);
         else _editing = null;
     }
 
     private ProjectEvidencePackage? PackageOf(Row row) => row.Record is { } r ? _evidence?.Packages.FirstOrDefault(p => p.ImportId == r.ImportId) : null;
 
     private PackageAssociation? AssociationOf(Row row) => row.Record is { } r ? _evidence?.Associations.FirstOrDefault(a => a.Package.ImportId == r.ImportId) : null;
-
-    private string CapabilityText(Row row) => PackageOf(row) is { Capabilities.Count: > 0 } p
-        ? string.Join(", ", p.Capabilities.Select(c => ProjectEvidencePackages.CapabilityLabel(c.Capability))) : row.Record is null ? "Not imported" : "None detected";
 
     /// <summary>Applications the source is evidence for: every Target Environment whose Project Evidence references the import (shared records).</summary>
     private IReadOnlyList<(string Application, string Environment)> AssociatedApplications(Row row)
@@ -144,100 +264,178 @@
     }
 
     /// <summary>A decision is open: the active environment's association needs review, or the role is neither confirmed nor classified.</summary>
-    private bool NeedsReview(Row row) => AssociationOf(row) is { State: EvidenceAssociationState.NeedsReview }
-        || row.Record is { } r && r.ConfirmedRoles.Count == 0 && AssociationOf(row) is { Role: PackageEvidenceRole.NotClassified };
+    private string? ReviewReason(Row row) =>
+        AssociationOf(row) is { State: EvidenceAssociationState.NeedsReview } a ? $"Association needs review: {a.Detail}"
+        : row.Record is { } r && r.ConfirmedRoles.Count == 0 && AssociationOf(row) is { Role: PackageEvidenceRole.NotClassified } ? "No role: assign what this source is"
+        : null;
 
     /// <summary>
-    /// Analysis per dimension the package actually contains ("Infrastructure: Analyzed · Docs: Partial") — the same reading as Project Evidence.
-    /// The snapshot's own status is the application-code analyzer's outcome only (a Terraform package without application code reads "Failed"
-    /// there), so it is never shown as the package's analysis.
+    /// Analysis per dimension the package actually contains — the same reading as Project Evidence. The snapshot's own status is the
+    /// application-code analyzer's outcome only (a Terraform package without application code reads "Failed" there), so it is never shown as
+    /// the package's analysis.
     /// </summary>
-    private string AnalysisStatus(Row row)
+    private SourceRowFacts Facts(Row row)
     {
-        if (row.Record is null) return "Not imported";
-        if (PackageOf(row) is not { } package) return row.Record.SourceSnapshotId is null ? "Not analyzed" : "Analysis not loaded";
-        var dimensions = BirkNext.Web.Components.TargetEnvironmentProjectPane.AnalysisDimensions(package);
-        return dimensions.Count == 0 ? package.SnapshotId is null ? "Not analyzed" : "Nothing analyzable detected"
-            : string.Join(" · ", dimensions.Select(d => $"{d.Label}: {DimensionText(d.Status)}"));
+        var package = PackageOf(row);
+        IReadOnlyList<SourceAnalysisChip> analysis = package is null ? []
+            : [.. BirkNext.Web.Components.TargetEnvironmentProjectPane.AnalysisDimensions(package).Select(d => new SourceAnalysisChip(d.Label, d.Status))];
+        string? note = row.Record is null ? "Not imported"
+            : package is null ? row.Record.SourceSnapshotId is null ? "Not analyzed" : "Analysis not loaded"
+            : analysis.Count == 0 ? package.SnapshotId is null ? "Not analyzed" : "Nothing analyzable detected" : null;
+        var reason = ReviewReason(row);
+        return new(row.Key, row.Name, row.Origin, row.Record is not null,
+            package is { Capabilities.Count: > 0 } p ? [.. p.Capabilities.Select(c => ProjectEvidencePackages.CapabilityLabel(c.Capability))] : [],
+            analysis, SourceManagementPresentation.Bucket(row.Record is not null, analysis), note, reason is not null, reason, SavedRoles(row),
+            AssociatedApplications(row), row.Record?.ImportedAt, row.Record?.SourceSnapshotId, row.Record?.Git?.ShortSha);
     }
-
-    private static string DimensionText(PackageCapabilityStatus status) => status switch
-        { PackageCapabilityStatus.Ready => "Analyzed", PackageCapabilityStatus.Partial => "Partial", _ => "Failed" };
-
-    /// <summary>Summary bucket: every contained dimension analyzed, some only partly (or failed), or nothing analyzed.</summary>
-    private string AnalysisSummary(Row row) => PackageOf(row) is { } package && BirkNext.Web.Components.TargetEnvironmentProjectPane.AnalysisDimensions(package) is { Count: > 0 } d
-        ? d.All(x => x.Status == PackageCapabilityStatus.Ready) ? "Analyzed" : "Partly analyzed" : "Not analyzed";
 
     private static readonly (string Key, string Label)[] DetailTabs =
         [("overview", "Overview"), ("roles", "Capabilities & Roles"), ("associations", "Associations"), ("snapshots", "Snapshots"), ("evidence", "Analysis & Evidence"), ("history", "History")];
 
-    private RenderFragment Detail(Row row) => __builder =>
+    private RenderFragment Tile(string testId, int value, string label, string detail, string? tone, Action? filter) => __builder =>
+    {
+        if (filter is null)
+        {
+            <div class="sm-tile @(tone is null ? null : $"is-{tone}")" data-testid="@testId"><strong class="sm-tile-value">@value</strong> <span class="sm-tile-label">@label</span><span class="sm-tile-detail">@detail</span></div>
+        }
+        else
+        {
+            <button type="button" class="sm-tile @(tone is null ? null : $"is-{tone}")" data-testid="@testId" @onclick="filter" title="Filter the list"><strong class="sm-tile-value">@value</strong> <span class="sm-tile-label">@label</span><span class="sm-tile-detail">@detail</span></button>
+        }
+    };
+
+    /// <summary>Confirmed roles as chips; without a confirmed role, one quiet line (not repeated noise on every row).</summary>
+    private RenderFragment RoleLine(SourceRowFacts f) => __builder =>
+    {
+        if (f.ConfirmedRoles.Count > 0)
+        {
+            <span class="sm-facet-label">Roles</span>
+            foreach (var role in f.ConfirmedRoles) { <span class="sm-chip sm-chip-role">@Label(role)</span> }
+            <span class="sm-quiet">confirmed</span>
+        }
+        else { <span class="sm-quiet">Role detected from content</span> }
+    };
+
+    private RenderFragment AnalysisChips(SourceRowFacts f) => __builder =>
+    {
+        if (f.Analysis.Count == 0) { <span class="sm-quiet">@f.AnalysisNote</span> return; }
+        foreach (var chip in f.Analysis)
+        {
+            <span class="sm-chip sm-status sm-status-@chip.Tone" data-status="@chip.Status"><span class="sm-status-dot" aria-hidden="true"></span>@chip.Dimension · @chip.StatusText</span>
+        }
+    };
+
+    private RenderFragment Detail(Row row, SourceRowFacts facts) => __builder =>
     {
         var association = AssociationOf(row);
         <section id="sm-detail" class="sm-detail" data-testid="sm-detail" data-key="@row.Key" aria-labelledby="sm-detail-title">
             <header class="sm-detail-head">
-                <h2 id="sm-detail-title">@row.Name</h2>
-                <div class="sm-detail-actions">
-                    @if (row.Link is { } link)
-                    {
-                        <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => CheckAsync(link)" data-testid="sm-check">Check for updates</button>
-                        <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ImportRevision(link)" data-testid="sm-import-revision">@(GitUpdateStates.CommitToImport(link) is { } commit ? $"Import revision {commit[..8]}" : "Import branch head")</button>
-                    }
-                    else { <a class="btn-secondary btn-sm" href="project-import?import=1" data-testid="sm-upload-version">Upload new version</a> }
-                    <button type="button" class="btn-secondary btn-sm" @onclick='() => _tab = "roles"' data-testid="sm-edit-roles">Manage roles</button>
-                    <a class="btn-secondary btn-sm" href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate">Associate with application</a>
-                    @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="btn-secondary btn-sm" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View evidence</a> }
-                    <a class="btn-secondary btn-sm" href="snapshots" data-testid="sm-snapshots">View snapshots</a>
+                <div class="sm-detail-title">
+                    <h2 id="sm-detail-title" tabindex="-1" @ref="_detailHeading">@row.Name</h2>
+                    <span class="sm-chip sm-chip-@row.Origin.ToLowerInvariant()">@row.Origin</span>
+                    @if (facts.NeedsReview) { <span class="sm-chip sm-chip-attention">Requires review</span> }
                 </div>
+                <button type="button" class="sm-close" aria-label="Close details" @onclick="() => Open(row.Key)" data-testid="sm-close">×</button>
             </header>
+            @if (facts.ReviewReason is { } why)
+            {
+                <p class="sm-review-callout" role="note" data-testid="sm-review-reason"><strong>Requires review.</strong> @why
+                    <a href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)">Decide in Project Evidence</a></p>
+            }
+            <div class="sm-detail-actions" role="group" aria-label="Update this source">
+                @if (row.Link is { } link)
+                {
+                    <BusyButton Class="btn-secondary btn-sm" Text="Check for updates" BusyText="Checking…" Disabled="@(_busy || _checkingAll)" OnClick="() => CheckAsync(link)" TestId="sm-check" />
+                    <button type="button" class="btn-primary btn-sm" disabled="@_busy" @onclick="() => ImportRevision(link)" data-testid="sm-import-revision">@(GitUpdateStates.CommitToImport(link) is { } commit ? $"Import revision {commit[..8]}" : "Import branch head")</button>
+                }
+                else { <a class="btn-primary btn-sm" href="project-import?import=1" data-testid="sm-upload-version">Upload new version</a> }
+                <span class="sm-action-sep" aria-hidden="true"></span>
+                <button type="button" class="sm-link-action" @onclick='() => SelectTab(row, "roles")' data-testid="sm-edit-roles">Manage roles</button>
+                <a class="sm-link-action" href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate">Associate with application</a>
+                @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="sm-link-action" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View evidence</a> }
+                <a class="sm-link-action" href="snapshots" data-testid="sm-snapshots">View snapshots</a>
+            </div>
             <div class="sm-tabs" role="tablist" aria-label="@($"{row.Name} details")">
                 @foreach (var (key, label) in DetailTabs)
                 {
                     <button type="button" role="tab" id="@($"sm-tab-{key}")" aria-selected="@(_tab == key ? "true" : "false")" aria-controls="sm-tabpanel" class="sm-tab"
-                            data-testid="sm-tab" data-tab="@key" @onclick="() => SelectTab(row, key)">@label</button>
+                            tabindex="@(_tab == key ? "0" : "-1")" data-testid="sm-tab" data-tab="@key" @onclick="() => SelectTab(row, key)" @onkeydown="e => TabKey(row, e)">@label</button>
                 }
             </div>
-            <div id="sm-tabpanel" role="tabpanel" aria-labelledby="@($"sm-tab-{_tab}")" class="sm-tabpanel" data-testid="sm-tabpanel" data-tab="@_tab">
+            <div id="sm-tabpanel" role="tabpanel" aria-labelledby="@($"sm-tab-{_tab}")" class="sm-tabpanel" data-testid="sm-tabpanel" data-tab="@_tab" tabindex="0">
                 @switch (_tab)
                 {
                     case "roles":
-                        @RoleEditor(row)
+                        @RoleEditor(row, facts)
                         break;
                     case "associations":
-                        var apps = AssociatedApplications(row);
-                        @if (apps.Count == 0) { <p class="sm-muted" data-testid="sm-no-associations">Not associated with any application yet. Associate it under Target Environments → Project Evidence.</p> }
-                        else { <ul data-testid="sm-association-list">@foreach (var (app, env) in apps) { <li><strong>@app</strong> · @env</li> }</ul> }
+                        var apps = facts.Applications;
+                        @if (apps.Count == 0)
+                        {
+                            <div class="sm-empty-card" data-testid="sm-no-associations"><strong>Not associated with any application yet.</strong>
+                                <span>A source becomes evidence for an application when you associate it under Target Environments → Project Evidence.</span></div>
+                        }
+                        else
+                        {
+                            <ul class="sm-assoc-list" data-testid="sm-association-list">
+                                @foreach (var (app, env) in apps) { <li><span class="sm-assoc-source">@row.Name</span><span aria-hidden="true">→</span><strong>@app</strong><span class="sm-chip">@env</span></li> }
+                            </ul>
+                        }
                         @if (association is { State: EvidenceAssociationState.NeedsReview or EvidenceAssociationState.NotAssociated } a)
                         {
-                            <p class="sm-muted" data-testid="sm-association-why">Active environment: @a.StateLabel — @a.Detail</p>
+                            <p class="sm-quiet" data-testid="sm-association-why">Active environment: @a.StateLabel — @a.Detail</p>
                         }
                         <a href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate-link">Review associations in Project Evidence</a>
                         break;
                     case "snapshots":
-                        <p>Current snapshot: @(row.Record?.SourceSnapshotId is { } current ? current.ToString() : "none")@if (row.Record?.Git is { } git) { <span> · commit @git.ShortSha</span> }</p>
-                        <a href="snapshots" data-testid="sm-snapshots-link">Open the Snapshot Registry</a>
+                        @if (row.Record?.SourceSnapshotId is { } current)
+                        {
+                            <div class="sm-card" data-testid="sm-current-snapshot">
+                                <span class="sm-facet-label">Current snapshot</span>
+                                <code class="sm-snapshot-id">@current.ToString("D")</code>
+                                @if (row.Record.Git is { } git) { <span class="sm-quiet">commit @git.ShortSha · @git.Branch</span> }
+                                <span class="sm-quiet">Imported @SourceManagementPresentation.Updated(row.Record.ImportedAt)</span>
+                                <div class="sm-card-actions">
+                                    <button type="button" class="btn-secondary btn-sm" @onclick="() => CopyAsync(current.ToString())" data-testid="sm-copy-snapshot">@(_copied ? "Copied" : "Copy id")</button>
+                                    <a class="btn-secondary btn-sm" href="@($"source-analysis?snapshot={current:D}")">Open in Source Analysis</a>
+                                </div>
+                            </div>
+                        }
+                        else { <div class="sm-empty-card"><strong>No snapshot yet.</strong><span>@(row.Record is null ? "This repository has not been imported." : "The source part of this import was not analyzed.")</span></div> }
+                        <a href="snapshots" data-testid="sm-snapshots-link">Open the Snapshot Registry — every revision, comparisons</a>
                         break;
                     case "evidence":
-                        <p data-testid="sm-analysis-detail">Analysis: @AnalysisStatus(row)</p>
-                        <p>Capabilities (from its content): @CapabilityText(row)</p>
-                        @if (row.Record?.SourceSnapshotId is { } snapshot) { <a href="@($"source-analysis?snapshot={snapshot:D}")">Open Source Analysis</a> }
+                        <div class="sm-card" data-testid="sm-analysis-detail">
+                            <span class="sm-facet-label">Analysis by dimension</span>
+                            @if (facts.Analysis.Count == 0) { <span class="sm-quiet">@facts.AnalysisNote</span> }
+                            else
+                            {
+                                <ul class="sm-dim-list">
+                                    @foreach (var chip in facts.Analysis)
+                                    {
+                                        <li><span>@chip.Dimension</span><span class="sm-chip sm-status sm-status-@chip.Tone"><span class="sm-status-dot" aria-hidden="true"></span>@chip.StatusText</span></li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <div class="sm-card"><span class="sm-facet-label">Capabilities (from its content)</span>
+                            <span class="sm-chips">@if (facts.Capabilities.Count == 0) { <span class="sm-quiet">None detected</span> } @foreach (var c in facts.Capabilities) { <span class="sm-chip">@c</span> }</span></div>
+                        @if (row.Record?.SourceSnapshotId is { } snapshot)
+                        {
+                            <p class="sm-links"><a href="@($"source-analysis?snapshot={snapshot:D}")">Open Source Analysis</a> · <a href="technology-coverage">Technology Coverage</a> · <a href="generated-documentation">Generated documentation</a></p>
+                        }
                         break;
                     case "history":
-                        @if (row.Link is { } historyLink)
-                        {
-                            <p class="sm-muted">Earlier ZIP imports that may be this repository. Names alone are never evidence; you decide.</p>
-                            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => MatchesAsync(historyLink)" data-testid="sm-matches">Find earlier imports</button>
-                            @if (_matches.TryGetValue(historyLink.Id, out var matches)) { @MatchList(historyLink, matches) }
-                        }
-                        else { <p class="sm-muted">Imported @(row.Record?.ImportedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—") UTC from @(row.Record?.ArchiveFileName ?? "a ZIP"). Upload a newer ZIP to add a revision.</p> }
+                        @History(row)
                         break;
                     default:
                         <dl class="sm-overview">
-                            <dt>Origin</dt><dd>@row.Origin@if (row.Link is { } l) { <span> · @l.Organization / @l.Project / @l.Repository · @(l.PinnedCommit ?? l.Branch)</span> }</dd>
-                            <dt>Roles</dt><dd>@Roles(row)</dd>
-                            <dt>Capabilities</dt><dd>@CapabilityText(row)</dd>
-                            <dt>Updates</dt><dd data-testid="sm-updates">@Updates(row)</dd>
-                            <dt>Analysis</dt><dd>@AnalysisStatus(row)</dd>
+                            <div><dt>Origin</dt><dd>@row.Origin@if (row.Link is { } l) { <span> · @l.Organization / @l.Project / @l.Repository · @(l.PinnedCommit is { } pin ? $"commit {pin[..8]}" : l.Branch)</span> } else if (row.Record is { } r) { <span> · @r.ArchiveFileName</span> }</dd></div>
+                            <div><dt>Roles</dt><dd>@RoleLine(facts)</dd></div>
+                            <div><dt>Capabilities</dt><dd class="sm-chips">@if (facts.Capabilities.Count == 0) { <span class="sm-quiet">@(facts.Imported ? "None detected" : "Not imported")</span> } @foreach (var c in facts.Capabilities) { <span class="sm-chip">@c</span> }</dd></div>
+                            <div><dt>Update path</dt><dd data-testid="sm-updates">@Updates(row)</dd></div>
+                            <div><dt>Analysis</dt><dd class="sm-chips">@AnalysisChips(facts)</dd></div>
+                            <div><dt>Applications</dt><dd>@(facts.Applications.Count == 0 ? "None yet" : string.Join(", ", facts.Applications.Select(a => a.Application).Distinct(StringComparer.OrdinalIgnoreCase)))</dd></div>
                         </dl>
                         break;
                 }
@@ -245,10 +443,26 @@
         </section>
     };
 
+    private void SetSort(ChangeEventArgs e) => _filter = _filter with { Sort = e.Value?.ToString() is { Length: > 0 } sort ? sort : "name" };
+
     private void SelectTab(Row row, string key)
     {
         _tab = key;
         if (key == "roles" && _editing != row.Key) ToggleRoleEditor(row, open: true);
+    }
+
+    /// <summary>Arrow keys move between tabs (WAI-ARIA tabs pattern); Home/End go to the first/last.</summary>
+    private void TabKey(Row row, KeyboardEventArgs e)
+    {
+        var index = Array.FindIndex(DetailTabs, t => t.Key == _tab);
+        var next = e.Key switch { "ArrowRight" => (index + 1) % DetailTabs.Length, "ArrowLeft" => (index + DetailTabs.Length - 1) % DetailTabs.Length, "Home" => 0, "End" => DetailTabs.Length - 1, _ => -1 };
+        if (next >= 0) SelectTab(row, DetailTabs[next].Key);
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _copied = true; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { _copied = false; }
     }
 
     /// <summary>
@@ -263,12 +477,7 @@
             r.Git is { } g ? _links.FirstOrDefault(l => string.Equals(l.Organization, g.Organization, StringComparison.OrdinalIgnoreCase) && l.RepositoryId == g.RepositoryId) : null)).ToList();
         rows.AddRange(_links.Where(l => rows.All(r => r.Link?.Id != l.Id)).Select(l => new Row(l.Id, l.Repository, "Git", null, l)));
         _rows = rows;
-    }
-
-    private static string Roles(Row row)
-    {
-        var confirmed = row.Link is { Roles.Count: > 0 } link ? link.Roles : row.Record?.ConfirmedRoles ?? [];
-        return confirmed.Count > 0 ? string.Join(", ", confirmed.Select(Label)) + " · confirmed" : "Detected from content";
+        _facts = [.. rows.Select(Facts)];
     }
 
     private static string Label(string role) => Enum.TryParse<PackageEvidenceRole>(role, out var r) ? ApplicationContexts.RoleLabel(r) : role;
@@ -288,6 +497,43 @@
         };
     }
 
+    /// <summary>History as a timeline: imports of this source (newest first), the last update check, and — for a repository — earlier ZIP imports
+    /// that may be the same code (the person decides).</summary>
+    private RenderFragment History(Row row) => __builder =>
+    {
+        var events = new List<(DateTimeOffset At, string Text)>();
+        if (row.Link is { } link)
+        {
+            events.AddRange(link.Imports.Select(i => (i.ImportedAt, $"Imported commit {i.CommitSha[..Math.Min(8, i.CommitSha.Length)]} from {i.Branch}")));
+            if (link.LastCheck is { } check) events.Add((check.CheckedAt, $"Checked for updates: {GitUpdateStates.Label(GitUpdateStates.Of(link))}"));
+        }
+        if (row.Record is { } record && (row.Link is null || row.Link.Imports.All(i => i.ImportId != record.ImportId)))
+            events.Add((record.ImportedAt, $"Imported from {(string.IsNullOrEmpty(record.ArchiveFileName) ? "a ZIP" : record.ArchiveFileName)}"));
+        if (events.Count == 0) { <div class="sm-empty-card"><strong>No history yet.</strong><span>Imports and update checks appear here.</span></div> }
+        else
+        {
+            <ol class="sm-timeline" data-testid="sm-timeline">
+                @foreach (var (at, text) in events.OrderByDescending(e => e.At))
+                {
+                    <li><time datetime="@at.ToString("O")">@SourceManagementPresentation.Updated(at)</time><span>@text</span></li>
+                }
+            </ol>
+        }
+        if (row.Link is { } historyLink)
+        {
+            <div class="sm-card">
+                <span class="sm-facet-label">Earlier ZIP imports of this repository?</span>
+                <p class="sm-quiet">Names alone are never evidence; matches are by content or commit, and you decide.</p>
+                <div><BusyButton Class="btn-secondary btn-sm" Text="Find earlier imports" BusyText="Searching…" Disabled="_busy" OnClick="() => MatchesAsync(historyLink)" TestId="sm-matches" /></div>
+                @if (_matches.TryGetValue(historyLink.Id, out var matches)) { @MatchList(historyLink, matches) }
+            </div>
+        }
+        else if (row.Record is { } zip)
+        {
+            <p class="sm-quiet">Upload a newer ZIP of @zip.ProjectName to add a revision; this one stays in the Snapshot Registry.</p>
+        }
+    };
+
     // ── "Check all linked repositories": read-only, a few at a time; each row keeps its own outcome (partial success is normal) ───────────
 
     private bool _checkingAll;
@@ -298,54 +544,60 @@
     {
         if (Git is not { } git || _environmentId is null || _links.Count == 0) return;
         (_checkingAll, _error, _bulkCheck) = (true, null, null);
-        var gate = new SemaphoreSlim(CheckConcurrency);
-        var results = await Task.WhenAll(_links.Select(async link =>
+        try
         {
-            await gate.WaitAsync();
-            try
+            var gate = new SemaphoreSlim(CheckConcurrency);
+            var results = await Task.WhenAll(_links.Select(async link =>
             {
-                var (updated, error) = await git.CheckAsync(link.Id, _environmentId);
-                return (Link: updated ?? link, Error: updated is null ? error ?? "The check failed." : null);
-            }
-            finally { gate.Release(); }
-        }));
-        _links = [.. _links.Select(l => results.FirstOrDefault(r => r.Link.Id == l.Id) is { Link: { } r } && r.Id == l.Id ? r : l)];
-        _bulkCheck = results;
-        _checkingAll = false;
-        Build();
+                await gate.WaitAsync();
+                try
+                {
+                    var (updated, error) = await git.CheckAsync(link.Id, _environmentId);
+                    return (Link: updated ?? link, Error: updated is null ? error ?? "The check failed." : null);
+                }
+                finally { gate.Release(); }
+            }));
+            _links = [.. _links.Select(l => results.FirstOrDefault(r => r.Link.Id == l.Id) is { Link: { } r } && r.Id == l.Id ? r : l)];
+            _bulkCheck = results;
+            Build();
+        }
+        finally { _checkingAll = false; }
     }
 
     private RenderFragment BulkCheckTable() => __builder =>
     {
-        <div class="sm-table-wrap" data-testid="sm-bulk-check">
-            <table class="sm-table">
-                <caption class="sm-muted sm-small">Checked @_bulkCheck!.Count linked repositor@(_bulkCheck.Count == 1 ? "y" : "ies") — nothing was imported, no snapshot was created.</caption>
-                <thead><tr><th scope="col">Azure DevOps project</th><th scope="col">Repository</th><th scope="col">Branch</th><th scope="col">Imported revision</th><th scope="col">Remote revision</th><th scope="col">Status</th></tr></thead>
-                <tbody>
-                    @foreach (var (link, error) in _bulkCheck)
-                    {
-                        var state = GitUpdateStates.Of(link);
-                        <tr data-testid="sm-bulk-row" data-state="@state">
-                            <td>@link.Project</td><th scope="row">@link.Repository</th><td>@(link.PinnedCommit is { } p ? $"commit {p[..8]}" : link.Branch)</td>
-                            <td>@(link.LastImport?.CommitSha is { } imported ? imported[..8] : "—")</td>
-                            <td>@(link.LastCheck?.RemoteCommit is { } remote ? remote[..8] : "—")</td>
-                            <td>@(error ?? GitUpdateStates.Label(state))</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+        <section class="sm-bulk" data-testid="sm-bulk-check" aria-labelledby="sm-bulk-heading">
+            <header class="sm-bulk-head">
+                <h2 id="sm-bulk-heading">Update check — @_bulkCheck!.Count linked repositor@(_bulkCheck.Count == 1 ? "y" : "ies")</h2>
+                <button type="button" class="sm-link-action" @onclick="() => _bulkCheck = null" data-testid="sm-bulk-close">Dismiss</button>
+            </header>
+            <p class="sm-quiet">Read-only — nothing was imported, no snapshot was created.</p>
+            <ul class="sm-bulk-list">
+                @foreach (var (link, error) in _bulkCheck)
+                {
+                    var state = GitUpdateStates.Of(link);
+                    <li data-testid="sm-bulk-row" data-state="@state">
+                        <strong>@link.Repository</strong><span class="sm-quiet">@link.Project · @(link.PinnedCommit is { } p ? $"commit {p[..8]}" : link.Branch)</span>
+                        <span class="sm-quiet">imported @(link.LastImport?.CommitSha is { } imported ? imported[..8] : "—") · remote @(link.LastCheck?.RemoteCommit is { } remote ? remote[..8] : "—")</span>
+                        <span class="sm-chip @(error is not null || state is GitUpdateState.CheckFailed or GitUpdateState.BranchUnavailable or GitUpdateState.AuthenticationRequired ? "sm-status-failed" : state == GitUpdateState.UpdateAvailable ? "sm-chip-attention" : null)">@(error ?? GitUpdateStates.Label(state))</span>
+                    </li>
+                }
+            </ul>
+        </section>
     };
 
     private async Task CheckAsync(GitSourceLink link)
     {
         if (Git is not { } git || _environmentId is null) return;
         (_busy, _error) = (true, null);
-        var (updated, error) = await git.CheckAsync(link.Id, _environmentId);
-        _busy = false;
-        if (updated is null) { _error = error; return; }
-        _links = [.. _links.Select(l => l.Id == updated.Id ? updated : l)];
-        Build();
+        try
+        {
+            var (updated, error) = await git.CheckAsync(link.Id, _environmentId);
+            if (updated is null) { _error = error; return; }
+            _links = [.. _links.Select(l => l.Id == updated.Id ? updated : l)];
+            Build();
+        }
+        finally { _busy = false; }
     }
 
     /// <summary>Imports the link's revision (pinned commit or branch head) through the normal Project Import review.</summary>
@@ -364,10 +616,13 @@
     {
         if (Git is not { } git || _environmentId is null) return;
         (_busy, _error) = (true, null);
-        var (items, error) = await git.MatchesAsync(link.Id, _environmentId);
-        _busy = false;
-        if (error is not null) { _error = error; return; }
-        _matches[link.Id] = items;
+        try
+        {
+            var (items, error) = await git.MatchesAsync(link.Id, _environmentId);
+            if (error is not null) { _error = error; return; }
+            _matches[link.Id] = items;
+        }
+        finally { _busy = false; }
     }
 
     private async Task DecideAsync(GitSourceLink link, Guid snapshot, bool associate)
@@ -404,29 +659,38 @@
         if (Evidence is { } evidence)
         {
             try { _evidence = await evidence.GetAsync(_environmentId, refresh: true); } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+            Build();
         }
     }
 
-    private RenderFragment RoleEditor(Row row) => __builder =>
+    private RenderFragment RoleEditor(Row row, SourceRowFacts facts) => __builder =>
     {
         var current = _draftRoles;
         var association = AssociationOf(row);
         <div class="sm-role-panel" data-testid="sm-role-editor">
-            <p><strong>Detected capabilities</strong> (from the content, read-only): <span data-testid="sm-detected">@CapabilityText(row)</span></p>
-            @if (association is { } a && a.Role != PackageEvidenceRole.NotClassified)
-            {
-                <p class="sm-muted" data-testid="sm-role-why">Detected role: @ApplicationContexts.RoleLabel(a.Role)@(a.RoleConfirmed ? " (confirmed)" : " — from its content")</p>
-            }
+            <div class="sm-role-grid">
+                <div class="sm-card"><span class="sm-facet-label">Detected capabilities</span><span class="sm-quiet">From the content, read-only</span>
+                    <span class="sm-chips" data-testid="sm-detected">@if (facts.Capabilities.Count == 0) { <span class="sm-quiet">@(facts.Imported ? "None detected" : "Not imported")</span> } @foreach (var c in facts.Capabilities) { <span class="sm-chip">@c</span> }</span></div>
+                <div class="sm-card"><span class="sm-facet-label">Detected role</span>
+                    @if (association is { } a && a.Role != PackageEvidenceRole.NotClassified)
+                    {
+                        <span data-testid="sm-role-why">@ApplicationContexts.RoleLabel(a.Role)@(a.RoleConfirmed ? " (confirmed)" : " — from its content")</span>
+                    }
+                    else { <span class="sm-quiet">Not classified from its content</span> }</div>
+                <div class="sm-card"><span class="sm-facet-label">Effective role</span>
+                    <span data-testid="sm-effective-role">@(SavedRoles(row) is { Count: > 0 } saved ? string.Join(", ", saved.Select(Label)) + " — assigned by you" : association is { Role: not PackageEvidenceRole.NotClassified } d ? $"{ApplicationContexts.RoleLabel(d.Role)} — detected (no role assigned)" : "None — assign a role below")</span>
+                    <span class="sm-quiet">What Project Evidence and every review read.</span></div>
+            </div>
             <fieldset class="sm-roles"><legend>Assigned roles — several allowed; none = the role detected from content</legend>
                 @foreach (var role in RoleChoices)
                 {
-                    <label><input type="checkbox" checked="@current.Contains(role.ToString())" @onchange="e => { if ((bool)e.Value!) current.Add(role.ToString()); else current.Remove(role.ToString()); }" data-testid="sm-role" data-role="@role" /> @ApplicationContexts.RoleLabel(role)</label>
+                    <label class="sm-role-option"><input type="checkbox" checked="@current.Contains(role.ToString())" @onchange="e => { if ((bool)e.Value!) current.Add(role.ToString()); else current.Remove(role.ToString()); }" data-testid="sm-role" data-role="@role" /> @ApplicationContexts.RoleLabel(role)</label>
                 }
             </fieldset>
-            <p class="sm-muted sm-small">A role says what this source is; the application it is evidence for is chosen per Target Environment in Project Evidence (unchanged here).</p>
+            <p class="sm-quiet sm-small">A role says what this source is; the application it is evidence for is chosen per Target Environment in Project Evidence (unchanged here).</p>
             @if (RolesChanged(row)) { <p class="sm-unsaved" role="status" data-testid="sm-unsaved">Unsaved role changes.</p> }
             <div class="sm-role-actions">
-                <button type="button" class="btn-primary btn-sm" disabled="@(!RolesChanged(row))" @onclick="() => SaveRolesAsync(row, current)" data-testid="sm-save-roles">Save roles</button>
+                <BusyButton Class="btn-primary btn-sm" Text="Save roles" BusyText="Saving…" Disabled="@(!RolesChanged(row))" OnClick="() => SaveRolesAsync(row, current)" TestId="sm-save-roles" />
                 <button type="button" class="btn-secondary btn-sm" disabled="@(!RolesChanged(row))" @onclick="() => ToggleRoleEditor(row, open: true)" data-testid="sm-reset-roles">Discard changes</button>
             </div>
         </div>
@@ -435,16 +699,18 @@
     private RenderFragment MatchList(GitSourceLink link, IReadOnlyList<GitSourceMatch> matches) => __builder =>
     {
         <div class="sm-matches" data-testid="sm-match-list">
-            @if (matches.Count == 0) { <p class="sm-muted">No earlier import appears to be this repository (names alone are never evidence).</p> }
+            @if (matches.Count == 0) { <p class="sm-quiet">No earlier import appears to be this repository (names alone are never evidence).</p> }
             @foreach (var m in matches)
             {
                 <div class="sm-match" data-testid="sm-match" data-strength="@m.Strength">
-                    <strong>@(m.Strength switch { GitSourceMatchStrength.SameContent => "Same content", GitSourceMatchStrength.SameCommit => "Same commit", _ => "Possible existing imported source" })</strong>
-                    · @m.ArchiveFileName · snapshot @m.SnapshotId.ToString()[..8] · @string.Join(" ", m.Evidence)
-                    @if (m.Decision is { } decision) { <span class="sm-badge">@decision</span> }
-                    <button type="button" class="btn-secondary btn-sm" @onclick="() => DecideAsync(link, m.SnapshotId, true)" data-testid="sm-associate-match">Associate with this repository</button>
-                    <button type="button" class="btn-secondary btn-sm" @onclick="() => DecideAsync(link, m.SnapshotId, false)" data-testid="sm-keep-separate">Keep separate</button>
-                    <a class="btn-secondary btn-sm" href="@($"source-analysis?snapshot={m.SnapshotId:D}")">Review evidence</a>
+                    <div><strong>@(m.Strength switch { GitSourceMatchStrength.SameContent => "Same content", GitSourceMatchStrength.SameCommit => "Same commit", _ => "Possible existing imported source" })</strong>
+                        <span class="sm-quiet"> · @m.ArchiveFileName · snapshot @m.SnapshotId.ToString()[..8] · @string.Join(" ", m.Evidence)</span>
+                        @if (m.Decision is { } decision) { <span class="sm-chip">@decision</span> }</div>
+                    <div class="sm-card-actions">
+                        <button type="button" class="btn-secondary btn-sm" @onclick="() => DecideAsync(link, m.SnapshotId, true)" data-testid="sm-associate-match">Associate with this repository</button>
+                        <button type="button" class="btn-secondary btn-sm" @onclick="() => DecideAsync(link, m.SnapshotId, false)" data-testid="sm-keep-separate">Keep separate</button>
+                        <a class="sm-link-action" href="@($"source-analysis?snapshot={m.SnapshotId:D}")">Review evidence</a>
+                    </div>
                 </div>
             }
         </div>
