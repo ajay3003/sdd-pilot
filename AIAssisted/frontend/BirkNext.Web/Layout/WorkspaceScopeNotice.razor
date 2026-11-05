@@ -1,0 +1,39 @@
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Routing
+@inject FeatureVisibilityService FeatureViz
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@* The open page is a module outside the selected Workspace View (a bookmark, a link from another page, search). The page stays open —
+   a Workspace View is presentation, not permission — and the person can add the module to the view or switch to All Modules. *@
+@if (Sections is not null && NavigationModules.Current(NavigationCatalog.RelativeLocation(Navigation), FeatureViz, Sections) is { Reach: ModuleReach.HiddenByWorkspaceView } module)
+{
+    var view = WorkspaceViews.Of(Sections.View);
+    <div class="workspace-scope-notice" role="status" data-testid="nav-outside-view" data-route="@module.Item.Route">
+        <span>Current module is outside your selected workspace view (@view.Label).</span>
+        <button type="button" class="btn btn-link btn-sm" data-testid="nav-outside-add" @onclick="() => Sections.AddToView(module.Item.Route)">Add @module.Item.Label to @view.Label</button>
+        <button type="button" class="btn btn-link btn-sm" data-testid="nav-outside-all" @onclick="() => Sections.SetView(WorkspaceView.AllModules)">Switch to All Modules</button>
+    </div>
+}
+
+@code {
+    [Parameter] public NavigationSectionState? Sections { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        FeatureViz.Changed += OnChanged;
+        if (Sections is not null) Sections.Changed += OnChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => OnChanged();
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        FeatureViz.Changed -= OnChanged;
+        if (Sections is not null) Sections.Changed -= OnChanged;
+    }
+}

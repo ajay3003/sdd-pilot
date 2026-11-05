@@ -1,0 +1,7 @@
+/* One quiet line above the page: the open module is outside the selected Workspace View (presentation, not permission). */
+.workspace-scope-notice {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; margin: .25rem 0 .75rem; padding: .4rem .75rem;
+    border: 1px solid var(--clr-border, #cbd5e1); border-left: 3px solid var(--clr-info, #2563eb); border-radius: 6px;
+    background: var(--clr-surface, #fff); color: var(--clr-text, #1e293b); font-size: .85rem;
+}
+.workspace-scope-notice .btn-link { padding: 0; font-size: .85rem; }

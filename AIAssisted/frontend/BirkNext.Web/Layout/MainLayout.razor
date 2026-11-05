@@ -21,7 +21,7 @@
 }
 else
 {
-    <div class="page">
+    <div class="page @(_navigation?.SidebarCollapsed == true ? "nav-collapsed" : null)" data-testid="layout-page">
         <div class="sidebar">
             <NavMenu />
         </div>
@@ -30,6 +30,7 @@ else
             @* Activity Center: always available, on every page; observes long-running work, never owns it. *@
             <div class="activity-row"><ActivityCenter /></div>
             <article class="content px-4">
+                <WorkspaceScopeNotice Sections="_navigation" />
                 <SharedWorkspaceTabs />
                 <WorkspaceDocumentsGate PageType="@RouteData?.PageType">@Body</WorkspaceDocumentsGate>
             </article>
@@ -41,8 +42,20 @@ else
     private bool _ready;
     [CascadingParameter] public RouteData? RouteData { get; set; }
 
+    private NavigationSectionState? _navigation;
+    private bool _sidebarCollapsed;
+
     protected override async Task OnInitializedAsync()
     {
+        // Navigation preferences first and synchronously (WebAssembly), so the sidebar has its remembered width on the first render.
+        _navigation = LayoutServices.GetService(typeof(NavigationSectionState)) as NavigationSectionState;
+        if (_navigation is not null)
+        {
+            _navigation.EnsureRestored(LayoutServices.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) as Microsoft.JSInterop.IJSRuntime);
+            _sidebarCollapsed = _navigation.SidebarCollapsed;
+            _navigation.Changed += OnNavigationChanged;
+        }
+
         // Another tab (or an earlier reset this tab missed) reset local data: discard this tab's leftover project state instead of saving it.
         _resetEpoch = LayoutServices.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch;
         if (_resetEpoch is not null) _resetEpoch.StaleDetected += OnStaleAfterResetAsync;
@@ -82,7 +95,19 @@ else
 
     private LocalDataResetEpoch? _resetEpoch;
 
-    public void Dispose() { if (_resetEpoch is not null) _resetEpoch.StaleDetected -= OnStaleAfterResetAsync; }
+    /// <summary>Only the sidebar width follows the navigation state here; other navigation changes do not re-render the page.</summary>
+    private void OnNavigationChanged()
+    {
+        if (_navigation is null || _navigation.SidebarCollapsed == _sidebarCollapsed) return;
+        _sidebarCollapsed = _navigation.SidebarCollapsed;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        if (_resetEpoch is not null) _resetEpoch.StaleDetected -= OnStaleAfterResetAsync;
+        if (_navigation is not null) _navigation.Changed -= OnNavigationChanged;
+    }
 
     private async Task RestoreCurrentWorkspaceAsync()
     {

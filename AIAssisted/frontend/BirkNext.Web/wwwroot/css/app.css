@@ -117,3 +117,6 @@ a, .btn-link {
 code {
     color: #c02d76;
 }
+
+/* Mobile navigation drawer open: the page behind it does not scroll (wwwroot/js/navigation.js). */
+body.nav-drawer-scroll-lock { overflow: hidden; }

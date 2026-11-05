@@ -1,0 +1,21 @@
+/* Module search: the input and its grouped results (expanded sidebar and the collapsed sidebar's compact search). */
+.nav-search { width: 100%; padding: .3rem .45rem; border: 1px solid #475569; border-radius: 6px; background: #0f172a; color: #e2e8f0; font-size: .84rem; }
+.nav-search:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
+.nav-search::placeholder { color: #94a3b8; }
+.nav-search-results { margin-top: .3rem; }
+.nav-search-count { color: #94a3b8; font-size: .75rem; margin: .3rem .1rem .2rem; }
+.nav-search-empty { color: #94a3b8; font-size: .75rem; margin: 0 .1rem .3rem; }
+.nav-search-list { list-style: none; margin: 0; padding: 0; }
+.nav-search-heading { margin: .45rem .1rem .15rem; color: #94a3b8; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.nav-search-option {
+    display: grid; grid-template-columns: 1.1rem minmax(0, 1fr); grid-template-rows: auto auto; column-gap: .5rem; align-items: center;
+    padding: .3rem .45rem; border-radius: 6px; color: #cbd5e1; font-size: .84rem; text-decoration: none;
+}
+.nav-search-option .nav-icon { grid-row: 1 / span 2; margin: 0; top: 0; }
+.nav-search-option .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-search-meta { grid-column: 2; color: #94a3b8; font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-search-option:hover, .nav-search-active { background: rgba(255, 255, 255, .09); color: #f8fafc; }
+.nav-search-active { box-shadow: 0 0 0 2px #93c5fd inset; }
+.nav-search-option.active { box-shadow: inset 3px 0 0 #93c5fd; }
+.nav-search-disabled { color: #8d9bb0; cursor: not-allowed; }
+.nav-search-disabled .nav-search-meta { color: #fde68a; }

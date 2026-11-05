@@ -6,109 +6,196 @@
 @using Microsoft.JSInterop
 @implements IDisposable
 
-@* Rows and sections come from NavigationCatalog; statuses from the shared applicability evaluation (NavStatusPresentation).
-   Each row is [icon] [label] [status]. Feature Visibility decides which rows exist. The Workspace View orders and expands groups (a
-   navigation preference, never a permission); collapsed groups, search and All Modules keep every module one step away. Collapsing and
-   the view are remembered in this browser. None of it touches the selected project or running work. *@
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="dashboard">QA Review Studio</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+@* Rows and sections come from NavigationCatalog; which rows exist from the one resolution model (NavigationModules: Feature Visibility,
+   then the Workspace View, then the person's additions); statuses from the shared applicability evaluation (NavStatusPresentation). Each
+   row is [icon] [label] [status]. The Workspace View is a navigation preference, never a permission: modules outside it are found by
+   search, shown with "Show other modules", and open by URL. Desktop: expanded (labels) or collapsed (icons, group flyouts, compact search),
+   remembered in this browser. Mobile: an overlay drawer (not remembered). None of it touches the page, the project or running work. *@
+<div class="top-row ps-3 navbar navbar-dark @(Rail ? "nav-top-collapsed" : null)">
+    <div class="container-fluid nav-top">
+        <a class="navbar-brand" href="dashboard" aria-label="QA Review Studio — Dashboard" title="QA Review Studio">
+            <span class="nav-brand-full">QA Review Studio</span><span class="nav-brand-short" aria-hidden="true">QA</span>
+        </a>
+        <button type="button" id="nav-collapse-toggle" class="nav-collapse-toggle" data-testid="nav-collapse-toggle" aria-controls="nav-panel"
+                aria-expanded="@(Collapsed ? "false" : "true")" aria-label="@(Collapsed ? "Expand sidebar" : "Collapse sidebar")" title="@(Collapsed ? "Expand sidebar" : "Collapse sidebar")"
+                @onclick="ToggleSidebar">
+            <span class="nav-chevron" aria-hidden="true"></span>
+        </button>
+        <button type="button" id="nav-drawer-toggle" title="Navigation menu" class="navbar-toggler" data-testid="nav-drawer-toggle" aria-controls="nav-panel"
+                aria-expanded="@(_drawerOpen ? "true" : "false")" aria-label="Open navigation" @onclick="OpenDrawer">
             <span class="navbar-toggler-icon"></span>
         </button>
     </div>
 </div>
 
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <div class="nav-tools" @onclick:stopPropagation="true">
-        <label class="nav-tool-label" for="nav-workspace-view">Workspace view</label>
-        <select id="nav-workspace-view" class="nav-view" data-testid="nav-workspace-view" value="@_sections.View" @onchange="OnViewChanged"
-                aria-describedby="nav-workspace-view-help">
-            @foreach (var view in WorkspaceViews.All) { <option value="@view.View">@view.Label</option> }
-        </select>
-        <span id="nav-workspace-view-help" class="visually-hidden">Changes which navigation groups come first. Not a permission; every module stays available.</span>
-        <label class="visually-hidden" for="nav-search">Search modules</label>
-        <input id="nav-search" type="search" class="nav-search" data-testid="nav-search" placeholder="Search modules…" autocomplete="off"
-               value="@_search" @oninput="e => _search = e.Value?.ToString()" @onkeydown="OnSearchKey" aria-controls="nav-search-results" />
-    </div>
-    <nav class="flex-column" aria-label="Main">
-        @{ var location = NavigationCatalog.RelativeLocation(Navigation); }
-        @if (!string.IsNullOrWhiteSpace(_search))
+@if (_drawerOpen)
+{
+    <div class="nav-drawer-backdrop" data-testid="nav-drawer-backdrop" @onclick="CloseDrawerAsync"></div>
+}
+<div id="nav-panel" class="nav-scrollable @(_drawerOpen ? "nav-drawer-open" : null) @(Rail ? "nav-rail" : null)" data-testid="nav-panel"
+     role="@(_drawerOpen ? "dialog" : null)" aria-modal="@(_drawerOpen ? "true" : null)" aria-label="@(_drawerOpen ? "Navigation" : null)" @onkeydown="OnPanelKeyAsync">
+    @{ var location = NavigationCatalog.RelativeLocation(Navigation); var modules = NavigationModules.All(FeatureViz, _sections); var view = WorkspaceViews.Of(_sections.View); }
+    @if (_drawerOpen)
+    {
+        <button type="button" class="nav-drawer-close" data-testid="nav-drawer-close" aria-label="Close navigation" @onclick="CloseDrawerAsync">×</button>
+    }
+    @if (Rail)
+    {
+        @* Collapsed: workspace and search triggers, then one icon per group; a group opens a flyout of its modules. *@
+        @if (_flyout is not null)
         {
-            var results = NavigationCatalog.Search(_search, FeatureViz);
-            <div id="nav-search-results" class="nav-group" role="group" aria-label="Search results" data-testid="nav-search-results">
-                <p class="nav-search-count" role="status" aria-live="polite" data-testid="nav-search-count">@(results.Count == 0 ? "No module found" : $"{results.Count} module{(results.Count == 1 ? "" : "s")}")</p>
-                @foreach (var (group, item) in results)
-                {
-                    var current = item.IsCurrentLocation(location);
-                    <div class="nav-item px-2">
-                        <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)" data-testid="nav-search-result" @onclick="ClearSearch">
-                            <span class="nav-icon @item.Icon" aria-hidden="true"></span>
-                            <span class="nav-label">@item.Label</span>
-                            <span class="nav-applicability nav-search-group" aria-hidden="true">@group.Label</span>
-                            <span class="visually-hidden">, in @group.Label</span>
-                        </a>
-                    </div>
-                }
-            </div>
+            <div class="nav-flyout-backdrop" data-testid="nav-flyout-backdrop" @onclick="CloseFlyout"></div>
         }
-        else
-        {
-        var focus = WorkspaceViews.Of(_sections.View).FocusSections;
-        var ordered = WorkspaceViews.Ordered(_sections.View);
-        var dividerShown = false;
-        @foreach (var group in ordered)
-        {
-            var items = group.Items.Where(i => i.Visible(FeatureViz)).ToList();
-            if (items.Count == 0) continue;
-            var collapsed = _sections.IsCollapsed(group.Id);
-            var listId = $"nav-section-{group.Id}";
-            if (focus.Count > 0 && !focus.Contains(group.Id) && !dividerShown)
+        <div class="nav-rail-item">
+            <button type="button" id="nav-rail-workspace" class="nav-rail-btn @(_flyout == "workspace" ? "nav-rail-open" : null)" data-testid="nav-rail-workspace" aria-label="@($"Workspace view: {view.Label}")" data-label="@($"Workspace view: {view.Label}")"
+                    aria-haspopup="menu" aria-expanded="@(_flyout == "workspace" ? "true" : "false")" aria-controls="nav-flyout-workspace" @onclick='() => ToggleFlyout("workspace")'>
+                <span class="nav-icon nav-icon-workflow" aria-hidden="true"></span>
+            </button>
+            @if (_flyout == "workspace")
             {
-                dividerShown = true;
-                <p class="nav-more" data-testid="nav-more-modules">More modules</p>
+                <div id="nav-flyout-workspace" class="nav-flyout" role="menu" aria-label="Workspace view" data-testid="nav-flyout" data-flyout="workspace">
+                    <p class="nav-flyout-title" role="presentation">Workspace view</p>
+                    @foreach (var option in WorkspaceViews.All)
+                    {
+                        <button type="button" role="menuitemradio" class="nav-flyout-option" aria-checked="@(option.View == _sections.View ? "true" : "false")"
+                                data-testid="nav-flyout-view" data-view="@option.View" title="@option.Description" @onclick="() => SelectViewFromFlyout(option.View)">@option.Label</button>
+                    }
+                </div>
             }
-            <button type="button" class="nav-section" data-testid="nav-section-@group.Id"
-                    aria-expanded="@((!collapsed).ToString().ToLowerInvariant())" aria-controls="@listId"
-                    @onclick="() => _sections.Toggle(group.Id)" @onclick:stopPropagation="true">@group.Label</button>
-            <div id="@listId" class="nav-group" role="group" aria-label="@($"{group.Label} navigation group")" hidden="@collapsed">
-                @foreach (var item in items)
-                {
-                    var status = item.ReviewId is { } reviewId ? NavStatusPresentation.For(item, _applicability?.For(reviewId)) : null;
-                    var current = item.IsCurrentLocation(location);
-                    <div class="nav-item px-2">
-                        <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
-                            <span class="nav-icon @item.Icon" aria-hidden="true"></span>
-                            <span class="nav-label@(item.WrapLabel ? " nav-label-wrap" : "")">@item.Label</span>
-                            @if (status is not null)
+        </div>
+        <div class="nav-rail-item">
+            <button type="button" id="nav-rail-search" class="nav-rail-btn @(_flyout == "search" ? "nav-rail-open" : null)" data-testid="nav-rail-search" aria-label="Search modules" data-label="Search modules"
+                    aria-haspopup="dialog" aria-expanded="@(_flyout == "search" ? "true" : "false")" aria-controls="nav-flyout-search" @onclick='() => ToggleFlyout("search")'>
+                <span class="nav-search-glyph" aria-hidden="true"></span>
+            </button>
+            @if (_flyout == "search")
+            {
+                <div id="nav-flyout-search" class="nav-flyout nav-flyout-search" role="dialog" aria-label="Search modules" data-testid="nav-flyout" data-flyout="search">
+                    <NavSearch IdPrefix="nav-compact" Sections="_sections" OnDone="CloseFlyoutAndReturn" />
+                </div>
+            }
+        </div>
+        <nav class="nav-rail-groups" aria-label="Main">
+            @foreach (var group in WorkspaceViews.Ordered(_sections.View))
+            {
+                var rows = Rows(modules, group, location);
+                if (rows.Count == 0) continue;
+                var hasCurrent = rows.Any(m => m.Item.IsCurrentLocation(location));
+                var flyoutId = $"nav-flyout-{group.Id}";
+                <div class="nav-rail-item">
+                    <button type="button" id="nav-rail-@group.Id" class="nav-rail-btn @(hasCurrent ? "active" : null) @(_flyout == group.Id ? "nav-rail-open" : null)" data-testid="nav-rail-@group.Id" aria-label="@group.Label" data-label="@group.Label"
+                            aria-haspopup="menu" aria-expanded="@(_flyout == group.Id ? "true" : "false")" aria-controls="@flyoutId" aria-current="@(hasCurrent ? "true" : null)"
+                            @onclick="() => ToggleFlyout(group.Id)">
+                        <span class="nav-icon @group.Icon" aria-hidden="true"></span>
+                    </button>
+                    @if (_flyout == group.Id)
+                    {
+                        <div id="@flyoutId" class="nav-flyout" role="menu" aria-label="@group.Label" data-testid="nav-flyout" data-flyout="@group.Id">
+                            <p class="nav-flyout-title" role="presentation">@group.Label</p>
+                            @foreach (var module in rows)
                             {
-                                <span class="nav-applicability nav-status-@status.Kind.ToString().ToLowerInvariant()" aria-hidden="true"
-                                      data-testid="nav-applicability-@item.ReviewId" data-kind="@status.Kind" title="@status.Tooltip">@status.Text</span>
-                                <span class="visually-hidden">, @status.Spoken</span>
+                                var current = module.Item.IsCurrentLocation(location);
+                                var status = Status(module);
+                                <a role="menuitem" class="nav-flyout-link @(current ? "active" : null) @(module.IsRow ? null : "nav-item-outside")" href="@module.Item.Route" title="@module.Item.Title"
+                                   aria-current="@(current ? "page" : null)" data-testid="nav-flyout-link" @onclick="CloseFlyout">
+                                    <span class="nav-icon @module.Item.Icon" aria-hidden="true"></span>
+                                    <span class="nav-label">@module.Item.Label</span>
+                                    @if (status is not null)
+                                    {
+                                        <span class="nav-applicability nav-status-@status.Kind.ToString().ToLowerInvariant()" aria-hidden="true">@status.Text</span>
+                                        <span class="visually-hidden">, @status.Spoken</span>
+                                    }
+                                    @if (!module.IsRow) { <span class="visually-hidden">, outside this workspace view</span> }
+                                </a>
                             }
-                        </a>
-                    </div>
-                }
-            </div>
-        }
-        }
-    </nav>
+                        </div>
+                    }
+                </div>
+            }
+        </nav>
+    }
+    else
+    {
+        <div class="nav-tools">
+            <label class="nav-tool-label" for="nav-workspace-view">Workspace view</label>
+            <select id="nav-workspace-view" class="nav-view" data-testid="nav-workspace-view" value="@_sections.View" @onchange="OnViewChanged"
+                    aria-describedby="nav-workspace-view-help">
+                @foreach (var option in WorkspaceViews.All) { <option value="@option.View">@option.Label</option> }
+            </select>
+            <p id="nav-workspace-view-help" class="nav-view-help" data-testid="nav-workspace-view-help">
+                @view.Description
+                <span class="visually-hidden">A navigation preference, not a permission: every module stays available through search.</span>
+            </p>
+            <NavSearch IdPrefix="nav" Sections="_sections" />
+        </div>
+        <nav id="nav-groups" class="flex-column" aria-label="Main">
+            @foreach (var group in WorkspaceViews.Ordered(_sections.View))
+            {
+                var rows = Rows(modules, group, location);
+                if (rows.Count == 0) continue;
+                var collapsed = _sections.IsCollapsed(group.Id);
+                var listId = $"nav-section-{group.Id}";
+                <button type="button" class="nav-section" data-testid="nav-section-@group.Id"
+                        aria-expanded="@((!collapsed).ToString().ToLowerInvariant())" aria-controls="@listId"
+                        @onclick="() => _sections.Toggle(group.Id)">@group.Label</button>
+                <div id="@listId" class="nav-group" role="group" aria-label="@($"{group.Label} navigation group")" hidden="@collapsed">
+                    @foreach (var module in rows)
+                    {
+                        var item = module.Item;
+                        var status = Status(module);
+                        var current = item.IsCurrentLocation(location);
+                        <div class="nav-item px-2 @(module.IsRow ? null : "nav-item-outside")">
+                            <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
+                                <span class="nav-icon @item.Icon" aria-hidden="true"></span>
+                                <span class="nav-label@(item.WrapLabel ? " nav-label-wrap" : "")">@item.Label</span>
+                                @if (status is not null)
+                                {
+                                    <span class="nav-applicability nav-status-@status.Kind.ToString().ToLowerInvariant()" aria-hidden="true"
+                                          data-testid="nav-applicability-@item.ReviewId" data-kind="@status.Kind" title="@status.Tooltip">@status.Text</span>
+                                    <span class="visually-hidden">, @status.Spoken</span>
+                                }
+                                else if (!module.IsRow)
+                                {
+                                    <span class="nav-applicability nav-status-outside" aria-hidden="true" data-testid="nav-outside-badge" title="Not part of the @view.Label workspace view">Other view</span>
+                                }
+                                @if (!module.IsRow) { <span class="visually-hidden">, outside this workspace view</span> }
+                            </a>
+                        </div>
+                    }
+                </div>
+            }
+            @{ var hidden = modules.Count(m => m.Reach == ModuleReach.HiddenByWorkspaceView); }
+            @if (!view.IsAllModules && hidden > 0)
+            {
+                <button type="button" class="nav-show-other" data-testid="nav-show-other" aria-pressed="@(_sections.ShowOtherModules ? "true" : "false")"
+                        @onclick="_sections.ToggleShowOtherModules">@(_sections.ShowOtherModules ? "Hide other modules" : $"Show {hidden} other module{(hidden == 1 ? "" : "s")}")</button>
+            }
+        </nav>
+    }
 </div>
 
 @code {
-    private bool collapseNavMenu = false;
     private ProjectApplicabilityState? _applicability;
     private ICurrentWorkspaceProjection? _workspace;
     private NavigationSectionState _sections = new();
+    private IJSRuntime? _js;
 
-    private string? _search;
-    private bool _restored;
-    private const string PreferencesKey = "birknext.navigation.v1";
+    /// <summary>Open flyout in the collapsed sidebar: "workspace", "search" or a group id.</summary>
+    private string? _flyout;
+    private string? _flyoutJustOpened;
+    private bool _drawerOpen;
+    private bool _drawerJustOpened;
+
+    private bool Collapsed => _sections.SidebarCollapsed;
+    /// <summary>The icon rail: the desktop preference, never inside the mobile drawer (which always shows labels).</summary>
+    private bool Rail => Collapsed && !_drawerOpen;
 
     protected override async Task OnInitializedAsync()
     {
         // Optional services: hosts (and tests) that do not register them still render the menu, without statuses.
         _sections = ServiceProvider.GetService<NavigationSectionState>() ?? _sections;
+        _js = ServiceProvider.GetService<IJSRuntime>();
+        _sections.EnsureRestored(_js);
         ExpandCurrentSection();
         _sections.Changed += OnSectionsChanged;
         Navigation.LocationChanged += OnLocationChanged;
@@ -124,6 +211,16 @@
         try { await _applicability.EnsureLoadedAsync(); } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { }
     }
 
+    /// <summary>
+    /// The rows of a group: modules of the view (and the person's additions); with "Show other modules", the rest of the group's enabled
+    /// modules; and always the current page's module, so the page that is open is never without its row.
+    /// </summary>
+    private IReadOnlyList<NavModule> Rows(IReadOnlyList<NavModule> modules, NavSection group, string location) =>
+        [.. modules.Where(m => m.Section == group && m.Enabled && (m.IsRow || _sections.ShowOtherModules || m.Item.IsCurrentLocation(location)))];
+
+    private NavStatus? Status(NavModule module) =>
+        module.Item.ReviewId is { } reviewId ? NavStatusPresentation.For(module.Item, _applicability?.For(reviewId)) : null;
+
     /// <summary>The current page's section is always open; other sections keep the state the person chose.</summary>
     private void ExpandCurrentSection()
     {
@@ -135,6 +232,9 @@
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         ExpandCurrentSection();
+        // A link in the mobile drawer or a flyout navigates: the overlay closes, the desktop preference stays.
+        _flyout = null;
+        if (_drawerOpen) _ = InvokeAsync(() => CloseDrawerAsync(returnFocus: false));
         // The active target, integrations or extensions may have changed on the page just left.
         _ = RefreshApplicabilityAsync();
         InvokeAsync(StateHasChanged);
@@ -152,54 +252,106 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _restored) return;
-        _restored = true;
-        // Remembered navigation preferences (this browser only; no project or review state).
-        if (ServiceProvider.GetService<IJSRuntime>() is not { } js) return;
-        try
+        if (firstRender)
         {
-            var stored = await js.InvokeAsync<string?>("localStorage.getItem", PreferencesKey);
-            _sections.Restore(stored);
-            ExpandCurrentSection();
+            // Runtimes without synchronous interop read the remembered preferences here instead.
+            if (!_sections.IsRestored)
+            {
+                await _sections.EnsureRestoredAsync(_js);
+                ExpandCurrentSection();
+            }
+            await Js("birknextNav.attachArrows", "nav-panel", ".nav-section, .nav-item a, .nav-show-other");
+            await Js("birknextNav.revealActive", "nav-panel");
         }
-        // Storage unavailable (private mode, blocked, a host without it): the defaults stay; navigation never depends on it.
+        if (_flyoutJustOpened is { } opened)
+        {
+            _flyoutJustOpened = null;
+            await Js("birknextNav.place", $"nav-flyout-{opened}");
+            await Js("birknextNav.attachArrows", $"nav-flyout-{opened}", "[role^=menuitem]");
+            await Js("birknextNav.focusFirst", $"nav-flyout-{opened}", opened == "search" ? "input" : "[role^=menuitem]");
+        }
+        if (_drawerJustOpened)
+        {
+            _drawerJustOpened = false;
+            await Js("birknextNav.openDrawer", "nav-panel");
+        }
+    }
+
+    /// <summary>JS conveniences (focus, placement, scroll lock). Navigation never depends on them; hosts without the script ignore them.</summary>
+    private async Task Js(string identifier, params object?[] args)
+    {
+        if (_js is null) return;
+        try { await _js.InvokeVoidAsync(identifier, args); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { }
     }
 
     private void OnSectionsChanged()
     {
-        _ = SaveAsync();
+        _ = _sections.SaveAsync(_js);
         _ = InvokeAsync(StateHasChanged);
     }
 
-    private async Task SaveAsync()
-    {
-        if (!_restored || ServiceProvider.GetService<IJSRuntime>() is not { } js) return;
-        try { await js.InvokeVoidAsync("localStorage.setItem", PreferencesKey, _sections.Serialize()); }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { }
-    }
-
-    /// <summary>Switching the Workspace View opens its landing page. It changes nothing else (project, running work, page state).</summary>
+    /// <summary>Switching the Workspace View changes the sidebar only — it never navigates. The page, the project, running work and page
+    /// state stay; a page outside the new view keeps its row and says so.</summary>
     private void OnViewChanged(ChangeEventArgs e)
     {
         if (!Enum.TryParse<WorkspaceView>(e.Value?.ToString(), out var view)) return;
         _sections.SetView(view);
         ExpandCurrentSection();
-        Navigation.NavigateTo(WorkspaceViews.Of(view).LandingRoute);
     }
 
-    private void OnSearchKey(KeyboardEventArgs e)
+    private async Task SelectViewFromFlyout(WorkspaceView view)
     {
-        if (e.Key == "Escape") { _search = null; return; }
-        if (e.Key == "Enter" && NavigationCatalog.Search(_search, FeatureViz) is { Count: > 0 } results)
-        {
-            var route = results[0].Item.Route;
-            _search = null;
-            Navigation.NavigateTo(route);
-        }
+        _sections.SetView(view);
+        ExpandCurrentSection();
+        await CloseFlyoutAndReturn();
     }
 
-    private void ClearSearch() => _search = null;
+    private void ToggleSidebar()
+    {
+        _flyout = null;
+        _sections.SetSidebarCollapsed(!_sections.SidebarCollapsed);
+    }
+
+    private void ToggleFlyout(string id)
+    {
+        _flyout = _flyout == id ? null : id;
+        _flyoutJustOpened = _flyout;
+    }
+
+    private void CloseFlyout() => _flyout = null;
+
+    /// <summary>Closes the flyout and returns focus to the button that opened it.</summary>
+    private async Task CloseFlyoutAndReturn()
+    {
+        var opener = _flyout is null ? null : $"nav-rail-{_flyout}";
+        _flyout = null;
+        StateHasChanged();
+        if (opener is not null) await Js("birknextNav.focusId", opener);
+    }
+
+    private async Task OnPanelKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (_flyout is not null) await CloseFlyoutAndReturn();
+        else if (_drawerOpen) await CloseDrawerAsync();
+    }
+
+    private void OpenDrawer()
+    {
+        _drawerOpen = true;
+        _drawerJustOpened = true;
+    }
+
+    private Task CloseDrawerAsync() => CloseDrawerAsync(returnFocus: true);
+
+    private async Task CloseDrawerAsync(bool returnFocus)
+    {
+        if (!_drawerOpen) return;
+        _drawerOpen = false;
+        StateHasChanged();
+        await Js("birknextNav.closeDrawer", returnFocus ? "nav-drawer-toggle" : null);
+    }
 
     public void Dispose()
     {
@@ -208,12 +360,6 @@
         FeatureViz.Changed -= OnFeatureVisibilityChanged;
         if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged;
         if (_workspace is not null) _workspace.Changed -= OnWorkspaceChanged;
-    }
-
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
-
-    private void ToggleNavMenu()
-    {
-        collapseNavMenu = !collapseNavMenu;
+        if (_drawerOpen) _ = Js("birknextNav.closeDrawer", (object?)null);
     }
 }

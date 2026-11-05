@@ -2,6 +2,7 @@ using BirkNext.Applicability;
 using BirkNext.Technology;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Routing;
+using Microsoft.JSInterop;
 
 namespace BirkNext.Web.Services;
 
@@ -56,8 +57,9 @@ public sealed record NavItem(
             : relativePath.Equals(Route, StringComparison.OrdinalIgnoreCase) || relativePath.StartsWith(Route + "/", StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>A sidebar section. It is shown when at least one of its rows is visible.</summary>
-public sealed record NavSection(string Id, string Label, IReadOnlyList<NavItem> Items);
+/// <summary>A sidebar section. It is shown when at least one of its rows is visible. <paramref name="Icon"/> stands for the group in the
+/// collapsed (icon-only) sidebar; it comes from the same icon set as the rows.</summary>
+public sealed record NavSection(string Id, string Label, IReadOnlyList<NavItem> Items, string Icon = "nav-icon-dashboard");
 
 /// <summary>Sibling pages shown as tabs of one workspace (see <see cref="NavigationCatalog.SharedWorkspaces"/>).</summary>
 public sealed record SharedWorkspace(string Id, string Label, IReadOnlyList<string> Routes);
@@ -96,7 +98,7 @@ public static class NavigationCatalog
                 Hint: "optional built-in example projects", Aliases: ["Sample Projects"]),
             new(TargetEnvironmentsRoute, "Target Environments", "nav-icon-target", f => f.AdminSystemSettings,
                 Hint: "runtime configuration of the deployed system, used by runtime reviews (opens System Settings)", FeatureId: "target-environments"),
-        ]),
+        ], "nav-icon-dashboard"),
         // DELIVERY MANAGEMENT: for Project Leaders and Scrum Masters — its own projects, snapshots and frozen reports (never current BirkNext state).
         new("delivery-reporting", "Delivery Management",
         [
@@ -106,7 +108,7 @@ public static class NavigationCatalog
             new("delivery-reporting", "Delivery Reports", "nav-icon-workflow", Always,
                 Hint: "weekly story/feature progress from imported repository snapshots: what changed, attention items, next-week focus",
                 Aliases: ["Delivery Reporting", "Weekly report", "Azure DevOps import"]),
-        ]),
+        ], "nav-icon-workflow"),
         // SPECIFICATIONS & PLANNING: what the documents say, how good they are, how tasks align and how revisions compare.
         new("document-review", "Specifications & Planning",
         [
@@ -122,7 +124,7 @@ public static class NavigationCatalog
             // Document ↔ document only (authored and generated revisions); it never reads source, so it stays with the documents.
             new("documentation-drift", "Documentation Drift", "nav-icon-spec-drift", f => f.SpecDrift,
                 Hint: "compares documents and revisions: authored ↔ authored, generated ↔ generated, authored ↔ generated", Aliases: ["Spec Drift", "Specification Comparison"]),
-        ]),
+        ], "nav-icon-task-explorer"),
         // TRACEABILITY & IMPACT: how lifecycle artifacts and tracked delivery changes are linked, and what a change affects.
         new("traceability", "Traceability & Impact",
         [
@@ -144,7 +146,7 @@ public static class NavigationCatalog
             new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilityCoverage, OptionalByDefault: true),
             new("traceability/suggestions", "Traceability Suggestions", "nav-icon-suggestions", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilitySuggestions, OptionalByDefault: true),
             new("code-traceability", "Code Traceability", "nav-icon-code-trace", f => f.LegacyTraceabilityNavigationEnabled && f.CodeTraceability, OptionalByDefault: true),
-        ]),
+        ], "nav-icon-traceability"),
         // SOURCE & ARCHITECTURE: consumers of the source snapshot (SBOM import also feeds Dependency Review; Environment Analysis adds a cloud provider).
         new("source-review", "Source & Architecture",
         [
@@ -167,7 +169,7 @@ public static class NavigationCatalog
                 ReviewId: "azure-environment", Hint: "read-only cloud environment inventory (provider: Azure)", ProviderWhenApplicable: "Azure", FeatureId: "environment-analysis",
                 Aliases: ["Azure Environment Analysis"]),
             new("ai-change-auditor", "AI Change Review", "nav-icon-ai-auditor", f => f.AiChangeReview, OptionalByDefault: true, Aliases: ["AI Review", "AI Change Auditor"]),
-        ]),
+        ], "nav-icon-source-analysis"),
         // Planning → preparation → target-bound runs. Source-only assessments (test inventory, code risk) say where to focus; Test Data
         // is the prerequisite of the runs that need test identities/assets (Performance, Critical E2E; readiness shown in API/Integration);
         // Topology precedes the IQR it reads bindings from; Critical E2E is the end-to-end release check.
@@ -184,7 +186,7 @@ public static class NavigationCatalog
                 Aliases: ["IQR", "API & Integration Quality"]),
             new("performance-test-review", "Performance Test Review", "nav-icon-constitution-compliance", Always, ReviewId: "performance-test-review", Aliases: ["PTR", "k6"]),
             new("critical-e2e-regression", "Critical E2E Regression", "nav-icon-constitution-compliance", f => f.CriticalE2ERegression, ReviewId: "critical-e2e-regression", Aliases: ["E2E", "Regression"]),
-        ]),
+        ], "nav-icon-constitution-compliance"),
         // PROJECT EXTENSIONS: project-specific domain extensions, shown with their applicability (N/A unless the extension is enabled).
         new("extensions", "Project Extensions",
         [
@@ -193,13 +195,13 @@ public static class NavigationCatalog
                 Aliases: ["Security Classification", "Kode 6", "Kode 7"]),
             new("extensions/skolenaervaer", "Skolenærvær Testing", "nav-icon-constitution-compliance", Always,
                 Hint: "domain view over the shared CDC and integration journey engines", Aliases: ["Skolenaervaer"]),
-        ]),
+        ], "nav-icon-import"),
         // HELP & SETTINGS.
         new("admin", "Help & Settings",
         [
             new("user-guide", "User Guide", "nav-icon-user-guide", f => f.UserGuide, Aliases: ["Help"]),
             new("admin/system-settings", "System Settings", "nav-icon-settings", f => f.AdminSystemSettings, Aliases: ["Admin", "Feature Visibility", "Authentication"]),
-        ]),
+        ], "nav-icon-settings"),
     ];
 
     public const string DeliveryOverviewRoute = "delivery-overview";
@@ -230,11 +232,15 @@ public static class NavigationCatalog
     /// Sidebar search over every row the person may open (Feature Visibility), whatever the Workspace View: current and earlier names, hints
     /// and the group name. Ranked: label starts with the text, label contains it, then alias/hint/group matches.
     /// </summary>
-    public static IReadOnlyList<(NavSection Section, NavItem Item)> Search(string? text, FeatureVisibilityService features)
+    public static IReadOnlyList<(NavSection Section, NavItem Item)> Search(string? text, FeatureVisibilityService features) =>
+        Rank(text, Sections.SelectMany(s => s.Items.Where(i => i.Visible(features)).Select(i => (s, i))));
+
+    /// <summary>Ranks rows for a search text (label prefix, label, alias, group name, then hint/description). Empty text finds nothing.</summary>
+    internal static IReadOnlyList<(NavSection Section, NavItem Item)> Rank(string? text, IEnumerable<(NavSection Section, NavItem Item)> rows)
     {
         var q = (text ?? "").Trim();
         if (q.Length == 0) return [];
-        return [.. Sections.SelectMany(s => s.Items.Where(i => i.Visible(features)).Select(i => (Section: s, Item: i)))
+        return [.. rows
             .Select(x => (x.Section, x.Item, Rank:
                 x.Item.Label.StartsWith(q, StringComparison.OrdinalIgnoreCase) ? 0
                 : x.Item.Label.Contains(q, StringComparison.OrdinalIgnoreCase) ? 1
@@ -337,30 +343,55 @@ public static class NavStatusPresentation
 }
 
 /// <summary>
-/// Navigation emphasis presets. A Workspace View is a navigation preference only — never a security role or permission: it orders and
-/// expands the groups a role usually needs and picks a landing page. Every module stays reachable in every view (collapsed groups, search,
-/// All Modules), and Feature Visibility alone decides which rows exist. Independent of the selected project in both directions.
+/// Navigation emphasis presets. A Workspace View is a navigation preference only — never a security role or permission. It picks the modules
+/// a role usually needs, puts their groups first and suggests a starting page (switching never navigates). Modules outside the view are
+/// only left out of the sidebar: search lists them under "Available in other workspaces", "Show other modules" reveals them, the person can
+/// add one to the view, and their URLs always open. Feature Visibility alone decides which modules exist. Independent of the selected
+/// project in both directions. Stored as numbers: 4 was "Technical Reviewer" and is now Developer (same source-first focus).
 /// </summary>
-public enum WorkspaceView { AllModules, ProjectLeader, ScrumMaster, TestLead, TechnicalReviewer }
+public enum WorkspaceView { AllModules = 0, ProjectLeader = 1, ScrumMaster = 2, TestLead = 3, Developer = 4, Architect = 5 }
 
-public sealed record WorkspaceViewDefinition(WorkspaceView View, string Label, string Description, string LandingRoute, IReadOnlyList<string> FocusSections);
+/// <param name="FocusSections">Group order: these groups first, the others after in catalog order.</param>
+/// <param name="Modules">Routes of the modules in the view (All Modules: every module).</param>
+public sealed record WorkspaceViewDefinition(WorkspaceView View, string Label, string Description, string LandingRoute, IReadOnlyList<string> FocusSections,
+    IReadOnlyList<string> Modules)
+{
+    public bool IsAllModules => View == WorkspaceView.AllModules;
+
+    /// <summary>The module is part of the view's preset (Dashboard, User Guide and System Settings are part of every view).</summary>
+    public bool Contains(NavItem item) => IsAllModules || WorkspaceViews.EveryView.Contains(item.Route) || Modules.Contains(item.Route);
+}
 
 public static class WorkspaceViews
 {
+    /// <summary>Rows every view keeps: the project overview, help and settings.</summary>
+    public static IReadOnlyList<string> EveryView { get; } = ["dashboard", "user-guide", "admin/system-settings"];
+
     public static IReadOnlyList<WorkspaceViewDefinition> All { get; } =
     [
-        new(WorkspaceView.AllModules, "All Modules", "Every group expanded in catalog order.", "dashboard", []),
-        new(WorkspaceView.ProjectLeader, "Project Leader", "Delivery status, scope and traceability first.", NavigationCatalog.DeliveryOverviewRoute,
-            ["delivery-reporting", "getting-started", "traceability"]),
-        new(WorkspaceView.ScrumMaster, "Scrum Master", "Weekly delivery progress, plans and tasks first.", "delivery-reporting",
-            ["delivery-reporting", "document-review", "getting-started"]),
-        new(WorkspaceView.TestLead, "Test Lead", "Quality, testing and requirement coverage first.", "test-coverage-review",
-            ["quality-testing", "traceability", "getting-started"]),
-        new(WorkspaceView.TechnicalReviewer, "Technical Reviewer", "Source, architecture and specifications first.", "source-analysis",
-            ["source-review", "document-review", "quality-testing"]),
+        new(WorkspaceView.AllModules, "All Modules", "Every module, in catalog order.", "dashboard", [], []),
+        new(WorkspaceView.ProjectLeader, "Project Leader", "Delivery status, release decision, snapshots and shared review decisions.", NavigationCatalog.DeliveryOverviewRoute,
+            ["delivery-reporting", "getting-started", "traceability"],
+            [NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting", "getting-started", "release-readiness", "snapshots", "correlation-review", "artifact-traceability"]),
+        new(WorkspaceView.ScrumMaster, "Scrum Master", "Weekly delivery progress, plans, tasks and their alignment.", "delivery-reporting",
+            ["delivery-reporting", "document-review", "getting-started", "traceability"],
+            ["delivery-reporting", NavigationCatalog.DeliveryOverviewRoute, "getting-started", "specification-explorer", "plan-explorer", "task-explorer", "task-alignment",
+             "implementation-traceability"]),
+        new(WorkspaceView.TestLead, "Test Lead", "Requirement coverage, test data, runtime reviews and the release decision.", "test-coverage-review",
+            ["quality-testing", "traceability", "delivery-reporting", "getting-started"],
+            ["artifact-traceability", "release-readiness", NavigationCatalog.DeliveryOverviewRoute, "test-coverage-review", "test-data", "frontend-quality-review",
+             "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression", NavigationCatalog.TargetEnvironmentsRoute]),
+        new(WorkspaceView.Developer, "Developer", "Source, specifications, schemas, APIs, dependencies and pipelines.", "source-analysis",
+            ["source-review", "document-review", "quality-testing", "getting-started"],
+            ["source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review",
+             "code-risk-review", "sources", "project-import"]),
+        new(WorkspaceView.Architect, "Architect", "Source structure, integrations, schemas, data models and environment architecture.", "integration-topology",
+            ["source-review", "quality-testing", "document-review", "getting-started"],
+            ["source-analysis", "integration-topology", "integration-quality-review", "schema-studio", "data-model-explorer", "constitution-explorer", "sources",
+             "technology-coverage", NavigationCatalog.GeneratedDocumentationExplorerRoute, "azure-environment"]),
     ];
 
-    public static WorkspaceViewDefinition Of(WorkspaceView view) => All.First(v => v.View == view);
+    public static WorkspaceViewDefinition Of(WorkspaceView view) => All.FirstOrDefault(v => v.View == view) ?? All[0];
 
     /// <summary>The sections in the view's order: its focus groups first, then the others in catalog order. Nothing is removed.</summary>
     public static IReadOnlyList<NavSection> Ordered(WorkspaceView view)
@@ -368,27 +399,112 @@ public static class WorkspaceViews
         var focus = Of(view).FocusSections;
         return [.. NavigationCatalog.Sections.Where(s => focus.Contains(s.Id)).OrderBy(s => focus.ToList().IndexOf(s.Id)), .. NavigationCatalog.Sections.Where(s => !focus.Contains(s.Id))];
     }
+
+    /// <summary>The focused views (not All Modules) whose preset holds the module, for "Available in other workspaces".</summary>
+    public static IReadOnlyList<WorkspaceViewDefinition> Holding(NavItem item) =>
+        [.. All.Where(v => !v.IsAllModules && !WorkspaceViews.EveryView.Contains(item.Route) && v.Modules.Contains(item.Route))];
+}
+
+/// <summary>Why a module is or is not a sidebar row in the current Workspace View.</summary>
+public enum ModuleReach
+{
+    /// <summary>A row of the current view.</summary>
+    InView,
+    /// <summary>Outside the view's preset, added to the view by the person.</summary>
+    AddedByYou,
+    /// <summary>Outside the view: not a row (search and "Show other modules" find it; its URL opens). Not a permission.</summary>
+    HiddenByWorkspaceView,
+    /// <summary>Turned off in System Settings → Feature Visibility: no row in any view.</summary>
+    DisabledByFeatureVisibility,
+}
+
+/// <summary>One module's navigation state. <see cref="Unavailable"/> is product availability (<see cref="FeatureAvailabilityCatalog"/>): the
+/// row stays and says so.</summary>
+public sealed record NavModule(NavSection Section, NavItem Item, ModuleReach Reach, bool Unavailable)
+{
+    public bool Enabled => Reach != ModuleReach.DisabledByFeatureVisibility;
+    public bool IsRow => Reach is ModuleReach.InView or ModuleReach.AddedByYou;
+}
+
+public enum NavSearchBucket { CurrentWorkspace, OtherWorkspaces, Disabled }
+
+public sealed record NavSearchResult(NavModule Module, NavSearchBucket Bucket, IReadOnlyList<WorkspaceViewDefinition> OtherViews)
+{
+    public NavSection Section => Module.Section;
+    public NavItem Item => Module.Item;
 }
 
 /// <summary>
-/// The sidebar's one state manager: the Workspace View and, per view, which groups the person collapsed or expanded. In a focused view the
-/// groups outside its focus start collapsed (still visible and searchable); All Modules starts with everything expanded. The current page's
-/// group is always expanded. Remembered in this browser (see <see cref="Serialize"/>); it holds no project state and project selection holds
-/// none of it.
+/// The one resolution model of the sidebar, in precedence order: (1) authorization — BirkNext has no per-module authorization (every person
+/// who can open BirkNext may open every module), so nothing resolves to access denied; (2) Feature Visibility (System Settings) — a disabled
+/// module is no row anywhere and search marks it disabled; (3) Workspace View presentation — a module outside the view is no row; (4) the
+/// person's own additions to the view. Product availability (<see cref="FeatureAvailabilityCatalog"/>) is shown on the row, never hidden.
+/// </summary>
+public static class NavigationModules
+{
+    public static NavModule Resolve(NavSection section, NavItem item, FeatureVisibilityService features, NavigationSectionState state)
+    {
+        var view = WorkspaceViews.Of(state.View);
+        var reach = !item.Visible(features) ? ModuleReach.DisabledByFeatureVisibility
+            : view.Contains(item) ? ModuleReach.InView
+            : state.IsAdded(item.Route) ? ModuleReach.AddedByYou
+            : ModuleReach.HiddenByWorkspaceView;
+        return new(section, item, reach, FeatureAvailabilityCatalog.IsUnavailable(item.FeatureId));
+    }
+
+    public static IReadOnlyList<NavModule> All(FeatureVisibilityService features, NavigationSectionState state) =>
+        [.. NavigationCatalog.Sections.SelectMany(s => s.Items.Select(i => Resolve(s, i, features, state)))];
+
+    /// <summary>The module of the current location (deep link first), if the location is a module at all.</summary>
+    public static NavModule? Current(string relativeLocation, FeatureVisibilityService features, NavigationSectionState state) =>
+        All(features, state).FirstOrDefault(m => m.Item.IsCurrentLocation(relativeLocation));
+
+    /// <summary>
+    /// Workspace-aware search over every module (labels, earlier names, group names, descriptions): rows of the current view first, then
+    /// modules of other views (with the views that hold them), then modules turned off in Feature Visibility (marked, not opened).
+    /// </summary>
+    public static IReadOnlyList<NavSearchResult> Search(string? text, FeatureVisibilityService features, NavigationSectionState state)
+    {
+        var modules = All(features, state).ToDictionary(m => m.Item.Route);
+        return [.. NavigationCatalog.Rank(text, modules.Values.Select(m => (m.Section, m.Item)))
+            .Select(r => modules[r.Item.Route])
+            .Select(m => new NavSearchResult(m, m.Reach switch
+            {
+                ModuleReach.DisabledByFeatureVisibility => NavSearchBucket.Disabled,
+                ModuleReach.HiddenByWorkspaceView => NavSearchBucket.OtherWorkspaces,
+                _ => NavSearchBucket.CurrentWorkspace,
+            }, m.Reach == ModuleReach.HiddenByWorkspaceView ? WorkspaceViews.Holding(m.Item) : []))
+            .OrderBy(r => r.Bucket)];
+    }
+}
+
+/// <summary>
+/// The sidebar's one state manager (navigation preferences only, remembered in this browser — see <see cref="Serialize"/>): the Workspace
+/// View; per view, which groups the person collapsed, whether other modules are shown and which modules the person added; and whether the
+/// desktop sidebar is collapsed to icons. The mobile drawer is not part of it. Groups start expanded; the current page's group is always
+/// expanded. It holds no project state and project selection holds none of it.
 /// </summary>
 public sealed class NavigationSectionState
 {
+    public const string PreferencesKey = "birknext.navigation.v1";
+
     private readonly Dictionary<WorkspaceView, Dictionary<string, bool>> _choices = [];
+    private readonly HashSet<WorkspaceView> _showOther = [];
+    private readonly Dictionary<WorkspaceView, HashSet<string>> _added = [];
 
     public WorkspaceView View { get; private set; } = WorkspaceView.AllModules;
+
+    /// <summary>The desktop sidebar shows icons only (a preference; independent of the mobile drawer).</summary>
+    public bool SidebarCollapsed { get; private set; }
+
+    /// <summary>Remembered preferences were read (or could not be); changes are saved from then on.</summary>
+    public bool IsRestored { get; private set; }
 
     public event Action? Changed;
 
     private Dictionary<string, bool> Choices => _choices.TryGetValue(View, out var c) ? c : _choices[View] = new(StringComparer.Ordinal);
 
-    private bool DefaultCollapsed(string sectionId) => View != WorkspaceView.AllModules && !WorkspaceViews.Of(View).FocusSections.Contains(sectionId);
-
-    public bool IsCollapsed(string sectionId) => Choices.TryGetValue(sectionId, out var collapsed) ? collapsed : DefaultCollapsed(sectionId);
+    public bool IsCollapsed(string sectionId) => Choices.TryGetValue(sectionId, out var collapsed) && collapsed;
 
     public void Toggle(string sectionId)
     {
@@ -403,30 +519,98 @@ public sealed class NavigationSectionState
         Changed?.Invoke();
     }
 
-    /// <summary>Switches the navigation emphasis. Changes nothing else: not the project, not running work, not any page state.</summary>
+    /// <summary>Switches the navigation emphasis. Changes nothing else: not the page, the project, running work or any page state.</summary>
     public void SetView(WorkspaceView view)
     {
-        if (View == view) return;
+        if (View == view || !Enum.IsDefined(view)) return;
         View = view;
         Changed?.Invoke();
     }
 
-    private sealed record Stored(WorkspaceView View, Dictionary<WorkspaceView, Dictionary<string, bool>> Choices);
+    public void SetSidebarCollapsed(bool collapsed)
+    {
+        if (SidebarCollapsed == collapsed) return;
+        SidebarCollapsed = collapsed;
+        Changed?.Invoke();
+    }
 
-    public string Serialize() => System.Text.Json.JsonSerializer.Serialize(new Stored(View, _choices));
+    /// <summary>Modules outside the current view are shown as rows too (marked outside the view).</summary>
+    public bool ShowOtherModules => _showOther.Contains(View);
 
-    /// <summary>Restores remembered preferences; unreadable or unknown values are ignored (defaults stay).</summary>
+    public void ToggleShowOtherModules()
+    {
+        if (!_showOther.Remove(View)) _showOther.Add(View);
+        Changed?.Invoke();
+    }
+
+    public bool IsAdded(string route) => _added.TryGetValue(View, out var routes) && routes.Contains(route);
+
+    /// <summary>The person's own addition to the current view (precedence 4: never shows a module Feature Visibility turned off).</summary>
+    public void AddToView(string route)
+    {
+        if (!(_added.TryGetValue(View, out var routes) ? routes : _added[View] = new(StringComparer.Ordinal)).Add(route)) return;
+        Changed?.Invoke();
+    }
+
+    public void RemoveFromView(string route)
+    {
+        if (!_added.TryGetValue(View, out var routes) || !routes.Remove(route)) return;
+        Changed?.Invoke();
+    }
+
+    private sealed record Stored(WorkspaceView View, Dictionary<WorkspaceView, Dictionary<string, bool>> Choices, bool SidebarCollapsed = false,
+        WorkspaceView[]? ShowOther = null, Dictionary<WorkspaceView, string[]>? Added = null);
+
+    public string Serialize() => System.Text.Json.JsonSerializer.Serialize(new Stored(View, _choices, SidebarCollapsed, [.. _showOther],
+        _added.ToDictionary(a => a.Key, a => a.Value.ToArray())));
+
+    /// <summary>Restores remembered preferences; unreadable or unknown values are ignored (defaults stay). Earlier preferences stay valid:
+    /// fields added later default, and the former "TechnicalReviewer" view key reads as Developer.</summary>
     public void Restore(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return;
         try
         {
+            json = json.Replace("\"TechnicalReviewer\"", "\"Developer\"", StringComparison.Ordinal);
             if (System.Text.Json.JsonSerializer.Deserialize<Stored>(json) is not { } stored || !Enum.IsDefined(stored.View)) return;
             View = stored.View;
+            SidebarCollapsed = stored.SidebarCollapsed;
             _choices.Clear();
             foreach (var (view, choices) in stored.Choices ?? []) if (Enum.IsDefined(view)) _choices[view] = new(choices, StringComparer.Ordinal);
+            _showOther.Clear();
+            foreach (var view in stored.ShowOther ?? []) if (Enum.IsDefined(view)) _showOther.Add(view);
+            _added.Clear();
+            foreach (var (view, routes) in stored.Added ?? []) if (Enum.IsDefined(view)) _added[view] = new(routes ?? [], StringComparer.Ordinal);
             Changed?.Invoke();
         }
         catch (System.Text.Json.JsonException) { }
+    }
+
+    /// <summary>
+    /// Reads remembered preferences once, synchronously where the runtime allows (WebAssembly), so the first render already has the right
+    /// sidebar width and view — no flash of the default. Storage that is unavailable leaves the defaults; navigation never depends on it.
+    /// </summary>
+    public void EnsureRestored(IJSRuntime? js)
+    {
+        if (IsRestored || js is not IJSInProcessRuntime inProcess) return;
+        try { Restore(inProcess.Invoke<string?>("localStorage.getItem", PreferencesKey)); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        IsRestored = true;
+    }
+
+    /// <summary>The asynchronous fallback of <see cref="EnsureRestored"/> for runtimes without synchronous interop.</summary>
+    public async Task EnsureRestoredAsync(IJSRuntime? js)
+    {
+        if (IsRestored || js is null) return;
+        try { Restore(await js.InvokeAsync<string?>("localStorage.getItem", PreferencesKey)); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        IsRestored = true;
+    }
+
+    public async Task SaveAsync(IJSRuntime? js)
+    {
+        if (!IsRestored || js is null) return;
+        try { await js.InvokeVoidAsync("localStorage.setItem", PreferencesKey, Serialize()); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
     }
 }

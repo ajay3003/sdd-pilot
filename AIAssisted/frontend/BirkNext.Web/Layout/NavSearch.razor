@@ -1,0 +1,137 @@
+@using BirkNext.Web.Services
+@inject FeatureVisibilityService FeatureViz
+@inject NavigationManager Navigation
+
+@* Module search (combobox): every module by label, earlier names, group and description. Rows of the current Workspace View first, then
+   modules of other views (they open like any page; the view is not changed), then modules turned off in Feature Visibility (marked, not
+   opened). Arrow keys move the active result, Enter opens it, Escape clears (and, when empty, closes the compact search). *@
+<label class="visually-hidden" for="@InputId">Search modules</label>
+<input id="@InputId" type="search" class="nav-search" data-testid="nav-search" placeholder="Search modules…" autocomplete="off"
+       role="combobox" aria-autocomplete="list" aria-expanded="@(Open ? "true" : "false")" aria-controls="@ListId"
+       aria-activedescendant="@(Open && _active >= 0 && _active < _results.Count ? OptionId(_active) : null)"
+       value="@_text" @oninput="OnInput" @onkeydown="OnKeyAsync" />
+@if (Open)
+{
+    var view = WorkspaceViews.Of(Sections.View);
+    <div class="nav-search-results" data-testid="nav-search-results">
+        <p class="nav-search-count" role="status" aria-live="polite" data-testid="nav-search-count">@(_results.Count == 0 ? "No module found" : $"{_results.Count} module{(_results.Count == 1 ? "" : "s")}")</p>
+        @if (_results.Count == 0)
+        {
+            <p class="nav-search-empty">Try another name — earlier names (for example “Implementation Review”) are found too.</p>
+        }
+        <ul id="@ListId" role="listbox" class="nav-search-list" aria-label="Search results">
+            @for (var i = 0; i < _results.Count; i++)
+            {
+                var index = i;
+                var result = _results[i];
+                if (i == 0 || _results[i - 1].Bucket != result.Bucket)
+                {
+                    <li role="presentation" class="nav-search-heading" data-testid="nav-search-bucket" data-bucket="@result.Bucket">@BucketLabel(result.Bucket, view)</li>
+                }
+                var current = result.Item.IsCurrentLocation(NavigationCatalog.RelativeLocation(Navigation));
+                <li role="presentation">
+                    @if (result.Bucket == NavSearchBucket.Disabled)
+                    {
+                        <span id="@OptionId(index)" role="option" aria-disabled="true" aria-selected="@(index == _active ? "true" : "false")"
+                              class="nav-search-option nav-search-disabled @(index == _active ? "nav-search-active" : null)" data-testid="nav-search-result" data-route="@result.Item.Route" data-bucket="@result.Bucket"
+                              title="Turned off in System Settings → Feature Visibility">
+                            <span class="nav-icon @result.Item.Icon" aria-hidden="true"></span>
+                            <span class="nav-label">@result.Item.Label</span>
+                            <span class="nav-search-meta">Disabled in Feature Visibility</span>
+                        </span>
+                    }
+                    else
+                    {
+                        <a id="@OptionId(index)" role="option" aria-selected="@(index == _active ? "true" : "false")" href="@result.Item.Route" title="@result.Item.Title"
+                           class="nav-search-option @(index == _active ? "nav-search-active" : null) @(current ? "active" : null)" aria-current="@(current ? "page" : null)"
+                           data-testid="nav-search-result" data-route="@result.Item.Route" data-bucket="@result.Bucket" @onclick="() => OpenedAsync(result)" @onmouseenter="() => _active = index">
+                            <span class="nav-icon @result.Item.Icon" aria-hidden="true"></span>
+                            <span class="nav-label">@result.Item.Label</span>
+                            <span class="nav-search-meta">@Meta(result)</span>
+                            <span class="visually-hidden">, in @result.Section.Label@(result.Module.Unavailable ? ", feature unavailable" : "")</span>
+                        </a>
+                    }
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    /// <summary>Id prefix: the expanded sidebar and the compact (collapsed) search are separate instances.</summary>
+    [Parameter] public string IdPrefix { get; set; } = "nav";
+    /// <summary>Called after a result was opened or Escape pressed on an empty box (the compact search closes).</summary>
+    [Parameter] public EventCallback OnDone { get; set; }
+    /// <summary>The sidebar's navigation state (view, additions) — the menu's own instance.</summary>
+    [Parameter, EditorRequired] public NavigationSectionState Sections { get; set; } = default!;
+
+    private string? _text;
+    private IReadOnlyList<NavSearchResult> _results = [];
+    private int _active = -1;
+
+    private string InputId => IdPrefix == "nav" ? "nav-search" : $"{IdPrefix}-search";
+    private string ListId => $"{InputId}-results";
+    private string OptionId(int index) => $"{InputId}-option-{index}";
+    private bool Open => !string.IsNullOrWhiteSpace(_text);
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString();
+        _results = NavigationModules.Search(_text, FeatureViz, Sections);
+        _active = FirstOpenable();
+    }
+
+    private int FirstOpenable() => _results.ToList().FindIndex(r => r.Bucket != NavSearchBucket.Disabled);
+
+    private async Task OnKeyAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Escape":
+                if (Open) Clear();
+                else await OnDone.InvokeAsync();
+                break;
+            case "ArrowDown" when _results.Count > 0:
+                _active = (_active + 1) % _results.Count;
+                break;
+            case "ArrowUp" when _results.Count > 0:
+                _active = _active <= 0 ? _results.Count - 1 : _active - 1;
+                break;
+            case "Enter" when Open:
+                var index = _active >= 0 && _active < _results.Count && _results[_active].Bucket != NavSearchBucket.Disabled ? _active : FirstOpenable();
+                if (index < 0) break;
+                var result = _results[index];
+                Navigation.NavigateTo(result.Item.Route);
+                await OpenedAsync(result);
+                break;
+        }
+    }
+
+    /// <summary>The opened module's group is revealed; the Workspace View stays as it is.</summary>
+    private async Task OpenedAsync(NavSearchResult result)
+    {
+        Clear();
+        Sections.Expand(result.Section.Id);
+        await OnDone.InvokeAsync();
+    }
+
+    private void Clear()
+    {
+        _text = null;
+        _results = [];
+        _active = -1;
+    }
+
+    private static string BucketLabel(NavSearchBucket bucket, WorkspaceViewDefinition view) => bucket switch
+    {
+        NavSearchBucket.CurrentWorkspace => view.IsAllModules ? "All modules" : $"In current workspace ({view.Label})",
+        NavSearchBucket.OtherWorkspaces => "Available in other workspaces",
+        _ => "Disabled in Feature Visibility",
+    };
+
+    private static string Meta(NavSearchResult result) =>
+        (result.Bucket == NavSearchBucket.OtherWorkspaces && result.OtherViews.Count > 0 ? string.Join(", ", result.OtherViews.Select(v => v.Label))
+            : result.Bucket == NavSearchBucket.OtherWorkspaces ? "All Modules"
+            : result.Section.Label)
+        + (result.Module.Unavailable ? " · Unavailable" : "");
+}

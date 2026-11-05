@@ -206,11 +206,104 @@
         background: transparent;
     }
 }
-/* ── Workspace view + search ───────────────────────────────────────────────── */
+/* ── Workspace view (search styles: NavSearch.razor.css) ─────────────────────── */
 .nav-tools { display: flex; flex-direction: column; gap: .3rem; padding: .55rem .75rem .25rem; }
 .nav-tool-label { color: #94a3b8; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.nav-view, .nav-search { width: 100%; padding: .3rem .45rem; border: 1px solid #475569; border-radius: 6px; background: #0f172a; color: #e2e8f0; font-size: .84rem; }
-.nav-view:focus-visible, .nav-search:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
-.nav-search::placeholder { color: #94a3b8; }
-.nav-search-count { color: #94a3b8; font-size: .75rem; margin: .4rem .75rem .2rem; }
-.nav-more { color: #94a3b8; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; margin: 1rem .5rem 0; padding: .3rem .5rem 0; border-top: 1px solid #334155; }
+.nav-view { width: 100%; padding: .3rem .45rem; border: 1px solid #475569; border-radius: 6px; background: #0f172a; color: #e2e8f0; font-size: .84rem; }
+.nav-view:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
+.nav-view-help { margin: 0 0 .2rem; color: #94a3b8; font-size: .75rem; line-height: 1.35; }
+
+/* A module outside the Workspace View (shown with "Show other modules", or the page that is open): quieter, never hidden. */
+.nav-item-outside ::deep a, .nav-flyout-link.nav-item-outside { color: #8d9bb0; }
+.nav-status-outside { border-style: dotted; }
+.nav-show-other {
+    display: block; width: calc(100% - 1rem); margin: .6rem .5rem 0; padding: .35rem .5rem; border: 1px dashed #475569; border-radius: 6px;
+    background: transparent; color: #cbd5e1; font-size: .78rem; text-align: left; cursor: pointer;
+}
+.nav-show-other:hover { background: rgba(255, 255, 255, .06); }
+.nav-show-other:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
+
+/* ── Top row: brand, desktop collapse control, mobile drawer trigger ─────────── */
+.nav-top { display: flex; align-items: center; gap: .4rem; flex-wrap: nowrap; }
+.nav-brand-short { display: none; }
+.nav-collapse-toggle {
+    display: none; flex: 0 0 auto; align-items: center; justify-content: center; width: 2rem; height: 2rem; margin-left: auto;
+    border: 0; border-radius: 6px; background: transparent; color: #cbd5e1; cursor: pointer;
+}
+.nav-collapse-toggle:hover { background: rgba(255, 255, 255, .08); color: #f8fafc; }
+.nav-collapse-toggle:focus-visible, .navbar-toggler:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
+.nav-chevron { width: .5rem; height: .5rem; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateX(2px) rotate(45deg); }
+.nav-collapse-toggle[aria-expanded="false"] .nav-chevron { transform: translateX(-2px) rotate(-135deg); }
+
+/* ── Collapsed (icon rail): workspace + search triggers, group icons with flyouts ── */
+.nav-rail { display: flex; flex-direction: column; align-items: center; gap: .2rem; padding-top: .5rem; }
+.nav-rail-groups { display: flex; flex-direction: column; align-items: center; gap: .2rem; margin-top: .35rem; padding-top: .45rem; border-top: 1px solid #334155; width: 100%; }
+.nav-rail-item { position: relative; }
+.nav-rail-btn {
+    position: relative; display: flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
+    border: 0; border-radius: 8px; background: transparent; color: #a9b6c8; cursor: pointer;
+}
+.nav-rail-btn .nav-icon { margin: 0; top: 0; }
+.nav-rail-btn:hover, .nav-rail-btn[aria-expanded="true"] { background: rgba(255, 255, 255, .08); color: #f8fafc; }
+.nav-rail-btn.active { background: rgba(255, 255, 255, .11); color: #f8fafc; box-shadow: inset 3px 0 0 #93c5fd; }
+.nav-rail-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
+/* Hover/focus label (not a sticky tooltip: it disappears with the pointer or focus, and never while the flyout is open). */
+.nav-rail-btn::after {
+    content: attr(data-label); position: absolute; left: calc(100% + .5rem); top: 50%; transform: translateY(-50%); z-index: 1060;
+    padding: .2rem .5rem; border-radius: 4px; background: #0f172a; color: #f8fafc; font-size: .78rem; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .3); opacity: 0; pointer-events: none; transition: opacity .1s ease;
+}
+.nav-rail-btn:hover::after, .nav-rail-btn:focus-visible::after { opacity: 1; }
+.nav-rail-btn.nav-rail-open::after { display: none; }
+.nav-search-glyph { width: .8rem; height: .8rem; border: 2px solid currentColor; border-radius: 50%; position: relative; top: -1px; left: -1px; }
+.nav-search-glyph::after { content: ""; position: absolute; width: .4rem; height: 2px; background: currentColor; right: -.42rem; bottom: -.22rem; transform: rotate(45deg); }
+
+.nav-flyout-backdrop { position: fixed; inset: 0; z-index: 1040; background: transparent; }
+.nav-flyout {
+    position: absolute; left: calc(100% + .6rem); top: 0; z-index: 1050; min-width: 15rem; max-width: 20rem; max-height: calc(100vh - 1rem); overflow-y: auto;
+    padding: .4rem; border: 1px solid #334155; border-radius: 8px; background: #1e293b; box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
+}
+.nav-flyout-search { width: 22rem; max-width: calc(100vw - 6rem); }
+.nav-flyout-title { margin: .1rem .4rem .35rem; color: #94a3b8; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.nav-flyout-link {
+    display: grid; grid-template-columns: 1.1rem minmax(0, 1fr) auto; align-items: center; column-gap: .5rem; min-height: 2rem; padding: .3rem .45rem;
+    border-radius: 6px; color: #cbd5e1; font-size: .84rem; text-decoration: none;
+}
+.nav-flyout-link .nav-icon { margin: 0; top: 0; }
+.nav-flyout-link:hover, .nav-flyout-link:focus-visible { background: rgba(255, 255, 255, .08); color: #f8fafc; outline: none; }
+.nav-flyout-link:focus-visible { box-shadow: 0 0 0 2px #93c5fd inset; }
+.nav-flyout-link.active { background: rgba(255, 255, 255, .11); box-shadow: inset 3px 0 0 #93c5fd; color: #f8fafc; }
+.nav-flyout-option {
+    display: block; width: 100%; padding: .35rem .5rem; border: 0; border-radius: 6px; background: transparent; color: #cbd5e1; font-size: .84rem; text-align: left; cursor: pointer;
+}
+.nav-flyout-option[aria-checked="true"] { background: rgba(255, 255, 255, .11); color: #f8fafc; font-weight: 600; }
+.nav-flyout-option:hover, .nav-flyout-option:focus-visible { background: rgba(255, 255, 255, .08); outline: none; box-shadow: 0 0 0 2px #93c5fd inset; }
+
+/* ── Mobile drawer ──────────────────────────────────────────────────────────── */
+.nav-drawer-close { display: none; }
+
+@media (max-width: 640.98px) {
+    .nav-scrollable { display: none; }
+    .nav-scrollable.nav-drawer-open {
+        display: block; position: fixed; inset: 0 auto 0 0; z-index: 1100; width: min(88vw, 20rem); overflow-y: auto; padding: 2.75rem 0 1rem;
+        background: #1e293b; box-shadow: 4px 0 24px rgba(0, 0, 0, .4);
+    }
+    .nav-drawer-backdrop { position: fixed; inset: 0; z-index: 1090; background: rgba(15, 23, 42, .55); }
+    .nav-drawer-close {
+        display: block; position: absolute; top: .5rem; right: .5rem; width: 2rem; height: 2rem; border: 0; border-radius: 6px;
+        background: transparent; color: #e2e8f0; font-size: 1.4rem; line-height: 1; cursor: pointer;
+    }
+    .nav-drawer-close:focus-visible { outline: 2px solid #93c5fd; }
+}
+
+@media (min-width: 641px) {
+    .nav-collapse-toggle { display: inline-flex; }
+    /* Collapsed: compact brand + expand control in the 64px rail; flyouts may extend beyond the rail. */
+    .nav-top-collapsed { padding-left: 0 !important; }
+    .nav-top-collapsed .nav-top { justify-content: center; gap: .1rem; padding: 0 .25rem; }
+    .nav-top-collapsed .navbar-brand { margin: 0; font-size: .95rem; }
+    .nav-top-collapsed .nav-brand-full { display: none; }
+    .nav-top-collapsed .nav-brand-short { display: inline; }
+    .nav-top-collapsed .nav-collapse-toggle { width: 1.6rem; margin-left: 0; }
+    .nav-scrollable.nav-rail { overflow: visible; }
+}
