@@ -132,7 +132,7 @@ public sealed class DeliveryOperationsTests : BunitContext
         Nav.NavigateTo($"delivery-overview?project={DeliveryReportingPageTests.ProjectId}");
         var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
 
-        page.WaitForAssertion(() => page.FindAll("[data-testid=do-item]").Should().HaveCount(2));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
         // Only statuses the source supports are charted; verification is a quality state ("Not recorded" / "Not assessed"), never a 0 or a tile.
         page.FindAll("[data-testid=dd-status-bar]").Select(t => t.GetAttribute("data-key")).Should().Equal("InProgress");
         page.Find("[data-testid=dd-status-bar][data-key=InProgress] .dd-bar-value").TextContent.Should().Be("2");
@@ -144,7 +144,7 @@ public sealed class DeliveryOperationsTests : BunitContext
         page.Find("[data-testid=do-open-report]").GetAttribute("href").Should().Contain($"project={DeliveryReportingPageTests.ProjectId}").And.Contain("tab=stories");
 
         page.Find("[data-testid=do-filter]").Change(nameof(BacklogStatus.Accepted));
-        page.FindAll("[data-testid=do-item]").Should().BeEmpty();
+        page.FindAll("[data-testid=dws-feature-row]").Should().BeEmpty();
         page.Find("[data-testid=do-empty-filter]").Should().NotBeNull();
     }
 

@@ -182,12 +182,26 @@ public sealed record DeliveryExplorerOptions(DeliveryExplorerMode Mode)
     /// <summary>Removed features, stories and tasks exist only in the baseline: the current inventory leaves them out.</summary>
     public bool IncludeRemoved => Mode == DeliveryExplorerMode.Comparison;
 
+    /// <summary>
+    /// Feature-level backlog facts (Delivery Overview): each feature's backlog status, checklist, requirement model, attention and priority, keyed by
+    /// feature key. When set the explorer offers the Features view — the backlog list of the Overview, now one view of the shared explorer.
+    /// </summary>
+    public IReadOnlyDictionary<string, DeliveryFeatureGridRow>? Backlog { get; init; }
+    /// <summary>Why a feature is in the selected Source / Functional scope (feature key → reason), shown with the feature.</summary>
+    public IReadOnlyDictionary<string, string>? Why { get; init; }
+    /// <summary>The page's own filters (scope, state, attention): only these features and their work items are in the inventory. Null = all.</summary>
+    public IReadOnlySet<string>? FeatureKeys { get; init; }
+
     public IReadOnlyList<(string Key, string Label)> Views => ShowChanges
         ? [("hierarchy", "Hierarchy"), ("list", "List"), ("board", "Change Board"), ("phases", "Phases")]
-        : [("hierarchy", "Hierarchy"), ("list", "List"), ("phases", "Phases")];
+        : Backlog is null ? [("hierarchy", "Hierarchy"), ("list", "List"), ("phases", "Phases")]
+        : [("features", "Features"), ("hierarchy", "Hierarchy"), ("list", "List"), ("phases", "Phases")];
 
-    /// <summary>The item is part of this mode's inventory.</summary>
-    public bool Includes(DeliveryWorkItem item) => IncludeRemoved || !DeliveryWorkItems.IsRemoved(item);
+    /// <summary>The view a fresh explorer opens with: the backlog's Features view when there is one, else the hierarchy.</summary>
+    public string DefaultView => Backlog is null ? "hierarchy" : "features";
+
+    /// <summary>The item is part of this mode's inventory (and of the page's feature filter).</summary>
+    public bool Includes(DeliveryWorkItem item) => (IncludeRemoved || !DeliveryWorkItems.IsRemoved(item)) && (FeatureKeys is null || FeatureKeys.Contains(item.FeatureKey));
 
     /// <summary>"Needs review" of this mode: in comparison mode a change that needs a look counts too; in current state only genuine review needs.</summary>
     public bool Attention(DeliveryWorkItem item) => ShowChanges ? item.Attention : DeliveryWorkItems.NeedsReview(item);
@@ -196,6 +210,92 @@ public sealed record DeliveryExplorerOptions(DeliveryExplorerMode Mode)
     public string CrossPageLabel => ShowChanges ? "View current state in Delivery Overview" : "View changes in Delivery Reports";
 
     public static string CrossPageHref(DeliveryExplorerMode from, Guid projectId, Guid reportId, string itemId) => from == DeliveryExplorerMode.Comparison
-        ? $"delivery-overview?project={projectId}&explore=items&item={Uri.EscapeDataString(itemId)}"
+        ? $"delivery-overview?project={projectId}&item={Uri.EscapeDataString(itemId)}"
         : $"delivery-reporting?project={projectId}&tab=stories&report={reportId}&item={Uri.EscapeDataString(itemId)}";
+}
+
+/// <summary>The explorer's filter, view and sort — the state that lives in the URL (wi-* keys) and is remembered per project, report and mode.</summary>
+public sealed record DeliveryExplorerFilter(string View = "", string Search = "", string Module = "", string Type = "", string Change = "", bool Review = false,
+    string Sort = "id", bool Descending = false);
+
+/// <summary>
+/// Round-trip of the explorer state through the URL: compact keys, values that are view keys, enum names, module names and plain search text — never
+/// ids of other projects, never serialized objects. <see cref="Validate"/> drops what does not fit the current report and mode (a module this report
+/// does not have, a change filter in current-state mode), so a stale link never shows an empty explorer without saying why.
+/// </summary>
+public static class DeliveryExplorerState
+{
+    public static readonly IReadOnlyList<string> QueryKeys = ["wi-view", "wi-q", "wi-module", "wi-type", "wi-change", "wi-review", "wi-sort", "wi-desc"];
+    public static readonly IReadOnlyList<string> Types = ["Feature", "Story", "Group", "Task"];
+    public static readonly IReadOnlyList<string> Sorts = ["id", "type", "title", "parent", "module", "phase", "progress", "change", "attention", "status"];
+
+    public static IReadOnlyDictionary<string, object?> ToQuery(DeliveryExplorerFilter f, string defaultView) => new Dictionary<string, object?>
+    {
+        ["wi-view"] = f.View.Length == 0 || f.View == defaultView ? null : f.View,
+        ["wi-q"] = f.Search.Trim().Length == 0 ? null : f.Search.Trim(),
+        ["wi-module"] = f.Module.Length == 0 ? null : f.Module,
+        ["wi-type"] = f.Type.Length == 0 ? null : f.Type,
+        ["wi-change"] = f.Change.Length == 0 ? null : f.Change,
+        ["wi-review"] = f.Review ? "1" : null,
+        ["wi-sort"] = f.Sort is "" or "id" ? null : f.Sort,
+        ["wi-desc"] = f.Descending ? "1" : null,
+    };
+
+    public static DeliveryExplorerFilter FromQuery(IReadOnlyDictionary<string, string?> q)
+    {
+        string S(string key) => q.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : "";
+        return new(S("wi-view"), S("wi-q"), S("wi-module"), S("wi-type"), S("wi-change"), S("wi-review") == "1", S("wi-sort") is { Length: > 0 } sort ? sort : "id", S("wi-desc") == "1");
+    }
+
+    public static bool HasAny(IReadOnlyDictionary<string, string?> q) => QueryKeys.Any(k => q.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v));
+
+    /// <summary>The filter as this report and mode can apply it, and a note for every part that was dropped.</summary>
+    public static (DeliveryExplorerFilter Filter, IReadOnlyList<string> Dropped) Validate(DeliveryExplorerFilter f, DeliveryExplorerOptions options, IReadOnlyCollection<string> modules)
+    {
+        var dropped = new List<string>();
+        var view = options.Views.Any(v => v.Key == f.View) ? f.View : options.DefaultView;
+        if (f.View.Length > 0 && view != f.View) dropped.Add($"The view “{f.View}” is not available here.");
+        var module = f.Module;
+        if (module.Length > 0 && !modules.Contains(module)) { dropped.Add($"Module “{module}” is not in this report — the module filter was cleared."); module = ""; }
+        var type = Types.Contains(f.Type) ? f.Type : "";
+        if (f.Type.Length > 0 && type.Length == 0) dropped.Add($"Unknown work-item type “{f.Type}” — the type filter was cleared.");
+        var change = options.ShowChanges && f.Change is "changed" or "unchanged" ? f.Change : "";
+        if (f.Change.Length > 0 && change.Length == 0) dropped.Add(options.ShowChanges ? $"Unknown change filter “{f.Change}”." : "Change filters apply to comparisons only (Delivery Reports).");
+        var sort = Sorts.Contains(f.Sort) ? f.Sort : "id";
+        return (new(view, f.Search, module, type, change, f.Review, sort, f.Descending), dropped);
+    }
+
+    /// <summary>The query of a URL as decoded key → value (the last value of a repeated key wins).</summary>
+    public static IReadOnlyDictionary<string, string?> Parse(string uri)
+    {
+        var query = uri.IndexOf('?') is var i and >= 0 ? uri[(i + 1)..] : "";
+        if (query.IndexOf('#') is var h and >= 0) query = query[..h];
+        var result = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = part.Split('=', 2);
+            result[Uri.UnescapeDataString(kv[0].Replace('+', ' '))] = kv.Length > 1 ? Uri.UnescapeDataString(kv[1].Replace('+', ' ')) : null;
+        }
+        return result;
+    }
+}
+
+/// <summary>
+/// Per-session memory of explorer state (one instance per browser tab): the query an explorer last had for one key (project + report + mode, or a
+/// Functional Quality Scope project), so leaving a tab or page and coming back through a link without that state restores it. The URL wins when it
+/// carries state. Never stored beyond the session; never holds secrets (only the same keys the URL shows).
+/// </summary>
+public sealed class ExplorerViewStateStore
+{
+    private readonly Dictionary<string, IReadOnlyDictionary<string, string?>> _state = new(StringComparer.Ordinal);
+
+    public IReadOnlyDictionary<string, string?>? Get(string key) => _state.GetValueOrDefault(key);
+
+    public void Set(string key, IReadOnlyDictionary<string, object?> query)
+    {
+        var values = query.Where(kv => kv.Value is not null && kv.Value.ToString() is { Length: > 0 })
+            .ToDictionary(kv => kv.Key, kv => (string?)kv.Value!.ToString(), StringComparer.Ordinal);
+        if (values.Count == 0) _state.Remove(key);
+        else _state[key] = values;
+    }
 }

@@ -13,8 +13,10 @@
 .dws-check { font-size: 0.875rem; display: inline-flex; gap: 0.25rem; align-items: center; }
 .dws-split { display: grid; grid-template-columns: minmax(18rem, 2fr) minmax(20rem, 3fr); gap: 0.75rem; align-items: start; }
 .dws-master, .dws-detail { border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white, #fff); padding: 0.5rem; min-width: 0; }
-.dws-detail { position: sticky; top: 0.5rem; max-height: calc(100vh - 2rem); overflow: auto; }
-.dws-master { max-height: calc(100vh - 2rem); overflow: auto; }
+/* Below the page's sticky header (if any): --page-sticky-offset is its measured height (explorerState.js). */
+.dws-detail { position: sticky; top: calc(var(--page-sticky-offset, 0px) + 0.5rem); max-height: calc(100vh - var(--page-sticky-offset, 0px) - 1rem); overflow: auto; }
+/* No top padding: the sticky table header sits flush with the scrolling edge, so rows never show above it. */
+.dws-master { max-height: calc(100vh - var(--page-sticky-offset, 0px) - 1rem); overflow: auto; padding-top: 0; }
 .dws-tree, .dws-tree ul, .dws-phase-list { list-style: none; margin: 0; padding: 0; }
 .dws-tree ul { padding-left: 0.9rem; }
 .dws-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.1rem 0.25rem; border-radius: 4px; font-size: 0.875rem; }
@@ -48,8 +50,19 @@
 .dws-rel-link { margin-right: 0.35rem; }
 .dws-section { margin-top: 0.5rem; }
 .dws-empty { color: var(--clr-text-muted); padding: 0.5rem; }
-.dws-tablewrap { overflow-x: auto; }
+/* The master pane is the scroll container (vertical and horizontal): the header row stays visible and the virtualized list measures against it. */
+.dws-tablewrap { overflow: visible; }
 .dws-table tr.is-selected { background: var(--clr-info-bg-light, #e8f1fd); }
+.dws-split.is-wide { grid-template-columns: minmax(0, 7fr) minmax(18rem, 3fr); }
+.dws-table thead th { position: sticky; top: 0; z-index: 1; background: var(--clr-surface-white, #fff); }
+.dws-row-fixed tbody tr { height: 40px; cursor: pointer; }
+.dws-row-fixed tbody td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; padding-top: 0; padding-bottom: 0; }
+.dws-row-fixed tbody td > button { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.dws-table[role=grid]:focus { outline: none; }
+.dws-table[role=grid]:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.dws-table[role=grid]:focus-visible tr.is-active { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: -2px; }
+.dws-table tr.is-active { box-shadow: inset 3px 0 0 var(--clr-focus, #2563eb); }
+.dws-notice { color: var(--clr-warning-text, #92400e); }
 .dws-unassigned .dws-title { font-style: italic; }
 @media (max-width: 900px) {
     .dws-split { grid-template-columns: 1fr; }
@@ -69,8 +82,10 @@
 @media (max-width: 640px) { .dws-legend-list { grid-template-columns: 1fr; } }
 .dws-status { display: flex; flex-wrap: wrap; gap: .375rem .5rem; align-items: center; margin: .5rem 0; font-size: .875rem; color: var(--clr-text-muted); }
 .dws-filter-chip { border: 1px solid var(--clr-border); border-radius: 999px; background: var(--clr-surface, transparent); padding: .125rem .625rem; font-size: .8125rem; cursor: pointer; }
-.dws-table { table-layout: fixed; width: 100%; }
-.dws-c-id { width: 7.5rem; } .dws-c-type { width: 7.5rem; } .dws-c-title { width: auto; } .dws-c-parent { width: 8rem; } .dws-c-module { width: 7rem; }
+.dws-table { table-layout: fixed; width: 100%; min-width: 50rem; }
+.dws-features { min-width: 46rem; }
+.dws-c-feature { width: auto; } .dws-c-status { width: 9rem; } .dws-c-checklist { width: 8.5rem; } .dws-c-model { width: 12rem; }
+.dws-c-id { width: 6.5rem; } .dws-c-type { width: 7rem; } .dws-c-title { width: auto; min-width: 16rem; } .dws-c-parent { width: 8rem; } .dws-c-module { width: 7rem; }
 .dws-c-phase { width: 9rem; } .dws-c-progress { width: 6.5rem; } .dws-c-change { width: 9rem; } .dws-c-review { width: 7rem; }
 .dws-cell-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dws-title-button { all: unset; cursor: pointer; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

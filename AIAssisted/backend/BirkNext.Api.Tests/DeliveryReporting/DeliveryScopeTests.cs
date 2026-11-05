@@ -263,5 +263,25 @@ public sealed class DeliveryScopeTests
         all.Scope.Should().BeNull("All work, no scope = the frozen report unchanged");
     }
 
+    [Fact]
+    public async Task A_report_frozen_before_the_integration_category_is_viewed_with_its_own_rules_and_a_new_report_with_the_new_ones()
+    {
+        var report = Report();
+        report.QualityRuleSet.Should().Be(FunctionalQualityClassifier.RuleSetVersion, "a new report records the quality rule set it was frozen with");
+        var first = report.Stories.First(s => !s.RemovedFeature && !s.NewFeature || !s.RemovedFeature);
+        var integration = report with { Stories = [.. report.Stories.Select(s => s.FeatureKey == first.FeatureKey ? s with { Title = "Altinn report arrives and is delivered to SkoleService" } : s)] };
+        var service = new DeliveryScopeService();
+
+        var current = await service.ForReportAsync(integration.ProjectId, integration, new(), [], default, new(DeliveryWorkType.NonTechnical, QualityCategory.Integration));
+        current.Classifications.Single(c => c.FeatureKey == first.FeatureKey).Category.Should().Be(QualityCategory.Integration);
+        current.Report!.Stories.Select(s => s.FeatureKey).Should().Contain(first.FeatureKey);
+
+        var legacy = integration with { QualityRuleSet = null };
+        var old = await service.ForReportAsync(legacy.ProjectId, legacy, new(), [], default, new(DeliveryWorkType.NonTechnical, QualityCategory.Integration));
+        old.Classifications.Single(c => c.FeatureKey == first.FeatureKey).Category.Should().NotBe(QualityCategory.Integration,
+            "a report frozen before functional-quality/3 is never silently reclassified");
+        old.Report!.Stories.Should().BeEmpty();
+    }
+
     private static int Metric(WeeklyDeliveryReport report, string key) => report.Metrics.Single(m => m.Key == key).Value;
 }

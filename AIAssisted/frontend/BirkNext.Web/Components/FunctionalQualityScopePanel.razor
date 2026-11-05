@@ -7,6 +7,7 @@
 @inject IFunctionalQualityScopeApiService Api
 @inject NavigationManager Nav
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 
 @* Functional Quality Scope: choose a scope (domain flow, module or custom) and see its user stories, acceptance scenarios, acceptance criteria and
    requirements, each with its quality category, why it is in scope, coverage, Test Data and testability. A projection over the newest Delivery
@@ -37,6 +38,22 @@
                 <label><input type="radio" name="fqs-mode" checked="@_includeRelated" @onchange="() => SetRelated(true)" data-testid="fqs-mode-related" /> Include related</label>
             </fieldset>
             <label class="fqs-check"><input type="checkbox" checked="@_includeTechnical" @onchange="ToggleTechnical" data-testid="fqs-technical" /> Include technical work</label>
+            <label class="fqs-field" title="Test and schema evidence is environment-specific: coverage, tests and schemas come from the selected environment's interpreted source.">
+                <span>Evidence environment</span>
+                <select data-testid="fqs-environment" value="@(EnvironmentValue)" @onchange="OnEnvironmentChanged" disabled="@_loading">
+                    @if (_resolution?.Evidence is { Applied: false, Available.Count: > 1 }) { <option value="">Choose an environment</option> }
+                    @if (_resolution?.Evidence is { Available.Count: 0 }) { <option value="">No environment has test evidence</option> }
+                    @foreach (var env in _resolution?.Evidence?.Available ?? [])
+                    {
+                        <option value="@env.Id">@ScopeFilterState.EnvironmentName(env.Id, _environmentNames) (@env.Tests test@(env.Tests == 1 ? "" : "s"))</option>
+                    }
+                    @if (_environment is { } chosen && chosen != ScopeEnvironments.All && _resolution?.Evidence?.Available.All(a => a.Id != chosen) != false)
+                    {
+                        <option value="@chosen">@ScopeFilterState.EnvironmentName(chosen, _environmentNames) (no test evidence)</option>
+                    }
+                    @if ((_resolution?.Evidence?.Available.Count ?? 0) > 1) { <option value="@ScopeEnvironments.All">All environments (aggregated)</option> }
+                </select>
+            </label>
         </div>
         <div class="fqs-actions">
             <button type="button" class="btn-secondary" data-testid="fqs-new" @onclick="StartNew">+ Custom scope</button>
@@ -86,6 +103,10 @@
     {
         <div class="fqs-skeleton" role="status" aria-label="Loading scope"><span></span><span></span></div>
     }
+    else if (_loading)
+    {
+        <ReviewStageList Stages="@([new ReviewStage("scope", _loadingLabel, ReviewStageState.Running)])" TestId="fqs-reloading" />
+    }
     else if (_resolution is { } r)
     {
         @Summary(r)
@@ -93,7 +114,7 @@
         @Scenarios(r)
         @foreach (var limitation in r.Limitations) { <p class="fqs-limit" data-testid="fqs-limitation">@limitation</p> }
         @if (_editing && _custom is not null) { @Builder(r) }
-        <div class="fqs-explorer" data-testid="fqs-explorer">
+        <div class="fqs-explorer" data-testid="fqs-explorer" @ref="_explorer">
             <div class="fqs-master" aria-label="Requirement explorer">
                 @Filters(r)
                 @if (_editing && _custom is not null)
@@ -107,7 +128,7 @@
                 else { @Items(r) }
             </div>
             <div class="fqs-detail-pane" aria-live="polite" data-testid="fqs-detail-pane">
-                @if (_detailLoading) { <ReviewStageList Stages="@([new ReviewStage("detail", "Loading the item's details, tests and evidence", ReviewStageState.Running)])" TestId="fqs-detail-loading" /> }
+                @if (_detailLoading) { <ReviewStageList Stages="@([new ReviewStage("detail", $"Loading the item's details, tests and evidence{(_environment is null ? "" : $" for {ScopeFilterState.EnvironmentName(_environment, _environmentNames)}")}", ReviewStageState.Running)])" TestId="fqs-detail-loading" /> }
                 else if (_detail is not null) { @Detail(_detail) }
                 else { <p class="fqs-muted fqs-detail-empty" data-testid="fqs-detail-empty">Select a requirement, user story or acceptance criterion to see its description, acceptance criteria, tests, Test Data and evidence.</p> }
             </div>
@@ -150,20 +171,55 @@
     private int _detailGeneration;
     private IReadOnlyList<ReviewDecisionView> _history = [];
     private ICanonicalInterpretationApiService? Review => Services.GetService(typeof(ICanonicalInterpretationApiService)) as ICanonicalInterpretationApiService;
+    private ExplorerViewStateStore? Store => Services.GetService(typeof(ExplorerViewStateStore)) as ExplorerViewStateStore;
+    /// <summary>Imported test results (TRX) of this workspace, for requirement → test → execution.</summary>
+    private BirkNext.Web.Models.SddLifecycleState? Lifecycle => (Services.GetService(typeof(IWorkspaceArtifactRepository)) as IWorkspaceArtifactRepository)?.SddLifecycle;
+    private string StateKey => $"fqs|{ProjectId}";
+    /// <summary>The evidence environment: a Target Environment id, "*" (all, aggregated) or null (the only one with evidence).</summary>
+    private string? _environment;
+    private string _loadingLabel = "Loading the scope";
+    private IReadOnlyDictionary<string, string> _environmentNames = new Dictionary<string, string>();
+    private string EnvironmentValue => _environment ?? (_resolution?.Evidence?.Applied == true ? _resolution.Evidence.Environment ?? "" : "");
+    private string? AppliedEnvironment => _resolution?.Evidence is { CrossEnvironment: true } ? ScopeEnvironments.All : _resolution?.Evidence?.Environment;
 
-    /// <summary>Filters and the selected item live in the URL (fq-* keys) so leaving and returning restores them; other query keys are kept.</summary>
+    /// <summary>Filters, the evidence environment and the selected item live in the URL (fq-* keys) and in this session's memory, so leaving the tab
+    /// or page and returning restores them; other query keys are kept.</summary>
     private void WriteUrl()
     {
-        var target = Nav.GetUriWithQueryParameters(ScopeFilterState.ToQuery(_filter, _detail?.Item.Key));
+        var query = new Dictionary<string, object?>(ScopeFilterState.ToQuery(_filter, _detail?.Item.Key)) { [ScopeFilterState.EnvironmentKey] = _environment };
+        var target = Nav.GetUriWithQueryParameters(query);
         if (target != Nav.Uri) Nav.NavigateTo(target, replace: true);
+        Store?.Set(StateKey, query);
     }
 
     private void ReadUrl()
     {
-        var query = new Uri(Nav.Uri).Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.Split('=', 2)).Where(kv => kv[0].StartsWith("fq-", StringComparison.Ordinal))
-            .ToDictionary(kv => Uri.UnescapeDataString(kv[0]), kv => kv.Length > 1 ? (string?)Uri.UnescapeDataString(kv[1].Replace('+', ' ')) : null);
+        var query = DeliveryExplorerState.Parse(Nav.Uri).Where(kv => kv.Key.StartsWith("fq-", StringComparison.Ordinal)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        // Nothing in the URL (the tab was opened from a plain link): this session's last state for the project, if any.
+        if (query.Values.All(string.IsNullOrWhiteSpace) && Store?.Get(StateKey) is { } saved) query = saved.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
         (_filter, _pendingItem) = ScopeFilterState.FromQuery(query);
+        _environment = query.GetValueOrDefault(ScopeFilterState.EnvironmentKey) is { Length: > 0 } env ? env : null;
+    }
+
+    private void LoadEnvironmentNames()
+    {
+        if (Services.GetService(typeof(IFrontendAnalysisSettingsService)) is not IFrontendAnalysisSettingsService settings) return;
+        _environmentNames = settings.Settings.Profiles.Where(p => p.Id.Length > 0).GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().Name, StringComparer.Ordinal);
+        _activeEnvironment = settings.ActiveProfile?.Id is { Length: > 0 } active ? active : null;
+    }
+
+    private string? _activeEnvironment;
+
+    /// <summary>Another environment's evidence: coverage, the list, the open item's tests and schemas all re-read for it. A slower earlier response
+    /// never overwrites a newer choice.</summary>
+    private async Task OnEnvironmentChanged(ChangeEventArgs e)
+    {
+        _environment = e.Value?.ToString() is { Length: > 0 } env ? env : null;
+        _loadingLabel = $"Loading test evidence for {ScopeFilterState.EnvironmentName(_environment, _environmentNames)}";
+        var open = _detail?.Item.Key;
+        await ResolveAsync();
+        WriteUrl();
+        if (open is not null && _resolution?.Items.Any(i => i.Key == open) == true) await OpenDetail(open);
     }
     private ScopeResolution? _all;
     private string? _builderSearch, _dragKey;
@@ -173,6 +229,7 @@
     private string _assessmentData = "";
     private IReadOnlyList<ScopeSnapshotView> _snapshots = [];
     private readonly HashSet<string> _why = new(StringComparer.Ordinal);
+    private ElementReference _explorer;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -185,19 +242,39 @@
             _notice = $"The scope “{missing}” is not available in this project; showing “{_available.First().Name}”.";
         _snapshots = await Api.SnapshotsAsync(ProjectId);
         ReadUrl();
+        LoadEnvironmentNames();
         await ResolveAsync();
-        if (_pendingItem is { } item && _resolution?.Items.Any(i => i.Key == item) == true) await OpenDetail(item);
+        // No environment chosen: the server uses the only one with evidence. With several, the active Target Environment is used when it has evidence;
+        // otherwise the person chooses — evidence is never taken from an environment nobody selected.
+        if (_environment is null && _resolution?.Evidence is { Applied: false, Available.Count: > 1 } ev && _activeEnvironment is { } activeEnv && ev.Available.Any(a => a.Id == activeEnv))
+        {
+            _environment = activeEnv;
+            await ResolveAsync();
+        }
+        if (_pendingItem is { } item)
+        {
+            if (_resolution?.Items.Any(i => i.Key == item) == true) { await OpenDetail(item); _scrollToSelected = true; }
+            else if (_resolution is not null) _notice = "The previously selected item is not in this scope or snapshot any more, so nothing is selected.";
+        }
         _pendingItem = null;
+        WriteUrl();
     }
 
     private Guid? CustomId => _available.FirstOrDefault(a => a.Key == _scopeKey)?.CustomId;
+
+    private int _resolveGeneration;
+    private bool _scrollToSelected;
 
     private async Task ResolveAsync()
     {
         if (_scopeKey.Length == 0) { _resolution = null; _loading = false; return; }
         _loading = true;
-        var (resolution, error) = await Api.ResolveAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical));
+        var generation = ++_resolveGeneration;
+        var (resolution, error) = await Api.ResolveAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical, Environment: _environment));
+        // A newer scope or environment choice wins over a slower earlier response.
+        if (generation != _resolveGeneration) return;
         _loading = false;
+        _loadingLabel = "Loading the scope";
         _error = error;
         if (resolution is null) return;
         _resolution = resolution;
@@ -229,6 +306,13 @@
                 @if (r.Scope.Id is not null && !r.Scope.BuiltIn) { <MetaBadge Kind="BadgeKind.Type" Text="@($"Custom · v{r.Scope.Version}")" /> }
                 @if (r.SnapshotLabel is { } label) { <MetaBadge Kind="BadgeKind.Provenance" Text="@($"Delivery snapshot {label}")" TestId="fqs-snapshot" /> }
             </div>
+            @if (r.Evidence is { } ev)
+            {
+                <p class="fqs-muted fqs-small @(ev.CrossEnvironment ? "fqs-cross-env" : "")" data-testid="fqs-evidence-context" data-environment="@(ev.CrossEnvironment ? ScopeEnvironments.All : ev.Environment ?? "")">
+                    <strong>Evidence: @(ev.CrossEnvironment ? "All environments (aggregated)" : ev.Environment is { } env ? ScopeFilterState.EnvironmentName(env, _environmentNames) : "none applied")</strong> — @ev.Basis
+                    @if (ev.CrossEnvironment) { <span data-testid="fqs-cross-env-warning"> Counts mix environments: they are not evidence from any one environment.</span> }
+                </p>
+            }
             <dl class="fqs-counts">
                 <div><dt>User stories</dt><dd data-testid="fqs-count-stories">@s.UserStories</dd></div>
                 <div><dt>Acceptance scenarios</dt><dd data-testid="fqs-count-scenarios">@s.Scenarios</dd></div>
@@ -316,7 +400,7 @@
             <label class="fqs-field"><span>Quality</span>
                 <select data-testid="fqs-filter-category" @onchange="e => Filter = _filter with { Category = Parse<QualityCategory>(e) }">
                     <option value="">All categories</option>
-                    @foreach (var c in Enum.GetValues<QualityCategory>()) { <option value="@c" selected="@(_filter.Category == c)">@FunctionalQualityClassifier.Label(c)</option> }
+                    @foreach (var c in FunctionalQualityClassifier.AllCategories) { <option value="@c" selected="@(_filter.Category == c)">@FunctionalQualityClassifier.Label(c)</option> }
                 </select>
             </label>
             <label class="fqs-field"><span>Module</span>
@@ -558,7 +642,7 @@
 
     private async Task Freeze()
     {
-        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical));
+        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical, Environment: _environment));
         _error = error;
         if (snapshot is null) return;
         _notice = $"Scope snapshot frozen: {snapshot.ItemCount} items (scope version {snapshot.ScopeVersion}).";
@@ -586,7 +670,7 @@
     {
         var generation = ++_detailGeneration;
         _detailLoading = true;
-        var detail = await Api.DetailAsync(ProjectId, key);
+        var detail = await Api.DetailAsync(ProjectId, key, _environment ?? AppliedEnvironment);
         // A later selection wins over a slower earlier request: never show the details of an item that is no longer selected.
         if (generation != _detailGeneration) return;
         _detailLoading = false;
@@ -680,6 +764,10 @@
                     <summary>Tests @(d.TestsAssessed ? $"({d.Tests.Count(t => t.Kind == ScopeTestLinkKind.Explicit)} explicit · {d.Tests.Count(t => t.Kind == ScopeTestLinkKind.Candidate)} candidate)" : "· not assessed")</summary>
                     @Tests(d)
                 </details>
+                <details class="fqs-section" open="@(d.Schemas.Any(s => s.Kind != ScopeSchemaLinkKind.Candidate))" data-testid="fqs-sec-schemas">
+                    <summary>Schemas &amp; contracts @(d.SchemasAssessed ? $"({d.Schemas.Count(s => s.Kind != ScopeSchemaLinkKind.Candidate)} linked · {d.Schemas.Count(s => s.Kind == ScopeSchemaLinkKind.Candidate)} candidate)" : "· not assessed")</summary>
+                    @Schemas(d)
+                </details>
                 <details class="fqs-section" data-testid="fqs-sec-testdata">
                     <summary>Test Data · @T.TestDataLabel(item.TestData)</summary>
                     @if (_assessment is { RequiredTestDataAssetIds.Count: > 0 } withData)
@@ -731,14 +819,77 @@
         </aside>
     };
 
+    private string? DetailEnvironment(ScopeItemDetail d) => d.Evidence is { CrossEnvironment: true } ? ScopeEnvironments.All : d.Evidence?.Environment;
+
+    private TestExecutionSummary Execution(ScopeItemDetail d, ScopeTestLink t)
+    {
+        var env = DetailEnvironment(d);
+        return RequirementTestExecutions.For(t, Lifecycle, env == ScopeEnvironments.All ? null : env, env is null || env == ScopeEnvironments.All ? null : ScopeFilterState.EnvironmentName(env, _environmentNames),
+            env == ScopeEnvironments.All);
+    }
+
+    /// <summary>Schemas and contracts associated with the item: explicit and confirmed apart from candidates, each with its source, relationship and
+    /// validation state. An existing schema is never shown as a validation.</summary>
+    private RenderFragment Schemas(ScopeItemDetail d) => __builder =>
+    {
+        if (!d.SchemasAssessed)
+        {
+            <p class="fqs-muted" data-testid="fqs-schemas-not-assessed">Schema unavailable: no contract evidence is interpreted for @ScopeFilterState.EnvironmentName(DetailEnvironment(d), _environmentNames), so nothing can be said about this item's schemas — not "none".</p>
+            return;
+        }
+        var linked = d.Schemas.Where(s => s.Kind != ScopeSchemaLinkKind.Candidate).ToList();
+        var candidates = d.Schemas.Where(s => s.Kind == ScopeSchemaLinkKind.Candidate).ToList();
+        <h4 class="fqs-h4">Linked schemas (@linked.Count)</h4>
+        @if (linked.Count == 0) { <p class="fqs-muted" data-testid="fqs-schemas-none">No schema is linked to this item: it names no contract and no canonical relation links one.@(candidates.Count > 0 ? " The candidates below are suggestions from module ownership only." : "")</p> }
+        else { <ul class="fqs-tests" data-testid="fqs-schemas-linked">@foreach (var s in linked) { @SchemaRow(s) }</ul> }
+        @if (candidates.Count > 0)
+        {
+            <details class="fqs-rejected" data-testid="fqs-schemas-candidates"><summary>Candidate associations (@candidates.Count) — same module, not confirmed</summary>
+                <ul class="fqs-tests">@foreach (var s in candidates) { @SchemaRow(s) }</ul>
+            </details>
+        }
+        <p class="fqs-muted fqs-small">Validation: an existing schema is not a validation result — only a recorded validation run would show as validated.</p>
+    };
+
+    private RenderFragment SchemaRow(ScopeSchemaLink s) => __builder =>
+    {
+        <li class="fqs-test fqs-schema" data-testid="fqs-schema" data-kind="@s.Kind" data-schema-kind="@s.SchemaKind">
+            <div>
+                <strong data-testid="fqs-schema-name">@s.Name</strong> <MetaBadge Kind="BadgeKind.Type" Text="@ScopeFilterState.SchemaTypeLabel(s.SchemaKind)" />
+                <MetaBadge Kind="BadgeKind.Provenance" Text="@ScopeFilterState.SchemaKindLabel(s.Kind)" TestId="fqs-schema-kind" />
+                <SemanticStatusBadge Status="@(s.Validation == ScopeSchemaValidation.ServerValidated ? SemanticStatus.Validated : SemanticStatus.NotRun)"
+                    QualifiedLabel="@(s.Validation == ScopeSchemaValidation.ServerValidated ? "Server-validated" : "Validation not performed")" Explanation="@s.ValidationDetail" TestId="fqs-schema-validation" />
+            </div>
+            <dl class="fqs-facts fqs-small">
+                <div><dt>Identity</dt><dd><code data-testid="fqs-schema-identity">@s.ContractIdentity</code></dd></div>
+                @if (s.Namespace is { Length: > 0 } ns) { <div><dt>Namespace</dt><dd><code>@ns</code></dd></div> }
+                @if (s.Version is { Length: > 0 } version) { <div><dt>Version</dt><dd>@version</dd></div> }
+                <div><dt>Source</dt><dd data-testid="fqs-schema-source">@(s.SourcePath is { } path ? path : "Not recorded")@(s.Package is { } pkg ? $" · package {pkg}" : "")@(s.SnapshotId is { } snap ? $" · snapshot {snap.ToString()[..8]}" : "")</dd></div>
+                <div><dt>Relationship</dt><dd data-testid="fqs-schema-relationship">@s.Relationship · <code>@s.RuleId</code> · @s.Confidence</dd></div>
+                <div><dt>Why</dt><dd>@s.Explanation</dd></div>
+                <div><dt>Environment</dt><dd>@ScopeFilterState.EnvironmentName(s.Scope, _environmentNames)</dd></div>
+            </dl>
+            @if (ScopeFilterState.SchemaHref(s) is { } href) { <a href="@href" class="fqs-link" data-testid="fqs-schema-open">Open @(s.SchemaKind is "XmlSchema" or "JsonSchema" ? "in Schema Studio" : "the contract evidence")</a> }
+            else { <span class="fqs-muted fqs-small">No stored source to open.</span> }
+        </li>
+    };
+
     /// <summary>Explicit links, candidates and rejected candidates apart. Without an interpretation the absence of tests means "not assessed".</summary>
     private RenderFragment Tests(ScopeItemDetail d) => __builder =>
     {
         if (!d.TestsAssessed)
         {
-            <p class="fqs-muted" data-testid="fqs-tests-not-assessed">Not assessed: no canonical test interpretation exists yet, so the absence of tests here does not mean the item is untested. Interpret the Source Analysis snapshots in <a href="correlation-review">Correlation Review</a>.</p>
+            <p class="fqs-muted" data-testid="fqs-tests-not-assessed">Not assessed@(d.Evidence is { Applied: false, Available.Count: > 1 } ? ": choose an evidence environment above — evidence from one environment never answers for another" : $": no canonical test interpretation exists for {ScopeFilterState.EnvironmentName(DetailEnvironment(d), _environmentNames)}, so the absence of tests here does not mean the item is untested. Interpret the Source Analysis snapshots in Correlation Review").</p>
+            <p><a href="correlation-review">Correlation Review</a></p>
             return;
         }
+        if (d.Evidence is { CrossEnvironment: true }) { <p class="fqs-limit" data-testid="fqs-tests-cross-env">All environments, aggregated: each test shows its own environment. This list is not evidence from one environment.</p> }
+        var withRuns = d.Tests.Where(t => t.Kind != ScopeTestLinkKind.Rejected).Select(t => Execution(d, t)).ToList();
+        <p class="fqs-muted fqs-small" data-testid="fqs-tests-execution-summary">
+            Execution in @ScopeFilterState.EnvironmentName(DetailEnvironment(d), _environmentNames):
+            @if (withRuns.Count == 0 || withRuns.All(x => x.State == RequirementTestExecutionState.Unavailable)) { <span>execution evidence unavailable — no test results (TRX) are imported in this workspace. <a href="implementation-review">Import test results</a></span> }
+            else { <span>@string.Join(" · ", withRuns.GroupBy(x => x.Label).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}"))</span> }
+        </p>
         var explicitTests = d.Tests.Where(t => t.Kind == ScopeTestLinkKind.Explicit).ToList();
         var candidates = d.Tests.Where(t => t.Kind == ScopeTestLinkKind.Candidate).ToList();
         var rejected = d.Tests.Where(t => t.Kind == ScopeTestLinkKind.Rejected).ToList();
@@ -761,9 +912,16 @@
 
     private RenderFragment TestRow(ScopeTestLink t) => __builder =>
     {
+        var run = _detail is { } d && t.Kind != ScopeTestLinkKind.Rejected ? Execution(d, t) : null;
         <li class="fqs-test" data-testid="fqs-test" data-kind="@t.Kind">
             <button type="button" class="fqs-title" data-testid="fqs-test-open" @onclick="() => SelectTest(t)" title="@t.TestIdentity">@t.TestName</button>
-            <MetaBadge Kind="BadgeKind.Type" Text="@ScopeFilterState.KindLabel(t.Kind)" TestId="fqs-test-kind" />
+            <MetaBadge Kind="BadgeKind.Type" Text="@ScopeFilterState.LinkLabel(t)" TestId="fqs-test-kind" />
+            @if (run is not null)
+            {
+                <SemanticStatusBadge Status="@(run.Current is { } c ? RequirementTestExecutions.Status(c.Outcome) : run.State == RequirementTestExecutionState.NotExecuted ? SemanticStatus.NotRun : SemanticStatus.Unavailable)"
+                    QualifiedLabel="@run.Label" Explanation="@run.Text" TestId="fqs-test-run" />
+            }
+            @if (_resolution?.Evidence is { CrossEnvironment: true }) { <span class="fqs-muted fqs-small" data-testid="fqs-test-env">@ScopeFilterState.EnvironmentName(t.Scope, _environmentNames)</span> }
             @if (t.Location is { } location) { <span class="fqs-muted fqs-small"><code>@location</code></span> }
         </li>
     };
@@ -774,13 +932,14 @@
             <button type="button" class="btn-link" data-testid="fqs-test-back" @onclick="() => { _selectedTest = null; }">← Back to @d.Item.DisplayId</button>
             <h4 class="fqs-h4" data-testid="fqs-test-name">@t.TestName</h4>
             <dl class="fqs-facts">
-                <div><dt>Relationship</dt><dd data-testid="fqs-test-relationship">@ScopeFilterState.KindLabel(t.Kind) · Test → VERIFIES → @d.Item.DisplayId</dd></div>
+                <div><dt>Relationship</dt><dd data-testid="fqs-test-relationship">@ScopeFilterState.LinkLabel(t) · Test → VERIFIES → @d.Item.DisplayId</dd></div>
+                <div><dt>Evidence kind</dt><dd data-testid="fqs-test-evidence-kind">Source relationship (test discovered in the source interpreted for @ScopeFilterState.EnvironmentName(t.Scope, _environmentNames)) — discovery, not execution</dd></div>
                 <div><dt>Test identity</dt><dd><code data-testid="fqs-test-identity">@t.TestIdentity</code></dd></div>
                 <div><dt>Source location</dt><dd data-testid="fqs-test-location">@(t.Location ?? "Not recorded in the interpretation")</dd></div>
                 <div><dt>Mapping rule</dt><dd><code>@(t.RuleId.Length > 0 ? t.RuleId : "—")</code> · @t.Resolution@(t.Confidence.Length > 0 ? $" · {t.Confidence}" : "")</dd></div>
                 <div><dt>Review state</dt><dd data-testid="fqs-test-review-state">@t.ReviewState</dd></div>
-                <div><dt>Execution</dt><dd data-testid="fqs-test-execution">@t.Execution</dd></div>
             </dl>
+            @ExecutionDetail(d, t)
             @if (t.Explanation.Length > 0) { <p data-testid="fqs-test-explanation">@t.Explanation</p> }
             <h5 class="fqs-h5">Relationship evidence</h5>
             @if (t.Evidence.Count == 0) { <p class="fqs-muted">No evidence items recorded for this relation.</p> }
@@ -812,6 +971,64 @@
             }
         </section>
     };
+
+    /// <summary>Execution of one linked test: the current result and why it was chosen, every run (with its run id, environment, time and source),
+    /// runs elsewhere apart, and name-only matches as unattributed candidates.</summary>
+    private RenderFragment ExecutionDetail(ScopeItemDetail d, ScopeTestLink t) => __builder =>
+    {
+        var x = Execution(d, t);
+        <h5 class="fqs-h5">Execution</h5>
+        <p data-testid="fqs-test-execution" data-state="@x.State">@x.Text</p>
+        @if (t.Kind == ScopeTestLinkKind.Candidate && x.Runs.Count > 0) { <p class="fqs-limit" data-testid="fqs-test-candidate-runs">A candidate test's results do not count as this item's coverage until the link is confirmed.</p> }
+        @if (x.Runs.Count > 0)
+        {
+            <p class="fqs-muted fqs-small" data-testid="fqs-test-selection-rule">@x.SelectionRule</p>
+            @RunTable(x.Runs, "fqs-test-runs")
+        }
+        @if (x.OtherEnvironments.Count > 0)
+        {
+            <details class="fqs-rejected" data-testid="fqs-test-other-env"><summary>Runs in other environments or without a recorded environment (@x.OtherEnvironments.Count) — not counted here</summary>@RunTable(x.OtherEnvironments, "fqs-test-other-runs")</details>
+        }
+        @if (x.Unattributed.Count > 0)
+        {
+            <details class="fqs-rejected" data-testid="fqs-test-unattributed"><summary>Same test name, not correlated (@x.Unattributed.Count) — not attributed to this test</summary>
+                <p class="fqs-muted fqs-small">These results name a test with the same name, but the import did not correlate them to this test's identity (ambiguous or unresolved). Their outcome is not this test's result. Confirm the correlation where the results were imported.</p>
+                @RunTable(x.Unattributed, "fqs-test-unattributed-runs")
+            </details>
+        }
+    };
+
+    private RenderFragment RunTable(IReadOnlyList<TestRunResult> runs, string testId) => __builder =>
+    {
+        <div class="fqs-runs"><table class="fqs-run-table" data-testid="@testId">
+            <thead><tr><th scope="col">Outcome</th><th scope="col">Run</th><th scope="col">Executed</th><th scope="col">Environment</th><th scope="col">Source</th></tr></thead>
+            <tbody>
+                @foreach (var r in runs)
+                {
+                    <tr data-testid="fqs-run-row" data-outcome="@r.Outcome" data-run="@r.RunId">
+                        <td>@if (r.Attribution == TestExecutionAttribution.Identity) { <SemanticStatusBadge Status="@RequirementTestExecutions.Status(r.Outcome)" QualifiedLabel="@r.Outcome" Explanation="@r.Error" /> } else { <span>Not attributed <span class="fqs-muted">(reported @r.Outcome)</span></span> }
+                            @if (r.Rows > 1) { <span class="fqs-muted fqs-small"> · @r.Rows rows</span> }
+                            @if (r.Currentness != "Current") { <span class="fqs-muted fqs-small" title="@r.CurrentnessReason"> · @r.Currentness</span> }</td>
+                        <td><code>@r.RunLabel</code>@if (r.ArtifactFile is { } file && file != r.RunLabel) { <br /><span class="fqs-muted fqs-small">@file</span> }</td>
+                        <td>@(r.ExecutedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                        <td>@(r.EnvironmentRecorded ? ScopeFilterState.EnvironmentName(r.Environment, _environmentNames) : "Environment not recorded")</td>
+                        <td class="fqs-small">@r.Basis@(r.Build is { } build ? $" · build {build}" : "")</td>
+                    </tr>
+                }
+            </tbody>
+        </table></div>
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            try { await JS.InvokeVoidAsync("birknextExplorer.stickyOffset"); }
+            catch (Exception) { /* layout convenience only */ }
+        if (!_scrollToSelected) return;
+        _scrollToSelected = false;
+        try { await JS.InvokeVoidAsync("birknextExplorer.selectedIntoView", _explorer, ".fqs-item.is-selected"); }
+        catch (Exception) { /* scroll is a convenience */ }
+    }
 
     private void ToggleVerification(string type)
     {

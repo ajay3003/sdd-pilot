@@ -12,7 +12,8 @@ public interface IFunctionalQualityScopeApiService
     Task<(ScopeResolution? Resolution, string? Error)> ResolveAsync(Guid projectId, ScopeQuery query, CancellationToken ct = default);
     /// <summary>Top-level items matching <paramref name="search"/> (bounded server-side) for the custom-scope builder.</summary>
     Task<(ScopeResolution? Resolution, string? Error)> AllItemsAsync(Guid projectId, bool includeTechnical, string? search = null, CancellationToken ct = default);
-    Task<ScopeItemDetail?> DetailAsync(Guid projectId, string key, CancellationToken ct = default);
+    /// <summary><paramref name="environment"/>: whose test and schema evidence (an environment id, "*" = all aggregated, null = the only one).</summary>
+    Task<ScopeItemDetail?> DetailAsync(Guid projectId, string key, string? environment = null, CancellationToken ct = default);
     Task<(ScopeDefinition? Scope, string? Error)> SaveAsync(Guid projectId, ScopeDefinition definition, CancellationToken ct = default);
     Task<(ScopeDefinition? Scope, string? Error)> CloneAsync(Guid projectId, Guid scopeId, CancellationToken ct = default);
     Task<string?> DeleteAsync(Guid projectId, Guid scopeId, CancellationToken ct = default);
@@ -40,8 +41,8 @@ public sealed class FunctionalQualityScopeApiService(HttpClient http) : IFunctio
     public Task<(ScopeResolution? Resolution, string? Error)> AllItemsAsync(Guid projectId, bool includeTechnical, string? search = null, CancellationToken ct = default) =>
         Send<ScopeResolution>(() => http.GetAsync($"{Base(projectId)}/items?includeTechnical={(includeTechnical ? "true" : "false")}&take=120{(string.IsNullOrWhiteSpace(search) ? "" : $"&search={Uri.EscapeDataString(search.Trim())}")}", ct), ct);
 
-    public async Task<ScopeItemDetail?> DetailAsync(Guid projectId, string key, CancellationToken ct = default) =>
-        (await Send<ScopeItemDetail>(() => http.GetAsync($"{Base(projectId)}/items/detail?key={Uri.EscapeDataString(key)}", ct), ct)).Value;
+    public async Task<ScopeItemDetail?> DetailAsync(Guid projectId, string key, string? environment = null, CancellationToken ct = default) =>
+        (await Send<ScopeItemDetail>(() => http.GetAsync($"{Base(projectId)}/items/detail?key={Uri.EscapeDataString(key)}{(string.IsNullOrEmpty(environment) ? "" : $"&environment={Uri.EscapeDataString(environment)}")}", ct), ct)).Value;
 
     public Task<(ScopeDefinition? Scope, string? Error)> SaveAsync(Guid projectId, ScopeDefinition definition, CancellationToken ct = default) =>
         Send<ScopeDefinition>(() => definition.Id is { } id

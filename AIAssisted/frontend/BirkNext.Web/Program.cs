@@ -61,6 +61,7 @@ builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<SchemaStudioService>();
 builder.Services.AddSingleton<SchemaGenerationProfilesService>();
 builder.Services.AddSingleton<SchemaStudioWorkspaceStore>();
+builder.Services.AddSingleton<ExplorerViewStateStore>();
 builder.Services.AddSingleton<SchemaTestRunHistory>();
 builder.Services.AddSingleton<SchemaGeneratedXmlStore>();
 builder.Services.AddSingleton<SchemaStudioDraftStore>();

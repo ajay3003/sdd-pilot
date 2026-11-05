@@ -118,6 +118,7 @@ public static class WeeklyReportBuilder
             CoverageText = coverageText,
             Direction = direction,
             ParserVersion = DeliverySnapshotParser.ParserVersion, InterpretationRuleSet = BirkNext.Interpretation.WorkItemInterpreter.RuleSetVersion,
+            QualityRuleSet = FunctionalQualityClassifier.RuleSetVersion,
         };
     }
 

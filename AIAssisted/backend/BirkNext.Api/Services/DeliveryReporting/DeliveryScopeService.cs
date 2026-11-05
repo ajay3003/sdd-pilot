@@ -27,7 +27,8 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
         var baseline = new Side(DeliverySourceIdentity.Of(report.Baseline), [.. report.Stories.Where(s => !s.NewFeature).Select(s => (s.Module, s.FeatureKey, s.Title))]);
         var stories = report.Stories.GroupBy(s => s.FeatureKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)[.. g.SelectMany(s => s.Hierarchy?.Stories ?? []).Select(x => x.Title)], StringComparer.Ordinal);
-        var view = await ResolveAsync(projectId, current, baseline, filter, [report.Current.SnapshotId, report.Baseline.SnapshotId, .. projectSnapshots], ct, work ?? new(), stories);
+        var view = await ResolveAsync(projectId, current, baseline, filter, [report.Current.SnapshotId, report.Baseline.SnapshotId, .. projectSnapshots], ct, work ?? new(), stories,
+            FunctionalQualityClassifier.RuleSetOf(report.QualityRuleSet));
         if (view.Scope is null) return view with { Report = report };
         return view with { Report = DeliveryReportScoping.Project(report, view.Scope.CurrentFeatureKeys.ToHashSet(StringComparer.Ordinal), view.Scope.BaselineFeatureKeys.ToHashSet(StringComparer.Ordinal), view.Scope) };
     }
@@ -44,7 +45,7 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
     }
 
     private async Task<DeliveryScopeView> ResolveAsync(Guid projectId, Side current, Side? baseline, CanonicalScopeFilter filter, IReadOnlyList<Guid> snapshotOrder, CancellationToken ct,
-        DeliveryWorkFilter work, IReadOnlyDictionary<string, IReadOnlyList<string>>? storyTitles)
+        DeliveryWorkFilter work, IReadOnlyDictionary<string, IReadOnlyList<string>>? storyTitles, string? qualityRuleSet = null)
     {
         // Every feature that can be in a scope: the current side and the baseline side (a removed feature only exists in the baseline).
         var all = current.Features.Concat(baseline?.Features ?? []).DistinctBy(f => f.FeatureKey).ToList();
@@ -101,7 +102,7 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
 
         // Work type: the shared feature classification, plus canonical evidence — every member of a change intent most of whose members are
         // technical work is technical work too ("Translate the Tjeneste module to English" joins ADR-029 by review, not by its wording).
-        var classes = all.ToDictionary(f => f.FeatureKey, f => FunctionalQualityClassifier.ClassifyFeature(f.Title, storyTitles?.GetValueOrDefault(f.FeatureKey)), StringComparer.Ordinal);
+        var classes = all.ToDictionary(f => f.FeatureKey, f => FunctionalQualityClassifier.ClassifyFeature(f.Title, storyTitles?.GetValueOrDefault(f.FeatureKey), qualityRuleSet), StringComparer.Ordinal);
         foreach (var intent in scopes.Where(s => s.Option.Kind == FunctionalScopeKind.ChangeIntent))
             if (intent.Members.Keys.Count(k => classes.TryGetValue(k, out var c) && c.Category == QualityCategory.Technical) * 2 > intent.Members.Count)
                 foreach (var key in intent.Members.Keys.Where(classes.ContainsKey)) classes[key] = (QualityCategory.Technical, TechnicalIntentRule);

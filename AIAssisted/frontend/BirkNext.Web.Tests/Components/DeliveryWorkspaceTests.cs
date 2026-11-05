@@ -3,6 +3,8 @@ using BirkNext.Web.Components;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Components;
 
@@ -253,7 +255,7 @@ public sealed class DeliveryWorkspaceTests : BunitContext
         cut.Find("[data-testid=dws-detail-change]").TextContent.Should().NotBeEmpty();
         cut.Find("[data-testid=dws-evidence-snapshot]").TextContent.Should().Contain("(baseline)");
         cut.Find("[data-testid=dws-cross-page]").GetAttribute("href").Should()
-            .Be($"delivery-overview?project={Project}&explore=items&item={Uri.EscapeDataString(DeliveryWorkItems.TaskId(Dashboard, "T010"))}");
+            .Be($"delivery-overview?project={Project}&item={Uri.EscapeDataString(DeliveryWorkItems.TaskId(Dashboard, "T010"))}");
         var removed = RenderMode(DeliveryExplorerOptions.Comparison, DeliveryWorkItems.FeatureId(Legacy));
         removed.FindAll("[data-testid=dws-cross-page]").Should().ContainSingle("comparison mode links to the current state even for a removed item, where Overview says it is not current");
         cut.Find("[data-testid=dws-view-list]").Change(true);
@@ -275,18 +277,23 @@ public sealed class DeliveryWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void The_list_pages_long_inventories_instead_of_cutting_them_off()
+    public void The_list_virtualizes_long_inventories_instead_of_cutting_them_off()
     {
         var report = Report();
         var h = report.Stories[0].Hierarchy!;
-        var many = report with { Stories = [report.Stories[0] with { Hierarchy = h with { Tasks = [.. Enumerable.Range(1, 250).Select(n => new DeliveryTaskRow($"X{n:000}", $"X{n:000}", $"Task {n}", n % 2 == 0, DeliveryTaskChange.Unchanged))] } }] };
+        var many = report with { Stories = [report.Stories[0] with { Hierarchy = h with { Tasks = [.. Enumerable.Range(1, 2500).Select(n => new DeliveryTaskRow($"X{n:0000}", $"X{n:0000}", $"Task {n}", n % 2 == 0, DeliveryTaskChange.Unchanged))] } }] };
         var cut = Render<DeliveryWorkspace>(p => p.Add(x => x.Report, many).Add(x => x.Options, DeliveryExplorerOptions.CurrentState));
         cut.Find("[data-testid=dws-view-list]").Change(true);
         cut.Find("[data-testid=dws-type]").Change("Task");
-        cut.FindAll("[data-testid=dws-list-row]").Should().HaveCount(100);
-        cut.Find("[data-testid=dws-show-more]").Click();
-        cut.FindAll("[data-testid=dws-list-row]").Should().HaveCount(200);
-        cut.Find("[data-testid=dws-count]").TextContent.Should().StartWith("250 of ");
+        // Every matching item is in the list (no cut-off, no paging) and rendered through Virtualize with the fixed row height the CSS enforces;
+        // the browser renders only the rows in view (verified in the real-browser run — bUnit's Virtualize handler renders all).
+        var virtualize = cut.FindComponent<Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize<DeliveryWorkItem>>();
+        virtualize.Instance.Items.Should().HaveCount(2500);
+        virtualize.Instance.ItemSize.Should().Be(40);
+        cut.Find("[data-testid=dws-list]").ClassList.Should().Contain("dws-row-fixed");
+        cut.FindAll("[data-testid=dws-show-more]").Should().BeEmpty();
+        cut.Find("[data-testid=dws-count]").TextContent.Should().StartWith("2500 of ");
+        cut.Find("[data-testid=dws-list-total]").TextContent.Should().StartWith("2500 work items");
     }
 
     /// <summary>Report v4: tasks hang under requirement-model groups — never a "Tasks without a user story" bucket — with explained badges.</summary>
@@ -334,5 +341,177 @@ public sealed class DeliveryWorkspaceTests : BunitContext
         cut.Find("[data-testid=dws-feature-model]").TextContent.Should().Be("Functional groups");
         cut.Find("[data-testid=dws-feature-groups]").TextContent.Should().Be("Functional group 1 · Shared & Foundational 1");
         cut.FindAll("[data-testid=dws-feature-unassigned]").Should().BeEmpty();
+    }
+
+    // ── Gap 1: explorer state in the URL and in the session; Back / Forward; stale filters ───────────────────────────────────────────
+
+    private static readonly Guid ProjectA = Guid.Parse("11111111-2222-3333-4444-555555555555");
+
+    private IRenderedComponent<DeliveryWorkspace> RenderAt(string url, DeliveryExplorerOptions? options = null, WeeklyDeliveryReport? report = null, string? selected = null)
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo(url);
+        return Render<DeliveryWorkspace>(p => p.Add(x => x.Report, report ?? Report()).Add(x => x.Options, options ?? DeliveryExplorerOptions.Comparison)
+            .Add(x => x.ProjectId, ProjectA).Add(x => x.SelectedId, selected).Add(x => x.OnSelect, (string? id) => _selected = id));
+    }
+
+    [Fact]
+    public void Filters_view_and_sort_live_in_the_url_and_are_restored_when_the_explorer_is_opened_again_without_them()
+    {
+        Services.AddSingleton(new ExplorerViewStateStore());
+        var nav = Services.GetRequiredService<NavigationManager>();
+        var cut = RenderAt($"delivery-reporting?project={ProjectA}&tab=stories");
+        cut.Find("[data-testid=dws-view-list]").Change(true);
+        cut.Find("[data-testid=dws-search]").Input("toggle");
+        cut.Find("[data-testid=dws-type]").Change("Task");
+        cut.Find("[data-testid=dws-change]").Change("changed");
+        cut.Find("[data-testid=dws-sort-title]").Click();
+        nav.Uri.Should().Contain("wi-view=list").And.Contain("wi-q=toggle").And.Contain("wi-type=Task").And.Contain("wi-change=changed").And.Contain("wi-sort=title")
+            .And.Contain("tab=stories", "other query keys are kept");
+        cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).Should().Equal($"t:{Dashboard}|T010");
+        cut.Dispose();
+
+        // Back from another tab: the link has no explorer state; the session remembers it for this project, report and mode.
+        var again = RenderAt($"delivery-reporting?project={ProjectA}&tab=stories");
+        again.Find("[data-testid=dws-master]").GetAttribute("data-view").Should().Be("list");
+        again.Find("[data-testid=dws-search]").GetAttribute("value").Should().Be("toggle");
+        again.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).Should().Equal($"t:{Dashboard}|T010");
+        nav.Uri.Should().Contain("wi-q=toggle", "the restored state is written back to the address");
+        again.Dispose();
+
+        // Another report (or mode) never inherits it.
+        var other = RenderAt($"delivery-reporting?project={ProjectA}&tab=stories", report: Report() with { ReportId = Guid.NewGuid() });
+        other.Find("[data-testid=dws-master]").GetAttribute("data-view").Should().Be("hierarchy");
+        other.Find("[data-testid=dws-search]").GetAttribute("value").Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Back_and_forward_re_read_the_state_from_the_url()
+    {
+        var nav = Services.GetRequiredService<NavigationManager>();
+        var cut = RenderAt($"delivery-reporting?project={ProjectA}&tab=stories&wi-view=list&wi-type=Task");
+        cut.FindAll("[data-testid=dws-list-row]").Should().HaveCount(4);
+        nav.NavigateTo($"delivery-reporting?project={ProjectA}&tab=stories&wi-view=list&wi-type=Task&wi-q=T012");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).Should().Equal($"t:{Dashboard}|T012"));
+        nav.NavigateTo($"delivery-reporting?project={ProjectA}&tab=stories");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=dws-master]").GetAttribute("data-view").Should().Be("hierarchy"));
+        cut.FindAll("[data-testid=dws-chip]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_stale_or_incompatible_filter_in_the_url_is_dropped_with_a_note_instead_of_an_unexplained_empty_list()
+    {
+        var cut = RenderAt($"delivery-overview?project={ProjectA}&wi-module=Gone&wi-change=changed&wi-view=list", DeliveryExplorerOptions.CurrentState);
+        cut.FindAll("[data-testid=dws-dropped-filter]").Select(p => p.TextContent).Should().Contain(t => t.Contains("Gone")).And.Contain(t => t.Contains("comparisons only"));
+        cut.FindAll("[data-testid=dws-list-row]").Should().NotBeEmpty();
+    }
+
+    // ── Gap 7: keyboard, stable sort ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void The_list_is_a_keyboard_grid_arrows_move_the_active_row_and_enter_opens_it()
+    {
+        var cut = RenderAt($"delivery-reporting?project={ProjectA}&tab=stories&wi-view=list&wi-type=Task");
+        var grid = cut.Find("[data-testid=dws-list]");
+        grid.GetAttribute("role").Should().Be("grid");
+        grid.GetAttribute("tabindex").Should().Be("0");
+        grid.Focus();
+        var ids = cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("id")).ToList();
+        cut.Find("[data-testid=dws-list]").GetAttribute("aria-activedescendant").Should().Be(ids[0], "focus starts on the first row");
+        cut.Find("[data-testid=dws-list]").KeyDown("ArrowDown");
+        cut.Find("[data-testid=dws-list]").KeyDown("ArrowDown");
+        cut.Find("[data-testid=dws-list]").KeyDown("ArrowUp");
+        cut.Find("[data-testid=dws-list]").GetAttribute("aria-activedescendant").Should().Be(ids[1]);
+        cut.Find($"#{ids[1]}").ClassList.Should().Contain("is-active");
+        _selected.Should().BeNull("moving is not selecting");
+        cut.Find("[data-testid=dws-list]").KeyDown("Enter");
+        _selected.Should().Be(cut.Find($"#{ids[1]}").GetAttribute("data-id"));
+        cut.Find("[data-testid=dws-detail-card]").GetAttribute("data-id").Should().Be(_selected, "Enter opens the details panel");
+        cut.Find("[data-testid=dws-list]").KeyDown("End");
+        cut.Find("[data-testid=dws-list]").GetAttribute("aria-activedescendant").Should().Be(ids[^1]);
+        cut.Find("[data-testid=dws-list]").KeyDown(" ");
+        _selected.Should().Be(cut.Find($"#{ids[^1]}").GetAttribute("data-id"));
+    }
+
+    [Fact]
+    public void Sorting_is_stable_equal_keys_keep_the_canonical_order_in_both_directions()
+    {
+        var cut = RenderAt($"delivery-reporting?project={ProjectA}&tab=stories&wi-view=list&wi-type=Task&wi-sort=module");
+        var asc = cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).ToList();
+        asc.Should().Equal($"t:{Dashboard}|T001", $"t:{Dashboard}|T002", $"t:{Dashboard}|T010", $"t:{Dashboard}|T012");
+        cut.Find("[data-testid=dws-sort-module]").Click();
+        cut.FindAll("[data-testid=dws-list-row]").Select(r => r.GetAttribute("data-id")).Should().Equal(asc, "one module: descending keeps equal keys in canonical order");
+        cut.Find("[data-testid=dws-sort-title]").Click();
+        cut.FindAll("[data-testid=dws-list-row]").Select(r => r.QuerySelector("[data-testid=dws-list-title]")!.TextContent).Should().BeInAscendingOrder(StringComparer.OrdinalIgnoreCase);
+        cut.Find("[data-testid=dws-sort-title]").Click();
+        cut.FindAll("[data-testid=dws-list-row]").Select(r => r.QuerySelector("[data-testid=dws-list-title]")!.TextContent).Should().BeInDescendingOrder(StringComparer.OrdinalIgnoreCase);
+    }
+
+    // ── Gap 6: the Overview's backlog is the explorer's Features view ───────────────────────────────────────────────────────────────
+
+    private static DeliveryExplorerOptions Backlog(params string[] onlyFeatures)
+    {
+        static DeliveryFeatureGridRow Row(string key, string title, string module, BacklogStatus status, int done, int total, int attention, int priority) =>
+            new(new BacklogItem(key, title, module, status, $"{done} of {total} tasks checked", 1, 1, done, total, 0, null) { Attention = attention }, "Unchanged",
+                DeliveryDashboardTone.Neutral, "2 User Stories · 1 criteria", null, priority);
+        var rows = new Dictionary<string, DeliveryFeatureGridRow>
+        {
+            [Dashboard] = Row(Dashboard, "Initial dashboard", "Frontend", BacklogStatus.InProgress, 2, 4, 1, 1),
+            [DevMode] = Row(DevMode, "Developer Mode Settings Panel", "Frontend", BacklogStatus.NotAssessed, 0, 0, 0, 5),
+            [Fresh] = Row(Fresh, "New export", "Backend", BacklogStatus.ChecklistComplete, 2, 2, 0, 2),
+        };
+        return DeliveryExplorerOptions.CurrentState with
+        {
+            Backlog = rows, Why = new Dictionary<string, string> { [Dashboard] = "Owned by module Frontend" },
+            FeatureKeys = onlyFeatures.Length == 0 ? null : onlyFeatures.ToHashSet(StringComparer.Ordinal),
+        };
+    }
+
+    [Fact]
+    public void The_features_view_keeps_backlog_status_progress_and_priority_and_shares_selection_and_details()
+    {
+        string? opened = null;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-overview?project={ProjectA}");
+        var cut = Render<DeliveryWorkspace>(p => p.Add(x => x.Report, Report()).Add(x => x.Options, Backlog()).Add(x => x.ProjectId, ProjectA)
+            .Add(x => x.OnSelect, (string? id) => _selected = id).Add(x => x.OnOpenFeature, (string key) => opened = key));
+        cut.Find("[data-testid=dws-master]").GetAttribute("data-view").Should().Be("features", "the backlog opens on Features");
+        cut.FindAll("[data-testid=dws-view-board]").Should().BeEmpty();
+        var rows = cut.FindAll("[data-testid=dws-feature-row]");
+        rows.Select(r => r.GetAttribute("data-id")).Should().Equal([DeliveryWorkItems.FeatureId(Dashboard), DeliveryWorkItems.FeatureId(Fresh), DeliveryWorkItems.FeatureId(DevMode)],
+            "priority order: needs review, new, the rest; removed features are not in the current state");
+        rows.Select(r => r.QuerySelector("[data-testid=dws-feature-status]")!.TextContent).Should().Equal(["In progress", "Task checklist complete", "Not assessed"],
+            "checkbox completion is a checklist state, never a workflow status such as Done");
+        rows[0].QuerySelector("[data-testid=dws-feature-checklist]")!.TextContent.Should().Be("2/4 · 50%");
+        rows[0].QuerySelector("[data-testid=dws-feature-attention]")!.TextContent.Should().Be("1 issue");
+        rows[0].QuerySelector("[data-testid=dws-feature-why]")!.TextContent.Should().Contain("Owned by module Frontend");
+
+        rows[0].QuerySelector("[data-testid=dws-feature-open]")!.Click();
+        _selected.Should().Be(DeliveryWorkItems.FeatureId(Dashboard));
+        cut.Find("[data-testid=dws-detail-backlog]").TextContent.Should().StartWith("In progress");
+        cut.Find("[data-testid=dws-detail-model]").TextContent.Should().Be("2 User Stories · 1 criteria");
+        cut.Find("[data-testid=dws-open-feature]").Click();
+        opened.Should().Be(Dashboard);
+
+        cut.Find("[data-testid=dws-view-hierarchy]").Change(true);
+        cut.Find("[data-testid=dws-row].is-selected").GetAttribute("data-id").Should().Be(DeliveryWorkItems.FeatureId(Dashboard), "one selection across views");
+    }
+
+    [Fact]
+    public void The_pages_feature_filter_limits_every_view_to_the_same_features()
+    {
+        var cut = RenderAt($"delivery-overview?project={ProjectA}&wi-view=list", Backlog(Fresh));
+        cut.FindAll("[data-testid=dws-list-row]").Should().OnlyContain(r => r.GetAttribute("data-id")!.Contains(Fresh));
+        cut.Find("[data-testid=dws-view-features]").Change(true);
+        cut.FindAll("[data-testid=dws-feature-row]").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_deep_link_to_a_task_opens_the_hierarchy_where_it_can_be_seen()
+    {
+        var nav = Services.GetRequiredService<NavigationManager>();
+        var task = $"t:{Dashboard}|T010";
+        var cut = RenderAt($"delivery-overview?project={ProjectA}&item={Uri.EscapeDataString(task)}", Backlog(), selected: task);
+        cut.Find("[data-testid=dws-master]").GetAttribute("data-view").Should().Be("hierarchy");
+        nav.Uri.Should().Contain("wi-view=hierarchy");
+        cut.Find("[data-testid=dws-detail-card]").GetAttribute("data-id").Should().Be(task);
     }
 }

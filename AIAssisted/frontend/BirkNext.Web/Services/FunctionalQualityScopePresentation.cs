@@ -82,7 +82,10 @@ public static class FunctionalQualityScopePresentation
 /// </summary>
 public static class ScopeFilterState
 {
-    public static readonly IReadOnlyList<string> QueryKeys = ["fq-q", "fq-type", "fq-quality", "fq-module", "fq-relation", "fq-coverage", "fq-testdata", "fq-testability", "fq-priority", "fq-item"];
+    public static readonly IReadOnlyList<string> QueryKeys = ["fq-q", "fq-type", "fq-quality", "fq-module", "fq-relation", "fq-coverage", "fq-testdata", "fq-testability", "fq-priority", "fq-item", EnvironmentKey];
+
+    /// <summary>The evidence environment (a Target Environment id, or "*" for all, aggregated). Context, not a filter: it changes coverage and tests.</summary>
+    public const string EnvironmentKey = "fq-env";
 
     /// <summary>Relation, Coverage, Test Data, Testability and Priority: the advanced group (open when one of them is set).</summary>
     public static bool AdvancedActive(ScopeFilter f) => f.Relation is not null || f.Coverage is not null || f.TestData is not null || f.Testability is not null || f.Priority is not null;
@@ -129,4 +132,37 @@ public static class ScopeFilterState
         ScopeTestLinkKind.Candidate => "Candidate — not confirmed",
         _ => "Rejected in review",
     };
+
+    /// <summary>The test's relationship as a person reads it: a human-confirmed link apart from an explicit one in the source.</summary>
+    public static string LinkLabel(ScopeTestLink t) => t.Kind == ScopeTestLinkKind.Explicit && t.ReviewState == "Confirmed" ? "Confirmed by a person" : KindLabel(t.Kind);
+
+    public static string SchemaKindLabel(ScopeSchemaLinkKind kind) => kind switch
+    {
+        ScopeSchemaLinkKind.Explicit => "Explicitly linked",
+        ScopeSchemaLinkKind.Confirmed => "Confirmed association",
+        _ => "Candidate association — not confirmed",
+    };
+
+    /// <summary>"XmlSchema" → "XSD", "OpenApi" → "OpenAPI"… the schema type as people name it.</summary>
+    public static string SchemaTypeLabel(string kind) => kind switch
+    {
+        "XmlSchema" => "XSD",
+        "JsonSchema" => "JSON Schema",
+        "OpenApi" => "OpenAPI",
+        "GraphQlSchema" => "GraphQL schema",
+        "GraphQlOperations" => "GraphQL operations",
+        "AsyncApi" => "AsyncAPI (messaging)",
+        _ => kind,
+    };
+
+    /// <summary>Where to look at the schema itself: Schema Studio opens the exact stored XSD / JSON schema of that snapshot; other contracts open the
+    /// snapshot's contract evidence in Source Analysis. Null when the association has no recorded source.</summary>
+    public static string? SchemaHref(ScopeSchemaLink s) => s.SnapshotId is not { } snapshot || s.SourcePath is not { Length: > 0 } path ? null
+        : s.SchemaKind is "XmlSchema" or "JsonSchema"
+            ? $"schema-studio?snapshot={snapshot}&contract={Uri.EscapeDataString(path)}{(s.Scope.Length > 0 && s.Scope != ScopeEnvironments.All ? $"&environment={Uri.EscapeDataString(s.Scope)}" : "")}"
+            : $"source-analysis?snapshot={snapshot}&area=quality-evidence&view=contracts";
+
+    /// <summary>The environment's display name: the Target Environment's name when known, else its id; "All environments" for the aggregate.</summary>
+    public static string EnvironmentName(string? id, IReadOnlyDictionary<string, string> names) =>
+        id is null ? "No environment" : id == ScopeEnvironments.All ? "All environments (aggregated)" : names.TryGetValue(id, out var name) && name.Length > 0 ? name : id;
 }

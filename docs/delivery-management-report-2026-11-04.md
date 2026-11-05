@@ -141,7 +141,7 @@ New tests:
 - `DeliverySnapshotListTests`.
 - Assertions extended in `DeliveryReportingPageTests`: headers, saved vs new, history table, snapshot search, attention parts.
 
-## G. Remaining gaps
+## G. Remaining gaps (as of 2026-11-04 — resolved in section H)
 
 1. **Overview's feature list is kept.** It is the Features view with backlog status, which the shared explorer does not model. It was not merged into the explorer, so both pages use the explorer, but Overview's feature cards remain a separate list.
 2. **No "Integration" quality category.** The acceptance scenario asks for one, but the classifier has none (Functional, Security, Privacy, Performance, Reliability, DataQuality, Compliance, Availability, Technical, Unclassified). The journey was verified with an existing category. No category was added, because that would change the classification rules.
@@ -151,3 +151,95 @@ New tests:
 6. **Schema / XSD evidence per requirement is not linked.** Test Data shows the assessment's asset ids only.
 7. **Not done:** list virtualisation (paging is used), keyboard arrow navigation in the list, and saving scroll position across page navigation.
 8. **Not done:** a live browser E2E run on real M2LB.
+
+## H. Section G gaps — resolved (2026-11-05)
+
+All eight gaps from section G were worked on. Real-browser verification ran against a throwaway copy of the M2LB data (database `birknext_gaps`, API :5099, published Release web build :5199, Microsoft Edge via Playwright, localhost only). The real `birknext` database was found **empty** on 2026-11-05 (no projects, snapshots or canonical entities — a local reset outside this work; it was only ever read), so the copy was taken from the earlier throwaway `birknext_ci2`, which holds the same M2LB import.
+
+| Gap | Implementation status | Tests | Browser verified | Evidence |
+|---|---|---|---|---|
+| 1. Filter persistence | Implemented | `DeliveryExplorerStateTests` (3), `DeliveryWorkspaceTests` (URL + session restore, Back/Forward, stale filters) | Yes | wi-* keys in the URL; leaving Stories for Overview and returning restores view, filters, selection and scroll (3000 px → 3000 px); Back/Forward move between selections |
+| 2. Environment scope | Implemented | backend: 3 environment tests; UI: selector, aggregate label, "choose an environment" | Yes (one environment exists in the data) | Selector lists only `ci-live` (the only environment with evidence); context line names it and says "source relationships, not executions"; `fq-env` in the URL |
+| 3. TRX correlation | Implemented | `RequirementTestExecutionsTests` (11), UI run-table test | Yes — unavailable state | The M2LB workspace has **0 imported TRX results**, so every linked test correctly shows "Execution evidence unavailable"; pass/fail/run metadata verified with controlled fixtures only |
+| 4. Integration category | Implemented | 10 classifier cases from real M2LB texts, legacy-rule-set test, frozen-report test | Yes | 23 Skolenærvær items classify as Integration (MU intake, receipts, delivery to SkoleService); frozen reports keep their rules (Overview of an older report shows no Integration) |
+| 5. Schema/XSD evidence | Implemented | backend schema-link test; UI linked/candidate/validation/link test | Yes | MU FR-007 / US1: 0 linked · 7 candidate (5 XSD, 1 OpenAPI, 1 test XSD), all "Validation not performed"; the XSD link opens the exact stored file in Schema Studio |
+| 6. Shared Feature Explorer | Implemented (snapshot-only fallback kept) | Workspace Features-view tests; Overview page tests migrated | Yes | Overview opens on the shared explorer's Features view (24 features, backlog statuses Not assessed / In progress / Task checklist complete / Planned); feature details → feature explorer → Back |
+| 7. List usability | Implemented | keyboard grid, stable sort, virtualization tests | Yes | Full M2LB report: 2385 work items, ~50 rows in the DOM, fixed 40 px rows; arrows + Enter open an item; focus ring visible |
+| 8. Browser E2E | Done | `scratchpad/gaps-e2e.cjs` (50 checks) | 50/50 passed | Screenshots in `scratchpad/gaps-shots/`; no external host contacted; no browser errors besides the one 500 injected to test error handling |
+
+### Root causes
+
+- **Filters lost (gap 1).** The explorer kept search, module, type, change, review, view and sort as component fields. Only the selection (`item=`) was in the URL, and every tab link was built from scratch, so returning to Stories reset everything.
+- **Mixed environments (gap 2).** `CoverageIndexAsync` and `TestLinksAsync` read `VERIFIES` relations across **every** canonical scope. Each canonical scope is one Target Environment, so with two interpreted environments one environment's tests counted as another's coverage.
+- **No execution link (gap 3).** TRX results live in the workspace SDD lifecycle (`TestExecutions`, `TestRuns`), keyed by the source test's stable identity once the import correlated them. Nothing joined them to the canonical `Test → VERIFIES` relations shown in Functional Quality Scope.
+- **No Integration category (gap 4).** It was missing from the taxonomy. The real "retries … exponential backoff" story also exposed that the Reliability rule matched "retry" but not "retries".
+- **No schema evidence (gap 5).** The canonical store holds contracts (Contract ← ContractVersion ← ContractOccurrence, Service → References → ContractVersion), but no requirement → contract relation exists in the real data. Nothing projected contracts onto requirements.
+- **Two feature lists (gap 6).** The Overview rendered its own backlog list because the shared explorer had no notion of backlog status, priority or "why included".
+- **List (gap 7).** The List rendered pages of 100 rows with "Show more", had no keyboard model and used unstable `Reverse()` sorting. Its columns were narrow next to the details panel.
+- **Found only in the browser:**
+  - The Functional Quality Scope detail kept its old fixed-drawer CSS (`position: fixed; top: 0`). Inside the master-detail layout from 3f1eba8c, the pane was 0 px tall and the page's sticky header hid the top of the drawer.
+  - The explorer details pane also started behind the ~290 px sticky Delivery Reports header.
+  - A restored scroll position was overridden by bringing the restored selection into view.
+  - Rows showed through the master pane's top padding above the sticky table header.
+
+### Architecture decisions
+
+- **One state model for the explorer.** `DeliveryExplorerState` maps the filter to and from compact URL keys. `wi-view`, `wi-q`, `wi-module`, `wi-type`, `wi-change`, `wi-review`, `wi-sort` and `wi-desc` are each written only when not the default. `ExplorerViewStateStore` is a per-tab session memory keyed by mode + project + report (Functional Quality Scope: `fqs|project`). The URL always wins; a plain link restores the remembered state and writes it back to the address. Values that don't fit the report or mode (an unknown module, a change filter in current-state mode) are dropped with a visible note.
+- **Environment = canonical scope.** No new identity model. `ScopeQuery.Environment` takes an environment id, `*` (all, aggregated and labelled as not evidence from one environment), or null (the only environment with evidence, if exactly one).
+  - With several environments and none chosen, coverage is Not assessed and the person is asked to choose. The UI defaults to the active Target Environment only when it has evidence.
+  - Canonical test relations are labelled "source relationship … discovery, not execution". Only a run is execution evidence.
+- **Execution correlation is a frontend projection** (`RequirementTestExecutions`) over the existing imported results. No second store, no backend copy.
+  - **Attribution needs identity:** the TRX import correlated the result (`Confirmed`) to the same stable test identity.
+  - **Name-only matches** are listed as "not attributed", with their reported outcome shown only as evidence.
+  - **Environment:** a run counts for the selected environment only when it records that environment (id or name). A run without one is "Environment not recorded" and never counts.
+  - **Runs:** every run is listed. The current result is the newest run in the environment whose result is still current, a rule shown on screen. Theory rows fold per run; any failure fails the run, and "skipped" is kept apart from "not executed".
+- **Integration (`functional-quality/3`).** Categories stay exclusive and are applied in precedence order.
+  - **Precedence:** technical, then privacy, security, performance, reliability, then Integration, then data quality, compliance, availability.
+  - **Integration needs intent, not one keyword:** explicit integration wording (never "integration test"), or an exchange channel *and* a system-to-system exchange.
+  - **A new delivery-failure Reliability rule** ("retries", "backoff", "never silently discard") keeps failure handling as Reliability.
+  - **Ordinals unchanged:** `Integration` is appended to the enum, so stored ordinals never shift. Lists use the display order.
+  - **Frozen reports:** new reports record `QualityRuleSet`. A report without one is viewed with `functional-quality/2`, which has no Integration rules.
+- **Schema evidence** is projected from the same environment's canonical contract evidence, in three kinds:
+  - *Confirmed / explicit:* a canonical relation exists between the item and the contract.
+  - *Explicit:* the item's text names the contract (its specific name, namespace or file; generic names like `schema.graphql` never count).
+  - *Candidate:* module ownership only.
+  - Validation is always "not performed": no validation store is linked, and an existing schema is never a validation. XSD and JSON schemas open the exact stored file in Schema Studio; other contracts open the snapshot's contract evidence in Source Analysis.
+- **One explorer for the Overview.** `DeliveryExplorerOptions` gained `Backlog`, `Why` and `FeatureKeys` (the page's own filters), plus a Features view (current-state mode only).
+  - The feature detail shows backlog status, requirement model and why included, and opens the feature drill-down.
+  - The old Overview list remains only for projects that have snapshots but no report, because the explorer needs a frozen report's hierarchy.
+- **List.** Virtualized (`Virtualize`, fixed 40 px rows, overscan 15) inside the scrolling master pane, with a sticky header and stable sort (column → canonical order → id).
+  - The table is a keyboard grid: `role=grid`, `aria-activedescendant`, arrows / Home / End / Page keys move the active row, and Enter / Space selects it.
+  - A remembered scroll position is applied until the virtualized list is tall enough.
+  - Sticky panes sit below the page's sticky header via `--page-sticky-offset` (measured with a ResizeObserver on `[data-sticky-offset]`).
+
+### Test commands and results
+
+| Command | Result |
+|---|---|
+| `dotnet test backend/BirkNext.Api.Tests` (full) | 5894 passed, 13 skipped, 0 failed |
+| `dotnet test frontend/BirkNext.Web.Tests` (full) | 8077 passed, 0 failed |
+| `node scratchpad/gaps-e2e.cjs` (Edge, Release build, M2LB copy) | 50/50 checks passed |
+
+### Migration
+
+None. `WeeklyDeliveryReport.QualityRuleSet` is a new optional field in the frozen report JSON: absent in existing reports, which is exactly the "legacy rules" case. No table or column changed, and no frozen report was rewritten.
+
+### Files changed
+
+- **Shared:** `shared/FunctionalQualityScope.cs` (Integration, rule sets, environment context, schema links), `shared/DeliveryReportingContracts.cs` (`QualityRuleSet`).
+- **Backend:** `FunctionalQualityScopeService.cs` (environment context, scoped coverage and tests, schema links), `FunctionalQualityScopeController.cs` (`environment` query), `DeliveryScopeService.cs` (frozen rule set), `WeeklyReportBuilder.cs`.
+- **Frontend:**
+  - `Components/DeliveryWorkspace.razor` (+ `.css`): state, keyboard, virtualization, Features view, scroll.
+  - `Components/FunctionalQualityScopePanel.razor` (+ `.css`): environment, executions, schemas, restore, in-pane detail.
+  - Pages: `Pages/DeliveryOverview.razor`, `Pages/DeliveryReporting.razor`.
+  - Services: `Services/DeliveryWorkItems.cs` (options, `DeliveryExplorerState`, `ExplorerViewStateStore`), `Services/RequirementTestExecutions.cs` (new), `Services/FunctionalQualityScopePresentation.cs`, `Services/FunctionalQualityScopeApiService.cs`.
+  - Wiring and assets: `Program.cs`, `wwwroot/js/explorerState.js` (new), `wwwroot/index.html`.
+- **Tests:** `FunctionalQualityScopeTests.cs`, `DeliveryScopeTests.cs`, `DeliveryExplorerStateTests.cs` (new), `RequirementTestExecutionsTests.cs` (new), `DeliveryWorkspaceTests.cs`, `FunctionalQualityScopeUiTests.cs`, Overview page tests migrated to the Features view.
+
+### Remaining gaps
+
+1. **No live TRX evidence or environment isolation.** The M2LB data has no imported TRX results and only one interpreted environment. Pass/fail/skipped display, multi-run history and mixed-environment prevention are verified with controlled fixtures (bUnit, backend in-memory), not on real data.
+2. **No server-validated schema state.** No requirement in the real data names a specific schema file, and no requirement → contract canonical relation exists, so all real associations are candidates (correct, but no Explicit example on real data). A Confirm action for schema associations needs a canonical relation to review, which the interpreter does not yet produce.
+3. **Snapshot-only Overview fallback.** A project with snapshots but no generated report still uses the old Overview list: the explorer needs a report's hierarchy.
+4. **Membership is not environment-scoped.** Functional Quality Scope *membership* via canonical capability relations still reads all scopes. Only test and schema evidence follow the selected environment.
+5. **Window scroll isn't restored.** Scroll restoration covers the explorer's own scroll container (List / Features / Hierarchy), not the page's window scroll.

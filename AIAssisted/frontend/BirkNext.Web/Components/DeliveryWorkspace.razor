@@ -1,6 +1,12 @@
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web.Virtualization
 @using W = BirkNext.Web.Services.DeliveryWorkItems
+@implements IDisposable
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IServiceProvider Services
 
 @* Work-item workspace (Azure DevOps-inspired, BirkNext-styled): a master/detail split over ONE canonical model built from the frozen report —
    Module → Feature → User Story → explicitly linked Tasks, with Phase as an independent dimension. Hierarchy, List, Board and Phases are views of
@@ -11,29 +17,30 @@
         <div class="dws-views" role="radiogroup" aria-label="View" data-testid="dws-views">
             @foreach (var (key, label) in Options.Views)
             {
-                <label class="dws-view @(_view == key ? "is-active" : "")"><input type="radio" name="dws-view" value="@key" checked="@(_view == key)" @onchange="() => _view = key" data-testid="dws-view-@key" /> @label</label>
+                <label class="dws-view @(_view == key ? "is-active" : "")"><input type="radio" name="dws-view" value="@key" checked="@(_view == key)" @onchange="() => Change(() => _view = key)" data-testid="dws-view-@key" /> @label</label>
             }
         </div>
         <label class="dws-search"><span class="visually-hidden">Search by ID or title</span>
-            <input type="search" placeholder="Search by ID or title" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" data-testid="dws-search" /></label>
+            <input type="search" placeholder="Search by ID or title" value="@_search" @oninput="e => Change(() => _search = e.Value?.ToString() ?? string.Empty)" data-testid="dws-search" /></label>
         <label><span class="visually-hidden">Module</span>
-            <select value="@_module" @onchange="e => _module = e.Value?.ToString() ?? string.Empty" data-testid="dws-module-filter">
+            <select value="@_module" @onchange="e => Change(() => _module = e.Value?.ToString() ?? string.Empty)" data-testid="dws-module-filter">
                 <option value="">All modules</option>
                 @foreach (var m in Modules) { <option value="@m">@m</option> }
             </select></label>
         <label><span class="visually-hidden">Type</span>
-            <select value="@_type" @onchange="e => _type = e.Value?.ToString() ?? string.Empty" data-testid="dws-type">
+            <select value="@_type" @onchange="e => Change(() => _type = e.Value?.ToString() ?? string.Empty)" data-testid="dws-type">
                 <option value="">All types</option><option value="Feature">Features</option><option value="Story">User stories / scenarios</option><option value="Group">Groups</option><option value="Task">Tasks</option>
             </select></label>
         @if (Options.ShowChanges)
         {
             <label><span class="visually-hidden">Change</span>
-                <select value="@_change" @onchange="e => _change = e.Value?.ToString() ?? string.Empty" data-testid="dws-change">
+                <select value="@_change" @onchange="e => Change(() => _change = e.Value?.ToString() ?? string.Empty)" data-testid="dws-change">
                     <option value="">Any change</option><option value="changed">Changed this period</option><option value="unchanged">Unchanged</option>
                 </select></label>
         }
-        <label class="dws-check"><input type="checkbox" checked="@_attentionOnly" @onchange="e => _attentionOnly = e.Value is true" data-testid="dws-attention" /> Needs review</label>
+        <label class="dws-check"><input type="checkbox" checked="@_attentionOnly" @onchange="e => Change(() => _attentionOnly = e.Value is true)" data-testid="dws-attention" /> Needs review</label>
     </div>
+    @foreach (var note in _dropped) { <p class="dws-status dws-notice" role="status" data-testid="dws-dropped-filter">@note</p> }
 
     <p class="dws-status" role="status" data-testid="dws-count">
         <span>@_items.Count(Matches) of @_items.Count work items@(Options.ShowChanges ? " (baseline and current)" : " in the current snapshot")</span>
@@ -54,10 +61,11 @@
         </dl>
     </details>
 
-    <div class="dws-split">
-        <div class="dws-master" data-testid="dws-master" data-view="@_view">
+    <div class="dws-split @(_view is "list" or "features" ? "is-wide" : "")">
+        <div class="dws-master" data-testid="dws-master" data-view="@_view" @ref="_master">
             @switch (_view)
             {
+                case "features": @FeaturesView() break;
                 case "list": @ListView() break;
                 case "board": @BoardView() break;
                 case "phases": @PhasesView() break;
@@ -81,22 +89,129 @@
     /// <summary>The delivery project: enables the link to the same canonical item on the other Delivery page.</summary>
     [Parameter] public Guid? ProjectId { get; set; }
 
-    private const int PageSize = 100;
-    private int _shown = PageSize;
+    /// <summary>Open the feature in the feature drill-down (Delivery Overview's ?feature=); the feature detail offers it when set.</summary>
+    [Parameter] public EventCallback<string> OnOpenFeature { get; set; }
+
+    /// <summary>Fixed row height of the List and Features tables (CSS .dws-row-fixed): the virtualized list and keyboard scrolling rely on it.</summary>
+    private const float RowHeight = 40;
     private string _view = "hierarchy", _search = "", _module = "", _type = "", _change = "", _sort = "id";
     private bool _attentionOnly, _sortDesc;
-    private string? _selected;
+    private string? _selected, _active, _lastSelectedParam, _stateKey;
+    private IReadOnlyList<string> _dropped = [];
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
     private IReadOnlyList<DeliveryWorkItem> _items = [];
+    private List<DeliveryWorkItem> _keyRows = [];
     private WeeklyDeliveryReport? _built;
     private DeliveryExplorerOptions? _builtFor;
+    private ElementReference _master;
+    private bool _restoreScroll, _scrollActive, _listening;
+    private string _path = "";
+    private ExplorerViewStateStore? Store => Services.GetService(typeof(ExplorerViewStateStore)) as ExplorerViewStateStore;
+    /// <summary>State is remembered per mode, project and report: another report's filters never apply to this one.</summary>
+    private string StateKey => $"dws|{Options.Mode}|{ProjectId}|{Report.ReportId}";
 
     protected override void OnParametersSet()
     {
         if (!ReferenceEquals(_built, Report) || _builtFor != Options) { _items = [.. W.Build(Report).Where(Options.Includes)]; (_built, _builtFor) = (Report, Options); }
-        if (Options.Views.All(v => v.Key != _view)) _view = "hierarchy";
-        if (!Options.ShowChanges) _change = "";
-        if (SelectedId is not null && SelectedId != _selected && _items.Any(i => i.Id == SelectedId)) { _selected = SelectedId; ExpandTo(SelectedId); }
+        if (_stateKey != StateKey)
+        {
+            _stateKey = StateKey;
+            RestoreState();
+        }
+        if (SelectedId != _lastSelectedParam)
+        {
+            _lastSelectedParam = SelectedId;
+            if (SelectedId is not null && _items.Any(i => i.Id == SelectedId)) { _selected = _active = SelectedId; ExpandTo(SelectedId); _scrollActive = true; }
+            else if (SelectedId is null) _selected = null;
+        }
+        if (!_listening) { Nav.LocationChanged += OnLocationChanged; _listening = true; }
+    }
+
+    /// <summary>
+    /// The explorer's state comes from the URL (wi-* keys). Without any in the URL (a plain link, another tab of the page) the state this explorer
+    /// last had in this session for the same project, report and mode is restored — and written back to the URL, so the address shows what is
+    /// applied. What does not fit this report is dropped with a note.
+    /// </summary>
+    private void RestoreState()
+    {
+        _path = new Uri(Nav.Uri).AbsolutePath;
+        var query = DeliveryExplorerState.Parse(Nav.Uri);
+        var saved = DeliveryExplorerState.HasAny(query) || SelectedId is not null ? null : Store?.Get(StateKey);
+        Apply(DeliveryExplorerState.FromQuery(saved ?? query));
+        if (saved is not null)
+        {
+            var restore = new Dictionary<string, object?>(DeliveryExplorerState.ToQuery(Current(), Options.DefaultView));
+            if (saved.GetValueOrDefault("item") is { } item && _items.Any(i => i.Id == item)) restore["item"] = item;
+            Nav.NavigateTo(Nav.GetUriWithQueryParameters(restore), replace: true);
+            _restoreScroll = true;
+        }
+        // A deep link to a work item below feature level opens where it can be seen (the Features view lists features only).
+        if (_view == "features" && !query.ContainsKey("wi-view") && SelectedId is { } selected && !selected.StartsWith("f:", StringComparison.Ordinal)) { _view = "hierarchy"; Commit(); }
+    }
+
+    private DeliveryExplorerFilter Current() => new(_view, _search, _module, _type, _change, _attentionOnly, _sort, _sortDesc);
+
+    private void Apply(DeliveryExplorerFilter requested)
+    {
+        var (f, dropped) = DeliveryExplorerState.Validate(requested, Options, Modules.ToList());
+        (_view, _search, _module, _type, _change, _attentionOnly, _sort, _sortDesc) = (f.View, f.Search, f.Module, f.Type, f.Change, f.Review, f.Sort, f.Descending);
+        _dropped = dropped;
+    }
+
+    /// <summary>Every filter, view and sort change: applied, written to the URL (replacing the entry — Back returns to the previous selection, not to
+    /// every keystroke) and remembered for this session.</summary>
+    private void Change(Action change)
+    {
+        change();
+        _dropped = [];
+        Commit();
+    }
+
+    private void Commit()
+    {
+        var query = DeliveryExplorerState.ToQuery(Current(), Options.DefaultView);
+        var target = Nav.GetUriWithQueryParameters(query);
+        if (target != Nav.Uri) Nav.NavigateTo(target, replace: true);
+        Remember();
+    }
+
+    private void Remember() => Store?.Set(StateKey, new Dictionary<string, object?>(DeliveryExplorerState.ToQuery(Current(), Options.DefaultView)) { ["item"] = _selected });
+
+    /// <summary>Back / Forward: the URL is the state — re-read it when it changes from outside.</summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Another page: this explorer is about to go away and keeps its remembered state.
+        if (!Uri.TryCreate(e.Location, UriKind.Absolute, out var location) || location.AbsolutePath != _path) return;
+        var query = DeliveryExplorerState.Parse(e.Location);
+        var wanted = DeliveryExplorerState.Validate(DeliveryExplorerState.FromQuery(query), Options, Modules.ToList()).Filter;
+        if (wanted == Current()) return;
+        _ = InvokeAsync(() => { Apply(wanted); StateHasChanged(); });
+    }
+
+    public void Dispose() { if (_listening) Nav.LocationChanged -= OnLocationChanged; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender) await JS.InvokeVoidAsync("birknextExplorer.stickyOffset");
+            await JS.InvokeVoidAsync("birknextExplorer.track", _master, $"{StateKey}|{_view}");
+            if (firstRender || _restoreScroll)
+            {
+                _restoreScroll = false;
+                // A remembered scroll position wins over bringing the (restored) selection into view: the person returns to where they were.
+                if (await JS.InvokeAsync<bool>("birknextExplorer.restore", _master, $"{StateKey}|{_view}")) _scrollActive = false;
+                else if (_selected is not null) await JS.InvokeVoidAsync("birknextExplorer.selectedIntoView", _master, "[aria-current=true], tr.is-selected");
+            }
+            if (_scrollActive)
+            {
+                _scrollActive = false;
+                var index = _keyRows.FindIndex(i => i.Id == _active);
+                if (index >= 0) await JS.InvokeVoidAsync("birknextExplorer.rowIntoView", _master, index, RowHeight);
+            }
+        }
+        // Scroll memory is a convenience: without the script (prerendering, tests) the explorer works the same.
+        catch (Exception) { /* any interop failure (no script, prerendering, tests) leaves the explorer working */ }
     }
 
     private DeliveryWorkItem? Selected => _items.FirstOrDefault(i => i.Id == _selected);
@@ -129,14 +244,46 @@
         if (_attentionOnly) yield return ("Needs review", () => _attentionOnly = false);
     }
 
-    private void ClearFilters() { (_search, _module, _type, _change, _attentionOnly) = ("", "", "", "", false); _shown = PageSize; }
+    private void ClearFilters() => Change(() => (_search, _module, _type, _change, _attentionOnly) = ("", "", "", "", false));
 
     private async Task Select(string id)
     {
-        _selected = id;
+        _selected = _active = id;
         ExpandTo(id);
+        Remember();
         await OnSelect.InvokeAsync(id);
     }
+
+    /// <summary>
+    /// Keyboard in the List and Features grids: Up/Down move the active row, Home/End and PageUp/PageDown jump; Enter or Space select it (opens its
+    /// details). The active row is kept in view even when the virtualized list has not rendered it yet.
+    /// </summary>
+    private async Task OnGridKey(KeyboardEventArgs e)
+    {
+        if (_keyRows.Count == 0) return;
+        var index = _keyRows.FindIndex(i => i.Id == (_active ?? _selected));
+        var next = e.Key switch
+        {
+            "ArrowDown" => Math.Min(_keyRows.Count - 1, index + 1),
+            "ArrowUp" => Math.Max(0, index < 0 ? 0 : index - 1),
+            "Home" => 0,
+            "End" => _keyRows.Count - 1,
+            "PageDown" => Math.Min(_keyRows.Count - 1, Math.Max(0, index) + 10),
+            "PageUp" => Math.Max(0, index - 10),
+            _ => -1,
+        };
+        if (next >= 0) { _active = _keyRows[next].Id; _scrollActive = true; return; }
+        if (e.Key is "Enter" or " " && index >= 0) await Select(_keyRows[index].Id);
+    }
+
+    private async Task OnGridFocus()
+    {
+        if (_active is null && _keyRows.Count > 0) _active = _selected is not null && _keyRows.Any(i => i.Id == _selected) ? _selected : _keyRows[0].Id;
+        try { await JS.InvokeVoidAsync("birknextExplorer.gridKeys", _master); }
+        catch (Exception) { }
+    }
+
+    private static string RowDomId(string id) => "dws-row-" + string.Concat(id.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));
 
     private void ExpandTo(string id)
     {
@@ -248,31 +395,46 @@
     };
 
     // ── List: one sortable table over every matching item ───────────────────────────────────────────────────────────────────────
-    private void SortBy(string column) { if (_sort == column) _sortDesc = !_sortDesc; else { _sort = column; _sortDesc = false; } }
+    private void SortBy(string column) => Change(() => { if (_sort == column) _sortDesc = !_sortDesc; else { _sort = column; _sortDesc = false; } });
 
     private IEnumerable<(string Key, string Label)> ListColumns => new[] { ("id", "ID"), ("type", "Type"), ("title", "Title"), ("parent", "Parent"), ("module", "Module"), ("phase", "Phase"), ("progress", "Progress") }
         .Concat(Options.ShowChanges ? [("change", "Period change")] : []).Append(("attention", "Review"));
 
     private string PhaseTitle(DeliveryWorkItem i) => i.PhaseKey is { } pk && i.Feature.Hierarchy?.Phases.FirstOrDefault(p => p.Key == pk) is { } ph ? ph.Title : "—";
 
+    /// <summary>Stable sort: the chosen column (ascending or descending), then the canonical order (feature, type, id), then the id — equal keys
+    /// never swap places between renders.</summary>
+    private List<DeliveryWorkItem> Sorted(IEnumerable<DeliveryWorkItem> rows)
+    {
+        Func<DeliveryWorkItem, string> key = _sort switch
+        {
+            "type" => i => ((int)i.Type).ToString("D2"),
+            "title" => i => i.Title,
+            "phase" => PhaseTitle,
+            "change" => i => i.Change,
+            "module" => i => i.Module,
+            "parent" => i => i.ParentId ?? "",
+            "progress" => i => i.Progress,
+            "attention" => i => Options.Attention(i) ? "0" : "1",
+            _ => i => "",
+        };
+        var ordered = _sortDesc ? rows.OrderByDescending(key, StringComparer.OrdinalIgnoreCase) : rows.OrderBy(key, StringComparer.OrdinalIgnoreCase);
+        var canonical = _sort == "id" && _sortDesc
+            ? ordered.ThenByDescending(i => i.FeatureKey, StringComparer.Ordinal).ThenByDescending(i => i.Type).ThenByDescending(i => i.SourceId, StringComparer.Ordinal)
+            : ordered.ThenBy(i => i.FeatureKey, StringComparer.Ordinal).ThenBy(i => i.Type).ThenBy(i => i.SourceId, StringComparer.Ordinal);
+        return [.. canonical.ThenBy(i => i.Id, StringComparer.Ordinal)];
+    }
+
+    /// <summary>The List: every matching item, virtualized (only the rows in view are rendered), fixed row height, full titles in the details panel.</summary>
     private RenderFragment ListView() => __builder =>
     {
-        IEnumerable<DeliveryWorkItem> rows = _items.Where(Matches);
-        rows = _sort switch
-        {
-            "type" => rows.OrderBy(i => i.Type),
-            "title" => rows.OrderBy(i => i.Title, StringComparer.OrdinalIgnoreCase),
-            "phase" => rows.OrderBy(PhaseTitle, StringComparer.OrdinalIgnoreCase),
-            "change" => rows.OrderBy(i => i.Change, StringComparer.Ordinal),
-            "module" => rows.OrderBy(i => i.Module, StringComparer.OrdinalIgnoreCase),
-            "parent" => rows.OrderBy(i => i.ParentId, StringComparer.Ordinal),
-            "attention" => rows.OrderByDescending(i => Options.Attention(i)),
-            _ => rows.OrderBy(i => i.FeatureKey, StringComparer.Ordinal).ThenBy(i => i.Type).ThenBy(i => i.SourceId, StringComparer.Ordinal),
-        };
-        var all = (_sortDesc ? rows.Reverse() : rows).ToList();
-        var list = all.Take(_shown).ToList();
+        var list = Sorted(_items.Where(Matches));
+        _keyRows = list;
         if (list.Count == 0) { <p class="dws-empty" data-testid="dws-none">No work items match these filters.</p> return; }
-        <div class="dws-tablewrap"><table class="dlr-table dws-table" data-testid="dws-list">
+        var activeIndex = list.FindIndex(i => i.Id == _active);
+        <p class="visually-hidden" data-testid="dws-list-keys">Use the arrow keys to move through the work items and Enter to open one.</p>
+        <div class="dws-tablewrap"><table class="dlr-table dws-table dws-row-fixed" data-testid="dws-list" role="grid" aria-rowcount="@(list.Count + 1)" tabindex="0"
+                aria-label="Work items" aria-activedescendant="@(activeIndex >= 0 ? RowDomId(list[activeIndex].Id) : null)" @onkeydown="OnGridKey" @onfocus="OnGridFocus">
             <colgroup><col class="dws-c-id" /><col class="dws-c-type" /><col class="dws-c-title" /><col class="dws-c-parent" /><col class="dws-c-module" /><col class="dws-c-phase" /><col class="dws-c-progress" />@if (Options.ShowChanges) { <col class="dws-c-change" /> }<col class="dws-c-review" /></colgroup>
             <thead><tr>
                 @foreach (var (key, label) in ListColumns)
@@ -281,25 +443,59 @@
                 }
             </tr></thead>
             <tbody>
-                @foreach (var i in list)
-                {
-                    var parent = i.ParentId is { } pid ? _items.FirstOrDefault(x => x.Id == pid) : null;
-                    <tr class="@(_selected == i.Id ? "is-selected" : "")" data-testid="dws-list-row" data-id="@i.Id" aria-selected="@(_selected == i.Id ? "true" : "false")">
-                        <td><button type="button" class="btn-link" @onclick="() => Select(i.Id)">@(i.SourceId.Length > 0 ? i.SourceId : TypeLabel(i))</button></td>
+                <Virtualize Items="list" ItemSize="RowHeight" OverscanCount="15" SpacerElement="tr" Context="i">
+                    @{ var parent = i.ParentId is { } pid ? _items.FirstOrDefault(x => x.Id == pid) : null; }
+                    <tr class="@(_selected == i.Id ? "is-selected" : "") @(_active == i.Id ? "is-active" : "")" id="@RowDomId(i.Id)" data-testid="dws-list-row" data-id="@i.Id"
+                        aria-selected="@(_selected == i.Id ? "true" : "false")" @onclick="() => Select(i.Id)">
+                        <td><button type="button" class="btn-link" tabindex="-1" @onclick="() => Select(i.Id)" @onclick:stopPropagation="true">@(i.SourceId.Length > 0 ? i.SourceId : TypeLabel(i))</button></td>
                         <td>@TypeLabel(i)</td>
-                        <td class="dws-cell-title" title="@i.Title"><button type="button" class="dws-title-button" @onclick="() => Select(i.Id)" data-testid="dws-list-title">@i.Title</button></td>
+                        <td class="dws-cell-title" title="@i.Title"><button type="button" class="dws-title-button" tabindex="-1" @onclick="() => Select(i.Id)" @onclick:stopPropagation="true" data-testid="dws-list-title">@i.Title</button></td>
                         <td class="dws-cell-title" title="@(parent?.Title)">@(parent is null ? "—" : parent.SourceId.Length > 0 ? parent.SourceId : parent.Title)</td>
-                        <td>@i.Module</td><td>@PhaseTitle(i)</td><td>@i.Progress</td>
-                        @if (Options.ShowChanges) { <td>@i.Change</td> }
+                        <td class="dws-cell-title">@i.Module</td><td class="dws-cell-title" title="@PhaseTitle(i)">@PhaseTitle(i)</td><td class="dws-cell-title">@i.Progress</td>
+                        @if (Options.ShowChanges) { <td class="dws-cell-title">@i.Change</td> }
                         <td>@(Options.Attention(i) ? "Needs review" : "—")</td>
+                    </tr>
+                </Virtualize>
+            </tbody>
+        </table></div>
+        <p class="dws-meta" data-testid="dws-list-total">@list.Count work item@(list.Count == 1 ? "" : "s") · rendered as you scroll</p>
+    };
+
+    /// <summary>
+    /// Features (Delivery Overview): the backlog of the current snapshot — one row per feature with its backlog status, task checklist, requirement
+    /// model and attention, in priority order (blocked, needs review, new, changed, in progress, the rest). Same selection and details as every view.
+    /// </summary>
+    private RenderFragment FeaturesView() => __builder =>
+    {
+        var backlog = Options.Backlog ?? new Dictionary<string, DeliveryFeatureGridRow>();
+        var features = _items.Where(i => i.Type == DeliveryWorkItemType.Feature && (Matches(i) || Filtering && _items.Any(x => x.FeatureKey == i.FeatureKey && Matches(x))))
+            .OrderBy(i => backlog.TryGetValue(i.FeatureKey, out var b) ? b.Priority : 9).ThenBy(i => i.Module, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.Id, StringComparer.Ordinal).ToList();
+        _keyRows = features;
+        if (features.Count == 0) { <p class="dws-empty" data-testid="dws-none">No feature matches these filters.</p> return; }
+        var activeIndex = features.FindIndex(i => i.Id == _active);
+        <div class="dws-tablewrap"><table class="dlr-table dws-table dws-features dws-row-fixed" data-testid="dws-features" role="grid" tabindex="0" aria-label="Features"
+                aria-activedescendant="@(activeIndex >= 0 ? RowDomId(features[activeIndex].Id) : null)" @onkeydown="OnGridKey" @onfocus="OnGridFocus">
+            <colgroup><col class="dws-c-feature" /><col class="dws-c-module" /><col class="dws-c-status" /><col class="dws-c-checklist" /><col class="dws-c-model" /><col class="dws-c-review" /></colgroup>
+            <thead><tr><th scope="col">Feature</th><th scope="col">Module</th><th scope="col">Backlog status</th><th scope="col" title="Task checklist only">Checklist</th><th scope="col">Requirement model</th><th scope="col">Attention</th></tr></thead>
+            <tbody>
+                @foreach (var f in features)
+                {
+                    backlog.TryGetValue(f.FeatureKey, out var b);
+                    <tr class="@(_selected == f.Id ? "is-selected" : "") @(_active == f.Id ? "is-active" : "")" id="@RowDomId(f.Id)" data-testid="dws-feature-row" data-id="@f.Id"
+                        data-status="@(b?.Item.Status.ToString() ?? "")" aria-selected="@(_selected == f.Id ? "true" : "false")" @onclick="() => Select(f.Id)">
+                        <td class="dws-cell-title" title="@f.Title"><button type="button" class="dws-title-button" tabindex="-1" @onclick="() => Select(f.Id)" @onclick:stopPropagation="true" data-testid="dws-feature-open"><strong>@f.Title</strong> <span class="dws-meta">@f.SourceId</span></button>
+                            @if (Options.Why?.GetValueOrDefault(f.FeatureKey) is { Length: > 0 } why) { <span class="dws-meta dws-feature-why" data-testid="dws-feature-why" title="@why">Why included: @why</span> }</td>
+                        <td class="dws-cell-title">@(f.Module.Length == 0 ? "Project" : f.Module)</td>
+                        <td class="dws-cell-title" data-testid="dws-feature-status" title="@b?.Item.StatusDetail">@(b is null ? "—" : DeliveryBacklog.Label(b.Item.Status))</td>
+                        <td class="dws-cell-title" data-testid="dws-feature-checklist" title="Task checklist only — not verified implementation">@(b is null ? f.Progress : b.Item.TasksTotal == 0 ? "No tasks" : $"{b.Item.TasksCompleted}/{b.Item.TasksTotal} · {100 * b.Item.TasksCompleted / b.Item.TasksTotal}%")</td>
+                        <td class="dws-cell-title" title="@b?.RequirementModel">@(b?.RequirementModel ?? "—")</td>
+                        <td class="dws-cell-title" data-testid="dws-feature-attention">@(b is { Item.Attention: > 0 } a ? $"{a.Item.Attention} issue{(a.Item.Attention == 1 ? "" : "s")}" : "—")</td>
                     </tr>
                 }
             </tbody>
         </table></div>
-        @if (all.Count > list.Count)
-        {
-            <p class="dws-meta" data-testid="dws-more">Showing @list.Count of @all.Count. <button type="button" class="btn-link" @onclick="() => _shown += PageSize" data-testid="dws-show-more">Show @Math.Min(PageSize, all.Count - list.Count) more</button></p>
-        }
+        <p class="dws-meta" data-testid="dws-features-note">Backlog status comes from task checkboxes and explicit status lines only — checklist progress is not verified implementation or QA completion.</p>
     };
 
     // ── Board: evidence-based change groups, features only ─────────────────────────────────────────────────────────────────────
@@ -374,11 +570,21 @@
                 {
                     <a class="dws-cross" href="@DeliveryExplorerOptions.CrossPageHref(Options.Mode, project, Report.ReportId, i.Id)" data-testid="dws-cross-page">@Options.CrossPageLabel</a>
                 }
+                @if (i.Type == DeliveryWorkItemType.Feature && OnOpenFeature.HasDelegate)
+                {
+                    <button type="button" class="btn-link dws-cross" data-testid="dws-open-feature" @onclick="() => OnOpenFeature.InvokeAsync(i.FeatureKey)">Open the feature explorer</button>
+                }
                 <dl class="dws-facts">
                     <div><dt>Module</dt><dd>@i.Module</dd></div>
                     @if (parent is not null) { <div><dt>Parent</dt><dd data-testid="dws-detail-parent"><button type="button" class="btn-link" @onclick="() => Select(parent.Id)">@parent.SourceId · @parent.Title</button></dd></div> }
                     @if (i.Story?.Priority is { } priority) { <div><dt>Priority</dt><dd data-testid="dws-detail-priority">@priority</dd></div> }
                     @if (i.Type == DeliveryWorkItemType.Feature) { <div><dt>Status</dt><dd data-testid="dws-detail-status">@W.StatusProvenance(i.Feature.RemovedFeature ? i.Feature.BaselineStatus : i.Feature.CurrentStatus)</dd></div> }
+                    @if (i.Type == DeliveryWorkItemType.Feature && Options.Backlog?.GetValueOrDefault(i.FeatureKey) is { } backlog)
+                    {
+                        <div><dt>Backlog status</dt><dd data-testid="dws-detail-backlog">@DeliveryBacklog.Label(backlog.Item.Status) <span class="dws-meta">— @backlog.Item.StatusDetail</span></dd></div>
+                        <div><dt>Requirement model</dt><dd data-testid="dws-detail-model">@backlog.RequirementModel</dd></div>
+                    }
+                    @if (i.Type == DeliveryWorkItemType.Feature && Options.Why?.GetValueOrDefault(i.FeatureKey) is { Length: > 0 } why) { <div><dt>Why included</dt><dd data-testid="dws-detail-why">@why</dd></div> }
                     @if (Options.ShowChanges) { <div><dt>Change</dt><dd data-testid="dws-detail-change">@i.Change</dd></div> }
                     @if (Options.Attention(i)) { <div><dt>Review</dt><dd data-testid="dws-detail-review">Needs review</dd></div> }
                     @if (PhaseTitle(i) is { } phase && phase != "—") { <div><dt>Phase</dt><dd>@phase</dd></div> }

@@ -450,4 +450,189 @@ public sealed class FunctionalQualityScopeTests
         r.Items.Should().BeEmpty();
         r.Limitations.Should().ContainSingle().Which.Should().Contain("No Delivery snapshot");
     }
+
+    // ── Integration category (functional-quality/3): intent, not one keyword; precedence; frozen reports keep their rules ─────────────
+
+    // Texts are M2LB user stories and requirements as imported (read-only audit of the real Delivery snapshot), shortened.
+    [Theory]
+    [InlineData("A private institution's or foster home's Altinn report arrives at MU. The intake picks it up, fetches the content, checks it against the skolenærvær v2.0.1 schema, maps it",
+        QualityCategory.Integration, "fq.integration.system-exchange")]
+    [InlineData("The adapter runs continuously, reading new changes from the BiRK change-data-capture stream in Azure Event Hubs.", QualityCategory.Integration, "fq.integration.system-exchange")]
+    [InlineData("A change in BiRK still reaches Person: PersonAdapter reads the CDC record, sends it to Person, and Person stores it and publishes the same events as before.",
+        QualityCategory.Integration, "fq.integration.system-exchange")]
+    [InlineData("Integrasjonen mot Folkeregisteret skal hente adresse for eleven", QualityCategory.Integration, "fq.integration.wording")]
+    // Precedence: a retry, an access rule or a latency target keeps its own meaning even when the requirement is about an integration.
+    [InlineData("The adapter must never silently discard messages. When delivery to Hendelsestjenesten fails due to a transient error, the adapter retries with exponential backoff.",
+        QualityCategory.Reliability, "fq.reliability.delivery-failure")]
+    [InlineData("Consuming services subscribe to Person module domain events on Service Bus. Consumers fetch details via authorised API calls.", QualityCategory.Security, "fq.security.wording")]
+    // One keyword is not an intent: a channel without an exchange, an exchange without a channel, "integration test".
+    [InlineData("An administrator opens the Emergency Access screen and is presented with a prioritised queue", QualityCategory.Functional, "fq.functional.behaviour")]
+    [InlineData("Saksbehandleren ser meldingen i oversikten", QualityCategory.Functional, "fq.functional.behaviour")]
+    [InlineData("Every existing unit and integration test passes, with only identifiers updated in test code.", QualityCategory.Functional, "fq.functional.behaviour")]
+    [InlineData("Rapporten valideres mot XSD", QualityCategory.DataQuality, "fq.data-quality.wording")]
+    public void Integration_needs_an_exchange_channel_and_a_system_to_system_exchange_and_keeps_stronger_meanings(string text, QualityCategory category, string rule) =>
+        FunctionalQualityClassifier.Classify(text).Should().Be((category, rule));
+
+    [Fact]
+    public void The_legacy_rule_set_has_no_integration_category_so_a_frozen_report_is_never_reclassified()
+    {
+        const string Altinn = "A private institution's Altinn report arrives at MU and is checked against the skolenærvær schema";
+        FunctionalQualityClassifier.Classify(Altinn).Category.Should().Be(QualityCategory.Integration);
+        FunctionalQualityClassifier.Classify(Altinn, null, FunctionalQualityClassifier.LegacyRuleSetVersion).Should().Be((QualityCategory.DataQuality, "fq.data-quality.wording"),
+            "functional-quality/2 classified it as data quality, and a report frozen with it keeps that");
+        FunctionalQualityClassifier.RuleSetOf(null).Should().Be(FunctionalQualityClassifier.LegacyRuleSetVersion, "a report frozen before rule sets were recorded predates Integration");
+        FunctionalQualityClassifier.RuleSetOf("functional-quality/3").Should().Be("functional-quality/3");
+        FunctionalQualityClassifier.ClassifyFeature("Altinn rapportmottak", ["Rapporten mottas fra Altinn og leveres til SkoleService"], FunctionalQualityClassifier.LegacyRuleSetVersion)
+            .Category.Should().NotBe(QualityCategory.Integration);
+        FunctionalQualityClassifier.ClassifyFeature("Altinn rapportmottak", ["Rapporten mottas fra Altinn og leveres til SkoleService"]).Category.Should().Be(QualityCategory.Integration);
+        FunctionalQualityClassifier.NonTechnicalCategories.Should().Contain(QualityCategory.Integration);
+        FunctionalQualityClassifier.DefaultCategories[1].Should().Be(QualityCategory.Integration, "listed right after Functional although its enum value is last");
+        ((int)QualityCategory.Unclassified).Should().Be(9, "appending Integration never shifts stored ordinals");
+    }
+
+    // ── Environment-scoped evidence: one environment's tests never answer for another ─────────────────────────────────────────
+
+    private static CanonicalEntityRecord EnvEntity(string scope, CanonicalEntityType type, string identity, string name, string attributes = "{}", string? version = null) =>
+        new() { Id = Guid.NewGuid(), Scope = scope, EntityType = type.ToString(), IdentityKey = identity, DisplayName = name, SourceIdentity = identity, AttributesJson = attributes, Version = version };
+
+    private static CanonicalRelationRecord EnvRelation(string scope, CanonicalEntityRecord from, CanonicalEntityRecord to, CanonicalRelationType type, RelationResolution resolution) =>
+        new() { Id = Guid.NewGuid(), Scope = scope, SourceEntityId = from.Id, TargetEntityId = to.Id, RelationType = type.ToString(), Resolution = resolution.ToString(),
+            ReviewState = nameof(RelationReviewState.NotReviewed), RelationKey = $"{scope}:{from.IdentityKey}->{type}->{to.IdentityKey}", Active = true };
+
+    private async Task<(Guid Project, FunctionalQualityScopeService Service)> TwoEnvironmentsAsync(DeliveryReportingDbContext db, CanonicalInterpretationDbContext canonical)
+    {
+        var (project, _) = await SeedAllAsync(db);
+        // Dev: an explicit test of FR-002. QA: only a candidate test of US2. Same requirement identities, different environments.
+        var devTest = EnvEntity("env-dev", CanonicalEntityType.Test, "tests/dev/Sends_report", "Sends report");
+        var devFr2 = EnvEntity("env-dev", CanonicalEntityType.Requirement, "FR-002", "FR-002");
+        var qaTest = EnvEntity("env-qa", CanonicalEntityType.Test, "tests/qa/Maybe_report", "Maybe report");
+        var qaUs2 = EnvEntity("env-qa", CanonicalEntityType.UserStory, "US2", "US2");
+        var qaFr2 = EnvEntity("env-qa", CanonicalEntityType.Requirement, "FR-002", "FR-002");
+        canonical.Entities.AddRange(devTest, devFr2, qaTest, qaUs2, qaFr2);
+        canonical.Relations.AddRange(EnvRelation("env-dev", devTest, devFr2, CanonicalRelationType.Verifies, RelationResolution.Explicit),
+            EnvRelation("env-qa", qaTest, qaUs2, CanonicalRelationType.Verifies, RelationResolution.Candidate));
+        await canonical.SaveChangesAsync();
+        return (project, Service(db, canonical));
+    }
+
+    [Fact]
+    public async Task Coverage_and_test_lists_follow_the_selected_environment_and_never_mix_environments()
+    {
+        await using var db = Db();
+        await using var canonical = Canonical();
+        var (project, service) = await TwoEnvironmentsAsync(db, canonical);
+        const string Fr2 = "req:SkoleService/001-rapport/FR-002";
+
+        var dev = await service.ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false, Environment: "env-dev"), default);
+        dev.Evidence!.Should().Match<ScopeEvidenceContext>(e => e.Environment == "env-dev" && !e.CrossEnvironment && e.Available.Count == 2);
+        dev.Items.Single(i => i.Key == Fr2).Coverage.Should().Be(ScopeCoverage.AutomatedCoverage);
+        dev.Items.Single(i => i.Key == "story:SkoleService/001-rapport/US2").Coverage.Should().Be(ScopeCoverage.NoKnownCoverage, "QA's candidate is not Dev evidence");
+
+        var qa = await service.ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false, Environment: "env-qa"), default);
+        qa.Items.Single(i => i.Key == Fr2).Coverage.Should().Be(ScopeCoverage.NoKnownCoverage, "Dev's explicit test does not answer for QA");
+        qa.Items.Single(i => i.Key == "story:SkoleService/001-rapport/US2").Coverage.Should().Be(ScopeCoverage.CandidateCoverageOnly);
+
+        var devDetail = (await service.DetailAsync(project, Fr2, default, "env-dev"))!;
+        devDetail.Tests.Should().ContainSingle().Which.Should().Match<ScopeTestLink>(t => t.TestName == "Sends report" && t.Scope == "env-dev");
+        var qaDetail = (await service.DetailAsync(project, Fr2, default, "env-qa"))!;
+        qaDetail.Should().Match<ScopeItemDetail>(d => d.TestsAssessed && d.Tests.Count == 0, "QA has test evidence, none for FR-002");
+    }
+
+    [Fact]
+    public async Task Without_a_chosen_environment_several_environments_are_not_assessed_and_all_is_an_explicit_labelled_aggregate()
+    {
+        await using var db = Db();
+        await using var canonical = Canonical();
+        var (project, service) = await TwoEnvironmentsAsync(db, canonical);
+
+        var unchosen = await service.ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false), default);
+        unchosen.Evidence!.Applied.Should().BeFalse("two environments have evidence and none was chosen: no environment is picked silently");
+        unchosen.Items.Should().OnlyContain(i => i.Coverage == ScopeCoverage.NotAssessed);
+        unchosen.Limitations.Should().Contain(l => l.Contains("2 environments") && l.Contains("choose an environment"));
+        (await service.DetailAsync(project, "req:SkoleService/001-rapport/FR-002", default))!.TestsAssessed.Should().BeFalse();
+
+        var all = await service.ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false, Environment: ScopeEnvironments.All), default);
+        all.Evidence!.Should().Match<ScopeEvidenceContext>(e => e.CrossEnvironment && e.Environment == null && e.Basis.Contains("not evidence from one environment"));
+        all.Items.Single(i => i.Key == "req:SkoleService/001-rapport/FR-002").Coverage.Should().Be(ScopeCoverage.AutomatedCoverage);
+        var allDetail = (await service.DetailAsync(project, "story:SkoleService/001-rapport/US2", default, ScopeEnvironments.All))!;
+        allDetail.Tests.Should().ContainSingle().Which.Scope.Should().Be("env-qa", "each aggregated test keeps its own environment");
+
+        var missing = await service.ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false, Environment: "env-prod"), default);
+        missing.Items.Should().OnlyContain(i => i.Coverage == ScopeCoverage.NotAssessed);
+        missing.Limitations.Should().Contain(l => l.Contains("env-prod") && l.Contains("other environments are not used in its place"));
+    }
+
+    [Fact]
+    public async Task A_single_environment_with_evidence_is_used_when_none_is_chosen_and_says_so()
+    {
+        await using var db = Db();
+        await using var canonical = Canonical();
+        var (project, _) = await SeedAllAsync(db);
+        var test = EnvEntity("env-dev", CanonicalEntityType.Test, "tests/a", "A");
+        var fr2 = EnvEntity("env-dev", CanonicalEntityType.Requirement, "FR-002", "FR-002");
+        canonical.Entities.AddRange(test, fr2);
+        canonical.Relations.Add(EnvRelation("env-dev", test, fr2, CanonicalRelationType.Verifies, RelationResolution.Explicit));
+        await canonical.SaveChangesAsync();
+        var r = await Service(db, canonical).ResolveAsync(project, new ScopeQuery("profile:skolenaervaer", null, false), default);
+        r.Evidence!.Should().Match<ScopeEvidenceContext>(e => e.Environment == "env-dev" && e.Basis.Contains("only environment"));
+        r.Items.Single(i => i.Key == "req:SkoleService/001-rapport/FR-002").Coverage.Should().Be(ScopeCoverage.AutomatedCoverage);
+    }
+
+    // ── Schema / contract evidence per requirement ─────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Schema_evidence_separates_a_schema_the_requirement_names_from_module_candidates_and_never_claims_validation()
+    {
+        await using var db = Db();
+        await using var canonical = Canonical();
+        var feature = new F("SkoleService", "010-xsd", "Motta rapport",
+            [("US1", "Skoletjenesten tar imot rapporten", "UserStory")], [],
+            [("FR-010", "Rapporten MÅ valideres mot bufdir.skolenaervaer.v2.0.1.xsd ved mottak"), ("FR-011", "Fraværet MÅ lagres per elev")]);
+        var (project, _) = await SeedAsync(db, null, Monday, "Monday", feature, Person);
+        var snapshot = Guid.NewGuid();
+
+        void Contract(string scope, string name, string kind, string path, string? ns, string version, string? service = null)
+        {
+            var contract = EnvEntity(scope, CanonicalEntityType.Contract, $"{kind.ToLowerInvariant()}:{kind.ToLowerInvariant()}|{ns}|{name}", name,
+                ns is null ? $$"""{"kind":"{{kind}}"}""" : $$"""{"kind":"{{kind}}","namespace":"{{ns}}"}""");
+            var v = EnvEntity(scope, CanonicalEntityType.ContractVersion, $"{contract.IdentityKey}@{version}", $"{name} {version}", "{}", version);
+            var occurrence = EnvEntity(scope, CanonicalEntityType.ContractOccurrence, $"{v.IdentityKey}#{path}", path);
+            canonical.Entities.AddRange(contract, v, occurrence);
+            canonical.Relations.AddRange(EnvRelation(scope, v, contract, CanonicalRelationType.BelongsTo, RelationResolution.Derived),
+                EnvRelation(scope, occurrence, v, CanonicalRelationType.OccurrenceOf, RelationResolution.Derived));
+            canonical.Occurrences.Add(new CanonicalOccurrenceRecord { Id = Guid.NewGuid(), EntityId = occurrence.Id, Scope = scope, SourceSnapshotId = snapshot.ToString(), OccurrenceKey = path,
+                Kind = "ContractOccurrence", Detail = "m2lb-language" });
+            if (service is not null)
+            {
+                var svc = EnvEntity(scope, CanonicalEntityType.Service, $"service:{service}", service);
+                canonical.Entities.Add(svc);
+                canonical.Relations.Add(EnvRelation(scope, svc, v, CanonicalRelationType.References, RelationResolution.Explicit));
+            }
+        }
+        Contract("env-dev", "bufdir.skolenaervaer.v2.0.1", "XmlSchema", "Meldingsutveksler/xsd/bufdir.skolenaervaer.v2.0.1.xsd", "https://bufdir.no/skolenaervaer.v2.0.1", "2.0.1");
+        Contract("env-dev", "M2LB Skole API", "OpenApi", "SkoleService/autodoc/openapi.yaml", null, "1.0");
+        Contract("env-dev", "schema", "GraphQlSchema", "Person/autodoc/schema.graphql", null, "1", "M2LB.Person.Api");
+        Contract("env-qa", "M2LB Skole QA API", "OpenApi", "SkoleService/autodoc/openapi.yaml", null, "1.0");
+        await canonical.SaveChangesAsync();
+        var service = Service(db, canonical);
+
+        var named = (await service.DetailAsync(project, "req:SkoleService/010-xsd/FR-010", default, "env-dev"))!;
+        named.SchemasAssessed.Should().BeTrue();
+        var xsd = named.Schemas.Single(s => s.SchemaKind == "XmlSchema");
+        xsd.Should().Match<ScopeSchemaLink>(s => s.Kind == ScopeSchemaLinkKind.Explicit && s.RuleId == "schema.named-in-requirement" && s.Namespace == "https://bufdir.no/skolenaervaer.v2.0.1"
+            && s.Version == "2.0.1" && s.SourcePath == "Meldingsutveksler/xsd/bufdir.skolenaervaer.v2.0.1.xsd" && s.Package == "m2lb-language" && s.SnapshotId == snapshot && s.Scope == "env-dev");
+        xsd.Validation.Should().Be(ScopeSchemaValidation.NotPerformed, "an existing schema is never a validation result");
+        named.Schemas.Single(s => s.SchemaKind == "OpenApi").Should().Match<ScopeSchemaLink>(s => s.Kind == ScopeSchemaLinkKind.Candidate && s.RuleId == "schema.module-ownership"
+            && s.Name == "M2LB Skole API", "the module's own contract is only a candidate; QA's contract is not Dev evidence");
+        named.Schemas.Should().NotContain(s => s.SchemaKind == "GraphQlSchema", "another module's contract is not associated");
+
+        var plain = (await service.DetailAsync(project, "req:SkoleService/010-xsd/FR-011", default, "env-dev"))!;
+        plain.Schemas.Should().OnlyContain(s => s.Kind == ScopeSchemaLinkKind.Candidate, "FR-011 names no schema");
+        var person = (await service.DetailAsync(project, "story:Person/003-person/US1", default, "env-dev"))!;
+        person.Schemas.Should().ContainSingle().Which.Should().Match<ScopeSchemaLink>(s => s.SchemaKind == "GraphQlSchema" && s.Kind == ScopeSchemaLinkKind.Candidate
+            && s.Explanation.Contains("M2LB.Person.Api"), "a service of the module references it; the generic name \"schema\" never counts as named");
+
+        var noContracts = (await Service(db).DetailAsync(project, "req:SkoleService/010-xsd/FR-010", default, "env-dev"))!;
+        noContracts.Should().Match<ScopeItemDetail>(d => !d.SchemasAssessed && d.Schemas.Count == 0, "without contract evidence: schema unavailable, not none");
+    }
 }

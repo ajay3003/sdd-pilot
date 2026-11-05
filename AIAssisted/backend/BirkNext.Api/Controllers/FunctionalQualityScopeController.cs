@@ -26,8 +26,8 @@ public sealed class FunctionalQualityScopeController(FunctionalQualityScopeServi
         Ok(await scopes.CandidatesAsync(projectId, includeTechnical, search, take, ct));
 
     [HttpGet("items/detail")]
-    public async Task<IActionResult> Detail(Guid projectId, [FromQuery] string key, CancellationToken ct) =>
-        await scopes.DetailAsync(projectId, key, ct) is { } detail ? Ok(detail) : NotFound();
+    public async Task<IActionResult> Detail(Guid projectId, [FromQuery] string key, [FromQuery] string? environment, CancellationToken ct) =>
+        await scopes.DetailAsync(projectId, key, ct, environment) is { } detail ? Ok(detail) : NotFound();
 
     [HttpPost("scopes")]
     public Task<IActionResult> Create(Guid projectId, ScopeDefinition definition, CancellationToken ct) =>

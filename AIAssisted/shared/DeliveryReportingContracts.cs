@@ -674,6 +674,9 @@ public sealed record WeeklyDeliveryReport
     /// <summary>The work-item interpretation rule set the report was classified with (BirkNext.Interpretation.WorkItemInterpreter.RuleSetVersion);
     /// null in reports frozen before the shared engine. A frozen report is never reclassified with a newer rule set.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? InterpretationRuleSet { get; init; }
+    /// <summary>The quality-classification rule set (FunctionalQualityClassifier.RuleSetVersion) in force when the report was frozen; null in reports
+    /// frozen before it was recorded, which are viewed with the legacy rules (no Integration category) — never silently reclassified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? QualityRuleSet { get; init; }
     /// <summary>Set when the report covers one Source and/or Functional scope only (exact ids, frozen); null = the whole comparison.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryReportScope? Scope { get; init; }
 }

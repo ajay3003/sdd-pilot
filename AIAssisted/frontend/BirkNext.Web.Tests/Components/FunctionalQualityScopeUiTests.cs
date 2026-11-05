@@ -178,13 +178,13 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
     public void Opening_an_item_loads_detail_lazily_and_saves_the_test_design()
     {
         var api = Api(Resolution(new ScopeDefinition { Name = "SkoleService", BuiltIn = true }, Story), new AvailableScope("module:SkoleService", "SkoleService", "Module", "1"));
-        api.Setup(a => a.DetailAsync(Project, Story.Key, It.IsAny<CancellationToken>()))
+        api.Setup(a => a.DetailAsync(Project, Story.Key, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ScopeItemDetail(Story, "Skoletjenesten tar imot en rapport og lagrer fraværet", [Criterion], [], null));
         api.Setup(a => a.AssessAsync(Project, It.IsAny<TestDesignAssessmentView>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid _, TestDesignAssessmentView a, CancellationToken _) => (a with { ReviewedAt = DateTimeOffset.UnixEpoch }, (string?)null));
         var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project));
         cut.WaitForElement("[data-testid=fqs-open]");
-        api.Verify(a => a.DetailAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never(), "detail is lazy");
+        api.Verify(a => a.DetailAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never(), "detail is lazy");
 
         cut.Find("[data-testid=fqs-open]").Click();
         cut.WaitForElement("[data-testid=fqs-detail]").TextContent.Should().Contain("lagrer fraværet").And.Contain("AC-1");
@@ -255,7 +255,7 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
     {
         var builtIn = new ScopeDefinition { Name = "Skolenærvær", Roots = ["profile:skolenaervaer"], BuiltIn = true };
         var api = Api(Resolution(builtIn, Story, Criterion, Scenario, Privacy, PersonStory), new AvailableScope("profile:skolenaervaer", "Skolenærvær", "Domain flow", "2 module(s)"));
-        api.Setup(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<CancellationToken>())).ReturnsAsync(new ScopeItemDetail(Privacy, LongText, [Criterion], ["1 test(s) explicitly verify US2."], null)
+        api.Setup(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new ScopeItemDetail(Privacy, LongText, [Criterion], ["1 test(s) explicitly verify US2."], null)
         {
             TestsAssessed = true, Tests = [Link("Sends_report", ScopeTestLinkKind.Explicit), Link("Maybe_report", ScopeTestLinkKind.Candidate), Link("Not_report", ScopeTestLinkKind.Rejected, "Rejected")],
         });
@@ -358,6 +358,172 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
         cut.Find("[data-testid=fqs-review-reject]").Click();
         review.Verify(r => r.DecideAsync("env-dev", It.Is<ReviewDecisionRequest>(q => q.TargetKind == ReviewTargetKind.Relation
             && q.TargetKey == "tests/Maybe_report->Verifies->US1" && q.Outcome == ReviewDecisionOutcome.Rejected), It.IsAny<CancellationToken>()), Times.Once());
-        api.Verify(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<CancellationToken>()), Times.Exactly(2), "the classification is re-read from the registry, never patched locally");
+        api.Verify(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(2), "the classification is re-read from the registry, never patched locally");
+    }
+
+    // ── Gap 2: evidence environment; Gap 3: TRX execution per linked test; Gap 5: schemas; Gap 1: session restore ──────────────────────
+
+    private static readonly ScopeEvidenceContext TwoEnvironments = new("env-dev", false,
+        [new ScopeEvidenceEnvironment("env-dev", 20, 12), new ScopeEvidenceEnvironment("env-qa", 4, 3)], "Source relationships interpreted for this environment's source snapshots.");
+
+    private (IRenderedComponent<FunctionalQualityScopePanel> Cut, Mock<IFunctionalQualityScopeApiService> Api) EvidenceJourney(ScopeItemDetail? detail = null,
+        ScopeEvidenceContext? evidence = null, BirkNext.Web.Models.SddLifecycleState? lifecycle = null, ExplorerViewStateStore? store = null, string? startUrl = null)
+    {
+        if (store is not null) Services.AddSingleton(store);
+        var builtIn = new ScopeDefinition { Name = "Skolenærvær", Roots = ["profile:skolenaervaer"], BuiltIn = true };
+        var resolution = Resolution(builtIn, Story, Criterion, Privacy) with { Evidence = evidence ?? TwoEnvironments };
+        var api = Api(resolution, new AvailableScope("profile:skolenaervaer", "Skolenærvær", "Domain flow", "2 module(s)"));
+        api.Setup(a => a.ResolveAsync(Project, It.Is<ScopeQuery>(q => q.Environment == "env-qa"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((resolution with { Evidence = TwoEnvironments with { Environment = "env-qa" } }, (string?)null));
+        api.Setup(a => a.DetailAsync(Project, Privacy.Key, It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(detail ?? new ScopeItemDetail(Privacy, "Ikke vis kode 6", [], [], null)
+        {
+            TestsAssessed = true, Evidence = evidence ?? TwoEnvironments,
+        });
+        if (lifecycle is not null)
+        {
+            var repo = new Mock<IWorkspaceArtifactRepository>();
+            repo.Setup(r => r.SddLifecycle).Returns(lifecycle);
+            Services.AddSingleton(repo.Object);
+        }
+        if (startUrl is not null) Services.GetRequiredService<NavigationManager>().NavigateTo(startUrl);
+        var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project));
+        cut.WaitForElement("[data-testid=fqs-item]");
+        return (cut, api);
+    }
+
+    [Fact]
+    public void The_evidence_environment_is_explicit_and_switching_it_re_reads_coverage_and_the_open_item_for_that_environment()
+    {
+        var (cut, api) = EvidenceJourney();
+        var nav = Services.GetRequiredService<NavigationManager>();
+        cut.Find("[data-testid=fqs-environment]").QuerySelectorAll("option").Select(o => o.GetAttribute("value")).Should().Equal(["env-dev", "env-qa", ScopeEnvironments.All]);
+        cut.Find("[data-testid=fqs-evidence-context]").GetAttribute("data-environment").Should().Be("env-dev");
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-detail]");
+
+        cut.Find("[data-testid=fqs-environment]").Change("env-qa");
+        api.Verify(a => a.ResolveAsync(Project, It.Is<ScopeQuery>(q => q.Environment == "env-qa"), It.IsAny<CancellationToken>()), Times.Once(), "coverage is re-read for QA");
+        api.Verify(a => a.DetailAsync(Project, Privacy.Key, "env-qa", It.IsAny<CancellationToken>()), Times.Once(), "the open item's tests and schemas follow the environment");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=fqs-evidence-context]").GetAttribute("data-environment").Should().Be("env-qa"));
+        nav.Uri.Should().Contain("fq-env=env-qa");
+    }
+
+    [Fact]
+    public void An_aggregate_over_all_environments_is_labelled_as_not_evidence_from_one_environment()
+    {
+        var all = TwoEnvironments with { Environment = null, CrossEnvironment = true, Basis = "All environments, aggregated." };
+        var (cut, _) = EvidenceJourney(evidence: all);
+        cut.Find("[data-testid=fqs-evidence-context]").ClassList.Should().Contain("fqs-cross-env");
+        cut.Find("[data-testid=fqs-cross-env-warning]").TextContent.Should().Contain("not evidence from any one environment");
+    }
+
+    [Fact]
+    public void Several_environments_and_none_chosen_ask_for_a_choice_instead_of_picking_one()
+    {
+        var none = TwoEnvironments with { Environment = null };
+        var (cut, _) = EvidenceJourney(new ScopeItemDetail(Privacy, "x", [], [], null) { TestsAssessed = false, Evidence = none }, none);
+        cut.Find("[data-testid=fqs-environment]").QuerySelectorAll("option")[0].TextContent.Should().Be("Choose an environment");
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-tests-not-assessed]").TextContent.Should().Contain("choose an evidence environment");
+    }
+
+    [Fact]
+    public void Linked_tests_show_their_trx_result_with_run_metadata_and_a_failure_is_traceable_to_its_run()
+    {
+        var lifecycle = new BirkNext.Web.Models.SddLifecycleState();
+        var artifact = new BirkNext.Web.Models.SddTestResultArtifact { FileName = "skole-dev.trx" };
+        var run = new BirkNext.Web.Models.SddTestRunEvidence { ArtifactId = artifact.ArtifactId, ProviderRunId = "run-42", EnvironmentReference = "env-dev" };
+        lifecycle.TestResultArtifacts.Add(artifact);
+        lifecycle.TestRuns.Add(run);
+        lifecycle.TestExecutions.Add(new BirkNext.Web.Models.SddTestExecutionEvidence
+        {
+            TestId = "tests/Sends_report", TestName = "Sends_report", Result = "Failed", ExecutionState = "Completed", CorrelationState = "Confirmed", RunId = run.RunId,
+            ArtifactId = artifact.ArtifactId, EnvironmentReference = "env-dev", ExecutedAt = new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero), ErrorMessage = "Expected 202",
+        });
+        var detail = new ScopeItemDetail(Privacy, "Ikke vis kode 6", [], [], null)
+        {
+            TestsAssessed = true, Evidence = TwoEnvironments,
+            Tests = [Link("Sends_report", ScopeTestLinkKind.Explicit), Link("Maybe_report", ScopeTestLinkKind.Candidate)],
+        };
+        var (cut, _) = EvidenceJourney(detail, lifecycle: lifecycle);
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-tests-explicit]");
+        cut.Find("[data-testid=fqs-tests-explicit] [data-testid=fqs-test-run]").TextContent.Should().Contain("Failed");
+        cut.Find("[data-testid=fqs-tests-candidates] [data-testid=fqs-test-run]").TextContent.Should().Contain("Not executed",
+            "results exist, none of them is this candidate test in this environment");
+        cut.Find("[data-testid=fqs-tests-execution-summary]").TextContent.Should().Contain("1 failed").And.Contain("1 not executed");
+
+        cut.FindAll("[data-testid=fqs-test-open]")[0].Click();
+        cut.Find("[data-testid=fqs-test-execution]").GetAttribute("data-state").Should().Be("Observed");
+        cut.Find("[data-testid=fqs-test-execution]").TextContent.Should().Contain("Failed in run run-42");
+        var row = cut.Find("[data-testid=fqs-test-runs] [data-testid=fqs-run-row]");
+        row.GetAttribute("data-outcome").Should().Be("Failed");
+        row.GetAttribute("data-run").Should().Be(run.RunId.ToString());
+        row.TextContent.Should().Contain("run-42").And.Contain("skole-dev.trx");
+        cut.Find("[data-testid=fqs-test-selection-rule]").TextContent.Should().Contain("newest run");
+        cut.Find("[data-testid=fqs-test-evidence-kind]").TextContent.Should().Contain("discovery, not execution");
+    }
+
+    [Fact]
+    public void Without_imported_results_execution_is_shown_as_unavailable_not_as_untested_or_passed()
+    {
+        var detail = new ScopeItemDetail(Privacy, "x", [], [], null) { TestsAssessed = true, Evidence = TwoEnvironments, Tests = [Link("Sends_report", ScopeTestLinkKind.Explicit)] };
+        var (cut, _) = EvidenceJourney(detail, lifecycle: new BirkNext.Web.Models.SddLifecycleState());
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-tests-execution-summary]").TextContent.Should().Contain("execution evidence unavailable");
+        cut.Find("[data-testid=fqs-test-run]").TextContent.Should().Contain("Execution evidence unavailable");
+    }
+
+    [Fact]
+    public void Schemas_separate_linked_from_candidate_never_claim_validation_and_open_the_exact_stored_contract()
+    {
+        var snapshot = Guid.NewGuid();
+        ScopeSchemaLink Schema(string name, string kind, ScopeSchemaLinkKind link, string path) => new($"{kind}:{name}", name, kind, kind == "XmlSchema" ? "https://bufdir.no/x" : null, "2.0.1",
+            "m2lb-language", snapshot, path, link, link == ScopeSchemaLinkKind.Explicit ? "Named in the requirement" : "Same module (SkoleService)", link == ScopeSchemaLinkKind.Explicit ? "High" : "Low",
+            link == ScopeSchemaLinkKind.Explicit ? "schema.named-in-requirement" : "schema.module-ownership", "why", ScopeSchemaValidation.NotPerformed, "No validation result is linked.", "env-dev");
+        var detail = new ScopeItemDetail(Privacy, "x", [], [], null)
+        {
+            TestsAssessed = true, Evidence = TwoEnvironments, SchemasAssessed = true,
+            Schemas = [Schema("bufdir.skolenaervaer.v2.0.1", "XmlSchema", ScopeSchemaLinkKind.Explicit, "xsd/bufdir.skolenaervaer.v2.0.1.xsd"),
+                       Schema("M2LB Skole API", "OpenApi", ScopeSchemaLinkKind.Candidate, "SkoleService/autodoc/openapi.yaml")],
+        };
+        var (cut, _) = EvidenceJourney(detail);
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        var linked = cut.WaitForElement("[data-testid=fqs-schemas-linked] [data-testid=fqs-schema]");
+        linked.QuerySelector("[data-testid=fqs-schema-kind]")!.TextContent.Should().EndWith("Explicitly linked");
+        linked.QuerySelector("[data-testid=fqs-schema-validation]")!.TextContent.Should().Contain("Validation not performed");
+        linked.QuerySelector("[data-testid=fqs-schema-source]")!.TextContent.Should().Contain("xsd/bufdir.skolenaervaer.v2.0.1.xsd").And.Contain("m2lb-language");
+        linked.QuerySelector("[data-testid=fqs-schema-open]")!.GetAttribute("href").Should()
+            .Be($"schema-studio?snapshot={snapshot}&contract={Uri.EscapeDataString("xsd/bufdir.skolenaervaer.v2.0.1.xsd")}&environment=env-dev");
+        cut.Find("[data-testid=fqs-schemas-candidates] [data-testid=fqs-schema-kind]").TextContent.Should().Contain("Candidate association");
+        cut.Find("[data-testid=fqs-schemas-candidates] [data-testid=fqs-schema-open]").GetAttribute("href").Should().StartWith($"source-analysis?snapshot={snapshot}");
+    }
+
+    [Fact]
+    public void Without_contract_evidence_schemas_are_unavailable_not_none()
+    {
+        var (cut, _) = EvidenceJourney();
+        cut.Find($"[data-key='{Privacy.Key}'] [data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-schemas-not-assessed]").TextContent.Should().Contain("not \"none\"");
+    }
+
+    [Fact]
+    public void Returning_through_a_plain_link_restores_this_sessions_filter_environment_and_selection()
+    {
+        var store = new ExplorerViewStateStore();
+        store.Set($"fqs|{Project}", new Dictionary<string, object?> { ["fq-quality"] = "Privacy", ["fq-item"] = Privacy.Key, [ScopeFilterState.EnvironmentKey] = "env-dev" });
+        var (cut, api) = EvidenceJourney(store: store, startUrl: "delivery-reporting?tab=scope");
+        cut.FindAll("[data-testid=fqs-item]").Should().ContainSingle().Which.GetAttribute("data-key").Should().Be(Privacy.Key);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=fqs-detail]").GetAttribute("data-key").Should().Be(Privacy.Key));
+        api.Verify(a => a.ResolveAsync(Project, It.Is<ScopeQuery>(q => q.Environment == "env-dev"), It.IsAny<CancellationToken>()), Times.Once());
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("fq-quality=Privacy").And.Contain("fq-env=env-dev");
+    }
+
+    [Fact]
+    public void The_quality_filter_offers_integration_after_functional()
+    {
+        var (cut, _) = EvidenceJourney();
+        cut.Find("[data-testid=fqs-filter-category]").QuerySelectorAll("option").Skip(1).Take(2).Select(o => o.GetAttribute("value"))
+            .Should().Equal([nameof(QualityCategory.Functional), nameof(QualityCategory.Integration)]);
     }
 }

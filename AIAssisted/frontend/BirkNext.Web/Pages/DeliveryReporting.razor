@@ -20,7 +20,7 @@
 
 <div class="sd-workspace dlr-page" data-testid="dlr-page" aria-busy="@(_loaded ? "false" : "true")">
     @* One header for every tab (sticky while scrolling): which report, which period, what it holds, and the project/import actions. *@
-    <div class="dlr-sticky" data-testid="dlr-sticky-header">
+    <div class="dlr-sticky" data-testid="dlr-sticky-header" data-sticky-offset>
     <header class="dlr-header">
         <div>
             <h1 class="dlr-page-title" data-testid="dlr-page-title">Delivery Reports</h1>
@@ -742,7 +742,8 @@
     [SupplyParameterFromQuery(Name = "item")] public string? ItemQuery { get; set; }
     private bool _drillDown;
 
-    private void SelectWorkItem(string? id) => Nav.NavigateTo($"{TabHref("stories")}{(id is null ? "" : "&item=" + Uri.EscapeDataString(id))}");
+    /// <summary>A selection is a history entry (Back returns to the previous item); the explorer's own filters (wi-*) stay in the URL.</summary>
+    private void SelectWorkItem(string? id) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("item", id));
 
     private bool _loaded, _busy;
     private string? _error, _notice;

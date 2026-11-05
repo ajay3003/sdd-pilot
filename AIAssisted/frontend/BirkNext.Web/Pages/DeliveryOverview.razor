@@ -275,18 +275,29 @@
             </div>
             <p class="do-muted dd-trend" data-testid="dd-trend">Trend available after more delivery snapshots — a baseline and a current snapshot are two points, not a trend.</p>
 
-            <div class="do-explore-mode" role="radiogroup" aria-label="Explore" data-testid="do-explore-mode">
-                <label class="@(Explore == "features" ? "is-active" : "")"><input type="radio" name="do-explore" checked="@(Explore == "features")" @onchange="@(() => SetExplore("features"))" data-testid="do-explore-features" /> Features</label>
-                <label class="@(Explore == "items" ? "is-active" : "")"><input type="radio" name="do-explore" checked="@(Explore == "items")" disabled="@(_report is null)" @onchange="@(() => SetExplore("items"))" data-testid="do-explore-items" /> Work items</label>
-                @if (_report is null) { <span class="do-muted">Work items need a generated report.</span> }
-            </div>
-            @if (Explore == "items" && _report is not null)
+            @if (_report is not null)
             {
-                <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" Options="BirkNext.Web.Services.DeliveryExplorerOptions.CurrentState"
-                    ProjectId="_projectId" SelectedId="@ItemQuery" OnSelect="SelectItem" />
+                @* One explorer for features and work items (the same component Delivery Reports → Stories uses, in current-state mode): the Features
+                   view is the backlog list; Hierarchy, List and Phases show the same canonical items. *@
+                var options = ExplorerOptions(view, _report);
+                <p class="do-muted" role="status" data-testid="do-count">@options.FeatureKeys!.Count of @view.Items.Count features @(Scoped ? "in this scope " : "")· blocked, needs review, new and changed first</p>
+                <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" Options="options"
+                    ProjectId="_projectId" SelectedId="@ItemQuery" OnSelect="SelectItem" OnOpenFeature="OpenFeature" />
+                @if (options.FeatureKeys.Count == 0 && view.Items.Count > 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
+                @if (view.RemovedFeatures.Count > 0)
+                {
+                    <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
+                }
+                <p class="do-links">
+                    @if (view.Source.ReportId is { } openReport)
+                    {
+                        <a href="@($"delivery-reporting?project={_projectId}&tab=stories&report={openReport}")" data-testid="do-open-report">Open the report (changes between snapshots)</a>
+                    }
+                </p>
             }
             else
             {
+            @* No report yet (snapshot only): the explorer needs a frozen report's hierarchy, so the backlog is listed from the snapshot until one exists. *@
             var keys = Filtered(view).Select(i => i.FeatureKey).ToHashSet(StringComparer.Ordinal);
             var rows = DeliveryDashboard.Rows(view, _report).Where(r => keys.Contains(r.Item.FeatureKey)).ToList();
             <p class="do-muted" role="status" data-testid="do-count">@rows.Count of @view.Items.Count features @(Scoped ? "in this scope " : "")shown · blocked, needs review, new and changed first</p>
@@ -345,13 +356,36 @@
     /// <summary>Work type: absent = Non-technical (the overview's default: functional and quality value), "All", "Technical".</summary>
     [SupplyParameterFromQuery(Name = "work")] public string? WorkQuery { get; set; }
     [SupplyParameterFromQuery(Name = "quality")] public string? QualityQuery { get; set; }
-    /// <summary>Explore view: absent = the feature list; "items" = the shared work-item explorer in current-state mode.</summary>
-    [SupplyParameterFromQuery(Name = "explore")] public string? ExploreQuery { get; set; }
     /// <summary>The selected work item (canonical id, e.g. f:frontend::004-x) — shared with Delivery Reports → Stories.</summary>
     [SupplyParameterFromQuery(Name = "item")] public string? ItemQuery { get; set; }
 
     private const string ChecklistHelp = "Checked tasks represent source checklist status, not confirmed implementation or QA verification.";
-    private string Explore => ExploreQuery == "items" ? "items" : "features";
+
+    private (DeliveryBacklogView View, WeeklyDeliveryReport Report, string Status, string Attention, string Search, DeliveryScopeView? Scope)? _optionsFor;
+    private BirkNext.Web.Services.DeliveryExplorerOptions? _options;
+
+    /// <summary>The explorer's current-state options with the backlog facts and the page's filters. Built once per data/filter change: the explorer
+    /// rebuilds its items when its options change, so they must not be recreated on every render.</summary>
+    private BirkNext.Web.Services.DeliveryExplorerOptions ExplorerOptions(DeliveryBacklogView view, WeeklyDeliveryReport report)
+    {
+        var key = (view, report, _status, _attention, _search, _scopeView);
+        if (_options is not null && _optionsFor is { } built && ReferenceEquals(built.View, view) && ReferenceEquals(built.Report, report) && built.Status == _status
+            && built.Attention == _attention && built.Search == _search && ReferenceEquals(built.Scope, _scopeView)) return _options;
+        var rows = DeliveryDashboard.Rows(view, report).ToDictionary(r => r.Item.FeatureKey, StringComparer.Ordinal);
+        _options = BirkNext.Web.Services.DeliveryExplorerOptions.CurrentState with
+        {
+            Backlog = rows,
+            Why = _scopeView?.Members.GroupBy(m => m.FeatureKey).ToDictionary(g => g.Key, g => g.First().Why, StringComparer.Ordinal),
+            FeatureKeys = Filtered(view).Select(i => i.FeatureKey).ToHashSet(StringComparer.Ordinal),
+        };
+        _optionsFor = key;
+        return _options;
+    }
+
+    /// <summary>The explorer's own state (wi-* keys) of the current URL: kept when the page's filters change.</summary>
+    private IEnumerable<string> ExplorerQuery() =>
+        BirkNext.Web.Services.DeliveryExplorerState.Parse(Nav.Uri).Where(kv => kv.Key.StartsWith("wi-", StringComparison.Ordinal) && kv.Value is { Length: > 0 })
+            .Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value!)}");
 
     private bool _loaded, _loadingProject;
     private string? _error, _scopeError;
@@ -532,8 +566,8 @@
         var at = keep ? attention ?? _attention : attention;
         if (at != AllFilter) Add("attention", at);
         if (keep) Add("q", _search);
-        if (keep && Explore == "items") Add("explore", "items");
-        if (keep && Explore == "items") Add("item", ItemQuery);
+        if (keep) Add("item", ItemQuery);
+        if (keep) parts.AddRange(ExplorerQuery());
         Add("feature", feature);
         return "delivery-overview?" + string.Join('&', parts);
     }
@@ -567,20 +601,11 @@
 
     private void OpenFeature(string key) => Nav.NavigateTo(Url(feature: key));
 
-    /// <summary>Switching the explore view keeps every filter; the work-item selection belongs to the work-item view only.</summary>
-    private void SetExplore(string explore)
-    {
-        var url = Url();
-        url = string.Join('&', url.Split('&').Where(part => !part.StartsWith("explore=", StringComparison.Ordinal) && !part.StartsWith("item=", StringComparison.Ordinal)));
-        Nav.NavigateTo(explore == "items" ? url + "&explore=items" : url);
-    }
-
-    /// <summary>A selection is a history entry (back returns to the previous item); filters stay in the URL.</summary>
+    /// <summary>A selection is a history entry (back returns to the previous item); filters and the explorer's state stay in the URL.</summary>
     private void SelectItem(string? id)
     {
         if (id is null || id == ItemQuery) return;
-        var url = string.Join('&', Url().Split('&').Where(part => !part.StartsWith("item=", StringComparison.Ordinal)));
-        Nav.NavigateTo($"{url}&item={Uri.EscapeDataString(id)}");
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("item", id));
     }
 
     private void CloseFeature() => Nav.NavigateTo(Url());

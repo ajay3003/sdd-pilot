@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BirkNext.Api.Data.CanonicalInterpretation;
 using BirkNext.Api.Data.DeliveryReporting;
 using BirkNext.Api.Services.IntegrationTopology;
@@ -70,8 +71,9 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         if (definition.IncludeRelated || query.IncludeRelated)
             foreach (var r in related.Where(r => r.Included && !included.ContainsKey(r.Module))) included[r.Module] = (r.Relation, r.Reason);
 
-        var coverage = await CoverageIndexAsync(ct);
-        if (coverage is null) limitations.Add("No canonical test evidence is interpreted yet: coverage is Not assessed (Correlation Review → Interpret the Source Analysis snapshots).");
+        var evidence = await EvidenceContextAsync(query.Environment, ct);
+        var coverage = evidence.Applied ? await CoverageIndexAsync(evidence, ct) : null;
+        if (coverage is null) limitations.Add(CoverageLimitation(evidence));
         var assessments = (await db.TestDesignAssessments.AsNoTracking().Where(a => a.ProjectId == projectId).ToListAsync(ct)).ToDictionary(a => a.ItemKey, StringComparer.Ordinal);
         var excludes = definition.ExplicitExcludes.ToHashSet(StringComparer.Ordinal);
         var includes = definition.ExplicitIncludes.ToHashSet(StringComparer.Ordinal);
@@ -111,7 +113,42 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         var ordered = items.OrderBy(i => i.Relation).ThenBy(i => i.Module, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.FeatureKey, StringComparer.Ordinal)
             .ThenBy(i => i.ParentKey ?? i.Key, StringComparer.Ordinal).ThenBy(i => i.Type).ThenBy(i => i.Key, StringComparer.Ordinal).ToList();
         return new(definition, snapshot.Value.Id, snapshot.Value.Label, FunctionalQualityClassifier.RuleSetVersion, ordered, Summary(ordered, technicalExcluded), related, limitations,
-            FunctionalQualityScopeText.Precedence);
+            FunctionalQualityScopeText.Precedence) { Evidence = evidence };
+    }
+
+    private static string CoverageLimitation(ScopeEvidenceContext evidence) => evidence switch
+    {
+        { Available.Count: 0 } => "No canonical test evidence is interpreted yet: coverage is Not assessed (Correlation Review → Interpret the Source Analysis snapshots).",
+        { Applied: false } => $"Test evidence is interpreted for {evidence.Available.Count} environments: choose an environment (or All environments, aggregated) to see coverage. " +
+            "Evidence from one environment never answers for another.",
+        _ => $"No canonical test evidence is interpreted for environment {evidence.Environment}: coverage is Not assessed there (other environments are not used in its place).",
+    };
+
+    /// <summary>
+    /// The environment whose canonical evidence is used. Each canonical interpretation scope is one Target Environment, so a relation always belongs to
+    /// exactly one environment; nothing is assigned to an environment it was not interpreted for. <paramref name="requested"/>: an environment id,
+    /// <see cref="ScopeEnvironments.All"/> (aggregated, labelled), or null — the only environment with evidence when there is exactly one.
+    /// </summary>
+    public async Task<ScopeEvidenceContext> EvidenceContextAsync(string? requested, CancellationToken ct)
+    {
+        IReadOnlyList<ScopeEvidenceEnvironment> available = [];
+        if (canonical is not null)
+            try
+            {
+                var rows = await canonical.Relations.AsNoTracking().Where(r => r.Active && r.RelationType == nameof(CanonicalRelationType.Verifies))
+                    .Select(r => new { r.Scope, r.SourceEntityId }).ToListAsync(ct);
+                available = [.. rows.GroupBy(r => r.Scope, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
+                    .Select(g => new ScopeEvidenceEnvironment(g.Key, g.Count(), g.Select(r => r.SourceEntityId).Distinct().Count()))];
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { /* canonical store unavailable */ }
+        if (requested == ScopeEnvironments.All)
+            return new(null, true, available, "All environments, aggregated: every test relationship keeps its own environment — this is not evidence from one environment.");
+        if (requested is { Length: > 0 })
+            return new(requested, false, available, available.Any(a => a.Id == requested)
+                ? "Source relationships interpreted for this environment's source snapshots — discovery, not execution."
+                : "No test evidence is interpreted for this environment.");
+        if (available.Count == 1) return new(available[0].Id, false, available, "The only environment with interpreted test evidence — source relationships, not executions.");
+        return new(null, false, available, available.Count == 0 ? "No test evidence is interpreted for any environment yet." : $"Test evidence exists for {available.Count} environments — choose one.");
     }
 
     /// <summary>
@@ -142,8 +179,8 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
     }
 
     /// <summary>Every item of the newest snapshot (all modules), for the custom-scope builder's "available items" list.</summary>
-    public Task<ScopeResolution> AllItemsAsync(Guid projectId, bool includeTechnical, CancellationToken ct) =>
-        ResolveAsync(projectId, new ScopeQuery(null, null, false, includeTechnical, new ScopeDefinition { Name = "All items", Roots = ["*"] }), ct);
+    public Task<ScopeResolution> AllItemsAsync(Guid projectId, bool includeTechnical, CancellationToken ct, string? environment = null) =>
+        ResolveAsync(projectId, new ScopeQuery(null, null, false, includeTechnical, new ScopeDefinition { Name = "All items", Roots = ["*"] }, environment), ct);
 
     /// <summary>The builder's candidate list: top-level items (stories, scenarios, requirements) matching <paramref name="search"/>, at most
     /// <paramref name="take"/>, so the browser never downloads the whole project to offer a few rows.</summary>
@@ -157,13 +194,13 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         return all with { Items = items };
     }
 
-    public async Task<ScopeItemDetail?> DetailAsync(Guid projectId, string key, CancellationToken ct)
+    public async Task<ScopeItemDetail?> DetailAsync(Guid projectId, string key, CancellationToken ct, string? environment = null)
     {
         var (snapshot, features) = await LatestAsync(projectId, ct);
         if (snapshot is null) return null;
         var raw = await ItemsAsync(snapshot.Value.Id, features, ct);
         if (raw.FirstOrDefault(r => r.Key == key) is not { } item) return null;
-        var all = await AllItemsAsync(projectId, true, ct);
+        var all = await AllItemsAsync(projectId, true, ct, environment);
         var view = all.Items.FirstOrDefault(i => i.Key == key);
         if (view is null) return null;
         var children = all.Items.Where(i => i.ParentKey == key).ToList();
@@ -171,10 +208,13 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         var id = CorrelationRules.NormalizeRequirement(item.DisplayId) ?? item.DisplayId;
         var sharedId = raw.Where(r => string.Equals(CorrelationRules.NormalizeRequirement(r.DisplayId) ?? r.DisplayId, id, StringComparison.OrdinalIgnoreCase))
             .Select(r => r.Feature.Id).Distinct().Count() > 1;
-        var tests = await TestLinksAsync(CorrelationRules.Scoped(item.Feature.Module, item.Feature.FeatureKey, id), id, sharedId, ct);
+        var evidence = all.Evidence ?? await EvidenceContextAsync(environment, ct);
+        var scopedKey = CorrelationRules.Scoped(item.Feature.Module, item.Feature.FeatureKey, id);
+        var tests = evidence.Applied ? await TestLinksAsync(scopedKey, id, sharedId, evidence, ct) : null;
+        var schemas = evidence.Applied ? await SchemaLinksAsync(item, scopedKey, evidence, ct) : null;
         return new(view, item.Text, children, view.CoverageDetail is { } d ? [d] : [], assessment is null ? null : View(assessment))
         {
-            Tests = tests ?? [], TestsAssessed = tests is not null,
+            Tests = tests ?? [], TestsAssessed = tests is not null, Schemas = schemas ?? [], SchemasAssessed = schemas is not null, Evidence = evidence,
         };
     }
 
@@ -315,15 +355,18 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
     private static ScopeArtifactType TypeOfKey(string key) => key.Split(':')[0] switch { "ac" => ScopeArtifactType.AcceptanceCriterion, "req" => ScopeArtifactType.Requirement, _ => ScopeArtifactType.UserStory };
     private static string ModuleOfKey(string key) => key.Contains(':') ? key[(key.IndexOf(':') + 1)..].Split('/')[0] : "";
 
-    /// <summary>Canonical VERIFIES index: requirement/story identity → (explicit, candidate) test counts. Null when nothing is interpreted.</summary>
-    private async Task<Dictionary<string, (int Explicit, int Candidate)>?> CoverageIndexAsync(CancellationToken ct)
+    /// <summary>Canonical VERIFIES index of one environment (or all, aggregated): requirement/story identity → (explicit, candidate) test counts.
+    /// Null when nothing is interpreted there.</summary>
+    private async Task<Dictionary<string, (int Explicit, int Candidate)>?> CoverageIndexAsync(ScopeEvidenceContext evidence, CancellationToken ct)
     {
         if (canonical is null) return null;
+        var (allEnvironments, environment) = (evidence.CrossEnvironment, evidence.Environment);
         try
         {
             var rows = await (from r in canonical.Relations.AsNoTracking()
                               join t in canonical.Entities.AsNoTracking() on r.TargetEntityId equals t.Id
                               where r.Active && r.RelationType == nameof(CanonicalRelationType.Verifies) && r.ReviewState != nameof(RelationReviewState.Rejected)
+                                    && (allEnvironments || r.Scope == environment)
                               select new { t.IdentityKey, r.Resolution, r.ReviewState }).ToListAsync(ct);
             if (rows.Count == 0) return null;
             return rows.GroupBy(r => r.IdentityKey, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key,
@@ -338,16 +381,18 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
     /// The individual VERIFIES relations behind an item's coverage, classified exactly as <see cref="Coverage"/> counts them: the feature pack's own id first;
     /// an unscoped id several features share is never explicit. Null when nothing is interpreted. Read-only: decisions go to the shared registry.
     /// </summary>
-    private async Task<IReadOnlyList<ScopeTestLink>?> TestLinksAsync(string scopedKey, string id, bool sharedId, CancellationToken ct)
+    private async Task<IReadOnlyList<ScopeTestLink>?> TestLinksAsync(string scopedKey, string id, bool sharedId, ScopeEvidenceContext evidence, CancellationToken ct)
     {
         if (canonical is null) return null;
+        var (allEnvironments, environment) = (evidence.CrossEnvironment, evidence.Environment);
         try
         {
-            if (!await canonical.Relations.AsNoTracking().AnyAsync(r => r.RelationType == nameof(CanonicalRelationType.Verifies), ct)) return null;
+            if (!await canonical.Relations.AsNoTracking().AnyAsync(r => r.RelationType == nameof(CanonicalRelationType.Verifies) && (allEnvironments || r.Scope == environment), ct)) return null;
             var rows = await (from r in canonical.Relations.AsNoTracking()
                               join t in canonical.Entities.AsNoTracking() on r.TargetEntityId equals t.Id
                               join s in canonical.Entities.AsNoTracking() on r.SourceEntityId equals s.Id
                               where r.Active && r.RelationType == nameof(CanonicalRelationType.Verifies) && (t.IdentityKey == scopedKey || t.IdentityKey == id)
+                                    && (allEnvironments || r.Scope == environment)
                               select new { Relation = r, Target = t.IdentityKey, Test = s }).ToListAsync(ct);
             // The feature pack's own requirement wins: an unscoped relation is only used when the pack has none.
             var scoped = rows.Where(x => string.Equals(x.Target, scopedKey, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -372,6 +417,112 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
             }).OrderBy(t => t.Kind).ThenBy(t => t.TestName, StringComparer.OrdinalIgnoreCase)];
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { return null; }
+    }
+
+    private static readonly HashSet<string> GenericContractNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "schema", "schema.graphql", "schema.json", "openapi", "openapi.yaml", "openapi.yml", "openapi.json", "swagger.json", "graphql-schema", "queries", "mutations",
+    };
+
+    /// <summary>
+    /// The schemas and contracts associated with one item, from the canonical contract evidence of the same environment (Contract ← ContractVersion ←
+    /// ContractOccurrence, Service —References→ ContractVersion):
+    /// <list type="bullet">
+    /// <item>Confirmed / Explicit: a canonical relation between the item and the contract (a person's confirmation, or an explicit/derived relation).</item>
+    /// <item>Explicit: the item's own text names the contract (its name, namespace or file name — never a generic name such as "schema.graphql").</item>
+    /// <item>Candidate: the contract belongs to the item's module (its file lies under the module, or a service of the module references it). The item
+    /// does not say it uses it: a suggestion, never a statement.</item>
+    /// </list>
+    /// No association carries validation: an existing schema is not a validation result. Null when no contract evidence is interpreted there.
+    /// </summary>
+    private async Task<IReadOnlyList<ScopeSchemaLink>?> SchemaLinksAsync(Raw item, string scopedKey, ScopeEvidenceContext evidence, CancellationToken ct)
+    {
+        if (canonical is null) return null;
+        var (allEnvironments, environment) = (evidence.CrossEnvironment, evidence.Environment);
+        string[] types = [nameof(CanonicalEntityType.Contract), nameof(CanonicalEntityType.ContractVersion), nameof(CanonicalEntityType.ContractOccurrence), nameof(CanonicalEntityType.Service)];
+        try
+        {
+            var entities = await canonical.Entities.AsNoTracking().Where(e => (allEnvironments || e.Scope == environment) && types.Contains(e.EntityType)).ToListAsync(ct);
+            var contracts = entities.Where(e => e.EntityType == nameof(CanonicalEntityType.Contract)).ToList();
+            if (contracts.Count == 0) return null;
+            var byId = entities.ToDictionary(e => e.Id);
+            var itemEntities = await canonical.Entities.AsNoTracking().Where(e => (allEnvironments || e.Scope == environment) && e.IdentityKey == scopedKey
+                && (e.EntityType == nameof(CanonicalEntityType.Requirement) || e.EntityType == nameof(CanonicalEntityType.UserStory))).Select(e => e.Id).ToListAsync(ct);
+            var ids = byId.Keys.Concat(itemEntities).ToList();
+            var relations = await canonical.Relations.AsNoTracking().Where(r => r.Active && (allEnvironments || r.Scope == environment)
+                && (ids.Contains(r.SourceEntityId) || ids.Contains(r.TargetEntityId))).ToListAsync(ct);
+            var occurrenceEntityIds = entities.Where(e => e.EntityType == nameof(CanonicalEntityType.ContractOccurrence)).Select(e => e.Id).ToList();
+            var occurrences = (await canonical.Occurrences.AsNoTracking().Where(o => occurrenceEntityIds.Contains(o.EntityId)).ToListAsync(ct))
+                .GroupBy(o => o.EntityId).ToDictionary(g => g.Key, g => g.OrderBy(o => o.OccurrenceKey, StringComparer.Ordinal).ToList());
+
+            List<Guid> Sources(string type, IEnumerable<Guid> targets) { var set = targets.ToHashSet(); return [.. relations.Where(r => r.RelationType == type && set.Contains(r.TargetEntityId)).Select(r => r.SourceEntityId)]; }
+            var itemIds = itemEntities.ToHashSet();
+            var module = item.Feature.Module;
+            var links = new Dictionary<string, ScopeSchemaLink>(StringComparer.Ordinal);
+            foreach (var c in contracts)
+            {
+                var versions = Sources(nameof(CanonicalRelationType.BelongsTo), [c.Id]).Where(byId.ContainsKey).Select(v => byId[v]).ToList();
+                var versionIds = versions.Select(v => v.Id).ToHashSet();
+                var found = Sources(nameof(CanonicalRelationType.OccurrenceOf), versionIds).SelectMany(o => occurrences.GetValueOrDefault(o) ?? []).ToList();
+                var services = Sources(nameof(CanonicalRelationType.References), versionIds).Where(byId.ContainsKey).Select(s => byId[s].DisplayName).ToList();
+                var (kind, ns) = ContractAttributes(c.AttributesJson);
+                var version = versions.Select(v => v.Version).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+                // 1. A canonical relation between the item and the contract (or one of its versions).
+                var stated = relations.Where(r => r.ReviewState != nameof(RelationReviewState.Rejected)
+                    && (itemIds.Contains(r.SourceEntityId) && (r.TargetEntityId == c.Id || versionIds.Contains(r.TargetEntityId))
+                        || itemIds.Contains(r.TargetEntityId) && (r.SourceEntityId == c.Id || versionIds.Contains(r.SourceEntityId)))).ToList();
+                // 2. The item's text names the contract.
+                var named = NamesOf(c, ns, found).FirstOrDefault(n => Regex.IsMatch(item.Text, $@"(?<![\w.]){Regex.Escape(n)}(?![\w])", RegexOptions.IgnoreCase));
+                // 3. The contract belongs to the item's module.
+                var owned = module.Length > 0 && (found.Any(o => string.Equals(o.OccurrenceKey.Split('/', 2)[0], module, StringComparison.OrdinalIgnoreCase))
+                    || services.Any(s => s.Split('.').Any(seg => string.Equals(seg, module, StringComparison.OrdinalIgnoreCase))));
+                if (stated.Count == 0 && named is null && !owned) continue;
+
+                var occurrence = found.FirstOrDefault(o => named is not null && o.OccurrenceKey.EndsWith(named, StringComparison.OrdinalIgnoreCase))
+                    ?? found.FirstOrDefault(o => string.Equals(o.OccurrenceKey.Split('/', 2)[0], module, StringComparison.OrdinalIgnoreCase)) ?? found.FirstOrDefault();
+                var more = found.Count > 1 ? $" Found in {found.Count} places; showing {occurrence?.OccurrenceKey}." : "";
+                ScopeSchemaLinkKind linkKind; string relationship, confidence, rule, explanation;
+                if (stated.FirstOrDefault(r => r.ReviewState == nameof(RelationReviewState.Confirmed)) is { } confirmed)
+                    (linkKind, relationship, confidence, rule, explanation) = (ScopeSchemaLinkKind.Confirmed, $"{confirmed.RelationType} (canonical relation)", "Confirmed by a person", confirmed.RuleId, confirmed.Explanation);
+                else if (stated.FirstOrDefault(r => r.Resolution is nameof(RelationResolution.Explicit) or nameof(RelationResolution.Derived)) is { } explicitRelation)
+                    (linkKind, relationship, confidence, rule, explanation) = (ScopeSchemaLinkKind.Explicit, $"{explicitRelation.RelationType} (canonical relation)", explicitRelation.Confidence, explicitRelation.RuleId, explicitRelation.Explanation);
+                else if (named is not null)
+                    (linkKind, relationship, confidence, rule, explanation) = (ScopeSchemaLinkKind.Explicit, "Named in the requirement", "High", "schema.named-in-requirement",
+                        $"The {FunctionalQualityScopeText.TypeLabel(item.Type).ToLowerInvariant()} names “{named}”.");
+                else if (stated.FirstOrDefault() is { } candidateRelation)
+                    (linkKind, relationship, confidence, rule, explanation) = (ScopeSchemaLinkKind.Candidate, $"{candidateRelation.RelationType} (canonical candidate)", candidateRelation.Confidence, candidateRelation.RuleId, candidateRelation.Explanation);
+                else
+                    (linkKind, relationship, confidence, rule, explanation) = (ScopeSchemaLinkKind.Candidate, $"Same module ({module})", "Low", "schema.module-ownership",
+                        $"The {module} module's source holds this contract{(services.Count > 0 ? $" (referenced by {string.Join(", ", services.Distinct().Take(3))})" : "")}; the item does not name it — confirm before relying on it.");
+                links[c.IdentityKey] = new(c.IdentityKey, c.DisplayName, kind, ns, version, occurrence?.Detail, Guid.TryParse(occurrence?.SourceSnapshotId, out var snapshotId) ? snapshotId : null,
+                    occurrence?.OccurrenceKey, linkKind, relationship, confidence, rule, explanation + more, ScopeSchemaValidation.NotPerformed,
+                    "No validation result is linked to this item — an existing schema is not a validation.", c.Scope);
+            }
+            return [.. links.Values.OrderBy(l => l.Kind == ScopeSchemaLinkKind.Confirmed ? 0 : l.Kind == ScopeSchemaLinkKind.Explicit ? 1 : 2).ThenBy(l => l.Name, StringComparer.OrdinalIgnoreCase)];
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { return null; }
+    }
+
+    private static (string Kind, string? Namespace) ContractAttributes(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+            string? Str(string name) => doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            return (Str("kind") ?? "Contract", Str("namespace"));
+        }
+        catch (JsonException) { return ("Contract", null); }
+    }
+
+    /// <summary>Names a requirement may use for a contract: its display name, namespace (and its last segment), identity name and file names —
+    /// specific ones only (at least 8 characters with a separator; generic names such as "schema.graphql" identify nothing).</summary>
+    private static IEnumerable<string> NamesOf(CanonicalEntityRecord contract, string? ns, IEnumerable<CanonicalOccurrenceRecord> occurrences)
+    {
+        var names = new List<string?> { contract.DisplayName, ns, ns?.TrimEnd('/').Split('/').LastOrDefault(), contract.IdentityKey.Split('|').LastOrDefault() };
+        names.AddRange(occurrences.Select(o => o.OccurrenceKey.Split('/').LastOrDefault()));
+        return names.OfType<string>().Select(n => n.Trim()).Where(n => n.Length >= 8 && n.IndexOfAny(['.', '-', ' ', '_']) > 0 && !GenericContractNames.Contains(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(n => n.Length);
     }
 
     private static IReadOnlyList<ScopeTestEvidence> ParseEvidence(string json)
