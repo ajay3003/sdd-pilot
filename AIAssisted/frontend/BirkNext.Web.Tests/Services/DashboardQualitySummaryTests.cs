@@ -28,7 +28,7 @@ public sealed class DashboardQualitySummaryTests
         Card(cards, "evidence").Detail.Should().Contain("1 partial").And.Contain("presence only, not reviewed");
         Card(cards, "specification").Value.Should().Be("Not assessed");
         Card(cards, "traceability").Value.Should().Be("Not assessed");
-        Card(cards, "qa").Value.Should().Be("Not verified");
+        Card(cards, "qa").Value.Should().Be("No verification evidence");
         Card(cards, "readiness").Value.Should().Be("1 of 2 inputs ready");
         cards.Should().OnlyContain(c => !c.Value.Contains('%'), "no invented percentage");
     }
@@ -61,6 +61,7 @@ public sealed class DashboardQualitySummaryTests
             new("info", "Note", null, "Open", "x", Informational: true),
         ];
         DashboardQualitySummary.Group("source").Should().Be("Missing required evidence");
+        DashboardQualitySummary.Group("ambiguous-Plan").Should().Be("Ambiguous evidence", "several candidate files are a choice to make, not missing evidence");
         DashboardQualitySummary.Group("custom").Should().Be("Other", "same text, different key: not merged");
         DashboardQualitySummary.Groups(items).Should().BeEquivalentTo(["Missing required evidence", "Specification quality", "Outdated results", "Other"]);
         DashboardQualitySummary.Cards(Rows, items, new DashboardReviewFacts()).Single(c => c.Key == "attention").Value.Should().Be("5", "informational notes are not counted");

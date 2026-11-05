@@ -62,7 +62,7 @@ public static class WorkflowPaths
     public static WorkflowEvidenceProfile Classify(CurrentWorkspaceSnapshot workspace, ProjectInputs inputs, ProjectTechnologyCoverage? coverage)
     {
         var documents = workspace.AvailableRoleCount > 0;
-        var source = inputs.Source.Status is ProjectInputStatus.Ready or ProjectInputStatus.NeedsAttention;
+        var source = inputs.Source.Status is ProjectInputStatus.Ready or ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention;
         if (documents && source) return WorkflowEvidenceProfile.SourceAndDocuments;
         if (documents) return WorkflowEvidenceProfile.DocumentsOnly;
         if (source)
@@ -132,6 +132,11 @@ public static class WorkflowPaths
                 profile == WorkflowEvidenceProfile.InfrastructureOnly ? "Infrastructure and pipeline source is analyzed and ready." : "Source evidence is analyzed and ready.",
                 "Source evidence is already analyzed, so source-based reviews can start immediately.",
                 "Continue with source review", ProjectInputPresentation.SourceAnalysisRoute, links, []),
+            ProjectInputStatus.Partial => new(WorkflowPathKind.Source, title, WorkflowPathState.Ready, "Ready now · partially analyzed",
+                inputs.Source.Detail, "Source evidence is analyzed; some areas are incomplete and reviews show that limitation.",
+                "Continue with source review", ProjectInputPresentation.SourceAnalysisRoute, links, []),
+            ProjectInputStatus.Failed => new(WorkflowPathKind.Source, title, WorkflowPathState.NeedsSetup, "Analysis failed",
+                inputs.Source.Detail, "The source is imported, but nothing in it could be analyzed.", "Open Source Analysis", ProjectInputPresentation.SourceAnalysisRoute, links, []),
             ProjectInputStatus.NeedsAttention => new(WorkflowPathKind.Source, title, WorkflowPathState.NeedsSetup, "Needs refresh",
                 inputs.Source.Detail, "The analyzed source is older than the current analyzers.", "Analyze the source again", ProjectInputPresentation.SourceAnalysisRoute, links, []),
             _ => new(WorkflowPathKind.Source, title, WorkflowPathState.Unavailable, "Requires source",
@@ -279,6 +284,8 @@ public static class WorkflowPaths
         (ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, _) => (SetupApplicability.Recommended, "Needs attention"),
         (ProjectInputKind.Documents, _, _) => (SetupApplicability.Unavailable, "Unavailable"),
         (ProjectInputKind.Source, ProjectInputStatus.NeedsAttention, _) => (SetupApplicability.Recommended, "Needs attention"),
+        (ProjectInputKind.Source, ProjectInputStatus.Partial, _) => (SetupApplicability.Recommended, "Partially analyzed"),
+        (ProjectInputKind.Source, ProjectInputStatus.Failed, _) => (SetupApplicability.Recommended, "Analysis failed"),
         (ProjectInputKind.Source, _, WorkflowPathKind.Source) => (SetupApplicability.RequiredNow, "Required for this path"),
         (ProjectInputKind.Source, _, _) => (SetupApplicability.Unavailable, "Unavailable"),
         _ => (SetupApplicability.Optional, "Optional"),

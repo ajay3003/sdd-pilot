@@ -58,7 +58,7 @@ public sealed class CanonicalSummaryUiTests : BunitContext
     {
         Setup("dev", new CanonicalSummaryView("dev", null, null, [], new Dictionary<string, int>(), new Dictionary<string, int>(), 0, 0, 0, 0, new(0, 0, 0, 0, 0), [], []));
         var cut = Render<CanonicalSummaryTile>();
-        cut.WaitForElement("[data-testid=cst-empty]").TextContent.Should().Contain("Not interpreted yet");
+        cut.WaitForElement("[data-testid=cst-empty]").TextContent.Should().Contain("Relationships not analyzed for this environment yet");
 
         var none = new BunitContext();
         var context = new Mock<IFrontendAnalysisContextFactory>();

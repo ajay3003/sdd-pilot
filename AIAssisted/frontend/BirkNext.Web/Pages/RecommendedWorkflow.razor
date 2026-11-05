@@ -93,7 +93,7 @@
                         @if (input.Kind == ProjectInputKind.Source && input.Status == ProjectInputStatus.Ready)
                         {
                             @* Source snapshot analyzed ≠ Artifact Pack bound to source ≠ implementation evidence assessed. *@
-                            <p class="rw-input-fact rw-source-binding" data-testid="rw-source-binding" data-state="@_readiness.SourceBinding">Artifact Pack source binding: @(_readiness.SourceBinding == SourceBindingState.Established ? "Established" : "Not established")</p>
+                            <p class="rw-input-fact rw-source-binding" data-testid="rw-source-binding" data-state="@_readiness.SourceBinding">Artifact Pack source binding: @(_readiness.SourceBinding switch { SourceBindingState.Established => "Established", SourceBindingState.NoScope => "No Artifact Pack chosen", _ => "Not established" })</p>
                         }
                         <a href="@input.Route" class="rw-input-action" data-testid="rw-input-action">@input.ActionLabel →</a>
                     </article>
@@ -281,7 +281,7 @@
                             {
                                 <div class="rw-detail-item"><dt class="rw-detail-label">@input.Title</dt><dd class="rw-detail-value">@input.StatusLabel</dd></div>
                             }
-                            <div class="rw-detail-item"><dt class="rw-detail-label">Source binding</dt><dd class="rw-detail-value" data-testid="rw-sidebar-binding">@(_readiness.SourceBinding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", _ => "No source snapshot" })</dd></div>
+                            <div class="rw-detail-item"><dt class="rw-detail-label">Source binding</dt><dd class="rw-detail-value" data-testid="rw-sidebar-binding">@(_readiness.SourceBinding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", SourceBindingState.NoScope => "No Artifact Pack chosen", _ => "No source snapshot" })</dd></div>
                         </dl>
                         </details>
 
@@ -457,7 +457,7 @@
     private static string InputIcon(ProjectInput input) => input.Status switch
     {
         ProjectInputStatus.Ready => "✓",
-        ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention => "!",
+        ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention or ProjectInputStatus.Failed => "!",
         ProjectInputStatus.Unknown => "?",
         _ => "○",
     };
@@ -791,7 +791,7 @@
             <dl class="rw-binding-facts">
                 <div><dt>Artifact Pack</dt><dd>@(Workspace?.PackLabel ?? Workspace?.ModuleLabel ?? "—")</dd></div>
                 <div><dt>Source</dt><dd>@_readiness.Inputs.Source.StatusLabel</dd></div>
-                <div><dt>Binding</dt><dd data-testid="rw-binding-state">@(binding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", _ => "No source snapshot" })</dd></div>
+                <div><dt>Binding</dt><dd data-testid="rw-binding-state">@(binding switch { SourceBindingState.Established => "Established", SourceBindingState.NotEstablished => "Not established", SourceBindingState.NoScope => "No Artifact Pack chosen", _ => "No source snapshot" })</dd></div>
             </dl>
             @if (binding == SourceBindingState.NotEstablished)
             {

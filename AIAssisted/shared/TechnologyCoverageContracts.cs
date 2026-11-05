@@ -606,4 +606,9 @@ public sealed record ProjectTechnologyCoverage
     public int? CiCdEvidenceVersion { get; init; }
     /// <summary>True when the latest snapshot's CI/CD evidence is older than Pipeline Review needs (see <see cref="ProjectApplicabilityInput.CiCdEvidenceOutdated"/>).</summary>
     public bool CiCdEvidenceOutdated { get; init; }
+    /// <summary>The snapshot's analysis outcome over the areas it contains (the shared <see cref="BirkNext.Integrations.SourceSetupOutcome.Overall"/> rule
+    /// the Snapshot Registry uses) — a stored snapshot is not an analyzed one. Null from older backends.</summary>
+    public BirkNext.Snapshots.SnapshotProcessingStatus? SourceOutcome { get; init; }
+    /// <summary>The snapshot's per-area outcomes (application code, architecture, evidence domains).</summary>
+    public List<BirkNext.Integrations.SourceSetupArea> SourceAreas { get; init; } = [];
 }

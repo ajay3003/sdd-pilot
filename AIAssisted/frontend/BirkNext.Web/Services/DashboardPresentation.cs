@@ -255,8 +255,9 @@ public static class DashboardPresentation
         }
         if (workflow?.Inputs.Target is { Status: ProjectInputStatus.Ready or ProjectInputStatus.Partial } target)
             facts.Add(new("target", $"1 test environment configured ({target.Facts.FirstOrDefault()})"));
-        if (workflow?.Inputs.Source is { Status: ProjectInputStatus.Ready or ProjectInputStatus.NeedsAttention })
-            facts.Add(new("source", "Source code analyzed"));
+        // The source input's own label (Analyzed / Partially analyzed / Analysis failed / Needs refresh): a snapshot's existence is not a success.
+        if (workflow?.Inputs.Source is { IsProvided: true } source)
+            facts.Add(new("source", $"Source: {source.StatusLabel.ToLowerInvariant()}"));
         return facts;
     }
 
@@ -317,6 +318,8 @@ public static class DashboardPresentation
 
         if (workflow?.Inputs.Source is { Status: ProjectInputStatus.NeedsAttention } source)
             items.Add(new("source", "Source analysis is out of date", source.Detail, "Analyze source", ProjectInputPresentation.SourceAnalysisRoute));
+        else if (workflow?.Inputs.Source is { Status: ProjectInputStatus.Failed } failedSource)
+            items.Add(new("source", "Source analysis failed", failedSource.Detail, "Open Source Analysis", ProjectInputPresentation.SourceAnalysisRoute));
         if (workflow is { SourceBinding: SourceBindingState.NotEstablished })
             items.Add(new("source-binding", $"Source binding not established for {workspace.PackLabel ?? workspace.ModuleLabel ?? "the selected scope"}",
                 "Source is analyzed, but the selected Artifact Pack is not mapped to source evidence; source-backed implementation review cannot be interpreted yet.",
@@ -654,9 +657,15 @@ public static class DashboardPresentation
         return source.Status switch
         {
             ProjectInputStatus.NeedsAttention => Area("source", DashboardStatus.AttentionNeeded, $"Evidence: Available · Assessment: Analyzed (outdated). {source.Detail}", "Analyze source", ProjectInputPresentation.SourceAnalysisRoute),
-            ProjectInputStatus.Ready => workflow.SourceBinding == SourceBindingState.Established
-                ? Area("source", DashboardStatus.Available, "Evidence: Available · Assessment: Analyzed · Artifact Pack source binding established.", "Open Implementation Evidence Review", WorkflowReadinessService.ImplementationEvidenceRoute, "Source binding established")
-                : Area("source", DashboardStatus.NeedsSetup, "Evidence: Available · Assessment: Analyzed · Artifact Pack source binding not established.", "Review source binding", WorkflowReadinessService.ImplementationEvidenceRoute, "Source binding required"),
+            ProjectInputStatus.Failed => Area("source", DashboardStatus.AttentionNeeded, $"Evidence: Available · Assessment: Analysis failed. {source.Detail}", "Open Source Analysis", ProjectInputPresentation.SourceAnalysisRoute),
+            // Analyzed or partially analyzed: usable; the assessment says which, and the Artifact Pack binding is a separate fact.
+            ProjectInputStatus.Ready or ProjectInputStatus.Partial => workflow.SourceBinding switch
+            {
+                SourceBindingState.Established => Area("source", DashboardStatus.Available, $"Evidence: Available · Assessment: {source.StatusLabel} · Artifact Pack source binding established.", "Open Implementation Evidence Review", WorkflowReadinessService.ImplementationEvidenceRoute, "Source binding established"),
+                SourceBindingState.NoScope => Area("source", source.Status == ProjectInputStatus.Ready ? DashboardStatus.Available : DashboardStatus.Partial,
+                    $"Evidence: Available · Assessment: {source.StatusLabel} · choose a module to evaluate its Artifact Pack source binding.", "Open Source Analysis", ProjectInputPresentation.SourceAnalysisRoute),
+                _ => Area("source", DashboardStatus.NeedsSetup, $"Evidence: Available · Assessment: {source.StatusLabel} · Artifact Pack source binding not established.", "Review source binding", WorkflowReadinessService.ImplementationEvidenceRoute, "Source binding required"),
+            },
             _ => Area("source", DashboardStatus.NotAssessed, "Source evidence not provided. Documentation reviews do not need it.", "Open Source Analysis", ProjectInputPresentation.SourceAnalysisRoute),
         };
     }
@@ -719,12 +728,19 @@ public static class DashboardPresentation
         if (workflow is not null)
         {
             var source = workflow.Inputs.Source;
-            rows.Add(new("source", "Source", source.Status is ProjectInputStatus.Ready or ProjectInputStatus.NeedsAttention ? DashboardStatus.Available : DashboardStatus.NotAssessed,
-                source.Status switch { ProjectInputStatus.Ready => "Analyzed", ProjectInputStatus.NeedsAttention => "Analyzed (outdated)", _ => "Not provided" },
+            rows.Add(new("source", "Source", source.Status switch
+                {
+                    ProjectInputStatus.Ready => DashboardStatus.Available,
+                    ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention => DashboardStatus.Partial,
+                    ProjectInputStatus.Failed => DashboardStatus.Failed,
+                    _ => DashboardStatus.NotAssessed,
+                },
+                source.IsProvided ? source.StatusLabel : "Not provided",
                 workflow.SourceBinding switch
                 {
                     SourceBindingState.Established => "Current project · Artifact Pack source binding established",
                     SourceBindingState.NotEstablished => "Current project · Artifact Pack source binding not established",
+                    SourceBindingState.NoScope => "Current project · choose a module to evaluate its Artifact Pack source binding",
                     _ => "Source reviews need a source snapshot; documentation reviews do not.",
                 }));
         }

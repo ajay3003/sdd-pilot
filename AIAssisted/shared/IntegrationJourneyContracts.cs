@@ -533,8 +533,9 @@ public sealed record SourceSetupArea(string Area, string Status);
 /// <summary>
 /// A snapshot's analysis outcome over the areas it actually contains — the one rule the Snapshot Registry, Relationship Review and every other
 /// consumer share. An area that is not present (NotDetected) or was not run (NotAnalyzed) does not count: a Terraform repository without
-/// application code is not a failed analysis. Every present area complete → Completed; every present area failed → Failed; otherwise Partial (an
-/// Unsupported area is an analyzer limitation and keeps the outcome Partial, never Completed). Nothing present → Unknown.
+/// application code is not a failed analysis. Every present area complete → Completed; no present area usable (each failed or unsupported) with at
+/// least one failed → Failed (Partial never hides a source nothing could be read from); otherwise Partial (an Unsupported area is an analyzer
+/// limitation and keeps the outcome Partial, never Completed). Nothing present → Unknown.
 /// </summary>
 public static class SourceSetupOutcome
 {
@@ -543,7 +544,8 @@ public static class SourceSetupOutcome
         var present = areas.Where(area => area.Status is not ("NotDetected" or "NotAnalyzed")).ToList();
         if (present.Count == 0) return BirkNext.Snapshots.SnapshotProcessingStatus.Unknown;
         if (present.All(area => area.Status == "Complete")) return BirkNext.Snapshots.SnapshotProcessingStatus.Completed;
-        if (present.All(area => area.Status == "Failed")) return BirkNext.Snapshots.SnapshotProcessingStatus.Failed;
+        if (present.All(area => area.Status is "Failed" or "Unsupported") && present.Any(area => area.Status == "Failed"))
+            return BirkNext.Snapshots.SnapshotProcessingStatus.Failed;
         return BirkNext.Snapshots.SnapshotProcessingStatus.Partial;
     }
 }

@@ -84,6 +84,28 @@ public static class ImportProjectOverview
                 : new(ImportAnalysisState.NoSource, "No source code", ProjectImportTone.Neutral, null, null);
         var areas = snapshot?.Areas ?? [];
         var summary = AreaSummary(areas);
+        if (areas.Count > 0)
+        {
+            // The shared outcome over the areas the snapshot contains — the rule the Snapshot Registry and Relationship Review use — so a snapshot
+            // whose code analyzer reports Ready while another area is partial is Partial here too. No application code is not a failure.
+            var noCode = areas.FirstOrDefault(a => a.Area == "Application code")?.Status is "NotDetected" or "Failed";
+            switch (SourceSetupOutcome.Overall(areas))
+            {
+                case BirkNext.Snapshots.SnapshotProcessingStatus.Completed:
+                    return noCode
+                        ? new(ImportAnalysisState.NoApplicationCode, "Available · no application code", ProjectImportTone.Available,
+                            "No supported production project was found, so code-level analysis did not run. The other source evidence was fully analyzed.", summary)
+                        : new(ImportAnalysisState.Ready, "Ready", ProjectImportTone.Available, null, summary);
+                case BirkNext.Snapshots.SnapshotProcessingStatus.Partial:
+                    return noCode && areas.Any(Usable)
+                        ? new(ImportAnalysisState.NoApplicationCode, "Partial · no application code", ProjectImportTone.Partial,
+                            "No supported production project was found, so code-level analysis did not run. The other source evidence is available.", summary)
+                        : new(ImportAnalysisState.Partial, "Partial", ProjectImportTone.Partial, "Some areas could not be fully analyzed.", summary);
+                case BirkNext.Snapshots.SnapshotProcessingStatus.Failed:
+                    return new(ImportAnalysisState.Failed, "Failed", ProjectImportTone.Rejected,
+                        "Nothing in this source could be analyzed: no supported production project and no architecture, infrastructure, configuration, CI/CD or contract evidence.", summary);
+            }
+        }
         return snapshot?.Status switch
         {
             null => new(ImportAnalysisState.Available, "Available", ProjectImportTone.Available, null, null),

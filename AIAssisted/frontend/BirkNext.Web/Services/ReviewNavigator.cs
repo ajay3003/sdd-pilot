@@ -129,15 +129,21 @@ public static class ReviewNavigator
             var sourceState = inputs.Source.Status;
             capabilities.Add(new("source-analysis", "Source Analysis", ReviewSection.Source,
                 sourceState is ProjectInputStatus.Absent or ProjectInputStatus.Unknown ? ReviewApplicabilityState.Unknown : ReviewApplicabilityState.Applicable,
-                sourceState switch { ProjectInputStatus.Ready => ReviewReadiness.Ready, ProjectInputStatus.NeedsAttention => ReviewReadiness.EvidenceChanged, _ => ReviewReadiness.WaitingForEvidence },
-                ReviewRequiredness.Recommended, ReviewDecisionState.NoDecisionTracked, inputs.Source.Route, sourceState == ProjectInputStatus.Ready ? [] : [SourceSnapshot],
+                sourceState switch
+                {
+                    ProjectInputStatus.Ready or ProjectInputStatus.Partial => ReviewReadiness.Ready,
+                    ProjectInputStatus.NeedsAttention => ReviewReadiness.EvidenceChanged,
+                    ProjectInputStatus.Failed => ReviewReadiness.NeedsSetup,
+                    _ => ReviewReadiness.WaitingForEvidence,
+                },
+                ReviewRequiredness.Recommended, ReviewDecisionState.NoDecisionTracked, inputs.Source.Route, inputs.Source.IsUsable ? [] : [SourceSnapshot],
                 inputs.Source.Detail, IsCore: true));
         }
         capabilities.Add(new("implementation-evidence", "Implementation Evidence Review", ReviewSection.Source,
             binding == SourceBindingState.NoSource ? ReviewApplicabilityState.Unknown : ReviewApplicabilityState.Applicable,
-            binding switch { SourceBindingState.Established => ReviewReadiness.Ready, SourceBindingState.NotEstablished => ReviewReadiness.NeedsSetup, _ => ReviewReadiness.WaitingForEvidence },
+            binding switch { SourceBindingState.Established => ReviewReadiness.Ready, SourceBindingState.NotEstablished or SourceBindingState.NoScope => ReviewReadiness.NeedsSetup, _ => ReviewReadiness.WaitingForEvidence },
             ReviewRequiredness.Recommended, ReviewDecisionState.NoDecisionTracked, WorkflowReadinessService.ImplementationEvidenceRoute,
-            binding switch { SourceBindingState.Established => [], SourceBindingState.NotEstablished => [SourceBinding], _ => [SourceSnapshot] },
+            binding switch { SourceBindingState.Established => [], SourceBindingState.NotEstablished or SourceBindingState.NoScope => [SourceBinding], _ => [SourceSnapshot] },
             "Assess documented requirements against explicit source-backed implementation and test evidence. A task marked complete, a source test or a filename match is not implementation proof.",
             IsCore: true));
 

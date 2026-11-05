@@ -44,7 +44,7 @@ public static class DashboardQualitySummary
                 DashboardPresentation.WorkflowRoute, inputs.All(x => x.Status == DashboardStatus.Available) && inputs.Count > 0 ? DashboardStatus.Available : DashboardStatus.Partial),
             r.RuntimeEvidence || r.QaAssessed
                 ? new("qa", "QA verification", "Results this session", "A runtime or QA review produced results; open the review for what was verified.", "quality-review", DashboardStatus.Available)
-                : new("qa", "QA verification", "Not verified", "No runtime or QA review has produced results for this project yet.", "quality-review", DashboardStatus.NotAssessed),
+                : new("qa", "QA verification", "No verification evidence", "Not assessed: no runtime or QA review has produced results for this project yet. Document and source analysis are not QA execution.", "quality-review", DashboardStatus.NotAssessed),
             new("attention", "Needs attention", open.ToString(), open == 0 ? "No open item from the evidence and completed reviews." : $"{Groups(attention).Count} area{S(Groups(attention).Count)} affected",
                 "#db-attention-heading", open > 0 ? DashboardStatus.AttentionNeeded : DashboardStatus.Available),
         ];
@@ -58,7 +58,9 @@ public static class DashboardQualitySummary
         "severe-findings" or "needs-changes" or "dqr-failed" => "Specification quality",
         "stale" => "Outdated results",
         _ when key.StartsWith("trace", StringComparison.OrdinalIgnoreCase) => "Traceability gaps",
-        _ when key.StartsWith("ambiguous", StringComparison.OrdinalIgnoreCase) || key.StartsWith("missing", StringComparison.OrdinalIgnoreCase) => "Missing required evidence",
+        // An ambiguity is evidence that exists more than once (a choice to make), never missing evidence.
+        _ when key.StartsWith("ambiguous", StringComparison.OrdinalIgnoreCase) => "Ambiguous evidence",
+        _ when key.StartsWith("missing", StringComparison.OrdinalIgnoreCase) => "Missing required evidence",
         _ => "Other",
     };
 

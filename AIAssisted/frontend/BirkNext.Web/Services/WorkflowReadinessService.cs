@@ -21,7 +21,9 @@ public enum ArtifactLoadState { Required, Partial, Done }
 public sealed record WorkflowReviewOption(string ReviewId, string Label, string Route, string Lane, ApplicabilityStatus Status, string Reason);
 
 /// <summary>Whether the viewed Artifact Pack is explicitly bound to source evidence (recorded CodeLinks in its scope). Never inferred from file names.</summary>
-public enum SourceBindingState { NoSource, NotEstablished, Established }
+/// <summary>Source → Artifact Pack binding. NoScope: source is usable but no Artifact Pack is chosen, so there is nothing to bind yet (never "not
+/// established"). Appended values keep stored numbers stable.</summary>
+public enum SourceBindingState { NoSource, NotEstablished, Established, NoScope }
 
 /// <summary>Azure DevOps change provenance: optional, independent of Source Analysis.</summary>
 public enum ChangeProvenanceState { Unknown, NotConfigured, Configured, DemoEvidence, Disabled }
@@ -570,7 +572,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         // Environment is never the default next step (it is required only on the runtime path).
         if (artifactLoad == ArtifactLoadState.Required && (inputs.Source.IsProvided || workspace.Evidence is not null))
             return ChoosePath("Choose what you want to review",
-                inputs.Source.Status == ProjectInputStatus.Ready
+                inputs.Source.IsUsable
                     ? "Source evidence is analyzed and can be reviewed now. Document reviews need supported project documents; runtime reviews need a Target Environment."
                     : "Document reviews need supported project documents; source reviews need an analyzed source; runtime reviews need a Target Environment.");
 
@@ -656,9 +658,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     /// </summary>
     private SourceBindingState SourceBindingOf(ProjectInputs inputs)
     {
-        if (inputs.Source.Status != ProjectInputStatus.Ready) return SourceBindingState.NoSource;
+        if (!inputs.Source.IsUsable) return SourceBindingState.NoSource;
         var lifecycle = _session?.SddLifecycle;
         if (lifecycle is null) return SourceBindingState.NotEstablished;
+        if (string.IsNullOrWhiteSpace(lifecycle.ActiveRequirementScope)) return SourceBindingState.NoScope;
         return lifecycle.ImplementationEvidence.Any(e => RequirementScopes.Matches(e.RequirementScope, lifecycle.ActiveRequirementScope))
             ? SourceBindingState.Established : SourceBindingState.NotEstablished;
     }
@@ -709,12 +712,14 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             {
                 SourceBindingState.NoSource => "Source unavailable",
                 SourceBindingState.NotEstablished => "Source analyzed · Artifact Pack source binding not established",
+                SourceBindingState.NoScope => "Source analyzed · no Artifact Pack chosen",
                 _ => "Ready to review",
             },
             binding switch
             {
                 SourceBindingState.NoSource => "Add a source snapshot (Import Project or Source Analysis) to review implementation evidence. Implementation is Not assessed.",
                 SourceBindingState.NotEstablished => "Source snapshot is available, but this Artifact Pack is not yet mapped to source evidence. Implementation is Not assessed until explicit CodeLinks are bound.",
+                SourceBindingState.NoScope => "Source snapshot is available. Choose a module (Artifact Pack) first: its source binding is evaluated for that pack. Implementation is Not assessed.",
                 _ => "Explicit source-backed evidence is recorded for this Artifact Pack.",
             },
             binding == SourceBindingState.NoSource ? inputs.Source.Route : ImplementationEvidenceRoute,

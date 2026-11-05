@@ -72,6 +72,16 @@
         if (Evidence is { } evidence) evidence.Changed += OnChanged;
         if (Settings is { } settings) settings.Changed += OnChanged;
         Load();
+        // Peek reads only what this session has already resolved. A page that never resolved Project Evidence (Import) would otherwise say
+        // "Not configured" while Recommended Workflow says the project is set: resolve once through the shared, cached service.
+        if (_view?.IsConfigured != true && Evidence is { } resolve) _ = ResolveAsync(resolve);
+    }
+
+    private async Task ResolveAsync(IProjectEvidenceService evidence)
+    {
+        try { await evidence.GetAsync(EnvironmentId); }
+        catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex)) { return; }
+        await InvokeAsync(() => { Load(); StateHasChanged(); });
     }
 
     private void Load()

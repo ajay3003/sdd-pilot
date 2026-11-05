@@ -101,6 +101,37 @@ public sealed class RecommendedWorkflowEvidenceTests : BunitContext
     }
 
     [Fact]
+    public async Task Without_a_chosen_Artifact_Pack_the_binding_is_not_evaluated_and_never_reported_missing()
+    {
+        SourceAnalyzed();
+        CoreDecided();
+        _repository.SddLifecycle.ActiveRequirementScope = null;
+
+        var r = await ReadinessAsync();
+
+        r.SourceBinding.Should().Be(SourceBindingState.NoScope, "no pack is chosen, so there is nothing to bind yet");
+        r.NextRecommendedAction?.Key.Should().NotBe(WorkflowReadinessService.EstablishSourceBindingKey);
+        r.EvidenceBranches.Single(b => b.Key == "source").State.Should().Be("Source analyzed · no Artifact Pack chosen");
+    }
+
+    [Fact]
+    public async Task A_partially_analyzed_source_is_usable_and_its_binding_is_still_evaluated()
+    {
+        SourceAnalyzed();
+        CoreDecided();
+        _coverage = _coverage! with
+        {
+            SourceOutcome = BirkNext.Snapshots.SnapshotProcessingStatus.Partial,
+            SourceAreas = [new("Application code", "Complete"), new("Architecture", "Partial")],
+        };
+
+        var r = await ReadinessAsync();
+
+        r.Inputs.Source.Should().Match<ProjectInput>(i => i.Status == ProjectInputStatus.Partial && i.StatusLabel == "Partially analyzed");
+        r.SourceBinding.Should().Be(SourceBindingState.NotEstablished, "partial analysis is usable evidence; the pack binding is a separate fact");
+    }
+
+    [Fact]
     public async Task A_sibling_pack_binding_does_not_satisfy_this_pack_but_its_own_binding_does()
     {
         SourceAnalyzed();

@@ -66,7 +66,7 @@ public class DashboardTesterFirstPageTests : BunitContext
         markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-detailed-analysis", StringComparison.Ordinal));
         cut.FindAll("[data-testid=db-kpi]").Select(k => k.GetAttribute("data-key")).Should().Equal("evidence", "specification", "traceability", "readiness", "qa", "attention");
         cut.Find("[data-testid=db-kpi][data-key=specification] [data-testid=db-kpi-value]").TextContent.Should().Be("Not assessed", "nothing was reviewed after the import");
-        cut.Find("[data-testid=db-kpi][data-key=qa] [data-testid=db-kpi-value]").TextContent.Should().Be("Not verified");
+        cut.Find("[data-testid=db-kpi][data-key=qa] [data-testid=db-kpi-value]").TextContent.Should().Be("No verification evidence");
         markup.Should().NotContain("Quality status for assessed areas", "no composite score in the header");
         cut.Find("[data-testid=db-detailed-analysis]").HasAttribute("open").Should().BeFalse("the detailed analysis is collapsed by default");
         markup.IndexOf("db-attention", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-health", StringComparison.Ordinal));

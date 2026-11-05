@@ -15,7 +15,7 @@
         </div>
         @if (matches.Count == 0)
         {
-            <p class="rpc-muted" data-testid="rpc-empty">No recommended packages are defined for @project. <a href="@EditHref">Define which packages to import</a>.</p>
+            <p class="rpc-muted" data-testid="rpc-empty">No package recommendations are configured for @project. Recommendations are an explicit list: imported packages are not recommendations by themselves. <a href="@EditHref">Define which packages to import</a>.</p>
         }
         else
         {

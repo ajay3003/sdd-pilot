@@ -162,7 +162,7 @@ public sealed class SddDashboardTests
 
         var rows = SddDashboard.Packages(associations);
         rows.Select(r => r.Name).Should().Equal("M2LB", "MU", "Terraform-iac-meldingsutveksler");
-        rows[0].Should().Match<SddPackageRow>(r => r.Documents == "228 SDD documents" && r.Roles.Contains("SDD documents") && r.Association == "Associated");
+        rows[0].Should().Match<SddPackageRow>(r => r.Documents == "228 SDD documents" && r.Roles.Contains("SDD documents") && r.Association == "Associated with application");
         rows[2].Roles.Should().Equal("Infrastructure evidence", "Contracts/schemas");
         rows[2].Documents.Should().Be("SDD documents: not applicable");
         rows[1].Should().Match<SddPackageRow>(r => r.NeedsResolution && r.Documents == "No SDD project documents detected");

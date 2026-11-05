@@ -10,7 +10,9 @@ public enum ProjectInputKind { Documents, Source, Target }
 /// State of one input. <see cref="Absent"/> is "not provided" (never a problem); <see cref="Partial"/> is provided but incomplete;
 /// <see cref="NeedsAttention"/> needs a user decision or a refresh before its consumers can use it; <see cref="Unknown"/> could not be read.
 /// </summary>
-public enum ProjectInputStatus { Absent, Partial, Ready, NeedsAttention, Unknown }
+/// <summary>How an input stands. For source: Ready = analyzed, Partial = analyzed with incomplete areas (usable), NeedsAttention = the snapshot needs
+/// re-analysis (outdated), Failed = imported but nothing in it could be analyzed (the import is kept). Appended values keep stored numbers stable.</summary>
+public enum ProjectInputStatus { Absent, Partial, Ready, NeedsAttention, Unknown, Failed }
 
 /// <summary>
 /// One input as Recommended Workflow shows it. <see cref="Requirement"/> says when it is needed ("Recommended start",
@@ -27,7 +29,10 @@ public sealed record ProjectInput(
     string Route,
     IReadOnlyList<string> Facts)
 {
-    public bool IsProvided => Status is ProjectInputStatus.Ready or ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention;
+    public bool IsProvided => Status is ProjectInputStatus.Ready or ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention or ProjectInputStatus.Failed;
+
+    /// <summary>The input can be used by reviews now: analyzed, or analyzed with incomplete areas (the limitation is shown, never hidden).</summary>
+    public bool IsUsable => Status is ProjectInputStatus.Ready or ProjectInputStatus.Partial;
 }
 
 /// <summary>The three inputs. Input completeness is evidence availability, never a quality score.</summary>
@@ -145,12 +150,22 @@ public static class ProjectInputPresentation
         if (coverage.SourceArchive is { Length: > 0 } archive) facts.Add(archive);
         if (coverage.AnalyzedAt is { } at) facts.Add($"Analyzed {at.ToLocalTime():yyyy-MM-dd HH:mm}");
         // Unsupported technologies are a tool limitation: the source is still provided.
+        // The analysis outcome over the areas the snapshot contains (shared rule, same as the Snapshot Registry): a stored snapshot is not an
+        // analyzed one. Infrastructure-only sources are not failed for lacking application code.
+        var incomplete = coverage.SourceAreas.Where(a => a.Status is not ("Complete" or "NotDetected" or "NotAnalyzed")).Select(a => $"{a.Area}: {a.Status}").ToList();
+        if (coverage.SourceOutcome is BirkNext.Snapshots.SnapshotProcessingStatus.Failed)
+            return new(ProjectInputKind.Source, ProjectInputStatus.Failed, title, requirement, "Analysis failed",
+                $"The source was imported, but no area of it could be analyzed{(incomplete.Count > 0 ? $" ({string.Join(" · ", incomplete)})" : "")}. The import itself is kept.",
+                "Open Source Analysis", SourceAnalysisRoute, facts);
         if (coverage.Source is null || coverage.CiCdEvidenceOutdated)
             return new(ProjectInputKind.Source, ProjectInputStatus.NeedsAttention, title, requirement, "Needs refresh",
                 coverage.Source is null
                     ? "The latest snapshot predates technology inventory. Analyze the source again."
                     : "The latest snapshot predates current CI/CD evidence. Analyze the source again.",
                 "Analyze again", SourceAnalysisRoute, facts);
+        if (coverage.SourceOutcome is BirkNext.Snapshots.SnapshotProcessingStatus.Partial)
+            return new(ProjectInputKind.Source, ProjectInputStatus.Partial, title, requirement, "Partially analyzed",
+                $"Some areas of the current source snapshot were not fully analyzed: {string.Join(" · ", incomplete)}.", "Open Source Analysis", SourceAnalysisRoute, facts);
         return new(ProjectInputKind.Source, ProjectInputStatus.Ready, title, requirement, "Analyzed",
             "Current source snapshot of the workspace.", "Open Source Analysis", SourceAnalysisRoute, facts);
     }

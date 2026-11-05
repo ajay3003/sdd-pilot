@@ -134,7 +134,7 @@ public static class SddDashboard
                 EvidenceAssociationState.NeedsReview => "partial",
                 _ => "neutral",
             };
-            return new SddPackageRow(p.ImportId, p.DisplayName, roles, documents, resolve ? "Needs association" : a.StateLabel == ApplicationContexts.RoleLabel(a.Role) ? "Associated" : a.StateLabel,
+            return new SddPackageRow(p.ImportId, p.DisplayName, roles, documents, resolve ? "Needs association" : a.StateLabel == ApplicationContexts.RoleLabel(a.Role) ? "Associated with application" : a.StateLabel,
                 tone, a.Detail, resolve);
         })];
 

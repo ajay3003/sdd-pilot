@@ -148,6 +148,10 @@ public sealed class SnapshotRegistryTests : IDisposable
     [InlineData(new[] { "NotDetected", "Unsupported", "Complete", "Complete", "Partial", "NotDetected" }, SnapshotProcessingStatus.Partial)]
     [InlineData(new[] { "NotDetected", "NotAnalyzed", "Complete", "Complete", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Completed)]
     [InlineData(new[] { "Failed", "NotAnalyzed", "NotDetected", "NotDetected", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Failed)]
+    // Nothing usable: CI/CD failed and architecture unsupported (no application code) is a failure, never Partial.
+    [InlineData(new[] { "NotDetected", "Unsupported", "NotDetected", "NotDetected", "Failed", "NotDetected" }, SnapshotProcessingStatus.Failed)]
+    // Only an analyzer limitation, nothing failed: Partial.
+    [InlineData(new[] { "NotDetected", "Unsupported", "NotDetected", "NotDetected", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Partial)]
     [InlineData(new[] { "Partial", "Complete", "NotDetected", "Partial", "Partial", "NotDetected" }, SnapshotProcessingStatus.Partial)]
     [InlineData(new[] { "NotDetected", "NotAnalyzed", "NotDetected", "NotDetected", "NotDetected", "NotDetected" }, SnapshotProcessingStatus.Unknown)]
     public void The_analysis_outcome_counts_only_the_areas_the_package_contains(string[] statuses, SnapshotProcessingStatus expected)

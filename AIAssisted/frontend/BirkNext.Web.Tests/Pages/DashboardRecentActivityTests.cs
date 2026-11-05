@@ -168,7 +168,7 @@ public sealed class DashboardRecentActivityTests : BunitContext
         var cut = Render("M2LB");
 
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=db-activity]").Should().HaveCount(SddDashboard.ActivityLimit));
-        cut.Find("[data-testid=sdd-hero]").TextContent.Should().Contain("Overall readiness").And.Contain("Blockers");
+        cut.Find("[data-testid=sdd-hero]").TextContent.Should().Contain("Review readiness").And.Contain("Blockers");
         cut.FindAll("[data-testid=sdd-charts] figure").Should().HaveCount(2);
         var rows = cut.FindAll("[data-testid=db-activity]");
         rows[0].TextContent.Should().Contain("Imported 2 infrastructure packages").And.NotContain("needs attention");

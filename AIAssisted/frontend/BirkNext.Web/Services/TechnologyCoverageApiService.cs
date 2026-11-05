@@ -10,16 +10,22 @@ namespace BirkNext.Web.Services;
 public interface ITechnologyCoverageApiService
 {
     Task<ProjectTechnologyCoverage?> GetAsync(string environmentId, CancellationToken ct = default);
+
+    /// <summary>Coverage of a named source snapshot (the Target Application's main package); null = the workspace's newest snapshot.</summary>
+    Task<ProjectTechnologyCoverage?> GetAsync(string environmentId, Guid? sourceSnapshotId, CancellationToken ct = default) => GetAsync(environmentId, ct);
 }
 
 public sealed class TechnologyCoverageApiService(HttpClient http) : ITechnologyCoverageApiService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public async Task<ProjectTechnologyCoverage?> GetAsync(string environmentId, CancellationToken ct = default)
+    public Task<ProjectTechnologyCoverage?> GetAsync(string environmentId, CancellationToken ct = default) => GetAsync(environmentId, null, ct);
+
+    public async Task<ProjectTechnologyCoverage?> GetAsync(string environmentId, Guid? sourceSnapshotId, CancellationToken ct = default)
     {
         // Failures propagate: the caller classifies them (an HTTP error is not "the backend did not answer").
-        return await http.GetFromJsonAsync<ProjectTechnologyCoverage>($"api/technology-coverage?environmentId={Uri.EscapeDataString(environmentId)}", Json, ct);
+        return await http.GetFromJsonAsync<ProjectTechnologyCoverage>(
+            $"api/technology-coverage?environmentId={Uri.EscapeDataString(environmentId)}{(sourceSnapshotId is { } id ? $"&snapshotId={id}" : "")}", Json, ct);
     }
 }
 
@@ -34,15 +40,17 @@ public sealed class ProjectApplicabilityState : IDisposable
     private readonly IFrontendAnalysisContextFactory contexts;
     private readonly ICurrentWorkspaceProjection workspace;
     private readonly IFrontendAnalysisSettingsService settings;
+    private readonly ProjectEvidence.IProjectEvidenceService? evidence;
     private Task? _loading;
 
     public ProjectApplicabilityState(ITechnologyCoverageApiService api, IFrontendAnalysisContextFactory contexts, ICurrentWorkspaceProjection workspace,
-        IFrontendAnalysisSettingsService settings)
+        IFrontendAnalysisSettingsService settings, ProjectEvidence.IProjectEvidenceService? evidence = null)
     {
         this.api = api;
         this.contexts = contexts;
         this.workspace = workspace;
         this.settings = settings;
+        this.evidence = evidence;
         // A saved Target Environment can change the active target, its URL and (environment-scoped) its source snapshot.
         this.settings.Changed += OnTargetEnvironmentsChanged;
     }
@@ -82,7 +90,12 @@ public sealed class ProjectApplicabilityState : IDisposable
             // read either way; only configured integrations and runtime targets come from the target.
             var context = await contexts.GetActiveContextAsync();
             profile = context.ActiveTargetError is null && context.ActiveProfile is { Id.Length: > 0 } active ? active : null;
-            coverage = await api.GetAsync(profile?.Id ?? "");
+            // The Target Application's main package (Project Evidence) when there is one: the source the project is about, never simply the
+            // package imported last. Peek reads the workspace only (no backend call).
+            Guid? main = null;
+            try { main = profile is null ? null : evidence?.Peek(profile.Id).Main?.SnapshotId; }
+            catch (InvalidOperationException) { main = null; }
+            coverage = main is null ? await api.GetAsync(profile?.Id ?? "") : await api.GetAsync(profile?.Id ?? "", main);
         }
         catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex))
         {

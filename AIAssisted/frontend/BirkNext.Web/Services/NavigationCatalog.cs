@@ -88,7 +88,8 @@ public static class NavigationCatalog
         // Demo Projects are optional examples; Target Environments is runtime configuration of the deployed system.
         new("getting-started", "Workspace",
         [
-            new("dashboard", "Dashboard", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix),
+            new("dashboard", "Project Quality", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix,
+                Hint: "Project Quality Dashboard: evidence, specification quality, traceability, reviews and verification", Aliases: ["Dashboard", "Project Quality Dashboard"]),
             new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow, Aliases: ["Getting Started"]),
             new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
                 Hint: "primary input: one project ZIP becomes project artifacts and a Source Analysis snapshot", Aliases: ["Project Inputs", "Upload ZIP"]),

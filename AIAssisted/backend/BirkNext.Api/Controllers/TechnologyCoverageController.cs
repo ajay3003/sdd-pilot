@@ -15,17 +15,21 @@ namespace BirkNext.Api.Controllers;
 public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegrationCatalogService catalog) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<ProjectTechnologyCoverage>> Get([FromQuery] string? environmentId, CancellationToken ct)
+    public async Task<ActionResult<ProjectTechnologyCoverage>> Get([FromQuery] string? environmentId, CancellationToken ct, [FromQuery] Guid? snapshotId = null)
     {
         // Source technology comes from the workspace's current source snapshot and needs no Target Environment. Configured integrations
         // belong to a target: without one there are none to list (not "none configured").
-        var latest = (await sources.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
+        // The application's own source when the caller names it (Project Evidence's main package); otherwise the workspace's newest snapshot,
+        // which may belong to another package (a shared library or an infrastructure repository imported last).
+        var latest = snapshotId is { } requested && await sources.FindSourceAnalysisAsync(requested, ct) is { } named ? named
+            : (await sources.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
         var hasTarget = !string.IsNullOrWhiteSpace(environmentId);
         // No environment type: a read-only check never upgrades or applies a template.
         var configured = hasTarget ? await catalog.GetAsync(environmentId!, null, null, ct) : new BirkNext.Integrations.IntegrationCatalog();
         var notices = new List<string>();
         if (latest is null) notices.Add("No source archive has been analyzed yet.");
         else if (latest.TechnologyCoverage is null) notices.Add("The latest snapshot was analyzed before technology inventory existed; analyze the source again to see it.");
+        IReadOnlyList<BirkNext.Integrations.SourceSetupArea> areas = latest is null ? [] : Services.IntegrationJourneys.SourceSetupAreas.Of(latest);
         return Ok(new ProjectTechnologyCoverage
         {
             EnvironmentId = environmentId ?? "", SourceSnapshotId = latest?.Id, SourceArchive = latest?.Archive.FileName, AnalyzedAt = latest?.AnalyzedAt,
@@ -35,6 +39,7 @@ public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegr
                 .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
             DomainExtensions = configured.DomainExtensions, Notices = notices,
             CiCdEvidenceVersion = latest?.EvidenceDomains?.CiCd.AnalyzerVersion,
+            SourceOutcome = latest is null ? null : BirkNext.Integrations.SourceSetupOutcome.Overall(areas), SourceAreas = [.. areas],
             // Mirrors Pipeline Review: no CI/CD domain, or an older analyzer that found pipelines, needs re-analysis (v1 without pipelines is N/A).
             CiCdEvidenceOutdated = latest is not null && (latest.EvidenceDomains?.CiCd is not { } cicd
                 || cicd.AnalyzerVersion < BirkNext.PipelineReview.PipelineReviewText.RequiredCiCdVersion && cicd.Pipelines.Count > 0),

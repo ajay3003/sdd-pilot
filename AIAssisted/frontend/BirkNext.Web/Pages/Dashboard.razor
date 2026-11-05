@@ -17,7 +17,7 @@
 @inject IServiceProvider Services
 @implements IDisposable
 
-<PageTitle>Dashboard</PageTitle>
+<PageTitle>Project Quality Dashboard</PageTitle>
 
 @if (ResetNotice is { } notice)
 {
@@ -38,7 +38,7 @@
     </div>
 }
 
-    <PageHeader Title="SDD Quality &amp; Readiness" Description="The selected project's SDD evidence, specification quality, traceability, analysis readiness and findings. Available is not analyzed; analyzed is not verified.">
+    <PageHeader Title="Project Quality Dashboard" Description="Overview of project evidence, specification quality, traceability, reviews and verification. Shows what is available, what has been assessed and what still requires attention.">
         @if (_hasAnySnapshot)
         {
             <button type="button" class="btn-secondary db-export-btn" @onclick="ExportHtml">Export HTML</button>
@@ -117,7 +117,7 @@
                 var hero = _hero;
                 <div class="sdd-hero" data-testid="sdd-hero" data-status="@hero.Status">
                     <div class="sdd-hero-state">
-                        <span class="sdd-hero-label">Overall readiness</span>
+                        <span class="sdd-hero-label">Review readiness</span>
                         <SemanticStatusBadge Status="DashboardPresentation.Semantic(hero.Status)" QualifiedLabel="@hero.Readiness" TestId="sdd-hero-readiness" />
                         <span class="db-muted" data-testid="sdd-hero-detail">@hero.Detail</span>
                     </div>
@@ -235,7 +235,7 @@
                         </ul>
                     </details>
                 }
-                @if (_workflowReadiness?.Inputs.Source is { Status: ProjectInputStatus.Ready or ProjectInputStatus.NeedsAttention })
+                @if (_workflowReadiness?.Inputs.Source is { IsProvided: true })
                 {
                     <p class="db-muted db-source-link">Source analysis available · <a href="source-analysis">View technical evidence</a></p>
                 }
