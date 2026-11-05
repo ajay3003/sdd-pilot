@@ -25,7 +25,7 @@
         }
     </header>
 
-    @if (!_loaded) { <p role="status">Loading delivery projects…</p> }
+    @if (!_loaded) { <InlineLoading Text="Loading delivery projects…" /> }
     else if (_error is not null) { <p class="do-error" role="alert">@_error</p> }
     else if (_projects.Count == 0)
     {
@@ -44,7 +44,7 @@
             </label>
         </div>
 
-        @if (_loadingProject) { <p role="status">Loading the backlog…</p> }
+        @if (_loadingProject) { <InlineLoading Text="Loading the backlog…" /> }
         else if (_view is null)
         {
             <section class="do-card" data-testid="do-no-snapshot">

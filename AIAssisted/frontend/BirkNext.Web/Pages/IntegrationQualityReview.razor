@@ -39,7 +39,7 @@
 
     @if (_profile is null && _error is null)
     {
-        <p class="iqr-muted" role="status" data-testid="iqr-loading">Loading the active Target Environment…</p>
+        <InlineLoading Text="Loading the active Target Environment…" Class="iqr-muted" TestId="iqr-loading" />
     }
     else if (_profile is { } profile && _result is null)
     {
@@ -67,7 +67,7 @@
         </nav>
         @if (_readiness is null && _error is null)
         {
-            <p class="iqr-muted" role="status" data-testid="iqr-integrations-loading">Loading configured integrations…</p>
+            <InlineLoading Text="Loading configured integrations…" Class="iqr-muted" TestId="iqr-integrations-loading" />
         }
 
         @* ── Overview ── *@
@@ -381,7 +381,7 @@
                             }
                         </div>
                     }
-                    else if (_error is null) { <p class="iqr-muted" role="status">Loading runtime evidence…</p> }
+                    else if (_error is null) { <InlineLoading Text="Loading runtime evidence…" Class="iqr-muted" /> }
                 </div>
             </div>
 
@@ -454,7 +454,7 @@
                 @DomainTable(coverage, profile)
                 @RunBar(coverage, profile, "iqr-run-from-review")
             }
-            else if (_error is null) { <p class="iqr-muted" role="status">Loading review coverage…</p> }
+            else if (_error is null) { <InlineLoading Text="Loading review coverage…" Class="iqr-muted" /> }
         </section>
 
         @* ── Test & Verify ── *@

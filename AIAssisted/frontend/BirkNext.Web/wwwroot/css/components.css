@@ -1445,3 +1445,48 @@
 a.export-menu-item { box-sizing: border-box; text-decoration: none; overflow-wrap: anywhere; }
 .export-menu-item:hover { background: var(--clr-surface); }
 .export-menu-item:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: -2px; }
+
+/* ── Shared loading & progress (Shared/Components/Loading) ───────────────────────────────────────────────────────────────────────────────
+   Delayed presentation: the element exists at once (state and tests see it) but stays hidden until its component reveals it after
+   LoadingThresholds.Inline of real time (a wall-clock timer, not a CSS animation delay — the animation clock lags while WebAssembly keeps
+   the main thread busy). Removing the element ends it; a fast operation never shows. */
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+@keyframes loading-shimmer { 0% { opacity: .55; } 50% { opacity: 1; } 100% { opacity: .55; } }
+
+.loading-delayed { visibility: hidden; }
+.loading-delayed.loading-revealed { visibility: visible; }
+
+.loading-spinner {
+    display: inline-block; flex: 0 0 auto; width: .9em; height: .9em; margin-right: .45em; vertical-align: -.1em;
+    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; opacity: .7;
+    animation: loading-spin .8s linear infinite;
+}
+.loading-inline { color: var(--clr-text-muted, #475569); }
+p.loading-inline { margin: .5rem 0; }
+
+.loading-skeleton { display: flex; flex-direction: column; gap: .5rem; padding: .5rem 0; }
+.loading-skeleton-line { display: block; height: .8rem; border-radius: 4px; background: var(--clr-border, #e2e8f0); animation: loading-shimmer 1.4s ease-in-out infinite; }
+
+.op-progress { padding: 1rem 1.25rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-lg, 8px); background: var(--clr-surface, #fff); }
+.op-progress .op-kicker { margin: 0 0 .25rem; color: var(--clr-text-muted, #475569); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.op-progress .op-title { display: flex; align-items: center; margin: 0 0 .35rem; font-size: 1.1rem; }
+.op-progress .op-current { margin: 0 0 .25rem; color: var(--clr-text-muted, #475569); }
+.op-progress .op-message { margin: .25rem 0 .5rem; }
+.op-progress .op-icon-failed { display: inline-flex; align-items: center; justify-content: center; width: 1.2em; height: 1.2em; margin-right: .45em; border-radius: 50%;
+    background: var(--clr-warning-bg, #fef3c7); color: var(--clr-warning, #92400e); font-weight: 700; }
+/* Compact first; the component renders the full step list after LoadingThresholds.Detail (a failed operation shows its steps at once). */
+.op-progress .op-steps-delayed { display: none; }
+.op-progress .op-slow { margin: 0 0 .25rem; color: var(--clr-text-muted, #475569); }
+
+.op-persistent { margin: .5rem 0; padding: .6rem .8rem; border: 1px solid var(--clr-border, #e2e8f0); border-left: 3px solid var(--clr-primary, #2563eb);
+    border-radius: var(--radius-md, 6px); background: var(--clr-surface, #fff); }
+.op-persistent-failed { border-left-color: var(--clr-warning, #b45309); }
+.op-persistent-head { display: flex; align-items: center; gap: .5rem; }
+.op-persistent-state { margin-left: auto; color: var(--clr-text-muted, #475569); font-size: .8rem; }
+.op-persistent-stage, .op-persistent-note, .op-persistent-error { margin: .25rem 0 0; font-size: .85rem; }
+.op-persistent-note { color: var(--clr-text-muted, #475569); }
+.op-persistent-bar { width: 100%; height: .5rem; margin-top: .35rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    .loading-spinner, .loading-skeleton-line { animation-duration: 0s; animation-iteration-count: 1; }
+}

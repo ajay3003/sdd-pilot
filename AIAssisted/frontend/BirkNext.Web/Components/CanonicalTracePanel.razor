@@ -112,7 +112,7 @@
 
     private RenderFragment Detail(TraceFeatureDetail? d) => __builder =>
     {
-        if (d is null) { <p class="ctp-muted" role="status">Loading the chain…</p>; return; }
+        if (d is null) { <InlineLoading Text="Loading the chain…" Class="ctp-muted" />; return; }
         <div class="ctp-detail" data-testid="ct-detail">
             @foreach (var g in d.Gaps) { <p class="ctp-limit">@g</p> }
             <h3 class="ctp-h3">Requirements</h3>

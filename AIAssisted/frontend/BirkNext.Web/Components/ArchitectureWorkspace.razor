@@ -160,7 +160,7 @@
             else
             {
                 <label>Compare with <select value="@_previousSourceId" @onchange="PreviousSourceChanged" data-testid="arch-previous">@foreach (var p in PreviousSources) { <option value="@p.Id">@p.Label</option> }</select></label>
-                @if (_previousLoading) { <p class="arch-muted" role="status" data-testid="arch-previous-loading">Loading the earlier snapshot…</p> }
+                @if (_previousLoading) { <InlineLoading Text="Loading the earlier snapshot…" Class="arch-muted" TestId="arch-previous-loading" /> }
                 else if (_previousError is { } previousError)
                 {
                     <p class="arch-limitation" role="alert" data-testid="arch-previous-error">Could not load the earlier snapshot: @previousError <button type="button" class="arch-link" data-testid="arch-previous-retry" @onclick="LoadSelectedPreviousAsync">Retry</button></p>

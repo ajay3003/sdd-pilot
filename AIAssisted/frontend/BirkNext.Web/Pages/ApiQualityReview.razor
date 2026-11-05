@@ -133,7 +133,7 @@
                 @CapabilityList(true)
                 <div class="aqr-run-row" data-testid="aqr-run-row">
                     <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run" aria-describedby="@(!Eligibility.Enabled ? "aqr-run-reason" : null)">
-                        @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
+                        @if (_running) { <span class="loading-spinner" aria-hidden="true"></span> }
                         @(_running ? "Reviewing..." : "Run API Quality Review")
                     </PrimaryButton>
                     <span class="aqr-muted aqr-run-note" data-testid="aqr-run-note">Runs the read-only review (safe requests only). Optional active checks run only when explicitly enabled and ready.</span>
@@ -897,12 +897,12 @@
     private static readonly (string Key, string Label)[] AssessmentStages =
     [
         ("target", "Loading target"), ("evidence", "Loading API evidence"), ("correlate", "Correlating runtime observations"),
-        ("auth", "Evaluating authentication"), ("capabilities", "Evaluating review capabilities"), ("readiness", "Calculating readiness"),
+        ("auth", "Evaluating authentication"), ("capabilities", "Evaluating review capabilities"), ("contracts", "Loading contract bindings"),
+        ("authorization", "Loading authorization checks"), ("readiness", "Calculating readiness"),
     ];
-    private static readonly TimeSpan SlowAssessment = TimeSpan.FromSeconds(4);
     private int _generation;
     private ReviewAssessment? _assessment;
-    private bool _evaluated, _assessing, _slow;
+    private bool _evaluated, _assessing;
     private string? _assessmentError;
     private RuntimeEvidence? _runtime;
 
@@ -912,9 +912,7 @@
         var a = new ReviewAssessment(++_generation, AssessmentStages);
         _assessment = a;
         _assessing = true;
-        _slow = false;
         _assessmentError = null;
-        _ = WatchSlowAssessmentAsync(a);
         void Changed() { if (_generation == a.Generation) _ = InvokeAsync(StateHasChanged); }
         try
         {
@@ -957,8 +955,8 @@
                 }
             }, Changed);
             var schemas = await a.StageAsync("capabilities", _ => LoadSchemaArtifactsCoreAsync(context, targets), Changed);
-            var bindings = await LoadContractBindingsCoreAsync(context, targets);
-            var authorization = await LoadAuthorizationInputsCoreAsync(context, targets);
+            var bindings = await a.StageAsync("contracts", _ => LoadContractBindingsCoreAsync(context, targets), Changed);
+            var authorization = await a.StageAsync("authorization", _ => LoadAuthorizationInputsCoreAsync(context, targets), Changed);
             if (!a.IsCurrent(_generation)) return;
             await a.StageAsync("readiness", _ => Task.FromResult(true), Changed);
             Commit(a, context, runtime, targets, capabilities, schemas, bindings, authorization);
@@ -970,7 +968,9 @@
         }
         finally
         {
-            if (_generation == a.Generation) { _assessing = false; _slow = false; }
+            // The step list ends with the operation: steps an early outcome made unnecessary read "skipped", never "pending" or Running.
+            a.Finish();
+            if (_generation == a.Generation) _assessing = false;
             Log(a, $"assessment {(a.Cancelled ? "cancelled" : "finished")} in {a.Elapsed.TotalMilliseconds:0} ms: "
                 + string.Join(", ", a.Stages.Select(s => $"{s.Key}={s.State}{(s.Duration is { } d ? $"/{d.TotalMilliseconds:0}ms" : "")}")));
         }
@@ -1017,45 +1017,20 @@
         _evaluated = true;
     }
 
-    private async Task WatchSlowAssessmentAsync(ReviewAssessment a)
-    {
-        try { await Task.Delay(SlowAssessment, a.Token); }
-        catch (OperationCanceledException) { return; }
-        catch (ObjectDisposedException) { return; }
-        if (_generation != a.Generation || !_assessing) return;
-        _slow = true;
-        await InvokeAsync(StateHasChanged);
-    }
-
     private void Log(ReviewAssessment a, string message) =>
         (ServiceProvider.GetService(typeof(ILogger<ApiQualityReview>)) as ILogger)?.LogInformation("API Quality Review readiness (generation {Generation}): {Message}", a.Generation, message);
 
-    /// <summary>Before the first evaluated snapshot: staged, announced progress (never red), or "Readiness could not be fully assessed" with Retry.</summary>
+    /// <summary>Before the first evaluated snapshot: the shared staged progress (OperationProgress — delayed, compact, then every step; never
+    /// red), or "Readiness could not be fully assessed" with Retry.</summary>
     private RenderFragment AssessingPanel() => __builder =>
     {
-        var a = _assessment;
         var failed = _assessmentError is not null && !_assessing;
-        <section class="aqr-card aqr-decision aqr-readiness aqr-readiness-@(failed ? "failed" : "assessing")" data-testid="aqr-readiness" data-readiness="@(failed ? "FailedToAssess" : "Assessing")"
-                 data-decision="@(failed ? ReviewDecision.FailedToAssess : ReviewDecision.Assessing)" aria-labelledby="aqr-readiness-heading" role="status" aria-live="polite">
-            <div class="aqr-decision-status">
-                <p class="aqr-decision-kicker">Run decision</p>
-                @if (failed)
-                {
-                    <h2 id="aqr-readiness-heading"><span class="aqr-readiness-icon" aria-hidden="true">!</span> @ReviewDecisions.FailedTitle</h2>
-                    <p class="aqr-readiness-message" data-testid="aqr-assessment-error">@_assessmentError</p>
-                    <button type="button" class="btn-secondary" @onclick="AssessAsync" data-testid="aqr-assessment-retry">Retry</button>
-                }
-                else
-                {
-                    <h2 id="aqr-readiness-heading"><span class="aqr-spinner" aria-hidden="true">⟳</span> @(_slow ? "Still assessing readiness…" : "Assessing API review readiness…")</h2>
-                    @if (_slow && a?.Waiting is { } waiting) { <p class="aqr-readiness-message" data-testid="aqr-assessment-waiting">Waiting for: @waiting.Label</p> }
-                }
-                @if (a is not null)
-                {
-                    <ReviewStageList Stages="a.Stages" TestId="aqr-assessment-stages" StageTestId="aqr-assessment-stage" />
-                }
-            </div>
-        </section>
+        <OperationProgress Title="Assessing API review readiness…" Stages="@(_assessment?.Stages ?? [])" Error="@(failed ? _assessmentError : null)"
+                           FailedTitle="@ReviewDecisions.FailedTitle" OnRetry="AssessAsync" Kicker="Run decision" HeadingId="aqr-readiness-heading"
+                           Class="@($"aqr-card aqr-decision aqr-readiness aqr-readiness-{(failed ? "failed" : "assessing")}")"
+                           TestId="aqr-readiness" StagesTestId="aqr-assessment-stages" StageTestId="aqr-assessment-stage"
+                           ErrorTestId="aqr-assessment-error" RetryTestId="aqr-assessment-retry"
+                           data-readiness="@(failed ? "FailedToAssess" : "Assessing")" data-decision="@(failed ? ReviewDecision.FailedToAssess : ReviewDecision.Assessing)" />
     };
 
     public void Dispose() => _assessment?.Dispose();

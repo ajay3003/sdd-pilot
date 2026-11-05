@@ -37,7 +37,7 @@
                     @if (_view is { } v) { <span class="ba-badge @(v.Configured && v.ConnectionStatusLabel.Length > 0 ? Tone(v) : Tone(v.State))" data-testid="ba-unattended-status">@(v.Configured && v.ConnectionStatusLabel.Length > 0 ? v.ConnectionStatusLabel : v.StateLabel)</span> }
                 </div>
                 <p>@BrowserAuthenticationText.UnattendedPurpose</p>
-                @if (!_loaded) { <p role="status">Loading…</p> }
+                @if (!_loaded) { <InlineLoading Text="Loading…" /> }
                 else if (_loadError is not null) { <p class="ba-error" role="alert">@_loadError</p> }
                 else if (_view is { Configured: false })
                 {

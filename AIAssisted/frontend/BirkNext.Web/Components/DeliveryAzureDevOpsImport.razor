@@ -9,7 +9,7 @@
 @* Import snapshot → Import from Azure DevOps: connection → project → repository → branch → date/time → resolved commit → the same import
    preview as a ZIP. The token is entered once, stored encrypted by the backend and never shown again. Read-only against Azure DevOps. *@
 <section class="ado" data-testid="dlr-ado" aria-label="Import from Azure DevOps">
-    @if (_loadingConnections) { <p role="status" class="ado-muted">Loading Azure DevOps connections…</p> }
+    @if (_loadingConnections) { <InlineLoading Text="Loading Azure DevOps connections…" Class="ado-muted" /> }
     else if (_editing)
     {
         <form class="ado-connection-form" data-testid="dlr-ado-connection-form" @onsubmit="SaveConnection" @onsubmit:preventDefault>

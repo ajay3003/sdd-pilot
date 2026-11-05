@@ -32,7 +32,7 @@
     <p class="sb-muted sb-legend" data-testid="sb-pointer-legend"><strong>Latest</strong> = newest stored · <strong>Latest completed</strong> = newest that finished completely
         (never a partial or failed one) · <strong>Current</strong> and <strong>Approved</strong> = chosen by a person. Latest is never assumed to be approved.</p>
 
-    @if (_loading is { } run) { <ReviewStageList Stages="run.Stages" TestId="sb-stages" StageTestId="sb-stage" /> }
+    @if (_loading is { } run) { <OperationProgress Title="Loading snapshots…" Stages="run.Stages" HeadingId="sb-loading-heading" TestId="sb-loading" StagesTestId="sb-stages" StageTestId="sb-stage" /> }
     else if (_error is not null) { <p class="sb-error" role="alert" data-testid="sb-error">@_error <button type="button" class="btn btn-secondary btn-sm" @onclick="ReloadAsync">Retry</button></p> }
     else if (_page is { Items.Count: 0 }) { <p class="sb-muted" data-testid="sb-empty">No snapshots match these filters.</p> }
     else if (_page is { } pg)

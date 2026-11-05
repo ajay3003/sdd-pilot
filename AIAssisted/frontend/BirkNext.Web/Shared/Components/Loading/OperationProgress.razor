@@ -1,0 +1,73 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Components
+@implements IDisposable
+@* Multi-step progress of one real operation (API Quality Review readiness, Source Analysis loading, a correlation pass…), rendered from the
+   operation's own ReviewStage list — never a guessed percentage. Presentation follows the shared thresholds (LoadingThresholds, real time
+   from first render):
+     < Inline (300 ms)   nothing visible
+     ≥ Inline            compact: title + "Step n of m · current step"
+     ≥ Detail (2 s)      the full step list
+     ≥ Slow (10 s)       "Still working — waiting for: …"
+   The caller stops rendering the component the moment the operation completes (which stops its timer), so nothing is left stuck and nothing
+   says Running after completion. A failure shows its steps at once, with Retry. *@
+<section class="op-progress @(Failed ? "op-failed" : $"op-running loading-delayed{(Phase > 0 ? " loading-revealed" : "")}") @Class" data-testid="@TestId" role="status" aria-live="polite"
+         aria-busy="@(Failed ? "false" : "true")" aria-labelledby="@HeadingId" @attributes="AdditionalAttributes">
+    @if (Kicker is not null) { <p class="op-kicker">@Kicker</p> }
+    @if (Failed)
+    {
+        <h2 id="@HeadingId" class="op-title @HeadingClass"><span class="op-icon op-icon-failed" aria-hidden="true">!</span> @FailedTitle</h2>
+        <p class="op-message" data-testid="@ErrorTestId">@Error</p>
+        @if (OnRetry.HasDelegate) { <button type="button" class="btn-secondary" @onclick="OnRetry" data-testid="@RetryTestId">Retry</button> }
+    }
+    else
+    {
+        <h2 id="@HeadingId" class="op-title @HeadingClass"><span class="loading-spinner" aria-hidden="true"></span> @Title</h2>
+        @if (Current is { } current)
+        {
+            <p class="op-current" data-testid="op-current">Step @(Index(current) + 1) of @Stages.Count · @current.Label</p>
+            @if (Phase >= 3) { <p class="op-slow" data-testid="op-slow">Still working — waiting for: @current.Label</p> }
+        }
+    }
+    <div class="@(Failed || Phase >= 2 ? "op-steps" : "op-steps op-steps-delayed")">
+        <ReviewStageList Stages="Stages" TestId="@StagesTestId" StageTestId="@StageTestId" RunningText="@RunningText" />
+    </div>
+    @ChildContent
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<ReviewStage> Stages { get; set; } = [];
+    /// <summary>A safe user-facing message: the operation failed (its steps show where).</summary>
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string FailedTitle { get; set; } = "Could not complete";
+    [Parameter] public EventCallback OnRetry { get; set; }
+    /// <summary>Optional content below the steps, e.g. the page's skeleton of what is loading.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Kicker { get; set; }
+    /// <summary>The page's own card classes (its spacing and frame).</summary>
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string HeadingId { get; set; } = "op-progress-heading";
+    [Parameter] public string? HeadingClass { get; set; }
+    [Parameter] public string RunningText { get; set; } = "loading…";
+    [Parameter] public string? TestId { get; set; } = "op-progress";
+    [Parameter] public string StagesTestId { get; set; } = "op-stages";
+    [Parameter] public string StageTestId { get; set; } = "op-stage";
+    [Parameter] public string ErrorTestId { get; set; } = "op-error";
+    [Parameter] public string RetryTestId { get; set; } = "op-retry";
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private bool Failed => Error is not null;
+
+    private DelayedPresentation? _reveal;
+    private int Phase => _reveal?.Phase ?? 0;
+
+    protected override void OnInitialized() =>
+        _reveal = new(() => InvokeAsync(StateHasChanged), LoadingThresholds.Inline, LoadingThresholds.Detail, LoadingThresholds.Slow);
+
+    public void Dispose() => _reveal?.Dispose();
+
+    /// <summary>The step that is running, else the first pending one (between two steps).</summary>
+    private ReviewStage? Current => Stages.FirstOrDefault(s => s.State == ReviewStageState.Running) ?? Stages.FirstOrDefault(s => s.State == ReviewStageState.Pending);
+
+    private int Index(ReviewStage stage) => Stages.ToList().FindIndex(s => s.Key == stage.Key);
+}

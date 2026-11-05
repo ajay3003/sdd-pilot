@@ -126,6 +126,19 @@ public sealed class ReviewAssessment : IDisposable
 
     public void Skip(string key, string? detail = null) => Set(key, ReviewStageState.Skipped, null, detail);
 
+    /// <summary>
+    /// Ends the operation's step list: a step that never ran is Skipped ("not needed" by default — an early outcome made it unnecessary),
+    /// and a step still Running (the operation was cancelled or ended mid-step) is Skipped as "stopped". After this, nothing reads Running.
+    /// </summary>
+    public void Finish(string notNeeded = "not needed")
+    {
+        for (var i = 0; i < _stages.Count; i++)
+        {
+            if (_stages[i].State == ReviewStageState.Pending) _stages[i] = _stages[i] with { State = ReviewStageState.Skipped, Detail = notNeeded };
+            else if (_stages[i].State == ReviewStageState.Running) _stages[i] = _stages[i] with { State = ReviewStageState.Skipped, Detail = "stopped" };
+        }
+    }
+
     private void Set(string key, ReviewStageState state, TimeSpan? duration, string? detail)
     {
         var i = _stages.FindIndex(s => s.Key == key);

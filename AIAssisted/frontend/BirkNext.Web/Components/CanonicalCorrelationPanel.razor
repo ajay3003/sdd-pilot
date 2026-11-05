@@ -17,7 +17,8 @@
     }
     else if (_assessment is { } a && _loading)
     {
-        <ReviewStageList Stages="a.Stages" TestId="@($"{TestId}-stages")" StageTestId="@($"{TestId}-stage")" />
+        <OperationProgress Title="Loading canonical correlations…" Stages="a.Stages" HeadingId="@($"{TestId}-loading-heading")" HeadingClass="ccp-loading-title"
+                           TestId="@($"{TestId}-loading")" StagesTestId="@($"{TestId}-stages")" StageTestId="@($"{TestId}-stage")" />
     }
     else if (_error is not null)
     {

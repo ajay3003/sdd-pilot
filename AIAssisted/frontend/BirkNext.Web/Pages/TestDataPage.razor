@@ -74,7 +74,7 @@
 
     @if (_loading)
     {
-        <p role="status" data-testid="td-loading">Loading test data…</p>
+        <InlineLoading Text="Loading test data…" TestId="td-loading" />
     }
     else if (_error is not null)
     {

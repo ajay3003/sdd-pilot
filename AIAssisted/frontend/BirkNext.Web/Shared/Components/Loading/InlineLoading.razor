@@ -1,0 +1,36 @@
+@implements IDisposable
+@* Inline loading for a short operation (a section's data, a list, a detail). Delayed presentation: the element is in the page at once (state
+   and tests see it) but stays invisible until LoadingThresholds.Inline (300 ms of real time), so a fast load never flashes. Completion is
+   never delayed — the caller stops rendering it the moment the data is there. One spinner and one style for the whole application.
+
+   Usage: @if (_loading) { <InlineLoading Text="Loading test data…" TestId="td-loading" /> } *@
+@if (Inline)
+{
+    <span class="loading-inline loading-delayed @Revealed @Class" role="status" aria-live="polite" data-testid="@TestId" @attributes="AdditionalAttributes">
+        <span class="loading-spinner" aria-hidden="true"></span>@Text
+    </span>
+}
+else
+{
+    <p class="loading-inline loading-delayed @Revealed @Class" role="status" aria-live="polite" data-testid="@TestId" @attributes="AdditionalAttributes">
+        <span class="loading-spinner" aria-hidden="true"></span>@Text
+    </p>
+}
+
+@code {
+    [Parameter] public string Text { get; set; } = "Loading…";
+    [Parameter] public string? TestId { get; set; }
+    /// <summary>Extra classes (the page's own muted/card class keeps its spacing).</summary>
+    [Parameter] public string? Class { get; set; }
+    /// <summary>A span inside a line of text instead of a paragraph.</summary>
+    [Parameter] public bool Inline { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private DelayedPresentation? _reveal;
+
+    protected override void OnInitialized() => _reveal = new(() => InvokeAsync(StateHasChanged), LoadingThresholds.Inline);
+
+    private string? Revealed => _reveal?.Phase > 0 ? "loading-revealed" : null;
+
+    public void Dispose() => _reveal?.Dispose();
+}

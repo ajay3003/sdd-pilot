@@ -465,41 +465,26 @@
     //    outdated generation are dropped, and a slow stage says what it waits for. Stages are the real requests, never invented phases. ──
     private ReviewAssessment? _loading;
     private int _loadGeneration;
-    private bool _loadSlow;
-    private static readonly TimeSpan SlowLoad = TimeSpan.FromSeconds(4);
 
     private ReviewAssessment BeginLoad(params (string Key, string Label)[] stages)
     {
         _loading?.Cancel();
         var a = new ReviewAssessment(++_loadGeneration, stages);
         _loading = a;
-        _loadSlow = false;
-        _ = WatchSlowLoadAsync(a);
         return a;
     }
 
-    private async Task WatchSlowLoadAsync(ReviewAssessment a)
-    {
-        try { await Task.Delay(SlowLoad, a.Token); }
-        catch (OperationCanceledException) { return; }
-        catch (ObjectDisposedException) { return; }
-        if (!a.IsCurrent(_loadGeneration) || a.Waiting is null) return;
-        _loadSlow = true;
-        await InvokeAsync(StateHasChanged);
-    }
-
+    /// <summary>The shared staged progress (OperationProgress: delayed, compact, then its steps, "still working" when slow) with the page's
+    /// card skeleton below it.</summary>
     private RenderFragment LoadingPanel(IqrSourceSnapshotSummary? summary) => __builder =>
     {
-        var a = _loading;
-        var title = _loadSlow && a?.Waiting is { } waiting ? $"Still loading… waiting for: {waiting.Label}"
-            : summary is null ? "Loading source snapshots…" : $"Loading analysis of {summary.Archive.FileName}…";
-        <section class="sa-card sa-loading" role="status" aria-live="polite" aria-busy="true" data-testid="@(summary is null ? "sa-list-loading" : "sa-detail-loading")" data-snapshot="@summary?.Id">
-            <p class="sa-loading-title"><span class="sa-loading-spinner" aria-hidden="true">⟳</span> @title</p>
-            @if (a is not null) { <ReviewStageList Stages="a.Stages" TestId="sa-loading-stages" StageTestId="sa-loading-stage" /> }
+        <OperationProgress Title="@(summary is null ? "Loading source snapshots…" : $"Loading analysis of {summary.Archive.FileName}…")" Stages="@(_loading?.Stages ?? [])"
+                           Class="sa-card sa-loading" HeadingId="sa-loading-heading" HeadingClass="sa-loading-title"
+                           TestId="@(summary is null ? "sa-list-loading" : "sa-detail-loading")" StagesTestId="sa-loading-stages" StageTestId="sa-loading-stage" data-snapshot="@summary?.Id">
             <div class="sa-skeleton" aria-hidden="true">
                 @for (var i = 0; i < 6; i++) { <span class="sa-skeleton-card"></span> }
             </div>
-        </section>
+        </OperationProgress>
     };
 
     /// <summary>Project Evidence associations (cached view; refreshed once per visit) — only to point at infrastructure in associated packages.</summary>
@@ -541,7 +526,7 @@
 
     private Task RetryDetailAsync() => LoadSelectedDetailAsync();
 
-    private static readonly RenderFragment LoadingAnalysis = @<p class="sa-card sa-muted" role="status" aria-busy="true" data-testid="sa-detail-loading">Loading analysis…</p>;
+    private static readonly RenderFragment LoadingAnalysis = @<InlineLoading Text="Loading analysis…" Class="sa-card sa-muted" TestId="sa-detail-loading" aria-busy="true" />;
 
     private sealed record PriorState(bool Ready, IqrSourceSnapshot? Detail, bool Failed);
     private readonly HashSet<Guid> _priorWatched = [];

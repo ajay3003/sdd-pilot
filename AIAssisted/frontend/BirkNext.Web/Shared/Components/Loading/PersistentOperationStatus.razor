@@ -1,0 +1,51 @@
+@using BirkNext.Web.Services.Operations
+@* The initiating page's view of one long-running operation (BackgroundOperationService — the same operation the Activity Center lists):
+   stage, measured progress only when the work reports a total (never a guessed percentage), and Cancel only where the operation allows it.
+   It keeps running if the person leaves the page. When the operation ends the page shows its result instead; a failure says why. *@
+@if (Operation is { } op)
+{
+    <div class="op-persistent op-persistent-@op.Status.ToString().ToLowerInvariant()" role="status" aria-live="polite" aria-busy="@(op.IsActive ? "true" : "false")"
+         data-testid="@TestId" data-status="@op.Status" data-operation="@op.Id">
+        <div class="op-persistent-head">
+            @if (op.IsActive) { <span class="loading-spinner" aria-hidden="true"></span> }
+            <strong>@op.Title</strong>
+            <span class="op-persistent-state" data-testid="@($"{TestId}-state")">@StateText(op.Status)</span>
+        </div>
+        @if (op.IsActive)
+        {
+            <p class="op-persistent-stage" data-testid="@($"{TestId}-stage")">@op.Stage@(op.Detail is { Length: > 0 } d ? $" — {d}" : "")</p>
+            @if (op.Percent is { } percent && op.Unit != "stages")
+            {
+                <progress class="op-persistent-bar" max="100" value="@percent" aria-label="@($"{op.Title}: {percent}%")">@percent%</progress>
+            }
+            <p class="op-persistent-note">@(Note ?? "It continues if you leave this page; see Activity.")</p>
+            @if (op.CanCancel && Operations is not null)
+            {
+                <button type="button" class="btn-link" data-testid="@($"{TestId}-cancel")" @onclick="() => Operations.Cancel(op.Id)">Cancel</button>
+            }
+        }
+        else if (op.Status == OperationStatus.Failed)
+        {
+            <p class="op-persistent-error" data-testid="@($"{TestId}-error")">@op.Error</p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public OperationSnapshot? Operation { get; set; }
+    /// <summary>Needed for Cancel; without it the status is read-only.</summary>
+    [Parameter] public BackgroundOperationService? Operations { get; set; }
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public string TestId { get; set; } = "op-persistent";
+
+    public static string StateText(OperationStatus status) => status switch
+    {
+        OperationStatus.Queued => "Queued",
+        OperationStatus.Preparing => "Preparing",
+        OperationStatus.Running => "Running",
+        OperationStatus.Cancelling => "Cancelling",
+        OperationStatus.Completed => "Completed",
+        OperationStatus.Failed => "Failed",
+        _ => "Cancelled",
+    };
+}

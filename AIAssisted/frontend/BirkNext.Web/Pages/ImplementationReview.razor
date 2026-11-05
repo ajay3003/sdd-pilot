@@ -217,7 +217,7 @@
                 { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToLocalTime().ToString("g") · @snapshot.Status · @Short(snapshot.Archive.Sha256)</option> }
             </select>
             <button data-testid="ier-bind-codelinks" @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(CodeLinkProject))">Bind explicit CodeLinks</button>
-            @if (_chosenSourceLoading) { <p role="status" aria-busy="true" data-testid="ier-source-snapshot-loading">Loading analysis…</p> }
+            @if (_chosenSourceLoading) { <InlineLoading Text="Loading analysis…" TestId="ier-source-snapshot-loading" aria-busy="true" /> }
             else if (_chosenSourceError is { } chosenError) { <p role="alert" data-testid="ier-source-snapshot-error">Could not load analysis: @chosenError <button type="button" @onclick="LoadChosenSourceSnapshotAsync">Retry</button></p> }
             @if (_chosenSourceSnapshot is { } chosen && chosen.Id == _selectedSourceSnapshotId
                 && SourceBindingSuggestions.For(SourceBindingSuggestions.ModuleOf(Artifacts.SddLifecycle.ActiveRequirementScope), chosen) is { Count: > 0 } suggestions)

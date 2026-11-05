@@ -88,8 +88,6 @@
 }
 
 .aqr-progress { margin: 0.75rem 0 0; font-size: 0.9rem; color: var(--clr-text-muted); }
-.aqr-spinner { display: inline-block; animation: aqr-spin 1s linear infinite; margin-right: 0.35rem; }
-@keyframes aqr-spin { to { transform: rotate(360deg); } }
 
 /* Pills: text label always present; tone only adds colour. */
 .aqr-pill {

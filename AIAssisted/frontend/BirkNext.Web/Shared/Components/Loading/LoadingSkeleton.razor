@@ -1,0 +1,27 @@
+@* Placeholder blocks with the shape of content that is loading (a summary, a table), so the page does not jump when it arrives. Delayed like
+   InlineLoading; the status text is for screen readers only.
+
+   Usage: @if (_loading) { <LoadingSkeleton Lines="4" Text="Loading the backlog…" TestId="do-backlog-loading" /> } *@
+@implements IDisposable
+<div class="loading-skeleton loading-delayed @(_reveal?.Phase > 0 ? "loading-revealed" : null) @Class" role="status" aria-live="polite" data-testid="@TestId">
+    <span class="visually-hidden">@Text</span>
+    @for (var i = 0; i < Math.Max(1, Lines); i++)
+    {
+        <span class="loading-skeleton-line" aria-hidden="true" style="@($"width:{Widths[i % Widths.Length]}%")"></span>
+    }
+</div>
+
+@code {
+    private static readonly int[] Widths = [92, 78, 85, 64, 88, 70];
+
+    [Parameter] public int Lines { get; set; } = 3;
+    [Parameter] public string Text { get; set; } = "Loading…";
+    [Parameter] public string? TestId { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private DelayedPresentation? _reveal;
+
+    protected override void OnInitialized() => _reveal = new(() => InvokeAsync(StateHasChanged), LoadingThresholds.Inline);
+
+    public void Dispose() => _reveal?.Dispose();
+}

@@ -12,7 +12,7 @@
 <PageTitle>Requirements Traceability</PageTitle>
 <main class="requirements-traceability">
     <PageHeader Title="Requirements Traceability" Description="One shared evidence graph for current requirements, acceptance criteria, plan, tasks, implementation references and test executions." />
-    @if (_snapshot is null) { <p role="status">Loading workspace artifacts…</p> }
+    @if (_snapshot is null) { <InlineLoading Text="Loading workspace artifacts…" /> }
     else if (_snapshot.State == CurrentWorkspaceState.Error) { <p role="alert">Unable to load workspace artifacts.</p> }
     else if (_selectionRequired.Count > 0) { <section role="status"><h2>Selection required</h2><p>Choose the artifact to use in its Explorer before viewing traceability.</p>@foreach (var role in _selectionRequired) { <p>@role.Label has multiple artifacts. <a href="/explorers">Choose artifact</a></p> }</section> }
     else if (!_snapshot.Has(WorkspaceArtifactType.Specification)) { <section role="status"><h2>Specification unavailable</h2><p>Add a Specification artifact to the current workspace to build requirements traceability.</p></section> }

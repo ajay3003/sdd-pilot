@@ -20,7 +20,7 @@
 
     @if (_initialising)
     {
-        <p class="cr-muted" role="status">Loading the active project…</p>
+        <InlineLoading Text="Loading the active project…" Class="cr-muted" />
     }
     else if (_scope is null)
     {
@@ -72,7 +72,11 @@
                 </ul>
                 <button type="button" class="btn btn-primary" disabled="@(_selected.Count == 0 || _interpreting is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run">Interpret selected</button>
             }
-            @if (_interpreting is { } run) { <ReviewStageList Stages="run.Stages" TestId="cr-interpret-stages" StageTestId="cr-interpret-stage" RunningText="working…" /> }
+            @if (_interpreting is { } run)
+            {
+                <OperationProgress Title="Interpreting the selected source snapshots…" Stages="run.Stages" RunningText="working…" HeadingId="cr-interpret-heading"
+                                   TestId="cr-interpret-progress" StagesTestId="cr-interpret-stages" StageTestId="cr-interpret-stage" />
+            }
             @if (_interpretError is not null) { <p class="cr-error" role="alert" data-testid="cr-interpret-error">@_interpretError</p> }
             @if (_lastRun is { } last)
             {
@@ -100,7 +104,7 @@
                     </select>
                 </label>
             }
-            @if (_queueLoading) { <p class="cr-muted" role="status">Loading the review queue…</p> }
+            @if (_queueLoading) { <InlineLoading Text="Loading the review queue…" Class="cr-muted" /> }
             else if (_queueError is not null) { <p class="cr-error" role="alert">Shared review queue unavailable: @_queueError <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadQueueAsync">Retry</button></p> }
             else if (_queue is { Page.Items.Count: 0 }) { <p class="cr-muted" data-testid="cr-queue-empty">@(_kind == ReviewItemKind.Decision ? "Nothing waits for a decision." : "No suggestions.")</p> }
             else if (_queue is { } queue)

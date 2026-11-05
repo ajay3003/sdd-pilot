@@ -183,7 +183,7 @@
             <ul class="atp-list atp-missing" data-testid="atp-missing" aria-label="Missing contract information">@foreach (var item in contract.Missing) { <li>@item</li> }</ul>
         }
     }
-    else if (_loading) { <p class="atp-muted" role="status">Loading the app contract…</p> }
+    else if (_loading) { <InlineLoading Text="Loading the app contract…" Class="atp-muted" /> }
 
     @if (_configuration is { } configuration)
     {

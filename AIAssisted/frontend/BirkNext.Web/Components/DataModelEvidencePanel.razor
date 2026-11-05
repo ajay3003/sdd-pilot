@@ -12,7 +12,7 @@
     @if (Snapshot is null)
     {
         @if (_error is { } error) { <p class="sd-muted" role="status">@error</p> }
-        else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+        else if (_snapshots is null) { <InlineLoading Text="Loading Source Analysis snapshots…" Class="sd-muted" /> }
         else if (_snapshots.Count == 0) { <p class="sd-muted" data-testid="data-model-evidence-none">No Source Analysis snapshot with a database model is stored.</p> }
         else
         {
@@ -96,7 +96,7 @@
             </ReviewDisclosure>
         </ReviewDisclosure>
     }
-    else if (Snapshot is null && _selection is { Loading: true }) { <p class="sd-muted" role="status" aria-busy="true" data-testid="data-model-evidence-loading">Loading analysis…</p> }
+    else if (Snapshot is null && _selection is { Loading: true }) { <InlineLoading Text="Loading analysis…" Class="sd-muted" TestId="data-model-evidence-loading" aria-busy="true" /> }
     else if (Snapshot is null && _selection?.Error is { } selectionError)
     {
         <p class="sd-muted" role="alert" data-testid="data-model-evidence-load-error">Could not load analysis: @selectionError <button type="button" class="btn-secondary" @onclick="() => _selection!.SelectAsync(_selection.Selected)">Retry</button></p>

@@ -27,7 +27,7 @@
 
     @if (!_loaded)
     {
-        <p class="ir-muted" role="status">Loading current workspace artifacts…</p>
+        <InlineLoading Text="Loading current workspace artifacts…" Class="ir-muted" />
     }
     else if (NoWorkspace)
     {

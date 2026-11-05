@@ -9,7 +9,7 @@
 <div class="sd-source-contracts" data-testid="delivery-evidence">
     <p class="sd-muted">@Note</p>
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="delivery-error">@error</p> }
-    else if (_sources is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+    else if (_sources is null) { <InlineLoading Text="Loading Source Analysis snapshots…" Class="sd-muted" /> }
     else if (_sources.Snapshots.Count(s => s.Pipelines > 0) == 0) { <p class="sd-muted" data-testid="delivery-none">No Source Analysis snapshot with pipeline definitions is stored.</p> }
     else
     {
@@ -26,7 +26,7 @@
                 <button type="button" class="btn-secondary btn-small" @onclick="() => SelectAsync(new ChangeEventArgs { Value = hint.Id.ToString() })" data-testid="delivery-use-suggested">Use suggested snapshot</button></p>
         }
         @if (string.IsNullOrEmpty(_selected) && !_loading) { <p class="sd-muted" role="status" data-testid="delivery-gate-state">@DeliveryGateStates.NoSnapshot</p> }
-        @if (_loading) { <p class="sd-muted" role="status">Loading delivery evidence…</p> }
+        @if (_loading) { <InlineLoading Text="Loading delivery evidence…" Class="sd-muted" /> }
         else if (_delivery is { } e)
         {
             @if (Environments)

@@ -51,7 +51,7 @@
         <h2 id="db-workspace-heading" class="db-visually-hidden">Current project</h2>
         @if (_workspace is null)
         {
-            <p class="db-workspace-message" role="status">Loading project…</p>
+            <InlineLoading Text="Loading project…" Class="db-workspace-message" />
         }
         else if (_workspace.State == CurrentWorkspaceState.NoWorkspace)
         {

@@ -166,6 +166,22 @@ public sealed class ApiQualityReviewReadinessLoadingTests : BunitContext
         page.Find("[data-testid=aqr-assessment-error]").TextContent.Should().Contain("Nothing was evaluated as blocked").And.NotContain("storage unavailable", "diagnostics stay safe");
         page.Find("[data-testid=aqr-assessment-retry]").Should().NotBeNull();
         page.FindAll("[data-testid=aqr-assessment-stage]").Single(s => s.GetAttribute("data-stage") == "evidence").GetAttribute("data-state").Should().Be("Failed");
+        page.FindAll("[data-testid=aqr-assessment-stage]").Select(s => s.GetAttribute("data-state")).Should().NotContain(["Pending", "Running"],
+            "the step list ends with the assessment: steps the failure made unnecessary read skipped");
+    }
+
+    [Fact]
+    public void Every_awaited_load_is_a_visible_stage_so_Assessing_never_outlasts_its_steps()
+    {
+        var pending = new TaskCompletionSource<LocalHttpsProxyStatus>();
+        var page = Render(new EndpointDiscoveryService(), Proxy(pending.Task).Object);
+
+        page.FindAll("[data-testid=aqr-assessment-stage]").Select(s => s.GetAttribute("data-stage")).Should().Equal(
+            "target", "evidence", "correlate", "auth", "capabilities", "contracts", "authorization", "readiness");
+        page.Find("[data-testid=aqr-readiness]").ClassList.Should().Contain("loading-delayed", "a fast assessment never flashes the panel");
+        page.Find("[data-testid=op-current]").TextContent.Should().Be("Step 2 of 8 · Loading API evidence");
+        pending.SetResult(Live(Traffic()));
+        page.WaitForAssertion(() => Decision(page).Should().NotBe(nameof(ReviewDecision.Assessing)), Wait);
     }
 
     [Fact]

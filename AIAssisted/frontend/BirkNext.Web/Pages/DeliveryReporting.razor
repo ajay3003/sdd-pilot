@@ -343,7 +343,8 @@
         <section class="dlr-card dlr-generate" data-testid="dlr-generate" aria-labelledby="dlr-generate-title">
             @if (RunningGeneration is { } running)
             {
-                <p class="dlr-muted" role="status" data-testid="dlr-generate-running">Generating a report (@running.Context.Baseline → @running.Context.Revision) — it continues if you leave this page; see Activity.</p>
+                <PersistentOperationStatus Operation="running" Operations="Operations" TestId="dlr-generate-running"
+                                           Note="@($"Generating a report ({running.Context.Baseline} → {running.Context.Revision}) — it continues if you leave this page; see Activity.")" />
             }
             <h2 class="dlr-h2" id="dlr-generate-title">Generate delivery report</h2>
             <p class="dlr-kicker" data-testid="dlr-new-config-label">New report configuration <span class="dlr-muted">· chooses the snapshots for a new report; saved reports keep their own snapshots</span></p>

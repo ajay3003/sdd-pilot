@@ -19,7 +19,7 @@
 
     @if (_initialising)
     {
-        <p class="rr-muted" role="status">Loading the active project…</p>
+        <InlineLoading Text="Loading the active project…" Class="rr-muted" />
     }
     else if (_scope is null)
     {
@@ -29,7 +29,7 @@
     {
         <p><a href="release-readiness" data-testid="rr-back">← Current readiness</a></p>
         @if (_reportError is not null) { <p class="rr-error" role="alert" data-testid="rr-report-error">@_reportError</p> }
-        else if (_report is null) { <p class="rr-muted" role="status">Loading the report…</p> }
+        else if (_report is null) { <InlineLoading Text="Loading the report…" Class="rr-muted" /> }
         else
         {
             <section class="rr-card" aria-labelledby="rr-report-h" data-testid="rr-report">
