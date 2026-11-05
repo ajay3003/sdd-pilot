@@ -1,6 +1,8 @@
 using BirkNext.Integrations;
 using BirkNext.Snapshots;
 using BirkNext.Web.Services;
+using BirkNext.Web.Models;
+using BirkNext.Web.Services.ProjectEvidence;
 using FluentAssertions;
 
 namespace BirkNext.Web.Tests.Services;
@@ -31,5 +33,33 @@ public sealed class HardeningPass2Tests
         // An older backend without the outcome keeps the analyzer's own words.
         SourceAnalysisOverview.OptionLabel(terraform with { Outcome = null }).Should().Contain("No production project found");
         SourceAnalysisOverview.Outcome(SnapshotProcessingStatus.Completed).Should().Be("Analyzed");
+    }
+
+    [Fact]
+    public void A_package_whose_Source_Analysis_is_not_read_yet_is_not_classified_never_guessed_as_application_source()
+    {
+        var lifecycle = new SddLifecycleState();
+        var snapshot = Guid.NewGuid();
+        var record = new SddProjectImportRecord
+        {
+            ImportId = "import-tf", ProjectName = "Terraform-iac-m2lb", ArchiveFileName = "Terraform-iac-m2lb.zip", ArchiveSha256 = "sha", ImportedAt = DateTimeOffset.UnixEpoch,
+            SourceState = "Created", SourceSnapshotId = snapshot,
+        };
+        lifecycle.ProjectImports.Add(record);
+
+        var pending = ProjectEvidencePackages.Of(record, lifecycle, null);
+        pending.SourcePending.Should().BeTrue();
+        pending.Classification.Should().Be("Not classified yet");
+        pending.ClassificationReason.Should().Contain("has not been read yet");
+
+        var read = ProjectEvidencePackages.Of(record, lifecycle, new SourceSetupView
+        {
+            Snapshots = [new SourceSetupSnapshot(snapshot, "Terraform-iac-m2lb.zip", "f", DateTimeOffset.UnixEpoch, "Failed")
+            {
+                Areas = [new("Application code", "NotDetected"), new("Infrastructure as Code", "Complete")], InfrastructureFormats = ["Terraform"],
+            }],
+        });
+        read.SourcePending.Should().BeFalse();
+        read.Classification.Should().Be("Infrastructure source", "once read, the role comes from the contents");
     }
 }

@@ -202,6 +202,10 @@
             <section class="db-panel" aria-labelledby="db-found-heading" data-testid="db-found">
                 <h2 id="db-found-heading" class="db-h2">Evidence inventory</h2>
                 <p class="db-muted" data-testid="db-inventory-note">Inventory only — presence does not mean reviewed or verified.</p>
+                @if (DashboardPresentation.InventoryScope(_workspace) is { } inventoryScope)
+                {
+                    <p class="db-muted" data-testid="db-inventory-scope">@inventoryScope</p>
+                }
                 @if (_found.Count == 0)
                 {
                     <p class="db-muted" data-testid="db-found-none">No SDD project documents detected.</p>

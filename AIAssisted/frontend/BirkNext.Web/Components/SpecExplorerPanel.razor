@@ -187,7 +187,8 @@
 
                             @if (!isExpanded && hasChildren && node.TotalDescendants > 0)
                             {
-                                <span class="se-child-count">(@node.TotalDescendants)</span>
+                                @* All entries under the heading (sub-headings and prose included) — not a count of requirements, tests or clarifications. *@
+                                <span class="se-child-count" title="All entries under this heading, including sub-headings — the labelled counts next to it are the classified items">(@node.TotalDescendants @(node.TotalDescendants == 1 ? "item" : "items"))</span>
                             }
 
                             @if (isHeading && (node.ReqCount > 0 || node.UserStoryCount > 0 || node.TestCount > 0 || node.ClarCount > 0 || node.ScCount > 0 || node.DecisionCount > 0))

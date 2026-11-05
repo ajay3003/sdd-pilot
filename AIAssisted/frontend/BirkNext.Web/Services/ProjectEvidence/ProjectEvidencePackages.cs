@@ -32,6 +32,10 @@ public sealed record ProjectEvidencePackage(
     IReadOnlyList<string> ConfigurationEnvironments,
     string? SourceAnalysisStatus)
 {
+    /// <summary>A source snapshot exists but its Source Analysis has not been read yet (the page is still loading it): the package's source role is
+    /// not known, so it is shown as "Not classified yet" — never guessed as application source (a Terraform package read that way for a moment).</summary>
+    public bool SourcePending { get; init; }
+
     public bool Has(ProjectEvidenceCapability capability) => Capabilities.Any(c => c.Capability == capability);
     public PackageCapability? Capability(ProjectEvidenceCapability capability) => Capabilities.FirstOrDefault(c => c.Capability == capability);
 
@@ -127,7 +131,7 @@ public static class ProjectEvidencePackages
         var logical = ProjectImportHistory.LogicalSources(setup, snapshotId);
         return new ProjectEvidencePackage(record.ImportId, string.IsNullOrWhiteSpace(record.ProjectName) ? record.ArchiveFileName : record.ProjectName,
             record.ArchiveFileName, record.ArchiveSha256, record.ImportedAt, snapshotId, capabilities, roles, documentCount, logical,
-            snapshot?.InfrastructureFormats ?? [], snapshot?.ConfigurationEnvironments ?? [], snapshot?.Status);
+            snapshot?.InfrastructureFormats ?? [], snapshot?.ConfigurationEnvironments ?? [], snapshot?.Status) { SourcePending = snapshotId is not null && setup is null };
     }
 
     /// <summary>
@@ -138,6 +142,7 @@ public static class ProjectEvidencePackages
     internal static string ClassificationOf(ProjectEvidencePackage p)
     {
         var docs = p.Has(ProjectEvidenceCapability.Documentation);
+        if (p.SourcePending) return docs ? "Not classified yet · documents" : "Not classified yet";
         return ApplicationContexts.RoleOf(p) switch
         {
             PackageEvidenceRole.PrimaryApplicationSource or PackageEvidenceRole.RelatedApplicationSource => docs ? "Source + documents" : "Application source",
@@ -152,6 +157,7 @@ public static class ProjectEvidencePackages
 
     internal static string ReasonOf(ProjectEvidencePackage p)
     {
+        if (p.SourcePending) return "Source Analysis has not been read yet: the package's role is decided from its contents once it is.";
         if (p.Capability(ProjectEvidenceCapability.ApplicationSource) is { } app)
             return $"Application candidate: Source Analysis found application source ({app.Fact}).";
         if (p.Capability(ProjectEvidenceCapability.SupportingSource) is { } shared)

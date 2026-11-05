@@ -236,6 +236,20 @@ public static class DashboardPresentation
 
     // ── What BirkNext found ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// The scope of the inventory counts: the project view across every package that contributes documents (and project-level candidates), never
+    /// one package. Import Project counts the package being shown, so the two numbers differ by design (M2LB: 39 plans across M2LB and
+    /// Terraform-iac-m2lb including 11 project-level candidates, vs 28 plans in the M2LB package).
+    /// </summary>
+    public static string? InventoryScope(CurrentWorkspaceSnapshot? workspace)
+    {
+        if (workspace is not { WorkspaceLoaded: true } || workspace.DocumentSourceCount == 0) return null;
+        var names = workspace.Evidence?.Sources.Select(s => System.IO.Path.GetFileNameWithoutExtension(s.ArchiveFileName)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [];
+        var count = Math.Max(workspace.DocumentSourceCount, names.Count);
+        return $"Project view: counts across {count} contributing source package{(count == 1 ? "" : "s")}{(names.Count > 0 ? $" ({string.Join(", ", names)})" : "")}, "
+            + "including project-level documents and candidates. Import Project counts one package at a time, so its numbers can be lower.";
+    }
+
     public static IReadOnlyList<DashboardFoundFact> Found(CurrentWorkspaceSnapshot workspace, WorkflowReadiness? workflow)
     {
         var facts = new List<DashboardFoundFact>();

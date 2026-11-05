@@ -11,7 +11,8 @@ namespace BirkNext.Web.Services;
 public sealed class TaskSpecAlignmentService
 {
     /// <summary>Bumped whenever classification rules change, so a stored result can say which rules produced it.</summary>
-    public const string RulesVersion = "task-spec-rules-v3";
+    // v4: the review context includes the selected Constitution and Data Model, so design artifact links can be found at all (v3 results had none).
+    public const string RulesVersion = "task-spec-rules-v4";
 
     private static readonly string[] InfrastructureTerms =
     [

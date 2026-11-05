@@ -29,6 +29,10 @@ public static class TaskExplorerService
     private static readonly Regex FrRefRe = new(
         @"\b(FR)-?(\d{1,4})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>A bracket or parenthesis that holds nothing but FR/SC ids — a reference marker, not prose.</summary>
+    private static readonly Regex ReferenceOnlyGroupRe = new(
+        @"[\(\[]\s*(?:(?:FR|SC)-?\d{1,4}\s*[,;/]?\s*)+[\)\]]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex ScRefRe = new(
         @"\b(SC)-?(\d{1,4})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -483,11 +487,13 @@ public static class TaskExplorerService
             }
         }
 
-        // Clean title: strip [P], [USN], FR/SC refs, then strip redundant leading task ID
+        // Clean title: strip [P], [USN] and groups that are only reference markers ("[FR-001]", "(FR-001, SC-002)"), then a redundant leading task
+        // ID. A reference inside authored prose ("masking … (FR-026, PS-08)") stays verbatim: removing it left "(, PS-08)" and changed the text.
+        // The ids themselves are extracted above for the reference chips either way.
         var title = ParallelRe.Replace(body, "").Trim();
         title = UserStoryTagRe.Replace(title, "").Trim();
-        title = FrRefRe.Replace(title, "").Trim();
-        title = ScRefRe.Replace(title, "").Trim();
+        title = ReferenceOnlyGroupRe.Replace(title, "").Trim();
+        title = Regex.Replace(title, @"\s{2,}", " ");
         title = StripMarkdown(title);
         if (taskId != null)
             title = Regex.Replace(title, @"^T\d{2,4}\s*[-–.]?\s*", "").Trim();

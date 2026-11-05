@@ -10,6 +10,7 @@
 @inject TaskSpecAlignmentService ImplementationReview
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 @implements IDisposable
 
 <PageTitle>Task Alignment Review</PageTitle>
@@ -100,6 +101,7 @@
                     <div><dt>Analyzed</dt><dd>@snapshot.AnalyzedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
                 }
                 <div><dt>Method</dt><dd>Deterministic rules</dd></div>
+                <div><dt>Design inputs</dt><dd data-testid="ir-design-inputs">@DesignInputs()</dd></div>
             </dl>
         </section>
 
@@ -434,6 +436,10 @@
 @code {
     private string _specText = string.Empty;
     private string _tasksText = string.Empty;
+    /// <summary>The selected Constitution and Data Model (optional design inputs): a task naming a rule id or a structure is a design artifact link.
+    /// Read through the same role authority as Spec and Tasks; a role that needs a choice stays unselected — never picked here.</summary>
+    private string _constitutionText = string.Empty, _dataModelText = string.Empty;
+    private string? _constitutionName, _dataModelName;
     private bool _specLoaded;
     private bool _tasksLoaded;
 
@@ -489,6 +495,10 @@
             var scope = ArtifactContext.CurrentScope;
             var spec = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.Specification);
             var tasks = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.Tasks);
+            var constitution = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.Constitution);
+            var dataModel = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.DataModel);
+            (_constitutionText, _constitutionName) = constitution.Status == ExplorerArtifactStatus.Loaded ? (constitution.Content ?? "", constitution.Selected?.FileName ?? "selected") : ("", null);
+            (_dataModelText, _dataModelName) = dataModel.Status == ExplorerArtifactStatus.Loaded ? (dataModel.Content ?? "", dataModel.Selected?.FileName ?? "selected") : ("", null);
             var hasArtifacts = await WorkspaceArtifactStates.ManualWorkspaceHasArtifactsAsync(ArtifactContext);
             var projectChanged = _loaded && !string.Equals(scope, _scope, StringComparison.Ordinal);
 
@@ -524,7 +534,12 @@
     }
 
     /// <summary>The identity a result is bound to (with the two fingerprints): the workspace scope, never a display name.</summary>
-    private string SessionKey => _scope ?? "manual-workspace";
+    /// <summary>The scope plus the design inputs: a result computed without (or with other) Constitution / Data Model content is never restored as
+    /// current — that reused a design-less run and showed 0 design artifact links after the documents were selected.</summary>
+    private string SessionKey => $"{_scope ?? "manual-workspace"}|design:{DesignFingerprint(_constitutionText)}:{DesignFingerprint(_dataModelText)}";
+
+    private static string DesignFingerprint(string text) => string.IsNullOrEmpty(text) ? "none"
+        : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..12];
 
     private bool NoWorkspace => _specState is { } spec && _tasksState is { } tasks
         && RoleState(WorkspaceArtifactType.Specification) == WorkspaceArtifactState.NoWorkspace
@@ -649,37 +664,17 @@
         await JS.InvokeVoidAsync("downloadHtmlFile", $"implementation-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
-    private ReviewContext BuildReviewContext()
+    private ReviewContext BuildReviewContext() =>
+        TaskAlignmentContext.Build(MarkdownEngine, _constitutionText, _specText, _tasksText, _dataModelText, Services.GetService<IDataModelAnalysisService>());
+
+    /// <summary>Which design artifacts the design-link rule read; without them "design artifact links" cannot be found and the count says nothing.</summary>
+    private string DesignInputs() => (_constitutionName, _dataModelName) switch
     {
-        var parsed = MarkdownEngine.Parse(
-            null,
-            _specText,
-            null,
-            _tasksText);
-
-        var constitutionSemanticModel = parsed.Constitution is not null
-            ? ConstitutionAnalysisService.BuildSemanticModel(parsed.Constitution)
-            : new ConstitutionSemanticModel();
-
-        var specSemanticModel = parsed.Spec is not null
-            ? SpecExplorerService.BuildSemanticModel(parsed.Spec, _specText)
-            : new SpecificationSemanticModel();
-
-        var planSemanticModel = parsed.Plan is not null
-            ? PlanAnalysisService.BuildSemanticModel(parsed.Plan)
-            : new PlanSemanticModel();
-
-        var taskSemanticModel = parsed.Tasks is not null
-            ? TaskExplorerService.BuildSemanticModel(parsed.Tasks)
-            : new TaskSemanticModel();
-
-        return ReviewContextFactory.Create(
-            constitutionSemanticModel,
-            specSemanticModel,
-            planSemanticModel,
-            taskSemanticModel,
-            new DataModelSemanticModel());
-    }
+        (null, null) => "None selected — Constitution and Data Model links are not assessed",
+        ({ } c, null) => $"Constitution {c} · Data Model not selected",
+        (null, { } d) => $"Data Model {d} · Constitution not selected",
+        ({ } c, { } d) => $"Constitution {c} · Data Model {d}",
+    };
 
     private void SelectTab(string tab) => _activePageTab = tab;
 
@@ -833,11 +828,14 @@
         return true;
     }
 
-    private static AlignmentReport NormalizeReport(AlignmentReport report) => new()
+    internal static AlignmentReport NormalizeReport(AlignmentReport report) => new()
     {
         TotalTasks = report.TotalTasks,
         LinkedTasks = report.LinkedTasks,
         TechnicalOnlyTasks = report.TechnicalOnlyTasks,
+        // Every summary count is copied: DesignLinkedTasks and TestImplementationTasks were dropped here, so the design card always read 0.
+        DesignLinkedTasks = report.DesignLinkedTasks,
+        TestImplementationTasks = report.TestImplementationTasks,
         NeedsReviewTasks = report.NeedsReviewTasks,
         PossibleDeviations = report.PossibleDeviations,
         HighImpactTasks = report.HighImpactTasks,
@@ -860,6 +858,10 @@
         ClassificationBasis = finding.ClassificationBasis ?? string.Empty,
         ClassificationSignal = finding.ClassificationSignal,
         Matches = (finding.Matches ?? []).Where(m => m is not null).Select(NormalizeMatch).ToList(),
+        DesignLinks = finding.DesignLinks ?? [],
+        Purpose = finding.Purpose,
+        Deviation = finding.Deviation,
+        UnlinkedBusinessTask = finding.UnlinkedBusinessTask,
         UnresolvedReferences = finding.UnresolvedReferences ?? [],
         AffectedAreas = finding.AffectedAreas ?? [],
         RecommendedTests = finding.RecommendedTests ?? [],

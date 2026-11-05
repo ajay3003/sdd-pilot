@@ -688,10 +688,14 @@
         var package = ProjectEvidencePackages.Of(record, session.SddLifecycle, _setup);
         <div class="pi-capabilities" data-testid="pi-capabilities" data-classification="@package.Classification" data-status="@package.Status">
             <span class="pi-badge pi-badge-neutral" data-testid="pi-classification">@package.Classification</span>
-            @foreach (var capability in package.Capabilities)
+            @foreach (var capability in package.Capabilities.Where(c => !(package.SourcePending && c.Capability == ProjectEvidenceCapability.ApplicationSource)))
             {
                 <span class="pi-badge pi-badge-@(capability.Status == PackageCapabilityStatus.Ready ? "available" : "partial")" data-testid="pi-capability"
                       data-capability="@capability.Capability">@ProjectEvidencePackages.CapabilityLabel(capability.Capability) · @capability.Fact</span>
+            }
+            @if (package.SourcePending)
+            {
+                <span class="pi-badge pi-badge-neutral" data-testid="pi-capability-pending">Source · role pending Source Analysis</span>
             }
             @foreach (var lacking in package.NotProvided)
             {
