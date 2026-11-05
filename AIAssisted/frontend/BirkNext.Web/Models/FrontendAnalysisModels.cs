@@ -223,6 +223,10 @@ public sealed class FrontendAnalysisProfile
     /// <summary>FQR access scope, independent of the target's authentication configuration. Null preserves legacy behavior.</summary>
     [JsonPropertyName("frontendReviewScope")] public FrontendReviewAccessScope? FrontendReviewScope { get; set; }
     [JsonPropertyName("manualVerification")] public ManualAuthenticationVerificationEvidence? ManualVerification { get; set; }
+    /// <summary>Authentication adoption history: which values were adopted from detection (with provenance) and which detected values a person
+    /// rejected. Review metadata, not configuration — kept off <see cref="Authentication"/> so recording a decision never changes session fingerprints.</summary>
+    [JsonPropertyName("authenticationAdoption"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BirkNext.Web.Services.AuthenticationAdoptionHistory? AuthenticationAdoption { get; set; }
 
     [JsonPropertyName("id")]              public string                    Id              { get; set; } = "";
     [JsonPropertyName("name")]            public string                    Name            { get; set; } = "";

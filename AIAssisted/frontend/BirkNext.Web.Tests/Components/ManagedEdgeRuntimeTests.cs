@@ -115,7 +115,7 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
             Click(cut, action);
             cut.WaitForAssertion(() => Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel"));
             // Settings form stays read-only and the managed Edge runtime panel has no editable control (no runtime trust opt-in).
-            Assert.Empty(cut.FindAll("input, select, textarea"));
+            Assert.Empty(cut.FindAll("input:not([data-testid^=awf-]), select, textarea"));
             Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
             Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "birkNextStorage.setItem");
             Assert.DoesNotContain("Needs re-check", cut.Markup);

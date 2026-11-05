@@ -1,0 +1,215 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using W = BirkNext.Web.Services.AuthenticationWorkflow
+@using A = BirkNext.Web.Services.AuthenticationAdoption
+
+@* The Authentication tab's normal workflow: what the target uses, what is configured, what is next, whether the session works, and where
+   to go after. Everything technical lives in Advanced Authentication Diagnostics below it. *@
+<section class="awf" data-testid="auth-workflow" aria-labelledby="awf-title" data-mode="@State.Mode">
+    <header class="awf-head">
+        <div>
+            <h2 id="awf-title" class="awf-title">Authentication</h2>
+            <p class="awf-target" data-testid="awf-target">@EnvironmentName@(TargetUrl is { Length: > 0 } url ? $" — {url}" : "")</p>
+        </div>
+        <dl class="awf-facts">
+            <div><dt>Provider</dt><dd data-testid="awf-provider">@ProviderLabel</dd></div>
+            <div><dt>Method</dt><dd data-testid="awf-method">@(State.Mode == AuthenticationMode.Unattended ? "Unattended identity" : MethodLabel)</dd></div>
+            <div><dt>Session</dt><dd data-testid="awf-session">@W.SessionLabel(State.Session)</dd></div>
+        </dl>
+    </header>
+
+    <div class="awf-mode" role="radiogroup" aria-label="Authentication method" data-testid="awf-mode">
+        <label class="@(State.Mode == AuthenticationMode.Attended ? "is-active" : "")"><input type="radio" name="awf-mode" checked="@(State.Mode == AuthenticationMode.Attended)"
+            @onchange="() => OnModeChanged.InvokeAsync(AuthenticationMode.Attended)" data-testid="awf-mode-attended" /> Attended login <span class="awf-muted">a person signs in (MFA)</span></label>
+        <label class="@(State.Mode == AuthenticationMode.Unattended ? "is-active" : "")"><input type="radio" name="awf-mode" checked="@(State.Mode == AuthenticationMode.Unattended)"
+            @onchange="() => OnModeChanged.InvokeAsync(AuthenticationMode.Unattended)" data-testid="awf-mode-unattended" /> Unattended authentication <span class="awf-muted">separately authorized identity</span></label>
+    </div>
+
+    <div class="awf-status awf-tone-@Tone" role="status" data-testid="awf-status">
+        <div>
+            <p class="awf-status-title" data-testid="awf-status-title">@State.PrimaryStatus</p>
+            @if (State.PrimaryDetail.Length > 0) { <p class="awf-muted" data-testid="awf-status-detail">@State.PrimaryDetail</p> }
+            <p class="awf-dimensions" data-testid="awf-dimensions">
+                <SemanticStatusBadge Status="@ConfigStatus" QualifiedLabel="@($"Configuration: {W.ConfigLabel(State.Configuration).Replace("Configuration ", "")}")" TestId="awf-dim-config" />
+                <SemanticStatusBadge Status="@SessionStatus" QualifiedLabel="@($"Session: {W.SessionLabel(State.Session)}")" TestId="awf-dim-session" />
+                <SemanticStatusBadge Status="@TestingStatus" QualifiedLabel="@($"Testing context: {W.TestingLabel(State.Testing)}")" TestId="awf-dim-testing" />
+            </p>
+        </div>
+        @if (State.Next is { } next)
+        {
+            <button type="button" class="btn-primary" data-testid="awf-next" data-action="@next.ActionId" disabled="@(Busy is not null)" @onclick="() => Run(next.ActionId!)">
+                @(Busy == next.ActionId ? BusyLabel(next) : next.ActionLabel)
+            </button>
+        }
+    </div>
+    @if (Busy is not null) { <ReviewStageList Stages="@([new ReviewStage(Busy, BusyText, ReviewStageState.Running)])" TestId="awf-busy" /> }
+    @if (Error is { Length: > 0 } error) { <p class="awf-error" role="alert" data-testid="awf-error">@error</p> }
+
+    <ol class="awf-steps" data-testid="awf-steps">
+        @foreach (var (step, index) in State.Steps.Select((s, i) => (s, i + 1)))
+        {
+            <li class="awf-step awf-step-@step.State.ToString().ToLowerInvariant()" data-testid="awf-step" data-step="@step.Id" data-state="@step.State" aria-current="@(step == State.Next ? "step" : null)">
+                <span class="awf-step-n" aria-hidden="true">@(step.State == AuthWorkflowStepState.Done ? "✓" : index.ToString())</span>
+                <div class="awf-step-body">
+                    <p class="awf-step-title"><strong>@step.Title</strong> <SemanticStatusBadge Status="@W.StepStatus(step.State)" QualifiedLabel="@step.StatusLabel" TestId="awf-step-status" /></p>
+                    <p class="awf-muted">@step.Explanation</p>
+                    @if (step.DisabledReason is { } why) { <p class="awf-muted awf-small" data-testid="awf-step-disabled">@why</p> }
+                </div>
+                @if (step.ActionId is { } action && step != State.Next && step.State is AuthWorkflowStepState.Current or AuthWorkflowStepState.Blocked or AuthWorkflowStepState.Waiting && step.DisabledReason is null
+                     && (step.Id == "discovery" ? State.CanContinueToDiscovery || action == W.DiscoveryAction : true))
+                {
+                    <button type="button" class="btn-secondary" data-testid="awf-step-action" data-action="@action" disabled="@(Busy is not null)" @onclick="() => Run(action)">@step.ActionLabel</button>
+                }
+            </li>
+        }
+    </ol>
+
+    @* Detected configuration: a summary by default; the values in Configuration details; only genuine conflicts ask for a decision. *@
+    <section class="awf-card" data-testid="awf-config" aria-labelledby="awf-config-title">
+        <h3 id="awf-config-title" class="awf-h3">@(Detected ? "Authentication configuration detected" : "Authentication configuration")</h3>
+        <dl class="awf-summary" data-testid="awf-config-summary">
+            <div><dt>Provider</dt><dd>@ProviderLabel</dd></div>
+            <div><dt>Tenant</dt><dd data-testid="awf-config-tenant">@(string.IsNullOrWhiteSpace(Settings?.ExpectedTenant) ? "Not configured" : "Configured")</dd></div>
+            <div><dt>Application</dt><dd data-testid="awf-config-application">@(string.IsNullOrWhiteSpace(Settings?.ExpectedClientId) ? "Not configured" : "Configured")</dd></div>
+            <div><dt>Status</dt><dd data-testid="awf-config-status">@ConfigSummaryStatus</dd></div>
+        </dl>
+        @if (Adopted is { Length: > 0 } adopted) { <p class="awf-notice" role="status" data-testid="awf-adopted">@adopted</p> }
+        @if (Review.Count > 0)
+        {
+            <div class="awf-review" id="awf-review" data-testid="awf-review" tabindex="-1">
+                <h4 class="awf-h4">Configuration needs review</h4>
+                <p class="awf-muted">@Review.Count detected value@(Review.Count == 1 ? "" : "s") @(Review.Count == 1 ? "needs" : "need") a decision. Saved values are never changed automatically.</p>
+                <ul class="awf-review-list">
+                    @foreach (var item in Review)
+                    {
+                        var slug = item.Setting.ToLowerInvariant().Replace(' ', '-');
+                        <li data-testid="awf-review-item" data-setting="@item.Setting" data-outcome="@item.Outcome">
+                            <p><strong>@item.Setting</strong> <MetaBadge Kind="BadgeKind.Type" Text="@(item.Outcome == AuthenticationAdoptionOutcome.Conflict ? "Differs from saved" : "Needs validation")" /></p>
+                            <dl class="awf-summary awf-small">
+                                <div><dt>Saved</dt><dd><code>@(Display(item.Setting, item.Saved) ?? "—")</code></dd></div>
+                                <div><dt>Detected</dt><dd><code>@(Display(item.Setting, item.Detected) ?? "—")</code></dd></div>
+                            </dl>
+                            <p class="awf-muted awf-small">@item.Reason</p>
+                            <div class="awf-actions">
+                                <button type="button" class="btn-secondary" data-testid="awf-keep-@slug" @onclick='() => Decide(item, "keep", null)'>@(item.Saved is null ? "Don't use" : "Keep existing")</button>
+                                <button type="button" class="btn-secondary" data-testid="awf-use-@slug" @onclick='() => Decide(item, "use", null)'>Use detected value</button>
+                                @if (item.Setting is not (A.Provider or A.RedirectUrls))
+                                {
+                                    <input class="form-control awf-custom" aria-label="@($"Custom value for {item.Setting}")" data-testid="awf-custom-input-@slug" value="@_custom.GetValueOrDefault(item.Setting)"
+                                           @oninput="e => _custom[item.Setting] = e.Value?.ToString() ?? string.Empty" placeholder="Enter custom value" />
+                                    <button type="button" class="btn-secondary" data-testid="awf-custom-@slug" disabled="@string.IsNullOrWhiteSpace(_custom.GetValueOrDefault(item.Setting))"
+                                            @onclick='() => Decide(item, "custom", _custom.GetValueOrDefault(item.Setting))'>Use custom value</button>
+                                }
+                                @if (History?.Provenance.Any(p => p.Setting == item.Setting && p.Previous is not null) == true)
+                                {
+                                    <button type="button" class="btn-link" data-testid="awf-restore-@slug" @onclick='() => Decide(item, "restore", null)'>Restore previous value</button>
+                                }
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+        <details class="awf-details" data-testid="awf-config-details">
+            <summary>Configuration details</summary>
+            <table class="awf-table">
+                <caption class="visually-hidden">Authentication configuration with its source and validation</caption>
+                <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Source</th><th scope="col">Validation</th></tr></thead>
+                <tbody>
+                    @foreach (var setting in new[] { A.Provider, A.Authority, A.Tenant, A.ClientId, A.RedirectUrls })
+                    {
+                        var latest = History?.Latest(setting);
+                        var item = Adoption.FirstOrDefault(i => i.Setting == setting);
+                        <tr data-testid="awf-detail-row" data-setting="@setting">
+                            <th scope="row">@setting</th>
+                            <td><code>@(Settings is null ? "—" : Display(setting, A.Current(setting, Settings)) ?? "Not set")</code></td>
+                            <td data-testid="awf-detail-source">@(Settings is null ? "—" : A.OverrideState(setting, Settings, History))</td>
+                            <td>@(item?.Reason ?? latest?.Validation ?? "Not checked")@(latest?.DetectedAt is { } at ? $" · detected {at.ToLocalTime():yyyy-MM-dd HH:mm}" : "")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="awf-muted awf-small">@(LastDetected is { } when ? $"Last detected {when.ToLocalTime():yyyy-MM-dd HH:mm} from the target's public sign-in flow." : "Not detected yet.") Scopes, client secrets and certificates are never discovered or stored.</p>
+        </details>
+    </section>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AuthenticationWorkflowState State { get; set; } = default!;
+    [Parameter] public IReadOnlyList<AuthenticationAdoptionItem> Adoption { get; set; } = [];
+    [Parameter] public FrontendAuthenticationSettings? Settings { get; set; }
+    [Parameter] public AuthenticationAdoptionHistory? History { get; set; }
+    [Parameter] public string EnvironmentName { get; set; } = "";
+    [Parameter] public string? TargetUrl { get; set; }
+    [Parameter] public string MethodLabel { get; set; } = "";
+    [Parameter] public DateTimeOffset? LastDetected { get; set; }
+    [Parameter] public string? Adopted { get; set; }
+    [Parameter] public string? Error { get; set; }
+    /// <summary>The action id currently running (one at a time: no duplicate starts).</summary>
+    [Parameter] public string? Busy { get; set; }
+    [Parameter] public EventCallback<string> OnAction { get; set; }
+    [Parameter] public EventCallback<AuthenticationMode> OnModeChanged { get; set; }
+    [Parameter] public EventCallback<(AuthenticationAdoptionItem Item, string Decision, string? Custom)> OnDecide { get; set; }
+
+    private readonly Dictionary<string, string> _custom = new(StringComparer.Ordinal);
+
+    private IReadOnlyList<AuthenticationAdoptionItem> Review => [.. Adoption.Where(a => a.NeedsReview)];
+    private bool Detected => Adoption.Count > 0;
+    private string ProviderLabel => Settings is null || Settings.AuthenticationType == FrontendAuthenticationType.None
+        ? (Adoption.FirstOrDefault(a => a.Setting == A.Provider)?.Detected is { } d && Enum.TryParse<FrontendAuthenticationType>(d, out var t) ? $"{AuthenticationPresentation.ProviderLabel(t)} (detected)" : "Not configured")
+        : AuthenticationPresentation.ProviderLabel(Settings.AuthenticationType);
+    private string ConfigSummaryStatus => State.Configuration switch
+    {
+        AuthConfigurationDimension.Conflict => "Needs review",
+        AuthConfigurationDimension.Validated or AuthConfigurationDimension.Configured => State.Mode == AuthenticationMode.Attended ? "Ready for authentication setup" : "Configured",
+        AuthConfigurationDimension.Detected => "Partially configured",
+        _ => "Not configured",
+    };
+    private string Tone => State.Configuration == AuthConfigurationDimension.Conflict || State.Steps.Any(s => s.State == AuthWorkflowStepState.Blocked) ? "review"
+        : State.Testing == AuthTestingDimension.Verified ? "ready" : "info";
+    private SemanticStatus ConfigStatus => State.Configuration switch
+    {
+        AuthConfigurationDimension.Validated => SemanticStatus.Validated,
+        AuthConfigurationDimension.Configured => SemanticStatus.Configured,
+        AuthConfigurationDimension.Detected => SemanticStatus.Detected,
+        AuthConfigurationDimension.Conflict => SemanticStatus.Conflict,
+        _ => SemanticStatus.Missing,
+    };
+    private SemanticStatus SessionStatus => State.Session switch
+    {
+        AuthSessionDimension.Authenticated => SemanticStatus.Available,
+        AuthSessionDimension.InProgress => SemanticStatus.Verifying,
+        AuthSessionDimension.Expired => SemanticStatus.Stale,
+        AuthSessionDimension.Failed => SemanticStatus.Failed,
+        _ => SemanticStatus.NotRun,
+    };
+    private SemanticStatus TestingStatus => State.Testing switch
+    {
+        AuthTestingDimension.Verified => SemanticStatus.Verified,
+        AuthTestingDimension.Connected => SemanticStatus.NotVerified,
+        AuthTestingDimension.Blocked => SemanticStatus.Blocked,
+        _ => SemanticStatus.Unavailable,
+    };
+    private string BusyText => Busy switch
+    {
+        AuthenticationSettingsChecks.CheckActionId => "Reading the target's public sign-in configuration",
+        "proxy-start" or "proxy-restart" => "Starting the local HTTPS proxy and waiting for it to listen",
+        "edge-open" or "edge-restart" => "Opening the dedicated browser",
+        W.VerifyAction => "Verifying the session with an authorized, non-destructive request",
+        _ => "Working",
+    };
+    private static string BusyLabel(AuthWorkflowStep step) => step.ActionId switch
+    {
+        AuthenticationSettingsChecks.CheckActionId => "Detecting…",
+        "proxy-start" => "Starting…",
+        W.VerifyAction => "Verifying…",
+        _ => "Working…",
+    };
+
+    /// <summary>The provider as a person reads it ("Microsoft Entra ID"), never the enum spelling; other values as stored.</summary>
+    private static string? Display(string setting, string? value) =>
+        setting == A.Provider && Enum.TryParse<FrontendAuthenticationType>(value, out var t) ? AuthenticationPresentation.ProviderLabel(t) : value;
+
+    private Task Run(string action) => OnAction.InvokeAsync(action);
+    private Task Decide(AuthenticationAdoptionItem item, string decision, string? custom) => OnDecide.InvokeAsync((item, decision, custom));
+}

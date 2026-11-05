@@ -22,32 +22,6 @@ public sealed partial class AuthenticationApplyDraftTests
         cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be(status);
     }
 
-    [Fact]
-    public void AuthenticationCards_TrackCheckApplyCancelAndSave()
-    {
-        var cut = Open();
-        OpenTab(cut, "Authentication");
-        SettingsCard(cut, "muted", "Not checked");
-        Card(cut, "authentication-configuration", "saved", "Saved configuration");
-        cut.Find("[data-testid=auth-action-auth-settings]").Click();
-        SettingsCard(cut, "needs-action", "Review required (5 differences)");
-        SaveCalls().Should().Be(0);
-        UseAllDetected(cut);
-        SettingsCard(cut, "ready", "Matches draft — not saved yet");
-        Card(cut, "authentication-configuration", "draft", "Unsaved changes");
-        cut.Find(".fa-page-unsaved").TextContent.Should().Be("Unsaved changes");
-        ButtonDisabled(cut, "Save changes").Should().BeFalse();
-        SaveCalls().Should().Be(0);
-        Click(cut, "Cancel");
-        SettingsCard(cut, "needs-action", "Review required (5 differences)");
-        Card(cut, "authentication-configuration", "saved", "Saved configuration");
-        SaveCalls().Should().Be(0);
-        UseAllDetected(cut);
-        Click(cut, "Save changes");
-        cut.WaitForAssertion(() => SettingsCard(cut, "ready", "Matches saved configuration"));
-        cut.FindAll("[data-testid=authentication-differences], [data-testid=authentication-apply-selected]").Should().BeEmpty();
-        SaveCalls().Should().Be(1);
-    }
 
     [Fact]
     public void MatchingConfiguration_OffersNothingToApply()
@@ -103,16 +77,4 @@ public sealed partial class AuthenticationApplyDraftTests
         }
     }
 
-    [Fact]
-    public void DivergentAuthenticationEdit_RequiresRecheck_AndCancelRestoresTheReview()
-    {
-        var cut = DetectAndApply(Open());
-        cut.Find("#configured-authority").Change("https://login.microsoftonline.com/other");
-        SettingsCard(cut, "needs-action", "Recheck required");
-        cut.Find("[data-testid=auth-card-auth-settings]").TextContent.Should().Contain("Authentication settings changed since the last check");
-        cut.FindAll("[data-testid=authentication-differences], [data-testid=authentication-apply-selected]").Should().BeEmpty("a stale comparison is never reviewed or applied");
-        Click(cut, "Cancel");
-        SettingsCard(cut, "needs-action", "Review required (5 differences)");
-        SaveCalls().Should().Be(0);
-    }
 }

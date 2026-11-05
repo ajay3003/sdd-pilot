@@ -378,30 +378,6 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     }
 
     // 34, 35, 36.
-    [Fact]
-    public void DifferingConfigurationIsAConflictThatNeedsAnExplicitDecision()
-    {
-        var mismatched = MatchingAuthentication.Replace(ClientId, "99999999-9999-9999-9999-999999999999");
-        var cut = Detect(mismatched);
-
-        Row(cut, "auth-status-auth-settings").Should().Be("Review required (1 difference)");
-        cut.Find("#authentication-differences-heading").TextContent.Should().Be("Authentication differences");
-        var row = cut.FindAll("[data-testid='authentication-difference-row']").Should().ContainSingle().Subject;
-        row.GetAttribute("data-setting").Should().Be("Expected Client ID");
-        row.TextContent.Should().Contain(ClientId).And.Contain("99999999-9999-9999-9999-999999999999").And.Contain("Conflict requiring review");
-        cut.FindAll("[data-testid='authentication-apply-selected']").Should().BeEmpty("nothing is pre-selected");
-
-        // Keep saved is a reviewed difference, not a match.
-        cut.Find("[data-testid='auth-decision-keep-expected-client-id']").Change(true);
-        Row(cut, "auth-status-auth-settings").Should().Be("Reviewed — 1 kept saved");
-        cut.FindAll("[data-testid='authentication-apply-selected']").Should().BeEmpty();
-
-        cut.Find("[data-testid='auth-decision-use-expected-client-id']").Change(true);
-        Row(cut, "authentication-apply-selected").Should().Be("Apply selected changes (1)");
-        cut.Find("[data-testid='authentication-apply-selected']").Click();
-        Row(cut, "auth-status-auth-settings").Should().Be("Matches draft — not saved yet");
-        cut.Find("#configured-client-id").GetAttribute("value").Should().Be(ClientId);
-    }
 
     // ── §43. Semantic separations ────────────────────────────────────────────────────────────
 

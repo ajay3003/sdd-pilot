@@ -148,7 +148,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         Assert.Equal(Origin, Row(cut, "browser-delivery-trust-target"));
         Assert.Equal("Exact origin", Row(cut, "browser-delivery-trust-model"));
         Assert.Contains("Only an authenticated browser tab at the configured target origin is accepted.", Row(cut, "browser-delivery-trust-help"));
-        Assert.Empty(cut.FindAll("input, select, textarea"));          // read-only until Edit Environment
+        Assert.Empty(cut.FindAll("input:not([data-testid^=awf-]), select, textarea"));          // read-only until Edit Environment
         Assert.False(HasButton(cut, "Save changes"));
         Assert.DoesNotContain("Accept an approved Microsoft Defender for Cloud Apps proxied delivery", cut.Markup);
     }
@@ -255,7 +255,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check Edge compatibility").HasAttribute("disabled")));
             Assert.False(HasButton(cut, "Save changes"));
             Assert.False(HasButton(cut, "Cancel"));
-            Assert.Empty(cut.FindAll("input, select, textarea"));
+            Assert.Empty(cut.FindAll("input:not([data-testid^=awf-]), select, textarea"));
             Assert.Equal(persisted, JsonSerializer.Serialize(_settings.Settings));
             Assert.Equal(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, Persisted().Authentication.BrowserDeliveryTrust);
             Assert.Equal(0, SaveCalls());

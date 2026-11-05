@@ -474,6 +474,18 @@
             @* ── Authentication ── *@
             @if (_activeTab == "auth")
             {
+                @* The normal workflow: detect → validate → populate safe missing settings → sign in → verify → continue. Everything below it
+                   (prerequisite cards, configuration form, runtime panels, diagnostics) is the same functionality, collapsed. *@
+                @if (SelectedProfile is not null)
+                {
+                    <AuthenticationWorkflowPanel State="AuthWorkflowState" Adoption="AdoptionItems" Settings="SelectedProfile.Authentication" History="SelectedProfile.AuthenticationAdoption"
+                                                 EnvironmentName="@SelectedProfile.Name" TargetUrl="@CurrentTargetUrl" MethodLabel="@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)"
+                                                 LastDetected="@(_detectionRestored ? RestoredSnapshot?.DetectedAt : _detectionCompletedAt)" Adopted="@_authAdopted" Error="@_authWorkflowError"
+                                                 Busy="@(_authBusy ?? (_isDetecting ? AuthenticationSettingsChecks.CheckActionId : null))"
+                                                 OnAction="RunAuthWorkflowActionAsync" OnModeChanged="SetAuthMode" OnDecide="DecideAdoptionAsync" />
+                }
+                <details class="fa-auth-advanced" data-testid="auth-advanced-diagnostics" open="@(_authAdvancedOpen || OpenHeadlessAuthDiagnostic)">
+                <summary @onclick="() => _authAdvancedOpen = !_authAdvancedOpen" @onclick:preventDefault="true" data-testid="auth-advanced-toggle">Advanced Authentication Diagnostics</summary>
                 @* Where the two browser login modes live: attended here (unchanged), unattended in System Settings → Authentication (read-only link). *@
                 <BrowserLoginModesNote />
                 <div class="fa-auth-layout" data-testid="fa-auth-panel">
@@ -496,75 +508,8 @@
                                               SettingsBusy="@_isDetecting">
                 <ChildContent>
 
-                @*
-                    Authentication differences — only while the settings check found something to review. Every difference
-                    starts undecided; nothing is pre-selected and nothing is applied until the reviewer chooses "Use detected
-                    value" and presses Apply selected changes, which writes the draft. Save changes persists it, as for any edit.
-                *@
-                @if (AuthSettingsCheck is { ShowDifferences: true } check)
-                {
-                    <section class="fa-auth-configuration fa-auth-differences fa-state-needs-action" data-testid="authentication-differences" aria-labelledby="authentication-differences-heading">
-                        <div class="fa-card-heading">
-                            <h3 id="authentication-differences-heading">Authentication differences</h3>
-                            <span class="fa-card-status" role="status" data-testid="authentication-differences-state">@AuthenticationSettingsChecks.StatusLabel(check)</span>
-                        </div>
-                        <p class="fa-auth-help">Detected from the target's public sign-in flow. Choose what to keep for each setting; conflicts are never applied automatically.</p>
-                        <div class="fa-auth-table-wrap">
-                            <table class="fa-auth-comparison" data-testid="authentication-comparison">
-                                <caption class="visually-hidden">Saved and detected authentication settings that differ</caption>
-                                <thead>
-                                    <tr><th scope="col">Setting</th><th scope="col">@(check.ComparedWithDraft ? "Draft" : "Saved")</th><th scope="col">Detected</th><th scope="col">State / decision</th></tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var row in check.Differences)
-                                    {
-                                        var slug = AuthSettingSlug(row.Setting);
-                                        <tr data-testid="authentication-difference-row" data-setting="@row.Setting" data-kind="@row.Kind">
-                                            <th scope="row">@row.Setting</th>
-                                            <td class="fa-auth-compare-value" data-label="@(check.ComparedWithDraft ? "Draft" : "Saved")">@row.Saved</td>
-                                            <td class="fa-auth-compare-value" data-label="Detected">@row.Detected</td>
-                                            <td>
-                                                <span class="fa-compare-badge fa-compare-@AuthenticationSettingsChecks.KindCss(row.Kind)"><span aria-hidden="true">!</span> @AuthenticationSettingsChecks.KindLabel(row.Kind)</span>
-                                                <fieldset class="fa-auth-decision" data-testid="auth-decision-@slug">
-                                                    <legend class="visually-hidden">Decision for @row.Setting</legend>
-                                                    <label><input type="radio" name="auth-decision-@slug" data-testid="auth-decision-keep-@slug"
-                                                                  checked="@(row.Decision == AuthenticationDifferenceDecision.KeepSaved)"
-                                                                  @onchange="() => DecideAuthSetting(row.Setting, AuthenticationDifferenceDecision.KeepSaved)" /> Keep saved value</label>
-                                                    <label><input type="radio" name="auth-decision-@slug" data-testid="auth-decision-use-@slug"
-                                                                  checked="@(row.Decision == AuthenticationDifferenceDecision.UseDetected)"
-                                                                  @onchange="() => DecideAuthSetting(row.Setting, AuthenticationDifferenceDecision.UseDetected)" /> Use detected value</label>
-                                                </fieldset>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="fa-auth-actions">
-                            @if (check.SelectedChanges > 0)
-                            {
-                                <button type="button" class="btn-primary fa-btn-sm" data-testid="authentication-apply-selected" @onclick="ApplySelectedAuthenticationChanges">
-                                    Apply selected changes (@check.SelectedChanges)
-                                </button>
-                            }
-                            <span class="fa-auth-help" data-testid="authentication-review-progress">@(check.OpenDifferences == 0 ? "Every difference has a decision." : $"{check.OpenDifferences} of {check.Differences.Count} still need a decision.")</span>
-                        </div>
-                        <details class="fa-auth-details" data-testid="authentication-all-settings">
-                            <summary>All compared settings (@check.Rows.Count)</summary>
-                            <table class="fa-auth-comparison">
-                                <caption class="visually-hidden">Every compared authentication setting</caption>
-                                <thead><tr><th scope="col">Setting</th><th scope="col">@(check.ComparedWithDraft ? "Draft" : "Saved")</th><th scope="col">Detected</th><th scope="col">State</th></tr></thead>
-                                <tbody>
-                                    @foreach (var row in check.Rows)
-                                    {
-                                        <tr><th scope="row">@row.Setting</th><td class="fa-auth-compare-value">@row.Saved</td><td class="fa-auth-compare-value">@row.Detected</td><td>@AuthenticationSettingsChecks.KindLabel(row.Kind)</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                            <p class="fa-auth-help">@AuthenticationSettingsChecks.NotDiscoverableNote</p>
-                        </details>
-                    </section>
-                }
+                @* Detected-versus-saved differences are reviewed in the workflow panel above ("Configuration needs review"): validated values for
+                   empty settings are adopted automatically with provenance; conflicts and unvalidated values wait for a decision. *@
                 @if (_authApplyResult is { Length: > 0 } applyResult)
                 {
                     <p class="fa-auth-help fa-auth-apply-result" role="status" data-testid="authentication-apply-result">@applyResult</p>
@@ -910,6 +855,7 @@
                     <HeadlessAuthDiagnosticCard Profile="CurrentProfile" />
                 </details>
                 </div>
+                </details>
             }
 
             @* ── Endpoint Discovery ── *@
@@ -2618,6 +2564,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
                 // Persist the safe public detection snapshot (no credential) so a restart restores it as "Previously detected".
                 await PersistDetectionSnapshotAsync(detectionProfile, result, detectionProfile.TargetUrl);
+                // Detect → validate → populate safe missing settings (conflicts and unvalidated values wait for review).
+                if (result.Success) await AdoptSafeAuthenticationValuesAsync(detectionProfile.Id, result);
 
                 // Detection updates transient evidence only; Apply owns draft mutations.
                 if (!result.Success)
@@ -3010,6 +2958,89 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         AuthenticationPresentation.Compare(_detectionResult, CurrentProfile?.Authentication);
 
     // ── Authentication settings check (fourth prerequisite) ──────────────────
+
+    // ── Guided authentication workflow ───────────────────────────────────────
+
+    private AuthenticationMode _authMode = AuthenticationMode.Attended;
+    private bool _authAdvancedOpen;
+    /// <summary>The workflow action running now: one at a time, so a second click never starts a second proxy.</summary>
+    private string? _authBusy;
+    private string? _authWorkflowError, _authAdopted;
+
+    /// <summary>Detected values against the SAVED configuration of the selected environment (never the draft).</summary>
+    private IReadOnlyList<AuthenticationAdoptionItem> AdoptionItems => SelectedProfile is { } saved
+        ? AuthenticationAdoption.Evaluate(_detectionResult, saved.Authentication, saved.TargetUrl, saved.AuthenticationAdoption) : [];
+
+    private AuthenticationWorkflowState AuthWorkflowState => AuthenticationWorkflow.Derive(_authMode, AuthPane, AdoptionItems, SelectedTestingMethod,
+        _proxyRuntime is null ? null : ProxyStatus, BrowserWasRoutedThroughProxy, AuthenticatedRestObserved || AuthenticatedGraphQlObserved, _detectionResult is not null);
+
+    private void SetAuthMode(AuthenticationMode mode) { _authMode = mode; _authWorkflowError = null; }
+
+    private async Task RunAuthWorkflowActionAsync(string actionId)
+    {
+        if (_authBusy is not null) return;
+        _authBusy = actionId;
+        _authWorkflowError = null;
+        StateHasChanged();
+        try
+        {
+            switch (actionId)
+            {
+                case AuthenticationWorkflow.VerifyAction: VerifyAuthentication(); break;
+                case AuthenticationWorkflow.DiscoveryAction: _activeTab = "endpoint"; break;
+                case AuthenticationWorkflow.ReviewAction:
+                    try { await JS.InvokeVoidAsync("birknextFocusElement", "awf-review"); } catch (Exception) { /* focus is a convenience */ }
+                    break;
+                case AuthenticationWorkflow.UnattendedSettingsAction:
+                    (ServiceProvider.GetService(typeof(NavigationManager)) as NavigationManager)?.NavigateTo("admin/system-settings?section=authentication");
+                    break;
+                default: await RunAuthPrerequisiteActionAsync(actionId); break;
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            _authWorkflowError = $"{e.Message} Nothing was changed; you can try again.";
+        }
+        finally { _authBusy = null; }
+    }
+
+    /// <summary>
+    /// Populates EMPTY saved settings with detected values that passed the trust policy, records their provenance and saves. Idempotent;
+    /// never overwrites a saved value (a difference is a conflict for review) and never runs while a draft is open (the draft would hide it).
+    /// </summary>
+    private async Task AdoptSafeAuthenticationValuesAsync(string profileId, TargetEnvironmentDetectionResult result)
+    {
+        _authAdopted = null;
+        if (_isEditMode || FaSettings.Settings.Profiles.FirstOrDefault(p => p.Id == profileId) is not { } saved) return;
+        var items = AuthenticationAdoption.Evaluate(result, saved.Authentication, saved.TargetUrl, saved.AuthenticationAdoption);
+        if (!items.Any(i => i.Outcome == AuthenticationAdoptionOutcome.AutoAdopt)) return;
+        var history = saved.AuthenticationAdoption ??= new AuthenticationAdoptionHistory();
+        var adopted = AuthenticationAdoption.Adopt(items, result, saved.Authentication, history, DateTimeOffset.UtcNow, _detectionCompletedAt);
+        if (adopted.Count == 0) return;
+        await FaSettings.SaveAsync(JS);
+        // The adopted values come from this very detection: it still describes the (now saved) configuration, so it is not stale and a
+        // sign-in check can be recorded against it without detecting again.
+        _detectionProfileSnapshot = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(System.Text.Json.JsonSerializer.Serialize(saved));
+        _manualDetectionContext = ManualVerificationContextFingerprint(saved);
+        _authAdopted = $"Filled in from the target's sign-in configuration (validated): {string.Join(", ", adopted)}. Saved values were not changed.";
+    }
+
+    /// <summary>A person's decision on one conflict or unvalidated value, saved immediately with provenance (the explicit choice is the approval).</summary>
+    private async Task DecideAdoptionAsync((AuthenticationAdoptionItem Item, string Decision, string? Custom) choice)
+    {
+        if (_isEditMode) { _authWorkflowError = "Save or cancel the open edit first; decisions are saved straight to the configuration."; return; }
+        if (SelectedProfile is not { } saved || _detectionResult is not { Success: true } detection) return;
+        var history = saved.AuthenticationAdoption ??= new AuthenticationAdoptionHistory();
+        AuthenticationAdoption.Decide(choice.Item.Setting, choice.Item, choice.Decision, choice.Custom, detection, saved.Authentication, history, DateTimeOffset.UtcNow);
+        await FaSettings.SaveAsync(JS);
+        _authAdopted = choice.Decision switch
+        {
+            "use" => $"{choice.Item.Setting}: detected value saved.",
+            "keep" => $"{choice.Item.Setting}: kept; this detected value will not be proposed again unless it changes.",
+            "custom" => $"{choice.Item.Setting}: custom value saved.",
+            _ => $"{choice.Item.Setting}: previous value restored.",
+        };
+    }
 
     /// <summary>Per-setting decisions for the current check. Cleared by every new check; never persisted.</summary>
     private readonly Dictionary<string, AuthenticationDifferenceDecision> _authDecisions = new(StringComparer.Ordinal);

@@ -170,11 +170,12 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         Click(cut, "Authentication");
         var persisted = JsonSerializer.Serialize(settings.Settings);
-        // Nothing is saved, so every detected value is a safe change waiting for an explicit decision.
-        var discovery = cut.Find("[data-testid='authentication-differences']").TextContent;
-        Assert.Contains("https://login.microsoftonline.com/tenant-id", discovery);
+        // Nothing is saved, but "tenant-id" / "client-id" are not recognisable ids: the trust policy keeps them as evidence for review
+        // instead of filling them in (and the authority, whose tenant segment disagrees with nothing, is reviewed with them).
+        var discovery = cut.Find("[data-testid='awf-review']").TextContent;
         Assert.Contains("client-id", discovery);
-        Assert.Contains("Safe change available", discovery);
+        Assert.Contains("Needs validation", discovery);
+        Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
         foreach (var action in new[] { "Check Edge compatibility", "Start Edge for authenticated testing", "Check Edge compatibility" })
         {
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == action).HasAttribute("disabled")));
@@ -183,7 +184,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel");
             // Settings form stays read-only, and the managed Edge runtime panel carries no editable control at all (no runtime trust opt-in).
             // Review decisions on authentication differences are radio buttons that write nothing until Apply selected changes.
-            Assert.Empty(cut.FindAll("input:not([data-testid^=auth-decision-]), select, textarea"));
+            Assert.Empty(cut.FindAll("input:not([data-testid^=auth-decision-]):not([data-testid^=awf-]), select, textarea"));
             Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
             Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "birkNextStorage.setItem");
             Assert.DoesNotContain("Needs re-check", cut.Markup);
@@ -204,7 +205,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         // ExactOrigin is the saved default for a profile without the field.
         Assert.Equal(ManagedEdgeTrustModel.ExactOrigin, _profile.Authentication.BrowserDeliveryTrust);
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Assert.Empty(cut.FindAll("input, select, textarea"));
+        Assert.Empty(cut.FindAll("input:not([data-testid^=awf-]), select, textarea"));
         Assert.DoesNotContain("Accept an approved Microsoft Defender for Cloud Apps proxied delivery", cut.Markup);
         Assert.Empty(cut.FindAll("[data-testid='edge-trust-model']"));
         Assert.Contains("Exact origin only", cut.Find("[data-testid='edge-configured-trust']").TextContent);
@@ -216,7 +217,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         cut.Render();
         Assert.Contains("Approved MCAS proxy permitted", cut.Find("[data-testid='edge-configured-trust']").TextContent);
         Assert.Contains("exact origin still preferred", cut.Find("[data-testid='edge-configured-trust']").TextContent);
-        Assert.Empty(cut.FindAll("input, select, textarea"));
+        Assert.Empty(cut.FindAll("input:not([data-testid^=awf-]), select, textarea"));
     }
 
     [Theory]
@@ -327,6 +328,6 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         Assert.Contains("Blocked", cut.Find("[data-testid='edge-manual-signin']").TextContent);
         Assert.Contains("Not verified", cut.Markup);
         Assert.True(Button(cut, "Verify authenticated access").HasAttribute("disabled"));
-        Assert.Empty(cut.FindAll("input, select, textarea"));   // no way to opt in from the runtime panel
+        Assert.Empty(cut.FindAll("input:not([data-testid^=awf-]), select, textarea"));   // no way to opt in from the runtime panel
     }
 }

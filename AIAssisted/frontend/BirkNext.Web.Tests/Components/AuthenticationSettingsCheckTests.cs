@@ -83,39 +83,6 @@ public sealed partial class AuthenticationApplyDraftTests
         System.Text.Json.JsonSerializer.Serialize(Persisted().Authentication).Should().Contain(ClientId);
     }
 
-    [Fact]
-    public void PartialApply_LeavesTheRemainingDifferences_AndKeepSavedIsReviewedNotMatched()
-    {
-        var cut = Open($$"""{ "authenticationType": "MicrosoftEntraId", "expectedAuthority": "https://login.example.com/other", "expectedClientId": "33333333-3333-3333-3333-333333333333" }""");
-        OpenTab(cut, "Authentication");
-        CheckSettings(cut);
-
-        // Authority and Client ID conflict; Tenant and Redirect URLs are safe additions.
-        cut.FindAll("[data-testid=authentication-difference-row]").Select(r => (r.GetAttribute("data-setting"), r.GetAttribute("data-kind")))
-            .Should().Equal(("Expected Authority", "Conflict"), ("Expected Tenant", "SafeChange"), ("Expected Client ID", "Conflict"), ("Allowed Redirect URLs", "SafeChange"));
-        Status(cut).Should().Be("Review required (4 differences)");
-
-        cut.Find("[data-testid=auth-decision-use-expected-tenant]").Change(true);
-        cut.Find("[data-testid=auth-decision-keep-expected-client-id]").Change(true);
-        cut.Find("[data-testid=authentication-apply-selected]").TextContent.Trim().Should().Be("Apply selected changes (1)");
-        cut.Find("[data-testid=authentication-apply-selected]").Click();
-
-        // Only the tenant moved into the draft; the conflicts kept their saved values.
-        cut.Find("#configured-tenant").GetAttribute("value").Should().Be(Tenant);
-        cut.Find("#configured-authority").GetAttribute("value").Should().Be("https://login.example.com/other");
-        cut.Find("#configured-client-id").GetAttribute("value").Should().Be("33333333-3333-3333-3333-333333333333");
-        cut.FindAll("[data-testid=authentication-difference-row]").Select(r => r.GetAttribute("data-setting"))
-            .Should().Equal("Expected Authority", "Expected Client ID", "Allowed Redirect URLs");
-        Status(cut).Should().Be("Review required (3 differences)");
-        cut.Find("[data-testid=authentication-review-progress]").TextContent.Should().Be("2 of 3 still need a decision.");
-        Persisted().Authentication.ExpectedTenant.Should().BeNull("Apply writes the draft; only Save changes persists");
-
-        cut.Find("[data-testid=auth-decision-keep-expected-authority]").Change(true);
-        cut.Find("[data-testid=auth-decision-keep-allowed-redirect-urls]").Change(true);
-        Status(cut).Should().Be("Reviewed — 3 kept saved");
-        cut.Find("[data-testid=auth-card-auth-settings]").TextContent.Should().Contain("kept values remain differences, not matches");
-        cut.FindAll("[data-testid=authentication-differences]").Should().ContainSingle("kept differences stay visible");
-    }
 
     [Fact]
     public void ATargetUrlChangeMakesTheComparisonRecheckRequired()

@@ -41,7 +41,7 @@ public sealed class SecurityConsumerProjectionTests : BunitContext
         rows[0].TextContent.Should().Contain("proves these surfaces only");
         rows[1].TextContent.Should().Contain("Skolenærvær rule · owner: Skolenærvær Testing");
         cut.Find("[data-testid=sc-open-full-review]").GetAttribute("href").Should().Be("/security-classification-review");
-        cut.FindAll("input, select, textarea").Should().BeEmpty("no second source selection or test context");
+        cut.FindAll("input:not([data-testid^=awf-]), select, textarea").Should().BeEmpty("no second source selection or test context");
         api.Verify(a => a.RunAsync(It.IsAny<string>(), It.IsAny<ClassificationRunRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
