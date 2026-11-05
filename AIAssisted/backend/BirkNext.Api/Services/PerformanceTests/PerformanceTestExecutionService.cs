@@ -174,7 +174,10 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         return items;
     }
 
-    public async Task<PerformanceTestReadiness> EvaluateAsync(PerformanceTestDefinition d, PerformanceTestDataProfile? data, bool hasActiveBaseline, CancellationToken ct = default)
+    /// <param name="identity">The Target Environment's proxy identity (as a run start sends it): with it, the API credential a scenario uses is
+    /// checked here exactly as at run start, so readiness is never Ready for a run that would be refused for a missing credential.</param>
+    public async Task<PerformanceTestReadiness> EvaluateAsync(PerformanceTestDefinition d, PerformanceTestDataProfile? data, bool hasActiveBaseline, CancellationToken ct = default,
+        BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity = null)
     {
         // Endpoint Discovery evidence is read from the persisted history directly (never from what a browser page happened to load).
         var endpoint = await EndpointEvidenceAsync(d, ct);
@@ -240,11 +243,27 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
             $"{d.Scenario.Steps.Count} request step(s), read-only methods{(d.TargetType == PerformanceTargetType.GraphQlHttp ? ", GraphQL query only" : "")}.", Definition, "scenario", PerformanceReadinessActions.EditScenario);
         var auth = PerformanceScenarioRuntime.AuthenticationRequirements(d, endpoint.ObservedAuthentication);
         var intentional = auth.Where(r => r.State == StepAuthenticationState.IntentionallyUnauthenticated).ToList();
+        var configured = auth.Count(r => r.State == StepAuthenticationState.Configured);
         Item("authentication", "Authentication", By("authentication"),
             intentional.Count > 0 && d.UnauthenticatedOverride is { } acknowledged
                 ? $"Intentionally unauthenticated — acknowledged {acknowledged.AcknowledgedAt:yyyy-MM-dd HH:mm} UTC{(acknowledged.AcknowledgedBy is { } by ? $" by {by}" : "")} for {intentional.Count} operation(s) observed with authentication ({string.Join(", ", intentional.Select(r => r.Identity).Distinct())}). Responses may be 401/403 or follow a different code path."
-                : "None — no enabled step was observed or declared with authentication.",
+                : configured > 0 ? $"Configured for {configured} step(s) that require authentication; the execution credential is checked separately."
+                : endpoint.ObservedAuthentication is null && d.Scenario.Steps.Any(s => !s.Disabled) && endpoint.Item is { Key: "endpoint-evidence", Blocking: true }
+                    ? "Not assessed — the authentication requirements could not be read."
+                    : "No enabled step was observed or declared with authentication.",
             Definition, "authentication", PerformanceReadinessActions.EditScenario);
+        if (PerformanceScenarioRuntime.UsesApiCredential(d) && scopes is not null)
+        {
+            // The same check the run start makes (present, in scope, valid for the whole run, this environment's own proxy identity).
+            using var credentialScope = scopes.CreateScope();
+            var problem = PerformanceApiCredential.Problem(credentialScope.ServiceProvider.GetService<LocalHttpsProxy.TransientAuthenticatedApiContextStore>(), d, d.EnvironmentId,
+                identity, DateTimeOffset.UtcNow);
+            items.Add(problem is null
+                ? new("credential", "Execution credential", PerformanceReadinessState.Ready, "The Target Environment API credential captured by the Local HTTPS proxy is available for this run (its value is never shown).", false)
+                    { Category = Setup, Summary = "execution credential" }
+                : new("credential", "Execution credential", PerformanceReadinessState.NeedsAuthentication, problem, true)
+                    { Category = Setup, Summary = "execution credential", Headline = "Authentication unresolved — execution blocked", Action = PerformanceReadinessActions.EditScenario, Owner = "Authentication" });
+        }
         if (endpoint.Item is { } endpointItem) items.Add(endpointItem);
         var central = PerformanceTestSafety.UsesCentralTestData(d);
         Item("testdata", "Test data", By("testdata", "placeholder"),
@@ -297,9 +316,11 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (null, new PerformanceReadinessItem("endpoint-evidence", "Endpoint evidence", PerformanceReadinessState.Optional,
-                "Endpoint Discovery history could not be read; observed authentication requirements were not re-checked against it.", false)
-                { Category = PerformanceReadinessCategories.Optional, Summary = "endpoint evidence" });
+            // Unknown is not "none required": without the history the authentication requirements of the steps are not assessed, so readiness is
+            // not Ready (retry when the history is readable again).
+            return (null, new PerformanceReadinessItem("endpoint-evidence", "Endpoint evidence", PerformanceReadinessState.Blocked,
+                "Endpoint Discovery history could not be read, so the authentication requirements of the steps are not assessed. Check readiness again.", true)
+                { Category = PerformanceReadinessCategories.Definition, Summary = "endpoint evidence", Headline = "Authentication requirements not assessed", Status = "Not assessed" });
         }
         var observedAuth = view.Operations.Where(o => o.AuthObserved).Select(o => o.Identity).ToHashSet(StringComparer.Ordinal);
         var byIdentity = view.Operations.ToDictionary(o => o.Identity, StringComparer.Ordinal);
@@ -649,7 +670,7 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         if (definition.Archived) return new(null, ["The definition is archived; restore or copy it to run."], null);
         var data = await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct);
         var baseline = await store.ActiveBaselineAsync(environmentId, definition.Id, definition.ComparisonFingerprint, ct);
-        var readiness = await readinessService.EvaluateAsync(definition, PerformanceTestSafety.HasRuntimeMappings(definition) ? null : data, baseline is not null, ct);
+        var readiness = await readinessService.EvaluateAsync(definition, PerformanceTestSafety.HasRuntimeMappings(definition) ? null : data, baseline is not null, ct, request.Identity);
         if (!readiness.Ready) return new(null, readiness.Blockers, null);
         // Target Environment API credential: present, in scope and valid for the whole run, from this environment's own proxy identity.
         var credentialStore = scope.ServiceProvider.GetService<LocalHttpsProxy.TransientAuthenticatedApiContextStore>();

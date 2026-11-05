@@ -772,6 +772,25 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     }
 
     [Fact]
+    public void A_missing_execution_credential_blocks_and_its_fix_opens_Scenario_authentication_focused()
+    {
+        var credential = new PerformanceReadinessItem("credential", "Execution credential", PerformanceReadinessState.NeedsAuthentication,
+            "No API credential has been captured for this Target Environment.", true)
+            { Category = PerformanceReadinessCategories.ExecutionSetup, Headline = "Authentication unresolved — execution blocked", Action = PerformanceReadinessActions.EditScenario };
+        Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = [credential.Detail], Items = [credential] });
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-next-action]"));
+        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().StartWith("Authentication unresolved — execution blocked");
+
+        cut.Find("[data-testid=pt-next-action]").Click();
+
+        cut.Find("[data-testid=pt-tab-scenario]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments[0]?.ToString()).Should().Contain("pt-scenario-auth"),
+            TimeSpan.FromSeconds(3));
+        cut.Find("#pt-scenario-auth").GetAttribute("tabindex").Should().Be("-1", "the section can take focus");
+    }
+
+    [Fact]
     public void OneBlocker_IsNamedAtTheTop_AndOverviewOffersItsAction()
     {
         Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["x"], Items = [NetworkBlocker(), new("baseline", "Baseline", PerformanceReadinessState.Optional, "none", false) { Category = "Optional" }] });
@@ -1205,6 +1224,44 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.FindAll("[data-testid=pt-step-enabled]")[1].Click();
         cut.FindAll("[data-testid=pt-step]")[1].GetAttribute("data-disabled").Should().Be("true");
         Status(cut, "pt-definition-state").Should().Be("Unsaved changes to v2");
+    }
+
+    [Fact]
+    public void Scenario_authentication_summarises_requirements_never_lets_None_pass_and_applies_the_default_only_after_a_preview()
+    {
+        const string Observed = "Authenticated requests observed by Endpoint Discovery";
+        Register(definitions: [Definition with { Scenario = new PerformanceScenario { Steps =
+        [
+            new HttpPerformanceStep { Name = "children", RelativePath = "/api/autorisasjon/v1/brukere/1/barn", Authentication = StepAuthenticationMode.None, Source = new() { ObservedAuthentication = Observed } },
+            new HttpPerformanceStep { Name = "profile", RelativePath = "/api/profile", Authentication = StepAuthenticationMode.Override,
+                AuthenticationReference = PerformanceScenarioRuntime.TargetEnvironmentAuthentication, Source = new() { ObservedAuthentication = Observed } },
+            new HttpPerformanceStep { Name = "health", RelativePath = "/api/health" },
+        ] } }]);
+        var cut = Page();
+        Tab(cut, "scenario");
+
+        cut.Find("[data-testid=pt-auth-summary]").TextContent.Should().Be("Authentication unresolved — 1 step blocked", "a step set to None never satisfies an observed requirement");
+        cut.Find("[data-testid=pt-auth-counts]").TextContent.Should().Contain("Scenario default: None").And.Contain("2 steps require authentication · 0 resolved · 1 unresolved · 1 not executable · 1 step override",
+            "resolved means configured and executable: attended sign-in is counted apart");
+        cut.FindAll("[data-testid=pt-auth-step]").Select(s => s.TextContent).Should().Contain(t => t.Contains("Step 1") && t.Contains("set to None"))
+            .And.Contain(t => t.Contains("Step 2") && t.Contains("attended sign-in — not executable"));
+
+        cut.FindAll("[data-testid=pt-unresolved-group]").Select(g => g.GetAttribute("data-cause")).Should().Contain("authentication");
+        cut.Find("[data-testid=pt-unresolved-group][data-cause=authentication]").TextContent.Should().Contain("1 step affected");
+        cut.Find("[data-testid=pt-auth-use-te]").Click();
+        cut.Find("[data-testid=pt-auth-counts]").TextContent.Should().Contain("Scenario default: Target Environment API credential");
+        cut.Find("[data-testid=pt-auth-summary]").TextContent.Should().StartWith("Authentication unresolved", "the explicit None on step 1 still wins over the default");
+
+        cut.Find("[data-testid=pt-auth-apply]").Click();
+        cut.FindAll("[data-testid=pt-auth-preview-step]").Select(s => s.TextContent).Should().Equal("Step 1 · children");
+        cut.Find("[data-testid=pt-auth-preview-kept]").TextContent.Should().Contain("1 step override");
+        cut.Find("[data-testid=pt-auth-apply-confirm]").Click();
+
+        cut.FindAll("[data-testid=pt-auth-preview]").Should().BeEmpty();
+        cut.Find("[data-testid=pt-auth-counts]").TextContent.Should().Contain("0 unresolved");
+        cut.FindAll("[data-testid=pt-auth-step]").Should().ContainSingle(s => s.TextContent.Contains("Step 2") && s.TextContent.Contains("not executable"),
+            "the override is kept as it is — and still reported honestly");
+        Status(cut, "pt-definition-state").Should().StartWith("Unsaved changes", "nothing is saved behind the person's back");
     }
 
     [Fact]

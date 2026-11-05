@@ -5,6 +5,8 @@ using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.PerformanceTests;
 using BirkNext.Applicability;
 using BirkNext.PerformanceTests;
+using BirkNext.TestData;
+using BirkNext.Integrations;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -552,6 +554,53 @@ public sealed class PerformanceTestReviewTests
         (await h.Store().RunsAsync("pay-qa")).Should().BeEmpty();
         h.Runner.Runs.Should().BeEmpty("no container is launched");
     }
+
+    [Fact]
+    public async Task A_scenario_using_the_API_credential_is_never_ready_without_a_captured_credential_exactly_as_the_run_would_refuse()
+    {
+        await using var h = new Harness(configure: s => s.AddSingleton(new BirkNext.Api.Services.LocalHttpsProxy.TransientAuthenticatedApiContextStore(() => DateTimeOffset.UtcNow)));
+        var d = await h.SeedAsync(Definition(x => x with { AuthenticationReference = "target-environment-api" }));
+        await h.Registry.CheckReachabilityAsync(d);
+        var service = h.Services.GetRequiredService<PerformanceTestReadinessService>();
+        var identity = new BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity(BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy, d.EnvironmentId, new string('A', 64));
+
+        var readiness = await service.EvaluateAsync(d, Data(), false, default, identity);
+
+        readiness.Ready.Should().BeFalse("before: every check read satisfied and only the run start refused");
+        var credential = readiness.Items.Single(i => i.Key == "credential");
+        credential.Should().Match<PerformanceReadinessItem>(i => i.Blocking && i.State == PerformanceReadinessState.NeedsAuthentication && i.Headline == "Authentication unresolved — execution blocked");
+        credential.Detail.Should().StartWith("No API credential has been captured");
+        readiness.Items.Single(i => i.Key == "authentication").Detail.Should().NotStartWith("None", "configured authentication is never described as none");
+        (await service.EvaluateAsync(d, Data(), false)).Items.Single(i => i.Key == "credential").Blocking.Should().BeTrue("without the proxy identity the credential is not assessed — never Ready");
+        var started = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id, Identity = identity });
+        started.Run.Should().BeNull();
+        started.Blockers.Should().Contain(b => b.StartsWith("No API credential has been captured"), "readiness and the run start give the same answer");
+    }
+
+    [Fact]
+    public async Task An_observed_runtime_value_is_a_candidate_that_blocks_until_approved_Test_Data_or_an_explicit_fixed_value_is_chosen()
+    {
+        await using var h = new Harness();
+        var observed = new ScenarioDataMapping("paymentId", [], TestDataDataType.SimpleValues, "path")
+            { Source = RuntimeValueSource.AutoFilled, FixedValue = "12345", ValueOrigin = RuntimeValueOrigins.LiveDiscovery };
+        var d = await h.SeedAsync(Definition(x => x with { Scenario = x.Scenario with { TestDataProfileId = null, Steps = [x.Scenario.Steps[0] with { DataMappings = [observed] }] } }));
+        await h.Registry.CheckReachabilityAsync(d);
+        var service = h.Services.GetRequiredService<PerformanceTestReadinessService>();
+
+        var readiness = await service.EvaluateAsync(d, null, false);
+        readiness.Ready.Should().BeFalse();
+        readiness.Blockers.Should().Contain(b => b.Contains("Observed value is a candidate, not approved Test Data"));
+
+        var explicitValue = d with { Scenario = d.Scenario with { Steps = [d.Scenario.Steps[0] with { DataMappings = [observed with { Source = RuntimeValueSource.Fixed, ValueOrigin = null }] }] } };
+        (await service.EvaluateAsync(explicitValue, null, false)).Blockers.Should().NotContain(b => b.Contains("candidate"), "an explicit fixed value is the person's decision");
+    }
+
+    [Theory]
+    [InlineData("central-test-data")]
+    [InlineData("scenario-contract")]
+    [InlineData("endpoint-evidence")]
+    public void Scenario_blockers_never_drop_out_of_the_setup_steps(string key) =>
+        PerformanceSetupModel.KindOf(new PerformanceReadinessItem(key, key, PerformanceReadinessState.Blocked, "", true)).Should().Be(JourneySetupStepKind.Scenario);
 
     [Fact]
     public async Task ImageMissing_IsItsOwnReadinessState()

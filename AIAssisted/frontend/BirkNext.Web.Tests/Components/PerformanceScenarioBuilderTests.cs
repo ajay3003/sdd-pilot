@@ -151,6 +151,32 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
     }
 
     [Fact]
+    public void Ready_read_only_operations_can_be_added_together_state_changing_ones_never_and_duplicates_are_skipped()
+    {
+        var cut = Render(Persons());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=psb-snapshot]"));
+        cut.Find("[data-testid=psb-snapshot]").Change(SnapshotId.ToString());
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=psb-operation]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=psb-operation]").Where(o => !o.QuerySelector("[data-testid=psb-op-name]")!.TextContent.StartsWith("GET"))
+            .Should().OnlyContain(o => o.QuerySelector("[data-testid=psb-select]") == null, "a state-changing operation is never bulk-added");
+        var selectable = cut.FindAll("[data-testid=psb-select]");
+        selectable.Should().NotBeEmpty();
+        foreach (var box in cut.FindAll("[data-testid=psb-select]").ToList()) cut.Find($"[data-testid=psb-operation][data-key=\"{box.Closest("[data-testid=psb-operation]")!.GetAttribute("data-key")}\"] [data-testid=psb-select]").Change(true);
+        cut.Find("[data-testid=psb-bulk-count]").TextContent.Should().Be($"{selectable.Count} selected");
+
+        cut.Find("[data-testid=psb-add-selected]").Click();
+
+        _changed!.Scenario.Steps.Should().HaveCount(selectable.Count).And.OnlyContain(s => s.Method == "GET");
+        _changed.Scenario.Steps.Select(s => s.Source!.OperationKey).Should().OnlyHaveUniqueItems();
+        _changed.Scenario.Steps.Should().OnlyContain(s => s.Authentication == StepAuthenticationMode.Inherit, "steps share the scenario's configuration — no per-step approval");
+        cut.Find("[data-testid=psb-message]").TextContent.Should().Contain("with the scenario's shared configuration").And.EndWith("Nothing has run.");
+        cut.FindAll("[data-testid=psb-bulk]").Should().BeEmpty("the selection is cleared");
+
+        var again = RenderBuilder([Seen("/api/person/123")], [PersonIds], authenticated: true, _changed);
+        again.FindAll("[data-testid=psb-select]").Should().BeEmpty("an operation already in the scenario is not selectable again");
+    }
+
+    [Fact]
     public void AddingAnOperation_CreatesAProposedStep_WithAliasMappingAndSuggestedName_NothingRuns()
     {
         var cut = Render(Persons());

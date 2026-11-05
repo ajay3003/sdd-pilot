@@ -445,3 +445,14 @@
 /* Runtime execution blocked (TLS): compact, text + border so it is not colour-only; design work stays available. */
 .ptc-banner { margin: 0 0 .75rem; padding: .5rem .75rem; border: 1px solid #fcd34d; border-left-width: 4px; border-radius: 6px; background: #fffbeb; color: #78350f; font-size: .9rem; }
 .ptc-banner a { margin-left: .4rem; font-weight: 600; color: #1d4ed8; }
+
+/* Scenario authentication summary (NEXT37): counts, explicit actions, preview before a bulk apply, unresolved steps with Configure. */
+.pt-auth { margin-top: .75rem; }
+.pt-auth h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.pt-auth-actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .35rem 0; }
+.pt-auth-preview { margin: .5rem 0; padding: .5rem .75rem; border-left: 3px solid var(--clr-primary, #2563eb); background: var(--clr-surface, #fff); }
+.pt-auth-steps { margin: .35rem 0 0; padding-left: 1.1rem; }
+.pt-auth:focus { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.pt-unresolved { margin-top: .75rem; }
+.pt-unresolved h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.pt-unresolved ul { margin: 0; padding-left: 1.1rem; }

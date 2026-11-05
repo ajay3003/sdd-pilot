@@ -109,6 +109,15 @@
         }
     }
     @if (_message is { } message) { <p class="psb-message" role="status" aria-live="polite" data-testid="psb-message">@message</p> }
+    @if (_bulk.Count > 0)
+    {
+        <div class="psb-bulk" role="region" aria-label="Selected operations" data-testid="psb-bulk">
+            <span data-testid="psb-bulk-count">@_bulk.Count selected</span>
+            <button type="button" class="btn-primary" data-testid="psb-add-selected" @onclick="AddSelectedAsync">Add selected (@_bulk.Count)</button>
+            <button type="button" class="btn-link" data-testid="psb-clear-selection" @onclick="() => _bulk.Clear()">Clear selection</button>
+            <span class="psb-why">Read-only operations that are ready to add; each becomes a step with the scenario's shared configuration (authentication inherits the scenario default).</span>
+        </div>
+    }
 </section>
 
 @code {
@@ -127,6 +136,8 @@
     [Parameter] public EventCallback<PerformanceTestDefinition> OnChange { get; set; }
     /// <summary>After "Add to scenario": the 1-based number of the new step (the page moves focus to it).</summary>
     [Parameter] public EventCallback<int> OnStepAdded { get; set; }
+    /// <summary>"Configure scenario step" on an operation already in the scenario: the step's 1-based number (the page focuses that step).</summary>
+    [Parameter] public EventCallback<int> OnConfigureStep { get; set; }
     /// <summary>"+ New GraphQL definition" (null) or "Review &amp; create GraphQL definition" (the proposed step). Nothing runs; the page opens an unsaved draft.</summary>
     [Parameter] public EventCallback<HttpPerformanceStep?> OnNewGraphQlDefinition { get; set; }
 
@@ -348,7 +359,21 @@
     private static string ProtocolOf(IEnumerable<ScenarioOperation> ops) =>
         ops.Any(o => o.GraphQlKind is not null) ? ops.All(o => o.GraphQlKind is not null) ? "GraphQL" : "REST + GraphQL" : "REST";
 
-    private bool IsAdded(ScenarioOperation op) => Definition.Scenario.Steps.Any(s => s.Source?.OperationKey == op.Key);
+    private bool IsAdded(ScenarioOperation op) => StepOf(op) is not null;
+
+    /// <summary>
+    /// The step that already holds the operation: the same operation key, or — for REST — the same observation identity (method + templated
+    /// path, the identity Readiness and the evidence history use). A step added from the OpenAPI contract and the same endpoint seen by Live
+    /// Discovery are one operation, so it is never offered for adding twice.
+    /// </summary>
+    private HttpPerformanceStep? StepOf(ScenarioOperation op) => Definition.Scenario.Steps.FirstOrDefault(s => s.Source?.OperationKey == op.Key)
+        ?? (op.GraphQlKind is null && op.Path is { } path
+            ? Definition.Scenario.Steps.FirstOrDefault(s => s.Source is not null && s.Source.Origin != ScenarioOperationOrigin.GraphQl
+                && BirkNext.PerformanceTests.PerformanceScenarioRuntime.ObservationIdentity(s) == ObservationIdentity(op.Method, path))
+            : null);
+
+    private static string ObservationIdentity(string method, string path) =>
+        $"{method.Trim().ToUpperInvariant()} {PerformanceScenarioEngine.Template(System.Text.RegularExpressions.Regex.Replace(path, "\\{[^}/]+\\}", "{id}"))}";
 
     private bool Matches(ScenarioOperation op, string filter) => filter switch
     {
@@ -553,6 +578,52 @@
         return true;
     }
 
+    // ── Multi-select: several ready, read-only operations become steps in one action (duplicates skipped; nothing runs) ─────────────────
+
+    private readonly HashSet<string> _bulk = new(StringComparer.Ordinal);
+
+    /// <summary>Selectable for "Add selected": ready to add, read-only (GET), REST, no review, no conflict. Anything else keeps its own review.</summary>
+    private bool Bulkable(ScenarioOperation op) => CanAdd(op, out _) && op.GraphQlKind is null && !op.ProposedDefinition && !InConflict(op)
+        && op.Level != ScenarioRecommendationLevel.ReviewRequired && string.Equals(op.Method, "GET", StringComparison.OrdinalIgnoreCase);
+
+    private void Select(ScenarioOperation op, bool on)
+    {
+        if (on) _bulk.Add(op.Key); else _bulk.Remove(op.Key);
+    }
+
+    /// <summary>Adds every selected operation in one change: the same step composition as a single add, the scenario's shared configuration
+    /// (authentication inherited from the scenario default, no per-step approval), duplicates and the 20-step limit skipped and reported.</summary>
+    private async Task AddSelectedAsync()
+    {
+        if (_catalog is null) return;
+        var ops = _catalog.Operations.Where(o => _bulk.Contains(o.Key) && Bulkable(o)).ToList();
+        var steps = Definition.Scenario.Steps.ToList();
+        var first = steps.Count + 1;
+        var skipped = 0;
+        foreach (var op in ops)
+        {
+            if (steps.Any(s => s.Source?.OperationKey == op.Key) || StepOf(op) is not null || steps.Count >= 20) { skipped++; continue; }
+            steps.Add(E.ToStep(op, _chosen.GetValueOrDefault(op.Key), _contracts?.Contracts.FirstOrDefault(c => c.Id == op.ContractId)?.Types));
+        }
+        _bulk.Clear();
+        var added = steps.Count - first + 1;
+        if (added <= 0) { _message = "Nothing was added: the selected operations are already in the scenario."; return; }
+        var defaultName = string.IsNullOrWhiteSpace(Definition.Scenario.Name) || Definition.Scenario.Name == "Main scenario";
+        var next = Definition with
+        {
+            TargetType = Definition.TargetType == PerformanceTargetType.GraphQlHttp ? PerformanceTargetType.RestHttp : Definition.TargetType,
+            Scenario = Definition.Scenario with
+            {
+                Steps = steps, SourceKind = Mode, ContractSnapshotId = ops.FirstOrDefault(o => o.SnapshotId is not null)?.SnapshotId ?? Definition.Scenario.ContractSnapshotId,
+                Name = defaultName ? E.SuggestName([.. steps.Select(s => _catalog.Operations.FirstOrDefault(o => o.Key == s.Source?.OperationKey)).OfType<ScenarioOperation>()]) : Definition.Scenario.Name,
+            },
+        };
+        _message = $"Added {added} operation{(added == 1 ? "" : "s")} as step{(added == 1 ? $" {first}" : $"s {first}–{steps.Count}")} with the scenario's shared configuration"
+            + (skipped > 0 ? $"; {skipped} skipped (already in the scenario or the 20-step limit)" : "") + ". Review unresolved items on the steps. Nothing has run.";
+        await OnChange.InvokeAsync(next);
+        await OnStepAdded.InvokeAsync(first);
+    }
+
     private async Task AddAsync(ScenarioOperation op)
     {
         if (!CanAdd(op, out _)) return;
@@ -588,7 +659,10 @@
         var items = new List<(string, string, bool)>();
         if (op.Evidence == ScenarioEvidence.ObservedOnly) items.Add(("evidence", op.GraphQlKind is null ? "Observed only · undocumented API, contract unknown" : "Observed only · not declared in a schema", true));
         if (op.RequiresAuthentication || op.GraphQl?.AuthObserved == true)
-            items.Add(("auth", $"Authentication: {(op.Observation?.AuthObserved == true || op.GraphQl?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security))} · {(Definition.AuthenticationReference is null ? "configuration missing" : "scenario default configured")}", Definition.AuthenticationReference is null));
+        {
+            var (text, warn) = AuthState(op);
+            items.Add(("auth", $"Authentication: {(op.Observation?.AuthObserved == true || op.GraphQl?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security))} · {text}", warn));
+        }
         if (op.TestDataState == ScenarioTestDataStates.Unknown) items.Add(("inputs", "GraphQL query document not captured · runtime inputs unknown", true));
         if (InConflict(op)) items.Add(("conflict", "Contract variants disagree · choose the contract file above", true));
         if (op.Traffic != ScenarioTrafficKind.Application) items.Add(("traffic", $"{E.TrafficLabel(op.Traffic)} · not a business-load baseline", true));
@@ -597,9 +671,33 @@
         return items;
     }
 
+    /// <summary>
+    /// The authentication the operation actually gets: the added step's effective authentication (its override, an explicit None, or the scenario
+    /// default) — for a candidate not added yet, the scenario default it would inherit — and whether the load generator can execute it. Only the
+    /// proxy-captured Target Environment API credential is executable (its availability is checked in Readiness); attended sign-in never is.
+    /// </summary>
+    private (string Text, bool Warn) AuthState(ScenarioOperation op)
+    {
+        var step = StepOf(op) is { Disabled: false } held ? held : null;
+        var reference = step is null ? Definition.AuthenticationReference : BirkNext.PerformanceTests.PerformanceScenarioRuntime.EffectiveAuthentication(Definition, step);
+        var from = step?.Authentication switch { StepAuthenticationMode.Override => "step override", _ => "scenario default" };
+        if (reference is null)
+            return (step?.Authentication == StepAuthenticationMode.None ? "step set to None — authentication unresolved" : "configuration missing", true);
+        return reference == BirkNext.PerformanceTests.PerformanceScenarioRuntime.TargetEnvironmentApiCredential
+            ? ($"{from}: Target Environment API credential (availability checked in Readiness)", false)
+            : ($"{from}: {BirkNext.PerformanceTests.PerformanceScenarioRuntime.AuthenticationSourceName(reference)} — not executable by the load generator", true);
+    }
+
+    /// <summary>"Configure scenario step": opens the step that already holds this operation (no duplicate is created).</summary>
+    private async Task ConfigureStepAsync(ScenarioOperation op)
+    {
+        var index = StepOf(op) is { } held ? Definition.Scenario.Steps.IndexOf(held) : -1;
+        if (index >= 0) await OnConfigureStep.InvokeAsync(index + 1);
+    }
+
     /// <summary>One primary candidate state (text + tone): Added, Conflict, Not runnable in this definition, Review required or Ready to add.</summary>
     private (string Key, string Label) State(ScenarioOperation op, bool canAdd) =>
-        IsAdded(op) ? ("added", Definition.Scenario.Steps.Any(s => s.Source?.OperationKey == op.Key && DD.IsDraft(s)) ? DD.Label : "Added to scenario")
+        IsAdded(op) ? ("added", StepOf(op) is { } held && DD.IsDraft(held) ? DD.Label : "Added to scenario")
         : InConflict(op) ? ("conflict", "Conflict")
         : op.ProposedDefinition || op.Level == ScenarioRecommendationLevel.ReviewRequired && canAdd ? ("review", "Review required")
         : !canAdd ? ("notrunnable", "Not runnable in this definition")
@@ -618,6 +716,11 @@
         <li class="psb-operation psb-state-@state.Key psb-level-@op.Level.ToString().ToLowerInvariant() @(added ? "psb-is-added" : "")" data-testid="psb-operation" data-key="@op.Key" data-level="@op.Level"
             data-state="@state.Key" data-evidence="@op.Evidence" data-added="@(added ? "true" : "false")" data-traffic="@op.Traffic" aria-labelledby="@headingId">
             <div class="psb-op-head">
+                @if (Bulkable(op))
+                {
+                    <input type="checkbox" class="psb-select" data-testid="psb-select" checked="@_bulk.Contains(op.Key)" aria-label="@($"Select {op.Method} {op.Path} for Add selected")"
+                           @onchange="e => Select(op, e.Value is true)" />
+                }
                 <h4 class="psb-op-name ptc-break" id="@headingId" data-testid="psb-op-name">@(op.GraphQlKind is not null ? op.Name : $"{op.Method} {op.Path}")</h4>
                 <span class="psb-chip psb-chip-@state.Key" data-testid="psb-state">@state.Label</span>
                 @if (added) { <span class="visually-hidden" data-testid="psb-added-badge">Added to scenario</span> }
@@ -643,8 +746,8 @@
             <p class="psb-actions">
                 @if (added)
                 {
-                    <button type="button" class="btn-secondary" disabled aria-describedby="@whyId" data-testid="psb-add">Added to scenario</button>
-                    <span class="psb-why" id="@whyId" data-testid="psb-why">Already in the scenario — use Duplicate on the step for a second copy.</span>
+                    <button type="button" class="btn-secondary" aria-describedby="@whyId" data-testid="psb-configure-step" @onclick="() => ConfigureStepAsync(op)">Configure scenario step</button>
+                    <span class="psb-why" id="@whyId" data-testid="psb-why">Already in the scenario — configure that step (use Duplicate on the step for a second copy).</span>
                 }
                 else if (op.ProposedDefinition)
                 {
@@ -708,7 +811,8 @@
                 <div><dt>Suggested use</dt><dd>@op.Use</dd></div>
                 @if (op.RequiresAuthentication || op.GraphQl?.AuthObserved == true)
                 {
-                    <div><dt>Authentication</dt><dd data-testid="psb-auth">@(op.Observation?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security)) · <span class="@(Definition.AuthenticationReference is null ? "psb-warn" : "")">@(Definition.AuthenticationReference is null ? "Needs configuration" : "Configured")</span> · references the approved authentication configuration (no token is copied)</dd></div>
+                    var authState = AuthState(op);
+                    <div><dt>Authentication</dt><dd data-testid="psb-auth">@(op.Observation?.AuthObserved == true ? "Bearer observed" : string.Join(", ", op.Security)) · <span class="@(authState.Warn ? "psb-warn" : "")">@authState.Text</span> · references the approved authentication configuration (no token is copied)</dd></div>
                 }
                 @if (op.GraphQl is { } gq)
                 {

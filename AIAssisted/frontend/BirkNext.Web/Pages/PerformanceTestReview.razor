@@ -360,7 +360,11 @@
             case "save" or "save-version": await SaveAsync(); break;
             case "run": await RunTestAsync(); break;
             case "history": _tab = Tab.History; break;
-            case "scenario" or PerformanceReadinessActions.EditScenario: _tab = Tab.Scenario; break;
+            case "scenario" or PerformanceReadinessActions.EditScenario:
+                _tab = Tab.Scenario;
+                // An authentication or execution-credential blocker is fixed in Scenario authentication: focus it (selection and focus, not scrolling).
+                if (_readiness?.Items.Any(i => i.Blocking && i.Key is "credential" or "authentication") == true) _focusTarget = "pt-scenario-auth";
+                break;
             case PerformanceReadinessActions.EditWorkload: _tab = Tab.Workload; break;
             case PerformanceReadinessActions.EditThresholds: _tab = Tab.Thresholds; break;
             case "resources": _tab = Tab.Resources; break;
@@ -388,7 +392,7 @@
             _tab = Tab.Readiness;
             return;
         }
-        else _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id);
+        else _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id, _identity);
         _tab = Tab.Readiness;
     }
 
@@ -456,7 +460,7 @@
             var result = await Api.NetworkCheckAsync(_profile!.Id, _draft.Id);
             if (result.Value is null) { _message = result.Error; return; }
             _reachability = result.Value;
-            _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id);
+            _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id, _identity);
             // Project activity: one event for a failed manual check or an applied TLS repair (never for every check).
             if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder)) is BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder activity
                 && BirkNext.Web.Services.ProjectActivity.ReviewActivity.NetworkValidation(result.Value, _profile.Id, _profile.Name) is { } validation)
@@ -525,7 +529,7 @@
     {
         _resourceTargets = _profile is null ? [] : await Api.ResourceTargetsAsync(_profile.Id, _draft.EnvironmentType);
         if (_isNew) { _readiness = null; _runs = []; _baselines = []; _selectedRun = null; return; }
-        _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id);
+        _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id, _identity);
         _runs = await Api.RunsAsync(_profile.Id, _draft.Id);
         _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
         _selectedRun = _runs.FirstOrDefault(r => r.RunId == _selectedRun?.RunId) ?? _runs.FirstOrDefault();
@@ -902,13 +906,14 @@
                 <h3 id="pt-scenario-context-h">Target service <span class="ptc-readonly-tag">read-only</span></h3>
                 <dl class="ptc-context-facts">
                     <div><dt>Target</dt><dd><strong class="ptc-break" data-testid="pt-target">@(_draft.TargetOrigin.Length == 0 ? "Not configured" : _draft.TargetOrigin)</strong><span class="ptc-sub">Owned by the Target Environment; steps are relative operations under it (the base URL is never copied into a step).</span></dd></div>
-                    <div><dt>Authentication</dt><dd><strong>@(_draft.AuthenticationReference is null ? "None" : "Referenced")</strong><span class="ptc-sub">Steps reference the approved authentication configuration; no observed token is ever copied.</span></dd></div>
                 </dl>
             </section>
+            @ScenarioAuthentication()
+            @UnresolvedItems()
         </div>
 
         <BirkNext.Web.Components.PerformanceScenarioBuilder Definition="_draft" EnvironmentId="@(_profile?.Id ?? "")" EnvironmentName="@_draft.EnvironmentName"
-            Observations="_observations" History="_history" HistoryLoaded="_historyLoaded" Assets="_testDataAssets" OnChange="Changed" OnStepAdded="FocusStep" OnNewGraphQlDefinition="NewGraphQlDefinition"
+            Observations="_observations" History="_history" HistoryLoaded="_historyLoaded" Assets="_testDataAssets" OnChange="Changed" OnStepAdded="FocusStep" OnConfigureStep="FocusStep" OnNewGraphQlDefinition="NewGraphQlDefinition"
             EndpointDiscoveryHref="@(_profile is null ? null : $"/admin/system-settings?section=target-environments&tab=endpoint&profile={Uri.EscapeDataString(_profile.Id)}")" />
 
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
@@ -1049,6 +1054,111 @@
 
     /// <summary>After "Add to scenario": focus the new step's heading (the builder announces "Added … as step N. Nothing has run.").</summary>
     private void FocusStep(int number) => _focusTarget = $"pt-step-h-{number}";
+
+    // ── Scenario Authentication: one summary of what the steps require and what they effectively get (TE → scenario default → step) ──────
+
+    private bool _authApplyPreview;
+    private const string ApiCredential = BirkNext.PerformanceTests.PerformanceScenarioRuntime.TargetEnvironmentApiCredential;
+
+    private IReadOnlyList<BirkNext.PerformanceTests.StepAuthenticationRequirement> AuthRequirements =>
+        BirkNext.PerformanceTests.PerformanceScenarioRuntime.AuthenticationRequirements(_draft, ObservedAuthentication);
+
+    /// <summary>Steps that require authentication but are explicitly set to None: the only steps "Apply the default" changes (overrides are kept).</summary>
+    private IReadOnlyList<(int Index, string Name)> NoneButRequired => [.. AuthRequirements
+        .Where(r => r.State == BirkNext.PerformanceTests.StepAuthenticationState.Missing && _draft.Scenario.Steps[r.Index].Authentication == StepAuthenticationMode.None)
+        .Select(r => (r.Index, r.Step))];
+
+    private RenderFragment ScenarioAuthentication() => __builder =>
+    {
+        var requirements = AuthRequirements.Where(r => r.State != BirkNext.PerformanceTests.StepAuthenticationState.NotRequired).ToList();
+        var unresolved = requirements.Where(r => r.Blocking).ToList();
+        var notExecutable = requirements.Where(r => r.State == BirkNext.PerformanceTests.StepAuthenticationState.Configured && r.Effective is { } e && e != ApiCredential).ToList();
+        var overrides = _draft.Scenario.Steps.Select((s, i) => (s, i)).Where(x => !x.s.Disabled && x.s.Authentication == StepAuthenticationMode.Override).ToList();
+        var noneButRequired = NoneButRequired;
+        var defaultText = _draft.AuthenticationReference is { } d ? BirkNext.PerformanceTests.PerformanceScenarioRuntime.AuthenticationSourceName(d) : "None";
+        <section class="ptc-panel pt-auth" aria-labelledby="pt-auth-h" data-testid="pt-scenario-auth" id="pt-scenario-auth" tabindex="-1">
+            <h3 id="pt-auth-h">Scenario authentication</h3>
+            <p data-testid="pt-auth-summary"><strong>@(unresolved.Count > 0 ? $"Authentication unresolved — {unresolved.Count} step{(unresolved.Count == 1 ? "" : "s")} blocked"
+                : notExecutable.Count > 0 ? $"{notExecutable.Count} step{(notExecutable.Count == 1 ? " uses" : "s use")} attended sign-in — not executable by the load generator"
+                : requirements.Count == 0 ? "No step requires authentication" : "Every step that requires authentication has a configuration")</strong></p>
+            @* Resolved means configured AND executable by the load generator; an attended sign-in is configured but counted apart. *@
+            <p class="ptc-sub" data-testid="pt-auth-counts">Scenario default: @defaultText · @requirements.Count step@(requirements.Count == 1 ? " requires" : "s require") authentication · @(requirements.Count - unresolved.Count - notExecutable.Count) resolved · @unresolved.Count unresolved@(notExecutable.Count > 0 ? $" · {notExecutable.Count} not executable" : "")@(overrides.Count > 0 ? $" · {overrides.Count} step override{(overrides.Count == 1 ? "" : "s")}" : "")
+                · the execution credential is checked in Readiness; no token is ever shown or copied.</p>
+            <div class="pt-auth-actions">
+                @if (_draft.AuthenticationReference != ApiCredential && (requirements.Count > 0 || _draft.AuthenticationReference is not null))
+                {
+                    <button type="button" class="btn-secondary btn-sm" data-testid="pt-auth-use-te" @onclick="UseTargetEnvironmentCredential">Use Target Environment API credential as scenario default</button>
+                }
+                @if (noneButRequired.Count > 0 && !_authApplyPreview)
+                {
+                    <button type="button" class="btn-secondary btn-sm" data-testid="pt-auth-apply" @onclick="() => _authApplyPreview = true">Apply the scenario default to @noneButRequired.Count step@(noneButRequired.Count == 1 ? "" : "s") set to None…</button>
+                }
+                <a class="btn-link btn-sm" data-testid="pt-auth-configure" href="@($"/admin/system-settings?section=target-environments&tab=auth{(_profile is null ? "" : $"&profile={Uri.EscapeDataString(_profile.Id)}")}")">Configure Target Environment authentication</a>
+            </div>
+            @if (_authApplyPreview)
+            {
+                <div class="pt-auth-preview" role="region" aria-label="Preview" data-testid="pt-auth-preview">
+                    <p>These steps require authentication but are set to None; they will inherit the scenario default (@defaultText):</p>
+                    <ul>@foreach (var (index, name) in noneButRequired) { <li data-testid="pt-auth-preview-step">Step @(index + 1) · @name</li> }</ul>
+                    @if (overrides.Count > 0) { <p class="ptc-sub" data-testid="pt-auth-preview-kept">Kept as they are: @overrides.Count step override@(overrides.Count == 1 ? "" : "s").</p> }
+                    <button type="button" class="btn-primary btn-sm" data-testid="pt-auth-apply-confirm" @onclick="ApplyDefaultToNoneSteps">Confirm</button>
+                    <button type="button" class="btn-secondary btn-sm" data-testid="pt-auth-apply-cancel" @onclick="() => _authApplyPreview = false">Cancel</button>
+                </div>
+            }
+            @if (unresolved.Count > 0 || notExecutable.Count > 0)
+            {
+                <ul class="pt-auth-steps" data-testid="pt-auth-unresolved">
+                    @foreach (var r in unresolved.Concat(notExecutable))
+                    {
+                        <li data-testid="pt-auth-step" data-index="@r.Index">Step @(r.Index + 1) · @r.Step — @(r.Requirement ?? "authentication required") ·
+                            @(r.State switch { BirkNext.PerformanceTests.StepAuthenticationState.Missing => _draft.Scenario.Steps[r.Index].Authentication == StepAuthenticationMode.None ? "set to None" : "no configuration",
+                                BirkNext.PerformanceTests.StepAuthenticationState.OverrideOutdated => "unauthenticated override outdated", _ => "attended sign-in — not executable" })
+                            <button type="button" class="btn-link btn-sm" data-testid="pt-auth-configure-step" @onclick="() => FocusStep(r.Index + 1)">Configure<span class="visually-hidden"> step @(r.Index + 1)</span></button></li>
+                    }
+                </ul>
+            }
+        </section>
+    };
+
+    /// <summary>
+    /// "Review unresolved items": what still needs a person, grouped by cause (authentication, runtime values and Test Data), with the number
+    /// of affected steps or bindings and one action that opens the first of them. Derived from the same rules as the step statuses and Readiness.
+    /// </summary>
+    private RenderFragment UnresolvedItems() => __builder =>
+    {
+        var auth = AuthRequirements.Where(r => r.Blocking).Select(r => r.Index).Distinct().ToList();
+        var values = _draft.Scenario.Steps.SelectMany((s, i) => s.Disabled ? [] : BirkNext.PerformanceTests.PerformanceScenarioRuntime.Rows(_draft.Scenario, i)
+            .Where(r => !r.Resolved).Select(r => (Index: i, r.Parameter.Variable))).ToList();
+        if (auth.Count == 0 && values.Count == 0) return;
+        <section class="ptc-panel pt-unresolved" aria-labelledby="pt-unresolved-h" data-testid="pt-unresolved">
+            <h3 id="pt-unresolved-h">Review unresolved items</h3>
+            <ul>
+                @if (auth.Count > 0)
+                {
+                    <li data-testid="pt-unresolved-group" data-cause="authentication"><strong>Authentication</strong> — @auth.Count step@(auth.Count == 1 ? "" : "s") affected
+                        <button type="button" class="btn-link btn-sm" data-testid="pt-unresolved-fix" @onclick='() => _focusTarget = "pt-scenario-auth"'>Review scenario authentication</button></li>
+                }
+                @if (values.Count > 0)
+                {
+                    <li data-testid="pt-unresolved-group" data-cause="values"><strong>Runtime values and Test Data</strong> — @values.Count parameter binding@(values.Count == 1 ? "" : "s") missing or not approved
+                        (@string.Join(", ", values.Select(v => "{" + v.Variable + "}").Distinct()))
+                        <button type="button" class="btn-link btn-sm" data-testid="pt-unresolved-fix" @onclick="() => FocusStep(values[0].Index + 1)">Configure step @(values[0].Index + 1)</button></li>
+                }
+            </ul>
+        </section>
+    };
+
+    /// <summary>An explicit choice: the scenario default becomes the Target Environment API credential (a reference, never a token). Step overrides
+    /// and explicit None stay as they are.</summary>
+    private void UseTargetEnvironmentCredential() => Changed(_draft with { AuthenticationReference = ApiCredential });
+
+    /// <summary>Confirmed bulk apply: only steps that require authentication and are set to None inherit the scenario default; overrides are kept.</summary>
+    private void ApplyDefaultToNoneSteps()
+    {
+        var indexes = NoneButRequired.Select(x => x.Index).ToHashSet();
+        _authApplyPreview = false;
+        Changed(_draft with { Scenario = _draft.Scenario with { Steps = [.. _draft.Scenario.Steps.Select((s, i) => indexes.Contains(i) ? s with { Authentication = StepAuthenticationMode.Inherit } : s)] } });
+    }
 
     /// <summary>"+ New GraphQL definition" / "Review &amp; create GraphQL definition": an unsaved GraphQL draft (REST and GraphQL are never mixed). Nothing runs.</summary>
     private void NewGraphQlDefinition(HttpPerformanceStep? proposed)

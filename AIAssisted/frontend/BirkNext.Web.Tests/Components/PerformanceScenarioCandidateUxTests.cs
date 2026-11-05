@@ -59,7 +59,51 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         var d = (definition ?? Definition()) with { Scenario = (definition ?? Definition()).Scenario with { SourceKind = source } };
         return Render<PerformanceScenarioBuilder>(p => p.Add(x => x.Definition, d).Add(x => x.EnvironmentId, "dev").Add(x => x.EnvironmentName, "Development")
             .Add(x => x.Observations, observed).Add(x => x.OnChange, (PerformanceTestDefinition next) => _changed = next)
-            .Add(x => x.OnStepAdded, (int n) => _addedStep = n).Add(x => x.OnNewGraphQlDefinition, (HttpPerformanceStep? s) => _graphQl = (true, s)));
+            .Add(x => x.OnStepAdded, (int n) => _addedStep = n).Add(x => x.OnConfigureStep, (int n) => _configuredStep = n)
+            .Add(x => x.OnNewGraphQlDefinition, (HttpPerformanceStep? s) => _graphQl = (true, s)));
+    }
+
+    private int? _configuredStep;
+
+    [Fact]
+    public void A_step_added_from_the_contract_is_the_same_operation_Live_Discovery_sees_so_it_is_never_added_twice()
+    {
+        var fromContract = new HttpPerformanceStep
+        {
+            Name = "getchildrenforuser", Method = "GET", RelativePath = "/api/brukere/{brukerId}/barn",
+            Source = new() { OperationKey = "openapi:openapi:Autorisasjon/openapi.yaml#GET /api/brukere/{brukerId}/barn", Origin = ScenarioOperationOrigin.OpenApi },
+        };
+        var cut = Builder([Rest($"/api/brukere/{ObservedId}/barn")], Definition(fromContract));
+
+        var card = cut.Find("[data-testid=psb-operation]");
+        card.GetAttribute("data-added").Should().Be("true", "the observed GET /api/brukere/{id}/barn is the contract's GET /api/brukere/{brukerId}/barn");
+        cut.FindAll("[data-testid=psb-add], [data-testid=psb-review-add], [data-testid=psb-select]").Should().BeEmpty("no second copy can be added");
+        cut.Find("[data-testid=psb-configure-step]").Click();
+        _configuredStep.Should().Be(1);
+    }
+
+    [Fact]
+    public void An_operation_shows_the_authentication_it_actually_gets_and_Configure_opens_its_existing_step()
+    {
+        var cut = Builder([Rest($"/api/brukere/{ObservedId}/barn")]);
+        cut.Find("[data-testid=psb-review-add]").Click();
+        cut.Find("[data-testid=psb-add]").Click();
+        var added = _changed!;
+        string Auth(PerformanceTestDefinition d) => Builder([Rest($"/api/brukere/{ObservedId}/barn")], d).FindAll("[data-testid=psb-attention-item][data-kind=auth]").Single().TextContent;
+        HttpPerformanceStep Step(StepAuthenticationMode mode, string? reference = null) => added.Scenario.Steps[0] with { Authentication = mode, AuthenticationReference = reference };
+
+        Auth(added).Should().EndWith("configuration missing");
+        Auth(added with { Scenario = added.Scenario with { Steps = [Step(StepAuthenticationMode.None)] }, AuthenticationReference = PerformanceScenarioRuntime.TargetEnvironmentApiCredential })
+            .Should().EndWith("step set to None — authentication unresolved", "an explicit None on the step wins over a configured default — and is unresolved");
+        Auth(added with { AuthenticationReference = PerformanceScenarioRuntime.TargetEnvironmentApiCredential })
+            .Should().Contain("scenario default: Target Environment API credential");
+        Auth(added with { Scenario = added.Scenario with { Steps = [Step(StepAuthenticationMode.Override, PerformanceScenarioRuntime.TargetEnvironmentAuthentication)] } })
+            .Should().Contain("step override: Target Environment — not executable by the load generator", "attended sign-in is configured, not executable");
+
+        var existing = Builder([Rest($"/api/brukere/{ObservedId}/barn")], added);
+        existing.Find("[data-testid=psb-configure-step]").Click();
+        _configuredStep.Should().Be(1, "it opens the step that already holds the operation");
+        _changed!.Scenario.Steps.Should().ContainSingle("no duplicate step is created");
     }
 
     private static AngleSharp.Dom.IElement Card(IRenderedComponent<PerformanceScenarioBuilder> cut, string name) =>
@@ -93,7 +137,7 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
             .And.Contain(t => t.StartsWith("Observed only")).And.Contain("Authentication: Bearer observed · configuration missing");
         card.QuerySelector("[data-testid=psb-attention-item][data-kind=dynamic]")!.ClassList.Should().Contain("psb-info-item", "a dynamic parameter alone is information, not a warning");
         card.QuerySelector("[data-testid=psb-testdata-state]")!.GetAttribute("data-state").Should().Be(ScenarioTestDataStates.Optional);
-        card.QuerySelector("[data-testid=psb-auth]")!.TextContent.Should().Contain("Bearer observed").And.Contain("Needs configuration").And.Contain("no token is copied");
+        card.QuerySelector("[data-testid=psb-auth]")!.TextContent.Should().Contain("Bearer observed").And.Contain("configuration missing").And.Contain("no token is copied");
         cut.Markup.Should().NotContain(ObservedId).And.NotContain("no Test Data needed").And.NotContain("Test Data missing");
     }
 
@@ -162,8 +206,9 @@ public sealed class PerformanceScenarioCandidateUxTests : BunitContext
         card.QuerySelector("[data-testid=psb-added-badge]")!.TextContent.Should().Contain("Added to scenario");
         card.GetAttribute("data-state").Should().Be("added");
         card.QuerySelector("[data-testid=psb-state]")!.TextContent.Should().Be("Added to scenario");
-        card.QuerySelector("[data-testid=psb-add]")!.TextContent.Should().Be("Added to scenario");
-        card.QuerySelector("[data-testid=psb-add]")!.HasAttribute("disabled").Should().BeTrue();
+        card.QuerySelectorAll("[data-testid=psb-add]").Should().BeEmpty("an added operation is never added twice");
+        card.QuerySelector("[data-testid=psb-configure-step]")!.TextContent.Should().Be("Configure scenario step", "it opens the existing step instead");
+        card.QuerySelector("[data-testid=psb-configure-step]")!.HasAttribute("disabled").Should().BeFalse();
         card.QuerySelectorAll("[data-testid=psb-attention-item].psb-warn-item").Should().NotBeEmpty("green means selected, not ready — unresolved warnings stay amber");
         card.QuerySelector("[data-testid=psb-level]")!.TextContent.Should().Be("Review required");
 

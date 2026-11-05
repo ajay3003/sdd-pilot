@@ -45,6 +45,10 @@ public interface IPerformanceTestApiService
     Task<PerformanceApiResult<PerformanceTestDefinition>> SaveDefinitionAsync(string environmentId, PerformanceTestDefinition definition, bool create, CancellationToken ct = default);
     Task<PerformanceApiResult<PerformanceTestDataProfile>> SaveDataProfileAsync(string environmentId, PerformanceTestDataProfile profile, CancellationToken ct = default);
     Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default);
+    /// <summary>Readiness with the Target Environment's proxy identity (as a run start sends it): the API credential a scenario uses is then
+    /// checked exactly as the run would check it, so readiness is never Ready for a run that would be refused.</summary>
+    Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default) =>
+        ReadinessAsync(environmentId, definitionId, ct);
     Task<PerformanceApiResult<PerformanceTestRun>> StartAsync(string environmentId, PerformanceRunRequest request, CancellationToken ct = default);
     Task<PerformanceTestRun?> RunAsync(string environmentId, Guid runId, CancellationToken ct = default);
     Task<List<PerformanceTestRun>> RunsAsync(string environmentId, string? definitionId, CancellationToken ct = default);
@@ -170,6 +174,11 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<T>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
     }
+
+    public Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default) =>
+        Get<PerformanceTestReadiness>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/readiness?{Env(environmentId)}"
+            + (identity is { ProfileId.Length: > 0, ContextFingerprint.Length: > 0 }
+                ? $"&profileId={Uri.EscapeDataString(identity.ProfileId)}&contextFingerprint={Uri.EscapeDataString(identity.ContextFingerprint)}" : ""), ct);
 
     public Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default) =>
         Get<PerformanceTestReadiness>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/readiness?{Env(environmentId)}", ct);

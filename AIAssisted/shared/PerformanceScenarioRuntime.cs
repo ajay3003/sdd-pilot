@@ -431,6 +431,10 @@ public static partial class PerformanceScenarioRuntime
             case RuntimeValueSource.AutoFilled:
                 if (string.IsNullOrEmpty(m.FixedValue)) return "Runtime value missing — choose a value source";
                 if (m.NeedsReview) return $"Needs review: the {m.ValueOrigin ?? "suggested"} value and values observed by Live Discovery may differ — confirm it or choose another source";
+                // A value observed at runtime is a candidate, not approved Test Data: it never resolves a parameter by itself. Map approved
+                // Test Data, or enter it as a fixed value when it is approved for this environment (an explicit decision).
+                if (m.ValueOrigin == RuntimeValueOrigins.LiveDiscovery)
+                    return $"Observed value is a candidate, not approved Test Data — map approved Test Data to {{{p.Variable}}} or enter it as a fixed value if it is approved for this environment";
                 return TypeProblem(m.FixedValue, m.DeclaredType, m.AllowedValues);
             default:
                 if (!GeneratedAllowed(p)) return "A generated value is not valid for this parameter — use Test Data or another source";

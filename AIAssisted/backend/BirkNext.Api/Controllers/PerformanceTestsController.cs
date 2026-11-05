@@ -129,7 +129,10 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         var definition = await store.DefinitionAsync(environmentId, id, ct);
         if (definition is null) return NotFound();
         var baseline = await store.ActiveBaselineAsync(environmentId, id, definition.ComparisonFingerprint, ct);
-        return Ok(await readiness.EvaluateAsync(definition, await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct), baseline is not null, ct));
+        // The Target Environment's proxy identity, as a run start sends it: the API credential is then checked exactly as the run would check it.
+        var identity = Request.Query.TryGetValue("profileId", out var profile) && Request.Query.TryGetValue("contextFingerprint", out var fingerprint)
+            ? new BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity(BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy, profile.ToString(), fingerprint.ToString()) : null;
+        return Ok(await readiness.EvaluateAsync(definition, await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct), baseline is not null, ct, identity));
     }
 
     /// <summary>Explicit container-network check: one GET of the target origin from a k6 container (same network, proxy and CA as a run).</summary>

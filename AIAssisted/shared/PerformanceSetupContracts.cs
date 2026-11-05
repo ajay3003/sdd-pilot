@@ -32,7 +32,8 @@ public static class PerformanceSetupModel
     {
         "target" => JourneySetupStepKind.Target,
         "environment" => JourneySetupStepKind.Environment,
-        "scenario" or "testdata" => JourneySetupStepKind.Scenario,
+        // Central Test Data, contract drift and endpoint evidence belong to the scenario: a blocker there never reads as a ready scenario.
+        "scenario" or "testdata" or "central-test-data" or "scenario-contract" or "endpoint-evidence" => JourneySetupStepKind.Scenario,
         "provider" when item.Category == PerformanceReadinessCategories.Definition => JourneySetupStepKind.Scenario,
         "provider" or "image" => JourneySetupStepKind.ExecutionEngine,
         "runtime" => JourneySetupStepKind.ContainerRuntime,

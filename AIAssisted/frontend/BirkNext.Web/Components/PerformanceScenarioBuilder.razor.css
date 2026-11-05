@@ -100,3 +100,7 @@ h4.psb-op-name { margin: 0; flex: 1 1 16rem; font-weight: 700; }
 .psb-discovery p { margin: 0; }
 .psb-discovery-notices { margin: .3rem 0 0; padding-left: 1.1rem; }
 @media (prefers-color-scheme: dark) { .psb-discovery { background: rgba(245, 158, 11, .1); border-color: #b45309; } }
+
+/* Multi-select (NEXT37b): one checkbox per ready read-only operation, one bar with "Add selected". */
+.psb-select { margin-right: .4rem; }
+.psb-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .5rem 0; padding: .45rem .7rem; border: 1px solid var(--clr-primary, #2563eb); border-radius: 6px; background: var(--clr-surface, #fff); }
