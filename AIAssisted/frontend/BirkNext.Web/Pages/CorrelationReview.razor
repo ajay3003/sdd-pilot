@@ -152,6 +152,17 @@
             else
             {
                 <p data-testid="cr-source-summary">@SourceSummary()</p>
+                @if (_delivery is { } delivery)
+                {
+                    <label class="cr-delivery" data-testid="cr-delivery"><input type="checkbox" checked="@_includeDelivery" @onchange="e => _includeDelivery = (bool)e.Value!" data-testid="cr-delivery-include" />
+                        Include Delivery snapshot <strong>@(delivery.Label ?? delivery.Id[..Math.Min(8, delivery.Id.Length)])</strong>
+                        <span class="cr-muted cr-small">— the feature packs, requirements, stories and tasks Release Readiness and Traceability read. Without it the analysis has no release scope.</span></label>
+                }
+                else if (_historyLoaded)
+                {
+                    <p class="cr-muted cr-small" data-testid="cr-no-delivery">No Delivery snapshot has been analyzed for this project yet: feature packs (the release scope) come from a Delivery snapshot. Import the
+                        project's work items in Delivery Reports, then analyze it from there or here.</p>
+                }
                 <p class="cr-muted" data-testid="cr-source-outcomes">@string.Join(" · ", _rows.GroupBy(r => r.Outcome).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.First().OutcomeLabel.ToLowerInvariant()}"))</p>
                 <div class="cr-actions">
                     <button type="button" class="btn btn-primary" disabled="@(_selected.Count == 0 || _interpreting is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run">Analyze relationships</button>
@@ -458,6 +469,8 @@
         if (next >= 0) _tab = Tabs[next].Key;
     }
 
+    private BirkNext.Snapshots.SnapshotReference? _delivery;
+    private bool _includeDelivery = true;
     private bool _initialising = true, _queueLoading, _saving;
     /// <summary>Bumped after every decision or interpretation: the governance gate is evaluated again (one fact, recomputed).</summary>
     private int _governanceVersion;
@@ -533,7 +546,8 @@
         void Changed() => _ = InvokeAsync(StateHasChanged);
         try
         {
-            var (snapshot, error) = await run.StageAsync("interpret", ct => Api.InterpretAsync(_scope, new([.. _selected], Trigger: "Relationship Review"), ct), Changed);
+            Guid? deliveryId = _includeDelivery && _delivery is { } d && Guid.TryParse(d.Id, out var parsed) ? parsed : null;
+            var (snapshot, error) = await run.StageAsync("interpret", ct => Api.InterpretAsync(_scope, new([.. _selected], deliveryId, Trigger: "Relationship Review"), ct), Changed);
             if (error is not null) { _interpretError = error; return; }
             _lastRun = snapshot;
             await run.StageAsync("refresh", async _ => { await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync()); return true; }, Changed);
@@ -555,6 +569,8 @@
     {
         if (_scope is null) return;
         _snapshots = [.. (await Api.SnapshotsAsync(_scope)).Items];
+        // The Delivery snapshot the latest analysis that had one used: offered (and selected) so re-analyzing never drops the release scope silently.
+        _delivery = _snapshots.SelectMany(s => s.SourceSnapshots).FirstOrDefault(r => r.Type == BirkNext.Snapshots.SnapshotType.Delivery);
         _summary = (await Api.SummaryAsync(_scope)).Summary;
         _decisions = [.. (await Api.DecisionsAsync(_scope)).Items];
         _historyLoaded = true;

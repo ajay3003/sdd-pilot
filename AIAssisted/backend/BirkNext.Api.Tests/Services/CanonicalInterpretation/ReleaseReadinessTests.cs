@@ -106,8 +106,10 @@ public sealed class ReleaseReadinessTests
         dims[ReadinessDimensionKey.FunctionalExecution].Summary.Should().Contain("a linked test is not an executed or passed test");
 
         var person = await service.AssessReleaseAsync("proj", ["PersonService"], null, default);
-        person.Decision.Should().Be(GateDecision.ReadyWithLimitations, "SkoleService's conflict and story references never block the PersonService release");
-        person.Dimensions.Single(d => d.Key == ReadinessDimensionKey.Traceability).State.Should().Be(GateDecision.Ready);
+        person.Decision.Should().NotBe(GateDecision.Blocked, "SkoleService's conflict and story references never block the PersonService release");
+        person.Dimensions.Single(d => d.Key == ReadinessDimensionKey.Traceability).State.Should().Be(GateDecision.NotAssessed,
+            "PersonService has no tasks: zero tasks is not full traceability (no vacuous truth)");
+        person.Decision.Should().Be(GateDecision.NotAssessed, "a required dimension with nothing to assess keeps the release Not assessed, never Ready");
     }
 
     [Fact]

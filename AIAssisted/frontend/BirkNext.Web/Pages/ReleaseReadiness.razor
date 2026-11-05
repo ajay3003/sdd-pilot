@@ -254,6 +254,10 @@
         _ => "?",
     };
 
+    /// <summary>Imported TRX results in the workspace (reported as found, never as execution of the release scope).</summary>
+    private ReleaseExecutionEvidence? Execution => Services.GetService(typeof(WorkspaceArtifactRepository)) is WorkspaceArtifactRepository repository
+        ? ReleaseReadinessPresentation.Execution(repository.SddLifecycle?.TestExecutions, null) : null;
+
     /// <summary>A count, or "Not assessed" when it is unknown — never 0 for unknown.</summary>
     private static string Count(int? value) => value is { } v ? v.ToString() : "Not assessed";
 
@@ -267,20 +271,45 @@
             <dl class="rr-facts" data-testid="rr-facts">
                 <div><dt>Requirements assessed</dt><dd data-testid="rr-fact-requirements">@Count(f?.Requirements)</dd></div>
                 <div><dt>Requirements with a confirmed test</dt><dd data-testid="rr-fact-tested">@Count(f?.RequirementsWithConfirmedTest)</dd></div>
-                <div><dt>Tests executed</dt><dd class="rr-na" data-testid="rr-fact-executed" title="Execution results are not read into release readiness; a linked test is not an executed test.">Not assessed</dd></div>
+                <div><dt>Tests executed</dt><dd class="rr-na" data-testid="rr-fact-executed" title="Execution results are not read into release readiness; a linked test is not an executed test.">Not assessed</dd>
+                    @if (Execution is { } run)
+                    {
+                        <dd class="rr-small rr-muted" data-testid="rr-fact-imported">@run.Results imported result@(run.Results == 1 ? "" : "s") (@run.Passed passed · @run.Failed failed@(run.Other > 0 ? $" · {run.Other} other" : "")) — not mapped to this scope</dd>
+                    }</div>
                 <div><dt>Blocking findings</dt><dd data-testid="rr-fact-blocking">@Count(f?.BlockingFindings)</dd></div>
                 <div><dt>Open review decisions</dt><dd data-testid="rr-fact-decisions">@Count(f?.OpenDecisions)</dd></div>
                 <div><dt>Evidence not assessed</dt><dd data-testid="rr-fact-missing">@missing dimension@(missing == 1 ? "" : "s")</dd></div>
             </dl>
-            @if (a.Blockers.Count > 0)
+            @{ var causes = ReleaseReadinessPresentation.BlockingCauses(a); var gaps = ReleaseReadinessPresentation.RequiredGaps(a); var steps = ReleaseReadinessPresentation.NextSteps(a); }
+            @if (causes.Count > 0)
             {
-                <h3 class="rr-sub">Must happen before release</h3>
-                <ul class="rr-list" data-testid="rr-blockers">@foreach (var b in a.Blockers) { <li>@b</li> }</ul>
+                <h3 class="rr-sub">What blocks release?</h3>
+                <ul class="rr-causes" data-testid="rr-blockers">
+                    @foreach (var c in causes)
+                    {
+                        <li class="rr-cause" data-testid="rr-cause" data-key="@c.Key">
+                            <strong>@c.Title</strong>
+                            <span class="rr-small">@c.Detail</span>
+                            <span class="rr-small rr-muted">Affects: @string.Join(" · ", c.Dimensions)</span>
+                            <a href="@c.Href" class="rr-small" data-testid="rr-cause-link">@c.ActionLabel</a>
+                        </li>
+                    }
+                </ul>
             }
-            @if (a.NextActions.Count > 0)
+            @if (gaps.Count > 0)
             {
-                <h3 class="rr-sub">Next actions</h3>
-                <ul class="rr-list" data-testid="rr-next">@foreach (var n in a.NextActions) { <li>@n</li> }</ul>
+                <h3 class="rr-sub">Required evidence not assessed</h3>
+                <ul class="rr-list" data-testid="rr-gaps">@foreach (var g in gaps) { <li><strong>@g.Title</strong> — @g.Summary</li> }</ul>
+            }
+            @if (steps.Count > 0)
+            {
+                <h3 class="rr-sub">What should I do next?</h3>
+                <ol class="rr-list" data-testid="rr-next">
+                    @foreach (var (title, action, href) in steps)
+                    {
+                        <li><strong>@title:</strong> @action @if (href is not null) { <a href="@href" class="rr-small">Open</a> }</li>
+                    }
+                </ol>
             }
         </section>
     };

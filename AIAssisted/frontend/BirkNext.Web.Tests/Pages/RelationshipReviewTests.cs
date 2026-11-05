@@ -261,4 +261,40 @@ public sealed class RelationshipReviewTests : BunitContext
         cut.Find("[data-testid=cr-tab-history]").GetAttribute("aria-selected").Should().Be("true");
         cut.Find("[data-testid=cr-tab-history]").GetAttribute("tabindex").Should().Be("0");
     }
+
+    [Fact]
+    public async Task Analyzing_again_keeps_the_Delivery_snapshot_so_the_release_scope_is_not_dropped()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        var storage = new ActiveTargetEnvironmentTests.Storage();
+        var settings = new FrontendAnalysisSettingsService();
+        await settings.LoadAsync(storage);
+        settings.Settings.ActiveProfileId = "dev";
+        Services.AddSingleton<IJSRuntime>(storage);
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
+        Services.AddSingleton<IFrontendAnalysisContextFactory>(ActiveTargetEnvironmentTests.Factory(settings, storage));
+        var source = Guid.NewGuid();
+        var delivery = Guid.NewGuid();
+        var catalog = new Mock<IIntegrationCatalogApiService>();
+        catalog.Setup(c => c.ListSourceSnapshotSummariesAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync([Stored(source, "M2LB-language.zip", SourceAnalysisStatus.Ready)]);
+        Services.AddSingleton(catalog.Object);
+        var api = new Mock<ICanonicalInterpretationApiService>();
+        // The latest analysis (from this page) had no Delivery snapshot; an earlier one did — its Delivery snapshot is offered and selected.
+        api.Setup(a => a.SnapshotsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<InterpretationSnapshotView>)
+        [
+            new(Guid.NewGuid(), "dev", DateTimeOffset.UnixEpoch.AddDays(2), ["correlation/4"], [new(BirkNext.Snapshots.SnapshotType.SourceAnalysis, source.ToString())], 1, 10, 10, "c2", [], "Relationship Review", null),
+            new(Guid.NewGuid(), "dev", DateTimeOffset.UnixEpoch.AddDays(1), ["correlation/4"],
+                [new(BirkNext.Snapshots.SnapshotType.SourceAnalysis, source.ToString()), new(BirkNext.Snapshots.SnapshotType.Delivery, delivery.ToString(), "M2LB-language 4 Nov")], 1, 20, 20, "c1", [], "scope acceptance", null),
+        ], (string?)null));
+        api.Setup(a => a.DecisionsAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
+        Services.AddSingleton(api.Object);
+
+        var cut = Render<CorrelationReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-delivery]").TextContent.Should().Contain("M2LB-language 4 Nov"));
+        cut.Find("[data-testid=cr-delivery-include]").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=cr-interpret-run]").Click();
+
+        cut.WaitForAssertion(() => api.Verify(a => a.InterpretAsync("dev", It.Is<InterpretRequest>(r => r.DeliverySnapshotId == delivery && r.SourceSnapshotIds.SequenceEqual(new[] { source })),
+            It.IsAny<CancellationToken>()), Times.Once()));
+    }
 }

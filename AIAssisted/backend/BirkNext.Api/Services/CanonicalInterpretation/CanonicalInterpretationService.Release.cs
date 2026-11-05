@@ -57,21 +57,26 @@ public sealed partial class CanonicalInterpretationService
 
         dims.Add(features.Count == 0
             ? new(ReadinessDimensionKey.ScopeClarity, "Scope", DimensionApplicability.Required, GateDecision.NotAssessed,
-                moduleSet is null ? "No feature pack is interpreted for this project." : $"No feature pack of {string.Join(", ", moduleSet.Order())} is in the latest interpretation.",
-                [], "Choose modules that have feature packs, or interpret their Delivery snapshot.", "correlation-review")
+                $"Release scope not resolved: {await ScopeDiagnosisAsync(scope, latest, moduleSet, ct)}",
+                [], "Analyze relationships in Relationship Review with the project's Delivery snapshot included, or choose modules that have feature packs.", "correlation-review")
             : new(ReadinessDimensionKey.ScopeClarity, "Scope", DimensionApplicability.Required, GateDecision.Ready,
                 $"{features.Count} feature pack{(features.Count == 1 ? "" : "s")} in scope{(moduleSet is null ? "" : $" (modules {string.Join(", ", moduleSet.Order())})")}.",
                 [.. features.Select(f => f.DisplayName).Order(StringComparer.Ordinal).Take(8)], null, "delivery-reporting?tab=scope"));
 
+        // Nothing to assess is never Ready (no vacuous truth): without requirements in a resolved scope, or without a scope at all, the dimension is
+        // Not assessed — a required dimension Not assessed keeps the release Not assessed, never Ready.
         dims.Add(new(ReadinessDimensionKey.Requirements, "Requirements", DimensionApplicability.Required,
-            requirements.Count > 0 ? GateDecision.Ready : GateDecision.ReadyWithLimitations,
-            requirements.Count > 0 ? $"{requirements.Count} requirement{(requirements.Count == 1 ? "" : "s")} written for the scope." : "No requirements are written for this scope.",
-            [], requirements.Count > 0 ? null : "Write the scope's functional requirements in its specification.", "specification-explorer"));
+            requirements.Count > 0 ? GateDecision.Ready : GateDecision.NotAssessed,
+            requirements.Count > 0 ? $"{requirements.Count} requirement{(requirements.Count == 1 ? "" : "s")} written for the scope."
+                : features.Count == 0 ? "Not assessed: the release scope is not resolved, so no requirement is in scope."
+                : "Not assessed: no requirements are written for the feature packs in scope.",
+            [], requirements.Count > 0 ? null : features.Count == 0 ? "Resolve the release scope first." : "Write the scope's functional requirements in its specification.", "specification-explorer"));
 
         var storyIssues = Count(GovernancePolicies.RemovedStory, GovernancePolicies.UnresolvedStory, GovernancePolicies.Ambiguity);
         dims.Add(new(ReadinessDimensionKey.Traceability, "Traceability", DimensionApplicability.Required,
-            storyIssues == 0 ? GateDecision.Ready : GateDecision.ReadyWithLimitations,
-            storyIssues == 0 ? "Every task traces to a current story, group or shared work; no reference is ambiguous."
+            tasks.Count == 0 && storyIssues == 0 ? GateDecision.NotAssessed : storyIssues == 0 ? GateDecision.Ready : GateDecision.ReadyWithLimitations,
+            tasks.Count == 0 && storyIssues == 0 ? "Not assessed: no tasks are in scope, so there is nothing to trace (zero tasks is not full traceability)."
+                : storyIssues == 0 ? $"Every one of {tasks.Count} task{(tasks.Count == 1 ? "" : "s")} traces to a current story, group or shared work; no reference is ambiguous."
                 : $"{storyIssues} reference{(storyIssues == 1 ? "" : "s")} to fix or decide (removed or undefined stories, ambiguous ids).",
             Examples(GovernancePolicies.RemovedStory, GovernancePolicies.UnresolvedStory, GovernancePolicies.Ambiguity),
             storyIssues == 0 ? null : "Fix story references in the tasks files; decide ambiguous references in Relationship Review.", "traceability"));
@@ -122,6 +127,28 @@ public sealed partial class CanonicalInterpretationService
             gate.Findings.Where(f => f.Level == FindingLevel.Blocking && f.Waiver is null).Sum(f => f.Finding.Count),
             gate.Findings.Where(f => f.Level == FindingLevel.Warning).Sum(f => f.Finding.Count), decisions);
         return Assessment(scopeRef, dims, gate, available, facts);
+    }
+
+    /// <summary>
+    /// Why the release scope is empty, from recorded facts only: the latest relationship analysis without a Delivery snapshot (feature packs come only
+    /// from an interpreted Delivery snapshot), an earlier analysis that had one, or the chosen modules not being among the interpreted packs.
+    /// </summary>
+    private async Task<string> ScopeDiagnosisAsync(string scope, Guid latest, HashSet<string>? modules, CancellationToken ct)
+    {
+        var history = await db.Snapshots.AsNoTracking().Where(s => s.Scope == scope).OrderByDescending(s => s.CreatedAt)
+            .Select(s => new { s.Id, s.CreatedAt, s.SourceSnapshotsJson }).Take(50).ToListAsync(ct);
+        static bool HasDelivery(string json) => (System.Text.Json.JsonSerializer.Deserialize<List<BirkNext.Snapshots.SnapshotReference>>(json, Json) ?? [])
+            .Any(r => r.Type == BirkNext.Snapshots.SnapshotType.Delivery);
+        var current = history.FirstOrDefault(h => h.Id == latest);
+        if (current is not null && !HasDelivery(current.SourceSnapshotsJson))
+        {
+            var earlier = history.FirstOrDefault(h => h.CreatedAt < current.CreatedAt && HasDelivery(h.SourceSnapshotsJson));
+            return earlier is null
+                ? $"the latest relationship analysis ({current.CreatedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC) includes no Delivery snapshot, and feature packs come only from an interpreted Delivery snapshot."
+                : $"the latest relationship analysis ({current.CreatedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC) includes no Delivery snapshot; the analysis of {earlier.CreatedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC did. Feature packs come only from an interpreted Delivery snapshot.";
+        }
+        return modules is null ? "the interpreted Delivery snapshot defines no feature pack for this project."
+            : $"none of the chosen modules ({string.Join(", ", modules.Order())}) has a feature pack in the latest relationship analysis.";
     }
 
     // ---------------------------------------------------------------- frozen reports
