@@ -33,6 +33,10 @@ public interface IProjectEvidenceService
 
     /// <summary>Project names already used by Target Environments (detected or manually created) — the picker offers them across environments.</summary>
     IReadOnlyList<string> KnownProjectNames() => [];
+    /// <summary>Registered Target Application names with the number of environments that use each.</summary>
+    IReadOnlyList<(string Name, int Environments)> RegisteredApplications() => [];
+    /// <summary>The stored Source Analysis snapshots the environment's last read returned (Source Management / imports), for application search.</summary>
+    IReadOnlyList<BirkNext.Integrations.SourceSetupSnapshot> SourceSnapshots(string? environmentId) => [];
 
     /// <summary>
     /// Saves Project setup in one step: the logical project (by name; <paramref name="draft"/>'s main package when it is a detected one, none
@@ -278,6 +282,13 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
         MutateAsync(environmentId, profile => TargetApplications.Set(profile, identity, _time.GetUtcNow()));
 
     public TargetApplicationIdentity? TargetApplicationOf(string? environmentId) => TargetApplications.Of(Profile(environmentId));
+
+    public IReadOnlyList<(string Name, int Environments)> RegisteredApplications() =>
+        [.. _settings.Settings.Profiles.Select(p => TargetApplications.Of(p)?.Name).OfType<string>().Where(n => n.Trim().Length > 0)
+            .GroupBy(n => n.Trim(), StringComparer.OrdinalIgnoreCase).Select(g => (g.Key, g.Count()))];
+
+    public IReadOnlyList<BirkNext.Integrations.SourceSetupSnapshot> SourceSnapshots(string? environmentId) =>
+        _setup.GetValueOrDefault(Profile(environmentId)?.Id ?? "")?.Snapshots ?? [];
 
     public IReadOnlyList<string> KnownProjectNames() =>
         [.. _settings.Settings.Profiles.Select(p => TargetApplications.Of(p)?.Name).OfType<string>().Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];

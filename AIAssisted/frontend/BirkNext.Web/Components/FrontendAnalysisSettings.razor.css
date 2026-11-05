@@ -1510,3 +1510,14 @@
 .fa-auth-origin-override { color: var(--clr-primary); border-color: currentColor; }
 .fa-auth-observed { display: block; font-size: .8125rem; color: var(--clr-text-muted); }
 .fa-auth-review { margin: .5rem 0 0; padding: .5rem .75rem; border: 1px solid var(--clr-warning-border); border-radius: var(--radius-md); background: var(--clr-warning-bg-light); color: var(--clr-warning); font-size: .875rem; }
+
+/* Target Application: one Target Detection summary with the next action; the detailed check and detected facts are one disclosure. */
+.fa-target-summary { border: 1px solid var(--clr-border); border-radius: 8px; padding: .75rem 1rem; margin: .75rem 0; background: var(--clr-surface-white, #fff); display: grid; gap: .375rem; }
+.fa-target-summary-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; align-items: flex-start; }
+.fa-target-summary h3 { margin: 0; font-size: 1.05rem; }
+.fa-target-url { margin: .125rem 0 0; font-family: var(--font-mono, monospace); font-size: .875rem; overflow-wrap: anywhere; }
+.fa-target-actions { display: flex; flex-wrap: wrap; gap: .375rem; }
+.fa-target-badges { display: flex; flex-wrap: wrap; gap: .375rem; margin: 0; }
+.fa-target-next, .fa-target-alt { margin: 0; font-size: .875rem; color: var(--clr-text-muted); }
+.fa-target-evidence { margin: .5rem 0 1rem; }
+.fa-target-evidence > summary { cursor: pointer; font-weight: 600; margin-bottom: .5rem; }

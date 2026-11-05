@@ -1,20 +1,21 @@
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 @using BirkNext.Web.Services.ProjectEvidence
 @implements IDisposable
 @inject IServiceProvider Services
 
-@* Target Application → Application: WHAT this environment represents (for example M2LB). Owns the logical application/system identity;
-   Project evidence binds imported packages to it afterwards. Candidates come from the detected application packages (never infrastructure,
-   contract, shared-library or generated-docs packages) and names already used by Target Environments; an application can be added by name.
-   Setting it never activates the environment, and a change archives the previous application's evidence instead of deleting it. *@
+@* Target Application → Application: WHAT this environment represents (for example M2LB). The selected application is a compact summary;
+   Change application opens a search over everything BirkNext already knows — registered applications (chosen as they are, never duplicated),
+   imported projects, imported application sources and Delivery projects (an application is created and linked from them after its name is
+   confirmed). Manual creation stays available under Advanced. Setting it never activates the environment; a change archives the previous
+   application's evidence instead of deleting it. *@
 @if (Evidence is not null)
 {
     <section class="tai" aria-labelledby="tai-title" data-testid="tai">
         <h4 id="tai-title" class="tai-title">Application</h4>
         @if (_identity is { } current && !_picking)
         {
-            @* Established: compact — name, provenance and confidence first; why it was identified on request. *@
-            <p class="tai-current" data-testid="tai-current"><strong data-testid="tai-name">@current.Name</strong>
+            <p class="tai-current" data-testid="tai-current"><span class="tai-muted">Selected application</span> <strong data-testid="tai-name">@current.Name</strong>
                 <span class="tai-badge" data-testid="tai-provenance">@TargetApplicationInference.Provenance(current)</span></p>
             @if (current.Reasons is { Count: > 0 } reasons)
             {
@@ -29,62 +30,82 @@
                     <button type="button" class="btn btn-link btn-sm" data-testid="tai-use-detected" @onclick="() => Choose(TargetApplications.FromCandidate(other, DateTimeOffset.UtcNow))">Use @other.Name</button></p>
             }
             <div class="tai-actions">
-                <a class="btn btn-secondary btn-sm" href="@ProjectEvidenceResolver.ProjectTabHref(EnvironmentId)" data-testid="tai-project-link">View project evidence</a>
                 <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-change" @onclick="StartPicking">Change application</button>
+                <a class="btn btn-link btn-sm" href="@ProjectEvidenceResolver.ProjectTabHref(EnvironmentId)" data-testid="tai-project-link">View project evidence</a>
             </div>
-            <p class="tai-muted" data-testid="tai-change-impact">Changing the application re-evaluates evidence associations. Imported packages, Source Analysis, Test Data and Connected Systems remain untouched.</p>
         }
         else
         {
-            @if (_identity is null)
+            @if (_identity is null && _inference.Candidates.Count > 0)
             {
-                @if (_inference.Candidates.Count > 0)
-                {
-                    @* Detected candidates: one click, never a form. Several (or a conflict) need a decision — nothing is chosen silently. *@
-                    <section class="tai-detected" aria-labelledby="tai-detected-h" data-testid="tai-detected" data-state="@_inference.State">
-                        <p id="tai-detected-h" class="tai-required"><strong>@(_inference.State == TargetApplicationInference.Detected ? "Detected application" : "Needs review")</strong> · @_inference.Summary</p>
-                        <ul class="tai-candidates">
-                            @foreach (var candidate in _inference.Candidates)
-                            {
-                                <li data-testid="tai-candidate" data-name="@candidate.Name">
-                                    <strong>@candidate.Name</strong> <span class="tai-muted">· Confidence: @candidate.Confidence</span>
-                                    <button type="button" class="btn btn-primary btn-sm" data-testid="tai-use-candidate" @onclick="() => Choose(TargetApplications.FromCandidate(candidate, DateTimeOffset.UtcNow))">Use @candidate.Name</button>
-                                    <details class="tai-why"><summary>Evidence<span class="visually-hidden"> for @candidate.Name</span></summary>
-                                        <ul class="tai-reasons">@foreach (var reason in candidate.Reasons) { <li>@reason</li> }</ul>
-                                    </details>
-                                </li>
-                            }
-                        </ul>
-                    </section>
-                }
-                else
-                {
-                    @* The target URL and check below say WHERE the application runs; Project evidence needs WHICH application it is. *@
-                    <p class="tai-required" role="note" data-testid="tai-empty"><strong>Application not chosen.</strong> No imported application source identifies it yet. Import the application's source (BirkNext then detects it), or choose an application below.</p>
-                }
+                @* Detected candidates: one click, never a form. Several (or a conflict) need a decision — nothing is chosen silently. *@
+                <section class="tai-detected" aria-labelledby="tai-detected-h" data-testid="tai-detected" data-state="@_inference.State">
+                    <p id="tai-detected-h" class="tai-required"><strong>@(_inference.State == TargetApplicationInference.Detected ? "Detected application" : "Needs review")</strong> · @_inference.Summary</p>
+                    <ul class="tai-candidates">
+                        @foreach (var candidate in _inference.Candidates)
+                        {
+                            <li data-testid="tai-candidate" data-name="@candidate.Name">
+                                <strong>@candidate.Name</strong> <span class="tai-muted">· Confidence: @candidate.Confidence</span>
+                                <button type="button" class="btn btn-primary btn-sm" data-testid="tai-use-candidate" @onclick="() => Choose(TargetApplications.FromCandidate(candidate, DateTimeOffset.UtcNow))">Use @candidate.Name</button>
+                                <details class="tai-why"><summary>Evidence<span class="visually-hidden"> for @candidate.Name</span></summary>
+                                    <ul class="tai-reasons">@foreach (var reason in candidate.Reasons) { <li>@reason</li> }</ul>
+                                </details>
+                            </li>
+                        }
+                    </ul>
+                </section>
             }
-            <details class="tai-choose" data-testid="tai-choose" open="@(_identity is not null || _inference.Candidates.Count == 0)">
-                <summary>@(_identity is null ? "Choose another application" : $"Choose a different application than {_identity.Name}")</summary>
-            <div class="tai-picker" data-testid="tai-picker">
-                <label for="tai-search" class="tai-label">Application</label>
-                <input id="tai-search" type="search" class="form-control" placeholder="Search applications" autocomplete="off" data-testid="tai-search"
-                       aria-controls="tai-options" @bind="_query" @bind:event="oninput" />
+            else if (_identity is null)
+            {
+                <p class="tai-required" role="note" data-testid="tai-empty"><strong>Application not chosen.</strong> Search for the application below — registered applications and imported projects are listed.</p>
+            }
+            <div class="tai-picker" data-testid="tai-picker" role="search">
+                <label for="tai-search" class="tai-label">Find an application</label>
+                <input id="tai-search" type="search" class="form-control" placeholder="Search applications and imported projects" autocomplete="off" data-testid="tai-search"
+                       aria-controls="tai-options" aria-describedby="tai-search-count" @bind="_query" @bind:event="oninput" @bind:after="() => _link = null" />
+                <p id="tai-search-count" class="tai-muted" role="status" data-testid="tai-search-count">@SearchStatus</p>
                 <div id="tai-options" role="listbox" aria-label="Applications" class="tai-options" data-testid="tai-options">
-                    @foreach (var group in ProjectSetupPlanner.Search(_options, _query).GroupBy(o => o.Group))
+                    @foreach (var group in Matches.GroupBy(r => r.Kind))
                     {
-                        <div role="group" aria-label="@group.Key">
-                            <p class="tai-group" aria-hidden="true">@group.Key</p>
-                            @foreach (var option in group)
+                        <div role="group" aria-label="@ApplicationSearch.GroupLabel(group.Key)" data-testid="tai-group" data-kind="@group.Key">
+                            <p class="tai-group" aria-hidden="true">@ApplicationSearch.GroupLabel(group.Key)</p>
+                            @foreach (var result in group)
                             {
-                                <button type="button" role="option" aria-selected="@(TargetApplications.SameApplication(_identity, option.Name) ? "true" : "false")" class="tai-option"
-                                        data-testid="tai-option" data-name="@option.Name" @onclick="() => Choose(TargetApplications.FromOption(option, DateTimeOffset.UtcNow))">
-                                    <strong>@option.Name</strong><span class="tai-muted"> · @option.Reason</span>
+                                <button type="button" role="option" aria-selected="@(TargetApplications.SameApplication(_identity, result.Name) ? "true" : "false")" class="tai-option"
+                                        data-testid="tai-option" data-name="@result.Name" data-kind="@result.Kind" @onclick="() => Pick(result)">
+                                    <strong>@result.Name</strong><span class="tai-muted"> · @result.Detail</span>
+                                    @if (!result.IsRegistered) { <span class="tai-badge">Create and link</span> }
                                 </button>
                             }
                         </div>
                     }
-                    @if (ProjectSetupPlanner.Search(_options, _query).Count == 0) { <p class="tai-muted" role="status">No detected application matches “@_query”.</p> }
+                    @if (Matches.Count == 0 && _deliveryState != LoadState.Loading)
+                    {
+                        <p class="tai-muted" role="status" data-testid="tai-no-results">No registered application or imported project matches “@_query”. You can add one manually under Advanced.</p>
+                    }
                 </div>
+                @if (_deliveryState == LoadState.Failed)
+                {
+                    <p class="tai-required" role="alert" data-testid="tai-search-error">Delivery projects could not be loaded, so they are missing from the results (other results are complete).
+                        <button type="button" class="btn btn-link btn-sm" data-testid="tai-search-retry" @onclick="LoadDeliveryProjectsAsync">Retry</button></p>
+                }
+                @if (_link is { } link)
+                {
+                    @* An imported project or source becomes an application only with a confirmed name; never invented URLs or authentication. *@
+                    <section class="tai-link" aria-labelledby="tai-link-h" data-testid="tai-link">
+                        <h5 id="tai-link-h">Create and link application</h5>
+                        <p class="tai-muted">From @ApplicationSearch.GroupLabel(link.Kind).ToLowerInvariant(): <strong>@link.Name</strong> — @link.Detail. The Frontend URL and authentication are not changed.</p>
+                        <label>Application name <input class="form-control" maxlength="120" data-testid="tai-link-name" @bind="_linkName" @bind:event="oninput" /></label>
+                        @if (Registered.FirstOrDefault(r => string.Equals(r.Name, _linkName?.Trim(), StringComparison.OrdinalIgnoreCase)) is { } existing)
+                        {
+                            <p class="tai-muted" data-testid="tai-link-existing">@existing.Name already exists — it will be selected, not created again.</p>
+                        }
+                        <div class="tai-actions">
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="tai-link-save" disabled="@string.IsNullOrWhiteSpace(_linkName)" @onclick="ConfirmLinkAsync">Create and link application</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-link-cancel" @onclick="() => _link = null">Cancel</button>
+                        </div>
+                    </section>
+                }
                 @* Manual is the exception (custom system, no source evidence, unsupported type) — kept, but not the normal path. *@
                 <details class="tai-advanced" data-testid="tai-advanced" open="@_adding">
                     <summary>Advanced — add an application manually</summary>
@@ -92,18 +113,17 @@
                         <label>Application name <input class="form-control" maxlength="120" data-testid="tai-manual-name" @bind="_manualName" @bind:event="oninput" /></label>
                         <label>Description (optional) <input class="form-control" maxlength="300" data-testid="tai-manual-description" @bind="_manualDescription" /></label>
                         <button type="button" class="btn btn-primary btn-sm" data-testid="tai-manual-save" disabled="@string.IsNullOrWhiteSpace(_manualName)"
-                                @onclick="() => Choose(TargetApplications.Manual(_manualName!, _manualDescription, DateTimeOffset.UtcNow))">Use this application</button>
+                                @onclick="() => Choose(ReuseOrManual(_manualName!, _manualDescription))">Use this application</button>
                     </div>
                 </details>
-                @if (_identity is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-keep" @onclick="() => _picking = false">Keep @_identity.Name</button> }
+                @if (_identity is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-cancel" @onclick="CancelPicking">Cancel</button> }
             </div>
-            </details>
         }
         @if (_pending is { } pending)
         {
             <section class="tai-confirm" role="alertdialog" aria-labelledby="tai-confirm-h" aria-describedby="tai-confirm-text" data-testid="tai-confirm">
                 <h5 id="tai-confirm-h">Change the Target Application to @pending.Name?</h5>
-                <p id="tai-confirm-text">Evidence associations are re-evaluated for @pending.Name; the Project evidence of @_identity?.Name is archived for this environment (not deleted). Imported packages, Source Analysis, Test Data and Connected Systems are not changed.</p>
+                <p id="tai-confirm-text">Evidence associations are re-evaluated for @pending.Name; the Project evidence of @_identity?.Name is archived for this environment (not deleted). Imported packages, Source Analysis, Test Data and Connected Systems are not changed; the Frontend URL and authentication stay as they are.</p>
                 <button type="button" class="btn btn-primary btn-sm" data-testid="tai-confirm-yes" @ref="_confirmButton" @onclick="() => SaveAsync(pending)">Change application</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-testid="tai-confirm-no" @onclick="() => _pending = null">Cancel</button>
             </section>
@@ -115,14 +135,26 @@
 @code {
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
 
+    private enum LoadState { NotLoaded, Loading, Loaded, Failed }
+
     private IProjectEvidenceService? Evidence => Services.GetService(typeof(IProjectEvidenceService)) as IProjectEvidenceService;
+    private IDeliveryReportingApiService? Delivery => Services.GetService(typeof(IDeliveryReportingApiService)) as IDeliveryReportingApiService;
     private TargetApplicationIdentity? _identity;
     private bool _hasEvidence, _picking, _adding, _focusConfirm;
-    private string? _query, _manualName, _manualDescription, _status, _loadedFor;
-    private IReadOnlyList<ProjectOption> _options = [];
+    private string? _query, _manualName, _manualDescription, _status, _loadedFor, _linkName;
+    private IReadOnlyList<ProjectEvidencePackage> _packages = [];
+    private IReadOnlyList<string> _deliveryProjects = [];
+    private LoadState _deliveryState;
     private ApplicationInference _inference = ApplicationInference.None;
     private TargetApplicationIdentity? _pending;
+    private ApplicationSearchResult? _link;
     private ElementReference _confirmButton;
+
+    private IReadOnlyList<(string Name, int Environments)> Registered => Evidence?.RegisteredApplications() ?? [];
+    private IReadOnlyList<ApplicationSearchResult> Matches => ApplicationSearch.Search(
+        ApplicationSearch.Build(Registered, _packages, Evidence?.SourceSnapshots(EnvironmentId) ?? [], _deliveryProjects), _query);
+    private string SearchStatus => _deliveryState == LoadState.Loading ? "Searching registered applications and imported projects…"
+        : $"{Matches.Count} result{(Matches.Count == 1 ? "" : "s")}{(string.IsNullOrWhiteSpace(_query) ? "" : $" for “{_query!.Trim()}”")}";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -131,6 +163,7 @@
         evidence.Changed -= OnChanged;
         evidence.Changed += OnChanged;
         await LoadAsync();
+        if (_picking) await LoadDeliveryProjectsAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -144,12 +177,59 @@
         var view = await evidence.GetAsync(EnvironmentId);
         _identity = evidence.TargetApplicationOf(EnvironmentId);
         _hasEvidence = view.IsConfigured;
-        _options = TargetApplications.Options(view.Packages, evidence.KnownProjectNames());
+        _packages = view.Packages;
         _inference = evidence.InferApplication(EnvironmentId);
         _picking = _identity is null;
     }
 
-    private void StartPicking() { _picking = true; _status = null; }
+    /// <summary>Delivery Reports projects are read once per picker session; a failure is an error with Retry, never "no applications found".</summary>
+    private async Task LoadDeliveryProjectsAsync()
+    {
+        if (Delivery is not { } delivery) { _deliveryState = LoadState.Loaded; return; }
+        _deliveryState = LoadState.Loading;
+        StateHasChanged();
+        try
+        {
+            var (projects, error) = await delivery.ProjectsAsync();
+            _deliveryProjects = [.. projects.Select(p => p.Name)];
+            _deliveryState = error is null ? LoadState.Loaded : LoadState.Failed;
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or TaskCanceledException) { _deliveryState = LoadState.Failed; }
+    }
+
+    private async Task StartPicking()
+    {
+        _picking = true; _status = null; _query = null; _link = null;
+        if (_deliveryState is LoadState.NotLoaded or LoadState.Failed) await LoadDeliveryProjectsAsync();
+    }
+
+    /// <summary>Closing the picker without choosing keeps the current application — nothing is saved.</summary>
+    private void CancelPicking() { _picking = false; _link = null; _query = null; }
+
+    private async Task Pick(ApplicationSearchResult result)
+    {
+        if (result.IsRegistered) { _link = null; await Choose(ReuseOrManual(result.Name, null)); return; }
+        _link = result;
+        _linkName = result.Name;
+    }
+
+    /// <summary>A registered name is reused as it is (never a second application with the same name); otherwise a new manual identity.</summary>
+    private TargetApplicationIdentity ReuseOrManual(string name, string? description) =>
+        Registered.FirstOrDefault(r => string.Equals(r.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)) is { Name.Length: > 0 } existing
+            ? new TargetApplicationIdentity { Name = existing.Name, Origin = TargetApplicationOrigins.Chosen, SetAt = DateTimeOffset.UtcNow }
+            : TargetApplications.Manual(name, description, DateTimeOffset.UtcNow);
+
+    private async Task ConfirmLinkAsync()
+    {
+        if (_link is not { } link || string.IsNullOrWhiteSpace(_linkName)) return;
+        var name = _linkName.Trim();
+        var identity = Registered.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)) ? ReuseOrManual(name, null)
+            : link.Package is { } package ? TargetApplications.FromOption(new ProjectOption(name, ApplicationSearch.GroupLabel(link.Kind), package, link.Detail), DateTimeOffset.UtcNow)
+            : new TargetApplicationIdentity { Name = name, Manual = false, Origin = TargetApplicationOrigins.Chosen, SetAt = DateTimeOffset.UtcNow,
+                Description = $"Linked from {ApplicationSearch.GroupLabel(link.Kind).ToLowerInvariant()}: {link.Name}" };
+        _link = null;
+        await Choose(identity);
+    }
 
     private async Task Choose(TargetApplicationIdentity next)
     {

@@ -111,7 +111,6 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         panel.FindAll("[data-testid=tai-empty]").Should().BeEmpty("no manual creation is needed");
         DevProfile.TargetApplication!.Should().Match<TargetApplicationIdentity>(t => t.Origin == TargetApplicationOrigins.Detected && t.ImportId == "a" && !t.Manual);
         _settings.Settings.ActiveProfileId.Should().Be("dev", "detection never changes activation");
-        panel.Find("[data-testid=tai-change-impact]").TextContent.Should().Contain("re-evaluates evidence associations").And.Contain("remain untouched");
     }
 
     [Fact]
@@ -212,8 +211,12 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
             "applications first, then the documentation project; Terraform-iac is evidence, never an application"));
         panel.Find("[data-testid=tai-search]").Input("terraform");
         panel.FindAll("[data-testid=tai-option]").Should().BeEmpty("package file names are not application names");
-        panel.Find("[data-testid=tai-search]").Input("");
+        panel.Find("[data-testid=tai-search]").Input("m2lb");
+        panel.FindAll("[data-testid=tai-option]").Select(o => o.GetAttribute("data-name")).Should().Equal(["M2LB", "M2LB-docs"], "case-insensitive, partial");
         panel.Find("[data-testid=tai-option][data-name=M2LB]").Click();
+        // An imported project becomes an application only after its name is confirmed (create and link; nothing invented).
+        panel.Find("[data-testid=tai-link-name]").GetAttribute("value").Should().Be("M2LB");
+        panel.Find("[data-testid=tai-link-save]").Click();
 
         panel.WaitForAssertion(() => panel.Find("[data-testid=tai-name]").TextContent.Should().Be("M2LB"));
         DevProfile.TargetApplication!.ImportId.Should().Be("a");
@@ -336,6 +339,7 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         panel.WaitForAssertion(() => panel.Find("[data-testid=tai-change]"));
         panel.Find("[data-testid=tai-change]").Click();
         panel.Find("[data-testid=tai-option][data-name=M2LB-docs]").Click();
+        panel.Find("[data-testid=tai-link-save]").Click();
 
         panel.Find("[data-testid=tai-confirm]").TextContent.Should().Contain("archived").And.Contain("not deleted").And.Contain("re-evaluated for M2LB-docs")
             .And.Contain("Imported packages, Source Analysis, Test Data and Connected Systems are not changed");

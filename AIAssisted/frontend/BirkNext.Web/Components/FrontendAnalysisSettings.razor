@@ -280,6 +280,42 @@
                 @* Detected target identity and runtime facts only. Authentication is configured, verified and
                    used for testing on the Authentication tab; nothing here edits authentication. *@
 
+                @* Target Detection, one answer: reachability, framework, provider and the next action derived from actual state. The detailed
+                   check and the detected facts (with their evidence) are one disclosure below — the same functionality, collapsed. *@
+                @if (SelectedProfile is { } targetSummaryProfile)
+                {
+                    var next = TargetApplicationNextActions.Next(TargetFacts);
+                    <section class="fa-target-summary" data-testid="target-detection" aria-labelledby="target-detection-heading">
+                        <div class="fa-target-summary-head">
+                            <div>
+                                <h3 id="target-detection-heading">Target Detection — <span data-testid="target-detection-state">@DetectionStateLabel</span></h3>
+                                <p class="fa-target-url" data-testid="target-detection-url">@(targetSummaryProfile.TargetUrl ?? "No Frontend URL")</p>
+                            </div>
+                            <div class="fa-target-actions">
+                                @if (next.Action != "check")
+                                {
+                                    <button type="button" class="btn btn-secondary btn-sm" data-testid="target-check-again" disabled="@_isDetecting" @onclick="DetectConfigurationAsync">@(_isDetecting ? "Checking…" : "Check target again")</button>
+                                }
+                                <button type="button" class="btn btn-primary btn-sm" data-testid="target-next-action" data-action="@next.Action" disabled="@(_isDetecting && next.Action == "check")"
+                                        @onclick="() => RunTargetNextActionAsync(next.Action)">@(_isDetecting && next.Action == "check" ? "Checking…" : next.Label)</button>
+                            </div>
+                        </div>
+                        <p class="fa-target-badges" data-testid="target-detection-badges">
+                            <SemanticStatusBadge Status="@TargetApplicationNextActions.ReachabilityStatus(_detectionResult)" QualifiedLabel="@TargetApplicationNextActions.Reachability(_detectionResult)" TestId="target-detection-reachability" />
+                            @if (_detectionResult?.DetectedClientFramework is { } framework) { <MetaBadge Kind="BadgeKind.Type" Text="@DetectionPresentation.FrameworkLabel(framework)" TestId="target-detection-framework" /> }
+                            @if (_detectionResult is { DetectedAuthenticationType: not FrontendAuthenticationType.None } withAuth) { <MetaBadge Kind="BadgeKind.Type" Text="@AuthenticationPresentation.ProviderLabel(withAuth.DetectedAuthenticationType)" TestId="target-detection-provider" /> }
+                            @if (_detectionResult is { Success: true } confident) { <MetaBadge Kind="BadgeKind.Type" Text="@($"Confidence: {DetectionPresentation.ConfidenceLabel(confident.Confidence)}")" TestId="target-detection-confidence-badge" /> }
+                            <SemanticStatusBadge Status="@(AuthenticatedContextAvailable ? SemanticStatus.Verified : SemanticStatus.NotVerified)" QualifiedLabel="@(AuthenticatedContextAvailable ? "Runtime verified" : "Runtime not verified")" TestId="target-detection-runtime" />
+                        </p>
+                        <p class="fa-target-next" data-testid="target-next-reason">@next.Reason</p>
+                        @if (_detectionResult?.Success == true && next.Action != "endpoint")
+                        {
+                            <p class="fa-target-alt">Source-derived endpoints never need a sign-in: <button type="button" class="btn btn-link btn-sm" data-testid="target-open-discovery" @onclick='() => _activeTab = "endpoint"'>Open Endpoint Discovery</button></p>
+                        }
+                    </section>
+                }
+                <details class="fa-target-evidence" data-testid="target-detection-evidence" open="@_targetEvidenceOpen">
+                <summary @onclick="() => _targetEvidenceOpen = !_targetEvidenceOpen" @onclick:preventDefault="true" data-testid="target-detection-evidence-toggle">View detection evidence</summary>
                 @* The target check is this tab's own action: it checks the Frontend URL (reachability, framework, environment
                    type) and proposes values. Other tabs own their own checks; there is no environment-wide detect. *@
                 <section class="fa-result fa-result-@DetectionStateCss" data-testid="target-check" aria-labelledby="target-check-heading"
@@ -425,6 +461,7 @@
                     </section>
                 }
 
+                </details>
                 @if (_isEditMode && _editProfile is not null)
                 {
                     <div class="fa-form-grid">
@@ -3131,6 +3168,23 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// Indicates if target discovery is stale (target identity changed since detection).
     /// </summary>
     private bool IsDetectionStale => CurrentDetectionState == DetectionState.Stale;
+
+    // ── Target Application summary ────────────────────────────────────────────
+
+    private bool _targetEvidenceOpen;
+
+    private TargetApplicationFacts TargetFacts => new(BirkNext.Web.Services.ProjectEvidence.TargetApplications.Of(SelectedProfile)?.Name, SelectedProfile?.TargetUrl,
+        _detectionResult, IsDetectionStale, AuthenticatedContextAvailable, AuthPane.Configuration == AuthConfigurationState.Configured);
+
+    private async Task RunTargetNextActionAsync(string action)
+    {
+        switch (action)
+        {
+            case "check": await DetectConfigurationAsync(); break;
+            case "application": try { await JS.InvokeVoidAsync("birknextFocusElement", "tai-search"); } catch (Exception) { /* focus is a convenience */ } break;
+            default: _activeTab = action; break;
+        }
+    }
 
     private string DetectionReadinessReason =>
         CurrentDetectionState switch

@@ -383,6 +383,23 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     }
 
     [Fact]
+    public void Target_application_shows_one_detection_summary_with_a_derived_next_action_and_the_evidence_collapsed()
+    {
+        var cut = Open();
+        OpenTab(cut, "Target Application");
+        cut.Find("[data-testid=target-detection-state]").TextContent.Should().Be("Not checked");
+        cut.Find("[data-testid=target-detection-evidence]").HasAttribute("open").Should().BeFalse("detection evidence is one disclosure, collapsed");
+        cut.Find("[data-testid=target-next-action]").GetAttribute("data-action").Should().Be("application", "no application is chosen yet: that comes first");
+        cut.Find("[data-testid=target-check-again]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=target-detection-reachability]").TextContent.Should().Contain("Reachable"));
+        cut.Find("[data-testid=target-detection-framework]").TextContent.Should().Contain("Blazor WebAssembly");
+        cut.Find("[data-testid=target-detection-provider]").TextContent.Should().Contain("Microsoft Entra ID");
+        cut.Find("[data-testid=target-detection-runtime]").TextContent.Should().Contain("Runtime not verified", "a detected provider is not runtime verification");
+        cut.Find("[data-testid=target-detection-url]").TextContent.Should().Be(Url, "the Frontend URL is never changed by a check");
+        _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once);
+    }
+
+    [Fact]
     public void The_guided_workflow_leads_and_the_technical_surface_is_collapsed_under_advanced_diagnostics()
     {
         var cut = Open();
