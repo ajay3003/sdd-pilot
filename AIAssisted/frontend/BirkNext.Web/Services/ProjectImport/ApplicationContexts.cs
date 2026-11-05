@@ -13,7 +13,7 @@ public enum ImportTarget { CurrentApplication, NewApplication }
 public enum PackageEvidenceRole { PrimaryApplicationSource, RelatedApplicationSource, SupportingSource, Documentation, Infrastructure, GeneratedDocumentation, Contracts, NotClassified }
 
 /// <summary>One package of an application with its role and its own (package-specific) Source Analysis status.</summary>
-public sealed record ApplicationPackage(SddProjectImportRecord Record, ProjectEvidencePackage Package, PackageEvidenceRole Role)
+public sealed record ApplicationPackage(SddProjectImportRecord Record, ProjectEvidencePackage Package, PackageEvidenceRole Role, bool RoleConfirmed = false)
 {
     public string ImportId => Record.ImportId;
     public string DisplayName => Package.DisplayName;
@@ -143,13 +143,25 @@ public static class ApplicationContexts
         var packages = Imports(lifecycle, applicationId).Select(record =>
         {
             var package = ProjectEvidencePackages.Of(record, lifecycle, setup);
+            // A role the person confirmed in Source Management is the package's canonical role; without one the role detected from content.
+            if (ConfirmedRole(record) is { } confirmed) return new ApplicationPackage(record, package, confirmed, RoleConfirmed: true);
             var role = Classified(record, setup) ? RoleOf(package) : PackageEvidenceRole.NotClassified;
             return new ApplicationPackage(record, package, role);
         }).ToList();
-        // One primary application source; any other package with its own host project is a related application/system (MU next to M2LB).
-        var primary = PrimaryOf(packages, Find(lifecycle, applicationId));
-        return [.. packages.Select(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource && p != primary ? p with { Role = PackageEvidenceRole.RelatedApplicationSource } : p)];
+        // One primary application source; any other package with its own host project is a related application/system (MU next to M2LB). A
+        // confirmed primary is never demoted, and when one exists it is the primary.
+        var primary = packages.FirstOrDefault(p => p.RoleConfirmed && p.Role == PackageEvidenceRole.PrimaryApplicationSource) ?? PrimaryOf(packages, Find(lifecycle, applicationId));
+        return [.. packages.Select(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource && p != primary && !p.RoleConfirmed ? p with { Role = PackageEvidenceRole.RelatedApplicationSource } : p)];
     }
+
+    /// <summary>
+    /// The canonical role a person confirmed for the package in Source Management (several may be confirmed; the association role is the
+    /// first in <see cref="PackageEvidenceRole"/> order, so an application source wins over its documentation). Null when none is confirmed.
+    /// Capabilities stay what the content shows: a confirmed role never adds a capability.
+    /// </summary>
+    public static PackageEvidenceRole? ConfirmedRole(SddProjectImportRecord record) =>
+        record.ConfirmedRoles.Select(r => Enum.TryParse<PackageEvidenceRole>(r, out var role) ? role : (PackageEvidenceRole?)null).OfType<PackageEvidenceRole>()
+            .Where(r => r != PackageEvidenceRole.NotClassified).Order().Cast<PackageEvidenceRole?>().FirstOrDefault();
 
     /// <summary>
     /// Whether the backend has classified the package: a package without source is classified by its documents alone; a package with a source

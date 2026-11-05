@@ -11,8 +11,8 @@
    snapshots. Unbound roles are only Suggested (one compatible package) or Needs decision (several): never the newest automatically. *@
 <section class="tep" data-testid="tep" aria-labelledby="tep-title">
     <header class="tep-head">
-        <h3 id="tep-title" class="tep-title">Project evidence</h3>
-        <p class="tep-lead">Imported source, documentation, contracts, infrastructure and supporting evidence are associated with the Target Application automatically when their role is clear. Only uncertain or conflicting sources need your review. <a class="ug-learn-more" href="/user-guide#project-model" data-testid="tep-learn-more">Learn more</a></p>
+        <h3 id="tep-title" class="tep-title">Project Evidence</h3>
+        <p class="tep-lead">Select the imported sources that provide application code, contracts, infrastructure and supporting evidence for this target application. <a class="ug-learn-more" href="/user-guide#project-model" data-testid="tep-learn-more">Learn more</a></p>
     </header>
 
     @if (_error is { } error) { <p class="tep-banner tep-banner-error" role="alert" data-testid="tep-error">@error</p> }
@@ -33,7 +33,16 @@
            what a person must decide. *@
         <p class="tep-decision tep-tone-@decision.Tone" data-testid="tep-decision" data-decision="@decision.Label"><strong>Project Evidence — @decision.Label:</strong>
             <span data-testid="tep-decision-explanation">@decision.Explanation</span></p>
-        <p class="tep-muted tep-context" data-testid="tep-context">@(_identity is { } contextApp ? $"{contextApp.Name} · " : "")<span data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</span></p>
+        <p class="tep-muted tep-context" data-testid="tep-context">Target Application <strong>@(_identity?.Name ?? "not chosen")</strong> · Environment <span data-testid="tep-environment">@(_view.EnvironmentName ?? EnvironmentId)</span></p>
+        @Overview
+        @if (_associating && _identity is { } editing)
+        {
+            <ProjectEvidenceAssociationEditor @key="@($"{EnvironmentId}|{editing.Name}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
+                                              View="_view" Identity="editing" Evidence="Evidence!" OnSaved="AssociationsSavedAsync" OnCancel="() => _associating = false" />
+        }
+        @AssociatedTable
+        <details class="tep-details" data-testid="tep-details" open="@(_detailsOpen || _openRole is not null)">
+        <summary @onclick="() => _detailsOpen = !_detailsOpen" @onclick:preventDefault="true" data-testid="tep-details-toggle">Evidence roles, requirements and diagnostics</summary>
         <ul class="tep-summary" data-testid="tep-summary" aria-label="Project evidence summary">
             @foreach (var card in ProjectEvidencePresentation.Cards(_view, _identity, _identity is { } a ? TargetApplicationInference.Provenance(a) : null))
             {
@@ -89,7 +98,7 @@
         }
         @if (!_view.IsConfigured || _setup)
         {
-            @* Project evidence for the Target Application: its evidence checklist. Saves into the same bindings the advanced table below shows. *@
+            @* The evidence checklist (by category). The association editor above is the primary path; both save into the same bindings. *@
             <ProjectSetupPanel @key="@($"{EnvironmentId}|{_identity?.Name}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
                                Packages="_view.Packages" Current="_view.Project" TargetApplication="_identity" Evidence="Evidence!" TargetUrl="@TargetUrl"
                                OnSaved="SetupSavedAsync" OnCancel="@(_view.IsConfigured ? EventCallback.Factory.Create(this, () => _setup = false) : default)" />
@@ -232,6 +241,7 @@
             </details>
         }
 
+        </details>
         <ReviewDisclosure Text="Canonical package identities" CollapseText="Hide canonical package identities" Hint="stable identity across re-imports · shared aliases" TestId="tep-canonical" @bind-Expanded="_canonicalOpen">
             @* Packages keep one stable canonical identity across re-imports (the repository identity; each archive is an occurrence). Aliases and
                associations come from the shared Correlation Review — Project Evidence keeps no alias logic of its own. *@
@@ -243,6 +253,90 @@
 
 @code {
     private bool _canonicalOpen;
+    private bool _associating, _detailsOpen;
+
+    private int AssociatedCount => _view?.Associations.Count(a => a.State == EvidenceAssociationState.Associated) ?? 0;
+    private int SuggestionCount => _view?.Associations.Count(a => a.State == EvidenceAssociationState.NeedsReview) ?? 0;
+
+    /// <summary>
+    /// The decision summary, calculated from the shared associations: imported sources available, how many are associated with the Target
+    /// Application, its application source (or the missing one), and what needs a decision. Imported is never reported as missing.
+    /// </summary>
+    private RenderFragment Overview => __builder =>
+    {
+        var view = _view!;
+        var primary = view.Associations.FirstOrDefault(a => a.State == EvidenceAssociationState.Associated && a.Role == PackageEvidenceRole.PrimaryApplicationSource);
+        var candidate = view.Associations.FirstOrDefault(a => a.State == EvidenceAssociationState.NeedsReview && a.Role == PackageEvidenceRole.PrimaryApplicationSource);
+        <div class="tep-overview" data-testid="tep-overview">
+            <ul class="tep-facts" aria-label="Project Evidence summary">
+                <li data-testid="tep-fact-available"><strong>@view.Packages.Count</strong> imported source@(view.Packages.Count == 1 ? "" : "s") available</li>
+                <li data-testid="tep-fact-associated"><strong>@AssociatedCount</strong> associated with @(_identity?.Name ?? "the Target Application")</li>
+                <li data-testid="tep-fact-application-source">@if (primary is not null) { <span>Application source: <strong>@primary.Package.DisplayName</strong></span> }
+                    else if (_identity is not null) { <span class="tep-fact-missing">Application source not selected@(candidate is not null ? $" · candidate: {candidate.Package.DisplayName}" : "")</span> }
+                    else { <span>Application source: choose the Target Application first</span> }</li>
+                @if (SuggestionCount > 0) { <li data-testid="tep-fact-suggestions"><strong>@SuggestionCount</strong> suggestion@(SuggestionCount == 1 ? "" : "s") to review</li> }
+            </ul>
+            @if (_identity is not null && !_associating)
+            {
+                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-review-suggested" @onclick="OpenAssociationEditor">
+                    @(SuggestionCount > 0 ? "Review suggested sources" : AssociatedCount == 0 && view.Packages.Count > 0 ? "Select sources" : "Add source")</button>
+            }
+        </div>
+    };
+
+    /// <summary>The associated sources of the Target Application: one compact row each, with its role for the application and where it came from.</summary>
+    private RenderFragment AssociatedTable => __builder =>
+    {
+        var associated = _view!.Associations.Where(a => a.State == EvidenceAssociationState.Associated).ToList();
+        if (_identity is null || associated.Count == 0) return;
+        <div class="tep-table-wrap">
+            <table class="tep-table tep-associated" data-testid="tep-associated" aria-label="@($"Sources associated with {_identity.Name}")">
+                <thead><tr><th scope="col">Source</th><th scope="col">Capabilities</th><th scope="col">Role for @_identity.Name</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var a in associated)
+                    {
+                        <tr data-testid="tep-associated-row" data-import="@a.Package.ImportId" data-role="@a.Role">
+                            <th scope="row">@a.Package.DisplayName</th>
+                            <td>@(a.Package.Capabilities.Count == 0 ? "—" : string.Join(", ", a.Package.Capabilities.Select(c => ShortCapability(c.Capability))))</td>
+                            <td>@ApplicationContexts.RoleLabel(a.Role)</td>
+                            <td><span class="tep-state tep-tone-available">@(a.UserConfirmed ? "Confirmed by you" : a.RoleConfirmed ? "Associated · role confirmed" : "Associated automatically")</span></td>
+                            <td class="tep-row-actions">
+                                @if (a.Package.SnapshotId is { } snapshot) { <a class="btn btn-link btn-sm" href="@($"source-analysis?snapshot={snapshot:D}")" data-testid="tep-view-evidence">View evidence<span class="visually-hidden"> of @a.Package.DisplayName</span></a> }
+                                <button type="button" class="btn btn-link btn-sm" data-testid="tep-remove-association" @onclick="() => RemoveAssociationAsync(a)">Remove<span class="visually-hidden"> @a.Package.DisplayName from @_identity.Name</span></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    };
+
+    private void OpenAssociationEditor()
+    {
+        _associating = true;
+        _setupVersion++;
+        _notice = null;
+    }
+
+    private async Task AssociationsSavedAsync(int count)
+    {
+        _associating = false;
+        await ReloadAsync();
+        var remaining = _view?.BlockingLabels ?? [];
+        _notice = remaining.Count == 0
+            ? $"Project Evidence configured — {count} source{(count == 1 ? "" : "s")} associated with {_identity?.Name}."
+            : $"Project Evidence partially configured — {count} source{(count == 1 ? "" : "s")} associated; still missing: {string.Join(", ", remaining)}.";
+    }
+
+    private async Task RemoveAssociationAsync(PackageAssociation association)
+    {
+        if (Evidence is null) return;
+        if (await Evidence.RemoveAssociationAsync(EnvironmentId, association.Package.ImportId))
+        {
+            _notice = $"{association.Package.DisplayName} is no longer evidence of {_identity?.Name}. The import and its snapshots are kept; it will not be associated again automatically.";
+            await ReloadAsync();
+        }
+    }
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
     /// <summary>A role key to open and focus (deep link from Recommended Workflow or an Explorer).</summary>
     [Parameter] public string? Focus { get; set; }

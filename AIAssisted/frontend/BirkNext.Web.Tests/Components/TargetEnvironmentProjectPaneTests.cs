@@ -5,6 +5,7 @@ using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using BirkNext.Web.Services.Explorers;
 using BirkNext.Web.Services.ProjectEvidence;
+using BirkNext.Web.Services.ProjectImport;
 using BirkNext.Web.Services.SampleProjects;
 using BirkNext.Web.Tests.Services;
 using BirkNext.Web.Tests.Pages;
@@ -145,7 +146,8 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
         var cut = RenderPane(withApplication: false);
         cut.WaitForAssertion(() => cut.Find("[data-testid=tep-application-provenance]").TextContent.Should().Contain("Detected automatically"));
-        cut.Find("[data-testid=tep-needs-review-count]").TextContent.Should().Be("0");
+        cut.Find("[data-testid=tep-needs-review-count]").TextContent.Should().Be("2",
+            "no workspace application holds these imports: M2LB's own package is a strong suggestion and M2LB-docs a possible match — suggested, never associated automatically");
         if (cut.FindAll("[data-testid=tep-roles]").Count > 0)
         {
             cut.FindAll("[data-testid=tep-requirement]").Should().OnlyContain(select => select.Closest("[data-testid=tep-advanced]") != null, "requirement editing is advanced");
@@ -153,6 +155,87 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
             cut.Find("[data-testid=tep-edit-evidence]").TextContent.Should().Be("Review evidence");
         }
         cut.FindAll("[data-testid=pce-pattern]").Should().OnlyContain(input => input.Closest("[data-testid=tep-advanced]") != null, "expected filename patterns are advanced");
+    }
+
+    // ── NEXT35: imported ≠ associated; suggestions; one association editor ─────────────────────────────────────────────
+
+    [Fact]
+    public void Imported_sources_that_no_application_holds_are_counted_and_suggested_never_reported_missing_or_associated()
+    {
+        var cut = RenderPane();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-overview]"));
+        cut.Find("[data-testid=tep-fact-available]").TextContent.Should().Be("3 imported sources available");
+        cut.Find("[data-testid=tep-fact-associated]").TextContent.Should().Be("0 associated with M2LB");
+        cut.Find("[data-testid=tep-fact-application-source]").TextContent.Should().Contain("Application source not selected").And.Contain("candidate: M2LB");
+        cut.Find("[data-testid=tep-fact-suggestions]").TextContent.Should().Be("2 suggestions to review");
+        cut.Find("[data-testid=tep-review-suggested]").TextContent.Trim().Should().Be("Review suggested sources");
+        cut.FindAll("[data-testid=tep-associated]").Should().BeEmpty("nothing is associated automatically on a name");
+        DevProfile.Project?.Evidence.SelectMany(r => r.Sources).Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public void The_association_editor_selects_reviews_roles_and_saves_all_at_once_possible_matches_need_confirmation()
+    {
+        var cut = RenderPane();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tep-review-suggested]"));
+        cut.Find("[data-testid=tep-review-suggested]").Click();
+
+        var candidates = cut.FindAll("[data-testid=pae-candidate]");
+        candidates.Single(c => c.GetAttribute("data-import") == "a").GetAttribute("data-suggestion").Should().Be("Strong");
+        candidates.Single(c => c.GetAttribute("data-import") == "b").GetAttribute("data-suggestion").Should().Be("Possible");
+        cut.Find("[data-testid=pae-candidate][data-import=a] [data-testid=pae-pick]").HasAttribute("checked").Should().BeTrue("a strong suggestion starts selected");
+        cut.Find("[data-testid=pae-candidate][data-import=b] [data-testid=pae-pick]").HasAttribute("checked").Should().BeFalse("a possible match is the person's choice");
+        cut.Find("[data-testid=pae-candidate][data-import=b] [data-testid=pae-pick]").Change(true);
+        cut.Find("[data-testid=pae-next]").Click();
+
+        cut.Find("[data-testid=pae-role-row][data-import=a] [data-testid=pae-role]").GetAttribute("value").Should().Be(nameof(PackageEvidenceRole.PrimaryApplicationSource));
+        cut.FindAll("[data-testid=pae-role-row][data-import=b] [data-testid=pae-role] option").Select(o => o.GetAttribute("value"))
+            .Should().Equal([nameof(PackageEvidenceRole.Documentation)], "only roles its content supports are offered");
+        cut.Find("[data-testid=pae-next]").Click();
+
+        cut.FindAll("[data-testid=pae-summary-item]").Should().HaveCount(2);
+        cut.Find("[data-testid=pae-save]").HasAttribute("disabled").Should().BeTrue("the possible match needs an explicit confirmation");
+        cut.Find("[data-testid=pae-confirm-input]").Change(true);
+        cut.Find("[data-testid=pae-save]").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-associated-row]").Should().HaveCount(2));
+        cut.Find("[data-testid=tep-associated-row][data-import=a]").GetAttribute("data-role").Should().Be(nameof(PackageEvidenceRole.PrimaryApplicationSource));
+        cut.Find("[data-testid=tep-associated-row][data-import=b]").TextContent.Should().Contain("Confirmed by you");
+        cut.Find("[data-testid=tep-notice]").TextContent.Should().StartWith("Project Evidence");
+        cut.Find("[data-testid=tep-fact-associated]").TextContent.Should().Be("2 associated with M2LB");
+        cut.Find("[data-testid=tep-fact-application-source]").TextContent.Should().Contain("Application source: M2LB");
+        DevProfile.Project!.ProjectImportId.Should().Be("a");
+    }
+
+    [Fact]
+    public async Task Saving_is_all_or_nothing_and_a_role_the_content_does_not_support_is_refused()
+    {
+        Application();
+        var evidence = Services.GetRequiredService<IProjectEvidenceService>();
+        await evidence.GetAsync("dev");
+
+        var result = await evidence.AssociateAsync("dev", [new("a", PackageEvidenceRole.PrimaryApplicationSource), new("i", PackageEvidenceRole.PrimaryApplicationSource)]);
+
+        result.Saved.Should().BeFalse();
+        result.Problems.Should().ContainSingle().Which.Should().Contain("Terraform-iac").And.Contain("cannot be Primary application source");
+        (DevProfile.Project?.Evidence.SelectMany(r => r.Sources) ?? []).Should().BeEmpty("nothing was saved — not even the valid choice");
+    }
+
+    [Fact]
+    public async Task Removing_an_association_keeps_the_import_and_it_is_never_associated_again_automatically()
+    {
+        Application();
+        var evidence = Services.GetRequiredService<IProjectEvidenceService>();
+        await evidence.GetAsync("dev");
+        (await evidence.AssociateAsync("dev", [new("a", PackageEvidenceRole.PrimaryApplicationSource), new("i", PackageEvidenceRole.Infrastructure)])).Saved.Should().BeTrue();
+
+        (await evidence.RemoveAssociationAsync("dev", "i")).Should().BeTrue();
+        var view = await evidence.GetAsync("dev", refresh: true);
+
+        view.Associations.Single(a => a.Package.ImportId == "i").State.Should().Be(EvidenceAssociationState.NotAssociated);
+        view.Packages.Should().Contain(p => p.ImportId == "i", "the import is kept");
+        DevProfile.Project!.Declined.Should().Contain(d => d.ImportId == "i" && d.RoleKey == ProjectEvidenceService.IgnoredRole);
+        view.Associations.Single(a => a.Package.ImportId == "a").State.Should().Be(EvidenceAssociationState.Associated);
     }
 
     private static AngleSharp.Dom.IElement Item(IRenderedComponent<TargetEnvironmentProjectPane> cut, string role, string import) =>

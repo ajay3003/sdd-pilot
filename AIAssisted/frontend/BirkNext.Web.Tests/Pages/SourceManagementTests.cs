@@ -59,6 +59,8 @@ public sealed class SourceManagementTests : BunitContext
         var cut = Render<SourceManagementPage>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=sm-row]").GetAttribute("data-origin").Should().Be("Git"));
         cut.Find("[data-testid=sm-roles]").TextContent.Should().Contain("confirmed");
+        cut.FindAll("[data-testid=sm-check]").Should().BeEmpty("actions live in the detail panel, not on every row");
+        cut.Find("[data-testid=sm-open]").Click();
         cut.Find("[data-testid=sm-updates]").TextContent.Should().Be("Not checked");
 
         cut.Find("[data-testid=sm-check]").Click();
@@ -76,7 +78,9 @@ public sealed class SourceManagementTests : BunitContext
         _git.Setup(g => g.DecideAsync(Link.Id, "dev", new GitAssociationRequest(Earlier, false), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Link with { KeptSeparate = [Earlier] }, (string?)null));
         var cut = Render<SourceManagementPage>();
-        cut.WaitForElement("[data-testid=sm-matches]").Click();
+        cut.WaitForElement("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-tab][data-tab=history]").Click();
+        cut.Find("[data-testid=sm-matches]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=sm-match]").GetAttribute("data-strength").Should().Be("PossibleSameStructure"));
         _git.Verify(g => g.DecideAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GitAssociationRequest>(), It.IsAny<CancellationToken>()), Times.Never(), "nothing is associated without a decision");
 
@@ -93,12 +97,39 @@ public sealed class SourceManagementTests : BunitContext
             .Callback((GitLinkRequest r, CancellationToken _) => saved = r)
             .ReturnsAsync((GitLinkRequest r, CancellationToken _) => (Link with { Roles = [.. r.Roles] }, (string?)null));
         var cut = Render<SourceManagementPage>();
-        cut.WaitForElement("[data-testid=sm-edit-roles]").Click();
+        cut.WaitForElement("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-edit-roles]").Click();
+        cut.Find("[data-testid=sm-save-roles]").HasAttribute("disabled").Should().BeTrue("nothing changed yet");
         cut.Find("[data-testid=sm-role][data-role=Contracts]").Change(true);
+        cut.Find("[data-testid=sm-unsaved]").TextContent.Should().Be("Unsaved role changes.");
         cut.Find("[data-testid=sm-save-roles]").Click();
         cut.WaitForAssertion(() => saved.Should().NotBeNull());
         saved!.Should().Match<GitLinkRequest>(r => r.OrganizationUrl == Org && r.RepositoryId == "r1" && r.Branch == "main" && r.EnvironmentId == "dev");
         saved.Roles.Should().BeEquivalentTo(["Infrastructure", "Contracts"]);
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-role-editor]").Should().BeEmpty());
+        cut.Find("[data-testid=sm-notice]").TextContent.Should().Contain("Project Evidence and every review use them");
+    }
+
+    [Fact]
+    public void The_grid_is_compact_with_a_summary_and_one_row_opens_its_detail_panel_with_all_sections()
+    {
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForElement("[data-testid=sm-summary]");
+        cut.Find("[data-testid=sm-summary-total]").TextContent.Should().Be("1 source");
+        cut.Find("[data-testid=sm-summary-git]").TextContent.Should().Be("1 Git");
+        cut.FindAll("[data-testid=sm-table] thead th").Select(t => t.TextContent).Should().Equal(
+            "Source", "Origin", "Capabilities", "Associated applications", "Current snapshot", "Analysis status", "Last updated");
+        cut.FindAll("[data-testid=sm-detail]").Should().BeEmpty();
+
+        cut.Find("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-open]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.FindAll("[data-testid=sm-tab]").Select(t => t.TextContent).Should().Equal(
+            "Overview", "Capabilities & Roles", "Associations", "Snapshots", "Analysis & Evidence", "History");
+        cut.Find("[data-testid=sm-tab][data-tab=associations]").Click();
+        cut.Find("[data-testid=sm-tabpanel]").GetAttribute("data-tab").Should().Be("associations");
+        cut.Find("[data-testid=sm-no-associations]").TextContent.Should().Contain("Not associated with any application yet");
+        cut.Find("[data-testid=sm-associate-link]").GetAttribute("href").Should().Contain("tab=project");
+        cut.Find("[data-testid=sm-open]").Click();
+        cut.FindAll("[data-testid=sm-detail]").Should().BeEmpty("the same row closes its panel");
     }
 }

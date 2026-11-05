@@ -1,0 +1,189 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services.ProjectEvidence
+@using BirkNext.Web.Services.ProjectImport
+
+@* The one association editor of Project Evidence: (1) select imported sources — suggestions first, with why; (2) review the role each has for
+   the Target Application — only roles its content supports (capability ≠ role); (3) review and save — possible matches need an explicit
+   confirmation, and the save is all-or-nothing. Imports, snapshots and earlier associations are never changed by it. *@
+<section class="pae" data-testid="pae" aria-labelledby="pae-title">
+    <header class="pae-head">
+        <h4 id="pae-title" class="pae-title" tabindex="-1">Associate sources with @Identity.Name</h4>
+        <ol class="pae-steps" aria-label="Steps">
+            @foreach (var (step, label) in Steps)
+            {
+                <li class="@(step == _step ? "pae-step-current" : step < _step ? "pae-step-done" : null)" aria-current="@(step == _step ? "step" : null)" data-testid="pae-step" data-step="@step">@label</li>
+            }
+        </ol>
+    </header>
+
+    @if (_step == 1)
+    {
+        <label class="visually-hidden" for="pae-search">Search imported sources</label>
+        <input id="pae-search" type="search" class="form-control form-control-sm pae-search" placeholder="Search imported sources…" data-testid="pae-search"
+               value="@_search" @oninput="e => _search = e.Value?.ToString()" />
+        @if (Suggested.Count > 0)
+        {
+            <h5 class="pae-subtitle">Suggested for @Identity.Name</h5>
+            <ul class="pae-list" data-testid="pae-suggested">@foreach (var a in Filter(Suggested)) { @Candidate(a) }</ul>
+        }
+        else
+        {
+            <p class="pae-muted" data-testid="pae-no-suggestions">No source is suggested for @Identity.Name. Choose from the imported sources below.</p>
+        }
+        <details class="pae-others" data-testid="pae-others" open="@(Suggested.Count == 0 || !string.IsNullOrWhiteSpace(_search))">
+            <summary>Other imported sources (@Others.Count)</summary>
+            <ul class="pae-list">@foreach (var a in Filter(Others)) { @Candidate(a) }</ul>
+        </details>
+        <div class="pae-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="pae-next" disabled="@(_selected.Count == 0)" @onclick="() => _step = 2">Next: review roles (@_selected.Count)</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="pae-cancel" @onclick="OnCancel">Cancel</button>
+        </div>
+    }
+    else if (_step == 2)
+    {
+        <p class="pae-muted">Choose the role each source has for @Identity.Name. Capabilities show what its content contains; a role is your decision. Only roles its content supports are offered.</p>
+        <table class="pae-table" data-testid="pae-roles">
+            <thead><tr><th scope="col">Source</th><th scope="col">Detected capabilities</th><th scope="col">Role for @Identity.Name</th></tr></thead>
+            <tbody>
+                @foreach (var a in SelectedAssociations)
+                {
+                    var supported = SourceRoleVocabulary.Supported(a.Package);
+                    <tr data-testid="pae-role-row" data-import="@a.Package.ImportId">
+                        <th scope="row">@a.Package.DisplayName</th>
+                        <td>@Capabilities(a.Package)</td>
+                        <td>
+                            @if (supported.Count == 0)
+                            {
+                                <span class="pae-problem" data-testid="pae-unsupported">No role is supported by its content</span>
+                            }
+                            else
+                            {
+                                <select class="form-select form-select-sm" aria-label="@($"Role of {a.Package.DisplayName} for {Identity.Name}")" data-testid="pae-role"
+                                        value="@_roles[a.Package.ImportId]" @onchange="e => _roles[a.Package.ImportId] = Enum.Parse<PackageEvidenceRole>(e.Value!.ToString()!)">
+                                    @foreach (var role in supported) { <option value="@role">@SourceRoleVocabulary.Label(role)</option> }
+                                </select>
+                                @if (a.RoleConfirmed) { <span class="pae-muted pae-small">Role confirmed in Source Management</span> }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="pae-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="pae-next" disabled="@SelectedAssociations.Any(a => SourceRoleVocabulary.Supported(a.Package).Count == 0)" @onclick="() => _step = 3">Next: review and save</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="pae-back" @onclick="() => _step = 1">Back</button>
+            <button type="button" class="btn btn-link btn-sm" data-testid="pae-cancel" @onclick="OnCancel">Cancel</button>
+        </div>
+    }
+    else
+    {
+        var possible = SelectedAssociations.Where(a => a.Suggestion == AssociationSuggestion.Possible || a.Suggestion == AssociationSuggestion.None && a.State != EvidenceAssociationState.NeedsReview).ToList();
+        <p class="pae-muted">These sources will provide evidence for <strong>@Identity.Name</strong>@(EnvironmentName is { } env ? $" in {env}" : ""). Existing associations stay as they are.</p>
+        <ul class="pae-summary" data-testid="pae-summary">
+            @foreach (var a in SelectedAssociations)
+            {
+                var role = _roles[a.Package.ImportId];
+                <li data-testid="pae-summary-item" data-import="@a.Package.ImportId"><strong>@a.Package.DisplayName</strong> → @SourceRoleVocabulary.Label(role)
+                    <span class="pae-muted">(@ProjectEvidencePackages.CapabilityLabel(SourceRoleVocabulary.CategoryOf(role)) · @Basis(a))</span></li>
+            }
+        </ul>
+        @if (possible.Count > 0)
+        {
+            <label class="pae-confirm" data-testid="pae-confirm">
+                <input type="checkbox" checked="@_confirmed" @onchange="e => _confirmed = e.Value is true" data-testid="pae-confirm-input" />
+                I reviewed @(possible.Count == 1 ? possible[0].Package.DisplayName : $"these {possible.Count} sources") and confirm @(possible.Count == 1 ? "it is" : "they are") evidence of @Identity.Name
+                <span class="pae-muted">(@(possible.Count == 1 ? "it is" : "they are") not supported by stronger evidence than the name or your choice)</span>
+            </label>
+        }
+        @if (_problems.Count > 0)
+        {
+            <div class="pae-problems" role="alert" data-testid="pae-problems"><p>Nothing was saved:</p><ul>@foreach (var p in _problems) { <li>@p</li> }</ul></div>
+        }
+        <div class="pae-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-testid="pae-save" disabled="@(_saving || possible.Count > 0 && !_confirmed)" @onclick="SaveAsync">@(_saving ? "Saving…" : $"Save {SelectedAssociations.Count} association{(SelectedAssociations.Count == 1 ? "" : "s")}")</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="pae-back" disabled="@_saving" @onclick="() => _step = 2">Back</button>
+            <button type="button" class="btn btn-link btn-sm" data-testid="pae-cancel" disabled="@_saving" @onclick="OnCancel">Cancel</button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter] public string? EnvironmentName { get; set; }
+    [Parameter, EditorRequired] public ProjectEvidenceView View { get; set; } = default!;
+    [Parameter, EditorRequired] public TargetApplicationIdentity Identity { get; set; } = default!;
+    [Parameter, EditorRequired] public IProjectEvidenceService Evidence { get; set; } = default!;
+    /// <summary>Called after a successful save with the number of sources associated.</summary>
+    [Parameter] public EventCallback<int> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private static readonly (int Step, string Label)[] Steps = [(1, "Select sources"), (2, "Review roles"), (3, "Review and save")];
+    private int _step = 1;
+    private string? _search;
+    private bool _confirmed, _saving;
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PackageEvidenceRole> _roles = new(StringComparer.Ordinal);
+    private IReadOnlyList<string> _problems = [];
+
+    /// <summary>Suggestions and review items first: strong before possible before other review items.</summary>
+    private IReadOnlyList<PackageAssociation> Suggested => [.. View.Associations.Where(a => a.State == EvidenceAssociationState.NeedsReview)
+        .OrderBy(a => a.Suggestion switch { AssociationSuggestion.Strong => 0, AssociationSuggestion.None => 1, _ => 2 }).ThenBy(a => a.Package.DisplayName, StringComparer.OrdinalIgnoreCase)];
+
+    private IReadOnlyList<PackageAssociation> Others => [.. View.Associations.Where(a => a.State is EvidenceAssociationState.NotAssociated or EvidenceAssociationState.WaitingForTargetApplication)
+        .OrderBy(a => a.Package.DisplayName, StringComparer.OrdinalIgnoreCase)];
+
+    private IReadOnlyList<PackageAssociation> SelectedAssociations => [.. View.Associations.Where(a => _selected.Contains(a.Package.ImportId))];
+
+    protected override void OnInitialized()
+    {
+        // Only strong suggestions start selected; a possible match is the person's choice.
+        foreach (var a in Suggested.Where(a => a.Suggestion == AssociationSuggestion.Strong)) Select(a, true);
+    }
+
+    private IEnumerable<PackageAssociation> Filter(IEnumerable<PackageAssociation> items) => string.IsNullOrWhiteSpace(_search) ? items
+        : items.Where(a => a.Package.DisplayName.Contains(_search, StringComparison.OrdinalIgnoreCase) || a.Package.ArchiveFileName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    private void Select(PackageAssociation a, bool on)
+    {
+        if (!on) { _selected.Remove(a.Package.ImportId); return; }
+        _selected.Add(a.Package.ImportId);
+        var supported = SourceRoleVocabulary.Supported(a.Package);
+        if (!_roles.ContainsKey(a.Package.ImportId) && supported.Count > 0)
+            _roles[a.Package.ImportId] = supported.Contains(a.Role) ? a.Role : supported[0];
+        _confirmed = false;
+    }
+
+    private RenderFragment Candidate(PackageAssociation a) => __builder =>
+    {
+        var id = $"pae-pick-{a.Package.ImportId}";
+        <li class="pae-candidate" data-testid="pae-candidate" data-import="@a.Package.ImportId" data-suggestion="@a.Suggestion">
+            <input id="@id" type="checkbox" checked="@_selected.Contains(a.Package.ImportId)" @onchange="e => Select(a, e.Value is true)" data-testid="pae-pick" />
+            <label for="@id"><strong>@a.Package.DisplayName</strong>
+                @if (a.Suggestion != AssociationSuggestion.None) { <span class="pae-badge pae-badge-@a.Suggestion.ToString().ToLowerInvariant()" data-testid="pae-strength">@(a.Suggestion == AssociationSuggestion.Strong ? "Strong suggestion" : "Possible match")</span> }
+                <span class="pae-muted pae-small">@Capabilities(a.Package) · @a.Detail</span></label>
+            @if (a.Package.SnapshotId is { } snapshot) { <a class="pae-link" href="@($"source-analysis?snapshot={snapshot:D}")" data-testid="pae-inspect">View evidence<span class="visually-hidden"> of @a.Package.DisplayName</span></a> }
+        </li>
+    };
+
+    private static RenderFragment Capabilities(ProjectEvidencePackage p) => __builder =>
+    {
+        @(p.Capabilities.Count == 0 ? "No capability detected" : string.Join(", ", p.Capabilities.Select(c => ProjectEvidencePackages.CapabilityLabel(c.Capability))))
+    };
+
+    private static string Basis(PackageAssociation a) => a.Suggestion switch
+    {
+        AssociationSuggestion.Strong => "strong suggestion",
+        AssociationSuggestion.Possible => "possible match — confirmed by you",
+        _ => a.State == EvidenceAssociationState.NeedsReview ? "needs your decision" : "chosen by you",
+    };
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _problems = [];
+        var result = await Evidence.AssociateAsync(EnvironmentId, [.. SelectedAssociations.Select(a => new SourceAssociationChoice(a.Package.ImportId, _roles[a.Package.ImportId]))]);
+        _saving = false;
+        if (!result.Saved) { _problems = result.Problems; return; }
+        await OnSaved.InvokeAsync(SelectedAssociations.Count);
+    }
+}

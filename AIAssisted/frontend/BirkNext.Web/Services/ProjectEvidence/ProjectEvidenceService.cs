@@ -60,8 +60,27 @@ public interface IProjectEvidenceService
     /// re-evaluation never re-associates it). Reversible by binding it explicitly.</summary>
     Task<bool> IgnoreSourceAsync(string environmentId, string importId) => Task.FromResult(false);
 
+    /// <summary>
+    /// The single association editor's save: associates every chosen source with the Target Application under the evidence category of its
+    /// role, in one transaction — all or nothing. Creates the Project evidence for the Target Application when there is none. An explicit
+    /// choice reverses an earlier "Not used for this application". A role whose category the source's content does not support is refused
+    /// (capability ≠ role), and nothing is saved.
+    /// </summary>
+    Task<AssociationSaveResult> AssociateAsync(string environmentId, IReadOnlyList<SourceAssociationChoice> choices) =>
+        Task.FromResult(new AssociationSaveResult(false, ["Not supported in this view."]));
+
+    /// <summary>Removes a source from the Target Application's evidence (every category) and remembers the decision, so re-evaluation never
+    /// associates it again automatically. The import and its snapshots are untouched.</summary>
+    Task<bool> RemoveAssociationAsync(string environmentId, string importId) => Task.FromResult(false);
+
     event Action? Changed;
 }
+
+/// <summary>One source and the role it has for the Target Application (several roles of one source are several choices).</summary>
+public sealed record SourceAssociationChoice(string ImportId, PackageEvidenceRole Role);
+
+/// <summary>The outcome of <see cref="IProjectEvidenceService.AssociateAsync"/>: saved, or why not (nothing was saved then).</summary>
+public sealed record AssociationSaveResult(bool Saved, IReadOnlyList<string> Problems);
 
 /// <summary>What Project setup saves: the logical project, its checklist decisions and new expected evidence (label + capability).</summary>
 public sealed record ProjectSetupDraft(string Name, string? Description, string? MainImportId, IReadOnlyList<ProjectSetupPlanner.RoleDecision> Decisions,
@@ -155,8 +174,68 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
     /// <summary>The decline marker of "Not used for this application" (every role).</summary>
     public const string IgnoredRole = "*";
 
+    public async Task<AssociationSaveResult> AssociateAsync(string environmentId, IReadOnlyList<SourceAssociationChoice> choices)
+    {
+        var problems = new List<string>();
+        if (choices.Count == 0) return new(false, ["Choose at least one source."]);
+        var saved = await MutateAsync(environmentId, profile =>
+        {
+            if (TargetApplications.Of(profile) is not { } identity) { problems.Add("Choose the Target Application first."); return false; }
+            var now = _time.GetUtcNow();
+            // All or nothing: the choices are applied to a copy and the copy replaces the evidence only when every choice applied.
+            var draft = profile.Project is { } current
+                ? System.Text.Json.JsonSerializer.Deserialize<EnvironmentProject>(System.Text.Json.JsonSerializer.Serialize(current))!
+                : new EnvironmentProject { ProjectName = identity.Name, SelectedAt = now, Manual = true, Evidence = [.. ProjectEvidenceRoles.Defaults()] };
+            foreach (var choice in choices)
+            {
+                if (Package(environmentId, choice.ImportId) is not { } package) { problems.Add($"{choice.ImportId} is no longer imported."); continue; }
+                var capability = SourceRoleVocabulary.CategoryOf(choice.Role);
+                if (!ProjectEvidencePackages.Satisfies(package, capability))
+                {
+                    problems.Add($"{package.DisplayName}: its content does not show {ProjectEvidencePackages.CapabilityLabel(capability)}, so it cannot be {ApplicationContexts.RoleLabel(choice.Role)}.");
+                    continue;
+                }
+                var role = draft.Evidence.FirstOrDefault(r => r.Capability == capability);
+                if (role is null)
+                {
+                    role = ProjectEvidenceRoles.Role($"user-{capability.ToString().ToLowerInvariant()}", ProjectEvidencePackages.CapabilityLabel(capability), capability,
+                        ProjectEvidenceRequirement.Optional, ProjectEvidenceCardinality.Multiple, "Associated in Project Evidence", ProjectEvidenceRoleOrigin.UserAdded);
+                    draft.Evidence.Add(role);
+                }
+                draft.Declined.RemoveAll(d => d.ImportId == package.ImportId && (d.RoleKey == IgnoredRole || d.RoleKey == role.RoleKey));
+                if (!ProjectEvidenceResolver.Bind(draft, role.RoleKey, package, now)) { problems.Add($"{package.DisplayName} could not be associated as {role.Label}."); continue; }
+                if (capability == ProjectEvidenceCapability.ApplicationSource) { draft.ProjectImportId = package.ImportId; draft.ArchiveSha256 = package.ArchiveSha256; draft.Manual = false; }
+            }
+            if (problems.Count > 0) return false;
+            profile.Project = draft;
+            return true;
+        });
+        return new(saved, saved ? [] : problems.Count > 0 ? problems : ["The association could not be saved."]);
+    }
+
+    public Task<bool> RemoveAssociationAsync(string environmentId, string importId) => MutateAsync(environmentId, profile =>
+    {
+        if (profile.Project is not { } project) return false;
+        var removed = project.Evidence.Sum(role => role.Sources.RemoveAll(s => s.ImportId == importId)) > 0;
+        if (!project.Declined.Any(d => d.ImportId == importId && d.RoleKey == IgnoredRole))
+            project.Declined.Add(new ProjectEvidenceDecline { RoleKey = IgnoredRole, ImportId = importId, At = _time.GetUtcNow() });
+        if (project.ProjectImportId == importId) { project.ProjectImportId = null; project.ArchiveSha256 = null; project.Manual = true; }
+        return true;
+    });
+
     private IReadOnlyList<PackageAssociation> Associations(FrontendAnalysisProfile? profile, SourceSetupView? setup) =>
-        ProjectEvidenceAssociation.Of(TargetApplications.Of(profile), profile?.Project, _workspace.SddLifecycle, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup);
+        ProjectEvidenceAssociation.Of(TargetApplications.Of(profile), profile?.Project, _workspace.SddLifecycle, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup,
+            ConfirmedElsewhere(profile));
+
+    /// <summary>Packages the person bound (not "Detected") for the same Target Application in other Target Environments — reused as suggestions.</summary>
+    private HashSet<string> ConfirmedElsewhere(FrontendAnalysisProfile? profile)
+    {
+        if (TargetApplications.Of(profile)?.Name is not { Length: > 0 } name) return [];
+        return _settings.Settings.Profiles
+            .Where(p => p.Id != profile!.Id && string.Equals(TargetApplications.Of(p)?.Name, name, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(p => p.Project?.Evidence.SelectMany(r => r.Sources) ?? [])
+            .Where(s => s.BoundBy != ProjectEvidenceAssociation.Detected).Select(s => s.ImportId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+    }
 
     /// <summary>
     /// The cached setup no longer describes the imported packages: an import names a Source Analysis snapshot the cache does not hold (it was

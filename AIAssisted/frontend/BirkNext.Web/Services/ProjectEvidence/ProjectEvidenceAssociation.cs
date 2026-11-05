@@ -17,8 +17,16 @@ public enum EvidenceAssociationState
     NotAssociated,
 }
 
+/// <summary>
+/// How strongly a package that is not (yet) associated is suggested for the Target Application. Never applied automatically: a suggestion is a
+/// review item the person confirms. Strong = supported by an explicit identity (the Target Application's own package) or by the same
+/// application's confirmed association in another Target Environment. Possible = only the names are related (weak evidence).
+/// </summary>
+public enum AssociationSuggestion { None, Strong, Possible }
+
 /// <summary>One package's association: state, role, and the reason in tester words.</summary>
-public sealed record PackageAssociation(ProjectEvidencePackage Package, EvidenceAssociationState State, PackageEvidenceRole Role, string Detail, bool UserConfirmed = false)
+public sealed record PackageAssociation(ProjectEvidencePackage Package, EvidenceAssociationState State, PackageEvidenceRole Role, string Detail, bool UserConfirmed = false,
+    AssociationSuggestion Suggestion = AssociationSuggestion.None, bool RoleConfirmed = false)
 {
     public string StateLabel => State switch
     {
@@ -57,12 +65,16 @@ public static class ProjectEvidenceAssociation
             ?? (identity.ImportId is { } own ? ApplicationContexts.Find(lifecycle, lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == own)?.ApplicationId) : null);
     }
 
+    /// <param name="confirmedElsewhere">Import ids the person confirmed for the same Target Application in another Target Environment.</param>
     public static IReadOnlyList<PackageAssociation> Of(TargetApplicationIdentity? identity, EnvironmentProject? project, SddLifecycleState lifecycle,
-        IReadOnlyList<ProjectEvidencePackage> packages, SourceSetupView? setup)
+        IReadOnlyList<ProjectEvidencePackage> packages, SourceSetupView? setup, IReadOnlySet<string>? confirmedElsewhere = null)
     {
         var application = ApplicationFor(identity, lifecycle);
-        // Roles are judged within the package's own application (the one it was imported for); without a Target Application only detected.
-        var roles = lifecycle.Applications.SelectMany(a => ApplicationContexts.Packages(lifecycle, a.Id, setup)).ToDictionary(p => p.ImportId, p => p.Role, StringComparer.Ordinal);
+        // Roles are judged within the package's own application (the one it was imported for); without a Target Application only detected. A
+        // role confirmed in Source Management is the canonical role (ApplicationContexts.Packages).
+        var classified = lifecycle.Applications.SelectMany(a => ApplicationContexts.Packages(lifecycle, a.Id, setup)).ToList();
+        var roles = classified.ToDictionary(p => p.ImportId, p => p.Role, StringComparer.Ordinal);
+        var confirmedRoles = classified.Where(p => p.RoleConfirmed).Select(p => p.ImportId).ToHashSet(StringComparer.Ordinal);
         PackageEvidenceRole RoleOf(ProjectEvidencePackage p) => roles.TryGetValue(p.ImportId, out var r) ? r
             : setup is null && p.SnapshotId is not null ? PackageEvidenceRole.NotClassified : ApplicationContexts.RoleOf(p);
         var userBound = project?.Evidence.SelectMany(r => r.Sources).Where(s => s.BoundBy != Detected).Select(s => s.ImportId).OfType<string>().ToHashSet(StringComparer.Ordinal) ?? [];
@@ -75,19 +87,28 @@ public static class ProjectEvidenceAssociation
         return [.. packages.Select(p =>
         {
             var role = RoleOf(p);
+            var roleConfirmed = confirmedRoles.Contains(p.ImportId);
             if (identity is null)
                 return new PackageAssociation(p, EvidenceAssociationState.WaitingForTargetApplication, role,
-                    "Configure the Target Application to assess this evidence for it.");
+                    "Configure the Target Application to assess this evidence for it.", RoleConfirmed: roleConfirmed);
             if (userBound.Contains(p.ImportId))
-                return new PackageAssociation(p, EvidenceAssociationState.Associated, role, $"Confirmed for {name} by you.", UserConfirmed: true);
+                return new PackageAssociation(p, EvidenceAssociationState.Associated, role, $"Confirmed for {name} by you.", UserConfirmed: true, RoleConfirmed: roleConfirmed);
             var record = lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == p.ImportId);
             if (application is null || record?.ApplicationId != application.Id)
+            {
+                // Not imported for this application: a suggestion when the evidence supports it, never an automatic association.
+                if (project?.Declined.Any(d => d.ImportId == p.ImportId && d.RoleKey == ProjectEvidenceService.IgnoredRole) != true
+                    && SuggestionFor(p, identity, application is null, confirmedElsewhere) is { } suggestion)
+                    return new PackageAssociation(p, EvidenceAssociationState.NeedsReview, role, suggestion.Reason, Suggestion: suggestion.Strength, RoleConfirmed: roleConfirmed);
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role,
-                    application is null ? $"No imported evidence is recorded for {name} yet." : "Imported as evidence for another application.");
+                    application is null ? $"No imported evidence is recorded for {name} yet." : "Imported as evidence for another application.", RoleConfirmed: roleConfirmed);
+            }
             if (project?.Declined.Any(d => d.ImportId == p.ImportId && d.RoleKey == ProjectEvidenceService.IgnoredRole) == true)
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role, $"Not used for {name} (your decision). The import is kept.");
             if (declined.Contains(p.ImportId) && !userBound.Contains(p.ImportId))
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role, "Removed from this application's evidence earlier.");
+            if (roleConfirmed && role is PackageEvidenceRole.RelatedApplicationSource)
+                return new(p, EvidenceAssociationState.Associated, role, $"{ApplicationContexts.RoleLabel(role)} of {name} — role confirmed in Source Management.", RoleConfirmed: true);
             return role switch
             {
                 PackageEvidenceRole.PrimaryApplicationSource when sameNamed > 1 => new(p, EvidenceAssociationState.NeedsReview, role,
@@ -104,6 +125,29 @@ public static class ProjectEvidenceAssociation
             };
         })];
     }
+
+    /// <summary>
+    /// Why a package that was not imported for the Target Application's workspace application may still be its evidence. Strong: it is the
+    /// identity's own package, or the person confirmed it for the same Target Application in another Target Environment (a reviewed association
+    /// reused as a suggestion, not copied). Possible — only when no workspace application corresponds to the Target Application (the
+    /// "imported, none associated" case): its name is related to the application's name. Names alone never associate anything.
+    /// </summary>
+    public static (AssociationSuggestion Strength, string Reason)? SuggestionFor(ProjectEvidencePackage package, TargetApplicationIdentity identity, bool noApplication,
+        IReadOnlySet<string>? confirmedElsewhere)
+    {
+        if (identity.ImportId == package.ImportId)
+            return (AssociationSuggestion.Strong, $"Strong suggestion: {package.DisplayName} is the package {identity.Name} was registered from. Confirm to associate it.");
+        if (confirmedElsewhere?.Contains(package.ImportId) == true)
+            return (AssociationSuggestion.Strong, $"Strong suggestion: confirmed for {identity.Name} in another Target Environment. Confirm to use it here too.");
+        if (!noApplication) return null;
+        var app = Compact(identity.Name);
+        var candidate = Compact(package.DisplayName);
+        if (app.Length >= 2 && (candidate.Contains(app, StringComparison.Ordinal) || ApplicationContexts.FamilyOf(package.DisplayName) is { } family && Compact(family) == app))
+            return (AssociationSuggestion.Possible, $"Possible match: the name {package.DisplayName} is related to {identity.Name} — names alone are weak evidence. Review its content, then confirm or set it aside.");
+        return null;
+    }
+
+    private static string Compact(string text) => new([.. text.ToLowerInvariant().Where(char.IsLetterOrDigit)]);
 
     /// <summary>
     /// Writes the automatic associations into the persisted Project evidence (creating it for the Target Application when there is evidence and

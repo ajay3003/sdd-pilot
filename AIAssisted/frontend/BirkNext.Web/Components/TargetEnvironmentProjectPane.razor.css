@@ -112,3 +112,13 @@
 
 .tep-tone-info { border-left-color: var(--clr-info); }
 .tep-tone-neutral { border-left-color: var(--clr-border-hover); }
+
+/* ── Decision summary, associated sources, collapsed details (NEXT35) ── */
+.tep-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin: .5rem 0 .75rem; padding: .6rem .8rem;
+    border: 1px solid var(--clr-border, #e2e8f0); border-radius: var(--radius-md, 6px); background: var(--clr-surface, #fff); }
+.tep-facts { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: 0; padding: 0; list-style: none; font-size: .9rem; }
+.tep-fact-missing { color: var(--clr-warning, #92400e); font-weight: 600; }
+.tep-associated th[scope=row] { font-weight: 600; }
+.tep-row-actions { white-space: nowrap; text-align: right; }
+.tep-details { margin-top: 1rem; }
+.tep-details > summary { cursor: pointer; font-weight: 600; color: var(--clr-text-muted, #475569); }
