@@ -122,7 +122,7 @@
             }
         }
 
-        @if (_loading) { <p class="act-muted" role="status">Checking readiness…</p> }
+        @if (_loading) { <InlineLoading Text="Checking readiness…" Class="act-muted" /> }
         @if (Checks.Count > 0)
         {
             <h3 class="act-subheading">Readiness</h3>

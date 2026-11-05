@@ -539,7 +539,7 @@
             <p class="fqs-muted fqs-small">Drag an item onto the scope list below, or use Add. Added items stay referenced by their stable key across re-imports.
                 @if (excluded.Count > 0) { <span> @excluded.Count item(s) explicitly excluded.</span> }</p>
             <label class="fqs-field"><span>Find items in the project</span><input type="search" data-testid="fqs-builder-search" value="@_builderSearch" @onchange="SearchCandidates" /></label>
-            @if (_all is null) { <p class="fqs-muted">Loading items…</p> }
+            @if (_all is null) { <InlineLoading Text="Loading items…" Class="fqs-muted" /> }
             else if (candidates.Count == 0) { <p class="fqs-muted">No other items match.</p> }
             else
             {

@@ -1,0 +1,33 @@
+@* An action button for async work (Run, Analyze, Import, Compare, Refresh). While its handler runs — or while the page says the work is
+   Busy — it is disabled (no duplicate submissions), says what it is doing and shows the shared spinner; it returns to its label when the
+   work ends, fails or is cancelled. The page still shows the outcome; the button never implies success.
+
+   Usage: <BusyButton Text="Compare" BusyText="Comparing…" OnClick="CompareAsync" Disabled="@(_previousId is null)" TestId="pr-compare" /> *@
+<button type="button" class="@(Class ?? "btn-primary") @(IsBusy ? "is-busy" : null)" disabled="@(Disabled || IsBusy)" aria-busy="@(IsBusy ? "true" : "false")"
+        data-testid="@TestId" @onclick="ClickAsync" @attributes="AdditionalAttributes">
+    @if (IsBusy) { <span class="loading-spinner" aria-hidden="true"></span>@(BusyText ?? Text) }
+    else { @Text }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public string? BusyText { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    /// <summary>Busy because of work the page tracks itself (e.g. a run started elsewhere on the page).</summary>
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? TestId { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private bool _running;
+    private bool IsBusy => Busy || _running;
+
+    private async Task ClickAsync()
+    {
+        if (IsBusy || Disabled) return;
+        _running = true;
+        try { await OnClick.InvokeAsync(); }
+        finally { _running = false; }
+    }
+}

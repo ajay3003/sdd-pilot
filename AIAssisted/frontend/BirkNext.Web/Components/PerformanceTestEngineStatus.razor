@@ -31,7 +31,7 @@
 
     @if (_providers is null && _resources is null && _loading)
     {
-        <p class="pte-loading" role="status">Checking engines and resource providers…</p>
+        <InlineLoading Text="Checking engines and resource providers…" Class="pte-loading" />
     }
     else if (_providers is null && _resources is null)
     {

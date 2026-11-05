@@ -8,7 +8,7 @@
     <h2 id="fbe-h">Pages and evidence</h2>
     @if (!Loaded)
     {
-        <p class="fqr-muted" role="status" aria-live="polite" data-testid="fqr-browser-evidence-loading">Loading browser evidence…</p>
+        <InlineLoading Text="Loading browser evidence…" Class="fqr-muted" TestId="fqr-browser-evidence-loading" />
     }
     else if (Error is not null)
     {

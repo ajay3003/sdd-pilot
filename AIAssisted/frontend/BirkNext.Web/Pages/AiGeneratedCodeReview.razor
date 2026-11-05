@@ -75,8 +75,8 @@
                     : "Changed files only reviews the files whose fingerprints differ between the baseline and the current snapshot.")</p>
             </fieldset>
             <div class="aic-actions">
-                <button type="button" class="btn-primary" data-testid="aic-run" disabled="@(BlockedReason is not null)" aria-describedby="aic-run-help" @onclick="RunAsync">
-                    @(_busy ? "Reviewing…" : "Run Code Risk Review")
+                <button type="button" class="btn-primary" data-testid="aic-run" disabled="@(BlockedReason is not null)" aria-describedby="aic-run-help" aria-busy="@(_busy ? "true" : "false")" @onclick="RunAsync">
+                    @if (_busy) { <span class="loading-spinner" aria-hidden="true"></span> }@(_busy ? "Reviewing…" : "Run Code Risk Review")
                 </button>
                 <p id="aic-run-help" class="aic-muted" role="status" data-testid="aic-run-help">@(BlockedReason ?? (_baselineId is null
                     ? "Run the current-state review now; select a baseline later for change-risk analysis. Nothing is uploaded or executed."

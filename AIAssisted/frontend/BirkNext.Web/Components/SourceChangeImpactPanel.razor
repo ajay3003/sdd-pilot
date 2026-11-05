@@ -10,7 +10,7 @@
     <p class="sci-note">Technical impact is derived from source changes and source relationships. Runtime or deployed impact is not verified here.</p>
     @if (_loading)
     {
-        <p role="status">Loading Source Analysis snapshots…</p>
+        <InlineLoading Text="Loading Source Analysis snapshots…" />
     }
     else if (_error is not null)
     {

@@ -587,7 +587,7 @@
             <h2 id="pr-probe-h">Will a change to this path be validated?</h2>
             <div class="sd-filterbar">
                 <label>Repository path <input type="search" @bind="_probePath" @bind:event="oninput" placeholder="src/Shop.Common/Money.cs" data-testid="pr-probe-path" /></label>
-                <button class="btn-primary" @onclick="Probe" disabled="@(_probing || string.IsNullOrWhiteSpace(_probePath))" data-testid="pr-probe-run">Check</button>
+                <button class="btn-primary" @onclick="Probe" disabled="@(_probing || string.IsNullOrWhiteSpace(_probePath))" aria-busy="@(_probing ? "true" : "false")" data-testid="pr-probe-run">@if (_probing) { <span class="loading-spinner" aria-hidden="true"></span><span>Checking…</span> } else { <span>Check</span> }</button>
             </div>
             @if (_probe is { } probe)
             {
@@ -1037,7 +1037,7 @@
                             @foreach (var s in _sources.Snapshots.Where(s => s.Id != _snapshotId).OrderByDescending(s => s.AnalyzedAt)) { <option value="@s.Id">@s.ArchiveName · @P.Utc(s.AnalyzedAt)</option> }
                         </select>
                     </label>
-                    <button class="btn-primary" @onclick="Compare" disabled="@(_comparing || _previousId is null)" data-testid="pr-compare">Compare</button>
+                    <button class="btn-primary" @onclick="Compare" disabled="@(_comparing || _previousId is null)" aria-busy="@(_comparing ? "true" : "false")" data-testid="pr-compare">@if (_comparing) { <span class="loading-spinner" aria-hidden="true"></span><span>Comparing…</span> } else { <span>Compare</span> }</button>
                 </div>
                 @if (_previousId is { } previous && _sources.Snapshots.FirstOrDefault(s => s.Id == previous) is { } other && Selected is { } currentSource && D.SourceName(other) != D.SourceName(currentSource))
                 {

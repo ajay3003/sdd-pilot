@@ -7,7 +7,7 @@
    runs) stays on the standalone page. *@
 <div class="sd-source-contracts" data-testid="sc-consumers">
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="sc-consumers-error">@error</p> }
-    else if (_assessments is null) { <p class="sd-muted" role="status">Loading security assessment…</p> }
+    else if (_assessments is null) { <InlineLoading Text="Loading security assessment…" Class="sd-muted" /> }
     else
     {
         @foreach (var consumer in _assessments.Where(a => ConsumerId is null || a.ConsumerId == ConsumerId))

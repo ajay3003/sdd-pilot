@@ -8,7 +8,7 @@
    never secrets — and is never approved: Review → Register as reusable Test Data (Draft / Needs review) → Approve, each step explicit. *@
 <div class="sd-source-contracts" data-testid="td-candidates-panel">
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="td-candidates-error">@error</p> }
-    else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+    else if (_snapshots is null) { <InlineLoading Text="Loading Source Analysis snapshots…" Class="sd-muted" /> }
     else if (_snapshots.Count == 0) { <p class="sd-muted" data-testid="td-candidates-no-snapshots">No Source Analysis snapshot is stored.</p> }
     else
     {
@@ -19,7 +19,7 @@
             </select>
         </label>
     }
-    @if (_loadingCandidates) { <p class="sd-muted" role="status">Loading candidates…</p> }
+    @if (_loadingCandidates) { <InlineLoading Text="Loading candidates…" Class="sd-muted" /> }
     else if (_candidates is { } candidates)
     {
         var shown = candidates.Where(c => !_dismissed.Contains(c.Id)).ToList();

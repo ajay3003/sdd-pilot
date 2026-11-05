@@ -183,7 +183,7 @@
                         <span class="iqr-pill iqr-pill-@(enabled.Count > 0 ? "ready" : "muted")" data-testid="iqr-stage-status">@(_readiness is null ? "Loading…" : subject is { Origin: IntegrationRecordOrigin.Discovered } ? "Discovered" : enabled.Count > 0 ? "Configured" : "None found")</span></h3>
                     @if (_readiness is null && _error is null)
                     {
-                        <p class="iqr-muted" role="status" data-testid="iqr-stage-loading">Reading integrations from the evidence…</p>
+                        <InlineLoading Text="Reading integrations from the evidence…" Class="iqr-muted" TestId="iqr-stage-loading" />
                     }
                     else if (enabled.Count == 0)
                     {

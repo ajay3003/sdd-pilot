@@ -659,7 +659,7 @@
                 </div>
                 @if (!_fromAzureDevOps) { <p class="dlr-hint">Need an earlier baseline? Export the repository at the desired Git commit or date and import the ZIP here with that effective date, or choose Import from Azure DevOps.</p> }
 
-                @if (_busy && _preview is null) { <p role="status" data-testid="dlr-import-reading">Reading the archive…</p> }
+                @if (_busy && _preview is null) { <InlineLoading Text="Reading the archive…" TestId="dlr-import-reading" /> }
                 @if (_importError is not null) { <p class="dlr-error" role="alert" data-testid="dlr-import-error">@_importError</p> }
 
                 @if (_preview is { } preview)

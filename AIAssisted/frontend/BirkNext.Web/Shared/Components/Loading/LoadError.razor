@@ -1,0 +1,37 @@
+@* A section or page whose data could not be loaded: what failed (a safe, user-facing message) and Retry. Distinct from empty ("nothing
+   to show"), unavailable ("not applicable / not configured") and loading; it is never shown as a result. While a retry runs the button is
+   disabled, so it cannot be submitted twice.
+
+   Usage: @if (_error is { } error) { <LoadError Message="@error" OnRetry="LoadAsync" TestId="db-readiness-error" /> } *@
+<div class="load-error @Class" role="alert" data-testid="@TestId">
+    <span class="load-error-icon" aria-hidden="true">!</span>
+    <div class="load-error-body">
+        <strong class="load-error-title">@Title</strong>
+        @if (!string.IsNullOrWhiteSpace(Message)) { <span class="load-error-message" data-testid="@($"{TestId}-message")">@Message</span> }
+    </div>
+    @if (OnRetry.HasDelegate)
+    {
+        <button type="button" class="btn-secondary btn-sm load-error-retry" disabled="@_retrying" aria-busy="@(_retrying ? "true" : "false")"
+                data-testid="@($"{TestId}-retry")" @onclick="RetryAsync">
+            @if (_retrying) { <span class="loading-spinner" aria-hidden="true"></span> }Retry
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Could not load";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string TestId { get; set; } = "load-error";
+
+    private bool _retrying;
+
+    private async Task RetryAsync()
+    {
+        if (_retrying) return;
+        _retrying = true;
+        try { await OnRetry.InvokeAsync(); }
+        finally { _retrying = false; }
+    }
+}

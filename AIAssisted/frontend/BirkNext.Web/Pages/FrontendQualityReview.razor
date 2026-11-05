@@ -244,7 +244,7 @@
                             <p class="fqr-section-note">Only active backend engines are shown. Runtime installation and capability are managed in <a href="@FrontendQualityLandingPresentation.SystemSettingsHref">System Settings — Frontend Engine Capabilities</a>.</p>
                             @if (_readinessPending)
                             {
-                                <p class="fqr-muted fqr-engine-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
+                                <p class="fqr-muted fqr-engine-progress" role="status" aria-live="polite" data-testid="fqr-readiness-pending"><span class="loading-spinner" aria-hidden="true"></span>Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
                             }
                             @if (_engineStatus is not null)
                             {

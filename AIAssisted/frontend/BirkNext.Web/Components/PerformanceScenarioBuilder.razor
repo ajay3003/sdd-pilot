@@ -414,7 +414,7 @@
             <h4 id="psb-live-h" class="psb-subtitle">Live Discovery</h4>
             @if (!HistoryLoaded)
             {
-                <p class="sd-muted" role="status" data-testid="psb-live-loading">Loading Endpoint Discovery history…</p>
+                <InlineLoading Text="Loading Endpoint Discovery history…" Class="sd-muted" TestId="psb-live-loading" />
             }
             else if (History is null)
             {

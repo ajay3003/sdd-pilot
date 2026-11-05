@@ -162,7 +162,7 @@
                 <div data-testid="aqr-environment">
                     <dt>Target</dt>
                     <dd>
-                        @if (_context is null) { <span class="aqr-muted">Loading the active Target Environment...</span> }
+                        @if (_context is null) { <InlineLoading Text="Loading the active Target Environment…" Class="aqr-muted" Inline="true" /> }
                         else if (_context.ActiveTargetError is { Length: > 0 } activeError) { <span class="aqr-error-inline" role="alert" data-testid="aqr-active-target-error">@activeError</span> }
                         else if (targetSummary is not null)
                         {

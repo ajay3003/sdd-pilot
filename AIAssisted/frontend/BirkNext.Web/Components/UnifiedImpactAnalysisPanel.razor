@@ -10,7 +10,7 @@
     <p>Review requirement and source changes together. Findings explain their evidence; linked tests are not proof of execution or behavioral coverage.</p>
     @if (_loading)
     {
-        <p role="status">Loading project and source evidence…</p>
+        <InlineLoading Text="Loading project and source evidence…" />
     }
     else if (_error is not null)
     {

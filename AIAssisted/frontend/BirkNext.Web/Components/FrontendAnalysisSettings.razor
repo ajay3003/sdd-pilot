@@ -14,7 +14,7 @@
 @* ── Load state ───────────────────────────────────────────────────────────── *@
 @if (!FaSettings.IsLoaded)
 {
-    <p class="loading-state">Loading target environments…</p>
+    <InlineLoading Text="Loading target environments…" Class="loading-state" />
     return;
 }
 

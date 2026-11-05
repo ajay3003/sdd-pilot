@@ -292,7 +292,7 @@
     /// <summary>OpenAPI / GraphQL structure from the backend's Source Analysis readers: operations grouped by path or kind, types with their fields.</summary>
     private RenderFragment ContractStructure(GeneratedDocumentView v) => __builder =>
     {
-        if (_contractLoading) { <p class="gde-muted" role="status">Reading the contract structure…</p> return; }
+        if (_contractLoading) { <InlineLoading Text="Reading the contract structure…" Class="gde-muted" /> return; }
         if (_contract is not { } c) { <p class="gde-note" role="status" data-testid="gde-contract-unparsed">The structure could not be read from this artifact. Its full content is in the Source tab.</p> return; }
         var graphQl = v.Document.Role == GeneratedDocumentRole.GraphQlSchema;
         <div data-testid="gde-contract" data-kind="@(graphQl ? "graphql" : "openapi")">

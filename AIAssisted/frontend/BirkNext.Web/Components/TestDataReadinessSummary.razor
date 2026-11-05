@@ -5,7 +5,7 @@
    environment → Environment mismatch (never reused). Shows aliases and states only — never values — and never approves or changes an asset. *@
 <div class="sd-source-contracts" data-testid="td-readiness">
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="td-readiness-error">@error</p> }
-    else if (_catalog is null) { <p class="sd-muted" role="status">Loading test data…</p> }
+    else if (_catalog is null) { <InlineLoading Text="Loading test data…" Class="sd-muted" /> }
     else if (_catalog.Assets.Count == 0) { <p class="sd-muted" data-testid="td-readiness-empty">No test data is configured. <a href="test-data">Open Test Data</a></p> }
     else
     {

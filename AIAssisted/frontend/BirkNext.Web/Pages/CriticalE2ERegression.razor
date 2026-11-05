@@ -28,7 +28,7 @@
         @* Without the overview there is nothing to show, so its failure is the page's — classified, never assumed unreachable. *@
         <BackendRequestNotice Error="_overviewError" OnRetry="RefreshAsync" TestId="e2e-overview-error"
                               Hint="Target, build, flow coverage and browser readiness come from this overview." />
-        @if (_overviewError is null) { <p class="e2e-loading" data-testid="e2e-loading">Loading…</p> }
+        @if (_overviewError is null) { <InlineLoading Text="Loading…" Class="e2e-loading" TestId="e2e-loading" /> }
     }
     else
     {

@@ -17,7 +17,7 @@
 <section class="ijp @(Embedded ? "ijp-is-embedded" : "")" aria-labelledby="@(Embedded ? null : "ijp-heading")" aria-label="@(Embedded ? "Journey details" : null)" data-testid="ijp-panel" data-embedded="@(Embedded ? "true" : "false")">
     @if (!Embedded) { <h2 id="ijp-heading">Integration journeys</h2> }
     @if (_error is { } error) { <p class="ijp-error" role="alert" data-testid="ijp-error">@error</p> }
-    @if (_loading) { <p class="ijp-muted" role="status">Loading journeys…</p> }
+    @if (_loading) { <InlineLoading Text="Loading journeys…" Class="ijp-muted" /> }
     @if (!_loading && _packs.Count == 0 && _error is null) { <p class="ijp-empty" data-testid="ijp-empty">No journey packs are registered.</p> }
 
     @if (_packs.Count > 1 && !Embedded && PackId is null)

@@ -28,21 +28,6 @@
     border-top-color: var(--clr-border);
 }
 
-.axh-spinner {
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid var(--clr-border);
-    border-top-color: var(--clr-primary);
-    border-radius: 50%;
-    animation: axh-spin 0.8s linear infinite;
-}
-
-@keyframes axh-spin { to { transform: rotate(360deg); } }
-
-@media (prefers-reduced-motion: reduce) {
-    .axh-spinner { animation: none; }
-}
-
 .axh-error {
     border-top-color: var(--clr-warning-border);
     text-align: left;

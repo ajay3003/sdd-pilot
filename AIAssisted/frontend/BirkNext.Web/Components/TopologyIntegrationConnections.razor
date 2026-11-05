@@ -8,7 +8,7 @@
 <section class="ti" aria-labelledby="@($"{_id}-heading")" data-testid="ti-panel">
     <h3 id="@($"{_id}-heading")">Integrations in the topology</h3>
     @if (string.IsNullOrWhiteSpace(EnvironmentId)) { <p role="status">Select a Target Environment.</p> }
-    else if (_loading) { <p role="status" data-testid="ti-loading">Loading Integration Topology…</p> }
+    else if (_loading) { <InlineLoading Text="Loading Integration Topology…" TestId="ti-loading" /> }
     else if (_error is not null) { <p role="alert" data-testid="ti-error">@_error</p> }
     else if (_connections.Count == 0) { <p data-testid="ti-empty">No configured integration states a connection yet.</p> }
     else

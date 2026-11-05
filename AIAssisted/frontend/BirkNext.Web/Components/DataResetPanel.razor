@@ -65,7 +65,7 @@
                 {
                     @if (_loadingPlan)
                     {
-                        <p class="drp-muted" data-testid="reset-plan-loading">Loading what this reset affects…</p>
+                        <InlineLoading Text="Loading what this reset affects…" Class="drp-muted" TestId="reset-plan-loading" />
                     }
                     else if (_plan is null)
                     {

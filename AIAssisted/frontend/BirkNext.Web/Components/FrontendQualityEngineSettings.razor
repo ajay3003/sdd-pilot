@@ -10,7 +10,7 @@
 
     @if (IsLoadingStatus)
     {
-        <div class="fqe-message" role="status">Checking engine status…</div>
+        <InlineLoading Text="Checking engine status…" Class="fqe-message" />
     }
     else if (AnonymousStatus == null)
     {

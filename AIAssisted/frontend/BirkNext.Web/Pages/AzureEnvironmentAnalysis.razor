@@ -651,7 +651,7 @@
     {
         <div data-testid="az-suggestions">
             <p class="sd-muted">Values observed in Azure that you may copy into the Target Environment. BirkNext does not save them; the Target Environment keeps what you configured.</p>
-            @if (_suggestions is null) { <p class="sd-muted">Loading…</p> }
+            @if (_suggestions is null) { <InlineLoading Text="Loading…" Class="sd-muted" /> }
             else if (_suggestions.Count == 0) { <p class="sd-empty">No application URLs, messaging hosts or telemetry components were observed.</p> }
             else
             {

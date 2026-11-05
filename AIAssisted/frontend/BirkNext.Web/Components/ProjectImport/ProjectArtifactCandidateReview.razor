@@ -12,7 +12,7 @@
     @if (LabelledBy is null) { <h2 id="pac-heading">Artifact candidates</h2> }
     @if (_overview is null)
     {
-        <p class="pac-muted" role="status">Loading artifact candidates…</p>
+        <InlineLoading Text="Loading artifact candidates…" Class="pac-muted" />
     }
     else if (_overview.Error is not null)
     {

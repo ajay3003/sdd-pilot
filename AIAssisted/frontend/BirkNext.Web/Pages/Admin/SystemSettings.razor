@@ -75,7 +75,7 @@
 
 @if (_isLoading)
 {
-    <p class="loading-state">Loading settings...</p>
+    <InlineLoading Text="Loading settings…" Class="loading-state" />
 }
 else if (_loadError is not null)
 {
@@ -285,7 +285,7 @@ else if (_settings is not null)
                     {
                         @if (!_configHealthLoaded)
                         {
-                            <p class="db-section-empty">Loading configuration health…</p>
+                            <InlineLoading Text="Loading configuration health…" Class="db-section-empty" />
                         }
                         else
                         {

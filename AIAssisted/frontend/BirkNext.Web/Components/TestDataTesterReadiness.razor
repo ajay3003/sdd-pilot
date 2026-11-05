@@ -12,7 +12,7 @@
     <h3 class="tdr-heading" id="@($"{TestId}-heading")">@Heading</h3>
     @if (_loading)
     {
-        <p class="tdr-muted" role="status">Loading Test Data readiness…</p>
+        <InlineLoading Text="Loading Test Data readiness…" Class="tdr-muted" />
     }
     else if (_context is null || _status is null)
     {

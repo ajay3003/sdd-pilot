@@ -1458,7 +1458,8 @@ a.export-menu-item { box-sizing: border-box; text-decoration: none; overflow-wra
 
 .loading-spinner {
     display: inline-block; flex: 0 0 auto; width: .9em; height: .9em; margin-right: .45em; vertical-align: -.1em;
-    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; opacity: .7;
+    /* The Plan Explorer (ArtifactExplorerHost) design, used everywhere: a neutral track with a primary arc. */
+    border: 2px solid var(--clr-border, #e2e8f0); border-top-color: var(--clr-primary, #2563eb); border-radius: 50%;
     animation: loading-spin .8s linear infinite;
 }
 .loading-inline { color: var(--clr-text-muted, #475569); }
@@ -1486,6 +1487,17 @@ p.loading-inline { margin: .5rem 0; }
 .op-persistent-stage, .op-persistent-note, .op-persistent-error { margin: .25rem 0 0; font-size: .85rem; }
 .op-persistent-note { color: var(--clr-text-muted, #475569); }
 .op-persistent-bar { width: 100%; height: .5rem; margin-top: .35rem; }
+
+/* Load failure (LoadError): what failed + Retry. Never shown as a result; distinct from empty and unavailable. */
+.load-error { display: flex; align-items: flex-start; gap: .6rem; margin: .5rem 0; padding: .6rem .8rem; border: 1px solid var(--clr-border, #e2e8f0);
+    border-left: 3px solid var(--clr-warning, #b45309); border-radius: var(--radius-md, 6px); background: var(--clr-surface, #fff); }
+.load-error-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 1.2em; height: 1.2em; border-radius: 50%;
+    background: var(--clr-warning-bg, #fef3c7); color: var(--clr-warning, #92400e); font-weight: 700; }
+.load-error-body { display: flex; flex-direction: column; gap: .15rem; flex: 1 1 auto; min-width: 0; }
+.load-error-message { color: var(--clr-text-muted, #475569); font-size: .88rem; overflow-wrap: anywhere; }
+.load-error-retry { flex: 0 0 auto; }
+/* A busy action button keeps its width steady and shows the shared spinner (BusyButton). */
+button.is-busy { cursor: progress; }
 
 @media (prefers-reduced-motion: reduce) {
     .loading-spinner, .loading-skeleton-line { animation-duration: 0s; animation-iteration-count: 1; }

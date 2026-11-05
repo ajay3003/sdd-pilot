@@ -72,7 +72,7 @@
             </div>
             @if (_isLoading)
             {
-                <p class="loading-state">Loading reviews...</p>
+                <InlineLoading Text="Loading reviews…" Class="loading-state" />
             }
             else if (_notice is not null)
             {

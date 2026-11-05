@@ -9,7 +9,7 @@
 <div class="sd-source-contracts" data-testid="source-contract-evidence">
     <p class="sd-muted">@Note</p>
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="source-contract-error">@error</p> }
-    else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+    else if (_snapshots is null) { <InlineLoading Text="Loading Source Analysis snapshots…" Class="sd-muted" /> }
     else if (_snapshots.Count == 0) { <p class="sd-muted" data-testid="source-contract-none">No Source Analysis snapshot is stored. Analyze the source in Source Analysis to compare its published contract with runtime behaviour.</p> }
     else
     {
@@ -19,7 +19,7 @@
                 @foreach (var s in _snapshots) { <option value="@s.Id">@s.Archive.FileName · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
             </select>
         </label>
-        @if (_selection is { Loading: true }) { <p class="sd-muted" role="status" aria-busy="true" data-testid="source-contract-loading">Loading analysis…</p> }
+        @if (_selection is { Loading: true }) { <InlineLoading Text="Loading analysis…" Class="sd-muted" TestId="source-contract-loading" /> }
         else if (_selection?.Error is { } selectionError)
         {
             <p class="sd-muted" role="alert" data-testid="source-contract-load-error">Could not load analysis: @selectionError <button type="button" class="btn-secondary" @onclick="() => _selection!.SelectAsync(_selection.Selected)">Retry</button></p>

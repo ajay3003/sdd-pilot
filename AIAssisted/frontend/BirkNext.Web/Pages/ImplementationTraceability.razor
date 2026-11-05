@@ -109,8 +109,7 @@
 
             <div class="it-form-actions">
                 <PrimaryButton OnClick="FetchEvidence" Disabled="@_loading">
-                    @if (_loading) { <span aria-hidden="true">⟳</span> }
-                    Load from Azure DevOps
+                    @if (_loading) { <span class="loading-spinner" aria-hidden="true"></span><span>Loading from Azure DevOps…</span> } else { <span>Load from Azure DevOps</span> }
                 </PrimaryButton>
                 @if (_report is not null)
                 {

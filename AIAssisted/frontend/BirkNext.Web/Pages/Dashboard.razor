@@ -161,8 +161,15 @@
     }
     else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
     {
-        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step">
-            <p class="db-workspace-message" role="status">Working out the recommended next step…</p>
+        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step" aria-busy="@(ReadinessPending ? "true" : "false")">
+            @if (_readinessError is { } readinessError)
+            {
+                <LoadError Title="Could not work out the review status" Message="@readinessError" OnRetry="RetryReadinessAsync" TestId="db-readiness-error" />
+            }
+            else
+            {
+                <InlineLoading Text="Working out the recommended next step…" Class="db-workspace-message" TestId="db-readiness-loading" />
+            }
         </section>
     }
 
@@ -180,6 +187,12 @@
     {
         <section class="db-kpis" aria-labelledby="db-kpis-heading" data-testid="db-quality-summary">
             <h2 id="db-kpis-heading" class="db-visually-hidden">Quality summary</h2>
+            @if (ReadinessPending)
+            {
+                <LoadingSkeleton Lines="2" Text="Loading the quality summary…" TestId="db-kpis-loading" />
+            }
+            else
+            {
             <ul class="db-kpi-list">
                 @foreach (var kpi in _kpis)
                 {
@@ -192,6 +205,7 @@
                     </li>
                 }
             </ul>
+            }
         </section>
     }
 
@@ -247,7 +261,15 @@
 
             <section class="db-panel" aria-labelledby="db-attention-heading" data-testid="db-attention">
                 <h2 id="db-attention-heading" class="db-h2">Needs attention</h2>
-                @if (_attention.Count == 0)
+                @if (ReadinessPending)
+                {
+                    <LoadingSkeleton Lines="3" Text="Checking what needs attention…" TestId="db-attention-loading" />
+                }
+                else if (_readinessError is not null)
+                {
+                    <p class="db-muted" data-testid="db-attention-unknown">Not known — the review status could not be loaded.</p>
+                }
+                else if (_attention.Count == 0)
                 {
                     <p class="db-muted" data-testid="db-attention-none">Nothing needs attention right now. Optional reviews that have not run are listed under Available next reviews.</p>
                 }
@@ -338,8 +360,9 @@
         <section class="db-section" aria-labelledby="db-readiness-heading" data-testid="db-review-readiness">
             <h2 id="db-readiness-heading" class="db-h2">Review availability</h2>
             <p class="db-section-lead">Shows whether required input exists for a review. Available does not mean reviewed, passed, verified or release-ready.</p>
+            @if (ReadinessPending) { <LoadingSkeleton Lines="4" Text="Loading review availability…" TestId="db-readiness-rows-loading" /> }
             <ul class="db-readiness-list">
-                @foreach (var row in _readiness)
+                @foreach (var row in ReadinessPending ? Array.Empty<DashboardReadinessRow>() : _readiness)
                 {
                     <li class="db-readiness-row" data-testid="db-readiness-row" data-key="@row.Key" data-status="@row.Status">
                         <span class="db-readiness-name">@row.Label</span>
@@ -375,7 +398,11 @@
     {
         <section class="db-section" aria-labelledby="db-activity-heading" data-testid="db-recent-activity">
             <h2 id="db-activity-heading" class="db-h2">Recent activity</h2>
-            @if (_activityItems is not { Count: > 0 } items)
+            @if (_activityItems is null && _activityLoading)
+            {
+                <InlineLoading Text="Loading recent activity…" Class="db-muted" TestId="db-activity-loading" />
+            }
+            else if (_activityItems is not { Count: > 0 } items)
             {
                 <p class="db-muted" data-testid="db-activity-none"><strong>@ProjectActivityPresentation.EmptyTitle</strong> @ProjectActivityPresentation.EmptyText</p>
                 @if (_activityUnavailable) { <p class="db-muted" role="status" data-testid="db-activity-unavailable">Recent activity could not be read from the backend.</p> }
@@ -921,17 +948,25 @@
 
     private void OnWorkspaceChanged() => _ = InvokeAsync(RefreshWorkspaceAsync);
 
+    /// <summary>One load per workspace change: a slower, older refresh (project switched meanwhile) never replaces the newer one's results.</summary>
+    private readonly LoadSequence _loads = new();
+
     private async Task RefreshWorkspaceAsync()
     {
-        _workspace = await CurrentWorkspace.GetAsync();
+        var load = _loads.Begin();
+        var workspace = await CurrentWorkspace.GetAsync();
+        if (!load.IsCurrent) return;
+        _workspace = workspace;
         RefreshApplication();
         StateHasChanged();
-        await RefreshActivityAsync();
-        await RefreshWorkflowReadinessAsync();
+        await RefreshActivityAsync(load);
+        await RefreshWorkflowReadinessAsync(load);
+        _loads.End(load);
     }
 
     public void Dispose()
     {
+        _loads.Dispose();
         CurrentWorkspace.Changed -= OnWorkspaceChanged;
         if (Services.GetService(typeof(ProjectActivityRecorder)) is ProjectActivityRecorder recorder) recorder.Recorded -= OnActivityRecorded;
         if (Services.GetService(typeof(BirkNext.Web.Services.Operations.BackgroundOperationService)) is BirkNext.Web.Services.Operations.BackgroundOperationService ops) ops.Changed -= OnOperationsChanged;
@@ -954,17 +989,25 @@
     }
 
     /// <summary>Reads the application's newest activity (by its stable id, newest first, bounded). Never derived from this session's operations.</summary>
-    private async Task RefreshActivityAsync()
+    private bool _activityLoading;
+
+    private Task RefreshActivityAsync() => RefreshActivityAsync(null);
+
+    /// <summary>Previous items stay visible while a refresh runs; a refresh for an older workspace load is discarded.</summary>
+    private async Task RefreshActivityAsync(LoadTicket? load)
     {
         _activityUnavailable = false;
         if (_application is not { } application || Services.GetService(typeof(IProjectActivityApiService)) is not IProjectActivityApiService api) { _activityItems = null; return; }
+        _activityLoading = true;
         try
         {
             var items = await api.ListAsync(application.Id, ActivityLimit);
+            if (load is { IsCurrent: false }) return;
             _activityUnavailable = items is null;
             _activityItems = items ?? _activityItems;
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { _activityUnavailable = true; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { if (load is not { IsCurrent: false }) _activityUnavailable = true; }
+        finally { if (load is not { IsCurrent: false }) _activityLoading = false; }
         StateHasChanged();
     }
 
@@ -1076,23 +1119,42 @@
     // ── Workflow readiness ────────────────────────────────────────────────────
 
     private WorkflowReadiness? _workflowReadiness;
+    /// <summary>Why readiness could not be loaded (null while loading or after success). Sections derived from readiness say "not known"
+    /// instead of showing a default state, and Retry reloads it.</summary>
+    private string? _readinessError;
 
-    private async Task RefreshWorkflowReadinessAsync()
+    /// <summary>Readiness-derived sections (KPIs, needs attention, availability) are loading: the workspace is there, readiness is not yet.</summary>
+    private bool ReadinessPending => _workspace is { WorkspaceLoaded: true } && _workflowReadiness is null && _readinessError is null;
+
+    private async Task RetryReadinessAsync()
+    {
+        _readinessError = null;
+        StateHasChanged();
+        await RefreshWorkflowReadinessAsync(null);
+    }
+
+    private async Task RefreshWorkflowReadinessAsync(LoadTicket? load)
     {
         try
         {
-            _workflowReadiness = await WorkflowReadiness.GetReadinessAsync();
+            var readiness = await WorkflowReadiness.GetReadinessAsync();
+            if (load is { IsCurrent: false }) return;
+            _workflowReadiness = readiness;
+            _readinessError = null;
             if (Services.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) is BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService evidence)
             {
                 try { _associations = evidence.Peek().Associations; }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { _associations = []; }
             }
-            StateHasChanged();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            if (load is { IsCurrent: false }) return;
+            // Keep an earlier readiness on screen (a background refresh failed); only a first load has nothing to keep.
+            if (_workflowReadiness is null) _readinessError = "The review status could not be read. Check that the BirkNext API is running, then retry.";
             System.Diagnostics.Debug.WriteLine($"Error loading workflow readiness: {ex.Message}");
         }
+        StateHasChanged();
     }
 
     // ── Runtime review session ────────────────────────────────────────────────

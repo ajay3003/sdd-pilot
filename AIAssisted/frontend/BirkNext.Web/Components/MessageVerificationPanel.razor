@@ -11,7 +11,7 @@
 <div class="mvp" data-testid="mvp">
     @if (_loading)
     {
-        <p class="mvp-muted" role="status">Loading the verification scenario and evidence providers…</p>
+        <InlineLoading Text="Loading the verification scenario and evidence providers…" Class="mvp-muted" />
     }
     else if (Scenario is null)
     {

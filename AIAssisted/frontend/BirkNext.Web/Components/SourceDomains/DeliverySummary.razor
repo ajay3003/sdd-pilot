@@ -5,7 +5,7 @@
    deployments defined, what gates them, artifact promotion vs rebuild, post-deploy validation. Declared only; nothing ran here. *@
 <div class="sd-source-contracts" data-testid="sd-delivery">
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="sd-delivery-error">@error</p> }
-    else if (_delivery is not { } e) { <p class="sd-muted" role="status">Loading delivery evidence…</p> }
+    else if (_delivery is not { } e) { <InlineLoading Text="Loading delivery evidence…" Class="sd-muted" /> }
     else if (e.Deployments.Count == 0) { <p data-testid="sd-delivery-none">No deployment is defined in these pipelines.</p> }
     else
     {

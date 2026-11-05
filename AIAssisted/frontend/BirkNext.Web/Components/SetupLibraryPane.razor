@@ -36,7 +36,7 @@
     @if (_error is { } error) { <p class="ei-banner ei-banner-error" role="alert" data-testid="slp-error">@error</p> }
     @if (_notice is { } notice) { <p class="ei-banner" role="status" data-testid="slp-notice">@notice</p> }
 
-    @if (_items is null) { <p class="ei-muted" role="status">Loading the Setup Library…</p> }
+    @if (_items is null) { <InlineLoading Text="Loading the Setup Library…" Class="ei-muted" /> }
     else if (_items.Count == 0) { <p class="ei-muted" data-testid="slp-empty">No packages. Save one from Connected Systems → Export setup, or import a file there.</p> }
     else
     {

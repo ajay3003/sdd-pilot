@@ -17,7 +17,7 @@
     <div id="@_descId">
         @if (_loading)
         {
-            <p class="tda-muted" role="status">Loading…</p>
+            <InlineLoading Text="Loading…" Class="tda-muted" />
         }
         else if (_mode == Mode.Edit)
         {

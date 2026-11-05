@@ -47,7 +47,7 @@
         <div class="rta-summary" id="@($"rta-summary-{_id}")" data-testid="rta-summary" aria-live="polite">
             @if (_loading)
             {
-                <span class="rta-muted">Checking authentication…</span>
+                <InlineLoading Text="Checking authentication…" Class="rta-muted" Inline="true" />
             }
             else if (_resolution is { } r)
             {

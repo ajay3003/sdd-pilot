@@ -1176,7 +1176,7 @@
                     <button class="btn-primary" disabled="@(_sourceContractPath.Length == 0)" @onclick="OpenSourceContract">Open contract in Schema Studio</button>
                 }
             }
-            @if (_sourceBusy) { <p role="status">Loading XSD artifacts from the selected snapshot…</p> }
+            @if (_sourceBusy) { <InlineLoading Text="Loading XSD artifacts from the selected snapshot…" /> }
             @if (!string.IsNullOrWhiteSpace(_sourceError)) { <p class="ss-error" role="alert">@_sourceError</p> }
         </section>;
 

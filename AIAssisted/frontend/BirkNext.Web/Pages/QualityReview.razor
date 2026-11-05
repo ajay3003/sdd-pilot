@@ -428,7 +428,7 @@
                 </div>
                 <div class="qr-run-action">
                     <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
-                        @if (_running) { <span>Running…</span> } else { <span>Run Document Quality Review</span> }
+                        @if (_running) { <span aria-busy="true"><span class="loading-spinner" aria-hidden="true"></span>Running…</span> } else { <span>Run Document Quality Review</span> }
                     </PrimaryButton>
                     @if (CannotRun && !_running)
                     {

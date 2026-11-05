@@ -274,7 +274,8 @@
             }
             else if (view is null)
             {
-                <p class="snt-muted" role="status">@(!_initialized ? "Loading readiness…" : "Readiness is not available for this journey.")</p>
+                @if (!_initialized) { <InlineLoading Text="Loading readiness…" Class="snt-muted" /> }
+                else { <p class="snt-muted" role="status">Readiness is not available for this journey.</p> }
             }
             else
             {
@@ -392,7 +393,8 @@
             }
             else
             {
-                <p class="snt-muted" role="status">@(_rulesError ?? "Loading rule results…")</p>
+                @if (_rulesError is { } rulesError) { <p class="snt-muted" role="alert">@rulesError</p> }
+                else { <InlineLoading Text="Loading rule results…" Class="snt-muted" /> }
             }
         </section>
     }

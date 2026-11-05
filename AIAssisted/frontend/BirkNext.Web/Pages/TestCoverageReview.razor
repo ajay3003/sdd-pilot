@@ -63,8 +63,8 @@
                 <p class="tco-notice" role="status" data-testid="tco-snapshot-old">@stale.ConsumerEvidenceNote</p>
             }
             <div class="tco-actions">
-                <button type="button" class="btn-primary" data-testid="tco-run" disabled="@(BlockedReason is not null)" aria-describedby="tco-run-help" @onclick="RunAsync">
-                    @(_busy ? "Reviewing…" : "Run Test Coverage & Overlap Review")
+                <button type="button" class="btn-primary" data-testid="tco-run" disabled="@(BlockedReason is not null)" aria-describedby="tco-run-help" aria-busy="@(_busy ? "true" : "false")" @onclick="RunAsync">
+                    @if (_busy) { <span class="loading-spinner" aria-hidden="true"></span> }@(_busy ? "Reviewing…" : "Run Test Coverage & Overlap Review")
                 </button>
                 <p id="tco-run-help" class="tco-muted" role="status" data-testid="tco-run-help">@(BlockedReason ?? "Reads the selected snapshot, the project documents and imported test results. Nothing is uploaded or executed.")</p>
             </div>
