@@ -358,6 +358,8 @@ public sealed record TestCoverageReviewRequest
     public Guid? BaselineSnapshotId { get; init; }
     /// <summary>The reviewer confirms that a baseline of another repository identity is a version of the same repository (recorded as declared).</summary>
     public bool BaselineSameRepositoryConfirmed { get; init; }
+    /// <summary>Remember a confirmed declaration for future comparisons (stored with who and when; revocable).</summary>
+    public bool RememberRepositoryAssociation { get; init; }
     /// <summary>Optional Target Environment whose Critical E2E flows count as QA automated tests (definitions and recorded runs only; nothing runs).</summary>
     public string? EnvironmentId { get; init; }
     public CoverageWorkspaceEvidence? Workspace { get; init; }

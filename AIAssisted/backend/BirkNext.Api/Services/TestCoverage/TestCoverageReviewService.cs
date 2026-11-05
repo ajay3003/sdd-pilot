@@ -30,7 +30,8 @@ public sealed record TestCoverageOutcome(TestCoverageReviewResult? Result, int S
 /// rescan), with Critical E2E flow definitions and recorded runs as QA automated evidence (nothing is executed), and stores each run bound
 /// to its exact snapshot ids. Reviewer decisions are review metadata per repository; they never overwrite source evidence.
 /// </summary>
-public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources, ICriticalE2EStore? e2e = null) : ITestCoverageReviewService
+public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources, ICriticalE2EStore? e2e = null,
+    SourceRepositoryAssociationService? associations = null) : ITestCoverageReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> AllowedValues = new(StringComparer.Ordinal) { "Confirmed", "Rejected", "DeveloperAutomated", "QaAutomated", "Unknown", "Accepted" };
@@ -41,6 +42,7 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         var list = await sources.ListAsync("", ct);
         return new ReviewSourceOptions
         {
+            RepositoryAssociations = associations is null ? [] : [.. await associations.ActiveAsync(ct)],
             Snapshots = ReviewSourceEvidenceProvider.Describe(list, s => s.TestBehaviorEvidence is null
                 ? new ConsumerSourceEvidence(false, "Analyzed before per-test facts existed: tests are listed but not analyzed until the source is analyzed again.")
                 : new ConsumerSourceEvidence(true, null, $"{s.TestBehaviorEvidence.Tests.Count} test(s) analyzed in {s.TestBehaviorEvidence.TestFilesAnalyzed} file(s)")),
@@ -60,8 +62,7 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         {
             baseline = await sources.ResolveAsync("", baselineId, ct);
             if (baseline is null) return TestCoverageOutcome.Fail(404, "The selected baseline snapshot is unavailable; nothing is substituted.");
-            (relation, var refused) = BaselineEligibility.Validate(ReviewSourceEvidenceProvider.Identity(current), ReviewSourceEvidenceProvider.Identity(baseline),
-                request.BaselineSameRepositoryConfirmed);
+            (relation, var refused) = await BaselineRelationAsync(current, baseline, request.BaselineSameRepositoryConfirmed, request.RememberRepositoryAssociation, ct);
             if (refused is not null) return TestCoverageOutcome.Fail(400, refused);
         }
         var repositoryKey = ReviewSourceEvidenceProvider.Identity(current).Key;
@@ -76,6 +77,19 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         });
         await db.SaveChangesAsync(ct);
         return new(result, 200, null);
+    }
+
+    /// <summary>The baseline's relation through the shared rule: same identity, a remembered declaration, or this run's explicit confirmation
+    /// (remembered when the reviewer asked for it).</summary>
+    private async Task<(BaselineRelation? Relation, string? Error)> BaselineRelationAsync(IqrSourceSnapshot current, IqrSourceSnapshot baseline, bool confirmed, bool remember,
+        CancellationToken ct)
+    {
+        var (currentId, baselineId) = (ReviewSourceEvidenceProvider.Identity(current), ReviewSourceEvidenceProvider.Identity(baseline));
+        var remembered = associations is null ? null : await associations.FindAsync(currentId.Key, baselineId.Key, ct);
+        var result = BaselineEligibility.Validate(currentId, baselineId, confirmed, remembered);
+        if (result.Relation is { Kind: BaselineRelationKind.DeclaredByReviewer } && remembered is null && remember && associations is not null)
+            await associations.DeclareAsync(new(currentId.Key, currentId.DisplayName, baselineId.Key, baselineId.DisplayName), "local user", ct);
+        return result;
     }
 
     private List<E2EFlowEvidence> Flows(string? environmentId)

@@ -27,7 +27,7 @@ public sealed record AiCodeReviewOutcome(AiCodeReviewResult? Result, int Status,
 /// Runs the Code Risk Review over Source Analysis snapshots through the shared source-evidence provider (no upload, no rescan),
 /// stores each run bound to its exact current/baseline snapshot ids, and lists history without re-binding a run to newer snapshots.
 /// </summary>
-public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources) : IAiCodeReviewService
+public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources, SourceRepositoryAssociationService? associations = null) : IAiCodeReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -37,6 +37,7 @@ public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidencePr
         var list = await sources.ListAsync("", ct);
         return new ReviewSourceOptions
         {
+            RepositoryAssociations = associations is null ? [] : [.. await associations.ActiveAsync(ct)],
             Snapshots = ReviewSourceEvidenceProvider.Describe(list, s => s.CodeRiskEvidence is null
                 ? new ConsumerSourceEvidence(false, "Analyzed before code-risk observations existed: source-level rules are not assessed until the source is analyzed again.")
                 : new ConsumerSourceEvidence(true, null, $"{s.CodeRiskEvidence.ProductionFiles} production / {s.CodeRiskEvidence.TestFiles} test C# file(s)")),
@@ -58,9 +59,12 @@ public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidencePr
             baseline = await sources.ResolveAsync("", baselineId, ct);
             if (baseline is null) return AiCodeReviewOutcome.Fail(404, "The selected baseline snapshot is unavailable; nothing is substituted.");
             // Never compare against an unrelated project: the same repository identity, or the reviewer's explicit declaration (recorded as declared).
-            (relation, var refused) = BaselineEligibility.Validate(ReviewSourceEvidenceProvider.Identity(current), ReviewSourceEvidenceProvider.Identity(baseline),
-                request.BaselineSameRepositoryConfirmed);
+            var (currentId, baselineIdentity) = (ReviewSourceEvidenceProvider.Identity(current), ReviewSourceEvidenceProvider.Identity(baseline));
+            var remembered = associations is null ? null : await associations.FindAsync(currentId.Key, baselineIdentity.Key, ct);
+            (relation, var refused) = BaselineEligibility.Validate(currentId, baselineIdentity, request.BaselineSameRepositoryConfirmed, remembered);
             if (refused is not null) return AiCodeReviewOutcome.Fail(400, refused);
+            if (relation is { Kind: BaselineRelationKind.DeclaredByReviewer } && remembered is null && request.RememberRepositoryAssociation && associations is not null)
+                await associations.DeclareAsync(new(currentId.Key, currentId.DisplayName, baselineIdentity.Key, baselineIdentity.DisplayName), "local user", ct);
         }
         var result = AiCodeReviewEngine.Review(current, baseline, request, DateTimeOffset.UtcNow, ct) with { BaselineRelation = relation };
         // Dependency evidence is owned by Dependency Review: its stored runs are consumed (never re-run or re-imported here).

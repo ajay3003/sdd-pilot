@@ -2039,6 +2039,69 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("setup_library_versions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.SourceRepositoryAssociationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("DeclaredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("declared_at");
+
+                    b.Property<string>("DeclaredBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("declared_by");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("RepositoryA")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository_a");
+
+                    b.Property<string>("RepositoryB")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository_b");
+
+                    b.Property<string>("RepositoryKeyA")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository_key_a");
+
+                    b.Property<string>("RepositoryKeyB")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("repository_key_b");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("RevokedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("revoked_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryKeyA", "RepositoryKeyB")
+                        .HasDatabaseName("ix_source_repository_associations_keys");
+
+                    b.ToTable("source_repository_associations", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>
                 {
                     b.Property<Guid>("SnapshotId")

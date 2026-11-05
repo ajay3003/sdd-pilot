@@ -56,7 +56,8 @@
                     </select>
                 </label>
             </div>
-            <BaselineEligibilityNote Snapshots="Snapshots" Current="CurrentSnapshot" Selected="_baselineId" @bind-Confirmed="_baselineConfirmed" TestId="tco-baseline-note" />
+            <BaselineEligibilityNote Snapshots="Snapshots" Current="CurrentSnapshot" Selected="_baselineId" @bind-Confirmed="_baselineConfirmed" @bind-Remember="_rememberAssociation"
+                                     Associations="Associations" AssociationRevoked="AssociationRevoked" TestId="tco-baseline-note" />
             @if (CurrentSnapshot is { HasConsumerEvidence: false } stale)
             {
                 <p class="tco-notice" role="status" data-testid="tco-snapshot-old">@stale.ConsumerEvidenceNote</p>
@@ -451,7 +452,17 @@
     private ReviewSourceSnapshot? CurrentSnapshot => Snapshots.FirstOrDefault(s => s.SnapshotId == _currentId);
     /// <summary>Every other snapshot as a baseline candidate (shared rule): same repository identity, or another identity that needs the reviewer's
     /// explicit confirmation. Nothing is hidden by name similarity.</summary>
-    private IReadOnlyList<BirkNext.SourceEvidence.BaselineCandidate> Candidates => BirkNext.SourceEvidence.BaselineEligibility.For(Snapshots, CurrentSnapshot);
+    private IReadOnlyList<BirkNext.SourceEvidence.BaselineCandidate> Candidates => BirkNext.SourceEvidence.BaselineEligibility.For(Snapshots, CurrentSnapshot, Associations);
+    private IReadOnlyList<BirkNext.SourceEvidence.SourceRepositoryAssociation> Associations => _sources?.RepositoryAssociations ?? [];
+    private bool _rememberAssociation;
+
+    /// <summary>A forgotten declaration leaves the options at once; a baseline it made eligible needs a confirmation again.</summary>
+    private void AssociationRevoked(Guid id)
+    {
+        if (_sources is null) return;
+        _sources = _sources with { RepositoryAssociations = [.. _sources.RepositoryAssociations.Where(a => a.Id != id)] };
+        _baselineConfirmed = false;
+    }
     private List<ReviewSourceSnapshot> BaselineOptions => [.. Candidates.Select(c => c.Snapshot)];
     private bool _baselineConfirmed;
     private bool BaselineNeedsConfirmation => Candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == _baselineId) is { NeedsConfirmation: true } && !_baselineConfirmed;
@@ -520,7 +531,7 @@
             var context = Services.GetService<IReviewContextProvider>()?.GetCurrent();
             await LoadSpecificationAsync(_cts.Token);
             var evidence = P.WorkspaceEvidence(Workspace, context, _projectName, _specification);
-            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, BaselineSameRepositoryConfirmed = _baselineConfirmed, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
+            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, BaselineSameRepositoryConfirmed = _baselineConfirmed, RememberRepositoryAssociation = _baselineConfirmed && _rememberAssociation, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
             if (result is null) { _runError = error ?? "The review could not be run."; return; }
             _result = result; _view = "overview";
             _history = await Api.HistoryAsync(_cts.Token);

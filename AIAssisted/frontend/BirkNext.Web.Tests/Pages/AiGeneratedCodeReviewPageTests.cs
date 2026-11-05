@@ -137,6 +137,30 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
     }
 
     [Fact]
+    public void A_remembered_declaration_is_shown_as_declared_and_can_be_forgotten()
+    {
+        var declared = new SourceRepositoryAssociation(Guid.NewGuid(), "shop", "Shop", "shop-language", "Shop-language", "test.lead", DateTimeOffset.UnixEpoch, null);
+        _api.Setup(x => x.SourcesAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new ReviewSourceOptions
+        {
+            Snapshots = [Snap(Current, "Shop", 0, true), Snap(Other, "Shop-language", 1, true)], RepositoryAssociations = [declared],
+        }, (string?)null));
+        var revoke = new Mock<ISourceRepositoryAssociationApiService>();
+        revoke.Setup(r => r.RevokeAsync(declared.Id, It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        Services.AddSingleton(revoke.Object);
+        var cut = Render<AiGeneratedCodeReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=aic-baseline]"));
+
+        cut.Find("[data-testid=aic-baseline] optgroup[label='Same repository']").TextContent.Should().Contain("Shop-language", "a remembered declaration makes it eligible");
+        cut.Find("[data-testid=aic-baseline]").Change(Other.ToString());
+        cut.Find("[data-testid=aic-baseline-note-remembered]").TextContent.Should().Contain("Declared by test.lead").And.Contain("not detected");
+        cut.Find("[data-testid=aic-run]").HasAttribute("disabled").Should().BeFalse("no per-run confirmation is needed for a remembered declaration");
+
+        cut.Find("[data-testid=aic-baseline-note-forget]").Click();
+        revoke.Verify(r => r.RevokeAsync(declared.Id, It.IsAny<CancellationToken>()), Times.Once());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=aic-run]").HasAttribute("disabled").Should().BeTrue("after forgetting, the relation needs a confirmation again"));
+    }
+
+    [Fact]
     public void A_snapshot_without_code_risk_evidence_is_flagged_as_needing_reanalysis()
     {
         Sources(Snap(Current, "Shop", 0, true, evidence: false));

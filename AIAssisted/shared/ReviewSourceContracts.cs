@@ -64,24 +64,47 @@ public enum BaselineRelationKind { SameRepositoryIdentity, DeclaredByReviewer }
 /// <summary>How the baseline of a stored result relates to its current snapshot (provenance of the comparison).</summary>
 public sealed record BaselineRelation(BaselineRelationKind Kind, string Explanation);
 
-/// <summary>One possible baseline for the current snapshot: eligible as is, or only after the reviewer confirms the repositories are the same.</summary>
+/// <summary>
+/// A reviewer's remembered declaration that two repository identities are versions of the same repository (e.g. a feature-branch ZIP and the main
+/// ZIP). Never detected and never inferred from names: it exists only because a person declared it, with who and when. Revoking it ends it for
+/// future comparisons; results recorded with it keep their relation.
+/// </summary>
+public sealed record SourceRepositoryAssociation(Guid Id, string RepositoryKeyA, string RepositoryA, string RepositoryKeyB, string RepositoryB, string DeclaredBy,
+    DateTimeOffset DeclaredAt, string? Note)
+{
+    public bool Links(string keyA, string keyB) =>
+        (string.Equals(RepositoryKeyA, keyA, StringComparison.Ordinal) && string.Equals(RepositoryKeyB, keyB, StringComparison.Ordinal))
+        || (string.Equals(RepositoryKeyA, keyB, StringComparison.Ordinal) && string.Equals(RepositoryKeyB, keyA, StringComparison.Ordinal));
+
+    public string Explanation => $"Declared by {DeclaredBy} on {DeclaredAt.UtcDateTime:yyyy-MM-dd}: {RepositoryA} and {RepositoryB} are versions of the same repository (remembered; not detected — their repository identities differ).";
+}
+
+public sealed record DeclareRepositoryAssociationRequest(string RepositoryKeyA, string RepositoryA, string RepositoryKeyB, string RepositoryB, string? Note = null);
+
+/// <summary>One possible baseline for the current snapshot: eligible as is (same identity, or a remembered declaration), or only after the reviewer
+/// confirms the repositories are the same.</summary>
 public sealed record BaselineCandidate(ReviewSourceSnapshot Snapshot, bool Eligible, string Reason)
 {
     public bool NeedsConfirmation => !Eligible;
+    /// <summary>The remembered declaration that makes a different identity eligible (null for the same identity or an unconfirmed one).</summary>
+    public SourceRepositoryAssociation? Association { get; init; }
 }
 
 public static class BaselineEligibility
 {
     /// <summary>Every other snapshot as a baseline candidate: same repository identity first (newest first), then the others with the reason they need
     /// confirmation. Nothing is filtered out silently.</summary>
-    public static IReadOnlyList<BaselineCandidate> For(IReadOnlyList<ReviewSourceSnapshot> snapshots, ReviewSourceSnapshot? current)
+    public static IReadOnlyList<BaselineCandidate> For(IReadOnlyList<ReviewSourceSnapshot> snapshots, ReviewSourceSnapshot? current,
+        IReadOnlyList<SourceRepositoryAssociation>? associations = null)
     {
         if (current is null) return [];
         return [.. snapshots.Where(s => s.SnapshotId != current.SnapshotId)
             .Select(s => s.RepositoryKey == current.RepositoryKey
                 ? new BaselineCandidate(s, true, $"Same repository identity ({s.Repository}; {s.IdentityBasis.ToLowerInvariant()}).")
-                : new BaselineCandidate(s, false, $"Different repository identity: {s.Repository} ({s.IdentityBasis.ToLowerInvariant()}) vs {current.Repository}. Compare only if both are versions of the same repository — you must confirm that explicitly; similar names are never treated as the same repository."))
-            .OrderByDescending(c => c.Eligible).ThenByDescending(c => c.Snapshot.AnalyzedAt)];
+                : (associations ?? []).FirstOrDefault(a => a.Links(s.RepositoryKey, current.RepositoryKey)) is { } remembered
+                    ? new BaselineCandidate(s, true, remembered.Explanation) { Association = remembered }
+                    : new BaselineCandidate(s, false, $"Different repository identity: {s.Repository} ({s.IdentityBasis.ToLowerInvariant()}) vs {current.Repository}. Compare only if both are versions of the same repository — you must confirm that explicitly; similar names are never treated as the same repository."))
+            .OrderByDescending(c => c.Eligible && c.Association is null).ThenByDescending(c => c.Eligible).ThenByDescending(c => c.Snapshot.AnalyzedAt)];
     }
 
     /// <summary>Why no baseline can be chosen at all (null when at least one candidate exists).</summary>
@@ -92,9 +115,12 @@ public static class BaselineEligibility
 
     /// <summary>The relation of a requested baseline to the current snapshot, or the reason it is refused. A different identity is accepted only with the
     /// reviewer's explicit confirmation, and is then recorded as declared.</summary>
-    public static (BaselineRelation? Relation, string? Error) Validate(SourceRepositoryIdentity current, SourceRepositoryIdentity baseline, bool confirmedSameRepository) =>
+    public static (BaselineRelation? Relation, string? Error) Validate(SourceRepositoryIdentity current, SourceRepositoryIdentity baseline, bool confirmedSameRepository,
+        SourceRepositoryAssociation? remembered = null) =>
         baseline.Key == current.Key
             ? (new(BaselineRelationKind.SameRepositoryIdentity, $"Same repository identity ({current.DisplayName}; {current.Basis.ToLowerInvariant()})."), null)
+            : remembered is not null && remembered.Links(current.Key, baseline.Key)
+                ? (new(BaselineRelationKind.DeclaredByReviewer, remembered.Explanation), null)
             : confirmedSameRepository
                 ? (new(BaselineRelationKind.DeclaredByReviewer,
                     $"Declared by the reviewer: {baseline.DisplayName} and {current.DisplayName} are versions of the same repository. Not detected — their repository identities differ."), null)
@@ -167,7 +193,9 @@ public record ReviewSourceOptions
     public bool SourceAnalysisEnabled { get; init; } = true;
     public List<ReviewSourceSnapshot> Snapshots { get; init; } = [];
     public List<RelatedSourceCandidate> Candidates { get; init; } = [];
-    public ReviewSourceScope? Scope { get; init; }
+    public ReviewSourceScope? Scope { get; init; }
+    /// <summary>Remembered repository declarations (active only) — what makes a different identity an eligible baseline.</summary>
+    public List<SourceRepositoryAssociation> RepositoryAssociations { get; init; } = [];
     /// <summary>Newer snapshots of the scope's repositories. Shown, never switched to automatically.</summary>
     public List<ReviewSourceSnapshot> Newer { get; init; } = [];
     public string? Error { get; init; }

@@ -206,6 +206,21 @@ public class TestCoverageDecisionRecord
     public DateTimeOffset DecidedAt { get; set; }
 }
 
+/// <summary>A reviewer's remembered "same repository" declaration between two repository identities. Never deleted: revoking sets RevokedAt.</summary>
+public class SourceRepositoryAssociationRecord
+{
+    public Guid Id { get; set; }
+    public string RepositoryKeyA { get; set; } = string.Empty;
+    public string RepositoryA { get; set; } = string.Empty;
+    public string RepositoryKeyB { get; set; } = string.Empty;
+    public string RepositoryB { get; set; } = string.Empty;
+    public string DeclaredBy { get; set; } = string.Empty;
+    public DateTimeOffset DeclaredAt { get; set; }
+    public string? Note { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+    public string? RevokedBy { get; set; }
+}
+
 public class AiCodeReviewRunRecord
 {
     public Guid Id { get; set; }

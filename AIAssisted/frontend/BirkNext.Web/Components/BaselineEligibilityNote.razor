@@ -1,8 +1,10 @@
 @using BirkNext.SourceEvidence
+@inject IServiceProvider Services
 
 @* The shared baseline explanation for every change/drift review: why no baseline can be chosen, which snapshots are of another repository identity
    (listed, never hidden), and — when such a snapshot is selected — the explicit confirmation that both are versions of the same repository. The
-   confirmation is sent with the run and recorded with the result as declared, not detected. *@
+   confirmation is sent with the run and recorded with the result as declared, not detected; it can be remembered for future comparisons and
+   revoked again. *@
 <div class="ben" data-testid="@TestId">
     @if (BaselineEligibility.Unavailable(Snapshots, Current) is { } unavailable)
     {
@@ -10,19 +12,30 @@
     }
     else
     {
-        var candidates = BaselineEligibility.For(Snapshots, Current);
+        var candidates = Candidates;
         var others = candidates.Where(c => c.NeedsConfirmation).ToList();
-        @if (candidates.All(c => c.NeedsConfirmation))
+        @if (candidates.All(c => c.NeedsConfirmation || c.Association is not null))
         {
             <p class="ben-muted" data-testid="@($"{TestId}-none-eligible")">No other snapshot of this repository identity (@Current!.Repository) is analyzed. Snapshots of other repositories are listed under
                 “Other repositories — confirm first”.</p>
         }
-        @if (Candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == Selected) is { NeedsConfirmation: true } chosen)
+        @if (candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == Selected) is { } chosen && chosen.Association is { } remembered)
+        {
+            <div class="ben-remembered" role="group" aria-label="Remembered repository declaration" data-testid="@($"{TestId}-remembered")">
+                <p><strong>Remembered declaration.</strong> @remembered.Explanation</p>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_revoking" data-testid="@($"{TestId}-forget")" @onclick="() => ForgetAsync(remembered)">
+                    @(_revoking ? "Forgetting…" : "Forget this declaration")</button>
+                @if (_error is not null) { <p class="ben-error" role="alert">@_error</p> }
+            </div>
+        }
+        else if (candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == Selected) is { NeedsConfirmation: true } unconfirmed)
         {
             <div class="ben-confirm" role="group" aria-labelledby="@($"{TestId}-confirm-h")" data-testid="@($"{TestId}-confirm")">
-                <p id="@($"{TestId}-confirm-h")"><strong>Confirm the repository relation.</strong> @chosen.Reason</p>
+                <p id="@($"{TestId}-confirm-h")"><strong>Confirm the repository relation.</strong> @unconfirmed.Reason</p>
                 <label><input type="checkbox" checked="@Confirmed" @onchange="e => ConfirmedChanged.InvokeAsync((bool)e.Value!)" data-testid="@($"{TestId}-confirm-check")" />
-                    @chosen.Snapshot.Repository and @Current!.Repository are versions of the same repository (for example a feature branch and main).</label>
+                    @unconfirmed.Snapshot.Repository and @Current!.Repository are versions of the same repository (for example a feature branch and main).</label>
+                <label><input type="checkbox" checked="@Remember" disabled="@(!Confirmed)" @onchange="e => RememberChanged.InvokeAsync((bool)e.Value!)" data-testid="@($"{TestId}-remember")" />
+                    Remember for future comparisons (recorded with who and when; you can forget it later)</label>
                 <p class="ben-muted">Recorded with the result as declared by you — not detected. Without this confirmation the review cannot run with this baseline.</p>
             </div>
         }
@@ -42,7 +55,25 @@
     [Parameter] public Guid? Selected { get; set; }
     [Parameter] public bool Confirmed { get; set; }
     [Parameter] public EventCallback<bool> ConfirmedChanged { get; set; }
+    [Parameter] public bool Remember { get; set; }
+    [Parameter] public EventCallback<bool> RememberChanged { get; set; }
+    /// <summary>Remembered declarations (from the review's source options).</summary>
+    [Parameter] public IReadOnlyList<SourceRepositoryAssociation> Associations { get; set; } = [];
+    /// <summary>Raised with the id of a declaration that was revoked, so the page can drop it from its options.</summary>
+    [Parameter] public EventCallback<Guid> AssociationRevoked { get; set; }
     [Parameter] public string TestId { get; set; } = "baseline-note";
 
-    private IReadOnlyList<BaselineCandidate> Candidates => BaselineEligibility.For(Snapshots, Current);
+    private bool _revoking;
+    private string? _error;
+
+    private IReadOnlyList<BaselineCandidate> Candidates => BaselineEligibility.For(Snapshots, Current, Associations);
+
+    private async Task ForgetAsync(SourceRepositoryAssociation association)
+    {
+        if (Services.GetService(typeof(ISourceRepositoryAssociationApiService)) is not ISourceRepositoryAssociationApiService api) { _error = "Revoking is not available in this host."; return; }
+        (_revoking, _error) = (true, null);
+        _error = await api.RevokeAsync(association.Id);
+        _revoking = false;
+        if (_error is null) await AssociationRevoked.InvokeAsync(association.Id);
+    }
 }

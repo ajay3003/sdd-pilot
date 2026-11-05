@@ -4,4 +4,6 @@
 .ben-confirm { border: 1px solid var(--clr-warning); border-radius: 6px; padding: .5rem .75rem; display: grid; gap: .375rem; background: var(--clr-surface); }
 .ben-confirm label { display: flex; gap: .5rem; align-items: flex-start; }
 .ben-others summary { cursor: pointer; color: var(--clr-text-muted); }
+.ben-remembered { border: 1px solid var(--clr-border); border-radius: 6px; padding: .5rem .75rem; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: space-between; }
+.ben-error { color: var(--clr-danger); }
 .ben-others ul { margin: .375rem 0 0; padding-left: 1.25rem; display: grid; gap: .25rem; }

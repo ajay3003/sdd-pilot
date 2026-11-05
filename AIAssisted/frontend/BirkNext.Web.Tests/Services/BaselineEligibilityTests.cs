@@ -64,4 +64,20 @@ public sealed class BaselineEligibilityTests
         ReviewSourceDefaults.Current(services, [common, main with { HasConsumerEvidence = false }]).Should().Be(common.SnapshotId,
             "a main package without the review's evidence is not forced as the default");
     }
+
+    [Fact]
+    public void A_remembered_declaration_makes_the_other_identity_eligible_and_says_it_is_declared()
+    {
+        var feature = S("M2LB-language", 0);
+        var main = S("M2LB", 2);
+        var declared = new SourceRepositoryAssociation(Guid.NewGuid(), "m2lb", "M2LB", "m2lb-language", "M2LB-language", "test.lead", DateTimeOffset.UnixEpoch, null);
+
+        var candidate = BaselineEligibility.For([feature, main], feature, [declared]).Single();
+
+        candidate.Eligible.Should().BeTrue();
+        candidate.Association.Should().Be(declared);
+        candidate.Reason.Should().Contain("Declared by test.lead").And.Contain("not detected");
+        BaselineEligibility.Validate(new("m2lb-language", "M2LB-language", "Import repository"), new("m2lb", "M2LB", "Import repository"), false, declared)
+            .Relation!.Kind.Should().Be(BaselineRelationKind.DeclaredByReviewer);
+    }
 }

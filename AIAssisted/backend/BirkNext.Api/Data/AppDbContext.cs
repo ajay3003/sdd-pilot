@@ -42,6 +42,7 @@ public class AppDbContext : DbContext
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
     public DbSet<AiCodeReviewRunRecord> AiCodeReviewRuns => Set<AiCodeReviewRunRecord>();
+    public DbSet<SourceRepositoryAssociationRecord> SourceRepositoryAssociations => Set<SourceRepositoryAssociationRecord>();
     public DbSet<TestCoverageReviewRunRecord> TestCoverageReviewRuns => Set<TestCoverageReviewRunRecord>();
     public DbSet<TestCoverageDecisionRecord> TestCoverageDecisions => Set<TestCoverageDecisionRecord>();
     public DbSet<PerformanceTestDefinitionRecord> PerformanceTestDefinitions => Set<PerformanceTestDefinitionRecord>();
@@ -922,6 +923,23 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Note).HasColumnName("note").HasMaxLength(500);
             entity.Property(r => r.DecidedAt).HasColumnName("decided_at");
             entity.HasIndex(r => new { r.RepositoryKey, r.Kind, r.SubjectKey }).HasDatabaseName("ix_test_coverage_decisions_subject");
+        });
+
+        modelBuilder.Entity<SourceRepositoryAssociationRecord>(entity =>
+        {
+            entity.ToTable("source_repository_associations");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.RepositoryKeyA).HasColumnName("repository_key_a").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.RepositoryA).HasColumnName("repository_a").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.RepositoryKeyB).HasColumnName("repository_key_b").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.RepositoryB).HasColumnName("repository_b").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.DeclaredBy).HasColumnName("declared_by").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.DeclaredAt).HasColumnName("declared_at");
+            entity.Property(r => r.Note).HasColumnName("note").HasMaxLength(1000);
+            entity.Property(r => r.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(r => r.RevokedBy).HasColumnName("revoked_by").HasMaxLength(200);
+            entity.HasIndex(r => new { r.RepositoryKeyA, r.RepositoryKeyB }).HasDatabaseName("ix_source_repository_associations_keys");
         });
 
         modelBuilder.Entity<AiCodeReviewRunRecord>(entity =>

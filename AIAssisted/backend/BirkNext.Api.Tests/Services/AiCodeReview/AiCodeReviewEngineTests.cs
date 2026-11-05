@@ -119,6 +119,37 @@ public sealed class AiCodeReviewEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task A_remembered_repository_declaration_makes_another_identity_a_baseline_until_it_is_revoked()
+    {
+        var (_, current) = await SnapshotsAsync();
+        var other = await AiCodeReviewFixture.AnalyzeAsync(_db, "other-repo.zip", AiCodeReviewFixture.Zip(("Other/Other.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />"), ("Other/A.cs", "namespace Other; class A {}")));
+        var associations = new BirkNext.Api.Services.SourceAnalysis.SourceRepositoryAssociationService(_db);
+        var service = new AiCodeReviewService(_db, new ReviewSourceEvidenceProvider(new IqrSourceStore(_db)), associations);
+
+        // Confirmed once with "remember": the declaration is stored with who and when.
+        var first = await service.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = current.Id, BaselineSnapshotId = other.Id, BaselineSameRepositoryConfirmed = true, RememberRepositoryAssociation = true });
+        first.Status.Should().Be(200);
+        var stored = (await associations.ActiveAsync()).Should().ContainSingle().Subject;
+        stored.DeclaredBy.Should().Be("local user");
+        (await service.SourcesAsync()).RepositoryAssociations.Should().ContainSingle(a => a.Id == stored.Id, "pickers receive the remembered declarations");
+
+        // Later runs need no confirmation; the relation says remembered and not detected.
+        var later = await service.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = current.Id, BaselineSnapshotId = other.Id });
+        later.Status.Should().Be(200);
+        later.Result!.BaselineRelation!.Explanation.Should().Contain("remembered").And.Contain("not detected");
+
+        // Declaring again is idempotent; the same identity twice is refused.
+        (await associations.DeclareAsync(new(stored.RepositoryKeyB, stored.RepositoryB, stored.RepositoryKeyA, stored.RepositoryA), "x")).Association!.Id.Should().Be(stored.Id);
+        (await associations.DeclareAsync(new("same", "Same", "same", "Same"), "x")).Error.Should().Contain("same repository identity");
+
+        // Revoked: never deleted, and comparisons need a confirmation again.
+        (await associations.RevokeAsync(stored.Id, "test.lead")).Should().BeTrue();
+        _db.SourceRepositoryAssociations.Single(r => r.Id == stored.Id).RevokedBy.Should().Be("test.lead");
+        (await service.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = current.Id, BaselineSnapshotId = other.Id })).Status.Should().Be(400);
+        (await service.GetAsync(later.Result.RunId))!.BaselineRelation!.Explanation.Should().Contain("remembered", "results recorded with the declaration keep their relation");
+    }
+
+    [Fact]
     public async Task Change_review_handles_the_same_operation_key_occurring_several_times()
     {
         // Real M2LB data: several services each map "GET /" (minimal API), so one operation key occurs several times. The change review crashed
