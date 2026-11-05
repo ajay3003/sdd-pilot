@@ -338,6 +338,12 @@ builder.Services.AddHttpClient<ITestCoverageApiService, TestCoverageApiService>(
 var activeEventsClient = builder.Services.AddHttpClient<IActiveEventsApiService, ActiveEventsApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     activeEventsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Test Data catalog, XML fixtures and approvals. Registered (not only resolved on demand): the XML fixture save, the automatic fixture draft after an
+// import and Security Classification ask the container for it — unregistered, the save said "Fixtures cannot be saved in this host." and the
+// automatic draft never ran.
+var testDataClient = builder.Services.AddHttpClient<ITestDataApiService, TestDataApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    testDataClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // IQR -> Integration journeys: one shared client for every journey pack; runs/history use the same execution permission and token pipeline.
 var journeysClient = builder.Services.AddHttpClient<IIntegrationJourneysApiService, IntegrationJourneysApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

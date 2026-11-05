@@ -758,7 +758,7 @@
         if (_package is null || _xml is null || _validation != "Valid" || _context is not { } context || CurrentXsd(context) is not { } xsd) return;
         if (Services.GetService(typeof(SchemaGeneratedXmlStore)) is not SchemaGeneratedXmlStore store
             || Services.GetService(typeof(IWorkspaceArtifactRepository)) is not IWorkspaceArtifactRepository repository)
-        { _error = "Fixtures cannot be saved in this host."; return; }
+        { _error = "The workspace is not loaded, so the fixture has nothing to be stored in. Open the project first; your XML is kept in the editor."; return; }
         _busy = true; _error = null;
         try
         {
@@ -773,7 +773,8 @@
             // regenerated, it is the next version of the one asset; the backend assigns the version and approval stays separate.
             if (context.CanonicalFixtureAlias is { } canonical && string.Equals(AsVersion ? _versionOf : _alias?.Trim(), canonical, StringComparison.Ordinal))
             {
-                if (Services.GetService(typeof(ITestDataApiService)) is not ITestDataApiService api) { _error = "Fixtures cannot be saved in this host."; return; }
+                // The same resolution every Test Data surface uses (registered client, else one built from the backend URL) — never a host-dependent refusal.
+                var api = TestDataApiService.Resolve(Services);
                 var builder = new SchemaGeneratedXmlStore();
                 var item = builder.Save(_package, xsd.File, "Test Data XML fixture", null, _xml, scope, null, facts);
                 var entry = builder.Register(item.Id, scope, canonical, "positive", _name?.Trim(), facts);

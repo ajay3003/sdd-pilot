@@ -841,8 +841,9 @@
     {
         if (_profile is null) return;
         IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> assets = [];
-        if (Services.GetService(typeof(ITestDataApiService)) is ITestDataApiService testData)
+        if (Services.GetService(typeof(ITestDataApiService)) is not null || Services.GetService(typeof(IHttpClientFactory)) is not null)
         {
+            var testData = TestDataApiService.Resolve(Services);
             try { assets = (await testData.CatalogAsync()).Catalog?.Assets ?? []; }
             catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { assets = []; }
         }

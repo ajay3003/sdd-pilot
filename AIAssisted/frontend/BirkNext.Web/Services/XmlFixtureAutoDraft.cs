@@ -27,12 +27,21 @@ public static class XmlFixtureAutoDraft
 {
     public const string GeneratorVersion = "Test Data XML fixture v2 · automatic after import";
 
+    /// <summary>The registered Test Data client, else the shared on-demand one (a host without a backend URL has none).</summary>
+    private static ITestDataApiService? ResolveTestData(IServiceProvider services)
+    {
+        if (services.GetService(typeof(ITestDataApiService)) is ITestDataApiService registered) return registered;
+        if (services.GetService(typeof(System.Net.Http.IHttpClientFactory)) is null) return null;
+        try { return TestDataApiService.Resolve(services); }
+        catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException or ArgumentException) { return null; }
+    }
+
     /// <param name="intoCurrentApplication">The import added evidence to the active application (not a new application): only then is its snapshot
     /// the Target Environment's evidence.</param>
     public static async Task<IReadOnlyList<XmlFixtureAutoDraftOutcome>> RunAsync(IServiceProvider services, Guid snapshotId, bool intoCurrentApplication, CancellationToken ct = default)
     {
         if (services.GetService(typeof(IIntegrationJourneysApiService)) is not IIntegrationJourneysApiService journeys
-            || services.GetService(typeof(ITestDataApiService)) is not ITestDataApiService testData)
+            || ResolveTestData(services) is not { } testData)
             return [];
         string? environmentId = null;
         if (services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
