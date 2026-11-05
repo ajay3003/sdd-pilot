@@ -70,7 +70,44 @@ public sealed record GitCommitInfo(string CommitSha, DateTimeOffset? CommittedAt
 public sealed record GitLinkImport(string CommitSha, string Branch, Guid? SnapshotId, string? ImportId, DateTimeOffset ImportedAt);
 
 /// <summary>The last explicit update check: the remote revision of the linked branch at that time (never imported by the check).</summary>
-public sealed record GitUpdateCheck(string? RemoteCommit, DateTimeOffset? RemoteCommittedAt, DateTimeOffset CheckedAt, bool UpdateAvailable, string? Problem = null);
+public sealed record GitUpdateCheck(string? RemoteCommit, DateTimeOffset? RemoteCommittedAt, DateTimeOffset CheckedAt, bool UpdateAvailable, string? Problem = null,
+    GitFailureKind? Failure = null);
+
+/// <summary>The outcome of "Check for updates" for one linked repository and branch (read-only: a check never imports, creates a snapshot,
+/// moves a pointer or changes an association). Revisions are compared by commit, never by timestamp.</summary>
+public enum GitUpdateState { NotChecked, UpToDate, UpdateAvailable, NotImported, UnableToCompare, BranchUnavailable, AuthenticationRequired, CheckFailed }
+
+public static class GitUpdateStates
+{
+    public static GitUpdateState Of(GitSourceLink link) => link.LastCheck switch
+    {
+        null => GitUpdateState.NotChecked,
+        { Failure: GitFailureKind.BranchNotFound or GitFailureKind.RevisionNotFound } => GitUpdateState.BranchUnavailable,
+        { Failure: GitFailureKind.SignInRequired or GitFailureKind.AccessDenied } => GitUpdateState.AuthenticationRequired,
+        { Failure: not null } or { Problem: not null } => GitUpdateState.CheckFailed,
+        { RemoteCommit: null } => GitUpdateState.UnableToCompare,
+        _ when link.LastImport is null => GitUpdateState.NotImported,
+        { UpdateAvailable: true } => GitUpdateState.UpdateAvailable,
+        _ => GitUpdateState.UpToDate,
+    };
+
+    public static string Label(GitUpdateState state) => state switch
+    {
+        GitUpdateState.NotChecked => "Not checked",
+        GitUpdateState.UpToDate => "Up to date",
+        GitUpdateState.UpdateAvailable => "Update available",
+        GitUpdateState.NotImported => "Not imported",
+        GitUpdateState.UnableToCompare => "Unable to compare",
+        GitUpdateState.BranchUnavailable => "Branch unavailable",
+        GitUpdateState.AuthenticationRequired => "Authentication required",
+        _ => "Check failed",
+    };
+
+    /// <summary>The commit an import should take: the one the last successful check reported (pinned, so a branch that moved since is never
+    /// imported silently), else the pinned commit, else null (the branch head at import time).</summary>
+    public static string? CommitToImport(GitSourceLink link) =>
+        link.PinnedCommit ?? (link.LastCheck is { RemoteCommit: { Length: 40 } checkedCommit, Failure: null, Problem: null } ? checkedCommit : null);
+}
 
 /// <summary>
 /// A repository linked to a BirkNext project. Identity = organization + Azure DevOps repository id (a rename keeps the link). Roles are the

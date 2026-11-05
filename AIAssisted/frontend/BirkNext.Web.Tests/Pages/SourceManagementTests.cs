@@ -64,7 +64,60 @@ public sealed class SourceManagementTests : BunitContext
         cut.Find("[data-testid=sm-updates]").TextContent.Should().Be("Not checked");
 
         cut.Find("[data-testid=sm-check]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=sm-updates]").TextContent.Should().Be("Update available (01234567)"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sm-updates]").TextContent.Should().Be("Not imported — remote 01234567", "never imported: not an update"));
+        _git.Verify(g => g.ImportAsync(It.IsAny<GitImportRequest>(), It.IsAny<CancellationToken>()), Times.Never(), "a check never imports");
+    }
+
+    [Theory]
+    [InlineData(null, null, false, null, false, GitUpdateState.NotChecked)]
+    [InlineData(Head, null, true, null, true, GitUpdateState.UpdateAvailable)]
+    [InlineData(Head, null, false, null, true, GitUpdateState.UpToDate)]
+    [InlineData(Head, null, true, null, false, GitUpdateState.NotImported)]
+    [InlineData(null, null, false, null, true, GitUpdateState.UnableToCompare)]
+    [InlineData(null, "Branch not found", false, GitFailureKind.BranchNotFound, true, GitUpdateState.BranchUnavailable)]
+    [InlineData(null, "Sign in", false, GitFailureKind.SignInRequired, true, GitUpdateState.AuthenticationRequired)]
+    [InlineData(null, "Throttled", false, GitFailureKind.Throttled, true, GitUpdateState.CheckFailed)]
+    public void Update_states_are_classified_by_commit_never_by_timestamp(string? remote, string? problem, bool update, GitFailureKind? failure, bool imported, GitUpdateState expected)
+    {
+        var link = Link with
+        {
+            LastCheck = remote is null && problem is null && failure is null && !imported && !update ? null : new GitUpdateCheck(remote, null, DateTimeOffset.UtcNow, update, problem, failure),
+            Imports = imported ? [new GitLinkImport("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "main", null, "import-1", DateTimeOffset.UtcNow)] : [],
+        };
+        GitUpdateStates.Of(link).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Import_takes_the_commit_the_check_reported_so_a_branch_that_moved_is_never_imported_silently()
+    {
+        var checkedLink = Link with { LastCheck = new GitUpdateCheck(Head, null, DateTimeOffset.UtcNow, true) };
+        GitUpdateStates.CommitToImport(checkedLink).Should().Be(Head);
+        GitUpdateStates.CommitToImport(Link).Should().BeNull("without a check the branch head at import time is taken — and the button says so");
+        GitUpdateStates.CommitToImport(checkedLink with { LastCheck = checkedLink.LastCheck with { Failure = GitFailureKind.Throttled, Problem = "x" } }).Should().BeNull();
+        GitUpdateStates.CommitToImport(checkedLink with { PinnedCommit = new string('b', 40) }).Should().Be(new string('b', 40), "a pinned commit always wins");
+
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[checkedLink], (string?)null));
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForElement("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-import-revision]").TextContent.Should().Be("Import revision 01234567");
+    }
+
+    [Fact]
+    public void Check_all_checks_every_linked_repository_read_only_and_reports_each_outcome()
+    {
+        var second = Link with { Id = "bufdir|r2", RepositoryId = "r2", Repository = "M2LB-language" };
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link, second], (string?)null));
+        _git.Setup(g => g.CheckAsync(Link.Id, "dev", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Link with { LastCheck = new GitUpdateCheck(Head, null, DateTimeOffset.UtcNow, true) }, (string?)null));
+        _git.Setup(g => g.CheckAsync(second.Id, "dev", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((second with { LastCheck = new GitUpdateCheck(null, null, DateTimeOffset.UtcNow, false, "Branch not found", GitFailureKind.BranchNotFound) }, (string?)null));
+        var cut = Render<SourceManagementPage>();
+
+        cut.WaitForElement("[data-testid=sm-check-all]").TextContent.Should().Contain("Check all linked repositories (2)");
+        cut.Find("[data-testid=sm-check-all]").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-bulk-row]").Select(r => r.GetAttribute("data-state")).Should().BeEquivalentTo(["NotImported", "BranchUnavailable"]));
+        cut.Find("[data-testid=sm-bulk-check]").TextContent.Should().Contain("nothing was imported, no snapshot was created");
         _git.Verify(g => g.ImportAsync(It.IsAny<GitImportRequest>(), It.IsAny<CancellationToken>()), Times.Never(), "a check never imports");
     }
 

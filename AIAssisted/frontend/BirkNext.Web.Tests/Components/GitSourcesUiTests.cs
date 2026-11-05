@@ -35,7 +35,8 @@ public sealed class GitSourcesUiTests : BunitContext
         var cut = Render<GitSourcesSettingsCard>();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=gss-state]").GetAttribute("data-state").Should().Be("Connected"));
-        cut.Find("[data-testid=gss-last-test]").TextContent.Should().Be("Not tested", "configured / signed in is not verified");
+        cut.Find("[data-testid=gss-last-test]").TextContent.Should().StartWith("Not verified yet — a Microsoft sign-in alone does not prove repository access",
+            "signed in to Microsoft is not Azure DevOps access");
         cut.Find("[data-testid=gss-org]").GetAttribute("value").Should().Be("https://dev.azure.com/bufdir");
         api.Verify(a => a.RepositoriesAsync(It.IsAny<CancellationToken>()), Times.Never(), "opening the section never contacts Azure DevOps");
         api.Verify(a => a.TestAsync(It.IsAny<CancellationToken>()), Times.Never());

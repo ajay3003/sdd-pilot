@@ -17,7 +17,10 @@
             <div><dt>Authentication</dt><dd>Microsoft Entra ID (delegated)</dd></div>
             <div><dt>Status</dt><dd data-testid="gss-state" data-state="@_status.State"><strong>@StateLabel(_status.State)</strong> — @_status.Message</dd></div>
             @if (_status.Account is not null) { <div><dt>Signed-in account</dt><dd data-testid="gss-account">@_status.Account</dd></div> }
-            <div><dt>Last Git test</dt><dd data-testid="gss-last-test">@(_status.LastTest is { } t ? $"{(t.Ready ? "Ready" : "Not ready")} · {t.TestedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "Not tested")</dd></div>
+            @* Signed in to Microsoft is not Azure DevOps access: only the explicit read-only test verifies the organization, projects and repositories. *@
+            <div><dt>Azure DevOps access</dt><dd data-testid="gss-last-test">@(_status.LastTest is { } t
+                ? $"{(t.Ready ? "Verified" : "Not verified")} by the read-only Git test · {t.TestedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC{(t.RepositoryCount is { } n ? $" · {n} repositor{(n == 1 ? "y" : "ies")} readable" : "")}"
+                : _status.State == GitConnectionState.Connected ? "Not verified yet — a Microsoft sign-in alone does not prove repository access; run Test Git connection" : "Not tested")</dd></div>
         </dl>
         @if (_status.Requirements.Count > 0)
         {
@@ -248,9 +251,9 @@
     private static string StateLabel(GitConnectionState s) => s switch
     {
         GitConnectionState.NotConfigured => "Not configured",
-        GitConnectionState.NotConnected => "Not connected",
-        GitConnectionState.SigningIn => "Signing in",
-        GitConnectionState.ReconnectRequired => "Reconnect required",
+        GitConnectionState.NotConnected => "Ready to connect",
+        GitConnectionState.SigningIn => "Connecting",
+        GitConnectionState.ReconnectRequired => "Authentication expired",
         GitConnectionState.Failed => "Connection failed",
         GitConnectionState.AwaitingDeviceCode => "Waiting for device-code sign-in",
         GitConnectionState.AccessDenied => "Azure DevOps access denied",

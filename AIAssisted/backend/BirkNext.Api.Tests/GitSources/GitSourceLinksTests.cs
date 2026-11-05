@@ -228,6 +228,9 @@ public sealed class GitSourceLinksTests : IDisposable
         var archiveCalls = http.Urls.Count(u => u.Contains("/items?"));
         var check = await service.CheckForUpdatesAsync(recorded.Id, "dev", default);
         check.LastCheck!.UpdateAvailable.Should().BeFalse("the imported commit is the branch head");
+        GitUpdateStates.Of(check).Should().Be(GitUpdateState.UpToDate);
+        check.LastCheck.Failure.Should().BeNull();
+        GitUpdateStates.CommitToImport(check).Should().Be(Head, "an import after a check takes exactly the checked commit");
         http.Urls.Count(u => u.Contains("/items?")).Should().Be(archiveCalls, "a check never downloads or imports");
 
         var pinned = await service.LinkAsync(new GitLinkRequest(Org, "r1", "main", Pinned, ["Infrastructure"], "dev", null), default);

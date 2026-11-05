@@ -129,7 +129,13 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         ]}
         """);
         var cut = Render<Component>();
-        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click();
+        // The settings load re-renders asynchronously: a chip found just before that re-render has a stale handler. Re-find it and retry the click
+        // only for that reason (never for an assertion failure).
+        for (var attempt = 0; ; attempt++)
+        {
+            try { cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click(); break; }
+            catch (Bunit.Rendering.UnknownEventHandlerIdException) when (attempt < 5) { }
+        }
         if (detect)
         {
             cut.Find("#target-tab-target").Click(); cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check target application").Click();

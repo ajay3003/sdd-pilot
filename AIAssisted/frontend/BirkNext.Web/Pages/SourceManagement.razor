@@ -40,6 +40,13 @@
                 <li data-testid="sm-summary-analysis" data-status="@group.Key"><strong>@group.Count()</strong> @group.Key.ToLowerInvariant()</li>
             }
         </ul>
+        @if (_links.Count > 0)
+        {
+            <p class="sm-bulk-actions"><button type="button" class="btn-secondary btn-sm" disabled="@(_checkingAll || _busy)" data-testid="sm-check-all" @onclick="CheckAllAsync">
+                @(_checkingAll ? "Checking…" : $"Check all linked repositories ({_links.Count})")</button>
+                <span class="sm-muted sm-small">Read-only: compares each branch's remote commit with the last imported one. Nothing is imported.</span></p>
+            @if (_bulkCheck is not null) { @BulkCheckTable() }
+        }
         <div class="sm-table-wrap">
             <table class="sm-table" data-testid="sm-table">
                 <thead><tr><th scope="col">Source</th><th scope="col">Origin</th><th scope="col">Capabilities</th><th scope="col">Associated applications</th><th scope="col">Current snapshot</th><th scope="col">Analysis status</th><th scope="col">Last updated</th></tr></thead>
@@ -174,7 +181,7 @@
                     @if (row.Link is { } link)
                     {
                         <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => CheckAsync(link)" data-testid="sm-check">Check for updates</button>
-                        <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ImportRevision(link)" data-testid="sm-import-revision">Import revision</button>
+                        <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => ImportRevision(link)" data-testid="sm-import-revision">@(GitUpdateStates.CommitToImport(link) is { } commit ? $"Import revision {commit[..8]}" : "Import branch head")</button>
                     }
                     else { <a class="btn-secondary btn-sm" href="project-import?import=1" data-testid="sm-upload-version">Upload new version</a> }
                     <button type="button" class="btn-secondary btn-sm" @onclick='() => _tab = "roles"' data-testid="sm-edit-roles">Manage roles</button>
@@ -266,13 +273,68 @@
 
     private static string Label(string role) => Enum.TryParse<PackageEvidenceRole>(role, out var r) ? ApplicationContexts.RoleLabel(r) : role;
 
-    private static string Updates(Row row) => row.Link switch
+    /// <summary>The shared update state (GitUpdateStates) in words, with the commit or the reason. Compared by commit, never by timestamp.</summary>
+    private static string Updates(Row row)
     {
-        null => "Upload a newer ZIP to update",
-        { LastCheck: { Problem: { } problem } } => problem,
-        { LastCheck: { UpdateAvailable: true } c } => $"Update available ({c.RemoteCommit?[..8]})",
-        { LastCheck: { } c } => $"Up to date ({c.CheckedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC)",
-        _ => "Not checked",
+        if (row.Link is not { } link) return "Upload a newer ZIP to update";
+        var state = GitUpdateStates.Of(link);
+        return state switch
+        {
+            GitUpdateState.UpdateAvailable => $"Update available ({link.LastCheck!.RemoteCommit?[..8]})",
+            GitUpdateState.UpToDate => $"Up to date ({link.LastCheck!.CheckedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC)",
+            GitUpdateState.NotImported => $"Not imported — remote {link.LastCheck!.RemoteCommit?[..8]}",
+            GitUpdateState.NotChecked => "Not checked",
+            _ => $"{GitUpdateStates.Label(state)}{(link.LastCheck?.Problem is { } problem ? $" — {problem}" : "")}",
+        };
+    }
+
+    // ── "Check all linked repositories": read-only, a few at a time; each row keeps its own outcome (partial success is normal) ───────────
+
+    private bool _checkingAll;
+    private IReadOnlyList<(GitSourceLink Link, string? Error)>? _bulkCheck;
+    private const int CheckConcurrency = 3;
+
+    private async Task CheckAllAsync()
+    {
+        if (Git is not { } git || _environmentId is null || _links.Count == 0) return;
+        (_checkingAll, _error, _bulkCheck) = (true, null, null);
+        var gate = new SemaphoreSlim(CheckConcurrency);
+        var results = await Task.WhenAll(_links.Select(async link =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                var (updated, error) = await git.CheckAsync(link.Id, _environmentId);
+                return (Link: updated ?? link, Error: updated is null ? error ?? "The check failed." : null);
+            }
+            finally { gate.Release(); }
+        }));
+        _links = [.. _links.Select(l => results.FirstOrDefault(r => r.Link.Id == l.Id) is { Link: { } r } && r.Id == l.Id ? r : l)];
+        _bulkCheck = results;
+        _checkingAll = false;
+        Build();
+    }
+
+    private RenderFragment BulkCheckTable() => __builder =>
+    {
+        <div class="sm-table-wrap" data-testid="sm-bulk-check">
+            <table class="sm-table">
+                <caption class="sm-muted sm-small">Checked @_bulkCheck!.Count linked repositor@(_bulkCheck.Count == 1 ? "y" : "ies") — nothing was imported, no snapshot was created.</caption>
+                <thead><tr><th scope="col">Azure DevOps project</th><th scope="col">Repository</th><th scope="col">Branch</th><th scope="col">Imported revision</th><th scope="col">Remote revision</th><th scope="col">Status</th></tr></thead>
+                <tbody>
+                    @foreach (var (link, error) in _bulkCheck)
+                    {
+                        var state = GitUpdateStates.Of(link);
+                        <tr data-testid="sm-bulk-row" data-state="@state">
+                            <td>@link.Project</td><th scope="row">@link.Repository</th><td>@(link.PinnedCommit is { } p ? $"commit {p[..8]}" : link.Branch)</td>
+                            <td>@(link.LastImport?.CommitSha is { } imported ? imported[..8] : "—")</td>
+                            <td>@(link.LastCheck?.RemoteCommit is { } remote ? remote[..8] : "—")</td>
+                            <td>@(error ?? GitUpdateStates.Label(state))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     };
 
     private async Task CheckAsync(GitSourceLink link)
@@ -290,8 +352,11 @@
     private void ImportRevision(GitSourceLink link)
     {
         if (Git is not { } git) return;
-        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = link.PinnedCommit };
-        _ = Session.StartGitPreviewAsync($"{link.Repository} @ {link.PinnedCommit?[..8] ?? link.Branch}", ct => git.ImportAsync(request, ct), null);
+        // The revision the person reviewed: the commit the last check reported (or the pinned one) — a branch that moved since is never imported
+        // silently; without a check, the branch head at import time (shown as the branch).
+        var commit = GitUpdateStates.CommitToImport(link);
+        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = commit };
+        _ = Session.StartGitPreviewAsync($"{link.Repository} @ {commit?[..8] ?? link.Branch}", ct => git.ImportAsync(request, ct), null);
         Nav.NavigateTo("project-import");
     }
 

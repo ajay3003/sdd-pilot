@@ -267,11 +267,11 @@ public sealed partial class GitSourcesService : IGitImportRecorder
             {
                 var branch = (await BranchesAsync(link.RepositoryId, ct, link.OrganizationUrl)).FirstOrDefault(b => b.Name == link.Branch);
                 check = branch is null
-                    ? new(null, null, _clock.GetUtcNow(), false, GitSourcePolicy.Describe(GitFailureKind.BranchNotFound))
+                    ? new(null, null, _clock.GetUtcNow(), false, GitSourcePolicy.Describe(GitFailureKind.BranchNotFound), GitFailureKind.BranchNotFound)
                     : new(branch.CommitSha, branch.CommittedAt, _clock.GetUtcNow(), link.LastImport?.CommitSha != branch.CommitSha);
             }
         }
-        catch (GitProviderException e) { check = new(null, null, _clock.GetUtcNow(), false, e.Message); }
+        catch (GitProviderException e) { check = new(null, null, _clock.GetUtcNow(), false, e.Message, e.Kind); }
         GitSourceLink? updated = null;
         store.Update(s => s with
         {
