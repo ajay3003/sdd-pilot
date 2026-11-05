@@ -530,6 +530,24 @@ public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName
 /// (the snapshot predates the area). Not a review result.</summary>
 public sealed record SourceSetupArea(string Area, string Status);
 
+/// <summary>
+/// A snapshot's analysis outcome over the areas it actually contains — the one rule the Snapshot Registry, Relationship Review and every other
+/// consumer share. An area that is not present (NotDetected) or was not run (NotAnalyzed) does not count: a Terraform repository without
+/// application code is not a failed analysis. Every present area complete → Completed; every present area failed → Failed; otherwise Partial (an
+/// Unsupported area is an analyzer limitation and keeps the outcome Partial, never Completed). Nothing present → Unknown.
+/// </summary>
+public static class SourceSetupOutcome
+{
+    public static BirkNext.Snapshots.SnapshotProcessingStatus Overall(IReadOnlyList<SourceSetupArea> areas)
+    {
+        var present = areas.Where(area => area.Status is not ("NotDetected" or "NotAnalyzed")).ToList();
+        if (present.Count == 0) return BirkNext.Snapshots.SnapshotProcessingStatus.Unknown;
+        if (present.All(area => area.Status == "Complete")) return BirkNext.Snapshots.SnapshotProcessingStatus.Completed;
+        if (present.All(area => area.Status == "Failed")) return BirkNext.Snapshots.SnapshotProcessingStatus.Failed;
+        return BirkNext.Snapshots.SnapshotProcessingStatus.Partial;
+    }
+}
+
 /// <summary>Source setup across every registered pack that declares logical sources, plus the stored snapshots they were matched against.
 /// Bindings are per target environment: without one, nothing reads as bound.</summary>
 public sealed record SourceSetupView

@@ -24,7 +24,7 @@ public sealed partial class CanonicalInterpretationService
         if (gate.InterpretationId is not { } latest)
         {
             dims.Add(new(ReadinessDimensionKey.ScopeClarity, "Scope", DimensionApplicability.Required, GateDecision.NotAssessed,
-                "Nothing is interpreted for this project yet, so the release scope is unknown.", [], "Interpret the project's Delivery and source snapshots in Correlation Review.", "correlation-review"));
+                "Nothing is interpreted for this project yet, so the release scope is unknown.", [], "Interpret the project's Delivery and source snapshots in Relationship Review.", "correlation-review"));
             return Assessment(scopeRef, dims, gate, []);
         }
 
@@ -73,7 +73,7 @@ public sealed partial class CanonicalInterpretationService
             storyIssues == 0 ? "Every task traces to a current story, group or shared work; no reference is ambiguous."
                 : $"{storyIssues} reference{(storyIssues == 1 ? "" : "s")} to fix or decide (removed or undefined stories, ambiguous ids).",
             Examples(GovernancePolicies.RemovedStory, GovernancePolicies.UnresolvedStory, GovernancePolicies.Ambiguity),
-            storyIssues == 0 ? null : "Fix story references in the tasks files; decide ambiguous references in Correlation Review.", "traceability"));
+            storyIssues == 0 ? null : "Fix story references in the tasks files; decide ambiguous references in Relationship Review.", "traceability"));
 
         var checkedTasks = tasks.Count(t => Attr(t.AttributesJson, "completed") == "true");
         var withCode = tasks.Count(t => implemented.Contains(t.Id));
@@ -95,13 +95,13 @@ public sealed partial class CanonicalInterpretationService
         dims.Add(new(ReadinessDimensionKey.Governance, "Governance", DimensionApplicability.Required, gate.Decision,
             $"{GovernancePolicies.DecisionLabel(gate.Decision)}: {gate.Reason}",
             [.. gate.Findings.Where(f => f.Level is FindingLevel.Blocking or FindingLevel.Warning).Select(f => $"{GovernancePolicies.LevelLabel(f.Level)} · {f.Finding.Title}{(f.Finding.Module is null ? "" : $" — {f.Finding.Module}")}")],
-            gate.Decision == GateDecision.Ready ? null : "Open the governance findings in Correlation Review.", "correlation-review"));
+            gate.Decision == GateDecision.Ready ? null : "Open the governance findings in Relationship Review.", "correlation-review"));
 
         var decisions = findings.Where(f => f.Owner == "Human review").Sum(f => f.Count);
         dims.Add(new(ReadinessDimensionKey.OpenDecisions, "Open review decisions", DimensionApplicability.Required,
             decisions == 0 ? GateDecision.Ready : GateDecision.ReadyWithLimitations,
             decisions == 0 ? "No review decision is open for this scope." : $"{decisions} decision{(decisions == 1 ? "" : "s")} waiting in the shared review queue.",
-            Examples(GovernancePolicies.IdentityConflict, GovernancePolicies.StaleAssociation), decisions == 0 ? null : "Answer them in Correlation Review.", "correlation-review"));
+            Examples(GovernancePolicies.IdentityConflict, GovernancePolicies.StaleAssociation), decisions == 0 ? null : "Answer them in Relationship Review.", "correlation-review"));
 
         // Execution evidence is owned by each review; this view does not read their runs yet and never invents a result.
         foreach (var (key, title, href) in new[]

@@ -295,7 +295,7 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
         cut.Find("[data-testid=fqs-test-relationship]").TextContent.Should().Contain("Explicitly linked").And.Contain("VERIFIES");
         cut.Find("[data-testid=fqs-test-execution]").TextContent.Should().Contain("not an executed test", "discovery is never execution");
         cut.Find("[data-testid=fqs-test-evidence]").TextContent.Should().Contain("RapportTests.cs");
-        cut.Find("[data-testid=fqs-review-readonly]").TextContent.Should().Contain("Correlation Review", "without the review service the test detail is read-only, not a dead button");
+        cut.Find("[data-testid=fqs-review-readonly]").TextContent.Should().Contain("Relationship Review", "without the review service the test detail is read-only, not a dead button");
 
         cut.Find("[data-testid=fqs-test-back]").Click();
         cut.Find("[data-testid=fqs-sec-tests]");

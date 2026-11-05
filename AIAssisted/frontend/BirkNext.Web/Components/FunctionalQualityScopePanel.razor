@@ -697,7 +697,7 @@
         (_history, _) = await review.DecisionsAsync(test.Scope, test.RelationKey);
     }
 
-    /// <summary>A decision goes to the shared canonical review registry (the same one Correlation Review uses); the item is then re-read, so coverage and
+    /// <summary>A decision goes to the shared canonical review registry (the same one Relationship Review uses); the item is then re-read, so coverage and
     /// the test's classification come from the registry — a rejected candidate never comes back as confirmed.</summary>
     private async Task DecideAsync(ScopeTestLink test, ReviewDecisionOutcome outcome)
     {
@@ -787,7 +787,7 @@
                     <nav class="fqs-links" aria-label="Related views">
                         <a href="artifact-traceability?q=@Uri.EscapeDataString(item.DisplayId)" data-testid="fqs-link-traceability">Traceability</a>
                         <a href="test-coverage-review?q=@Uri.EscapeDataString(item.DisplayId)" data-testid="fqs-link-coverage">Test coverage</a>
-                        <a href="correlation-review" data-testid="fqs-link-correlation">Correlation Review</a>
+                        <a href="correlation-review" data-testid="fqs-link-correlation">Relationship Review</a>
                         <a href="test-data" data-testid="fqs-link-testdata">Test Data</a>
                     </nav>
                 </details>
@@ -879,8 +879,8 @@
     {
         if (!d.TestsAssessed)
         {
-            <p class="fqs-muted" data-testid="fqs-tests-not-assessed">Not assessed@(d.Evidence is { Applied: false, Available.Count: > 1 } ? ": choose an evidence environment above — evidence from one environment never answers for another" : $": no canonical test interpretation exists for {ScopeFilterState.EnvironmentName(DetailEnvironment(d), _environmentNames)}, so the absence of tests here does not mean the item is untested. Interpret the Source Analysis snapshots in Correlation Review").</p>
-            <p><a href="correlation-review">Correlation Review</a></p>
+            <p class="fqs-muted" data-testid="fqs-tests-not-assessed">Not assessed@(d.Evidence is { Applied: false, Available.Count: > 1 } ? ": choose an evidence environment above — evidence from one environment never answers for another" : $": no canonical test interpretation exists for {ScopeFilterState.EnvironmentName(DetailEnvironment(d), _environmentNames)}, so the absence of tests here does not mean the item is untested. Interpret the Source Analysis snapshots in Relationship Review").</p>
+            <p><a href="correlation-review">Relationship Review</a></p>
             return;
         }
         if (d.Evidence is { CrossEnvironment: true }) { <p class="fqs-limit" data-testid="fqs-tests-cross-env">All environments, aggregated: each test shows its own environment. This list is not evidence from one environment.</p> }
@@ -952,7 +952,7 @@
             <h5 class="fqs-h5">Review</h5>
             @if (Review is null)
             {
-                <p class="fqs-muted" data-testid="fqs-review-readonly">Read-only here: review decisions are recorded in <a href="correlation-review">Correlation Review</a>.</p>
+                <p class="fqs-muted" data-testid="fqs-review-readonly">Read-only here: review decisions are recorded in <a href="correlation-review">Relationship Review</a>.</p>
             }
             else
             {
@@ -961,7 +961,7 @@
                     <button type="button" class="btn-secondary fqs-small-btn" disabled="@_deciding" data-testid="fqs-review-reject" @onclick="() => DecideAsync(t, ReviewDecisionOutcome.Rejected)">Reject</button>
                     <button type="button" class="btn-secondary fqs-small-btn" disabled="@_deciding" data-testid="fqs-review-defer" @onclick="() => DecideAsync(t, ReviewDecisionOutcome.Deferred)">Defer</button>
                 </div>
-                <p class="fqs-muted fqs-small">Recorded in the shared review registry (the same decisions Correlation Review shows).</p>
+                <p class="fqs-muted fqs-small">Recorded in the shared review registry (the same decisions Relationship Review shows).</p>
                 @if (_history.Count > 0)
                 {
                     <ol class="fqs-children" data-testid="fqs-review-history">

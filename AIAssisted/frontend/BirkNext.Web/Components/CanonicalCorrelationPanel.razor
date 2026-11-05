@@ -8,7 +8,7 @@
 <section class="ccp" data-testid="@TestId" aria-label="@Title">
     <header class="ccp-head">
         <h3 class="ccp-title">@Title</h3>
-        @if (Scope is not null) { <a class="ccp-link" href="correlation-review" data-testid="@($"{TestId}-open-review")">Open Correlation Review</a> }
+        @if (Scope is not null) { <a class="ccp-link" href="correlation-review" data-testid="@($"{TestId}-open-review")">Open Relationship Review</a> }
     </header>
 
     @if (Scope is null)
@@ -102,7 +102,7 @@
     [Parameter] public string? Path { get; set; }
     [Parameter] public int MaxEntities { get; set; } = 3;
     [Parameter] public int MaxRelations { get; set; } = 25;
-    [Parameter] public string Empty { get; set; } = "No canonical entity is recorded for this yet. Run an interpretation in Correlation Review.";
+    [Parameter] public string Empty { get; set; } = "No canonical entity is recorded for this yet. Run an interpretation in Relationship Review.";
     [Parameter] public string TestId { get; set; } = "ccp";
 
     private static readonly (string, string)[] Stages = [("entities", "Finding canonical entities"), ("relations", "Loading relations and reviews")];

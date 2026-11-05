@@ -159,7 +159,7 @@ public sealed partial class CanonicalInterpretationService
         var implemented = relations.Where(r => r.RelationType == "References" && r.RuleId == CorrelationRules.TaskSymbolRule && Established(r.Resolution, r.ReviewState))
             .Select(r => r.SourceEntityId).ToHashSet();
         var limitations = new List<string>();
-        if (current.Count == 0) limitations.Add("No feature packs are interpreted yet: interpret a Delivery snapshot together with the source snapshots (Correlation Review).");
+        if (current.Count == 0) limitations.Add("No feature packs are interpreted yet: interpret a Delivery snapshot together with the source snapshots (Relationship Review).");
         if (tasks.Count > 0 && implemented.Count == 0)
             limitations.Add("No task names a source type of its module yet (or the source was analyzed before declared types were recorded): implementation evidence is not linked.");
         // A feature pack counts when it contains work items (the same rule the feature list uses), so the two numbers always agree.

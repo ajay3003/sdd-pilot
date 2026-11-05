@@ -163,7 +163,7 @@
                     <details class="do-candidates" data-testid="do-scope-candidates">
                         <summary>@candidates.Count more feature@(candidates.Count == 1 ? "" : "s") may belong to this scope — awaiting review, not counted</summary>
                         <ul>@foreach (var c in candidates) { <li><strong>@c.Title</strong> — @c.Why</li> }</ul>
-                        <p><a href="correlation-review">Confirm or reject them in Correlation Review</a></p>
+                        <p><a href="correlation-review">Confirm or reject them in Relationship Review</a></p>
                     </details>
                 }
                 @if (_scopeView?.InterpretationNote is { } interpretationNote) { <p class="do-muted" data-testid="do-interpretation-note">@interpretationNote</p> }

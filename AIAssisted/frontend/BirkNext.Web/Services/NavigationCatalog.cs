@@ -135,8 +135,8 @@ public static class NavigationCatalog
             // Cross-cutting impact of requirement and source changes (off by default).
             new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis, Aliases: ["Unified Impact Analysis"]),
             // Shared canonical correlation: one review registry for aliases, capability candidates, contract versions and test VERIFIES links.
-            new("correlation-review", "Correlation Review", "nav-icon-traceability", Always,
-                Hint: "canonical entities, typed relations and the shared review decisions every module uses", Aliases: ["Canonical interpretation", "Aliases"]),
+            new("correlation-review", "Relationship Review", "nav-icon-traceability", Always,
+                Hint: "canonical entities, typed relations and the shared review decisions every module uses", Aliases: ["Correlation Review", "Canonical interpretation", "Aliases"]),
             // Test lead's release decision for a project or modules: dimensions, governance, frozen reports and sign-off.
             new("release-readiness", "Release Readiness", "nav-icon-traceability", Always,
                 Hint: "Ready / Ready with limitations / Blocked / Not assessed for a release scope, with reasons, frozen reports and sign-off",

@@ -488,7 +488,7 @@ public sealed partial class CanonicalInterpretationService(
         var latest = await db.Snapshots.AsNoTracking().Where(s => s.Scope == scope).OrderByDescending(s => s.CreatedAt).FirstOrDefaultAsync(ct);
         if (latest is null)
             return new(scope, null, null, [], new Dictionary<string, int>(), new Dictionary<string, int>(), 0, 0, 0, 0, new(0, 0, 0, 0, 0), [],
-                ["No canonical interpretation exists for this project yet (Correlation Review → Interpret)."]);
+                ["No canonical interpretation exists for this project yet (Relationship Review → Interpret)."]);
         var entities = await (from m in db.SnapshotEntities.AsNoTracking()
                               join e in db.Entities.AsNoTracking() on m.EntityId equals e.Id
                               where m.SnapshotId == latest.Id

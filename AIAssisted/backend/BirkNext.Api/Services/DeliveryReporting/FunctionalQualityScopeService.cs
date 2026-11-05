@@ -118,7 +118,7 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
 
     private static string CoverageLimitation(ScopeEvidenceContext evidence) => evidence switch
     {
-        { Available.Count: 0 } => "No canonical test evidence is interpreted yet: coverage is Not assessed (Correlation Review → Interpret the Source Analysis snapshots).",
+        { Available.Count: 0 } => "No canonical test evidence is interpreted yet: coverage is Not assessed (Relationship Review → Interpret the Source Analysis snapshots).",
         { Applied: false } => $"Test evidence is interpreted for {evidence.Available.Count} environments: choose an environment (or All environments, aggregated) to see coverage. " +
             "Evidence from one environment never answers for another.",
         _ => $"No canonical test evidence is interpreted for environment {evidence.Environment}: coverage is Not assessed there (other environments are not used in its place).",
@@ -277,7 +277,7 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
                     var established = r.ReviewState == nameof(RelationReviewState.Confirmed) || r.Resolution is nameof(RelationResolution.Explicit) or nameof(RelationResolution.Derived);
                     Add(new(module, ScopeRelation.RelatedCapability, established
                         ? $"Shares the capability \"{r.Capability}\" (confirmed canonical relation)"
-                        : $"Suggested: may share the capability \"{r.Capability}\" (candidate — confirm in Correlation Review or include items explicitly)", established));
+                        : $"Suggested: may share the capability \"{r.Capability}\" (candidate — confirm in Relationship Review or include items explicitly)", established));
                 }
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException) { /* canonical store unavailable: no capability relations */ }

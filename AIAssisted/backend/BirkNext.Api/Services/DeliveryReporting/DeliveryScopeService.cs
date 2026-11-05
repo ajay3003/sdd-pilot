@@ -59,7 +59,7 @@ public sealed class DeliveryScopeService(CanonicalInterpretationService? canonic
             {
                 canonicalScope = await canonical.ScopeOfDeliveryAsync([.. snapshotOrder.Distinct()], ct);
                 if (canonicalScope is null)
-                    note = "No canonical interpretation covers this Delivery project yet: capabilities and change intents appear after Correlation Review → Interpret with a Delivery snapshot.";
+                    note = "No canonical interpretation covers this Delivery project yet: capabilities and change intents appear after Relationship Review → Interpret with a Delivery snapshot.";
                 else
                 {
                     var identity = all.ToDictionary(f => CorrelationRules.FeatureIdentity(f.Module, f.FeatureKey), f => f, StringComparer.Ordinal);

@@ -151,20 +151,31 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
 
         var cut = Render<CorrelationReview>();
 
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-queue-item]").Should().ContainSingle());
-        cut.Find("[data-testid=cr-scope]").TextContent.Should().Contain("dev");
+        // Overview: the latest analysis and the source evidence; the queue, explorer and governance live in their own tabs.
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-sum-contracts]").TextContent.Should()
+            .Contain("70 logical").And.Contain("84 versions").And.Contain("81 distinct contents").And.Contain("88 occurrences"));
+        cut.Find("[data-testid=cr-sum-package]").TextContent.Should().Contain("Infrastructure").And.Contain("Contracts");
+        cut.Find("[data-testid=cr-scope]").TextContent.Should().Contain("Target Application:").And.Contain("Environment:");
+        cut.Find("[data-testid=cr-interpret-run]").TextContent.Should().Be("Analyze relationships");
+        cut.FindAll("[data-testid=cr-source]").Should().BeEmpty("the source list is a customization, the summary comes first");
+        cut.Find("[data-testid=cr-customize]").Click();
         cut.FindAll("[data-testid=cr-source]").Should().ContainSingle();
+
+        cut.Find("[data-testid=cr-tab-review]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-queue-item]").Should().ContainSingle());
+        cut.Find("[data-testid=cr-tab-review]").TextContent.Should().Be("Needs Review (1)");
         cut.Find("[data-testid=cr-queue-item]").GetAttribute("data-rule").Should().Be(CorrelationRules.TestScopeAmbiguityRule);
         cut.Find("[data-testid=cr-queue-item] .ssb-label").TextContent.Should().Be("Ambiguous");
         cut.Find("[data-testid=cr-decision-count]").TextContent.Should().Be("1 decision");
         cut.Find("[data-testid=cr-kind-suggestions]").TextContent.Should().Contain("1361");
         cut.Find("[data-testid=cr-affects]").TextContent.Should().Contain("Traceability").And.Contain("Test Coverage");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-sum-contracts]").TextContent.Should()
-            .Contain("70 logical").And.Contain("84 versions").And.Contain("81 distinct contents").And.Contain("88 occurrences"));
-        cut.Find("[data-testid=cr-sum-package]").TextContent.Should().Contain("Infrastructure").And.Contain("Contracts");
-        api.Verify(a => a.GovernanceAsync("dev", GateAction.ReleaseReadiness, null, It.IsAny<CancellationToken>()), Times.Once(), "the governance gate is evaluated for the project");
+
+        cut.Find("[data-testid=cr-tab-history]").Click();
+        cut.WaitForAssertion(() => api.Verify(a => a.GovernanceAsync("dev", GateAction.ReleaseReadiness, null, It.IsAny<CancellationToken>()), Times.Once(),
+            "with an analysis, the governance gate is evaluated for the project"));
 
         // Regression: Explore passed the literal text "_scope" as the project (api/canonical/_scope/… → 400). It must send the active project.
+        cut.Find("[data-testid=cr-tab-relationships]").Click();
         cut.Find("[data-testid=cr-explore-text]").Change("MU");
         cut.Find("[data-testid=cr-explore-run]").Click();
         cut.WaitForAssertion(() => api.Verify(a => a.EntitiesAsync("dev", It.IsAny<CanonicalEntityType?>(), "MU", 0, 5, It.IsAny<CancellationToken>()), Times.Once()));
@@ -200,6 +211,7 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         Services.AddSingleton(api.Object);
 
         var cut = Render<CorrelationReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-tab-review]").Click());
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-queue-item]").Should().ContainSingle("two alternatives of one test are one question"));
         cut.FindAll("[data-testid=cr-choose]").Should().HaveCount(2);
         cut.FindAll("[data-testid=cr-choose]")[1].Click();

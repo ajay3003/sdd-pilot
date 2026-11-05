@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.Interpretation;
 
-// The one shared review model for unresolved canonical relationships. Every surface (Correlation Review, Dashboard, Traceability, Topology, IQR, Project
+// The one shared review model for unresolved canonical relationships. Every surface (Relationship Review, Dashboard, Traceability, Topology, IQR, Project
 // Evidence) reads these items from the same query and writes decisions to the same registry, so one ambiguity is one question, asked once.
 
 /// <summary>A decision blocks or changes an interpretation; a suggestion is an optional proposal (naming-only) that nothing depends on until confirmed.</summary>

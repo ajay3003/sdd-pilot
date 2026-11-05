@@ -23,11 +23,11 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         decision, decision == GateDecision.Blocked ? "Blocked by governance." : "Limitations in test design.",
         [
             new(ReadinessDimensionKey.Governance, "Governance", DimensionApplicability.Required, decision == GateDecision.Blocked ? GateDecision.Blocked : GateDecision.Ready,
-                "Blocked: 1 blocking finding", ["Blocking · Identity conflict — SkoleAdapter"], "Open the governance findings in Correlation Review.", "correlation-review"),
+                "Blocked: 1 blocking finding", ["Blocking · Identity conflict — SkoleAdapter"], "Open the governance findings in Relationship Review.", "correlation-review"),
             new(ReadinessDimensionKey.Performance, "Performance", DimensionApplicability.Optional, GateDecision.NotAssessed,
                 "Not read into release readiness yet: open Performance for its own readiness and results.", [], null, "performance-test-review"),
         ],
-        decision == GateDecision.Blocked ? ["Identity conflict: Confirm the correct identity in Correlation Review."] : [], ["Governance: Open the governance findings in Correlation Review."],
+        decision == GateDecision.Blocked ? ["Identity conflict: Confirm the correct identity in Relationship Review."] : [], ["Governance: Open the governance findings in Relationship Review."],
         "release/1", "governance/1", Now) { AvailableModules = ["SkoleAdapter"] };
 
     private async Task<Mock<ICanonicalInterpretationApiService>> Setup()

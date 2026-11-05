@@ -3,19 +3,26 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services.ProjectEvidence
 @inject ICanonicalInterpretationApiService Api
 @inject IIntegrationCatalogApiService Catalog
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject IServiceProvider Services
 @implements IDisposable
 
-<PageTitle>Correlation Review</PageTitle>
+<PageTitle>Relationship Review</PageTitle>
 
 <div class="cr" data-testid="correlation-review">
     <header class="cr-head">
-        <h1>Correlation Review</h1>
-        <p class="cr-lead">One shared registry of canonical entities, typed relations and review decisions. A decision made here applies to every module in this
-            project (Topology, Integration Quality Review, API Quality Review, Project Evidence, Traceability); heuristics never override it.</p>
-        @if (_scope is not null) { <p class="cr-muted" data-testid="cr-scope">Project: <strong>@_projectName</strong> <MetaBadge Kind="BadgeKind.Scope" Text="@_scope" /></p> }
+        <h1>Relationship Review</h1>
+        <p class="cr-lead" data-testid="cr-intro">Review and confirm relationships between requirements, user stories, source code, APIs, contracts and tests. Your decisions are shared across
+            BirkNext so the same relationship does not need to be reviewed multiple times.</p>
+        <p class="cr-muted cr-lead">BirkNext discovers possible relationships from imported evidence. Confirm, reject or defer uncertain matches before they are treated as verified associations.</p>
+        @if (_scope is not null)
+        {
+            <p class="cr-muted" data-testid="cr-scope">Target Application: <strong data-testid="cr-application">@(_applicationName ?? "not set")</strong>
+                · Environment: <span data-testid="cr-environment">@_environmentName</span></p>
+        }
     </header>
 
     @if (_initialising)
@@ -24,22 +31,66 @@
     }
     else if (_scope is null)
     {
-        <p class="cr-muted" data-testid="cr-no-scope">Select a project (Target Environment) first. Canonical interpretation is always scoped to one project.</p>
+        <p class="cr-muted" data-testid="cr-no-scope">Select a Target Environment first. Relationships are always reviewed for one application in one environment.</p>
     }
     else
     {
-        @if (_summary is { InterpretationId: not null } sum)
+        <div class="cr-tabs cr-page-tabs" role="tablist" aria-label="Relationship Review">
+            @foreach (var (key, label) in Tabs)
+            {
+                <button type="button" role="tab" id="@($"cr-tab-{key}")" class="cr-tab @(_tab == key ? "is-active" : "")" aria-selected="@(_tab == key ? "true" : "false")"
+                        aria-controls="cr-tabpanel" data-testid="@($"cr-tab-{key}")" @onclick="() => _tab = key">@label@(key == "review" && _queue is { } tq ? $" ({tq.Decisions})" : "")</button>
+            }
+        </div>
+        <div id="cr-tabpanel" role="tabpanel" aria-labelledby="@($"cr-tab-{_tab}")" class="cr-panel">
+            @if (_tab == "review") { @QueueSection() }
+            else if (_tab == "relationships") { @ExploreSection() }
+            else if (_tab == "history") { @GovernanceSection() @HistorySection() }
+            else { @OverviewSection() @SourcesSection() }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly (string, string)[] InterpretStages = [("interpret", "Analyzing relationships in the stored evidence"), ("refresh", "Refreshing the review queue")];
+    private static readonly (string Key, string Label)[] Tabs = [("overview", "Overview"), ("review", "Needs Review"), ("relationships", "Relationships"), ("history", "History & Governance")];
+    /// <summary>Quick filters of the relationship explorer: the entity kinds the review is about.</summary>
+    private static readonly (CanonicalEntityType Type, string Label)[] ExploreKinds =
+    [
+        (CanonicalEntityType.Requirement, "Requirements"), (CanonicalEntityType.UserStory, "User stories"), (CanonicalEntityType.SourceSymbol, "Source code"),
+        (CanonicalEntityType.ApiOperation, "APIs"), (CanonicalEntityType.Contract, "Contracts"), (CanonicalEntityType.Test, "Tests"),
+    ];
+
+    /// <summary>Opens a tab directly (?tab=review|relationships|history), e.g. from Release Readiness.</summary>
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    private string _tab = "overview";
+    private string? _applicationName, _environmentName;
+    private bool _historyLoaded, _customizeSources;
+    private IReadOnlyList<RelationshipSource> _rows = [];
+
+    /// <summary>Relationships are analyzed once an interpretation exists; before that every count is "Not analyzed", never 0.</summary>
+    private bool Analyzed => _summary?.InterpretationId is not null;
+
+    private RenderFragment OverviewSection() => __builder =>
+    {
+        if (!_historyLoaded) { <InlineLoading Text="Loading the latest analysis…" Class="cr-muted" /> }
+        else if (_summary is { InterpretationId: not null } sum)
         {
             <section class="cr-card" aria-labelledby="cr-summary-h" data-testid="cr-summary">
-                <h2 id="cr-summary-h">Latest interpretation</h2>
+                <h2 id="cr-summary-h">Latest analysis</h2>
                 <p class="cr-muted">@sum.InterpretedAt!.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · rules @string.Join(", ", sum.RuleSetVersions)</p>
                 <dl class="cr-counts">
-                    <div><dt>Established relations</dt><dd data-testid="cr-sum-established">@sum.EstablishedRelations</dd></div>
+                    <div><dt>Established relationships</dt><dd data-testid="cr-sum-established">@sum.EstablishedRelations</dd></div>
                     <div><dt>Candidates (not counted)</dt><dd data-testid="cr-sum-candidates">@sum.CandidateRelations</dd></div>
                     <div><dt>Decisions needed</dt><dd data-testid="cr-sum-review">@sum.Decisions</dd></div>
                     <div><dt>Optional suggestions</dt><dd data-testid="cr-sum-suggestions">@sum.Suggestions</dd></div>
                     <div><dt>Conflicts</dt><dd data-testid="cr-sum-conflicts">@sum.Conflicts</dd></div>
                 </dl>
+                @if (sum.Decisions > 0)
+                {
+                    <p><button type="button" class="btn btn-secondary btn-sm" data-testid="cr-overview-review" @onclick="@(() => _tab = "review")">Review @sum.Decisions decision@(sum.Decisions == 1 ? "" : "s")</button></p>
+                }
                 <p class="cr-muted" data-testid="cr-sum-contracts">Contracts: @sum.Contracts.LogicalContracts logical · @sum.Contracts.Versions versions · @sum.Contracts.DistinctContents distinct contents · @sum.Contracts.Occurrences occurrences in packages</p>
                 @if (sum.Packages.Count > 0)
                 {
@@ -55,36 +106,97 @@
                 }
             </section>
         }
-        <GovernanceGatePanel Scope="@_scope" Version="_governanceVersion" TestId="cr-governance" />
+        else
+        {
+            <section class="cr-card" aria-labelledby="cr-summary-h" data-testid="cr-not-analyzed">
+                <h2 id="cr-summary-h">Relationships <span class="cr-count">Not analyzed</span></h2>
+                <p class="cr-muted">Relationships have not been analyzed for @(_applicationName ?? "this application") yet. Analyze relationships from the source evidence below;
+                    until then nothing is counted as established, needing review or conflicting.</p>
+                <dl class="cr-counts">
+                    <div><dt>Established relationships</dt><dd class="cr-na">Not analyzed</dd></div>
+                    <div><dt>Decisions needed</dt><dd class="cr-na">Not analyzed</dd></div>
+                    <div><dt>Conflicts</dt><dd class="cr-na">Not analyzed</dd></div>
+                    <div><dt>Governance</dt><dd class="cr-na">Not assessed</dd></div>
+                </dl>
+            </section>
+        }
+    };
+
+    private RenderFragment SourcesSection() => __builder =>
+    {
         <section class="cr-card" aria-labelledby="cr-interpret-h" data-testid="cr-interpret">
-            <h2 id="cr-interpret-h">Interpret source evidence</h2>
-            <p class="cr-muted">Reads stored Source Analysis snapshots only (no archive is parsed again). Each run creates a new, frozen interpretation; an unchanged
-                one is reused, and earlier interpretations never change.</p>
-            @if (_sources.Count == 0) { <p class="cr-muted" data-testid="cr-no-sources">No Source Analysis snapshots are stored for this project yet.</p> }
+            <h2 id="cr-interpret-h">Source evidence</h2>
+            <p class="cr-muted">Reads stored Source Analysis snapshots only (no archive is parsed again). Each analysis is recorded as a new, frozen version; an unchanged
+                one is reused, and earlier versions never change.</p>
+            @if (_rows.Count == 0) { <p class="cr-muted" data-testid="cr-no-sources">No Source Analysis snapshots are stored for this environment yet. Import the project's sources first.</p> }
             else
             {
-                <ul class="cr-sources">
-                    @foreach (var s in _sources)
-                    {
-                        <li><label><input type="checkbox" checked="@_selected.Contains(s.Id)" @onchange="e => Toggle(s.Id, (bool)e.Value!)" data-testid="cr-source" />
-                            @s.Archive.FileName <span class="cr-muted">· analyzed @s.AnalyzedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</span></label></li>
-                    }
-                </ul>
-                <button type="button" class="btn btn-primary" disabled="@(_selected.Count == 0 || _interpreting is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run">Interpret selected</button>
+                <p data-testid="cr-source-summary">@SourceSummary()</p>
+                <p class="cr-muted" data-testid="cr-source-outcomes">@string.Join(" · ", _rows.GroupBy(r => r.Outcome).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.First().OutcomeLabel.ToLowerInvariant()}"))</p>
+                <div class="cr-actions">
+                    <button type="button" class="btn btn-primary" disabled="@(_selected.Count == 0 || _interpreting is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run">Analyze relationships</button>
+                    <button type="button" class="btn btn-secondary" aria-expanded="@(_customizeSources ? "true" : "false")" aria-controls="cr-source-list"
+                            data-testid="cr-customize" @onclick="() => _customizeSources = !_customizeSources">@(_customizeSources ? "Hide sources" : "Customize sources")</button>
+                </div>
+                @if (_customizeSources)
+                {
+                    <ul class="cr-sources" id="cr-source-list" aria-label="Sources to analyze">
+                        @foreach (var s in _rows)
+                        {
+                            <li data-testid="cr-source-row" data-id="@s.Id" data-outcome="@s.Outcome"><label><input type="checkbox" checked="@_selected.Contains(s.Id)" @onchange="e => Toggle(s.Id, (bool)e.Value!)" data-testid="cr-source" />
+                                @s.Label</label>
+                                <span class="cr-status cr-status-@s.Outcome.ToString().ToLowerInvariant()" data-testid="cr-source-status">@s.OutcomeLabel</span>
+                                @if (s.Associated) { <MetaBadge Kind="BadgeKind.Scope" Text="Associated" /> }
+                                <span class="cr-muted">· @s.AnalyzedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                                @if (s.Detail is not null) { <span class="cr-muted cr-source-detail" data-testid="cr-source-detail">@s.Detail</span> }
+                            </li>
+                        }
+                    </ul>
+                    <button type="button" class="btn btn-secondary btn-sm" data-testid="cr-reset-sources" @onclick="ResetSelection">Reset to the default selection</button>
+                }
             }
             @if (_interpreting is { } run)
             {
-                <OperationProgress Title="Interpreting the selected source snapshots…" Stages="run.Stages" RunningText="working…" HeadingId="cr-interpret-heading"
+                <OperationProgress Title="Analyzing relationships in the selected sources…" Stages="run.Stages" RunningText="working…" HeadingId="cr-interpret-heading"
                                    TestId="cr-interpret-progress" StagesTestId="cr-interpret-stages" StageTestId="cr-interpret-stage" />
             }
             @if (_interpretError is not null) { <p class="cr-error" role="alert" data-testid="cr-interpret-error">@_interpretError</p> }
             @if (_lastRun is { } last)
             {
-                <p class="cr-muted" role="status" data-testid="cr-interpret-result">@(last.Reused ? "Nothing changed: the existing interpretation was reused." : "New interpretation recorded.")
-                    @last.EntityCount entities · @last.RelationCount relations · rules @string.Join(", ", last.RuleSetVersions)</p>
+                <p class="cr-muted" role="status" data-testid="cr-interpret-result">@(last.Reused ? "Nothing changed: the existing analysis was reused." : "New analysis recorded.")
+                    @last.EntityCount entities · @last.RelationCount relationships · rules @string.Join(", ", last.RuleSetVersions)</p>
             }
         </section>
+    };
 
+    private string SourceSummary()
+    {
+        var selected = _rows.Count(r => _selected.Contains(r.Id));
+        var associated = _rows.Count(r => r.Associated);
+        var basis = associated > 0
+            ? $"the {associated} source{(associated == 1 ? "" : "s")} associated with {_applicationName ?? "the Target Application"} in Project Evidence"
+            : "every analyzed source (none is associated with the Target Application in Project Evidence yet)";
+        return $"{selected} of {_rows.Count} source{(_rows.Count == 1 ? "" : "s")} selected · default: {basis}.";
+    }
+
+    private RenderFragment GovernanceSection() => __builder =>
+    {
+        if (!_historyLoaded) { <InlineLoading Text="Loading governance…" Class="cr-muted" /> }
+        else if (!Analyzed)
+        {
+            <section class="cr-card" aria-labelledby="cr-gov-h" data-testid="cr-governance-not-assessed">
+                <h2 id="cr-gov-h">Governance</h2>
+                <p>Governance not assessed — Analyze project relationships before evaluating governance rules.</p>
+            </section>
+        }
+        else
+        {
+            <GovernanceGatePanel Scope="@_scope" Version="_governanceVersion" TestId="cr-governance" />
+        }
+    };
+
+    private RenderFragment QueueSection() => __builder =>
+    {
         <section class="cr-card" aria-labelledby="cr-queue-h" data-testid="cr-queue">
             <h2 id="cr-queue-h">Needs review <span class="cr-count" data-testid="cr-decision-count">@(_queue?.Decisions ?? 0) decision@(_queue?.Decisions == 1 ? "" : "s")</span></h2>
             <p class="cr-muted">One shared queue for every surface: a question answered here is answered for Delivery, Traceability, Topology, IQR, AQR and Project Evidence.
@@ -106,7 +218,7 @@
             }
             @if (_queueLoading) { <InlineLoading Text="Loading the review queue…" Class="cr-muted" /> }
             else if (_queueError is not null) { <p class="cr-error" role="alert">Shared review queue unavailable: @_queueError <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadQueueAsync">Retry</button></p> }
-            else if (_queue is { Page.Items.Count: 0 }) { <p class="cr-muted" data-testid="cr-queue-empty">@(_kind == ReviewItemKind.Decision ? "Nothing waits for a decision." : "No suggestions.")</p> }
+            else if (_queue is { Page.Items.Count: 0 }) { <p class="cr-muted" data-testid="cr-queue-empty">@(!Analyzed ? "Not analyzed — analyze relationships on the Overview tab to find what needs review." : _kind == ReviewItemKind.Decision ? "Nothing waits for a decision." : "No suggestions.")</p> }
             else if (_queue is { } queue)
             {
                 var q = queue.Page;
@@ -167,7 +279,7 @@
                                     <input class="form-control form-control-sm" placeholder="Note (optional)" value="@_notes.GetValueOrDefault(item.ReviewItemId)" @onchange="e => _notes[item.ReviewItemId] = (string?)e.Value" aria-label="Review note" />
                                     <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Confirmed)" data-testid="cr-confirm">Confirm</button>
                                     <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Rejected)" data-testid="cr-reject">Reject</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Deferred)" data-testid="cr-defer">Keep open</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Deferred)" data-testid="cr-defer">Defer</button>
                                 </div>
                             }
                         </li>
@@ -181,26 +293,46 @@
             }
             @if (_decisionError is not null) { <p class="cr-error" role="alert">@_decisionError</p> }
         </section>
+    };
 
+    private RenderFragment ExploreSection() => __builder =>
+    {
         <section class="cr-card" aria-labelledby="cr-explore-h" data-testid="cr-explore">
-            <h2 id="cr-explore-h">Explore an entity</h2>
-            <div class="cr-search">
-                <select @bind="_exploreType" aria-label="Entity type" data-testid="cr-explore-type">
-                    <option value="">Any type</option>
-                    @foreach (var t in Enum.GetValues<CanonicalEntityType>()) { <option value="@t">@CorrelationPresentation.TypeLabel(t)</option> }
-                </select>
-                <input class="form-control" placeholder="Name or identity (e.g. MU, AbsenceApi, FR-001)" @bind="_exploreText" aria-label="Search" data-testid="cr-explore-text" />
-                <button type="button" class="btn btn-secondary" @onclick="Explore" data-testid="cr-explore-run">Show</button>
-            </div>
-            @if (_exploreSearch is not null)
+            <h2 id="cr-explore-h">Relationship explorer</h2>
+            @if (!Analyzed)
             {
-                <CanonicalCorrelationPanel Scope="@_scope" Title="Matching entities" Search="@_exploreSearch" EntityType="@ExploreType" MaxEntities="5" TestId="cr-explore-panel" />
+                <p class="cr-muted" data-testid="cr-explore-not-analyzed">Not analyzed — analyze relationships on the Overview tab before exploring them.</p>
+            }
+            else
+            {
+                <div class="cr-chips" role="group" aria-label="Show relationships of">
+                    @foreach (var (type, label) in ExploreKinds)
+                    {
+                        <button type="button" class="cr-chip @(_exploreType == type.ToString() ? "is-active" : "")" aria-pressed="@(_exploreType == type.ToString() ? "true" : "false")"
+                                data-testid="cr-explore-kind" data-kind="@type" @onclick="() => ExploreKind(type)">@label</button>
+                    }
+                </div>
+                <form class="cr-search" @onsubmit="Explore" @onsubmit:preventDefault>
+                    <select @bind="_exploreType" aria-label="Entity type" data-testid="cr-explore-type">
+                        <option value="">Any type</option>
+                        @foreach (var t in Enum.GetValues<CanonicalEntityType>()) { <option value="@t">@CorrelationPresentation.TypeLabel(t)</option> }
+                    </select>
+                    <input class="form-control" placeholder="Search by name or identity (e.g. FR-001, US1, AbsenceApi, GET /api/…)" @bind="_exploreText" aria-label="Search relationships" data-testid="cr-explore-text" />
+                    <button type="submit" class="btn btn-secondary" data-testid="cr-explore-run">Search</button>
+                </form>
+                @if (_exploreSearch is not null)
+                {
+                    <CanonicalCorrelationPanel Scope="@_scope" Title="Matching entities and their relationships" Search="@_exploreSearch" EntityType="@ExploreType" MaxEntities="5" TestId="cr-explore-panel" />
+                }
             }
         </section>
+    };
 
+    private RenderFragment HistorySection() => __builder =>
+    {
         <section class="cr-card" aria-labelledby="cr-history-h" data-testid="cr-history">
-            <h2 id="cr-history-h">Interpretations and decisions</h2>
-            @if (_snapshots.Count == 0) { <p class="cr-muted">No interpretation has been recorded for this project.</p> }
+            <h2 id="cr-history-h">Analysis and decision history</h2>
+            @if (_snapshots.Count == 0) { <p class="cr-muted">Not analyzed — no relationship analysis has been recorded for this environment.</p> }
             else
             {
                 <table class="cr-table">
@@ -234,17 +366,13 @@
                 </ul>
             }
         </section>
-    }
-</div>
+    };
 
-@code {
-    private static readonly (string, string)[] InterpretStages = [("interpret", "Correlating stored evidence"), ("refresh", "Refreshing the review queue")];
 
     private bool _initialising = true, _queueLoading, _saving;
     /// <summary>Bumped after every decision or interpretation: the governance gate is evaluated again (one fact, recomputed).</summary>
     private int _governanceVersion;
-    private string? _scope, _projectName, _queueError, _decisionError, _interpretError, _exploreText, _exploreSearch, _exploreType;
-    private List<IqrSourceSnapshotSummary> _sources = [];
+    private string? _scope, _queueError, _decisionError, _interpretError, _exploreText, _exploreSearch, _exploreType;
     private readonly HashSet<Guid> _selected = [];
     private ReviewAssessment? _interpreting;
     private InterpretationSnapshotView? _lastRun;
@@ -264,14 +392,45 @@
     {
         var profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
         _scope = CorrelationPresentation.Scope(profile?.Id);
-        _projectName = profile?.Name;
+        // The context is the application under test (Target Application), shown with its environment — never the environment's name as "project".
+        // The context's profile is a data-minimized copy without the Target Application, so it is read from the saved profile (as the project strip does).
+        var saved = profile is null ? null : Services.GetService<IFrontendAnalysisSettingsService>()?.Settings.Profiles.FirstOrDefault(p => p.Id == profile.Id);
+        (_applicationName, _environmentName) = (TargetApplications.Of(saved)?.Name, profile?.Name);
+        if (Tab is "review" or "relationships" or "history") _tab = Tab;
         _initialising = false;
         if (_scope is null) return;
-        try { _sources = [.. (await Catalog.ListSourceSnapshotSummariesAsync(_scope)).OrderByDescending(s => s.AnalyzedAt)]; }
-        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _interpretError = "Source Analysis snapshots could not be listed."; }
         _governanceVersion++;
-        await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
+        await Task.WhenAll(LoadSourcesAsync(), LoadQueueAsync(), LoadHistoryAsync());
     }
+
+    /// <summary>Stored snapshots with their real per-area outcome (Source Analysis setup) and Project Evidence association; the default selection is
+    /// the associated sources. Setup and evidence are optional: without them the code analyzer's status is shown and every usable source is selected.</summary>
+    private async Task LoadSourcesAsync()
+    {
+        List<IqrSourceSnapshotSummary> stored = [];
+        try { stored = [.. await Catalog.ListSourceSnapshotSummariesAsync(_scope!) ?? []]; }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _interpretError = "Source Analysis snapshots could not be listed."; }
+        SourceSetupView? setup = null;
+        ProjectEvidenceView? evidence = null;
+        if (stored.Count > 0)
+        {
+            if (Services.GetService<IIntegrationJourneysApiService>() is { } journeys)
+            {
+                try { setup = (await journeys.SourceSetupAsync(_scope)).Value; }
+                catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { }
+            }
+            if (Services.GetService<IProjectEvidenceService>() is { } projectEvidence)
+            {
+                try { evidence = await projectEvidence.GetAsync(_scope); }
+                catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { }
+            }
+        }
+        _rows = RelationshipReviewSources.Of(stored, setup, evidence);
+        ResetSelection();
+        StateHasChanged();
+    }
+
+    private void ResetSelection() { _selected.Clear(); _selected.UnionWith(RelationshipReviewSources.DefaultSelection(_rows)); }
 
     private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
 
@@ -283,7 +442,7 @@
         void Changed() => _ = InvokeAsync(StateHasChanged);
         try
         {
-            var (snapshot, error) = await run.StageAsync("interpret", ct => Api.InterpretAsync(_scope, new([.. _selected], Trigger: "Correlation Review"), ct), Changed);
+            var (snapshot, error) = await run.StageAsync("interpret", ct => Api.InterpretAsync(_scope, new([.. _selected], Trigger: "Relationship Review"), ct), Changed);
             if (error is not null) { _interpretError = error; return; }
             _lastRun = snapshot;
             await run.StageAsync("refresh", async _ => { await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync()); return true; }, Changed);
@@ -307,6 +466,7 @@
         _snapshots = [.. (await Api.SnapshotsAsync(_scope)).Items];
         _summary = (await Api.SummaryAsync(_scope)).Summary;
         _decisions = [.. (await Api.DecisionsAsync(_scope)).Items];
+        _historyLoaded = true;
         StateHasChanged();
     }
 
@@ -347,6 +507,12 @@
     }
 
     private void Explore() => _exploreSearch = string.IsNullOrWhiteSpace(_exploreText) ? "" : _exploreText.Trim();
+
+    private void ExploreKind(CanonicalEntityType type)
+    {
+        _exploreType = _exploreType == type.ToString() ? "" : type.ToString();
+        Explore();
+    }
 
     private async Task CompareAsync()
     {

@@ -43,20 +43,8 @@ public static class SourceSetupAreas
         ];
     }
 
-    /// <summary>
-    /// The snapshot's analysis outcome over the areas it actually contains — the one rule the Snapshot Registry and every consumer share. An
-    /// area that is not present (NotDetected) or was not run (NotAnalyzed) does not count: a Terraform repository without application code is
-    /// not a failed analysis. Every present area complete → Completed; every present area failed → Failed; otherwise Partial (an Unsupported
-    /// area is an analyzer limitation and keeps the outcome Partial, never Completed). Nothing present → Unknown.
-    /// </summary>
-    public static BirkNext.Snapshots.SnapshotProcessingStatus Overall(IReadOnlyList<SourceSetupArea> areas)
-    {
-        var present = areas.Where(area => area.Status is not ("NotDetected" or "NotAnalyzed")).ToList();
-        if (present.Count == 0) return BirkNext.Snapshots.SnapshotProcessingStatus.Unknown;
-        if (present.All(area => area.Status == "Complete")) return BirkNext.Snapshots.SnapshotProcessingStatus.Completed;
-        if (present.All(area => area.Status == "Failed")) return BirkNext.Snapshots.SnapshotProcessingStatus.Failed;
-        return BirkNext.Snapshots.SnapshotProcessingStatus.Partial;
-    }
+    /// <summary>The snapshot's analysis outcome over the areas it contains: the shared <see cref="SourceSetupOutcome.Overall"/> rule.</summary>
+    public static BirkNext.Snapshots.SnapshotProcessingStatus Overall(IReadOnlyList<SourceSetupArea> areas) => SourceSetupOutcome.Overall(areas);
 
     /// <summary>Production projects the analyzer classified from their project file as a web/service host (Web SDK) or an Event Hub
     /// application — the deterministic "application, not only a library" evidence used for package classification.</summary>

@@ -10,7 +10,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>Summary-first canonical counts (correlation/2): the Dashboard tile reads only the summary endpoint for the active project, names what each
-/// count counts (logical contracts vs occurrences), points to Correlation Review only when decisions are needed, and renders nothing without a scope.</summary>
+/// count counts (logical contracts vs occurrences), points to Relationship Review only when decisions are needed, and renders nothing without a scope.</summary>
 public sealed class CanonicalSummaryUiTests : BunitContext
 {
     static CanonicalSummaryView Summary(int needsReview, Guid? interpretation = null) => new("dev", interpretation ?? Guid.NewGuid(), DateTimeOffset.UnixEpoch,

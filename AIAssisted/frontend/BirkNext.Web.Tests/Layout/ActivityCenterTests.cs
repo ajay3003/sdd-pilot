@@ -74,7 +74,8 @@ public sealed class ActivityCenterTests : BunitContext
         gate.SetResult();
         cut.WaitForAssertion(() => cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-open]").TextContent.Should().Be("Open the imported project"), TimeSpan.FromSeconds(30)); // generous: under a full parallel run the completion can take seconds to propagate
         cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-open]").GetAttribute("href").Should().Be("project-import?done");
-        cut.Find("[data-testid=activity-live]").TextContent.Should().Contain("Completed");
+        // The live region announces the latest change; under a full parallel run the earlier "Cancelled" announcement can still be rendering.
+        cut.WaitForAssertion(() => cut.Find("[data-testid=activity-live]").TextContent.Should().Contain("Completed"), TimeSpan.FromSeconds(10));
         cut.Find("[data-testid=activity-item][data-status=Completed] [data-testid=activity-dismiss]").Click();
         // Dismiss re-renders through the operations' Changed event (InvokeAsync): wait for it like the assertions above, never assume it is synchronous.
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=activity-item][data-status=Completed]").Should().BeEmpty(), TimeSpan.FromSeconds(10));

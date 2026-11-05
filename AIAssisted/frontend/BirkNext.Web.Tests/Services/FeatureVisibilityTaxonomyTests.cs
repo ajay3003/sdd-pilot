@@ -36,10 +36,10 @@ public sealed class FeatureVisibilityTaxonomyTests
             return NavigationCatalog.Sections.Single(s => s.Id == "traceability").Items.Where(i => i.Visible(visibility)).Select(i => i.Label);
         }
         // Traceability & Impact: Impact Analysis joined the group (its own key still gates it).
-        // Correlation Review (shared canonical review registry) is always available at the end of the group.
-        Visible(null).Should().Equal("Requirements Traceability", "Impact Analysis", "Correlation Review", "Release Readiness", "Snapshots");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis", "Correlation Review", "Release Readiness", "Snapshots");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = false, ImpactAnalysis = false }).Should().Equal("Requirements Traceability", "Correlation Review", "Release Readiness", "Snapshots");
+        // Relationship Review (shared canonical review registry) is always available at the end of the group.
+        Visible(null).Should().Equal("Requirements Traceability", "Impact Analysis", "Relationship Review", "Release Readiness", "Snapshots");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis", "Relationship Review", "Release Readiness", "Snapshots");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = false, ImpactAnalysis = false }).Should().Equal("Requirements Traceability", "Relationship Review", "Release Readiness", "Snapshots");
         new FeatureVisibilityDto().ImplementationTraceability.Should().BeFalse("no explicit value means disabled");
         SidebarLabels("traceability").Should().NotContain(["Task Alignment Review", "Documentation Drift"], "document reviews stay in Specifications & Planning").And.Contain("Impact Analysis");
     }

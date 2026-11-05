@@ -65,17 +65,17 @@ public static class GovernancePolicies
     // New rules start as warnings where behaviour used to be permissive; only release / approval decisions that would rest on contradicted identity block.
     public static readonly GovernancePolicy IdentityConflict = new("gov.identity.conflict", 1, "Identity conflict",
         "Two declarations, or a reviewed decision and new source evidence, disagree about what something is. Anything built on it may point at the wrong system, contract or story.",
-        "Human review", "Confirm the correct identity in Correlation Review.", true,
+        "Human review", "Confirm the correct identity in Relationship Review.", true,
         L((GateAction.Review, W), (GateAction.Execution, W), (GateAction.DeliveryReport, W), (GateAction.Approval, B), (GateAction.ReleaseReadiness, B)));
 
     public static readonly GovernancePolicy StaleAssociation = new("gov.review.stale-association", 1, "Reviewed association to recheck",
         "A reviewed link was decided on evidence that has since changed. It is not silently re-applied or dropped.",
-        "Human review", "Recheck the decision in Correlation Review: confirm it again or reject it.", true,
+        "Human review", "Recheck the decision in Relationship Review: confirm it again or reject it.", true,
         L((GateAction.Review, W), (GateAction.Approval, W), (GateAction.DeliveryReport, W), (GateAction.ReleaseReadiness, W)));
 
     public static readonly GovernancePolicy Ambiguity = new("gov.traceability.ambiguous-reference", 1, "Ambiguous reference",
         "A reference matches several candidates (for example FR-001 defined by two feature packs). It is not merged by id text; until someone chooses, it counts for neither.",
-        "Human review", "Choose the intended target in Correlation Review.", true,
+        "Human review", "Choose the intended target in Relationship Review.", true,
         L((GateAction.Review, W), (GateAction.DeliveryReport, W), (GateAction.ReleaseReadiness, W)));
 
     public static readonly GovernancePolicy RemovedStory = new("gov.traceability.removed-story-reference", 1, "Task references a removed story",
@@ -95,7 +95,7 @@ public static class GovernancePolicies
 
     public static readonly GovernancePolicy CandidateOnly = new("gov.coverage.candidate-only", 1, "Requirement with only a suggested test",
         "The only test link is a naming-based suggestion. A suggested link never satisfies a gate that needs confirmed coverage.",
-        "Test coverage", "Confirm or reject the suggested test link in Correlation Review, or reference the requirement id in the test.", true,
+        "Test coverage", "Confirm or reject the suggested test link in Relationship Review, or reference the requirement id in the test.", true,
         L((GateAction.ReleaseReadiness, W)));
 
     public static readonly GovernancePolicy UnknownImpact = new("gov.impact.unknown", 1, "Unresolved relations",
@@ -105,7 +105,7 @@ public static class GovernancePolicies
 
     public static readonly GovernancePolicy NotInterpreted = new("gov.analysis.not-interpreted", 1, "No canonical interpretation",
         "Nothing has been interpreted for this project yet, so no policy can be assessed.",
-        "Correlation Review", "Interpret a Delivery snapshot with its source snapshots in Correlation Review.", true,
+        "Relationship Review", "Interpret a Delivery snapshot with its source snapshots in Relationship Review.", true,
         L((GateAction.Review, FindingLevel.NotAssessed), (GateAction.Execution, FindingLevel.NotAssessed), (GateAction.Approval, FindingLevel.NotAssessed),
           (GateAction.DeliveryReport, FindingLevel.NotAssessed), (GateAction.ReleaseReadiness, FindingLevel.NotAssessed)));
 
