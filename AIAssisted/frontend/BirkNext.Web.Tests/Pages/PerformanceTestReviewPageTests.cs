@@ -20,6 +20,10 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     private sealed class FakeApi : IPerformanceTestApiService
     {
         public PerformanceTestOverview? Overview { get; set; }
+        /// <summary>The persisted Endpoint Discovery history (null = none); a factory so a test can hold it pending or make it fail.</summary>
+        public Func<Task<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>>? History { get; set; }
+        public Task<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?> ObservationHistoryAsync(string environmentId, string targetUrl, CancellationToken ct = default) =>
+            History?.Invoke() ?? Task.FromResult<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>(null);
         public PerformanceTestReadiness? Readiness { get; set; }
         public List<PerformanceTestRun> Runs { get; set; } = [];
         public List<PerformanceBaseline> Baselines { get; set; } = [];
@@ -1333,5 +1337,45 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=tdm-open-test-data]").GetAttribute("href").Should().StartWith("/test-data?consumer=performance-test-review");
         cut.Find("[data-testid=tdm-cancel]").Click();
         cut.FindAll("[data-testid=tdm]").Should().BeEmpty();
+    }
+
+    // ── NEXT51: authentication requirements are never claimed absent without the endpoint evidence ──────────────────────────────────
+
+    static PerformanceTestDefinition AutorisasjonGets => Definition with { Scenario = new PerformanceScenario { Steps =
+    [
+        new HttpPerformanceStep { Name = "brukere", Method = "GET", RelativePath = "/api/autorisasjon/v1/brukere/{brukerId}" },
+        new HttpPerformanceStep { Name = "barn", Method = "GET", RelativePath = "/api/autorisasjon/v1/brukere/{brukerId}/barn" },
+    ] } };
+
+    [Fact]
+    public void While_the_endpoint_history_loads_the_summary_checks_instead_of_claiming_no_authentication()
+    {
+        var pending = new TaskCompletionSource<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>();
+        _api.History = () => pending.Task;
+        Register(definitions: [AutorisasjonGets]);
+        var cut = Render<PerformanceTestReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-page]"));
+        cut.Markup.Should().NotContain("No step requires authentication", "a claim without evidence while the endpoint history loads");
+        pending.SetResult(null);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-scenario]"));
+        Tab(cut, "scenario");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-auth-summary]").TextContent.Should().Be("No step requires authentication"));
+    }
+
+    [Fact]
+    public void When_the_endpoint_history_cannot_be_read_requirements_are_not_fully_known_and_retry_is_offered()
+    {
+        _api.History = () => Task.FromException<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>(new HttpRequestException("down"));
+        Register(definitions: [AutorisasjonGets]);
+        var cut = Page();
+        Tab(cut, "scenario");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-auth-summary]").TextContent.Should().Be("Authentication requirements not fully known"));
+        cut.Find("[data-testid=pt-auth-summary]").GetAttribute("data-evidence").Should().Be("partial");
+        cut.Find("[data-testid=pt-auth-evidence-unavailable]").TextContent.Should().Contain("Readiness and the run still check it on the server");
+        _api.History = () => Task.FromResult<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>(null);
+        cut.Find("[data-testid=pt-auth-evidence-retry]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-auth-summary]").TextContent.Should().Be("No step requires authentication"));
     }
 }

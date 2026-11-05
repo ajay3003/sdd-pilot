@@ -958,6 +958,8 @@
     /// <summary>Persisted Endpoint Discovery history of this environment + target host (null: not read or unreadable — never "no traffic").</summary>
     private BirkNext.LocalHttpsProxy.EndpointObservationHistoryView? _history;
     private bool _historyLoaded;
+    /// <summary>The Endpoint Discovery history could not be read: authentication observed only there is unknown, never "not required".</summary>
+    private bool _historyFailed;
     private IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> _testDataAssets = [];
 
     /// <summary>Discovery observations (this browser's Endpoint Discovery store) and central Test Data summaries for the scenario builder. Both optional.</summary>
@@ -976,8 +978,9 @@
                 && await Api.ImportObservationBaselineAsync(_profile.Id, uri.Host, _observations))
                 history = await Api.ObservationHistoryAsync(_profile.Id, targetUrl);
             _history = history;
+            _historyFailed = false;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _history = null; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { (_history, _historyFailed) = (null, true); }
         _historyLoaded = true;
     }
 
@@ -1078,9 +1081,24 @@
         var defaultText = _draft.AuthenticationReference is { } d ? BirkNext.PerformanceTests.PerformanceScenarioRuntime.AuthenticationSourceName(d) : "None";
         <section class="ptc-panel pt-auth" aria-labelledby="pt-auth-h" data-testid="pt-scenario-auth" id="pt-scenario-auth" tabindex="-1">
             <h3 id="pt-auth-h">Scenario authentication</h3>
-            <p data-testid="pt-auth-summary"><strong>@(unresolved.Count > 0 ? $"Authentication unresolved — {unresolved.Count} step{(unresolved.Count == 1 ? "" : "s")} blocked"
-                : notExecutable.Count > 0 ? $"{notExecutable.Count} step{(notExecutable.Count == 1 ? " uses" : "s use")} attended sign-in — not executable by the load generator"
-                : requirements.Count == 0 ? "No step requires authentication" : "Every step that requires authentication has a configuration")</strong></p>
+            @* Requirements come from the step's recorded observation and from the persisted Endpoint Discovery history. Until that history is read
+               (or when it cannot be), "no step requires authentication" would be a claim without evidence — the summary says so instead. *@
+            @if (!_historyLoaded && unresolved.Count == 0)
+            {
+                <InlineLoading Text="Checking endpoint evidence for authentication requirements…" TestId="pt-auth-checking" />
+            }
+            else
+            {
+                <p data-testid="pt-auth-summary" data-evidence="@(_historyFailed ? "partial" : "complete")"><strong>@(unresolved.Count > 0 ? $"Authentication unresolved — {unresolved.Count} step{(unresolved.Count == 1 ? "" : "s")} blocked"
+                    : notExecutable.Count > 0 ? $"{notExecutable.Count} step{(notExecutable.Count == 1 ? " uses" : "s use")} attended sign-in — not executable by the load generator"
+                    : _historyFailed ? "Authentication requirements not fully known"
+                    : requirements.Count == 0 ? "No step requires authentication" : "Every step that requires authentication has a configuration")</strong></p>
+                @if (_historyFailed)
+                {
+                    <p class="ptc-sub" role="alert" data-testid="pt-auth-evidence-unavailable">The Endpoint Discovery history could not be read, so authentication observed only there is not checked here.
+                        Readiness and the run still check it on the server. <button type="button" class="btn-link btn-sm" data-testid="pt-auth-evidence-retry" @onclick="LoadObservationHistoryAsync">Retry</button></p>
+                }
+            }
             @* Resolved means configured AND executable by the load generator; an attended sign-in is configured but counted apart. *@
             <p class="ptc-sub" data-testid="pt-auth-counts">Scenario default: @defaultText · @requirements.Count step@(requirements.Count == 1 ? " requires" : "s require") authentication · @(requirements.Count - unresolved.Count - notExecutable.Count) resolved · @unresolved.Count unresolved@(notExecutable.Count > 0 ? $" · {notExecutable.Count} not executable" : "")@(overrides.Count > 0 ? $" · {overrides.Count} step override{(overrides.Count == 1 ? "" : "s")}" : "")
                 · the execution credential is checked in Readiness; no token is ever shown or copied.</p>
