@@ -50,11 +50,13 @@
                 </label>
                 <label class="tco-field">Baseline snapshot <span class="tco-muted">(optional — finds changed code without test changes)</span>
                     <select class="form-control" data-testid="tco-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="BaselineChanged" disabled="@(_busy || BaselineOptions.Count == 0)">
-                        <option value="">No baseline</option>
-                        @foreach (var s in BaselineOptions) { <option value="@s.SnapshotId">@Option(s)</option> }
+                        <option value="">No baseline — current snapshot only</option>
+                        @if (Candidates.Any(c => c.Eligible)) { <optgroup label="Same repository">@foreach (var c in Candidates.Where(c => c.Eligible)) { <option value="@c.Snapshot.SnapshotId">@Option(c.Snapshot)</option> }</optgroup> }
+                        @if (Candidates.Any(c => c.NeedsConfirmation)) { <optgroup label="Other repositories — confirm first">@foreach (var c in Candidates.Where(c => c.NeedsConfirmation)) { <option value="@c.Snapshot.SnapshotId">@Option(c.Snapshot)</option> }</optgroup> }
                     </select>
                 </label>
             </div>
+            <BaselineEligibilityNote Snapshots="Snapshots" Current="CurrentSnapshot" Selected="_baselineId" @bind-Confirmed="_baselineConfirmed" TestId="tco-baseline-note" />
             @if (CurrentSnapshot is { HasConsumerEvidence: false } stale)
             {
                 <p class="tco-notice" role="status" data-testid="tco-snapshot-old">@stale.ConsumerEvidenceNote</p>
@@ -84,7 +86,7 @@
             <dl class="tco-context" data-testid="tco-context">
                 <div><dt>Project context</dt><dd>@(r.ProjectName ?? "No project documents")</dd></div>
                 <div><dt>Source evidence</dt><dd>@r.Current.Repository · @r.Current.ArchiveName</dd></div>
-                <div><dt>Baseline</dt><dd>@(r.Baseline is { } bl ? $"{bl.ArchiveName} (finds code changed without test changes — not runtime evidence)" : "No baseline selected")</dd></div>
+                <div><dt>Baseline</dt><dd data-testid="tco-result-baseline">@(r.Baseline is { } bl ? $"{bl.ArchiveName} (finds code changed without test changes — not runtime evidence)" : "No baseline selected")@(r.BaselineRelation is { } rel ? $" · {rel.Explanation}" : "")</dd></div>
             </dl>
             @if (r.Partial) { <p class="tco-notice" role="status"><strong data-testid="tco-partial">partial review</strong> — some evidence could not be read; see Limitations.</p> }
             @if (NewerExists(r)) { <p class="tco-notice" role="status" data-testid="tco-stale">A newer snapshot exists. This review stays bound to the snapshot above; run it again to review the newer one.</p> }
@@ -447,8 +449,14 @@
 
     private IReadOnlyList<ReviewSourceSnapshot> Snapshots => _sources?.Snapshots.OrderByDescending(s => s.AnalyzedAt).ToList() ?? [];
     private ReviewSourceSnapshot? CurrentSnapshot => Snapshots.FirstOrDefault(s => s.SnapshotId == _currentId);
-    private List<ReviewSourceSnapshot> BaselineOptions => CurrentSnapshot is { } c ? Snapshots.Where(s => s.RepositoryKey == c.RepositoryKey && s.SnapshotId != c.SnapshotId).ToList() : [];
-    private string? BlockedReason => P.RunBlockedReason(_currentId, _busy);
+    /// <summary>Every other snapshot as a baseline candidate (shared rule): same repository identity, or another identity that needs the reviewer's
+    /// explicit confirmation. Nothing is hidden by name similarity.</summary>
+    private IReadOnlyList<BirkNext.SourceEvidence.BaselineCandidate> Candidates => BirkNext.SourceEvidence.BaselineEligibility.For(Snapshots, CurrentSnapshot);
+    private List<ReviewSourceSnapshot> BaselineOptions => [.. Candidates.Select(c => c.Snapshot)];
+    private bool _baselineConfirmed;
+    private bool BaselineNeedsConfirmation => Candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == _baselineId) is { NeedsConfirmation: true } && !_baselineConfirmed;
+    private string? BlockedReason => P.RunBlockedReason(_currentId, _busy)
+        ?? (BaselineNeedsConfirmation ? "Confirm that the baseline is a version of the same repository, or choose another baseline." : null);
 
     protected override async Task OnInitializedAsync()
     {
@@ -460,7 +468,7 @@
         var (options, error) = await Api.SourcesAsync(token);
         _sources = options; _loadError = error;
         _scope.Options = options ?? (error is null ? null : new ReviewSourceOptions());
-        _currentId = Snapshots.FirstOrDefault()?.SnapshotId;
+        _currentId = ReviewSourceDefaults.Current(Services, Snapshots);
         _scope.PickPrimary(_currentId);
         _history = await Api.HistoryAsync(token);
         // Critical E2E flows of the active Target Environment count as QA automated tests (definitions and recorded runs only).
@@ -492,7 +500,7 @@
         if (_baselineId is { } b && BaselineOptions.All(s => s.SnapshotId != b)) _baselineId = null;
     }
 
-    private void BaselineChanged(ChangeEventArgs e) => _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+    private void BaselineChanged(ChangeEventArgs e) => (_baselineId, _baselineConfirmed) = (Guid.TryParse(e.Value?.ToString(), out var id) ? id : null, false);
 
     private void TabKey(KeyboardEventArgs e, string key)
     {
@@ -512,7 +520,7 @@
             var context = Services.GetService<IReviewContextProvider>()?.GetCurrent();
             await LoadSpecificationAsync(_cts.Token);
             var evidence = P.WorkspaceEvidence(Workspace, context, _projectName, _specification);
-            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
+            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, BaselineSameRepositoryConfirmed = _baselineConfirmed, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
             if (result is null) { _runError = error ?? "The review could not be run."; return; }
             _result = result; _view = "overview";
             _history = await Api.HistoryAsync(_cts.Token);

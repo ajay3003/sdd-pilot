@@ -868,24 +868,36 @@ public static class SpecExplorerService
     }
 
     // ── Inline BDD splitter ───────────────────────────────────────────────────
-    // Splits "Given X, When Y, Then Z" into (X, Y, Z).
+    // Splits "Given X, When Y, Then Z" into (X, Y, Z). The keywords are the bold-marked ones when the item uses bold ("**Given** …"), otherwise
+    // capitalised keywords only: a lowercase "when"/"then" inside a clause ("saves and then reloads") is prose, never a step boundary. A keyword may
+    // be followed by a colon. Everything after Then (including "And …"/"But …" clauses and continuation lines) stays in Then; a step that is
+    // absent in the source stays null — it is never manufactured.
 
-    private static (string? Given, string? When, string? Then) SplitInlineBdd(string text)
+    private static readonly Regex BoldBddKeyword = new(@"\*\*\s*(Given|When|Then)\s*\*\*\s*:?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex PlainBddKeyword = new(@"\b(Given|When|Then)\b\s*:?", RegexOptions.Compiled);
+
+    internal static (string? Given, string? When, string? Then) SplitInlineBdd(string text)
     {
-        var t = Regex.Replace(text, @"\*+", "");
+        var bold = BoldBddKeyword.Matches(text);
+        var marks = (bold.Count > 0 ? bold : PlainBddKeyword.Matches(text))
+            .Select(m => (Key: m.Groups[1].Value.ToLowerInvariant(), m.Index, End: m.Index + m.Length)).ToList();
+        var given = marks.FirstOrDefault(m => m.Key == "given");
+        var hasGiven = given.Key is not null;
+        var when = marks.FirstOrDefault(m => m.Key == "when" && (!hasGiven || m.Index > given.Index));
+        var hasWhen = when.Key is not null;
+        var after = hasWhen ? when.Index : hasGiven ? given.Index : -1;
+        var then = marks.FirstOrDefault(m => m.Key == "then" && m.Index > after);
+        var hasThen = then.Key is not null;
 
-        var givenM = Regex.Match(t, @"\bGiven\b\s+(.+?)(?=\s*,?\s*\bWhen\b|\s*$)",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        var whenM  = Regex.Match(t, @"\bWhen\b\s+(.+?)(?=\s*,?\s*\bThen\b|\s*$)",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        var thenM  = Regex.Match(t, @"\bThen\b\s+(.+)$",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        string? Segment((string Key, int Index, int End) mark, bool present, params (string Key, int Index, int End)[] next)
+        {
+            if (!present) return null;
+            var stop = next.Where(n => n.Key is not null && n.Index > mark.Index).Select(n => n.Index).DefaultIfEmpty(text.Length).Min();
+            var value = Regex.Replace(text[mark.End..stop], @"\*+", "").Trim().TrimEnd(',', ';', ' ');
+            return value.Length == 0 ? null : value;
+        }
 
-        return (
-            givenM.Success ? givenM.Groups[1].Value.Trim().TrimEnd(',', ' ') : null,
-            whenM.Success  ? whenM.Groups[1].Value.Trim().TrimEnd(',', ' ')  : null,
-            thenM.Success  ? thenM.Groups[1].Value.Trim()                    : null
-        );
+        return (Segment(given, hasGiven, when, then), Segment(when, hasWhen, then), Segment(then, hasThen));
     }
 
     // ── Semantic section detection ────────────────────────────────────────────

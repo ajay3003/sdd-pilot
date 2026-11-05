@@ -400,19 +400,24 @@ public static class AiCodeReviewEngine
             else
             {
                 State("AIC-SEC-001", AiRuleExecutionState.Executed);
-                var now = risk!.Endpoints.ToDictionary(e => e.Key, StringComparer.Ordinal);
-                foreach (var before in baselineRisk.Endpoints.Where(e => e.Authorized))
+                // The same operation key can occur several times (several services each mapping "GET /"): compare per key, never assume one.
+                // Authorization counts as removed only when no current occurrence of the key is authorized; each key is reported once.
+                var now = risk!.Endpoints.ToLookup(e => e.Key, StringComparer.Ordinal);
+                bool Has(string key) => now.Contains(key);
+                bool Authorized(string key) => now[key].Any(e => e.Authorized);
+                foreach (var before in baselineRisk.Endpoints.Where(e => e.Authorized).DistinctBy(e => e.Key, StringComparer.Ordinal))
                 {
-                    if (!now.TryGetValue(before.Key, out var after) || after.Authorized) continue;
+                    if (!Has(before.Key) || Authorized(before.Key)) continue;
+                    var after = now[before.Key].First();
                     Add("AIC-SEC-001", $"sec|auth|{before.Key}", AiFindingSeverity.High, $"Authorization protection removed in source evidence: {after.Display}",
                         $"Baseline: {before.Basis}. Current: {after.Basis}.", "Authorization metadata of the same operation compared between snapshots.", sourceOnly,
                         "Restore authorization or document why the operation is now public.", [new(after.File, after.Line, after.Display)], change: AiChangeKind.Changed,
                         before: before.Basis, after: after.Basis, extraSources: [AiEvidenceSource.SnapshotDiff]);
                 }
                 changes.Add(new("Security controls", risk.Endpoints.Count(e => e.Authorized && baselineRisk.Endpoints.All(b => b.Key != e.Key)),
-                    baselineRisk.Endpoints.Count(b => b.Authorized && (!now.TryGetValue(b.Key, out var a) || !a.Authorized)),
-                    baselineRisk.Endpoints.Count(b => now.TryGetValue(b.Key, out var a) && a.Authorized != b.Authorized),
-                    baselineRisk.Endpoints.Count(b => now.TryGetValue(b.Key, out var a) && a.Authorized == b.Authorized), "Endpoints/operations with authorization metadata."));
+                    baselineRisk.Endpoints.Count(b => b.Authorized && (!Has(b.Key) || !Authorized(b.Key))),
+                    baselineRisk.Endpoints.Count(b => Has(b.Key) && Authorized(b.Key) != b.Authorized),
+                    baselineRisk.Endpoints.Count(b => Has(b.Key) && Authorized(b.Key) == b.Authorized), "Endpoints/operations with authorization metadata."));
             }
 
             State("AIC-SEC-002", AiRuleExecutionState.Executed);

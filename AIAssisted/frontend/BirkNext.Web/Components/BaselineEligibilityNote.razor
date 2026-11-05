@@ -1,0 +1,48 @@
+@using BirkNext.SourceEvidence
+
+@* The shared baseline explanation for every change/drift review: why no baseline can be chosen, which snapshots are of another repository identity
+   (listed, never hidden), and — when such a snapshot is selected — the explicit confirmation that both are versions of the same repository. The
+   confirmation is sent with the run and recorded with the result as declared, not detected. *@
+<div class="ben" data-testid="@TestId">
+    @if (BaselineEligibility.Unavailable(Snapshots, Current) is { } unavailable)
+    {
+        <p class="ben-muted" data-testid="@($"{TestId}-unavailable")">No baseline available: @unavailable Without one, the review assesses the current snapshot only.</p>
+    }
+    else
+    {
+        var candidates = BaselineEligibility.For(Snapshots, Current);
+        var others = candidates.Where(c => c.NeedsConfirmation).ToList();
+        @if (candidates.All(c => c.NeedsConfirmation))
+        {
+            <p class="ben-muted" data-testid="@($"{TestId}-none-eligible")">No other snapshot of this repository identity (@Current!.Repository) is analyzed. Snapshots of other repositories are listed under
+                “Other repositories — confirm first”.</p>
+        }
+        @if (Candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == Selected) is { NeedsConfirmation: true } chosen)
+        {
+            <div class="ben-confirm" role="group" aria-labelledby="@($"{TestId}-confirm-h")" data-testid="@($"{TestId}-confirm")">
+                <p id="@($"{TestId}-confirm-h")"><strong>Confirm the repository relation.</strong> @chosen.Reason</p>
+                <label><input type="checkbox" checked="@Confirmed" @onchange="e => ConfirmedChanged.InvokeAsync((bool)e.Value!)" data-testid="@($"{TestId}-confirm-check")" />
+                    @chosen.Snapshot.Repository and @Current!.Repository are versions of the same repository (for example a feature branch and main).</label>
+                <p class="ben-muted">Recorded with the result as declared by you — not detected. Without this confirmation the review cannot run with this baseline.</p>
+            </div>
+        }
+        else if (others.Count > 0)
+        {
+            <details class="ben-others" data-testid="@($"{TestId}-others")">
+                <summary>@others.Count snapshot@(others.Count == 1 ? "" : "s") of other repositories — why they need confirmation</summary>
+                <ul>@foreach (var c in others) { <li>@c.Snapshot.ArchiveName · @c.Snapshot.AnalyzedAt.ToLocalTime().ToString("g") — @c.Reason</li> }</ul>
+            </details>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ReviewSourceSnapshot> Snapshots { get; set; } = [];
+    [Parameter] public ReviewSourceSnapshot? Current { get; set; }
+    [Parameter] public Guid? Selected { get; set; }
+    [Parameter] public bool Confirmed { get; set; }
+    [Parameter] public EventCallback<bool> ConfirmedChanged { get; set; }
+    [Parameter] public string TestId { get; set; } = "baseline-note";
+
+    private IReadOnlyList<BaselineCandidate> Candidates => BaselineEligibility.For(Snapshots, Current);
+}

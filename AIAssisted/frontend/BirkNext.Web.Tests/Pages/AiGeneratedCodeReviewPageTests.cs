@@ -90,14 +90,16 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
     }
 
     [Fact]
-    public void Current_snapshot_is_preselected_and_baselines_are_limited_to_the_same_repository()
+    public void Current_snapshot_is_preselected_and_other_repositories_are_listed_apart_never_as_the_same_repository()
     {
         Sources(Snap(Current, "Shop", 0, true), Snap(Older, "Shop", 2, false), Snap(Other, "Billing", 1, true));
         var cut = Render<AiGeneratedCodeReview>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=aic-current]"));
         cut.Find("[data-testid=aic-current]").GetAttribute("value").Should().Be(Current.ToString());
         var baselines = cut.FindAll("[data-testid=aic-baseline] option").Select(o => o.GetAttribute("value")).ToList();
-        baselines.Should().Equal("", Older.ToString());
+        baselines.Should().Equal("", Older.ToString(), Other.ToString());
+        cut.FindAll("[data-testid=aic-baseline] optgroup").Select(g => g.GetAttribute("label")).Should().Equal("Same repository", "Other repositories — confirm first");
+        cut.Find("[data-testid=aic-baseline] optgroup[label='Same repository']").TextContent.Should().NotContain("Billing");
         cut.Find("[data-testid=aic-scope-changed]").HasAttribute("disabled").Should().BeTrue("changed-files scope needs a baseline");
         cut.Find("[data-testid=aic-run]").HasAttribute("disabled").Should().BeFalse();
         cut.Find("[data-testid=aic-mode-value]").TextContent.Should().Be("Current snapshot review");
@@ -105,6 +107,33 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
         cut.Find("[data-testid=aic-baseline]").Change(Older.ToString());
         cut.Find("[data-testid=aic-mode-value]").TextContent.Should().Contain("Snapshot change review");
         cut.Find("[data-testid=aic-scope-changed]").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_baseline_of_another_repository_runs_only_after_explicit_confirmation_and_sends_it()
+    {
+        Sources(Snap(Current, "Shop", 0, true), Snap(Other, "Shop-language", 1, true));
+        AiCodeReviewRequest? sent = null;
+        _api.Setup(x => x.RunAsync(It.IsAny<AiCodeReviewRequest>(), It.IsAny<CancellationToken>())).Callback<AiCodeReviewRequest, CancellationToken>((r, _) => sent = r)
+            .ReturnsAsync(((AiCodeReviewResult?)null, "stop"));
+        var cut = Render<AiGeneratedCodeReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=aic-baseline]"));
+        cut.Find("[data-testid=aic-baseline-note-none-eligible]").TextContent.Should().Contain("No other snapshot of this repository identity");
+
+        cut.Find("[data-testid=aic-baseline]").Change(Other.ToString());
+        cut.Find("[data-testid=aic-baseline-note-confirm]").TextContent.Should().Contain("Different repository identity").And.Contain("similar names are never treated as the same repository");
+        cut.Find("[data-testid=aic-run]").HasAttribute("disabled").Should().BeTrue("a different repository identity is compared only after the reviewer confirms it");
+        cut.Find("[data-testid=aic-run-help]").TextContent.Should().Contain("Confirm that the baseline is a version of the same repository");
+
+        cut.Find("[data-testid=aic-baseline-note-confirm-check]").Change(true);
+        cut.Find("[data-testid=aic-run]").HasAttribute("disabled").Should().BeFalse();
+        cut.Find("[data-testid=aic-run]").Click();
+        cut.WaitForAssertion(() => sent.Should().NotBeNull());
+        sent!.Should().Match<AiCodeReviewRequest>(r => r.BaselineSnapshotId == Other && r.BaselineSameRepositoryConfirmed);
+
+        cut.Find("[data-testid=aic-baseline]").Change("");
+        cut.Find("[data-testid=aic-baseline]").Change(Other.ToString());
+        cut.Find("[data-testid=aic-run]").HasAttribute("disabled").Should().BeTrue("changing the baseline clears the confirmation");
     }
 
     [Fact]

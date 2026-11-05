@@ -256,6 +256,49 @@ public sealed class SpecExplorerServiceTests
         bdds[1].BddThen.Should().Contain("address-protection flag");
     }
 
+    [Theory]
+    // A lowercase "then"/"when" inside a clause is prose, never a step boundary (it truncated When and started Then mid-sentence).
+    [InlineData("**Given** a saved case, **When** the user saves and then reloads the page, **Then** the case is shown when the list opens.",
+        "a saved case", "the user saves and then reloads the page", "the case is shown when the list opens.")]
+    // A colon after the keyword: the Then was lost entirely and reported as missing.
+    [InlineData("**Given**: a caseworker, **When**: they search, **Then**: results appear.", "a caseworker", "they search", "results appear.")]
+    // And/But after Then stay in Then.
+    [InlineData("**Given** a child, **When** searched, **Then** it appears, **And** the address flag is shown, **But** no address is disclosed.",
+        "a child", "searched", "it appears, And the address flag is shown, But no address is disclosed.")]
+    // Without bold, only capitalised keywords split.
+    [InlineData("Given a list when filtered, When sorted, Then the order is stable.", "a list when filtered", "sorted", "the order is stable.")]
+    // A Then that is absent in the source stays absent — never manufactured.
+    [InlineData("**Given** a draft, **When** it is opened", "a draft", "it is opened", null)]
+    public void Inline_Given_When_Then_split_on_real_step_keywords_only(string text, string given, string when, string? then)
+    {
+        var (g, w, t) = SpecExplorerService.SplitInlineBdd(text);
+        g.Should().Be(given);
+        w.Should().Be(when);
+        t.Should().Be(then);
+    }
+
+    [Fact]
+    public void A_multi_line_numbered_scenario_keeps_its_complete_Then()
+    {
+        const string md = """
+            # Spec
+
+            ## User Story 1: Child Search
+
+            **Acceptance Scenarios**:
+
+            1. **Given** a caseworker, **When** they search and then open a child,
+               **Then** the child is shown with its status
+               and its history in order of change.
+
+            """;
+
+        var bdd = AllDescendants(SpecExplorerService.Parse(md)).Single(n => n.NodeType == SpecNodeType.BddScenario);
+
+        bdd.BddWhen.Should().Be("they search and then open a child");
+        bdd.BddThen.Should().Be("the child is shown with its status and its history in order of change.");
+    }
+
     // =========================================================================
     // T4 — Q/A parsing: inline format produces QaPair, no phantom requirements
     // =========================================================================

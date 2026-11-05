@@ -4,6 +4,7 @@ using BirkNext.Api.Models;
 using BirkNext.Api.Services.CriticalE2E;
 using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Integrations;
+using BirkNext.SourceEvidence;
 using BirkNext.TestCoverage;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,17 +55,19 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         var current = await sources.ResolveAsync("", request.CurrentSnapshotId, ct);
         if (current is null) return TestCoverageOutcome.Fail(404, "The selected snapshot is unavailable; nothing is substituted.");
         IqrSourceSnapshot? baseline = null;
+        BaselineRelation? relation = null;
         if (request.BaselineSnapshotId is { } baselineId)
         {
             baseline = await sources.ResolveAsync("", baselineId, ct);
             if (baseline is null) return TestCoverageOutcome.Fail(404, "The selected baseline snapshot is unavailable; nothing is substituted.");
-            if (ReviewSourceEvidenceProvider.Identity(baseline).Key != ReviewSourceEvidenceProvider.Identity(current).Key)
-                return TestCoverageOutcome.Fail(400, "The baseline belongs to another repository; a change-aware review compares two snapshots of the same repository.");
+            (relation, var refused) = BaselineEligibility.Validate(ReviewSourceEvidenceProvider.Identity(current), ReviewSourceEvidenceProvider.Identity(baseline),
+                request.BaselineSameRepositoryConfirmed);
+            if (refused is not null) return TestCoverageOutcome.Fail(400, refused);
         }
         var repositoryKey = ReviewSourceEvidenceProvider.Identity(current).Key;
         var decisions = await DecisionsAsync(repositoryKey, ct);
         var flows = Flows(request.EnvironmentId);
-        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct);
+        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct) with { BaselineRelation = relation };
         var label = $"{result.Current.Repository} · {result.Inventory.TestsDiscovered} test(s) · {result.Journeys.Count} journey(s)";
         db.TestCoverageReviewRuns.Add(new TestCoverageReviewRunRecord
         {

@@ -119,6 +119,21 @@ public sealed class AiCodeReviewEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task Change_review_handles_the_same_operation_key_occurring_several_times()
+    {
+        // Real M2LB data: several services each map "GET /" (minimal API), so one operation key occurs several times. The change review crashed
+        // (duplicate dictionary key → HTTP 500); it now compares per key and reports each key once.
+        var (baseline, current) = await SnapshotsAsync();
+        static IqrSourceSnapshot Twice(IqrSourceSnapshot s) =>
+            s with { CodeRiskEvidence = s.CodeRiskEvidence! with { Endpoints = [.. s.CodeRiskEvidence.Endpoints, .. s.CodeRiskEvidence.Endpoints] } };
+
+        var plain = Review(current, baseline);
+        var doubled = Review(Twice(current), Twice(baseline));
+
+        Rule(doubled, "AIC-SEC-001").Select(f => f.Title).Should().BeEquivalentTo(Rule(plain, "AIC-SEC-001").Select(f => f.Title), "each operation key is reported once");
+    }
+
+    [Fact]
     public async Task Change_review_compares_baseline_and_current_snapshots()
     {
         var (baseline, current) = await SnapshotsAsync();
@@ -255,8 +270,16 @@ public sealed class AiCodeReviewEngineTests : IDisposable
 
         var outcome = await service.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = current.Id, BaselineSnapshotId = baseline.Id });
         outcome.Result.Should().NotBeNull();
+        outcome.Result!.BaselineRelation!.Kind.Should().Be(BirkNext.SourceEvidence.BaselineRelationKind.SameRepositoryIdentity);
+
+        // Another repository identity is compared only when the reviewer declares it, and the stored result says so (declared, not detected).
+        var declared = await service.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = current.Id, BaselineSnapshotId = other.Id, BaselineSameRepositoryConfirmed = true });
+        declared.Status.Should().Be(200);
+        declared.Result!.BaselineRelation.Should().Match<BirkNext.SourceEvidence.BaselineRelation>(r =>
+            r.Kind == BirkNext.SourceEvidence.BaselineRelationKind.DeclaredByReviewer && r.Explanation.Contains("Not detected"));
+        (await service.GetAsync(declared.Result.RunId))!.BaselineRelation!.Kind.Should().Be(BirkNext.SourceEvidence.BaselineRelationKind.DeclaredByReviewer, "the declaration is stored with the run");
         var history = await service.HistoryAsync();
-        history.Should().ContainSingle(h => h.RunId == outcome.Result!.RunId && h.CurrentSnapshotId == current.Id && h.BaselineSnapshotId == baseline.Id);
+        history.Should().Contain(h => h.RunId == outcome.Result!.RunId && h.CurrentSnapshotId == current.Id && h.BaselineSnapshotId == baseline.Id);
         // A newer snapshot of the same repository does not re-bind the stored run.
         await AiCodeReviewFixture.AnalyzeAsync(_db, "contoso-shop.zip", AiCodeReviewFixture.Current());
         (await service.GetAsync(outcome.Result!.RunId))!.Current.SnapshotId.Should().Be(current.Id);

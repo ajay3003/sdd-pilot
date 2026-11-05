@@ -134,6 +134,8 @@ public sealed record AiCodeReviewRequest
     public Guid? BaselineSnapshotId { get; init; }
     public AiReviewScope Scope { get; init; } = AiReviewScope.EntireSource;
     public AiWorkspaceEvidence? Workspace { get; init; }
+    /// <summary>The reviewer confirms that a baseline of another repository identity is a version of the same repository (recorded as declared).</summary>
+    public bool BaselineSameRepositoryConfirmed { get; init; }
 }
 
 public sealed record AiSnapshotProvenance(Guid SnapshotId, string Repository, string ArchiveName, string Fingerprint, DateTimeOffset AnalyzedAt, bool HasCodeRiskEvidence);
@@ -186,6 +188,8 @@ public sealed record AiCodeReviewResult
     public string? ProjectName { get; init; }
     public AiSnapshotProvenance Current { get; init; } = new(Guid.Empty, "", "", "", default, false);
     public AiSnapshotProvenance? Baseline { get; init; }
+    /// <summary>How the baseline relates to the current snapshot (same identity, or declared by the reviewer). Null without a baseline or for older results.</summary>
+    public BirkNext.SourceEvidence.BaselineRelation? BaselineRelation { get; init; }
     public List<AiReadinessItem> Readiness { get; init; } = [];
     public List<AiCategoryResult> Categories { get; init; } = [];
     public List<AiRuleExecution> Rules { get; init; } = [];

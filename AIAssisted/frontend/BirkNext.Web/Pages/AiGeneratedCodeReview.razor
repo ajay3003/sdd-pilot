@@ -10,6 +10,7 @@
 @inject ICurrentWorkspaceProjection CurrentWorkspace
 @inject SddEvidenceGraphService Graph
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 
 <PageTitle>@AiCodeReviewText.Title</PageTitle>
 
@@ -46,13 +47,12 @@
                 <label class="aic-field">Baseline snapshot <span class="aic-muted">(optional — same repository; enables change-risk rules)</span>
                     <select id="@T.BaselineAnchor" class="form-control" data-testid="aic-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="BaselineChanged" disabled="@(_busy || BaselineOptions.Count == 0)" @ref="_baselineSelect">
                         <option value="">No baseline — review the current snapshot</option>
-                        @foreach (var s in BaselineOptions)
-                        {
-                            <option value="@s.SnapshotId">@Option(s)</option>
-                        }
+                        @if (Candidates.Any(c => c.Eligible)) { <optgroup label="Same repository">@foreach (var c in Candidates.Where(c => c.Eligible)) { <option value="@c.Snapshot.SnapshotId">@Option(c.Snapshot)</option> }</optgroup> }
+                        @if (Candidates.Any(c => c.NeedsConfirmation)) { <optgroup label="Other repositories — confirm first">@foreach (var c in Candidates.Where(c => c.NeedsConfirmation)) { <option value="@c.Snapshot.SnapshotId">@Option(c.Snapshot)</option> }</optgroup> }
                     </select>
                 </label>
             </div>
+            <BaselineEligibilityNote Snapshots="Snapshots" Current="CurrentSnapshot" Selected="_baselineId" @bind-Confirmed="_baselineConfirmed" TestId="aic-baseline-note" />
             @if (_baselineId is null && CurrentSnapshot is { } cur && T.SuggestedBaseline(Snapshots, cur) is { } suggested)
             {
                 @* A proposal: the previous snapshot of the same repository. Nothing is selected until the user says so. *@
@@ -287,7 +287,7 @@
                 }
                 else
                 {
-                    <p class="aic-muted" data-testid="aic-change-provenance">Baseline <code>@r.Baseline.ArchiveName · @T.Short(r.Baseline.Fingerprint)</code> → current <code>@r.Current.ArchiveName · @T.Short(r.Current.Fingerprint)</code> · same repository (@r.Current.Repository) · @r.ChangedFiles changed file(s)</p>
+                    <p class="aic-muted" data-testid="aic-change-provenance">Baseline <code>@r.Baseline.ArchiveName · @T.Short(r.Baseline.Fingerprint)</code> → current <code>@r.Current.ArchiveName · @T.Short(r.Current.Fingerprint)</code> · @(r.BaselineRelation?.Explanation ?? $"same repository ({r.Current.Repository})") · @r.ChangedFiles changed file(s)</p>
                     @if (r.Attention is { } attention)
                     {
                         <p class="aic-attention aic-attention-@attention.ToString().ToLowerInvariant()" data-testid="aic-attention">Review attention: <strong>@attention</strong>
@@ -402,9 +402,14 @@
 
     private IReadOnlyList<ReviewSourceSnapshot> Snapshots => _sources?.Snapshots.OrderByDescending(s => s.AnalyzedAt).ToList() ?? [];
     private ReviewSourceSnapshot? CurrentSnapshot => Snapshots.FirstOrDefault(s => s.SnapshotId == _currentId);
-    private List<ReviewSourceSnapshot> BaselineOptions => CurrentSnapshot is { } c
-        ? Snapshots.Where(s => s.RepositoryKey == c.RepositoryKey && s.SnapshotId != c.SnapshotId).ToList() : [];
-    private string? BlockedReason => P.RunBlockedReason(_currentId, _baselineId, _scope_, _busy);
+    /// <summary>Every other snapshot as a baseline candidate (shared rule): same repository identity, or another identity that needs the reviewer's
+    /// explicit confirmation. Nothing is hidden by name similarity.</summary>
+    private IReadOnlyList<BirkNext.SourceEvidence.BaselineCandidate> Candidates => BirkNext.SourceEvidence.BaselineEligibility.For(Snapshots, CurrentSnapshot);
+    private List<ReviewSourceSnapshot> BaselineOptions => [.. Candidates.Select(c => c.Snapshot)];
+    private bool _baselineConfirmed;
+    private bool BaselineNeedsConfirmation => Candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == _baselineId) is { NeedsConfirmation: true } && !_baselineConfirmed;
+    private string? BlockedReason => P.RunBlockedReason(_currentId, _baselineId, _scope_, _busy)
+        ?? (BaselineNeedsConfirmation ? "Confirm that the baseline is a version of the same repository, or choose another baseline." : null);
     private List<AiCodeFinding> VisibleFindings => _result?.Findings.Where(f => (_category is null || f.Category == _category) && T.Matches(f, _query)).ToList() ?? [];
 
     private IReadOnlyList<AiReadinessItem> Readiness =>
@@ -424,7 +429,7 @@
         var (options, error) = await Api.SourcesAsync(_cts.Token);
         _sources = options; _loadError = error;
         _scope.Options = options ?? (error is null ? null : new ReviewSourceOptions());
-        _currentId = Snapshots.FirstOrDefault()?.SnapshotId;
+        _currentId = ReviewSourceDefaults.Current(Services, Snapshots);
         _scope.PickPrimary(_currentId);
         _history = await Api.HistoryAsync(_cts.Token);
         _loaded = true;
@@ -461,7 +466,7 @@
 
     private void BaselineChanged(ChangeEventArgs e)
     {
-        _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        (_baselineId, _baselineConfirmed) = (Guid.TryParse(e.Value?.ToString(), out var id) ? id : null, false);
         if (_baselineId is null) _scope_ = AiReviewScope.EntireSource;
     }
 
@@ -501,7 +506,7 @@
         try
         {
             var evidence = P.WorkspaceEvidence(Workspace, Graph.Build(Workspace), _projectName);
-            var (result, error) = await Api.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, Scope = _scope_, Workspace = evidence }, _cts.Token);
+            var (result, error) = await Api.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, BaselineSameRepositoryConfirmed = _baselineConfirmed, Scope = _scope_, Workspace = evidence }, _cts.Token);
             if (result is null) { _runError = error ?? "The review could not be run."; return; }
             Show(result);
             _history = await Api.HistoryAsync(_cts.Token);

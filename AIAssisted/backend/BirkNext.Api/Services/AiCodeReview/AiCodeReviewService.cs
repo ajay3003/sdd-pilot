@@ -5,6 +5,7 @@ using BirkNext.Api.Models;
 using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Dependencies;
 using BirkNext.Integrations;
+using BirkNext.SourceEvidence;
 using Microsoft.EntityFrameworkCore;
 
 namespace BirkNext.Api.Services.AiCodeReview;
@@ -51,15 +52,17 @@ public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidencePr
         var current = await sources.ResolveAsync("", request.CurrentSnapshotId, ct);
         if (current is null) return AiCodeReviewOutcome.Fail(404, "The selected current snapshot is unavailable; nothing is substituted.");
         IqrSourceSnapshot? baseline = null;
+        BaselineRelation? relation = null;
         if (request.BaselineSnapshotId is { } baselineId)
         {
             baseline = await sources.ResolveAsync("", baselineId, ct);
             if (baseline is null) return AiCodeReviewOutcome.Fail(404, "The selected baseline snapshot is unavailable; nothing is substituted.");
-            // Never compare against an unrelated project: both snapshots must have the same repository identity.
-            if (ReviewSourceEvidenceProvider.Identity(baseline).Key != ReviewSourceEvidenceProvider.Identity(current).Key)
-                return AiCodeReviewOutcome.Fail(400, $"The baseline belongs to another repository ({ReviewSourceEvidenceProvider.Identity(baseline).DisplayName}); a change review compares two snapshots of the same repository.");
+            // Never compare against an unrelated project: the same repository identity, or the reviewer's explicit declaration (recorded as declared).
+            (relation, var refused) = BaselineEligibility.Validate(ReviewSourceEvidenceProvider.Identity(current), ReviewSourceEvidenceProvider.Identity(baseline),
+                request.BaselineSameRepositoryConfirmed);
+            if (refused is not null) return AiCodeReviewOutcome.Fail(400, refused);
         }
-        var result = AiCodeReviewEngine.Review(current, baseline, request, DateTimeOffset.UtcNow, ct);
+        var result = AiCodeReviewEngine.Review(current, baseline, request, DateTimeOffset.UtcNow, ct) with { BaselineRelation = relation };
         // Dependency evidence is owned by Dependency Review: its stored runs are consumed (never re-run or re-imported here).
         result = result with { Readiness = [.. result.Readiness, await DependencyReviewCoverageAsync(current, ct)] };
         var label = $"{result.Current.Repository} · {(baseline is null ? "current snapshot" : "change review")} · {result.Findings.Count} finding(s)";

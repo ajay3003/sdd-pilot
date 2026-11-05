@@ -53,6 +53,54 @@ public sealed record ReviewSourceSnapshot
     public string? ConsumerSummary { get; init; }
 }
 
+// ── Baseline eligibility (shared by every change/drift review) ──────────────────────────────────────────────────────────────
+// A baseline is comparable when it has the current snapshot's repository identity. A snapshot of another identity is never matched by a similar
+// name (M2LB vs M2LB-language) and never hidden: it is listed with the reason, and it can be compared only after the reviewer explicitly declares
+// both are versions of the same repository. That declaration is recorded with the result as such — declared, not detected.
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BaselineRelationKind { SameRepositoryIdentity, DeclaredByReviewer }
+
+/// <summary>How the baseline of a stored result relates to its current snapshot (provenance of the comparison).</summary>
+public sealed record BaselineRelation(BaselineRelationKind Kind, string Explanation);
+
+/// <summary>One possible baseline for the current snapshot: eligible as is, or only after the reviewer confirms the repositories are the same.</summary>
+public sealed record BaselineCandidate(ReviewSourceSnapshot Snapshot, bool Eligible, string Reason)
+{
+    public bool NeedsConfirmation => !Eligible;
+}
+
+public static class BaselineEligibility
+{
+    /// <summary>Every other snapshot as a baseline candidate: same repository identity first (newest first), then the others with the reason they need
+    /// confirmation. Nothing is filtered out silently.</summary>
+    public static IReadOnlyList<BaselineCandidate> For(IReadOnlyList<ReviewSourceSnapshot> snapshots, ReviewSourceSnapshot? current)
+    {
+        if (current is null) return [];
+        return [.. snapshots.Where(s => s.SnapshotId != current.SnapshotId)
+            .Select(s => s.RepositoryKey == current.RepositoryKey
+                ? new BaselineCandidate(s, true, $"Same repository identity ({s.Repository}; {s.IdentityBasis.ToLowerInvariant()}).")
+                : new BaselineCandidate(s, false, $"Different repository identity: {s.Repository} ({s.IdentityBasis.ToLowerInvariant()}) vs {current.Repository}. Compare only if both are versions of the same repository — you must confirm that explicitly; similar names are never treated as the same repository."))
+            .OrderByDescending(c => c.Eligible).ThenByDescending(c => c.Snapshot.AnalyzedAt)];
+    }
+
+    /// <summary>Why no baseline can be chosen at all (null when at least one candidate exists).</summary>
+    public static string? Unavailable(IReadOnlyList<ReviewSourceSnapshot> snapshots, ReviewSourceSnapshot? current) =>
+        current is null ? "Choose the current snapshot first."
+        : snapshots.All(s => s.SnapshotId == current.SnapshotId) ? "No other analyzed snapshot exists. Analyze another revision (for example a feature branch or the main branch) in Source Analysis to compare against it."
+        : null;
+
+    /// <summary>The relation of a requested baseline to the current snapshot, or the reason it is refused. A different identity is accepted only with the
+    /// reviewer's explicit confirmation, and is then recorded as declared.</summary>
+    public static (BaselineRelation? Relation, string? Error) Validate(SourceRepositoryIdentity current, SourceRepositoryIdentity baseline, bool confirmedSameRepository) =>
+        baseline.Key == current.Key
+            ? (new(BaselineRelationKind.SameRepositoryIdentity, $"Same repository identity ({current.DisplayName}; {current.Basis.ToLowerInvariant()})."), null)
+            : confirmedSameRepository
+                ? (new(BaselineRelationKind.DeclaredByReviewer,
+                    $"Declared by the reviewer: {baseline.DisplayName} and {current.DisplayName} are versions of the same repository. Not detected — their repository identities differ."), null)
+                : (null, $"The baseline belongs to another repository identity ({baseline.DisplayName} vs {current.DisplayName}). Confirm that both are versions of the same repository to compare them.");
+}
+
 /// <summary>An exact snapshot in a review scope, as it was at run time.</summary>
 public sealed record SourceScopeEntry
 {

@@ -289,6 +289,8 @@ public sealed record TestCoverageReviewResult
     public List<CoverageArtifactRef> SpecificationArtifacts { get; init; } = [];
     public CoverageSnapshotRef Current { get; init; } = new(Guid.Empty, "", "", "", default);
     public CoverageSnapshotRef? Baseline { get; init; }
+    /// <summary>How the baseline relates to the current snapshot (same identity, or declared by the reviewer). Null without a baseline or for older results.</summary>
+    public BirkNext.SourceEvidence.BaselineRelation? BaselineRelation { get; init; }
     public CoverageInventory Inventory { get; init; } = new();
     public List<CoverageTest> Tests { get; init; } = [];
     public List<QaTestCandidate> QaTests { get; init; } = [];
@@ -354,6 +356,8 @@ public sealed record TestCoverageReviewRequest
 {
     public Guid CurrentSnapshotId { get; init; }
     public Guid? BaselineSnapshotId { get; init; }
+    /// <summary>The reviewer confirms that a baseline of another repository identity is a version of the same repository (recorded as declared).</summary>
+    public bool BaselineSameRepositoryConfirmed { get; init; }
     /// <summary>Optional Target Environment whose Critical E2E flows count as QA automated tests (definitions and recorded runs only; nothing runs).</summary>
     public string? EnvironmentId { get; init; }
     public CoverageWorkspaceEvidence? Workspace { get; init; }
