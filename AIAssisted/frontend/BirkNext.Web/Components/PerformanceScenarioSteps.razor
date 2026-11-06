@@ -156,8 +156,27 @@
         _ => "attention",
     };
 
-    /// <summary>Long scenarios start collapsed (a person's choice per step wins); short ones start expanded.</summary>
-    private bool Expanded(HttpPerformanceStep s) => _expanded.TryGetValue(s.Id, out var open) ? open : Steps.Count <= 3;
+    /// <summary>One step is open by default — the first enabled step that needs attention, else the first step; a person's choice per step wins.</summary>
+    private bool Expanded(HttpPerformanceStep s) => _expanded.TryGetValue(s.Id, out var open) ? open : s.Id == StableDefaultOpen();
+
+    /// <summary>The default open step is chosen once and kept while it exists: editing or moving steps never closes the editor in use.</summary>
+    private string? _defaultOpen;
+    private string? StableDefaultOpen()
+    {
+        if (_defaultOpen is null || Steps.All(x => x.Id != _defaultOpen)) _defaultOpen = DefaultOpen();
+        return _defaultOpen;
+    }
+
+    private string? DefaultOpen()
+    {
+        for (var i = 0; i < Steps.Count; i++)
+        {
+            if (Steps[i].Disabled || DD.IsDraft(Steps[i])) continue;
+            var status = R.Readiness(Definition, i, KnownAliases, ObservedAuthentication);
+            if (status.Status != StepStatus.Ready || R.Dimensions(Definition, i, KnownAliases, ObservedAuthentication).ConfiguredButExecutionBlocked) return Steps[i].Id;
+        }
+        return Steps.FirstOrDefault()?.Id;
+    }
 
     private Task Change(PerformanceTestDefinition next) => OnChange.InvokeAsync(next);
 
@@ -370,34 +389,52 @@
         var open = Expanded(s);
         var rows = R.Rows(Definition.Scenario, index, KnownAliases);
         var bodyId = $"pt-step-body-{s.Id}";
-        @* Native dragover cancellation enables drop without dispatching every pointer movement through Blazor. *@
-        <li @key="s.Id" class="pt-step pss-step pss-tone-@(DD.IsDraft(s) ? "discovered" : executionBlocked ? "blocked" : Tone(status.Status)) @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
+        var issues = status.Status == StepStatus.Disabled ? 0 : status.Reasons.Count + (executionBlocked ? 1 : 0);
+        @* Compact operation row (always): order, name, method + path, source, the three status dimensions, issues and Configure. One step is open by
+           default (the first that needs attention); its focused editor has five parts. Native dragover cancellation enables drop without
+           dispatching every pointer movement through Blazor. *@
+        <li @key="s.Id" class="pt-step pss-step pss-tone-@(DD.IsDraft(s) ? "discovered" : executionBlocked ? "blocked" : Tone(status.Status)) @(open ? "is-open" : "") @(_dragged is not null && _dropBefore == s.Id ? "pss-drop-target" : "") @(_dragged == s.Id ? "pss-dragging" : "")"
             data-testid="pt-step" data-step-id="@s.Id" data-status="@(executionBlocked ? "ExecutionBlocked" : status.Status.ToString())" data-disabled="@(s.Disabled ? "true" : "false")" aria-labelledby="@($"pt-step-h-{index + 1}")"
             ondragover="event.preventDefault()" @ondragenter="() => _dropBefore = s.Id" @ondrop="() => DropBefore(s.Id)" @ondrop:stopPropagation>
             <div class="pss-step-head">
                 <span class="pss-handle" draggable="true" title="Drag to reorder" aria-hidden="true" data-testid="pt-step-drag"
                       @ondragstart="() => StartDrag(s.Id)" @ondragend="EndDrag">⋮⋮</span>
-                <h4 class="pss-step-title" id="@($"pt-step-h-{index + 1}")" tabindex="-1" data-testid="pt-step-heading">@(index + 1) · @(string.IsNullOrWhiteSpace(s.Name) ? "Unnamed step" : s.Name)</h4>
-                @if (DD.IsDraft(s))
-                {
-                    <span class="pss-status pss-status-discovered" data-testid="pt-step-status" data-status="Discovered">@DD.Label</span>
-                }
-                else if (executionBlocked)
-                {
-                    <span class="pss-status pss-status-blocked" data-testid="pt-step-status" data-status="ExecutionBlocked">Configured · execution blocked</span>
-                }
-                else
-                {
-                    <span class="pss-status pss-status-@Tone(status.Status)" data-testid="pt-step-status" data-status="@status.Status">@R.StatusLabel(status.Status)</span>
-                }
-                <button type="button" class="btn-link pss-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@bodyId" @onclick="() => _expanded[s.Id] = !open" data-testid="pt-step-toggle">
-                    @(open ? "Collapse" : "Expand")<span class="visually-hidden"> step @(index + 1)</span></button>
+                <div class="pss-row-main">
+                    <h4 class="pss-step-title" id="@($"pt-step-h-{index + 1}")" tabindex="-1" data-testid="pt-step-heading">@(index + 1) · @(string.IsNullOrWhiteSpace(s.Name) ? "Unnamed step" : s.Name)</h4>
+                    <p class="pss-endpoint" data-testid="pt-step-endpoint"><span class="pss-method">@s.Method</span> <code class="pss-break">@(s.RelativePath.Length == 0 ? "(path not entered)" : s.RelativePath)</code>@if (s.GraphQlOperationName is { Length: > 0 } op) { <span class="pss-hint"> · operation @op</span> }</p>
+                    <p class="pss-source @(D.FromEvidence(s) ? "pss-source-evidence" : "")" data-testid="pt-step-source" data-evidence="@(s.Source?.Evidence.ToString() ?? "Manual")">
+                        @if (D.FromEvidence(s)) { <span class="pss-origin" data-testid="pt-step-origin">Added from detected operation</span><span> · </span> }
+                        @D.StepSource(s)
+                    </p>
+                </div>
+                <div class="pss-row-state">
+                    @if (DD.IsDraft(s))
+                    {
+                        <span class="pss-status pss-status-discovered" data-testid="pt-step-status" data-status="Discovered">@DD.Label</span>
+                    }
+                    else if (executionBlocked)
+                    {
+                        <span class="pss-status pss-status-blocked" data-testid="pt-step-status" data-status="ExecutionBlocked">Configured · execution blocked</span>
+                    }
+                    else
+                    {
+                        <span class="pss-status pss-status-@Tone(status.Status)" data-testid="pt-step-status" data-status="@status.Status">@R.StatusLabel(status.Status)</span>
+                    }
+                    @if (!DD.IsDraft(s) && !s.Disabled)
+                    {
+                        @* Defined · Configured · Executable: three separate facts, so a defined step never reads as runnable. *@
+                        <span class="pss-dims" data-testid="pt-step-dims">
+                            @foreach (var (key, label, dim) in new[] { ("defined", "Defined", dims.Definition), ("configured", "Configured", dims.RuntimeValues), ("executable", "Executable", dims.Execution) })
+                            {
+                                <span class="pss-dim pss-dim-@dim.State.ToString().ToLowerInvariant()" data-testid="pt-step-dim" data-dim="@key" data-state="@dim.State" title="@dim.Text"><span aria-hidden="true">@Glyph(dim.State) </span>@label</span>
+                            }
+                        </span>
+                    }
+                    @if (issues > 0) { <span class="pss-issues" data-testid="pt-step-issues">@issues issue@(issues == 1 ? "" : "s")</span> }
+                    <button type="button" class="btn-secondary btn-sm pss-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@bodyId" @onclick="() => Toggle(s)" data-testid="pt-step-toggle">
+                        @(open ? "Close" : "Configure")<span class="visually-hidden"> step @(index + 1)</span></button>
+                </div>
             </div>
-            <p class="pss-endpoint" data-testid="pt-step-endpoint"><span class="pss-method">@s.Method</span> <code class="pss-break">@(s.RelativePath.Length == 0 ? "(path not entered)" : s.RelativePath)</code>@if (s.GraphQlOperationName is { Length: > 0 } op) { <span class="pss-hint"> · operation @op</span> }</p>
-            <p class="pss-source @(D.FromEvidence(s) ? "pss-source-evidence" : "")" data-testid="pt-step-source" data-evidence="@(s.Source?.Evidence.ToString() ?? "Manual")">
-                @if (D.FromEvidence(s)) { <span class="pss-origin" data-testid="pt-step-origin">Added from detected operation</span><span> · </span> }
-                @D.StepSource(s)
-            </p>
             @if (DD.IsDraft(s))
             {
                 <div class="pss-draft" role="group" aria-label="@($"Discovered step {index + 1} review")" data-testid="pt-step-draft">
@@ -415,72 +452,157 @@
             }
             else
             {
+                var part = Part(s, status, dims, rows);
                 <div id="@bodyId" class="pss-step-body">
-                    <dl class="pss-step-summary">
-                        <div><dt>Definition</dt><dd data-testid="pt-step-dim-definition" data-state="@dims.Definition.State"><span aria-hidden="true">@Glyph(dims.Definition.State) </span>@dims.Definition.Text</dd></div>
-                        <div><dt>Runtime values</dt><dd><span data-testid="pt-step-dim-values" data-state="@dims.RuntimeValues.State"><span aria-hidden="true">@Glyph(dims.RuntimeValues.State) </span>@dims.RuntimeValues.Text</span>
-                            <span class="pss-hint" data-testid="pt-step-values-summary">@(rows.Count == 0 ? "No dynamic parameters" : string.Join(" · ", rows.Select(r => $"{r.Parameter.Variable} → {(r.Mapping is null ? "not configured" : $"{r.SourceLabel} · {r.ValueText}")}")))</span></dd></div>
-                        @if (DD.Observed(s) && History is { } history)
-                        {
-                            var operation = history.Operations.FirstOrDefault(o => o.Identity == R.ObservationIdentity(s));
-                            var evidence = PerformanceEndpointEvidence.Of(s, operation, history.LatestRun, DateTimeOffset.UtcNow);
-                            <div><dt>Endpoint evidence</dt><dd data-testid="pt-step-endpoint-evidence" data-state="@evidence.State">
-                                <span aria-hidden="true">@(evidence.State switch { PerformanceEndpointEvidenceState.Current => "✓ ", PerformanceEndpointEvidenceState.NewerAvailable => "! ", _ => "○ " })</span>@PerformanceEndpointEvidence.Summary(evidence, operation?.ObservationCount)
-                                @if (PerformanceEndpointEvidence.Comparison(evidence) is { Length: > 0 } comparison) { <span class="pss-hint" data-testid="pt-step-endpoint-comparison">@comparison</span> }</dd></div>
-                        }
-                        <div><dt>Authentication</dt><dd><span data-testid="pt-step-auth-summary">@R.AuthenticationLabel(Definition, s)</span>
-                            @if (dims.Credential is { } credential)
-                            {
-                                <dl class="pss-auth-facts" data-testid="pt-step-auth-facts">
-                                    <div><dt>Source</dt><dd data-testid="pt-step-auth-source">@credential.Source</dd></div>
-                                    @if (AuthenticationMethod is { Length: > 0 } method) { <div><dt>Method</dt><dd data-testid="pt-step-auth-method">@method</dd></div> }
-                                    <div><dt>Interactive (attended)</dt><dd data-testid="pt-step-auth-interactive">@(credential.Interactive ? "Yes" : "No")</dd></div>
-                                    <div><dt>Performance execution compatible</dt><dd data-testid="pt-step-auth-compatible">@(credential.PerformanceCompatible ? "Yes" : "No")</dd></div>
-                                    <div><dt>Execution credential</dt><dd data-testid="pt-step-auth-credential" data-state="@(credential.PerformanceCompatible ? "CheckedAtStart" : "Missing")">@(credential.PerformanceCompatible ? "Captured by the Local HTTPS proxy — checked when a validation request or run starts" : "✕ Missing")</dd></div>
-                                </dl>
-                            }</dd></div>
-                        <div><dt>Execution</dt><dd data-testid="pt-step-dim-execution" data-state="@dims.Execution.State"><span aria-hidden="true">@Glyph(dims.Execution.State) </span>@dims.Execution.Text
-                            @if (dims.Credential is { PerformanceCompatible: false } blockedBy) { <span class="pss-hint" data-testid="pt-step-execution-reason">Execution blocked — unattended authentication required. @blockedBy.Problem</span> }</dd></div>
-                        @if (DD.Observed(s))
-                        {
-                            <div><dt><label for="@($"pt-step-tracking-{s.Id}")">Observation</label></dt>
-                                <dd><select id="@($"pt-step-tracking-{s.Id}")" value="@DD.Tracking(s)" @onchange="e => SetTracking(index, e)" aria-describedby="@($"pt-step-tracking-help-{s.Id}")" data-testid="pt-step-tracking">
-                                        @foreach (var t in new[] { ObservationTracking.FollowLatest, ObservationTracking.Pinned }) { <option value="@t">@DD.TrackingLabel(t)</option> }
-                                    </select>
-                                    <span class="pss-hint" id="@($"pt-step-tracking-help-{s.Id}")" data-testid="pt-step-tracking-help">@TrackingHelp(s)</span></dd></div>
-                        }
-                    </dl>
                     @if (status.Reasons.Count > 0 && status.Status != StepStatus.Disabled)
                     {
                         <ul class="pss-reasons" data-testid="pt-step-reasons">@foreach (var r in status.Reasons) { <li>@r</li> }</ul>
                     }
+                    @* The focused editor: five parts as tabs (arrow keys move between them). Switching parts or steps keeps every edit: each change is
+                       applied to the definition when made, nothing waits in the editor. *@
+                    <div class="pss-parts" role="tablist" aria-label="@($"Configure step {index + 1}")" data-testid="pt-step-parts" @onkeydown="e => PartKey(s, e)">
+                        @foreach (var (key, label) in Parts)
+                        {
+                            var partIssue = PartIssue(key, s, status, dims, rows);
+                            <button type="button" role="tab" id="@($"pt-part-{s.Id}-{key}")" class="pss-part @(part == key ? "is-active" : "")" aria-selected="@(part == key ? "true" : "false")"
+                                    aria-controls="@($"pt-part-panel-{s.Id}")" tabindex="@(part == key ? 0 : -1)" data-testid="pt-step-part" data-part="@key" data-issue="@(partIssue ? "true" : "false")"
+                                    @onclick="() => _part[s.Id] = key">@label@if (partIssue) { <span class="pss-part-flag" aria-label="needs attention"> !</span> }</button>
+                        }
+                    </div>
+                    <div class="pss-part-panel" role="tabpanel" id="@($"pt-part-panel-{s.Id}")" aria-labelledby="@($"pt-part-{s.Id}-{part}")" data-testid="pt-step-part-panel" data-part="@part">
+                        @switch (part)
+                        {
+                            case "auth":
+                                @AuthPart(index, s, dims)
+                                break;
+                            case "parameters":
+                                <p class="pss-hint" data-testid="pt-step-values-summary">@(rows.Count == 0 ? "No dynamic parameters" : string.Join(" · ", rows.Select(r => $"{r.Parameter.Variable} → {(r.Mapping is null ? "not configured" : $"{r.SourceLabel} · {r.ValueText}")}")))</p>
+                                @RuntimeValues(index, s, rows)
+                                @if (rows.Count == 0) { <p class="pss-hint" data-testid="pt-step-no-parameters">This operation has no path, query or body parameters to resolve.</p> }
+                                break;
+                            case "request":
+                                <section class="pss-card" aria-labelledby="@($"pt-request-h-{s.Id}")" data-testid="pt-request-card">
+                                    <h5 class="pss-card-title" id="@($"pt-request-h-{s.Id}")">Request</h5>
+                                    @RequestView(index, s, rows, status)
+                                    <button type="button" class="btn-link" aria-expanded="@(_editing.Contains(s.Id) ? "true" : "false")" @onclick="() => ToggleEdit(s.Id)" data-testid="pt-step-edit">Edit<span class="visually-hidden"> step @(index + 1) request</span></button>
+                                    @if (_editing.Contains(s.Id)) { @Request(index, s) }
+                                </section>
+                                break;
+                            case "response":
+                                <section class="pss-card" aria-labelledby="@($"pt-response-h-{s.Id}")" data-testid="pt-response-card">
+                                    <h5 class="pss-card-title" id="@($"pt-response-h-{s.Id}")">Response</h5>
+                                    <p class="pss-hint" data-testid="pt-response-expected">Expected status @string.Join(", ", s.ExpectedStatusCodes)</p>
+                                    @TrialView(s)
+                                    @Outputs(index, s)
+                                </section>
+                                break;
+                            default:
+                                @AdvancedPart(index, s, dims)
+                                break;
+                        }
+                    </div>
                     <div class="pss-actions" role="group" aria-label="@($"Step {index + 1} actions")">
-                        <button type="button" class="btn-link" aria-expanded="@(_editing.Contains(s.Id) ? "true" : "false")" @onclick="() => ToggleEdit(s.Id)" data-testid="pt-step-edit">Edit<span class="visually-hidden"> step @(index + 1) request</span></button>
                         <button type="button" class="btn-link" @onclick="() => Duplicate(index)" disabled="@(Steps.Count >= 20)" title="@(Steps.Count >= 20 ? "A scenario may contain at most 20 steps" : null)" data-testid="pt-step-duplicate">Duplicate<span class="visually-hidden"> step @(index + 1)</span></button>
                         <button type="button" class="btn-link" @onclick="() => ToggleDisabled(index)" data-testid="pt-step-enabled" aria-pressed="@(s.Disabled ? "true" : "false")">@(s.Disabled ? "Enable" : "Disable")<span class="visually-hidden"> step @(index + 1)</span></button>
                         <button type="button" class="btn-link" id="@($"pt-step-up-{s.Id}")" disabled="@(index == 0)" @onclick="() => Move(index, index - 1, Up)" aria-label="@($"Move step {index + 1} up")" data-testid="pt-step-up">Move up</button>
                         <button type="button" class="btn-link" id="@($"pt-step-down-{s.Id}")" disabled="@(index == Steps.Count - 1)" @onclick="() => Move(index, index + 1, Down)" aria-label="@($"Move step {index + 1} down")" data-testid="pt-step-down">Move down</button>
                         <button type="button" class="btn-link pss-danger" @onclick="() => Delete(index)" aria-label="@($"Delete step {index + 1}")" data-testid="pt-remove-step">Delete</button>
                     </div>
-                    <div class="pss-rr" data-testid="pt-step-rr">
-                        <section class="pss-card" aria-labelledby="@($"pt-request-h-{s.Id}")" data-testid="pt-request-card">
-                            <h5 class="pss-card-title" id="@($"pt-request-h-{s.Id}")">Request</h5>
-                            @RequestView(index, s, rows, status)
-                            @RuntimeValues(index, s, rows)
-                            @StepAuthentication(index, s)
-                            @if (_editing.Contains(s.Id)) { @Request(index, s) }
-                        </section>
-                        <span class="pss-rr-arrow" aria-hidden="true">→</span>
-                        <section class="pss-card" aria-labelledby="@($"pt-response-h-{s.Id}")" data-testid="pt-response-card">
-                            <h5 class="pss-card-title" id="@($"pt-response-h-{s.Id}")">Response</h5>
-                            <p class="pss-hint" data-testid="pt-response-expected">Expected status @string.Join(", ", s.ExpectedStatusCodes)</p>
-                            @TrialView(s)
-                            @Outputs(index, s)
-                        </section>
-                    </div>
                 </div>
             }
         </li>
+    };
+
+    // ── Focused step editor (NEXT55) ─────────────────────────────────────────────────────────────────────────────────────
+
+    private static readonly (string Key, string Label)[] Parts =
+        [("auth", "Authentication"), ("parameters", "Parameters & Test Data"), ("request", "Request"), ("response", "Response & extraction"), ("advanced", "Advanced")];
+    private readonly Dictionary<string, string> _part = [];
+
+    /// <summary>The open part: the person's choice, else the first part that needs attention (authentication, parameters, request), else
+    /// Parameters & Test Data when the operation has runtime values (the usual work), else Request.</summary>
+    private string Part(HttpPerformanceStep s, StepReadiness status, StepDimensions dims, IReadOnlyList<RuntimeValueRow> rows) =>
+        _part.TryGetValue(s.Id, out var chosen) ? chosen
+        : PartIssue("auth", s, status, dims, rows) ? "auth" : PartIssue("parameters", s, status, dims, rows) ? "parameters"
+        : PartIssue("request", s, status, dims, rows) ? "request" : rows.Count > 0 ? "parameters" : "request";
+
+    /// <summary>Which part an open issue belongs to: an authentication requirement (observed or declared) not met, or a runtime value not resolved.</summary>
+    private bool PartIssue(string part, HttpPerformanceStep s, StepReadiness status, StepDimensions dims, IReadOnlyList<RuntimeValueRow> rows) => part switch
+    {
+        "auth" => !s.Disabled && (AuthRequirement(s)?.State is StepAuthenticationState.Missing or StepAuthenticationState.OverrideOutdated || dims.Credential is { PerformanceCompatible: false }),
+        "parameters" => !s.Disabled && dims.RuntimeValues.State is StepDimensionState.NeedsConfiguration or StepDimensionState.Blocked,
+        "request" => !s.Disabled && dims.Definition.State is StepDimensionState.NeedsConfiguration or StepDimensionState.Blocked,
+        _ => false,
+    };
+
+    private StepAuthenticationRequirement? AuthRequirement(HttpPerformanceStep s)
+    {
+        var index = Steps.ToList().FindIndex(x => x.Id == s.Id);
+        return index < 0 ? null : R.AuthenticationRequirements(Definition, ObservedAuthentication).FirstOrDefault(r => r.Index == index);
+    }
+
+    private void PartKey(HttpPerformanceStep s, KeyboardEventArgs e)
+    {
+        if (e.Key is not ("ArrowRight" or "ArrowLeft" or "Home" or "End")) return;
+        var current = Array.FindIndex(Parts, p => p.Key == (_part.TryGetValue(s.Id, out var c) ? c : "request"));
+        var next = e.Key switch { "Home" => 0, "End" => Parts.Length - 1, "ArrowRight" => (current + 1) % Parts.Length, _ => (current - 1 + Parts.Length) % Parts.Length };
+        _part[s.Id] = Parts[next].Key;
+        _focus = $"pt-part-{s.Id}-{Parts[next].Key}";
+    }
+
+    private void Toggle(HttpPerformanceStep s) => _expanded[s.Id] = !Expanded(s);
+
+    /// <summary>The authentication part: what the evidence requires (observed or declared), what is effective (step override, scenario default or
+    /// none) and whether execution can use it. An observed Bearer that nothing configures stays Missing — never "not required".</summary>
+    private RenderFragment AuthPart(int index, HttpPerformanceStep s, StepDimensions dims) => __builder =>
+    {
+        var requirement = AuthRequirement(s);
+        <dl class="pss-auth-facts" data-testid="pt-step-auth-requirement" data-state="@(requirement?.State.ToString() ?? "Unknown")">
+            <div><dt>Required by the evidence</dt><dd data-testid="pt-step-auth-required">@(requirement?.Requirement ?? (ObservedAuthentication is null ? "Not fully known — endpoint evidence not loaded" : "No authentication observed or declared"))</dd></div>
+            <div><dt>Effective for this step</dt><dd data-testid="pt-step-auth-summary">@R.AuthenticationLabel(Definition, s)</dd></div>
+            @if (requirement is { State: StepAuthenticationState.Missing or StepAuthenticationState.OverrideOutdated } missing)
+            {
+                <div><dt>State</dt><dd class="pss-warn" data-testid="pt-step-auth-problem">@R.AuthenticationRequirementProblem(missing) — execution stays blocked until it is configured.</dd></div>
+            }
+        </dl>
+        @StepAuthentication(index, s)
+        @if (dims.Credential is { } credential)
+        {
+            <dl class="pss-auth-facts" data-testid="pt-step-auth-facts">
+                <div><dt>Source</dt><dd data-testid="pt-step-auth-source">@credential.Source</dd></div>
+                @if (AuthenticationMethod is { Length: > 0 } method) { <div><dt>Method</dt><dd data-testid="pt-step-auth-method">@method</dd></div> }
+                <div><dt>Interactive (attended)</dt><dd data-testid="pt-step-auth-interactive">@(credential.Interactive ? "Yes" : "No")</dd></div>
+                <div><dt>Performance execution compatible</dt><dd data-testid="pt-step-auth-compatible">@(credential.PerformanceCompatible ? "Yes" : "No")</dd></div>
+                <div><dt>Execution credential</dt><dd data-testid="pt-step-auth-credential" data-state="@(credential.PerformanceCompatible ? "CheckedAtStart" : "Missing")">@(credential.PerformanceCompatible ? "Captured by the Local HTTPS proxy — checked when a validation request or run starts" : "✕ Missing")</dd></div>
+            </dl>
+            @if (!credential.PerformanceCompatible) { <p class="pss-hint" data-testid="pt-step-execution-reason">Execution blocked — unattended authentication required. @credential.Problem</p> }
+        }
+    };
+
+    /// <summary>Advanced: the three status dimensions in words, endpoint evidence and how the step follows new observations.</summary>
+    private RenderFragment AdvancedPart(int index, HttpPerformanceStep s, StepDimensions dims) => __builder =>
+    {
+        <dl class="pss-step-summary">
+            <div><dt>Definition</dt><dd data-testid="pt-step-dim-definition" data-state="@dims.Definition.State"><span aria-hidden="true">@Glyph(dims.Definition.State) </span>@dims.Definition.Text</dd></div>
+            <div><dt>Runtime values</dt><dd data-testid="pt-step-dim-values" data-state="@dims.RuntimeValues.State"><span aria-hidden="true">@Glyph(dims.RuntimeValues.State) </span>@dims.RuntimeValues.Text</dd></div>
+            <div><dt>Execution</dt><dd data-testid="pt-step-dim-execution" data-state="@dims.Execution.State"><span aria-hidden="true">@Glyph(dims.Execution.State) </span>@dims.Execution.Text</dd></div>
+            @if (DD.Observed(s) && History is { } history)
+            {
+                var operation = history.Operations.FirstOrDefault(o => o.Identity == R.ObservationIdentity(s));
+                var evidence = PerformanceEndpointEvidence.Of(s, operation, history.LatestRun, DateTimeOffset.UtcNow);
+                <div><dt>Endpoint evidence</dt><dd data-testid="pt-step-endpoint-evidence" data-state="@evidence.State">
+                    <span aria-hidden="true">@(evidence.State switch { PerformanceEndpointEvidenceState.Current => "✓ ", PerformanceEndpointEvidenceState.NewerAvailable => "! ", _ => "○ " })</span>@PerformanceEndpointEvidence.Summary(evidence, operation?.ObservationCount)
+                    @if (PerformanceEndpointEvidence.Comparison(evidence) is { Length: > 0 } comparison) { <span class="pss-hint" data-testid="pt-step-endpoint-comparison">@comparison</span> }</dd></div>
+            }
+            @if (DD.Observed(s))
+            {
+                <div><dt><label for="@($"pt-step-tracking-{s.Id}")">Observation</label></dt>
+                    <dd><select id="@($"pt-step-tracking-{s.Id}")" value="@DD.Tracking(s)" @onchange="e => SetTracking(index, e)" aria-describedby="@($"pt-step-tracking-help-{s.Id}")" data-testid="pt-step-tracking">
+                            @foreach (var t in new[] { ObservationTracking.FollowLatest, ObservationTracking.Pinned }) { <option value="@t">@DD.TrackingLabel(t)</option> }
+                        </select>
+                        <span class="pss-hint" id="@($"pt-step-tracking-help-{s.Id}")" data-testid="pt-step-tracking-help">@TrackingHelp(s)</span></dd></div>
+            }
+        </dl>
     };
 
     private void ToggleEdit(string id) { if (!_editing.Remove(id)) _editing.Add(id); }

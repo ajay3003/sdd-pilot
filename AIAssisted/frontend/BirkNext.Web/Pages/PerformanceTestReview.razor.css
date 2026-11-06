@@ -456,3 +456,5 @@
 .pt-unresolved { margin-top: .75rem; }
 .pt-unresolved h3 { margin: 0 0 .35rem; font-size: 1rem; }
 .pt-unresolved ul { margin: 0; padding-left: 1.1rem; }
+.pt-auth { min-width: 0; overflow-wrap: anywhere; }
+.pt-auth-actions .btn-secondary { white-space: normal; max-width: 100%; }

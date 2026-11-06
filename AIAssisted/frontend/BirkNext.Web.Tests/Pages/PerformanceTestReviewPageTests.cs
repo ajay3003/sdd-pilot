@@ -1185,6 +1185,20 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         },
     };
 
+    /// <summary>Opens every step's focused editor (one is open by default) — for tests that work across several steps.</summary>
+    private static void OpenAll<T>(IRenderedComponent<T> cut) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < cut.FindAll("[data-testid=pt-step-toggle]").Count; i++)
+            if (cut.FindAll("[data-testid=pt-step-toggle]")[i].GetAttribute("aria-expanded") == "false") cut.FindAll("[data-testid=pt-step-toggle]")[i].Click();
+    }
+
+    /// <summary>Switches every open step editor to one part.</summary>
+    private static void PartAll<T>(IRenderedComponent<T> cut, string part) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < cut.FindAll("[data-testid=pt-step]").Count; i++)
+            cut.FindAll("[data-testid=pt-step]")[i].QuerySelector($"[data-testid=pt-step-part][data-part={part}]")?.Click();
+    }
+
     [Fact]
     public void ScenarioTab_ShowsTargetServiceAndStepProvenance_WithoutInlineTestDataAuthoring()
     {
@@ -1202,8 +1216,11 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.FindAll("[data-testid=pt-data-save]").Should().BeEmpty("Performance Review no longer authors reusable Test Data");
         cut.Markup.Should().NotContain("Rows (one per line");
         cut.Find("[data-testid=pt-legacy-profile]").TextContent.Should().Contain("Old local rows").And.Contain("not shared");
+        OpenAll(cut);
+        PartAll(cut, "parameters");
         cut.Find("[data-testid=pt-step-mapping][data-variable=personId]").GetAttribute("data-state").Should().Be("mapped");
         cut.Find("[data-testid=pt-testdata-asset]").TextContent.Should().StartWith("person-id-baseline · Simple values / parameters").And.Contain("used by getperson");
+        PartAll(cut, "request");
         cut.FindAll("[data-testid=pt-step-edit]")[0].Click();
         cut.Find("[data-testid=pt-step-delay]").ParentElement!.TextContent.Should().Contain("Delay before next step").And.Contain("not a request timeout");
     }
@@ -1214,6 +1231,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Register(definitions: [Mapped()]);
         var cut = Page();
         Tab(cut, "scenario");
+        OpenAll(cut);
+        PartAll(cut, "request");
         cut.FindAll("[data-testid=pt-step-edit]")[0].Click();
         cut.FindAll("[data-testid=pt-step-edit]")[1].Click();
         cut.FindAll("[data-testid=pt-step-expected]")[0].Change("200, abc");

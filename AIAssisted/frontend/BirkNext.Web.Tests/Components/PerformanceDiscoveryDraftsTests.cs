@@ -266,6 +266,7 @@ public sealed class PerformanceDiscoveryDraftsTests : BunitContext
         var accepted = DD.Reconcile(Definition(), Current(Rest("GET", "/api/reports")), "run-2").Definition;
         var cut = Steps(accepted with { Scenario = accepted.Scenario with { Steps = [DD.Accept(accepted.Scenario.Steps[0], T0)] } });
 
+        cut.Find("[data-testid=pt-step-part][data-part=advanced]").Click();
         var tracking = cut.Find("[data-testid=pt-step-tracking]");
         tracking.GetAttribute("value").Should().Be("FollowLatest");
         tracking.Change("Pinned");

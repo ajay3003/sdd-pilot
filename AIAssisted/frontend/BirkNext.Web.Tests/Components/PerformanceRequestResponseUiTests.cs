@@ -69,21 +69,45 @@ public sealed class PerformanceRequestResponseUiTests : BunitContext
         return cut;
     }
 
+    /// <summary>Opens one part of the focused step editor (Authentication, Parameters & Test Data, Request, Response & extraction, Advanced).</summary>
+    private static void Part<T>(IRenderedComponent<T> cut, string part, int step = 0) where T : Microsoft.AspNetCore.Components.IComponent =>
+        cut.FindAll("[data-testid=pt-step]")[step].QuerySelector($"[data-testid=pt-step-part][data-part={part}]")!.Click();
+
+    /// <summary>Opens every step's focused editor (one is open by default) — for tests that work across several steps.</summary>
+    private static void OpenAll<T>(IRenderedComponent<T> cut) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < cut.FindAll("[data-testid=pt-step-toggle]").Count; i++)
+            if (cut.FindAll("[data-testid=pt-step-toggle]")[i].GetAttribute("aria-expanded") == "false") cut.FindAll("[data-testid=pt-step-toggle]")[i].Click();
+    }
+
+    /// <summary>Switches every open step editor to one part.</summary>
+    private static void PartAll<T>(IRenderedComponent<T> cut, string part) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < cut.FindAll("[data-testid=pt-step]").Count; i++)
+            cut.FindAll("[data-testid=pt-step]")[i].QuerySelector($"[data-testid=pt-step-part][data-part={part}]")?.Click();
+    }
+
     private static AngleSharp.Dom.IElement Step(IRenderedComponent<PerformanceScenarioSteps> cut, string id) => cut.Find($"[data-testid=pt-step][data-step-id={id}]");
 
     [Fact]
     public void Request_card_is_structured_with_badges_and_keeps_test_data_and_authentication_apart()
     {
         var cut = Render(steps: [Create, Read]);
+        OpenAll(cut);
+        PartAll(cut, "request");
         var create = Step(cut, "create");
         create.QuerySelector("[data-testid=pt-request-summary]")!.TextContent.Should().Contain("POST").And.Contain("JSON").And.Contain("2 runtime values");
         create.QuerySelector("[data-testid=pt-request-url]")!.TextContent.Should().Be("POST https://app.example.test/person");
         create.QuerySelector("[data-testid=pt-request-headers]")!.TextContent.Should().Be("Content-Type: application/json · X-Trace: t-1");
-        create.QuerySelector("[data-testid=pt-request-auth]")!.TextContent.Should().Contain("Authentication").And.Contain("never a request header or runtime value");
+        create.QuerySelector("[data-testid=pt-request-auth]").Should().BeNull("authentication is its own part of the step editor, never mixed into the request");
         create.QuerySelector("[data-testid=pt-request-body]")!.TextContent.Should().Contain("\"name\": \"Test Person\"").And.Contain("\"child\": \"{childId}\"", "Test Data values are never shown");
         create.QuerySelector("[data-testid=pt-request-masked]")!.TextContent.Should().Be("{childId}");
         create.QuerySelector("[data-testid=pt-request-body]")!.GetAttribute("tabindex").Should().Be("0");
         Step(cut, "read").QuerySelector("[data-testid=pt-request-url]")!.TextContent.Should().Be("GET https://app.example.test/person/{id}");
+        PartAll(cut, "auth");
+        Step(cut, "create").QuerySelector("[data-testid=pt-request-auth]")!.TextContent.Should().Contain("Authentication").And.Contain("never a request header or runtime value");
+        PartAll(cut, "response");
+        create = Step(cut, "create");
         create.QuerySelector("[data-testid=pt-response-expected]")!.TextContent.Should().Be("Expected status 201");
         create.QuerySelector("[data-testid=pt-response-none]")!.TextContent.Should().Contain("load runs keep metrics and status only");
     }
@@ -94,6 +118,8 @@ public sealed class PerformanceRequestResponseUiTests : BunitContext
         var cut = Render(steps: [Create, Read]);
         cut.Find("[data-testid=pss-trial-send]").Click();
         _trialSent!.Scenario.Steps.Should().HaveCount(2);
+        OpenAll(cut);
+        PartAll(cut, "response");
         var create = Step(cut, "create");
         create.QuerySelector("[data-testid=pt-response-summary]")!.TextContent.Should().Contain("201 Created").And.Contain("JSON").And.Contain("142 ms").And.Contain("1.8 KB").And.Contain("Sample retained");
         create.QuerySelector("[data-testid=pt-response-preview]")!.TextContent.Should().Contain("\"id\": 12345");
@@ -110,6 +136,7 @@ public sealed class PerformanceRequestResponseUiTests : BunitContext
     {
         var gql = new HttpPerformanceStep { Id = "g", Name = "child", Method = "POST", RelativePath = "/graphql", ExpectedStatusCodes = [200], GraphQlQuery = "query Q { child { id } }", GraphQlVariablesJson = """{"id":"{childId}"}""" };
         var cut = Render(PerformanceTargetType.GraphQlHttp, gql);
+        PartAll(cut, "request");
         cut.Find("[data-testid=pt-request-graphql]").TextContent.Should().Be("query Q { child { id } }");
         cut.Find("[data-testid=pt-request-variables]").TextContent.Should().Contain("\"id\": \"{childId}\"");
         cut.FindAll("[data-testid=pt-request-body]").Should().BeEmpty("query and variables are shown structurally, not as one JSON body");
@@ -119,6 +146,7 @@ public sealed class PerformanceRequestResponseUiTests : BunitContext
     public void Outputs_read_a_json_path_or_a_header_state_engine_limits_and_block_credentials()
     {
         var cut = Render(steps: [Create]);
+        PartAll(cut, "response");
         var create = Step(cut, "create");
         create.QuerySelector("[data-testid=pt-output-capabilities]")!.TextContent.Should().Contain("JSON body path · Supported").And.Contain("Response header · Supported").And.Contain("XML / XPath · Unavailable");
         cut.Find("[data-testid=pt-output-name]").Input("location");
@@ -137,6 +165,7 @@ public sealed class PerformanceRequestResponseUiTests : BunitContext
     public void Request_editor_offers_content_types_query_and_headers_but_never_an_authorization_header()
     {
         var cut = Render(steps: [Create]);
+        PartAll(cut, "request");
         cut.Find("[data-testid=pt-step-edit]").Click();
         cut.FindAll("[data-testid=pt-step-content-type] option").Select(o => o.GetAttribute("value")).Should().Equal(
             "application/json", "application/xml", "text/xml", "text/plain", "application/x-www-form-urlencoded");

@@ -24,7 +24,33 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
 
     private static HttpPerformanceStep Step(string id, string path) => new() { Id = id, Name = id, Method = "GET", RelativePath = path, ExpectedStatusCodes = [200] };
 
+    /// <summary>Opens one part of the focused step editor (Authentication, Parameters & Test Data, Request, Response & extraction, Advanced).</summary>
+    private static void Part<T>(IRenderedComponent<T> cut, string part, int step = 0) where T : Microsoft.AspNetCore.Components.IComponent =>
+        cut.FindAll("[data-testid=pt-step]")[step].QuerySelector($"[data-testid=pt-step-part][data-part={part}]")!.Click();
+
+    /// <summary>Opens every step's focused editor (one is open by default) — for tests that work across several steps.</summary>
+    private static void OpenAll<T>(IRenderedComponent<T> cut) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < cut.FindAll("[data-testid=pt-step-toggle]").Count; i++)
+            if (cut.FindAll("[data-testid=pt-step-toggle]")[i].GetAttribute("aria-expanded") == "false") cut.FindAll("[data-testid=pt-step-toggle]")[i].Click();
+    }
+
+    /// <summary>Switches every open step editor to one part.</summary>
+    private static void PartAll<T>(IRenderedComponent<T> cut, string part) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        for (var i = 0; i < cut.FindAll("[data-testid=pt-step]").Count; i++)
+            cut.FindAll("[data-testid=pt-step]")[i].QuerySelector($"[data-testid=pt-step-part][data-part={part}]")?.Click();
+    }
+
+    /// <summary>Renders the steps with every editor open (most tests work across steps); <see cref="RenderAsIs"/> keeps the default.</summary>
     private IRenderedComponent<PerformanceScenarioSteps> Render(params HttpPerformanceStep[] steps)
+    {
+        var rendered = RenderAsIs(steps);
+        OpenAll(rendered);
+        return rendered;
+    }
+
+    private IRenderedComponent<PerformanceScenarioSteps> RenderAsIs(params HttpPerformanceStep[] steps)
     {
         _d = new PerformanceTestDefinition
         {
@@ -39,7 +65,11 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
 
     private static List<string?> Order(IRenderedComponent<PerformanceScenarioSteps> cut) => cut.FindAll("[data-testid=pt-step]").Select(s => s.GetAttribute("data-step-id")).ToList();
 
-    private static AngleSharp.Dom.IElement Row(IRenderedComponent<PerformanceScenarioSteps> cut, string variable) => cut.Find($"[data-testid=pt-step-mapping][data-variable={variable}]");
+    private static AngleSharp.Dom.IElement Row(IRenderedComponent<PerformanceScenarioSteps> cut, string variable)
+    {
+        if (cut.FindAll($"[data-testid=pt-step-mapping][data-variable={variable}]").Count == 0) { OpenAll(cut); PartAll(cut, "parameters"); }
+        return cut.Find($"[data-testid=pt-step-mapping][data-variable={variable}]");
+    }
 
     [Fact]
     public void A_dynamic_parameter_needs_a_runtime_value_source_and_offers_only_valid_sources()
@@ -68,6 +98,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.Find("[data-testid=pt-value-apply]").Click();
         Row(cut, "correlationId").QuerySelector("[data-testid=pt-value-text]")!.TextContent.Should().Be("UUID");
         cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Ready");
+        Part(cut, "parameters");
         cut.Find("[data-testid=pt-step-values-summary]").TextContent.Should().Be("brukerId → Test Data · user-01 · correlationId → Generated value · UUID");
     }
 
@@ -108,6 +139,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         Row(cut, "id").QuerySelector("[data-testid=pt-value-text]")!.TextContent.Should().Be("Step 1 · create · id");
         cut.Find("[data-testid=pss-dependencies]").TextContent.Should().Be("1 step-to-step reference");
         cut.FindAll("[data-testid=pt-step-status]").Select(s => s.TextContent).Should().Equal("Ready", "Ready");
+        PartAll(cut, "response");
         cut.Find("[data-testid=pt-step-output]").TextContent.Should().Contain("1 mapping");
 
         var first = Render(Step("children", "/api/brukere/{id}/barn"), Step("create", "/api/users"));
@@ -216,6 +248,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
     public void Default_authentication_is_inherited_or_overridden_per_step_and_never_a_token()
     {
         var cut = Render(Step("list", "/api/users"));
+        Part(cut, "auth");
         cut.Find("[data-testid=pt-step-auth-summary]").TextContent.Should().Be("Inherit scenario default (None)");
         cut.Find("[data-testid=pss-default-auth]").Change("target-environment");
         _d.AuthenticationReference.Should().Be("target-environment");
@@ -235,10 +268,15 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.Find("[data-testid=pt-step-status]").TextContent.Should().Be("Configured · execution blocked");
         cut.Find("[data-testid=pt-step]").GetAttribute("data-status").Should().Be("ExecutionBlocked");
         cut.Find("[data-testid=pss-readiness]").TextContent.Should().Be("Configured · execution blocked", "the scenario summary applies the same rule");
+        cut.Find("[data-testid=pt-step-part-panel]").GetAttribute("data-part").Should().Be("auth", "the editor opens on the part that blocks execution");
+        cut.FindAll("[data-testid=pt-step-dim]").Select(d => $"{d.GetAttribute("data-dim")}:{d.GetAttribute("data-state")}").Should().Equal("defined:Ready", "configured:NotApplicable", "executable:Blocked");
+        cut.Find("[data-testid=pt-step-auth-source]").TextContent.Should().Be("Target Environment");
+        Part(cut, "advanced");
         cut.Find("[data-testid=pt-step-dim-definition]").GetAttribute("data-state").Should().Be("Ready");
         cut.Find("[data-testid=pt-step-dim-values]").GetAttribute("data-state").Should().Be("NotApplicable");
-        cut.Find("[data-testid=pt-step-dim-execution]").TextContent.Should().Contain("Blocked — authentication").And.Contain("Execution blocked — unattended authentication required");
-        cut.Find("[data-testid=pt-step-auth-source]").TextContent.Should().Be("Target Environment");
+        cut.Find("[data-testid=pt-step-dim-execution]").TextContent.Should().Contain("Blocked — authentication");
+        Part(cut, "auth");
+        cut.Find("[data-testid=pt-step-execution-reason]").TextContent.Should().Contain("Execution blocked — unattended authentication required");
         cut.Find("[data-testid=pt-step-auth-interactive]").TextContent.Should().Be("Yes");
         cut.Find("[data-testid=pt-step-auth-compatible]").TextContent.Should().Be("No");
         cut.Find("[data-testid=pt-step-auth-credential]").GetAttribute("data-state").Should().Be("Missing");
@@ -262,6 +300,7 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.Render(p => p.Add(x => x.History, new BirkNext.LocalHttpsProxy.EndpointObservationHistoryView("env", "app.example.test", true, run, null, [run],
             [new BirkNext.LocalHttpsProxy.ObservedOperationHistory { Identity = "GET /api/brukere/{id}/barn", LastObservedAt = seen, ObservationCount = 2, LastRunId = "live" }])));
 
+        Part(cut, "advanced");
         var evidence = cut.Find("[data-testid=pt-step-endpoint-evidence]");
         evidence.GetAttribute("data-state").Should().Be("Current");
         evidence.TextContent.Should().Contain("Observed 2× · last observed 09:27 UTC");
@@ -272,19 +311,25 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
     }
 
     [Fact]
-    public void Header_summarises_and_long_scenarios_start_collapsed_with_one_status_each()
+    public void Header_summarises_and_one_step_is_open_by_default_the_first_that_needs_attention()
     {
-        var cut = Render(Step("a", "/api/a"), Step("b", "/api/b/{id}"), Step("c", "/api/c"), Step("d", ""));
+        var cut = RenderAsIs(Step("a", "/api/a"), Step("b", "/api/b/{id}"), Step("c", "/api/c"), Step("d", ""));
         cut.Find("[data-testid=pss-protocol]").TextContent.Should().Be("REST");
         cut.Find("[data-testid=pss-steps-count]").TextContent.Should().Be("4");
         cut.Find("[data-testid=pss-readiness]").TextContent.Should().Be("Blocked", "a step without a path cannot run");
-        cut.FindAll("[data-testid=pt-step-toggle]").Should().OnlyContain(b => b.GetAttribute("aria-expanded") == "false", "long scenarios start collapsed");
+        cut.FindAll("[data-testid=pt-step-toggle]").Select(b => b.GetAttribute("aria-expanded")).Should().Equal(["false", "true", "false", "false"],
+            "one step is open: the first that needs attention");
         cut.FindAll("[data-testid=pt-step-status]").Select(s => s.TextContent).Should().Equal("Ready", "Needs configuration", "Ready", "Blocked");
-        cut.FindAll("[data-testid=pt-step-collapsed-reason]").Select(r => r.TextContent).Should().Equal("Step 2 · id: Runtime value missing — choose a value source", "Step 4: enter the request path");
+        cut.FindAll("[data-testid=pt-step-issues]").Select(i => i.TextContent).Should().Equal("1 issue", "1 issue");
+        cut.FindAll("[data-testid=pt-step-collapsed-reason]").Select(r => r.TextContent).Should().Equal("Step 4: enter the request path");
         cut.FindAll("[data-testid=pt-step-endpoint]")[1].TextContent.Should().Contain("/api/b/{id}", "the full path stays readable");
-        cut.FindAll("[data-testid=pt-step-toggle]")[1].Click();
-        cut.FindAll("[data-testid=pt-step-toggle]")[1].GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid=pt-step-part-panel]").GetAttribute("data-part").Should().Be("parameters", "the open step starts on the part with the missing value");
         cut.FindAll("[data-testid=pt-runtime-values]").Should().ContainSingle();
+        cut.FindAll("[data-testid=pt-request-card], [data-testid=pt-response-card]").Should().BeEmpty("request and response panels only on request");
+        cut.FindAll("[data-testid=pt-step-toggle]")[1].Click();
+        cut.FindAll("[data-testid=pt-step-toggle]")[1].GetAttribute("aria-expanded").Should().Be("false");
+        cut.FindAll("[data-testid=pt-step-toggle]")[3].Click();
+        cut.Find("[data-testid=pt-step-part-panel]").GetAttribute("data-part").Should().Be("request", "a missing path is a request issue");
     }
 
     [Fact]
@@ -355,5 +400,81 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         Row(withEnum, "status").QuerySelector("[data-testid=pt-step-map]")!.Click();
         withEnum.FindAll("[data-testid=pt-value-source-option]").Single(o => o.GetAttribute("data-source") == "Fixed").Change(true);
         withEnum.FindAll("[data-testid=pt-value-fixed-enum] option").Select(o => o.TextContent).Should().Equal("Choose…", "AKTIV", "INAKTIV");
+    }
+
+    // ── NEXT55: compact rows and the focused step editor ─────────────────────────────────────────────────────────────────
+
+    /// <summary>The primary scenario: two observed Autorisasjon GETs that need a Bearer token (observed) and a brukerId path value.</summary>
+    private IRenderedComponent<PerformanceScenarioSteps> Autorisasjon(IReadOnlySet<string>? observed)
+    {
+        _d = new PerformanceTestDefinition
+        {
+            Id = "def-1", Name = "Baseline", TargetOrigin = "https://app.example.test", EnvironmentName = "Development", TargetType = PerformanceTargetType.RestHttp,
+            Scenario = new PerformanceScenario { Name = "Baseline check", Steps = [Step("brukere", "/api/autorisasjon/v1/brukere/{brukerId}"), Step("barn", "/api/autorisasjon/v1/brukere/{brukerId}/barn")] },
+        };
+        IRenderedComponent<PerformanceScenarioSteps>? cut = null;
+        cut = Render<PerformanceScenarioSteps>(p => p.Add(x => x.Definition, _d).Add(x => x.Assets, [UserId]).Add(x => x.ObservedAuthentication, observed)
+            .Add(x => x.OnChange, (PerformanceTestDefinition next) => { _d = next; cut?.Render(q => q.Add(x => x.Definition, next)); }));
+        return cut;
+    }
+
+    private static readonly IReadOnlySet<string> BearerObserved = new HashSet<string> { "GET /api/autorisasjon/v1/brukere/{id}", "GET /api/autorisasjon/v1/brukere/{id}/barn" };
+
+    [Fact]
+    public void Observed_bearer_and_a_missing_brukerId_are_named_on_compact_rows_and_the_editor_opens_on_authentication()
+    {
+        var cut = Autorisasjon(BearerObserved);
+
+        cut.FindAll("[data-testid=pt-step-toggle]").Select(t => t.GetAttribute("aria-expanded")).Should().Equal("true", "false");
+        cut.FindAll("[data-testid=pt-step-issues]").Should().HaveCount(2).And.OnlyContain(i => i.TextContent.EndsWith("issues") || i.TextContent.EndsWith("issue"));
+        cut.FindAll("[data-testid=pt-step]")[0].QuerySelectorAll("[data-testid=pt-step-dim]").Select(d => $"{d.GetAttribute("data-dim")}:{d.GetAttribute("data-state")}")
+            .Should().Contain(x => x.StartsWith("executable:") && !x.EndsWith("Ready"), "a step with unresolved authentication is never executable");
+        cut.Find("[data-testid=pt-step-part-panel]").GetAttribute("data-part").Should().Be("auth", "authentication blocks first");
+        cut.Find("[data-testid=pt-step-auth-requirement]").GetAttribute("data-state").Should().Be("Missing");
+        cut.Find("[data-testid=pt-step-auth-problem]").TextContent.Should().Contain("execution stays blocked");
+        cut.Find("[data-testid=pt-step-part][data-part=parameters]").GetAttribute("data-issue").Should().Be("true", "brukerId has no value source");
+        cut.Find("[data-testid=pss-readiness]").GetAttribute("data-status").Should().NotBe("Ready");
+        cut.FindAll("[data-testid=pt-request-card], [data-testid=pt-response-card]").Should().BeEmpty("request and response panels only on request");
+    }
+
+    [Fact]
+    public void Unloaded_endpoint_evidence_is_never_read_as_no_authentication_required()
+    {
+        var cut = Autorisasjon(null);
+        Part(cut, "auth");
+        cut.Find("[data-testid=pt-step-auth-required]").TextContent.Should().Be("Not fully known — endpoint evidence not loaded");
+        cut.Markup.Should().NotContain("No authentication observed or declared");
+    }
+
+    [Fact]
+    public void Editor_parts_are_keyboard_tabs_and_switching_parts_or_steps_keeps_every_edit()
+    {
+        var cut = Autorisasjon(BearerObserved);
+        var tabs = cut.Find("[data-testid=pt-step-parts]");
+        tabs.GetAttribute("role").Should().Be("tablist");
+        cut.FindAll("[data-testid=pt-step-part]").Select(t => t.TextContent.TrimEnd('!', ' ')).Should().Equal("Authentication", "Parameters & Test Data", "Request", "Response & extraction", "Advanced");
+        cut.Find("[data-testid=pt-step-part][data-part=request]").Click();
+        cut.Find("[data-testid=pt-step-edit]").Click();
+        cut.Find("[data-testid=pt-step-expected]").Change("200, 204");
+        tabs = cut.Find("[data-testid=pt-step-parts]");
+        tabs.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "ArrowRight" });
+        cut.Find("[data-testid=pt-step-part-panel]").GetAttribute("data-part").Should().Be("response");
+        cut.Find("[data-testid=pt-step-parts]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Home" });
+        cut.Find("[data-testid=pt-step-part-panel]").GetAttribute("data-part").Should().Be("auth");
+        cut.FindAll("[data-testid=pt-step-toggle]")[1].Click();
+        cut.FindAll("[data-testid=pt-step-toggle]")[1].Click();
+        _d.Scenario.Steps[0].ExpectedStatusCodes.Should().Equal([200, 204], "an edit is applied when made — switching parts or steps never loses it");
+        cut.FindAll("[data-testid=pt-step]")[0].QuerySelector("[data-testid=pt-step-part][data-part=request]")!.Click();
+        cut.Find("[data-testid=pt-step-expected]").GetAttribute("value").Should().Be("200, 204");
+    }
+
+    [Fact]
+    public void Configuring_authentication_and_a_shared_value_clears_the_flags_but_a_defined_step_is_still_not_called_executable_without_a_credential()
+    {
+        var cut = Autorisasjon(BearerObserved);
+        cut.Find("[data-testid=pss-default-auth]").Change(PerformanceScenarioRuntime.TargetEnvironmentAuthentication);
+        cut.Find("[data-testid=pt-step-part][data-part=auth]").GetAttribute("data-issue").Should().Be("true", "attended sign-in is configured but not usable by the load generator");
+        cut.FindAll("[data-testid=pt-step]")[0].QuerySelector("[data-testid=pt-step-dim][data-dim=defined]")!.GetAttribute("data-state").Should().Be("Ready");
+        cut.FindAll("[data-testid=pt-step]")[0].QuerySelector("[data-testid=pt-step-dim][data-dim=executable]")!.GetAttribute("data-state").Should().NotBe("Ready");
     }
 }

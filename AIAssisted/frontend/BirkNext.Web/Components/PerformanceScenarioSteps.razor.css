@@ -111,3 +111,42 @@
 .pss-capabilities .pss-hint { display: inline; }
 .pss-pairs { border: 1px solid var(--clr-border, #e2e8f0); border-radius: .3rem; padding: .35rem .55rem; }
 .pss-sample caption { caption-side: top; text-align: left; font-size: .8rem; font-weight: 600; color: var(--clr-text-muted, #475569); padding-bottom: .2rem; }
+
+/* ── Compact operation rows and the focused five-part editor (NEXT55) ────────────────────────────────────────────── */
+.pss-step-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: .25rem .75rem; }
+.pss-row-main { display: grid; gap: .1rem; min-width: 0; }
+.pss-row-main .pss-step-title { margin: 0; font-size: .95rem; }
+.pss-row-main .pss-endpoint, .pss-row-main .pss-source { margin: 0; font-size: .82rem; }
+.pss-row-state { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .35rem; }
+.pss-dims { display: inline-flex; gap: .25rem; }
+.pss-dim { font-size: .72rem; padding: .05rem .4rem; border-radius: 999px; border: 1px solid var(--clr-border, #e2e8f0); white-space: nowrap; }
+.pss-dim-ready { color: #15803d; border-color: rgba(21, 128, 61, .35); }
+.pss-dim-needsconfiguration { color: #b45309; border-color: rgba(180, 83, 9, .35); }
+.pss-dim-blocked { color: #b91c1c; border-color: rgba(185, 28, 28, .35); }
+.pss-dim-notapplicable { color: #64748b; }
+.pss-issues { font-size: .75rem; font-weight: 600; color: #b45309; }
+.pss-step.is-open { box-shadow: 0 0 0 1px var(--clr-link, #1d4ed8); }
+.pss-parts { display: flex; flex-wrap: wrap; gap: .2rem; margin: .6rem 0 .5rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); }
+.pss-part { border: 0; background: none; padding: .35rem .7rem; border-bottom: 3px solid transparent; font-weight: 600; font-size: .85rem; color: var(--clr-text-body, #1f2937); cursor: pointer; }
+.pss-part.is-active { border-bottom-color: var(--clr-link, #1d4ed8); color: var(--clr-link, #1d4ed8); }
+.pss-part:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.pss-part-flag { color: #b45309; }
+.pss-part-panel { min-width: 0; }
+@media (max-width: 640px) {
+    .pss-step-head { grid-template-columns: auto minmax(0, 1fr); }
+    .pss-row-state { grid-column: 1 / -1; justify-content: flex-start; }
+}
+/* One column that may shrink: a grid item's default min-width (its min-content) let a wide child push the scenario past a phone's width. */
+.pss { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.pss > * { min-width: 0; }
+.pss-variables summary, .pss-variables p, .pss-trial .pss-hint { overflow-wrap: anywhere; }
+.pss-step select, .pss-step input, .pss-step textarea { max-width: 100%; min-width: 0; }
+@media (max-width: 640px) { .pss-auth-facts { grid-template-columns: minmax(0, 1fr); } .pss-auth-facts dt { margin-top: .3rem; } }
+.pss-auth-facts dd { overflow-wrap: anywhere; }
+/* Runtime values on a phone: each parameter becomes a stacked block instead of a table row wider than the screen. */
+@media (max-width: 640px) {
+    .pss-table, .pss-table tbody, .pss-table tr, .pss-table td, .pss-table th[scope=row] { display: block; width: 100%; box-sizing: border-box; }
+    .pss-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .pss-table tr { padding: .4rem 0; border-bottom: 1px solid var(--clr-border, #e2e8f0); }
+    .pss-table td, .pss-table th[scope=row] { padding: .15rem 0; border: 0; overflow-wrap: anywhere; }
+}
