@@ -279,6 +279,56 @@ public sealed class IntegrationTopologyPageTests : BunitContext
     };
 
     [Fact]
+    public void UnresolvedWorklist_IsGroupedByFixAction_WithAccurateCounts_AndOneActionPerItem()
+    {
+        _api.View = Sample() with { Profiles = ["skolenaervaer"] };
+        _api.Coverage = BindingCoverage();
+        var page = Render<IntegrationTopologyPage>();
+
+        var sections = page.FindAll("[data-testid=it-gap-section]");
+        sections.Select(s => s.QuerySelector("summary .it-name")!.TextContent).Should().Equal("Bind existing source · M2LB", "Import source · BiRK application source");
+        sections.Select(s => s.GetAttribute("data-count")).Should().Equal("2", "1");
+        sections.Sum(s => s.QuerySelectorAll("[data-testid=it-unresolved]").Length).Should().Be(page.FindAll("[data-testid=it-unresolved]").Count, "every unresolved item is in exactly one group");
+        sections.Should().AllSatisfy(s => s.HasAttribute("open").Should().BeTrue("groups start expanded"));
+        page.Find("[data-testid=it-gap-next]").TextContent.Should().Contain("available is not bound");
+
+        // The group only states its action; each item keeps its own single action control.
+        foreach (var section in sections)
+        {
+            section.QuerySelectorAll("[data-testid=it-gap-action]").Length.Should().Be(section.QuerySelectorAll("[data-testid=it-unresolved]").Length);
+            section.QuerySelectorAll("summary a, summary button, [data-testid=it-gap-next] a, [data-testid=it-gap-next] button").Should().BeEmpty("no group-level duplicate of the item actions");
+        }
+        // Resolved connections stay a separate section, never inside a gap group.
+        page.FindAll("[data-testid=it-gap-section] [data-testid=it-resolved]").Should().BeEmpty();
+        page.FindAll("[data-testid=it-resolved]").Should().HaveCount(2);
+
+        // Each summary line links to its own group (same key and order).
+        page.FindAll("[data-testid=it-gap-group] a").Select(a => a.GetAttribute("href")).Should().Equal(
+            sections.Select(s => $"/integration-topology#{s.QuerySelector("summary")!.Id}"));
+    }
+
+    [Fact]
+    public void UnresolvedWorklist_ByOwner_UsesOnlyStatedOwners_AndNeverInventsOne()
+    {
+        _api.View = Sample() with { Profiles = ["skolenaervaer"] };
+        _api.Coverage = BindingCoverage() with
+        {
+            Relationships = [.. BindingCoverage().Relationships.Select(r => r.Id == "b" ? r with { Owner = "Project Import" } : r)],
+        };
+        var page = Render<IntegrationTopologyPage>();
+
+        page.Find("[data-testid=it-group-by-owner]").Change(true);
+        var sections = page.FindAll("[data-testid=it-gap-section]");
+        sections.Select(s => (s.QuerySelector("summary .it-name")!.TextContent, s.GetAttribute("data-count"))).Should().Equal(
+            ("No owner stated", "2"), ("Project Import", "1"));
+        sections[0].QuerySelector("[data-testid=it-gap-next]")!.TextContent.Should().Be("Next: Actions: Bind existing source (2).");
+        page.FindAll("[data-testid=it-unresolved] [data-testid=it-gap-action]").Should().HaveCount(3, "regrouping never adds or removes an action");
+
+        page.Find("[data-testid=it-group-by-action]").Change(true);
+        page.FindAll("[data-testid=it-gap-section]").Should().HaveCount(2);
+    }
+
+    [Fact]
     public void AvailableUnboundSource_ReadsNeedsBinding_AndOffersBindNotImport()
     {
         _api.View = Sample() with { Profiles = ["skolenaervaer"] };

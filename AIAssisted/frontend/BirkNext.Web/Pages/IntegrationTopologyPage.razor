@@ -195,7 +195,7 @@
                 @if (unresolved.Count > 0)
                 {
                     <ul class="it-plain it-gap-groups" data-testid="it-gap-groups" aria-label="What would resolve the unresolved relationships">
-                        @foreach (var group in P.MissingEvidenceGroups(coverage)) { <li data-testid="it-gap-group">@group.Text</li> }
+                        @foreach (var group in P.UnresolvedGroups(coverage)) { <li data-testid="it-gap-group"><a href="@($"/integration-topology#{group.Id}")" @onclick:preventDefault @onclick="() => OpenGapGroup(group.Id)">@group.Summary</a></li> }
                     </ul>
                 }
                 <details class="it-disclosure" data-testid="it-legend">
@@ -228,8 +228,21 @@
 
                 <h3 class="it-subheading" id="it-unresolved-heading" tabindex="-1">Expected but unresolved (@unresolved.Count)</h3>
                 @if (unresolved.Count == 0) { <p class="it-note">Every expected relationship has sufficient evidence.</p> }
+                else
+                {
+                    <fieldset class="it-gap-grouping" data-testid="it-gap-grouping">
+                        <legend>Group by</legend>
+                        <label><input type="radio" name="it-gap-grouping" checked="@(_gapGrouping == TopologyGapGrouping.FixAction)" @onchange="() => _gapGrouping = TopologyGapGrouping.FixAction" data-testid="it-group-by-action" /> Fix action</label>
+                        <label><input type="radio" name="it-gap-grouping" checked="@(_gapGrouping == TopologyGapGrouping.Owner)" @onchange="() => _gapGrouping = TopologyGapGrouping.Owner" data-testid="it-group-by-owner" /> Owner of the fix</label>
+                    </fieldset>
+                }
+                @foreach (var gapGroup in P.UnresolvedGroups(coverage, _gapGrouping))
+                {
+                <details class="it-gap-section" open data-testid="it-gap-section" data-group="@gapGroup.Id" data-count="@gapGroup.Items.Count" @key="gapGroup.Id">
+                    <summary id="@gapGroup.Id"><span class="it-name">@gapGroup.Title</span> <span class="it-pill" data-testid="it-gap-section-count" aria-label="@($"{gapGroup.Items.Count} unresolved")">@gapGroup.Items.Count</span></summary>
+                    <p class="it-note" data-testid="it-gap-next">Next: @gapGroup.NextAction</p>
                 <ul class="it-plain it-relationship-list">
-                    @foreach (var item in unresolved)
+                    @foreach (var item in gapGroup.Items)
                     {
                         <li class="it-unresolved" data-testid="it-unresolved" data-relationship="@item.Id" data-state="@item.State">
                             <p class="it-unresolved-title"><span class="it-name">@item.Label</span> <span class="it-pill it-pill-@P.RelationshipTone(item.State)">@P.Relationship(item.State)</span> <span class="it-note">@item.Transport</span></p>
@@ -260,6 +273,8 @@
                         </li>
                     }
                 </ul>
+                </details>
+                }
             </section>
         }
         else if (_coverageError is not null)
@@ -502,6 +517,23 @@
     private async Task Focus(string id)
     {
         try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
+    }
+
+    /// <summary>The unresolved worklist grouping (page-local; the resolver's results are not changed by it).</summary>
+    private TopologyGapGrouping _gapGrouping = TopologyGapGrouping.FixAction;
+    private string? _pendingGapFocus;
+
+    /// <summary>A summary line opens its fix-action group: switches to that grouping if needed, then focuses the group after it renders.</summary>
+    private async Task OpenGapGroup(string id)
+    {
+        if (_gapGrouping == TopologyGapGrouping.FixAction) { await Focus(id); return; }
+        _gapGrouping = TopologyGapGrouping.FixAction;
+        _pendingGapFocus = id;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingGapFocus is { } id) { _pendingGapFocus = null; await Focus(id); }
     }
 
     private RenderFragment RelationshipDetail(TopologyRelationshipResult item) =>

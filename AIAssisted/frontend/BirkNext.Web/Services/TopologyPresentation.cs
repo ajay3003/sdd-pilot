@@ -220,6 +220,46 @@ public static class TopologyPresentation
             .Select(group => (Text: GapPhrase(group.Key.Action, group.Key.Role, group.Count()), Count: group.Count()))
             .OrderByDescending(group => group.Count)];
 
+    /// <summary>
+    /// The unresolved expected relationships as collapsible worklist groups, by the fix that would resolve them (action + source role — the
+    /// same key and order as <see cref="MissingEvidenceGroups"/>, so the summary and the sections always agree) or by the stated owner of the
+    /// fix. Only fields the resolver states are used: no severity, no system identity (From/To are display names) and no relationship is
+    /// confirmed here. Every item keeps its own action; a group only says what that action is.
+    /// </summary>
+    public static IReadOnlyList<TopologyGapGroup> UnresolvedGroups(TopologyCoverageView coverage, TopologyGapGrouping by = TopologyGapGrouping.FixAction)
+    {
+        var unresolved = coverage.Relationships.Where(item => !IsResolved(item.State));
+        return by == TopologyGapGrouping.Owner
+            ? [.. unresolved.GroupBy(item => item.Owner ?? "").OrderByDescending(group => group.Count()).Select((group, i) => new TopologyGapGroup(
+                $"it-gap-owner-{i}-{Slug(group.Key)}",
+                group.Key.Length > 0 ? group.Key : "No owner stated",
+                $"{group.Count()} unresolved",
+                "Actions: " + string.Join(", ", group.GroupBy(item => item.Action).Select(a => $"{ActionLabel(a.Key) ?? "none available here"} ({a.Count()})")) + ".",
+                [.. group]))]
+            : [.. unresolved.GroupBy(item => (item.Action, Role: item.SourceRoleName ?? "")).OrderByDescending(group => group.Count()).Select((group, i) => new TopologyGapGroup(
+                $"it-gap-action-{i}-{group.Key.Action.ToString().ToLowerInvariant()}-{Slug(group.Key.Role)}",
+                (ActionLabel(group.Key.Action) ?? "No action available here") + (group.Key.Role.Length > 0 ? $" · {group.Key.Role}" : ""),
+                GapPhrase(group.Key.Action, group.Key.Role, group.Count()),
+                NextAction(group.Key.Action),
+                [.. group]))];
+    }
+
+    /// <summary>What the group's action means and where it is done (the owner page); the action itself stays on each item.</summary>
+    public static string NextAction(TopologyGapAction action) => action switch
+    {
+        TopologyGapAction.ImportSource => "Import the missing source in Project Import. Topology imports nothing itself.",
+        TopologyGapAction.BindSource => "Bind the available source in Integration Quality Review → Setup & Evidence (available is not bound).",
+        TopologyGapAction.ReviewCandidates => "Choose one source among the candidates in Integration Quality Review → Setup & Evidence; the newest is never chosen automatically.",
+        TopologyGapAction.ReanalyzeSource => "Re-analyze the source in Source Analysis.",
+        TopologyGapAction.ViewMissingEvidence => "The source is available but does not state this evidence; check it in Source Analysis.",
+        TopologyGapAction.ConfigureIntegration => "Configure the exact integration mapping in the Integration Catalog; mappings are never confirmed automatically.",
+        TopologyGapAction.ViewEvidence => "Review the evidence in Source Analysis.",
+        _ => "No action is available on this page; see each relationship's detail.",
+    };
+
+    private static string Slug(string text) =>
+        text.Length == 0 ? "none" : new string([.. text.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-')]).Trim('-');
+
     private static string GapPhrase(TopologyGapAction action, string role, int count)
     {
         var need = count == 1 ? "needs" : "need";
@@ -253,3 +293,9 @@ public static class TopologyPresentation
 
 /// <summary>One mutually exclusive attention category and where on the page its items are.</summary>
 public sealed record TopologyAttentionCategory(string Key, string Label, int Count, string Anchor);
+
+/// <summary>How the unresolved worklist is grouped: by the fix that resolves it, or by the stated owner of that fix.</summary>
+public enum TopologyGapGrouping { FixAction, Owner }
+
+/// <summary>One worklist group: a stable anchor id, its title, the count phrase, what its action means, and its relationships.</summary>
+public sealed record TopologyGapGroup(string Id, string Title, string Summary, string NextAction, IReadOnlyList<TopologyRelationshipResult> Items);
