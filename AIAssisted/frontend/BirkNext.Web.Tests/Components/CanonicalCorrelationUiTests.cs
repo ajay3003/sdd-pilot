@@ -147,6 +147,7 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         api.Setup(a => a.SummaryAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalSummaryView("dev", Guid.NewGuid(), DateTimeOffset.UnixEpoch, ["correlation/2"],
             new Dictionary<string, int>(), new Dictionary<string, int>(), 10, 1, 1, 0, new(70, 84, 81, 88, 14),
             [new(Guid.NewGuid(), "Terraform-iac-meldingsutveksler", ["Infrastructure", "Contracts"], [])], []), (string?)null));
+        api.Setup(a => a.InterpretAsync("dev", It.IsAny<InterpretRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(((InterpretationSnapshotView?)null, "The analysis failed: the database is not reachable."));
         Services.AddSingleton(api.Object);
 
         var cut = Render<CorrelationReview>();
@@ -157,9 +158,19 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         cut.Find("[data-testid=cr-sum-package]").TextContent.Should().Contain("Infrastructure").And.Contain("Contracts");
         cut.Find("[data-testid=cr-scope]").TextContent.Should().Contain("Target Application:").And.Contain("Environment:");
         cut.Find("[data-testid=cr-interpret-run]").TextContent.Should().Be("Analyze relationships");
+        cut.Find("[data-testid=cr-interpret-what]").TextContent.Should().Contain("records a new frozen version only if the selected sources or rules changed")
+            .And.Contain("review decisions are kept");
         cut.FindAll("[data-testid=cr-source]").Should().BeEmpty("the source list is a customization, the summary comes first");
         cut.Find("[data-testid=cr-customize]").Click();
         cut.FindAll("[data-testid=cr-source]").Should().ContainSingle();
+        cut.Find("[data-testid=cr-source]").Change(false);
+        cut.Find("[data-testid=cr-interpret-run]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=cr-interpret-blocked]").TextContent.Should().Be("Select at least one source (Customize sources) to analyze.");
+        cut.Find("[data-testid=cr-source]").Change(true);
+        cut.Find("[data-testid=cr-interpret-run]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-interpret-error]"));
+        cut.Find("[data-testid=cr-interpret-kept]").TextContent.Should().Contain("is unchanged and still the current one", "a failed re-analysis keeps the previous results");
+        cut.Find("[data-testid=cr-sum-contracts]");
 
         cut.Find("[data-testid=cr-tab-review]").Click();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-queue-item]").Should().ContainSingle());

@@ -165,10 +165,19 @@
                 }
                 <p class="cr-muted" data-testid="cr-source-outcomes">@string.Join(" · ", _rows.GroupBy(r => r.Outcome).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.First().OutcomeLabel.ToLowerInvariant()}"))</p>
                 <div class="cr-actions">
-                    <button type="button" class="btn btn-primary" disabled="@(_selected.Count == 0 || _interpreting is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run">Analyze relationships</button>
+                    <button type="button" class="btn btn-primary" disabled="@(AnalyzeBlockedReason is not null)" @onclick="InterpretAsync" data-testid="cr-interpret-run"
+                            aria-describedby="@(AnalyzeBlockedReason is null ? "cr-interpret-what" : "cr-interpret-blocked")">Analyze relationships</button>
                     <button type="button" class="btn btn-secondary" aria-expanded="@(_customizeSources ? "true" : "false")" aria-controls="cr-source-list"
                             data-testid="cr-customize" @onclick="() => _customizeSources = !_customizeSources">@(_customizeSources ? "Hide sources" : "Customize sources")</button>
                 </div>
+                @if (AnalyzeBlockedReason is { } blocked) { <p id="cr-interpret-blocked" class="cr-muted cr-small" data-testid="cr-interpret-blocked">@blocked</p> }
+                else
+                {
+                    @* What a (re)analysis does, before it runs: a new frozen version only when inputs changed; earlier results and decisions are kept. *@
+                    <p id="cr-interpret-what" class="cr-muted cr-small" data-testid="cr-interpret-what">@(_summary is { InterpretationId: not null } current
+                        ? $"The current analysis is from {current.InterpretedAt!.Value.UtcDateTime:yyyy-MM-dd HH:mm} UTC. Analyzing again records a new frozen version only if the selected sources or rules changed (otherwise it is reused); earlier versions and review decisions are kept, and the current results stay visible while it runs."
+                        : "The first analysis is recorded as a frozen version; nothing is counted as established before it.")</p>
+                }
                 @if (_customizeSources)
                 {
                     <ul class="cr-sources" id="cr-source-list" aria-label="Sources to analyze">
@@ -191,11 +200,18 @@
                 <OperationProgress Title="Analyzing relationships in the selected sources…" Stages="run.Stages" RunningText="working…" HeadingId="cr-interpret-heading"
                                    TestId="cr-interpret-progress" StagesTestId="cr-interpret-stages" StageTestId="cr-interpret-stage" />
             }
-            @if (_interpretError is not null) { <p class="cr-error" role="alert" data-testid="cr-interpret-error">@_interpretError</p> }
+            @if (_interpretError is not null)
+            {
+                <p class="cr-error" role="alert" data-testid="cr-interpret-error">@_interpretError</p>
+                @if (_summary is { InterpretationId: not null } kept) { <p class="cr-muted cr-small" data-testid="cr-interpret-kept">The previous analysis (@kept.InterpretedAt!.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC) is unchanged and still the current one.</p> }
+            }
             @if (_lastRun is { } last)
             {
-                <p class="cr-muted" role="status" data-testid="cr-interpret-result">@(last.Reused ? "Nothing changed: the existing analysis was reused." : "New analysis recorded.")
-                    @last.EntityCount entities · @last.RelationCount relationships · rules @string.Join(", ", last.RuleSetVersions)</p>
+                @* A confirmation of this action, dismissible — the saved result itself is described by "Latest analysis" above. *@
+                <p class="cr-muted cr-confirm" role="status" data-testid="cr-interpret-result">@(last.Reused
+                    ? "Nothing changed in the selected sources or rules: the existing analysis was reused (no new version)."
+                    : "A new frozen analysis version was recorded.") @($"{last.EntityCount} entities · {last.RelationCount} relationships · rules {string.Join(", ", last.RuleSetVersions)}")
+                    <button type="button" class="btn btn-link btn-sm" data-testid="cr-interpret-dismiss" @onclick="() => _lastRun = null">Dismiss<span class="visually-hidden"> confirmation</span></button></p>
             }
         </section>
     };
@@ -666,9 +682,14 @@
 
     private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
 
+    /// <summary>Why Analyze relationships is unavailable (null when it can run): one analysis at a time, and at least one source.</summary>
+    private string? AnalyzeBlockedReason => _interpreting is not null ? "An analysis is running; wait for it to finish."
+        : _selected.Count == 0 ? "Select at least one source (Customize sources) to analyze."
+        : null;
+
     private async Task InterpretAsync()
     {
-        if (_scope is null) return;
+        if (_scope is null || AnalyzeBlockedReason is not null) return;
         var run = new ReviewAssessment(++_generation, InterpretStages);
         (_interpreting, _interpretError) = (run, null);
         void Changed() => _ = InvokeAsync(StateHasChanged);
