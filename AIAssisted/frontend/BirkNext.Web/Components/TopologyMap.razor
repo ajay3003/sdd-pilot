@@ -22,6 +22,9 @@
             </select>
         </label>
         <button type="button" class="btn btn-secondary btn-sm" data-testid="tm-fit" @onclick="FitAsync">Fit to view</button>
+        @* Node positions can be dragged; saving keeps them in this browser per environment and level (never on the server, never shared). *@
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="tm-save" @onclick="SaveLayoutAsync">Save layout</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="tm-reset" @onclick="ResetLayoutAsync">Reset layout</button>
     </div>
     <p class="tm-legend" data-testid="tm-legend">Solid line: resolved or observed · dashed: candidate or strongly supported (inferred, not resolved) · dotted: expected but unresolved · dash-dot: conflict. "observed" in a label marks runtime evidence. Nothing here is confirmed by a person.</p>
     @if (Graph.OmittedNodes > 0) { <p class="tm-note" data-testid="tm-omitted">Showing the @M.MaxSystemNodes most connected components; @Graph.OmittedNodes more are listed in the Technical Inventory.</p> }
@@ -32,7 +35,7 @@
     else
     {
         <div class="tm-canvas" @ref="_canvas" data-testid="tm-canvas" aria-describedby="tm-heading"></div>
-        @if (_message is { } message) { <p class="tm-note" role="status" data-testid="tm-message">@message</p> }
+        @if (_message is { } message) { <p class="tm-note" role="status" aria-live="polite" data-testid="tm-message">@message</p> }
     }
 
     @if (SelectedEdge is { } edge)
@@ -142,6 +145,18 @@
             _message = "The interactive map could not be drawn; the table below lists the same relationships.";
             StateHasChanged();
         }
+    }
+
+    private async Task SaveLayoutAsync()
+    {
+        try { if (_module is not null) _message = await _module.InvokeAsync<string>("save", _canvas); }
+        catch (JSException) { _message = "The layout could not be saved in this browser."; }
+    }
+
+    private async Task ResetLayoutAsync()
+    {
+        try { if (_module is not null) { await _module.InvokeVoidAsync("reset", _canvas); await _module.InvokeVoidAsync("fit", _canvas); _message = "Layout reset to the default for this level."; } }
+        catch (JSException) { _message = "The layout could not be reset."; }
     }
 
     private async Task FitAsync()
