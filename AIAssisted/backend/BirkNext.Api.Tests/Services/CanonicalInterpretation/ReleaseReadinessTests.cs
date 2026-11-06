@@ -168,4 +168,41 @@ public sealed class ReleaseReadinessTests
         (await service.ReleaseReportsAsync("proj", 20, default)).Should().HaveCount(3);
         _ = ids;
     }
+
+    // ── Concurrency and decision precedence ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Concurrent_identical_freezes_store_exactly_one_report()
+    {
+        var (db, _, _) = await Project();
+        var options = (DbContextOptions<CanonicalInterpretationDbContext>)Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
+            .GetService<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptions>(db);
+        var attempts = Enumerable.Range(0, 4).Select(_ => Task.Run(async () =>
+        {
+            await using var own = new CanonicalInterpretationDbContext(options);
+            try { await new CanonicalInterpretationService(own, new NoSources(), TimeProvider.System).FreezeReleaseAsync("proj", new("Sprint 47", ["SkoleService"]), default); return true; }
+            catch (CanonicalRequestException) { return false; }
+        })).ToList();
+        var outcomes = await Task.WhenAll(attempts);
+        outcomes.Count(stored => stored).Should().Be(1, "the duplicate check and the insert are one serialised step per scope");
+        (await db.ReleaseReports.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Deferring_a_rejection_that_new_explicit_evidence_contradicts_keeps_the_conflict()
+    {
+        var (db, service, ids) = await Project(conflict: false);
+        var relation = await db.Relations.SingleAsync(r => r.RelationType == nameof(CanonicalRelationType.Verifies));
+        relation.EvidenceFingerprint = "fp-1"; relation.Resolution = nameof(RelationResolution.Candidate);
+        await db.SaveChangesAsync();
+        await service.DecideAsync("proj", new(ReviewTargetKind.Relation, relation.RelationKey, ReviewDecisionOutcome.Rejected, Notes: "not this test"), "lead", default);
+        // New evidence: the test now names the requirement explicitly — the rejection is contradicted.
+        relation.EvidenceFingerprint = "fp-2"; relation.Resolution = nameof(RelationResolution.Explicit);
+        await db.SaveChangesAsync();
+
+        await service.DecideAsync("proj", new(ReviewTargetKind.Relation, relation.RelationKey, ReviewDecisionOutcome.Deferred), "lead", default);
+        (await db.Relations.AsNoTracking().SingleAsync(r => r.Id == relation.Id)).ReviewState.Should().Be(nameof(RelationReviewState.Conflict),
+            "deferring postpones the question; it never removes the conflict (or the release blocker it causes)");
+        (await db.Decisions.CountAsync(d => d.TargetKey == relation.RelationKey)).Should().Be(2, "the decision history keeps both, append-only");
+    }
 }

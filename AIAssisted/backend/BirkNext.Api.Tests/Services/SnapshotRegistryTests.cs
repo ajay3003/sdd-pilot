@@ -374,4 +374,53 @@ public sealed class SnapshotRegistryTests : IDisposable
         using var db = new SnapshotRegistryDbContext(options.Options);
         db.Model.GetEntityTypes().Should().OnlyContain(e => e.GetSchema() == SnapshotRegistryDbContext.Schema);
     }
+
+    // ── Owner reconciliation for every adapter; stale pointers ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_deleted_delivery_report_is_marked_unavailable_without_touching_another_owners_report_of_the_same_type()
+    {
+        var (_, _, _, reportId) = DeliveryReport();
+        var release = new BirkNext.Api.Data.CanonicalInterpretation.ReleaseReadinessReportRecord
+        {
+            Id = Guid.NewGuid(), Scope = "proj", Name = "Sprint 47", FrozenAt = DateTimeOffset.Parse("2026-11-01T09:00:00Z"), Decision = "Blocked", ModulesJson = "[]",
+            RuleSetVersion = "release/1", PolicySetVersion = "governance/1", AssessmentJson = "{}",
+        };
+        _canonical.ReleaseReports.Add(release);
+        _canonical.SaveChanges();
+        var registry = new SnapshotRegistryService(_registry,
+            [new DeliverySnapshotSource(_delivery), new InterpretationSnapshotSource(_canonical), new ReleaseReadinessSnapshotSource(_canonical)], TimeProvider.System);
+        await registry.SyncAsync(true, default);
+
+        _delivery.WeeklyReports.Remove(_delivery.WeeklyReports.Single(r => r.Id == reportId));
+        _delivery.SaveChanges();
+        var sync = await registry.SyncAsync(true, default);
+
+        sync.Problems.Should().ContainSingle(p => p.Contains("Week 44 report") && p.Contains("marked unavailable"));
+        (await registry.GetAsync(SnapshotType.GeneratedReport, reportId.ToString(), default))!.PayloadAvailable.Should().BeFalse("kept as metadata, never deleted");
+        (await registry.GetAsync(SnapshotType.GeneratedReport, release.Id.ToString(), default))!.PayloadAvailable
+            .Should().BeTrue("a release report of the same type belongs to another owner and is untouched");
+        (await registry.SyncAsync(true, default)).Registered.Should().Be(0, "synchronisation is idempotent");
+    }
+
+    [Fact]
+    public async Task A_stored_pointer_to_a_vanished_owner_is_reported_stale_and_computed_pointers_skip_it()
+    {
+        var older = SourceAnalysis("old.zip", DateTimeOffset.Parse("2026-11-01T09:00:00Z"));
+        var newer = SourceAnalysis("new.zip", DateTimeOffset.Parse("2026-11-02T09:00:00Z"));
+        var registry = Registry();
+        await registry.SyncAsync(true, default);
+        (await registry.SetPointerAsync(new(null, SnapshotType.SourceAnalysis, "source-analysis", SnapshotPointerKind.CurrentSelected, newer.ToString()), "tester", default)).Should().BeNull();
+        (await registry.PointersAsync(null, SnapshotType.SourceAnalysis, "source-analysis", default)).Single(p => p.Kind == SnapshotPointerKind.CurrentSelected)
+            .TargetAvailable.Should().BeTrue();
+
+        _app.IqrSourceSnapshots.Remove(_app.IqrSourceSnapshots.Single(r => r.Id == newer));
+        _app.SaveChanges();
+        await registry.SyncAsync(true, default);
+        var pointers = await registry.PointersAsync(null, SnapshotType.SourceAnalysis, "source-analysis", default);
+
+        pointers.Single(p => p.Kind == SnapshotPointerKind.CurrentSelected).Should().Match<SnapshotPointerView>(p => p.Snapshot!.Id == newer.ToString() && p.TargetAvailable == false,
+            "the person's choice is kept, but it is never trusted as current evidence");
+        pointers.Single(p => p.Kind == SnapshotPointerKind.LatestCreated).Snapshot!.Id.Should().Be(older.ToString(), "computed pointers only name what the owner still holds");
+    }
 }

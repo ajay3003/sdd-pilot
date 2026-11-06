@@ -69,7 +69,10 @@ public class QualityReviewPageModelServiceTests
         var model = await service.BuildApiQualityReviewModelAsync();
 
         Assert.Equal("API Quality Review", model.Title);
-        Assert.Equal(QualityReviewStatus.Blocked, model.ReadinessStatus);
+        // The API page-model builder has no configuration evidence (placeholder detectors): its answer is Not assessed, never an authoritative Blocked.
+        Assert.Equal(QualityReviewStatus.NotAssessed, model.ReadinessStatus);
+        Assert.Equal("none", model.EvidenceAuthority);
+        Assert.False(model.Summary.CanRun);
         apiBuilder.Verify(b => b.BuildPageModelAsync(), Times.Once);
     }
 
@@ -100,7 +103,7 @@ public class QualityReviewPageModelServiceTests
         var model = await service.BuildFrontendQualityReviewModelAsync();
 
         Assert.Equal("Frontend Quality Review", model.Title);
-        Assert.Equal(QualityReviewStatus.Warning, model.ReadinessStatus);
+        Assert.Equal(QualityReviewStatus.NotAssessed, model.ReadinessStatus);
         frontendBuilder.Verify(b => b.BuildPageModelAsync(), Times.Once);
     }
 
@@ -131,7 +134,8 @@ public class QualityReviewPageModelServiceTests
         var model = await service.BuildIntegrationQualityReviewModelAsync();
 
         Assert.Equal("Integration Quality Review", model.Title);
-        Assert.Equal(QualityReviewStatus.Blocked, model.ReadinessStatus);
+        Assert.Equal(QualityReviewStatus.NotAssessed, model.ReadinessStatus);
+        Assert.Contains("Integration Quality Review evaluates readiness", model.Summary.ReadinessMessage);
         integrationBuilder.Verify(b => b.BuildPageModelAsync(), Times.Once);
     }
 

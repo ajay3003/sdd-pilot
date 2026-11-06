@@ -1260,6 +1260,27 @@ public sealed class PerformanceTestReviewTests
         readiness.Ready.Should().BeFalse();
     }
 
+
+    [Fact]
+    public async Task An_interrupted_run_older_than_the_twenty_newest_is_still_reconciled_and_never_reads_as_running()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        var store = h.Store();
+        var orphan = new PerformanceTestRun { EnvironmentId = "pay-qa", DefinitionId = d.Id, DefinitionSnapshot = d, State = PerformanceRunState.Running,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-2), StartedAt = DateTimeOffset.UtcNow.AddDays(-2) };
+        await store.SaveRunAsync(orphan);
+        for (var i = 0; i < 25; i++)
+            await store.SaveRunAsync(new PerformanceTestRun { EnvironmentId = "pay-qa", DefinitionId = d.Id, DefinitionSnapshot = d, State = PerformanceRunState.Completed,
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-i), Metrics = new PerformanceMetrics { RequestCount = 1 } });
+
+        await h.Execution.ReconcileAsync(h.Store(), "pay-qa");
+
+        var reconciled = (await h.Store().RunAsync(orphan.RunId))!;
+        reconciled.State.Should().Be(PerformanceRunState.ExecutionFailed, "a BirkNext restart never leaves a run Running forever, however old");
+        reconciled.Verdict.Should().NotBe(PerformanceQualityVerdict.Pass);
+        (await h.Store().HasActiveRunAsync("pay-qa")).Should().BeFalse();
+    }
 }
 
 /// <summary>Runs only when Podman is reachable and the pinned k6 and busybox images are present locally; otherwise skipped with the reason.</summary>
@@ -1283,4 +1304,5 @@ public sealed class PodmanK6LiveFactAttribute : FactAttribute
         else if (!Ok("image", "exists", PerformanceContainerOptions.DefaultImage) || !Ok("image", "exists", "docker.io/library/busybox:latest"))
             Skip = $"Live Podman/k6 test: pull the pinned images first (podman pull {PerformanceContainerOptions.DefaultImage}; podman pull docker.io/library/busybox:latest).";
     }
+
 }

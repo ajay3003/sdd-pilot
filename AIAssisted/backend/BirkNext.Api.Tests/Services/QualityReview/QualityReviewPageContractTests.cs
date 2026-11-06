@@ -52,7 +52,7 @@ public class QualityReviewPageContractTests
     [Fact]
     public void QualityReviewStatus_HasAllRequiredValues()
     {
-        Assert.Equal(6, typeof(QualityReviewStatus).GetEnumValues().Length);
+        Assert.Equal(7, typeof(QualityReviewStatus).GetEnumValues().Length);
         var values = Enum.GetValues(typeof(QualityReviewStatus)).Cast<QualityReviewStatus>().ToList();
         Assert.Contains(QualityReviewStatus.Available, values);
         Assert.Contains(QualityReviewStatus.Blocked, values);
@@ -60,6 +60,8 @@ public class QualityReviewPageContractTests
         Assert.Contains(QualityReviewStatus.Selected, values);
         Assert.Contains(QualityReviewStatus.Warning, values);
         Assert.Contains(QualityReviewStatus.Fail, values);
+        Assert.Contains(QualityReviewStatus.NotAssessed, values);
+        Assert.Equal(6, (int)QualityReviewStatus.NotAssessed); // appended: existing values keep their numbers
     }
 
     [Fact]
