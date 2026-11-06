@@ -597,6 +597,7 @@
 
     private RenderFragment JourneyStatus(IntegrationJourneyView view) => __builder =>
     {
+        <JourneyCard View="view" />
         <div class="snt-dimensions" data-testid="snt-status" data-journey="@view.Journey.JourneyId">
             <span><span class="snt-dimension-label">Configuration</span> @Dimension("Configuration", JourneyConfiguration(view))</span>
             <span><span class="snt-dimension-label">Source evidence</span> @Dimension("Source evidence", TestPackPresentation.SourceEvidence(view))</span>

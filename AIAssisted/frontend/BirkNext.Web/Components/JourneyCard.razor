@@ -1,0 +1,44 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+
+@* One journey at a glance (purpose → prerequisites → eligibility → verification → next action). Details stay in the sections below it. *@
+@{ var c = JourneyCardPresentation.Build(View); }
+<section class="jc" data-testid="jc" data-journey="@View.Journey.JourneyId" aria-label="@($"{View.Journey.DisplayName} at a glance")">
+    <p class="jc-purpose" data-testid="jc-purpose">@c.Purpose</p>
+    <dl class="jc-facts">
+        <div><dt>Eligibility</dt><dd data-testid="jc-eligibility" data-can-run="@(View.CanRun ? "true" : "false")">@c.Eligibility</dd></div>
+        <div><dt>Verification</dt><dd data-testid="jc-verification">@c.Verification</dd></div>
+        <div><dt>Expected result</dt><dd data-testid="jc-expected">@c.Expected</dd></div>
+        <div class="jc-wide"><dt>Next action</dt><dd data-testid="jc-next">@c.NextAction</dd></div>
+    </dl>
+    @if (c.Blockers.Count > 0)
+    {
+        <ul class="jc-list jc-blockers" data-testid="jc-blockers" aria-label="Current blockers">
+            @foreach (var b in c.Blockers) { <li data-testid="jc-blocker"><strong>@b.Label</strong> <span class="jc-state">@b.State</span> <span class="jc-muted">@b.Detail</span></li> }
+        </ul>
+    }
+    <div class="jc-grid">
+        @Group("Required integrations", c.Integrations, "jc-integrations", "No integration is declared for this journey.")
+        @Group("Source evidence", c.SourceEvidence, "jc-sources", "No source evidence prerequisite is declared.")
+        @Group("Test Data", c.TestData, "jc-test-data", "No Test Data prerequisite is declared.")
+        @Group("Authentication and authorization", c.Access, "jc-access", "No authentication or authorization prerequisite is declared.")
+    </div>
+    @if (c.Scenarios.Count > 0) { <p class="jc-muted" data-testid="jc-scenarios">Defined scenarios: @string.Join(", ", c.Scenarios). A scenario description is not an executable test.</p> }
+    @if (c.History is { } history) { <p class="jc-muted" data-testid="jc-history">@history</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IntegrationJourneyView View { get; set; } = default!;
+
+    private static RenderFragment Group(string title, IReadOnlyList<JourneyCardPresentation.Item> items, string testId, string empty) => __builder =>
+    {
+        <div class="jc-group" data-testid="@testId">
+            <h4 class="jc-h4">@title</h4>
+            @if (items.Count == 0) { <p class="jc-muted">@empty</p> }
+            else
+            {
+                <ul class="jc-list">@foreach (var i in items) { <li><span>@i.Label</span> <span class="jc-state" data-state="@i.State">@i.State</span></li> }</ul>
+            }
+        </div>
+    };
+}
