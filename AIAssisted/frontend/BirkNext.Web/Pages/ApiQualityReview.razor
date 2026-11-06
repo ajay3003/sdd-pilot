@@ -66,6 +66,8 @@
             var blocked = readiness.Level == ApiReviewReadinessLevel.Blocked;
             var knownLimitations = ApiReviewPreRunPresentation.KnownLimitations(targetReviews, _authorizationChecks);
         }
+        <BirkNext.Web.Components.GuidedStepList Steps="@ApiReviewWorkflow.Derive(_targets, _selected, _capabilities, _authentication, Eligibility, _context?.ActiveProfileOrNull?.Id)"
+                                                TestId="aqr-steps" Label="API Quality Review steps" />
         <section class="aqr-card aqr-decision aqr-readiness aqr-readiness-@readiness.Level.ToString().ToLowerInvariant()" data-testid="aqr-readiness" data-readiness="@readiness.Level" data-decision="@ApiReviewPresentation.Decision(readiness)" aria-labelledby="aqr-readiness-heading" role="@(blocked ? "alert" : "status")">
             <div class="aqr-decision-status">
                 <p class="aqr-decision-kicker">Run decision</p>
@@ -130,6 +132,10 @@
             {
                 <BirkNext.Web.Components.RuntimeAuthenticationSelector OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.ApiAuthenticatedChecks"
                     Profile="@_context?.ActiveProfileOrNull" ResolutionChanged="r => _authentication = r" />
+                @if (ApiReviewPresentation.AuthenticationModeNote(_authentication, _targets.Where(t => _selected.Contains(t.TargetId)).ToList(), _capabilities) is { } modeNote)
+                {
+                    <p class="aqr-help" role="note" data-testid="aqr-auth-mode-note">@modeNote</p>
+                }
                 @CapabilityList(true)
                 <div class="aqr-run-row" data-testid="aqr-run-row">
                     <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run" aria-describedby="@(!Eligibility.Enabled ? "aqr-run-reason" : null)">
@@ -581,12 +587,18 @@
                         <ul class="aqr-list" data-testid="aqr-limitation-areas">
                             @foreach (var obligation in ApiReviewPresentation.ManualReviewObligations)
                             {
+                                var guide = ApiReviewPresentation.ManualObligationGuide(obligation.Area);
                                 <li data-testid="aqr-limitation-area">
-                                    <strong>@obligation.Area</strong>
+                                    <strong>@obligation.Area</strong> <span class="aqr-pill" data-testid="aqr-obligation-status">Not reviewed</span>
                                     <ul class="aqr-list aqr-muted">@foreach (var detail in obligation.Details) { <li data-testid="aqr-limitation-detail">@detail</li> }</ul>
+                                    <dl class="aqr-obligation" data-testid="aqr-obligation">
+                                        <div><dt>Purpose</dt><dd>@guide.Purpose</dd></div>
+                                        <div><dt>Evidence required</dt><dd>@guide.Evidence</dd></div>
+                                    </dl>
                                 </li>
                             }
                         </ul>
+                        <p class="aqr-muted" data-testid="aqr-obligation-note">BirkNext does not record manual review decisions yet: record each outcome where your team tracks test results. The automated run never marks an obligation as done.</p>
                     </ReviewDisclosure>
                 </section>
 
@@ -878,7 +890,7 @@
     /// <summary>Records the selection in this history entry before leaving for the editor (the link itself then navigates).</summary>
     private void RememberSelection() => Navigation.NavigateTo(SelectionUrl(), replace: true);
 
-    private ApiReviewRunEligibility Eligibility => ApiReviewRunEligibility.Evaluate(_context, _targets, _selected, _capabilities);
+    private ApiReviewRunEligibility Eligibility => ApiReviewRunEligibility.Evaluate(_context, _targets, _selected, _capabilities, _authentication?.Effective);
 
     protected override async Task OnInitializedAsync()
     {

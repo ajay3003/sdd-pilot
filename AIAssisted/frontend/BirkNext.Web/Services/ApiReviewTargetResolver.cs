@@ -219,24 +219,31 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
         ? TargetEnvironmentsHref + "&tab=auth"
         : TargetEnvironmentsHref + "&tab=auth&profile=" + Uri.EscapeDataString(profileId);
 
-    public static ApiReviewRunEligibility Evaluate(FrontendAnalysisContext? context, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selectedIds, AuthenticatedReviewCapabilities? capabilities)
+    /// <param name="mode">The effective runtime authentication mode (null while unresolved). None and Unattended never reach a protected target:
+    /// an authenticated context alone does not make those targets runnable.</param>
+    public static ApiReviewRunEligibility Evaluate(FrontendAnalysisContext? context, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selectedIds, AuthenticatedReviewCapabilities? capabilities,
+        BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode? mode = null)
     {
         if (context is null) return new(false, "Loading the active Target Environment…", null, null);
         if (context.ActiveTargetError is { Length: > 0 } error) return new(false, error, "Open Target Environments", TargetEnvironmentsHref);
         if (targets.Count == 0) return new(false, NoTargetsReason, "View Endpoint Discovery or configure an API target", TargetEnvironmentsHref);
         var selected = targets.Where(t => selectedIds.Contains(t.TargetId)).ToList();
         if (selected.Count == 0) return new(false, NoSelectionReason, null, null);
-        var authenticatedAvailable = capabilities?.AuthenticatedApi == true;
+        var modeExcludesAuth = mode is BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.None or BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Unattended;
+        var authenticatedAvailable = capabilities?.AuthenticatedApi == true && !modeExcludesAuth;
         var runnable = selected.Where(t => !t.AuthRequired || authenticatedAvailable).ToList();
-        if (runnable.Count > 0) return new(true, runnable.Count == selected.Count ? $"{Targets(selected.Count)} ready." : $"{runnable.Count} of {Targets(selected.Count)} runnable; authenticated targets will be reported as blocked (no timeout).", null, null);
+        if (runnable.Count > 0) return new(true, runnable.Count == selected.Count ? $"{Targets(selected.Count)} ready." : $"{runnable.Count} of {Targets(selected.Count)} runnable; authenticated targets will be reported as blocked{(modeExcludesAuth ? $" (authentication {mode} selected)" : "")} (no timeout).", null, null);
         var method = context.ActiveProfile.Authentication.AuthenticatedTestingMethod;
         var authHref = AuthenticationHref(context.ActiveProfile.Id);
         // The read-only contract review needs no authentication: a protected target with a published contract is still reviewed statically,
         // and only its live authenticated checks are skipped. Missing authentication never blocks what can run without it.
         var staticOnly = selected.Count(t => !string.IsNullOrWhiteSpace(t.ContractSource));
         if (staticOnly > 0)
-            return new(true, $"{StaticOnlyPrefix} {Targets(staticOnly)}; authenticated checks will be skipped ({(capabilities?.ContextStatus == AuthenticatedApiContextStatus.Expired ? "authentication expired" : "no authenticated context")}).",
-                capabilities?.ContextStatus == AuthenticatedApiContextStatus.Expired ? "Re-authenticate" : NoAuthContextAction, authHref);
+            return new(true, $"{StaticOnlyPrefix} {Targets(staticOnly)}; authenticated checks will be skipped ({(modeExcludesAuth ? $"authentication {mode} selected" : capabilities?.ContextStatus == AuthenticatedApiContextStatus.Expired ? "authentication expired" : "no authenticated context")}).",
+                modeExcludesAuth ? null : capabilities?.ContextStatus == AuthenticatedApiContextStatus.Expired ? "Re-authenticate" : NoAuthContextAction, modeExcludesAuth ? null : authHref);
+        // A verified context exists, but the selected mode does not use it: nothing would execute. Blocked with the explicit choice, never run as "failed".
+        if (modeExcludesAuth && capabilities?.AuthenticatedApi == true)
+            return new(false, $"Authentication {mode} is selected, and every selected target requires authentication, so nothing would execute. Select Attended to use the verified session (nothing is transferred automatically).", null, null);
         return method switch
         {
             AuthenticatedTestingMethod.ManualOnly => new(false, "Authenticated automated API review is unavailable: the environment is manual-verification only.", "Change the authenticated testing method", authHref),

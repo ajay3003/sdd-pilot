@@ -404,6 +404,9 @@ public enum ApiReviewResultState
     /// <summary>Everything selected executed, but under reduced access or evidence.</summary>
     CompletedWithLimitations,
     Completed,
+    /// <summary>Nothing executed by design: every selected target was blocked before execution (authentication unavailable or not selected,
+    /// manual verification only, or unavailable). Not a failure of the API or of the run, and nothing can be concluded about the API.</summary>
+    BlockedBeforeExecution,
 }
 
 /// <summary>
@@ -417,6 +420,7 @@ public static class ApiReviewResultStates
     public static string Label(ApiReviewResultState state) => state switch
     {
         ApiReviewResultState.FailedToRun => "No target could be reviewed",
+        ApiReviewResultState.BlockedBeforeExecution => "Blocked before execution",
         ApiReviewResultState.PartialCoverage => "Partial coverage",
         ApiReviewResultState.CompletedWithLimitations => "Completed with limitations",
         _ => "Completed",
@@ -425,12 +429,12 @@ public static class ApiReviewResultStates
     public static string Tone(ApiReviewResultState state) => state switch
     {
         ApiReviewResultState.Completed => "ready",
-        ApiReviewResultState.FailedToRun => "attention",
+        ApiReviewResultState.FailedToRun or ApiReviewResultState.BlockedBeforeExecution => "attention",
         _ => "warning",
     };
 
     /// <summary>The review produced judgeable output. False means this is an execution report, not a quality one.</summary>
-    public static bool IsCompleted(ApiReviewResultState state) => state is not ApiReviewResultState.FailedToRun;
+    public static bool IsCompleted(ApiReviewResultState state) => state is not (ApiReviewResultState.FailedToRun or ApiReviewResultState.BlockedBeforeExecution);
 }
 
 /// <param name="ManualReviewCount">

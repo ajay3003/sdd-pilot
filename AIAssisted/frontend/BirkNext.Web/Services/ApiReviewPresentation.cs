@@ -115,6 +115,40 @@ public static class ApiReviewPresentation
         ]),
     ];
 
+    /// <summary>
+    /// Why the effective authentication mode will not reach the selected protected targets, with the explicit next step. Auto chooses None
+    /// when the environment's frontend needs no sign-in (an anonymous-capable operation); the API can still require authentication. A verified
+    /// attended session is never used silently: the person selects Attended. Null when the mode reaches every protected target (or none is selected).
+    /// </summary>
+    public static string? AuthenticationModeNote(BirkNext.RuntimeAuthentication.RuntimeAuthenticationResolution? resolution, IReadOnlyList<ApiReviewTarget> selected,
+        AuthenticatedReviewCapabilities? capabilities)
+    {
+        var protectedCount = selected.Count(t => t.AuthRequired);
+        if (resolution is null || protectedCount == 0) return null;
+        var mode = resolution.Effective;
+        if (mode is not (BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.None or BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Unattended)) return null;
+        var targets = protectedCount == 1 ? "The selected API target requires" : $"{protectedCount} selected API targets require";
+        var session = capabilities?.AuthenticatedApi == true ? " A verified attended session is available for this environment: select Attended to use it." : " Select Attended and sign in through Target Environment → Authentication to review them.";
+        var why = mode == BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Unattended
+            ? "Unattended authentication cannot be used for API requests in this review."
+            : resolution.Requested == BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Auto
+                ? $"Auto chose None ({resolution.Reason.TrimEnd('.')}): the frontend needs no sign-in, but the API is a separate question."
+                : "Authentication None is selected.";
+        return $"{why} {targets} authentication, so {(protectedCount == 1 ? "it is" : "they are")} blocked before execution — reported as blocked, never passed.{session} Nothing is transferred automatically.";
+    }
+
+    /// <summary>What each manual area is for and the evidence that settles it. BirkNext records no decision for these yet.</summary>
+    public static (string Purpose, string Evidence) ManualObligationGuide(string area) => area switch
+    {
+        "Write operations and side effects" => ("Confirm that writes behave correctly and safely: the review never sends POST/PUT/PATCH/DELETE or GraphQL mutations.",
+            "A controlled test of each write operation in an approved environment, with its side effects (records, messages) checked."),
+        "Authorization between roles and tenants" => ("Confirm that each role and tenant sees and changes only what it may; one rejected anonymous request proves nothing about this.",
+            "Requests made as different roles/tenants against the same resources, with expected allow/deny outcomes."),
+        "Business correctness of returned data" => ("Confirm that returned values are right for the business, not only structurally valid.",
+            "Spot checks of returned data against an agreed source of truth or test data."),
+        _ => ("Review this area manually.", "Evidence agreed with the test lead."),
+    };
+
     /// <summary>The areas a person still has to review — this is what "N manual review areas" counts, everywhere.</summary>
     public static IReadOnlyList<string> ManualReviewAreas => ManualReviewObligations.Select(o => o.Area).ToList();
 
@@ -783,8 +817,12 @@ public static class ApiReviewPresentation
         // Execution state describes execution only. Whether a person still has work to do is a separate fact, carried
         // beside it — folding it in here said "Completed — manual review required", which reads as though the automated
         // review had not finished. It always finishes; some things are simply not automatable.
+        // Every target blocked by the engine before execution (it sent nothing) is a blocked run, not a failed one; a run that tried and got
+        // nothing back (not tested, unreachable) stays FailedToRun.
+        var blockedBeforeExecution = report.Targets.Count > 0 && report.Targets.All(t => t.Status == ApiReviewTargetStatus.Blocked);
         var state =
-            report.Targets.Count == 0 || assessed == 0 ? ApiReviewResultState.FailedToRun
+            report.Targets.Count == 0 ? ApiReviewResultState.FailedToRun
+            : assessed == 0 ? blockedBeforeExecution ? ApiReviewResultState.BlockedBeforeExecution : ApiReviewResultState.FailedToRun
             : blocked > 0 ? ApiReviewResultState.PartialCoverage
             : statuses.Any(s => s == ApiReviewTargetPresentationStatus.PartiallyAssessed) ? ApiReviewResultState.CompletedWithLimitations
             : ApiReviewResultState.Completed;
@@ -799,6 +837,8 @@ public static class ApiReviewPresentation
         {
             ApiReviewResultState.FailedToRun =>
                 "No selected API target could be reviewed, so nothing can be concluded about them.",
+            ApiReviewResultState.BlockedBeforeExecution =>
+                $"Nothing was executed: every selected target was blocked before any request ({string.Join(", ", statuses.GroupBy(ApiReviewStatusLabels.Label).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}"))}). This is not an API failure, and nothing can be concluded about the API.",
             ApiReviewResultState.PartialCoverage =>
                 $"{found} across {services}. {blocked} could not be reached and {(blocked == 1 ? "is" : "are")} reported as such, never as a pass.",
             ApiReviewResultState.CompletedWithLimitations =>

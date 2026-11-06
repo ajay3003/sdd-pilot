@@ -786,3 +786,8 @@
 .aqr-link-button { background: none; border: 0; padding: 0; color: var(--clr-primary); text-decoration: underline; cursor: pointer; font: inherit; }
 
 .aqr-pill-blocked { background: var(--clr-danger-bg-light); color: var(--clr-danger); border-color: var(--clr-danger-border); }
+
+/* Manual review worklist: what each obligation is for and the evidence that settles it. */
+.aqr-obligation { display: grid; gap: .2rem; margin: .3rem 0 .5rem; font-size: .88rem; }
+.aqr-obligation dt { font-weight: 600; }
+.aqr-obligation dd { margin: 0; }

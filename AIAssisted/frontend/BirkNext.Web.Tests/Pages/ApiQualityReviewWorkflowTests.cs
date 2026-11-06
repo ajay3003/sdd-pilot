@@ -522,10 +522,10 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         var result = ApiReviewPresentation.Result(report);
 
-        result.State.Should().Be(ApiReviewResultState.FailedToRun);
+        result.State.Should().Be(ApiReviewResultState.BlockedBeforeExecution, "the engine blocked the target before sending anything: blocked, not failed");
         ApiReviewResultStates.IsCompleted(result.State).Should().BeFalse();
         result.FindingCount.Should().Be(0);
-        result.Summary.Should().Be("No selected API target could be reviewed, so nothing can be concluded about them.");
+        result.Summary.Should().StartWith("Nothing was executed: every selected target was blocked before any request (1 authentication required).").And.Contain("nothing can be concluded about the API");
         result.Summary.Should().NotContain("0 findings");
     }
 

@@ -148,10 +148,12 @@ public static class ApiReviewPostRunPresentation
             result.State switch
             {
                 ApiReviewResultState.FailedToRun => "Failed",
+                ApiReviewResultState.BlockedBeforeExecution => "Blocked before execution",
                 ApiReviewResultState.PartialCoverage => "Completed — partial coverage",
                 _ => "Completed",
             },
-            result.State == ApiReviewResultState.FailedToRun ? "Incomplete"
+            result.State == ApiReviewResultState.BlockedBeforeExecution ? "Not assessed"
+                : result.State == ApiReviewResultState.FailedToRun ? "Incomplete"
                 : result.IssueCount > 0 ? "Issues identified" : "No automated issues identified",
             ManualReviewLabel(report),
             coverage.Any(c => c.Limited) ? "Partial" : "Complete",
