@@ -289,6 +289,17 @@ public sealed class ArtifactTraceabilityReport
     /// <summary>Informational observations: items with no explicit document reference. Never a defect, readiness or quality count.</summary>
     public int NoExplicitReferenceCount => Gaps.Count(g => TraceabilityLabels.CategoryOf(g) == TraceabilityObservationCategory.NoExplicitReference);
 
+    /// <summary>The informational count by the population it comes from — three different denominators, so it is never read as one number.</summary>
+    public IReadOnlyList<(string Label, int Count)> NoExplicitReferenceBreakdown =>
+        [.. Gaps.Where(g => TraceabilityLabels.CategoryOf(g) == TraceabilityObservationCategory.NoExplicitReference).GroupBy(g => g.GapIn).OrderBy(g => g.Key)
+            .Select(g => (g.Key switch
+            {
+                ArtifactType.Constitution => "Constitution rules not cited by the specification",
+                ArtifactType.Specification => "requirements without a plan reference",
+                ArtifactType.Task => "tasks without a requirement/SC reference",
+                _ => g.Key.ToString(),
+            }, g.Count()))];
+
     /// <summary>Traceability issues that may need review attention: broken, ambiguous and policy-required observations only.</summary>
     public int ReferenceIssueCount => Gaps.Count - NoExplicitReferenceCount;
 

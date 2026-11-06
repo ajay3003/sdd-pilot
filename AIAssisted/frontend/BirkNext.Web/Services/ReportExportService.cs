@@ -1146,7 +1146,8 @@ public sealed class ReportExportService : IReportExportService
         // Health KPIs
         sb.Append("<div class=\"kpi-row\">");
         if (traceability is not null)
-            sb.Append(Kpi(traceability.Health.HasAssessedCoverage ? $"{traceability.Health.CoveragePercentage:0.#}% across assessed transitions" : "Not assessed", "Traceability"));
+            // Per transition, never one percentage across different denominators.
+            sb.Append(Kpi($"{traceability.AssessedTransitionCount} of {traceability.Transitions.Count} transitions assessed", "Traceability"));
         if (compliance is not null)
             sb.Append(Kpi($"{compliance.Coverage.CompliancePercentage:0.#}%", "Compliance"));
         if (audit is not null)
@@ -1182,9 +1183,7 @@ public sealed class ReportExportService : IReportExportService
 
         // Analyses run
         var ran = new List<string>();
-        if (traceability is not null)  ran.Add(traceability.Health.HasAssessedCoverage
-            ? $"Requirements Traceability — {traceability.Health.CoveragePercentage:0.#}% across assessed transitions"
-            : "Requirements Traceability — transitions not assessed");
+        if (traceability is not null)  ran.Add($"Requirements Traceability — {string.Join(" · ", traceability.Transitions.Select(t => $"{t.Name}: {(t.Assessed ? t.Detail.Split(" · ")[0] : "Not assessed")}"))} (per transition; no combined score)");
         if (compliance is not null)    ran.Add($"Constitution Compliance — {compliance.Coverage.CompliancePercentage:0.#}% compliant");
         if (audit is not null)         ran.Add($"QA Audit — score {audit.Health.AuditScore:0.#}, {audit.Health.TotalFindings} findings");
         if (delivery is not null)      ran.Add($"Delivery Readiness — {delivery.Health.OverallReadinessScore:0.#}% overall");

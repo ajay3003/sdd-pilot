@@ -18,22 +18,30 @@
     else
     {
         var s = _summary;
-        <dl class="ctp-counts" data-testid="ct-summary">
-            <div><dt>Requirements</dt><dd>@s.Requirements</dd></div>
-            <div><dt>User stories / scenarios</dt><dd>@s.UserStories / @s.Scenarios</dd></div>
-            <div><dt>Functional / scenario groups</dt><dd>@s.FunctionalGroups / @s.ScenarioGroups</dd></div>
-            <div><dt>Tasks</dt><dd>@s.Tasks <span class="ctp-muted">(@s.SharedFoundationTasks shared &amp; foundational)</span></dd></div>
-            <div><dt>Tasks with implementation evidence</dt><dd data-testid="ct-implemented">@s.TasksWithImplementation</dd></div>
-            <div><dt>Requirements with explicit tests</dt><dd data-testid="ct-tested">@s.RequirementsWithExplicitTests</dd></div>
-            <div><dt>Only suggested test links</dt><dd>@s.RequirementsWithCandidateTestsOnly</dd></div>
-            <div><dt>No linked test</dt><dd>@s.RequirementsWithoutTests</dd></div>
-            <div><dt>Story references to fix</dt><dd>@(s.UnresolvedStoryReferences + s.RemovedStoryReferences)</dd></div>
+        // Nothing interpreted yet: every count would read 0, which looks like "measured and empty". It is not assessed.
+        var interpreted = s.Features > 0 || s.Requirements > 0 || s.Tasks > 0;
+        string N(int value) => interpreted ? value.ToString() : "Not assessed";
+        <dl class="ctp-counts" data-testid="ct-summary" data-interpreted="@(interpreted ? "true" : "false")">
+            <div><dt>Requirements</dt><dd>@N(s.Requirements)</dd></div>
+            <div><dt>User stories / scenarios</dt><dd>@(interpreted ? $"{s.UserStories} / {s.Scenarios}" : "Not assessed")</dd></div>
+            <div><dt>Functional / scenario groups</dt><dd>@(interpreted ? $"{s.FunctionalGroups} / {s.ScenarioGroups}" : "Not assessed")</dd></div>
+            <div><dt>Tasks</dt><dd>@N(s.Tasks) @if (interpreted) { <span class="ctp-muted">(@s.SharedFoundationTasks shared &amp; foundational)</span> }</dd></div>
+            <div><dt>Tasks with implementation evidence</dt><dd data-testid="ct-implemented">@N(s.TasksWithImplementation)</dd></div>
+            <div><dt>Requirements with explicit tests</dt><dd data-testid="ct-tested">@N(s.RequirementsWithExplicitTests)</dd></div>
+            <div><dt>Only suggested test links</dt><dd>@N(s.RequirementsWithCandidateTestsOnly)</dd></div>
+            <div><dt>No linked test</dt><dd>@N(s.RequirementsWithoutTests)</dd></div>
+            <div><dt>Story references to fix</dt><dd>@N(s.UnresolvedStoryReferences + s.RemovedStoryReferences)</dd></div>
         </dl>
         <p class="ctp-muted">Document, implementation and test evidence are counted separately; none of them is a completion percentage, and a checked task is not implementation evidence.</p>
         @foreach (var l in s.Limitations) { <p class="ctp-limit" data-testid="ct-limitation">@l</p> }
         @if (_features is null)
         {
-            <button type="button" class="btn-secondary" data-testid="ct-show-features" disabled="@(s.Features == 0)" @onclick="LoadFeaturesAsync">Show @s.Features feature pack@(s.Features == 1 ? "" : "s")</button>
+            <button type="button" class="btn-secondary" data-testid="ct-show-features" disabled="@(s.Features == 0)" @onclick="LoadFeaturesAsync"
+                    aria-describedby="@(s.Features == 0 ? "ct-features-why" : null)">Show @s.Features feature pack@(s.Features == 1 ? "" : "s")</button>
+            @if (s.Features == 0)
+            {
+                <p class="ctp-muted" id="ct-features-why" data-testid="ct-features-why">No feature pack is interpreted for this project yet. Feature packs come from an interpreted Delivery snapshot (<a href="/correlation-review">Relationship Review → Analyze relationships</a>); nothing is invented here.</p>
+            }
         }
         else
         {

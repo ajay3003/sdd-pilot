@@ -262,4 +262,41 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
         planTask.Detail.Should().Be("No stable Plan→Task identity available").And.NotContain("0");
         report.AssessedTransitionCount.Should().Be(3);
     }
+
+    // ── Guided steps, observation breakdown, no combined score in the dashboard export ─────────────────────────────────────
+
+    [Fact]
+    public void Guided_steps_follow_the_transitions_and_plan_to_tasks_stays_not_assessed_with_the_reason()
+    {
+        var cut = RenderReport();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=at-steps] [data-testid=gsl-step]").Should().HaveCount(6));
+        cut.FindAll("[data-testid=at-steps] [data-testid=gsl-step]").Select(s => s.GetAttribute("data-step")).Should().Equal("scope", "const-spec", "spec-plan", "plan-task", "task-ref", "gaps");
+        var plan = cut.Find("[data-testid=at-steps] [data-step=plan-task]");
+        plan.GetAttribute("data-state").Should().Be("NotApplicable");
+        plan.TextContent.Should().Contain("Not assessed").And.Contain("stable task identifiers").And.NotContain("0%");
+        cut.Find("[data-testid=at-steps] [data-step=const-spec]").TextContent.Should().Contain("not proof that work was implemented or tested");
+        cut.Find("[data-testid=at-steps] [data-step=gaps]").TextContent.Should().Contain("not a failure").And.Contain("Links are never created to raise coverage");
+        cut.Find("[data-testid=at-steps] [data-step=plan-task] [data-testid=gsl-action]").Click();
+        cut.Find(".at-tab-btn.is-active").TextContent.Should().Contain("Plan");
+    }
+
+    [Fact]
+    public void Informational_observations_are_broken_down_by_population_and_never_one_rate()
+    {
+        var report = Analyze();
+        report.NoExplicitReferenceBreakdown.Sum(b => b.Count).Should().Be(report.NoExplicitReferenceCount);
+        var cut = RenderReport();
+        if (report.NoExplicitReferenceCount > 0)
+            cut.Find("[data-testid=at-observation-breakdown]").TextContent.Should().Contain("different denominators, never one rate");
+    }
+
+    [Fact]
+    public void The_dashboard_export_states_transitions_and_never_a_combined_percentage()
+    {
+        var report = Analyze();
+        var html = new ReportExportService().ExportDashboardSummary("Access", report, null, null, null, null, null, null);
+        html.Should().NotContain("% across assessed transitions");
+        html.Should().Contain($"{report.AssessedTransitionCount} of {report.Transitions.Count} transitions assessed").And.Contain("no combined score");
+        html.Should().Contain("Plan → Tasks: Not assessed");
+    }
 }

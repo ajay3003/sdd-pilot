@@ -168,7 +168,12 @@
             <MetricCard Value="@_report.NoExplicitReferenceCount.ToString()" Label="No explicit document reference" Sublabel="Informational reference observations across assessed transitions." />
             <MetricCard Value="@_report.PolicyRequiredGapCount.ToString()" Label="Policy-required trace issues" Sublabel="@PolicySublabel" Variant="@(_report.PolicyRequiredGapCount > 0 ? "warning" : "")" />
         </div>
+        @if (_report.NoExplicitReferenceBreakdown.Count > 0)
+        {
+            <p class="at-neutral-note" data-testid="at-observation-breakdown">No explicit document reference, by population (different denominators, never one rate): @string.Join(" · ", _report.NoExplicitReferenceBreakdown.Select(b => $"{b.Count} {b.Label}")).</p>
+        }
         <p class="at-neutral-note" data-testid="at-semantics">@TraceabilityLabels.Semantics @_report.Policy.Description</p>
+        <BirkNext.Web.Components.GuidedStepList Steps="@BirkNext.Web.Services.TraceabilityWorkflow.Derive(_report, _inputs)" OnAction="SetTab" TestId="at-steps" Label="Requirements Traceability steps" />
 
         <!-- Tab bar -->
         <div class="at-tab-bar" role="tablist">

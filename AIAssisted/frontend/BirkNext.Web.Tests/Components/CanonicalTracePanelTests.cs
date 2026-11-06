@@ -84,4 +84,29 @@ public sealed class CanonicalTracePanelTests : BunitContext
         cut.WaitForElement("[data-testid=ct-unavailable]").TextContent.Should().Contain("Shared interpretation unavailable").And.Contain("could not be reached");
         cut.FindAll("[data-testid=ct-summary]").Should().BeEmpty();
     }
+
+    [Fact]
+    public void Without_an_interpretation_counts_read_not_assessed_and_the_disabled_feature_action_says_why()
+    {
+        Setup(new TraceSummaryView(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ["No feature packs are interpreted yet."]));
+        var cut = Render<CanonicalTracePanel>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ct-summary]"));
+        cut.Find("[data-testid=ct-summary]").GetAttribute("data-interpreted").Should().Be("false");
+        cut.Find("[data-testid=ct-implemented]").TextContent.Should().Be("Not assessed", "an unknown is never shown as a measured zero");
+        cut.Find("[data-testid=ct-tested]").TextContent.Should().Be("Not assessed");
+        var button = cut.Find("[data-testid=ct-show-features]");
+        button.HasAttribute("disabled").Should().BeTrue();
+        button.GetAttribute("aria-describedby").Should().Be("ct-features-why");
+        cut.Find("[data-testid=ct-features-why]").TextContent.Should().Contain("No feature pack is interpreted").And.Contain("nothing is invented");
+    }
+
+    [Fact]
+    public void With_an_interpretation_zero_is_a_measured_zero()
+    {
+        Setup(new TraceSummaryView(Guid.NewGuid(), 1, 4, 1, 0, 0, 0, 6, 1, 0, 0, 0, 4, 0, 0, []));
+        var cut = Render<CanonicalTracePanel>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ct-summary]"));
+        cut.Find("[data-testid=ct-implemented]").TextContent.Should().Be("0");
+        cut.FindAll("[data-testid=ct-features-why]").Should().BeEmpty();
+    }
 }
