@@ -381,6 +381,7 @@
                 @if (scope.Evidence.Count > 0) { <ul class="rr-list rr-small" data-testid="rr-scope-features">@foreach (var e in scope.Evidence) { <li>@e</li> }</ul> }
             }
         </section>
+        @RequirementEvidence(a)
         <section class="rr-card" aria-labelledby="rr-evidence-h" data-testid="rr-evidence">
             <h2 id="rr-evidence-h">Evidence used</h2>
             <dl class="rr-evidence-list">
@@ -416,6 +417,40 @@
         }
         else
         {
+            var findings = ReleaseReadinessPresentation.Findings(a);
+            var shownFindings = findings.Where(f => _findingSeverity is null || f.Severity == _findingSeverity)
+                .Where(f => string.IsNullOrWhiteSpace(_findingSearch) || $"{f.Title} {f.Detail} {string.Join(" ", f.Dimensions)}".Contains(_findingSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+            <section class="rr-card" aria-labelledby="rr-findings-h" data-testid="rr-findings">
+                <h2 id="rr-findings-h">Findings <span class="rr-muted rr-small">@findings.Count — one row per root cause, worst first</span></h2>
+                <div class="rr-form">
+                    <label>Severity
+                        <select data-testid="rr-findings-severity" @onchange="e => _findingSeverity = Enum.TryParse<ReleaseFindingSeverity>(e.Value?.ToString(), out var s) ? s : null">
+                            <option value="">All (@findings.Count)</option>
+                            @foreach (var s in Enum.GetValues<ReleaseFindingSeverity>()) { <option value="@s">@ReleaseReadinessPresentation.Label(s) (@findings.Count(f => f.Severity == s))</option> }
+                        </select></label>
+                    <label class="rr-grow">Search <input class="form-control" type="search" data-testid="rr-findings-search" @bind="_findingSearch" @bind:event="oninput" placeholder="Finding, dimension or evidence" /></label>
+                </div>
+                @if (shownFindings.Count == 0) { <p class="rr-muted" data-testid="rr-findings-empty">@(findings.Count == 0 ? "No findings: every applicable dimension is ready." : "No finding matches the filter.")</p> }
+                else
+                {
+                    <div class="rr-table-wrap">
+                        <table class="rr-table" data-testid="rr-findings-table">
+                            <thead><tr><th scope="col">Severity</th><th scope="col">Finding</th><th scope="col">Affects</th><th scope="col">Action</th></tr></thead>
+                            <tbody>
+                                @foreach (var f in shownFindings)
+                                {
+                                    <tr data-testid="rr-finding" data-key="@f.Key" data-severity="@f.Severity">
+                                        <td><span class="rr-chip is-@(f.Severity switch { ReleaseFindingSeverity.Blocking => "blocked", ReleaseFindingSeverity.RequiredGap => "notassessed", _ => "limited" })">@ReleaseReadinessPresentation.Label(f.Severity)</span></td>
+                                        <th scope="row">@f.Title <span class="rr-muted rr-small">@f.Detail</span></th>
+                                        <td class="rr-small">@string.Join(" · ", f.Dimensions)</td>
+                                        <td class="rr-small">@if (f.Href is { Length: > 0 } href) { <a href="@href" data-testid="rr-finding-action">@f.Action</a> } else { @f.Action }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
             @if (a.Blockers.Count > 0)
             {
                 <section class="rr-card" aria-labelledby="rr-block-h"><h2 id="rr-block-h">Blocking</h2>
@@ -478,6 +513,94 @@
         </section>
     };
 
+    // ── Per-requirement test evidence (NEXT57 follow-up) ─────────────────────────────────────────────────────────────
+
+    private ReleaseFindingSeverity? _findingSeverity;
+    private string? _findingSearch;
+    private IReadOnlyList<TraceFeatureRow>? _features;
+    private string? _featuresError;
+    private readonly Dictionary<Guid, IReadOnlyList<RequirementEvidenceRow>?> _requirementRows = [];
+    private Guid? _openFeature;
+
+    private async Task LoadFeaturesAsync()
+    {
+        if (_scope is null) return;
+        _featuresError = null;
+        var (items, error) = await Api.TraceFeaturesAsync(_scope, null);
+        _features = items;
+        _featuresError = items is null || error is not null && items.Count == 0 ? error : null;
+    }
+
+    private async Task ToggleFeatureAsync(Guid id)
+    {
+        if (_openFeature == id) { _openFeature = null; return; }
+        _openFeature = id;
+        if (_scope is null || _requirementRows.ContainsKey(id)) return;
+        _requirementRows[id] = null;
+        var (detail, _) = await Api.TraceFeatureAsync(_scope, id);
+        var repository = Services.GetService(typeof(WorkspaceArtifactRepository)) as WorkspaceArtifactRepository;
+        _requirementRows[id] = detail is null ? [] : ReleaseReadinessPresentation.RequirementEvidence(detail, repository?.SddLifecycle?.TestExecutions);
+    }
+
+    private static string FeatureModule(TraceFeatureRow f) => f.Feature.Attributes.GetValueOrDefault("module") ?? "";
+
+    /// <summary>Per feature in scope (lazily, one at a time): each requirement's confirmed vs candidate tests and the imported results mapped to it.</summary>
+    private RenderFragment RequirementEvidence(ReleaseReadinessAssessment a) => __builder =>
+    {
+        <section class="rr-card" aria-labelledby="rr-reqev-h" data-testid="rr-requirement-evidence">
+            <h2 id="rr-reqev-h">Test evidence per requirement</h2>
+            <p class="rr-muted rr-small">Confirmed test links count as test design; candidate links never do. An imported result maps to a requirement only by an explicit
+                requirement reference or the exact name of a confirmed test. Mapped results are shown as found — “Functional test execution” in the assessment stays
+                Not assessed until execution evidence is validated for this scope, environment and evidence version.</p>
+            @if (!Prepared(a)) { <p class="rr-muted" data-testid="rr-reqev-not-prepared">Not assessed — analyze relationships first.</p> }
+            else if (_features is null && _featuresError is null)
+            {
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="rr-reqev-load" @onclick="LoadFeaturesAsync">Show requirements and their test evidence</button>
+            }
+            else if (_featuresError is { } error) { <LoadError Title="Features could not be read" Message="@error" OnRetry="LoadFeaturesAsync" TestId="rr-reqev-error" /> }
+            else if (_features is { } features)
+            {
+                var inScope = features.Where(f => _selected.Count == 0 || _selected.Contains(FeatureModule(f))).ToList();
+                <p class="rr-small" data-testid="rr-reqev-summary">@inScope.Count feature pack@(inScope.Count == 1 ? "" : "s") · @inScope.Sum(f => f.Requirements) requirements · @inScope.Sum(f => f.RequirementsWithExplicitTests) with an explicit test · @inScope.Sum(f => f.RequirementsWithoutTests) without a test</p>
+                <ul class="rr-feature-list">
+                    @foreach (var f in inScope.OrderByDescending(f => f.RequirementsWithoutTests).ThenBy(f => f.Feature.DisplayName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        var id = f.Feature.Id;
+                        var open = _openFeature == id;
+                        <li class="rr-feature" data-testid="rr-reqev-feature" data-feature="@id">
+                            <button type="button" class="rr-feature-btn" aria-expanded="@(open ? "true" : "false")" data-testid="rr-reqev-feature-toggle" @onclick="() => ToggleFeatureAsync(id)">
+                                <strong>@f.Feature.DisplayName</strong> <span class="rr-muted rr-small">@FeatureModule(f) · @f.Requirements requirements · @f.RequirementsWithExplicitTests with a test · @f.RequirementsWithoutTests without</span></button>
+                            @if (open)
+                            {
+                                @if (_requirementRows.GetValueOrDefault(id) is not { } rows) { <InlineLoading Text="Reading the feature's requirements…" Class="rr-muted" /> }
+                                else if (rows.Count == 0) { <p class="rr-muted">No requirement in this feature pack.</p> }
+                                else
+                                {
+                                    <div class="rr-table-wrap">
+                                        <table class="rr-table" data-testid="rr-reqev-table">
+                                            <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">Imported results</th><th scope="col">State</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var r in rows)
+                                                {
+                                                    <tr data-testid="rr-reqev-row" data-requirement="@r.Requirement" data-state="@r.State">
+                                                        <th scope="row">@r.Name</th>
+                                                        <td>@r.ConfirmedTests confirmed@(r.CandidateTests > 0 ? $" · {r.CandidateTests} candidate (not coverage)" : "")</td>
+                                                        <td>@(r.Passed + r.Failed == 0 ? "None" : $"{r.Passed} passed · {r.Failed} failed") <span class="rr-muted rr-small">@r.Mapping</span></td>
+                                                        <td><span class="rr-chip is-@(r.State switch { RequirementEvidenceState.Passed => "ready", RequirementEvidenceState.Failed => "blocked", RequirementEvidenceState.NotExecuted => "limited", _ => "notassessed" })">@ReleaseReadinessPresentation.Label(r.State)</span></td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    };
+
     // ── History inspector (NEXT57): a frozen assessment beside the current draft ───────────────────────────────────────────
 
     private Guid? _inspected;
@@ -485,9 +608,19 @@
     private string? _inspectError;
     private bool _inspecting;
 
+    private ReleaseReadinessReport? _compareWith;
+
+    /// <summary>Compare the inspected frozen assessment with another frozen one (read, never recomputed), or with the current draft.</summary>
+    private async Task CompareWithAsync(string? id)
+    {
+        if (_scope is null || !Guid.TryParse(id, out var other)) { _compareWith = null; return; }
+        _compareWith = (await Api.ReleaseReportAsync(_scope, other)).Report;
+    }
+
     private async Task InspectAsync(Guid id)
     {
         if (_scope is null) return;
+        _compareWith = null;
         if (_inspected == id) { (_inspected, _inspectedReport) = (null, null); return; }
         (_inspected, _inspectedReport, _inspectError, _inspecting) = (id, null, null, true);
         var (report, error) = await Api.ReleaseReportAsync(_scope, id);
@@ -509,10 +642,17 @@
                     @foreach (var (label, value) in ReleaseReadinessPresentation.FreezeSummary(frozen)) { <div><dt>@label</dt><dd>@value</dd></div> }
                     <div><dt>Release decision</dt><dd>@(r.SignOffs.LastOrDefault() is { } s ? $"{OutcomeLabel(s.Outcome)} by {s.By}" : "Not recorded")</dd></div>
                 </dl>
-                <h4 class="rr-sub">Compared with the current draft</h4>
-                var changes = ReleaseReadinessPresentation.Compare(frozen, current);
-                <p class="rr-muted rr-small" data-testid="rr-compare-summary">@(changes.Count(c => c.Changed) is var n and > 0 ? $"{n} dimension{(n == 1 ? "" : "s")} changed since it was frozen." : "No dimension changed since it was frozen.")
-                    Result then: <strong>@GovernancePolicies.DecisionLabel(frozen.Decision)</strong> · now: <strong>@GovernancePolicies.DecisionLabel(current.Decision)</strong>. The frozen assessment itself never changes.</p>
+                <label class="rr-small">Compare with
+                    <select data-testid="rr-compare-with" @onchange="e => CompareWithAsync(e.Value?.ToString())">
+                        <option value="">The current draft</option>
+                        @foreach (var other in _reports.Where(x => x.Id != r.Id)) { <option value="@other.Id" selected="@(_compareWith?.Id == other.Id)">@other.Name · frozen @other.FrozenAt.UtcDateTime.ToString("yyyy-MM-dd")</option> }
+                    </select></label>
+                var against = _compareWith?.Assessment ?? current;
+                var againstName = _compareWith is { } cw ? $"“{cw.Name}”" : "the current draft";
+                <h4 class="rr-sub" data-testid="rr-compare-title">Compared with @againstName</h4>
+                var changes = ReleaseReadinessPresentation.Compare(frozen, against);
+                <p class="rr-muted rr-small" data-testid="rr-compare-summary">@(changes.Count(c => c.Changed) is var n and > 0 ? $"{n} dimension{(n == 1 ? " differs" : "s differ")}." : "No dimension differs.")
+                    Result then: <strong>@GovernancePolicies.DecisionLabel(frozen.Decision)</strong> · @(_compareWith is null ? "now" : "in the other assessment"): <strong>@GovernancePolicies.DecisionLabel(against.Decision)</strong>. Frozen assessments never change.</p>
                 <ul class="rr-dim-list">
                     @foreach (var c in changes)
                     {

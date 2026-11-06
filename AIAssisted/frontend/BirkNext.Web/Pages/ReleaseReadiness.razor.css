@@ -93,3 +93,10 @@ details summary { cursor: pointer; font-size: .8125rem; }
     .rr-dim-row, .rr-compare-row { grid-template-columns: minmax(0, 1fr); }
     .rr-dim-action { justify-self: start; text-align: left; }
 }
+
+/* NEXT57 follow-up: findings table, per-requirement evidence */
+.rr-feature-list { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .3rem; }
+.rr-feature { border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); }
+.rr-feature-btn { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; gap: .1rem; padding: .45rem .65rem; }
+.rr-feature-btn:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.rr-feature .rr-table-wrap { padding: 0 .65rem .5rem; }

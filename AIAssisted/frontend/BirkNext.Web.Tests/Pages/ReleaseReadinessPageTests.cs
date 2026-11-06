@@ -193,7 +193,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-freeze-summary]").TextContent.Should().Contain("Entire project").And.Contain("Ready with limitations"));
         cut.Find("[data-testid=rr-report-inspect]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-history-inspector]").TextContent.Should().Contain("Sprint 47"));
-        cut.Find("[data-testid=rr-compare-summary]").TextContent.Should().Contain("1 dimension changed").And.Contain("Result then: Blocked").And.Contain("now: Ready with limitations");
+        cut.Find("[data-testid=rr-compare-summary]").TextContent.Should().Contain("1 dimension differs").And.Contain("Result then: Blocked").And.Contain("now: Ready with limitations");
         var governance = cut.FindAll("[data-testid=rr-compare-row]").Single(r => r.GetAttribute("data-key") == "Governance");
         governance.GetAttribute("data-changed").Should().Be("true");
         governance.TextContent.Should().Contain("Blocked").And.Contain("Ready");
@@ -211,5 +211,68 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.Find("[data-testid=rr-legend]").TextContent.Should().Contain("Ready").And.Contain("Ready with limitations").And.Contain("Blocked").And.Contain("Not assessed");
         cut.FindAll("[data-testid=rr-metric]").Select(m => m.GetAttribute("data-key")).Should().Equal("packs", "requirements", "tested", "executed", "blocking", "decisions", "gaps");
         cut.Find("[data-testid=rr-fact-packs]").TextContent.Should().Be("1");
+    }
+
+    // ── NEXT57 follow-up: findings table, two frozen assessments, per-requirement evidence ─────────────────────────────────
+
+    [Fact]
+    public async Task Findings_are_an_actionable_table_with_a_severity_filter()
+    {
+        await Setup();
+        var cut = Render<ReleaseReadiness>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]"));
+        cut.Find("[data-testid=rr-tab-findings]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-findings-table]"));
+        cut.FindAll("[data-testid=rr-finding]").Select(f => f.GetAttribute("data-severity")).Should().Equal(["OptionalGap"], "only Performance is not ready in this assessment");
+        cut.Find("[data-testid=rr-finding-action]").GetAttribute("href").Should().Be("performance-test-review");
+        cut.Find("[data-testid=rr-findings-severity]").Change("Blocking");
+        cut.Find("[data-testid=rr-findings-empty]").TextContent.Should().Be("No finding matches the filter.");
+    }
+
+    [Fact]
+    public async Task Two_frozen_assessments_are_compared_with_each_other_without_recomputing()
+    {
+        var api = await Setup();
+        Guid sprint46 = Guid.NewGuid(), sprint47 = Guid.NewGuid();
+        var blocked = A(GateDecision.Blocked);
+        var limited = A(GateDecision.ReadyWithLimitations);
+        api.Setup(a => a.ReleaseReportsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(([
+            new ReleaseReadinessReportSummary(sprint47, "Sprint 47", Now, GateDecision.Blocked, [], null, null),
+            new ReleaseReadinessReportSummary(sprint46, "Sprint 46", Now.AddDays(-14), GateDecision.ReadyWithLimitations, [], null, null)], (string?)null));
+        api.Setup(a => a.ReleaseReportAsync("dev", sprint47, It.IsAny<CancellationToken>())).ReturnsAsync((new ReleaseReadinessReport(sprint47, "Sprint 47", Now, blocked, []), (string?)null));
+        api.Setup(a => a.ReleaseReportAsync("dev", sprint46, It.IsAny<CancellationToken>())).ReturnsAsync((new ReleaseReadinessReport(sprint46, "Sprint 46", Now.AddDays(-14), limited, []), (string?)null));
+        var cut = Render<ReleaseReadiness>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]"));
+        cut.Find("[data-testid=rr-tab-history]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=rr-report-inspect]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=rr-report-inspect]")[0].Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-compare-with]"));
+        cut.Find("[data-testid=rr-compare-with]").Change(sprint46.ToString());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-compare-title]").TextContent.Should().Be("Compared with “Sprint 46”"));
+        cut.Find("[data-testid=rr-compare-summary]").TextContent.Should().Contain("Result then: Blocked").And.Contain("in the other assessment: Ready with limitations");
+        cut.FindAll("[data-testid=rr-compare-row]").Single(r => r.GetAttribute("data-key") == "Governance").GetAttribute("data-changed").Should().Be("true");
+        api.Verify(a => a.FreezeReleaseAsync(It.IsAny<string>(), It.IsAny<FreezeReleaseReadinessRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task The_scope_tab_lists_requirements_per_feature_with_confirmed_and_candidate_tests_apart()
+    {
+        var api = await Setup();
+        var feature = new CanonicalEntityView(Guid.NewGuid(), CanonicalEntityType.Feature, "skoleadapter/001", "Absence reporting", "001", "x", null,
+            new Dictionary<string, string> { ["module"] = "SkoleAdapter" }, Now, Now);
+        var requirement = new CanonicalEntityView(Guid.NewGuid(), CanonicalEntityType.Requirement, "FR-001", "FR-001 Register absence", "FR-001", "x", null, new Dictionary<string, string>(), Now, Now);
+        var test = new CanonicalEntityView(Guid.NewGuid(), CanonicalEntityType.Test, "T", "AbsenceTests.Register", "T", "x", null, new Dictionary<string, string>(), Now, Now);
+        var link = new TraceLink(test, new CanonicalRelationView(Guid.NewGuid(), "r", test, requirement, CanonicalRelationType.Verifies, RelationResolution.Candidate, RelationResolution.Candidate,
+            CorrelationConfidence.Low, "CR", "correlation/4", [], "fp", "", RelationReviewState.NotReviewed, null, true));
+        api.Setup(a => a.TraceFeaturesAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(([new TraceFeatureRow(feature, 1, 1, 1, 0, 0, 1, 0)], (string?)null));
+        api.Setup(a => a.TraceFeatureAsync("dev", feature.Id, It.IsAny<CancellationToken>())).ReturnsAsync((new TraceFeatureDetail(feature, [new(requirement, [link])], [], [], null), (string?)null));
+        var cut = Render<ReleaseReadiness>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]"));
+        cut.Find("[data-testid=rr-tab-scope]").Click();
+        cut.Find("[data-testid=rr-reqev-load]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-reqev-summary]").TextContent.Should().Contain("1 feature pack · 1 requirements"));
+        cut.Find("[data-testid=rr-reqev-feature-toggle]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-reqev-row]").GetAttribute("data-state").Should().Be("CandidateOnly"));
+        cut.Find("[data-testid=rr-reqev-row]").TextContent.Should().Contain("0 confirmed · 1 candidate (not coverage)").And.Contain("Candidate test only — not coverage");
     }
 }

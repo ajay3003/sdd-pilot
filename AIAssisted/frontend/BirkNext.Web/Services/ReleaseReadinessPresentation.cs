@@ -29,6 +29,16 @@ public sealed record ReleaseDimensionChange(ReadinessDimensionKey Key, string Ti
     public bool Changed => Then != Now;
 }
 
+public enum ReleaseFindingSeverity { Blocking, RequiredGap, Limitation, OptionalGap }
+
+/// <summary>One actionable finding: its severity, the root cause (one row per cause), the dimensions it affects and the action that resolves it.</summary>
+public sealed record ReleaseFinding(string Key, ReleaseFindingSeverity Severity, string Title, string Detail, IReadOnlyList<string> Dimensions, string Action, string? Href);
+
+public enum RequirementEvidenceState { Passed, Failed, NotExecuted, CandidateOnly, NoTest }
+
+/// <summary>One requirement in scope with its test design (confirmed vs candidate links) and the imported results mapped to it — and how they were mapped.</summary>
+public sealed record RequirementEvidenceRow(string Requirement, string Name, int ConfirmedTests, int CandidateTests, int Passed, int Failed, RequirementEvidenceState State, string Mapping);
+
 public static class ReleaseReadinessPresentation
 {
     /// <summary>The order prerequisites resolve in: scope first (nothing else is meaningful without it), then governance and decisions, then the evidence.</summary>
@@ -154,6 +164,68 @@ public static class ReleaseReadinessPresentation
         ("Required gaps", RequiredGaps(a).Count.ToString()),
         ("Rules", $"{a.RuleSetVersion} · {a.PolicySetVersion}"),
     ];
+
+    // ── NEXT57 follow-up: findings table, per-requirement evidence ───────────────────────────────────────────────────────
+
+    /// <summary>Every finding once, worst first: blocking root causes, required evidence not assessed, required limitations, then optional gaps.</summary>
+    public static IReadOnlyList<ReleaseFinding> Findings(ReleaseReadinessAssessment a)
+    {
+        var list = new List<ReleaseFinding>();
+        list.AddRange(BlockingCauses(a).Select(c => new ReleaseFinding(c.Key, ReleaseFindingSeverity.Blocking, c.Title, c.Detail, c.Dimensions, c.ActionLabel, c.Href)));
+        list.AddRange(RequiredGaps(a).Select(g => new ReleaseFinding($"gap:{g.Key}", ReleaseFindingSeverity.RequiredGap, $"{g.Title} not assessed", g.Summary, [g.Title],
+            g.NextAction ?? "Provide the evidence", g.Href)));
+        list.AddRange(a.Dimensions.Where(d => d.Applicability == DimensionApplicability.Required && d.State is GateDecision.ReadyWithLimitations or GateDecision.PassedWithException)
+            .Select(d => new ReleaseFinding($"limit:{d.Key}", ReleaseFindingSeverity.Limitation, d.Title, d.Summary, [d.Title], d.NextAction ?? "Review", d.Href)));
+        list.AddRange(a.Dimensions.Where(d => d.Applicability == DimensionApplicability.Optional && d.State != GateDecision.Ready)
+            .Select(d => new ReleaseFinding($"optional:{d.Key}", ReleaseFindingSeverity.OptionalGap, d.Title, d.Summary, [d.Title], d.NextAction ?? $"Open {d.Title}", d.Href)));
+        return list;
+    }
+
+    public static string Label(ReleaseFindingSeverity s) => s switch
+    {
+        ReleaseFindingSeverity.Blocking => "Blocking",
+        ReleaseFindingSeverity.RequiredGap => "Required — not assessed",
+        ReleaseFindingSeverity.Limitation => "Limitation",
+        _ => "Optional — not ready",
+    };
+
+    /// <summary>
+    /// Per requirement of a feature: confirmed and candidate test links (canonical trace) and imported results mapped to it. A result maps only by an
+    /// explicit requirement reference in the result, or by the exact name of a confirmed test — never through a candidate link or a similar name.
+    /// </summary>
+    public static IReadOnlyList<RequirementEvidenceRow> RequirementEvidence(TraceFeatureDetail detail, IEnumerable<SddTestExecutionEvidence>? executions)
+    {
+        var results = (executions ?? []).Where(e => e.EvidenceKind == "Executed").ToList();
+        return
+        [
+            .. detail.Requirements.Select(r =>
+            {
+                var id = r.Requirement.IdentityKey;
+                var confirmed = r.Tests.Where(t => CorrelationPrecedence.Counts(t.Relation.Effective)).ToList();
+                var candidates = r.Tests.Count - confirmed.Count;
+                var names = confirmed.SelectMany(t => new[] { t.Entity.DisplayName, t.Entity.SourceIdentity, t.Entity.IdentityKey }).Where(n => n.Length > 0).ToHashSet(StringComparer.Ordinal);
+                var byReference = results.Where(e => e.RequirementReferences.Any(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase) || string.Equals(x, r.Requirement.DisplayName, StringComparison.OrdinalIgnoreCase))).ToList();
+                var byName = results.Where(e => names.Contains(e.FullyQualifiedTestName ?? "") || names.Contains(e.TestName)).Except(byReference).ToList();
+                var mapped = byReference.Concat(byName).ToList();
+                int Count(string outcome) => mapped.Count(e => string.Equals(e.Result, outcome, StringComparison.OrdinalIgnoreCase));
+                var (passed, failed) = (Count("Passed"), Count("Failed"));
+                var state = failed > 0 ? RequirementEvidenceState.Failed : passed > 0 ? RequirementEvidenceState.Passed
+                    : confirmed.Count > 0 ? RequirementEvidenceState.NotExecuted : candidates > 0 ? RequirementEvidenceState.CandidateOnly : RequirementEvidenceState.NoTest;
+                var mapping = mapped.Count == 0 ? "No imported result maps to it"
+                    : string.Join(" · ", new[] { byReference.Count > 0 ? $"{byReference.Count} by requirement reference" : null, byName.Count > 0 ? $"{byName.Count} by confirmed test name" : null }.Where(x => x is not null));
+                return new RequirementEvidenceRow(id, r.Requirement.DisplayName, confirmed.Count, candidates, passed, failed, state, mapping);
+            }),
+        ];
+    }
+
+    public static string Label(RequirementEvidenceState s) => s switch
+    {
+        RequirementEvidenceState.Passed => "Passed (imported result)",
+        RequirementEvidenceState.Failed => "Failed (imported result)",
+        RequirementEvidenceState.NotExecuted => "Confirmed test · no result",
+        RequirementEvidenceState.CandidateOnly => "Candidate test only — not coverage",
+        _ => "No test",
+    };
 
     public static ReleaseExecutionEvidence? Execution(IEnumerable<SddTestExecutionEvidence>? executions, string? environment)
     {

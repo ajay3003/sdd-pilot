@@ -143,4 +143,54 @@ public sealed class ReleaseReadinessPresentationTests
         changes.First().Changed.Should().BeTrue("changes are listed first");
         ReleaseReadinessPresentation.FreezeSummary(frozen).Should().Contain(("Feature packs · requirements", "38 · 676")).And.Contain(("Result", "Blocked"));
     }
+
+    // ── NEXT57 follow-up: findings table and per-requirement test evidence ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Findings_list_each_root_cause_once_worst_first_and_name_unassessed_required_evidence()
+    {
+        var findings = ReleaseReadinessPresentation.Findings(M2lbCorrected());
+        findings.Select(f => f.Severity).Should().BeInAscendingOrder();
+        findings.Select(f => f.Key).Should().OnlyHaveUniqueItems();
+        findings.First().Should().Match<ReleaseFinding>(f => f.Severity == ReleaseFindingSeverity.Blocking && f.Key == "identity-conflict");
+        findings.Should().Contain(f => f.Severity == ReleaseFindingSeverity.RequiredGap && f.Title == "Test design not assessed");
+        findings.Should().Contain(f => f.Severity == ReleaseFindingSeverity.OptionalGap && f.Title == "Performance");
+        findings.Should().NotContain(f => f.Title == "Scope" || f.Title == "Critical E2E", "ready dimensions are not findings");
+    }
+
+    static CanonicalEntityView E(CanonicalEntityType type, string id, string name) =>
+        new(Guid.NewGuid(), type, id, name, name, "explicit id", null, new Dictionary<string, string>(), DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
+
+    static TraceLink Link(CanonicalEntityView test, RelationResolution resolution) => new(test, new CanonicalRelationView(Guid.NewGuid(), "r", test, test, CanonicalRelationType.Verifies,
+        resolution, resolution, CorrelationConfidence.Medium, "CR", "correlation/4", [], "fp", "", RelationReviewState.NotReviewed, null, true));
+
+    static SddTestExecutionEvidence Result(string name, string result, params string[] requirements) =>
+        new() { TestName = name, FullyQualifiedTestName = name, Result = result, RequirementReferences = [.. requirements] };
+
+    [Fact]
+    public void Imported_results_map_to_a_requirement_only_by_an_explicit_reference_or_a_confirmed_test_name_never_a_candidate()
+    {
+        var t1 = E(CanonicalEntityType.Test, "Absence.Register", "Absence.Register");
+        var candidate = E(CanonicalEntityType.Test, "Absence.Maybe", "Absence.Maybe");
+        var t4 = E(CanonicalEntityType.Test, "Report.Send", "Report.Send");
+        var detail = new TraceFeatureDetail(E(CanonicalEntityType.Feature, "f", "Feature"),
+        [
+            new(E(CanonicalEntityType.Requirement, "FR-001", "FR-001 Register"), [Link(t1, RelationResolution.Explicit)]),
+            new(E(CanonicalEntityType.Requirement, "FR-002", "FR-002 Maybe"), [Link(candidate, RelationResolution.Candidate)]),
+            new(E(CanonicalEntityType.Requirement, "FR-003", "FR-003 Nothing"), []),
+            new(E(CanonicalEntityType.Requirement, "FR-004", "FR-004 Send"), [Link(t4, RelationResolution.Confirmed)]),
+            new(E(CanonicalEntityType.Requirement, "FR-005", "FR-005 Linked"), [Link(E(CanonicalEntityType.Test, "X.Y", "X.Y"), RelationResolution.Derived)]),
+        ], [], [], null);
+        var results = new[] { Result("Other.Test", "Passed", "FR-001"), Result("Report.Send", "Failed"), Result("Absence.Maybe", "Passed") };
+
+        var rows = ReleaseReadinessPresentation.RequirementEvidence(detail, results).ToDictionary(r => r.Requirement);
+        rows["FR-001"].State.Should().Be(RequirementEvidenceState.Passed);
+        rows["FR-001"].Mapping.Should().Be("1 by requirement reference");
+        rows["FR-002"].State.Should().Be(RequirementEvidenceState.CandidateOnly, "a passing result of a candidate test is never coverage");
+        rows["FR-002"].Passed.Should().Be(0);
+        rows["FR-003"].State.Should().Be(RequirementEvidenceState.NoTest);
+        rows["FR-004"].State.Should().Be(RequirementEvidenceState.Failed);
+        rows["FR-004"].Mapping.Should().Be("1 by confirmed test name");
+        rows["FR-005"].State.Should().Be(RequirementEvidenceState.NotExecuted, "a confirmed test without a result is not executed");
+    }
 }
