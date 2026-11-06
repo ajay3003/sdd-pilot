@@ -1,0 +1,18 @@
+@using BirkNext.Web.Services
+@* "View as": which Delivery view opens by default (Project Leader → dashboard, Scrum Master → features/change board, Test Lead → risks/quality scope).
+   Remembered in this browser only; it never changes a calculation or what anyone may see. *@
+<label class="ddr" data-testid="@TestId">
+    <span class="ddr-label">View as</span>
+    <select value="@Role" @onchange="Change" data-testid="@($"{TestId}-select")" aria-describedby="@($"{TestId}-help")">
+        @foreach (var r in Enum.GetValues<DeliveryRole>()) { <option value="@r">@DeliveryIntelligenceHistory.Label(r)</option> }
+    </select>
+    <span class="visually-hidden" id="@($"{TestId}-help")">Chooses the view this page opens on. The figures are the same for every role.</span>
+</label>
+
+@code {
+    [Parameter] public DeliveryRole Role { get; set; }
+    [Parameter] public EventCallback<DeliveryRole> OnChange { get; set; }
+    [Parameter] public string TestId { get; set; } = "ddr";
+
+    private Task Change(ChangeEventArgs e) => Enum.TryParse<DeliveryRole>(e.Value?.ToString(), out var r) ? OnChange.InvokeAsync(r) : Task.CompletedTask;
+}

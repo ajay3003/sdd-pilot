@@ -29,6 +29,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         _api.Report = Report();
         _api.Scope = Server;
         Services.AddSingleton<IDeliveryReportingApiService>(_api);
+        JSInterop.Mode = JSRuntimeMode.Loose;   // the page reads the remembered Delivery role (localStorage); none is remembered here
     }
 
     private static DeliveryStoryRow Row(string key, string title, string module, int done, int total, bool isNew) => new()

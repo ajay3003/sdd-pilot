@@ -8,6 +8,7 @@
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation
 @inject IDeliveryReportingApiService Api
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 @* Delivery Overview: the virtual SDD backlog of a Delivery Reporting project (read-only). It shows what the newest frozen weekly report (or
    newest snapshot) states — never current BirkNext workspace state and never a status the evidence does not state. A feature opens in the
@@ -15,7 +16,7 @@
 <PageTitle>Delivery Overview</PageTitle>
 <div class="do-page" data-testid="delivery-overview">
     <header class="do-head" data-testid="do-header">
-        <h1>Delivery Overview</h1>
+        <div class="do-title-row"><h1>Delivery Overview</h1><DeliveryRolePicker Role="_role" OnChange="SetRoleAsync" TestId="do-role" /></div>
         <p class="do-lead" data-testid="do-lead">Where delivery stands now: features, verified completion, risks and what needs a decision.</p>
         <p class="do-clarify do-muted" data-testid="do-checklist-clarification">Task checklist progress reflects source checkboxes, not verified implementation or QA completion.
             <span class="dd-info" tabindex="0" title="@ChecklistHelp" aria-label="@ChecklistHelp">ⓘ</span></p>
@@ -218,7 +219,27 @@
     [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
 
     private static readonly string[] Sections = ["overview", "features", "risks", "technical"];
-    private string Section => SectionQuery is { } s && Sections.Contains(s) ? s : "overview";
+    /// <summary>The section in the URL; without one, the default of the chosen role (Project Leader: dashboard, Scrum Master: features, Test Lead: risks).</summary>
+    private string Section => SectionQuery is { } s && Sections.Contains(s) ? s : DeliveryIntelligenceHistory.DefaultOverviewSection(_role);
+
+    private DeliveryRole _role = DeliveryRole.ProjectLeader;
+    private List<DeliveryReportSummaryRow> _reportRows = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || await DeliveryIntelligenceHistory.ReadRoleAsync(JS) is not { } role || role == _role) return;
+        _role = role;
+        StateHasChanged();
+    }
+
+    private async Task SetRoleAsync(DeliveryRole role)
+    {
+        _role = role;
+        await DeliveryIntelligenceHistory.WriteRoleAsync(JS, role);
+        Go(Url(section: DeliveryIntelligenceHistory.DefaultOverviewSection(role)));
+    }
+
+    private string TimelineHref(DeliveryTimelinePoint p) => $"delivery-reporting?project={_projectId}&report={p.ReportId}";
     private DeliveryFeatureSort Sort => Enum.TryParse<DeliveryFeatureSort>(SortQuery, true, out var s) ? s : DeliveryFeatureSort.Priority;
 
     // One calculation per data change (the components only render): cards, attention entries and the filtered list are memoised.
@@ -315,6 +336,9 @@
         {
             <p class="do-links"><a href="@($"delivery-reporting?project={_projectId}")" data-testid="do-generate-report">Generate a report to see changes since a baseline, user stories and acceptance criteria</a></p>
         }
+        <div class="dd-spaced">
+            <DeliveryTimeline Points="DeliveryIntelligenceHistory.Timeline(_reportRows, view.Source.ReportId)" Milestones="DeliveryIntelligenceHistory.Milestones(_report)" Href="TimelineHref" TestId="do-timeline" />
+        </div>
         <p class="do-muted dd-trend" data-testid="dd-trend">Trend available after more delivery snapshots — a baseline and a current snapshot are two points, not a trend.</p>
     };
 
@@ -531,7 +555,8 @@
         try
         {
             // A scoped report covers part of the project only: the overview starts from the newest whole-comparison report and scopes it here.
-            if ((await Api.ReportsAsync(id)).Where(r => r.ScopeLabel.Length == 0).OrderByDescending(r => r.GeneratedAt).FirstOrDefault() is { } newest) _reportId = newest.Id;
+            _reportRows = await Api.ReportsAsync(id) ?? [];
+            if (_reportRows.Where(r => r.ScopeLabel.Length == 0).OrderByDescending(r => r.GeneratedAt).FirstOrDefault() is { } newest) _reportId = newest.Id;
             else if ((await Api.SnapshotsAsync(id)).OrderByDescending(s => s.EffectiveAt).FirstOrDefault() is { } snapshot) _snapshotId = snapshot.Id;
             await LoadScopeAsync();
         }
@@ -623,7 +648,7 @@
     {
         var parts = new List<string> { $"project={_projectId}" };
         var sec = section ?? Section;
-        if (sec != "overview") parts.Add($"section={sec}");
+        if (sec != DeliveryIntelligenceHistory.DefaultOverviewSection(_role)) parts.Add($"section={sec}");
         void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) parts.Add($"{key}={Uri.EscapeDataString(value)}"); }
         Add("source", keep ? source ?? _source : source);
         Add("scope", keep ? scope ?? _scope : scope);

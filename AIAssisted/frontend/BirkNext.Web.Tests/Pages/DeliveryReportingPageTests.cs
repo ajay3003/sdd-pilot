@@ -13,7 +13,7 @@ namespace BirkNext.Web.Tests.Pages;
 public sealed class DeliveryReportingPageTests : BunitContext
 {
     internal static readonly Guid ProjectId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid ReportId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    internal static readonly Guid ReportId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly DateTimeOffset Monday = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset Friday = new(2026, 10, 30, 15, 0, 0, TimeSpan.Zero);
     private readonly FakeApi _api = new();
@@ -64,8 +64,10 @@ public sealed class DeliveryReportingPageTests : BunitContext
         }
         public Task<DeliveryBaselineSuggestion?> SuggestBaselineAsync(Guid projectId, Guid currentId, CancellationToken ct = default) =>
             Task.FromResult<DeliveryBaselineSuggestion?>(new(Snapshots[^1].Id, "Earliest snapshot in the week of the current snapshot (2026-10-26).", false, [Snapshots[^1].Id]));
+        /// <summary>The saved reports of the project (null = the one sample report).</summary>
+        public List<DeliveryReportSummaryRow>? ReportRows { get; set; }
         public Task<List<DeliveryReportSummaryRow>> ReportsAsync(Guid projectId, CancellationToken ct = default) =>
-            Task.FromResult(new List<DeliveryReportSummaryRow> { new(ReportId, Report.Title, Report.WeekLabel, Monday, Friday, Friday, Report.Coverage, "Monday", "Friday", 1, Report.Attention.Count) });
+            Task.FromResult(ReportRows ?? new List<DeliveryReportSummaryRow> { new(ReportId, Report.Title, Report.WeekLabel, Monday, Friday, Friday, Report.Coverage, "Monday", "Friday", 1, Report.Attention.Count) });
         public DeliveryComparisonPreview? Comparison { get; set; }
         public List<(Guid Baseline, Guid Current)> PreviewRequests { get; } = [];
         public GenerateWeeklyReportRequest? LastGenerate { get; private set; }

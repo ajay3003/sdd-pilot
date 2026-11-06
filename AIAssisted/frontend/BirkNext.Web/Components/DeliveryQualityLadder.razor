@@ -1,0 +1,32 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@* Functional Quality Scope evidence ladder (Scrum Master / Test Lead): acceptance criteria defined → explicitly linked tests → candidate links only →
+   no known coverage → not assessed, then executed and passed. Each rung says what it means; candidates are never coverage; unknown is Not assessed. *@
+<div class="dql" role="group" aria-label="Quality evidence" data-testid="@TestId">
+    @{ var max = Math.Max(1, Rows.Where(r => r.Key != "criteria").Select(r => r.Count ?? 0).DefaultIfEmpty(0).Sum()); }
+    @foreach (var row in Rows)
+    {
+        var current = row;
+        var active = row.Filter is not null && row.Filter == Active;
+        <div class="dql-row dd-tone-@DeliveryDashboard.ToneClass(row.Tone) @(active ? "is-active" : "")" data-testid="dql-row" data-key="@row.Key">
+            @if (row.Filter is not null && OnFilter.HasDelegate)
+            {
+                <button type="button" class="dql-label dql-filter" aria-pressed="@(active ? "true" : "false")" title="Show only these items" @onclick="() => OnFilter.InvokeAsync(active ? null : current.Filter)">@row.Label</button>
+            }
+            else
+            {
+                <span class="dql-label">@row.Label</span>
+            }
+            <span class="dql-bar" aria-hidden="true">@if (row.Count is { } c && row.Key != "criteria") { <span class="dd-bar-fill dd-tone-@DeliveryDashboard.ToneClass(row.Tone)" style="width:@(100 * c / max)%"></span> }</span>
+            <span class="dql-value" data-testid="dql-value">@row.Value</span>
+            <span class="dql-meaning do-muted">@row.Meaning</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryLadderRow> Rows { get; set; } = [];
+    [Parameter] public ScopeCoverage? Active { get; set; }
+    [Parameter] public EventCallback<ScopeCoverage?> OnFilter { get; set; }
+    [Parameter] public string TestId { get; set; } = "dql";
+}

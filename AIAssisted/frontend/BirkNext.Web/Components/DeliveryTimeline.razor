@@ -1,0 +1,47 @@
+@using BirkNext.Web.Services
+@* Project Leader timeline: the frozen delivery reports in time order (authoritative, immutable) with their key changes, and the milestones the current
+   report states (checklist completed, stated done). No planned dates or forecast: only what the evidence records. *@
+<section class="dd-card dtl" aria-labelledby="@($"{TestId}-h")" data-testid="@TestId">
+    <h3 class="dd-card-h" id="@($"{TestId}-h")">Delivery timeline</h3>
+    @if (Points.Count == 0)
+    {
+        <p class="do-muted" data-testid="@($"{TestId}-empty")">No delivery report has been generated yet — the timeline starts with the first frozen report.</p>
+    }
+    else
+    {
+        <ol class="dtl-points" aria-label="Frozen delivery reports">
+            @foreach (var p in Points)
+            {
+                <li class="dtl-point @(p.Current ? "is-current" : "")" data-testid="dtl-point" data-current="@(p.Current ? "true" : "false")">
+                    <span class="dtl-dot" aria-hidden="true"></span>
+                    <span class="dtl-date">@p.PeriodEnd.ToString("d MMM yyyy")</span>
+                    <a class="dtl-title" href="@Href(p)" aria-current="@(p.Current ? "true" : null)">@p.Title</a>
+                    <span class="do-muted">@p.Comparison · @p.StoriesChanged changed · @p.Attention to review</span>
+                </li>
+            }
+        </ol>
+        @if (Points.Count == 1) { <p class="do-muted dd-note">One report: a point, not a trend.</p> }
+    }
+    @if (Milestones.Count > 0)
+    {
+        <h4 class="dtl-h">Milestones this period <span class="do-muted">(stated by the current report)</span></h4>
+        <ul class="dtl-milestones" data-testid="@($"{TestId}-milestones")">
+            @foreach (var m in Milestones.Take(8))
+            {
+                <li data-testid="dtl-milestone" data-kind="@m.Kind" title="@m.Meaning"><span class="dd-badge dd-tone-@(m.Kind == "Stated done" ? "progress" : "ready")">@m.Kind</span> @m.Title <span class="do-muted">· @(m.Module.Length == 0 ? "Project" : m.Module)</span></li>
+            }
+        </ul>
+        @if (Milestones.Count > 8) { <p class="do-muted">+@(Milestones.Count - 8) more in the change board</p> }
+    }
+    else if (Points.Count > 0)
+    {
+        <p class="do-muted dd-note" data-testid="@($"{TestId}-no-milestones")">No feature completed its checklist or was stated done in the current period.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryTimelinePoint> Points { get; set; } = [];
+    [Parameter] public IReadOnlyList<DeliveryMilestone> Milestones { get; set; } = [];
+    [Parameter, EditorRequired] public Func<DeliveryTimelinePoint, string> Href { get; set; } = _ => "";
+    [Parameter] public string TestId { get; set; } = "dtl";
+}

@@ -236,4 +236,96 @@ public sealed class DeliveryIntelligenceTests : BunitContext
         page.Find("[data-testid=do-load-error-retry]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=dd-kpi][data-key=features]"));
     }
+
+    // ── NEXT53 follow-up: timeline, report history navigation, role defaults, quality evidence ladder ──────────────────────
+
+    private static DeliveryReportSummaryRow Summary(Guid id, int day, string scope = "") =>
+        new(id, $"Report {day}", $"2026-W{day}", new DateTimeOffset(2026, 10, day, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, day + 4, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 10, day + 4, 12, 0, 0, TimeSpan.Zero), DeliveryCoverage.Complete, "Monday", "Friday", day, 1) { ScopeLabel = scope };
+
+    [Fact]
+    public void The_timeline_lists_whole_project_reports_in_time_order_and_history_navigation_stays_within_one_kind_of_report()
+    {
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid(), scoped = Guid.NewGuid();
+        var rows = new[] { Summary(c, 19), Summary(a, 5), Summary(scoped, 12, "M2LB-language"), Summary(b, 12) };
+
+        var points = DeliveryIntelligenceHistory.Timeline(rows, b);
+        points.Select(p => p.ReportId).Should().Equal([a, b, c], "scoped reports are not points of the project timeline");
+        points.Single(p => p.Current).ReportId.Should().Be(b);
+
+        var (previous, next) = DeliveryIntelligenceHistory.Neighbours(rows, b);
+        previous!.Id.Should().Be(a);
+        next!.Id.Should().Be(c);
+        DeliveryIntelligenceHistory.Neighbours(rows, scoped).Should().Be(((DeliveryReportSummaryRow?)null, (DeliveryReportSummaryRow?)null), "a scoped report has no whole-project neighbours");
+    }
+
+    [Fact]
+    public void Milestones_are_only_what_the_report_states_this_period()
+    {
+        var milestones = DeliveryIntelligenceHistory.Milestones(Report());
+        milestones.Select(m => (m.FeatureKey, m.Kind)).Should().Equal([("f::001-done", "Checklist completed")],
+            "a feature stated done in the baseline already is no milestone of this period");
+        DeliveryIntelligenceHistory.Milestones(null).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_quality_ladder_never_counts_candidates_as_coverage_and_execution_stays_not_assessed()
+    {
+        var summary = new ScopeSummary(3, 1, 12, 4, 0, new Dictionary<QualityCategory, int>(),
+            new Dictionary<ScopeCoverage, int> { [ScopeCoverage.AutomatedCoverage] = 2, [ScopeCoverage.CandidateCoverageOnly] = 5, [ScopeCoverage.NoKnownCoverage] = 4, [ScopeCoverage.NotAssessed] = 1 }, 0, 0);
+        var ladder = DeliveryIntelligenceHistory.QualityLadder(summary).ToDictionary(r => r.Key);
+
+        ladder.Keys.Should().Equal("criteria", "linked", "candidate", "none", "not-assessed", "executed", "passed");
+        ladder["criteria"].Value.Should().Be("12");
+        ladder["linked"].Value.Should().Be("2");
+        ladder["candidate"].Meaning.Should().Contain("not coverage until confirmed");
+        ladder["executed"].Value.Should().Be("Not assessed");
+        ladder["passed"].Value.Should().Be("Not assessed");
+
+        ScopeCoverage? filtered = null;
+        var cut = Render<DeliveryQualityLadder>(p => p.Add(x => x.Rows, DeliveryIntelligenceHistory.QualityLadder(summary)).Add(x => x.OnFilter, (ScopeCoverage? c) => filtered = c));
+        cut.Find("[data-testid=dql-row][data-key=candidate] .dql-filter").Click();
+        filtered.Should().Be(ScopeCoverage.CandidateCoverageOnly, "a rung filters the scope list");
+        cut.FindAll("[data-testid=dql-row][data-key=executed] .dql-filter").Should().BeEmpty("execution is not assessed, so there is nothing to filter");
+    }
+
+    [Theory]
+    [InlineData("ProjectLeader", "overview", "overview")]
+    [InlineData("ScrumMaster", "features", "changes")]
+    [InlineData("TestLead", "risks", "scope")]
+    public void A_remembered_role_picks_the_default_view_and_never_changes_the_figures(string role, string overviewSection, string reportsTab)
+    {
+        var parsed = Enum.Parse<DeliveryRole>(role);
+        DeliveryIntelligenceHistory.DefaultOverviewSection(parsed).Should().Be(overviewSection);
+        DeliveryIntelligenceHistory.DefaultReportsTab(parsed).Should().Be(reportsTab);
+
+        Api();
+        JSInterop.Setup<string?>("localStorage.getItem", "birknext:delivery-role").SetResult(role);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-overview?project={ProjectId}&work=All");
+        var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
+        page.WaitForAssertion(() => page.Find($"[data-testid=do-section-{overviewSection}]").GetAttribute("aria-current").Should().Be("page"));
+        page.Find("[data-testid=do-role-select]").GetAttribute("value").Should().Be(role);
+    }
+
+    [Fact]
+    public void Delivery_Reports_navigates_report_history_and_the_overview_shows_the_timeline()
+    {
+        var api = Api();
+        Guid older = Guid.NewGuid(), newer = Guid.NewGuid();
+        api.ReportRows = [Summary(older, 5), Summary(ReportId, 12), Summary(newer, 19)];
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo($"delivery-reporting?project={ProjectId}&tab=overview&report={ReportId}");
+        var page = Render<DeliveryReportingPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-report-nav]"));
+        page.Find("[data-testid=dlr-report-prev]").GetAttribute("href").Should().Contain($"report={older}").And.Contain("tab=overview");
+        page.Find("[data-testid=dlr-report-next]").GetAttribute("href").Should().Contain($"report={newer}");
+
+        nav.NavigateTo($"delivery-overview?project={ProjectId}&work=All");
+        var overview = Render<BirkNext.Web.Pages.DeliveryOverview>();
+        overview.WaitForAssertion(() => overview.FindAll("[data-testid=dtl-point]").Should().HaveCount(3));
+        overview.FindAll("[data-testid=dtl-point]").Select(p => p.GetAttribute("data-current")).Should().Equal(["false", "true", "false"],
+            "the point marked current is the report the overview shows (the fake API serves the sample report for any id)");
+        overview.Find("[data-testid=dtl-milestone]").GetAttribute("data-kind").Should().Be("Checklist completed");
+    }
 }

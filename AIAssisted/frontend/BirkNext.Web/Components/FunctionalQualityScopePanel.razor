@@ -328,8 +328,10 @@
                             @onclick="() => Filter = _filter with { Category = active ? null : category }">@FunctionalQualityClassifier.Label(category) · @count</button>
                 }
             </div>
+            @* Quality evidence ladder: criteria defined → explicit test links → candidates (never coverage) → none → not assessed → executed → passed. *@
+            <DeliveryQualityLadder Rows="DeliveryIntelligenceHistory.QualityLadder(s)" Active="_filter.Coverage" OnFilter="@(c => Filter = _filter with { Coverage = c })" TestId="fqs-ladder" />
             <p class="fqs-muted fqs-small">
-                Coverage: @string.Join(" · ", s.ByCoverage.OrderBy(c => c.Key).Select(c => $"{T.CoverageLabel(c.Key)} {c.Value}"))
+                <span class="visually-hidden">Coverage: @string.Join(" · ", s.ByCoverage.OrderBy(c => c.Key).Select(c => $"{T.CoverageLabel(c.Key)} {c.Value}"))</span>
                 @if (s.TechnicalExcluded > 0) { <span data-testid="fqs-technical-excluded"> · @s.TechnicalExcluded technical item(s) excluded</span> }
                 @if (s.Unavailable > 0) { <span data-testid="fqs-unavailable-count"> · @s.Unavailable unavailable</span> }
             </p>

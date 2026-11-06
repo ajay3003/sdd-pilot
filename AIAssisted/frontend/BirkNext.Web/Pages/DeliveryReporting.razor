@@ -47,6 +47,7 @@
                     @foreach (var project in _projects) { <option value="@project.Id">@project.Name</option> }
                 </select>
             </label>
+            <DeliveryRolePicker Role="_role" OnChange="SetRoleAsync" TestId="dlr-role" />
             <button type="button" class="btn-secondary" data-testid="dlr-new-project" aria-expanded="@(_newProjectOpen ? "true" : "false")" aria-controls="dlr-new-project-form"
                     @onclick="ToggleNewProject">+ New reporting project</button>
             <button type="button" class="btn-primary" data-testid="dlr-import-open" disabled="@(_projectId is null)" @onclick="OpenImport">Import snapshot</button>
@@ -165,6 +166,15 @@
             <p class="dlr-kicker" data-testid="dlr-saved-label">Saved report comparison <span class="dlr-muted">· frozen when generated; the selection below does not change it</span></p>
             <div class="dlr-report-title">
                 <h2 class="dlr-h2" data-testid="dlr-report-title">@DeliveryReportTitles.Display(report)</h2>
+                @{ var (previous, next) = DeliveryIntelligenceHistory.Neighbours(_reports, report.ReportId); }
+                @if (previous is not null || next is not null)
+                {
+                    <nav class="dlr-report-nav" aria-label="Report history" data-testid="dlr-report-nav">
+                        @if (previous is { } prev) { <a href="@ReportHref(prev.Id)" data-testid="dlr-report-prev" rel="prev">← Previous report <span class="dlr-muted">(@prev.PeriodEnd.ToString("d MMM"))</span></a> }
+                        @if (next is { } nxt) { <a href="@ReportHref(nxt.Id)" data-testid="dlr-report-next" rel="next">Next report <span class="dlr-muted">(@nxt.PeriodEnd.ToString("d MMM"))</span> →</a> }
+                        else { <span class="dlr-muted" data-testid="dlr-report-latest">Latest report</span> }
+                    </nav>
+                }
                 @if (report.CoverageText.Length > 0) { <p class="dlr-coverage-text" data-testid="dlr-report-coverage" data-coverage="@report.PeriodCoverage">@report.CoverageText</p> }
                 @if (report.Scope is { } reportScope)
                 {
@@ -835,6 +845,25 @@
     private string _tab = "overview";
     private List<DeliverySnapshotSummary> _snapshots = [];
     private List<DeliveryReportSummaryRow> _reports = [];
+    private DeliveryRole _role = DeliveryRole.ProjectLeader;
+
+    /// <summary>The same tab, another frozen report of this project (history navigation).</summary>
+    private string ReportHref(Guid id) => $"{P.Route}?project={_projectId}&tab={_tab}&report={id}";
+
+    /// <summary>The remembered role (this browser) picks the default tab when the URL names none.</summary>
+    private async Task ApplyRoleAsync(bool firstRender)
+    {
+        if (!firstRender || await DeliveryIntelligenceHistory.ReadRoleAsync(JS) is not { } role || role == _role) return;
+        _role = role;
+        if (TabQuery is null) { _tab = DeliveryIntelligenceHistory.DefaultReportsTab(role); StateHasChanged(); }
+    }
+
+    private async Task SetRoleAsync(DeliveryRole role)
+    {
+        _role = role;
+        await DeliveryIntelligenceHistory.WriteRoleAsync(JS, role);
+        Nav.NavigateTo($"{P.Route}?project={_projectId}&tab={DeliveryIntelligenceHistory.DefaultReportsTab(role)}{(_report is null ? "" : $"&report={_report.ReportId}")}", replace: true);
+    }
     private WeeklyDeliveryReport? _report;
 
     private bool _newProjectOpen;
@@ -903,7 +932,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = P.TabOrDefault(TabQuery);
+        _tab = TabQuery is null ? DeliveryIntelligenceHistory.DefaultReportsTab(_role) : P.TabOrDefault(TabQuery);
         if (!_loaded)
         {
             var (projects, error) = await Api.ProjectsAsync();
@@ -925,6 +954,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await ApplyRoleAsync(firstRender);
         if (_focusImport) { _focusImport = false; await _importTitle.FocusAsync(); }
         if (_focusConfirm) { _focusConfirm = false; await _confirmButton.FocusAsync(); }
     }
