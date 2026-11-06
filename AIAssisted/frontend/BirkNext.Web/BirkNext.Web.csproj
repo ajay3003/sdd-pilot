@@ -14,13 +14,20 @@
     <PackageReference Include="Markdig" Version="0.37.0" />
   </ItemGroup>
 
-  <!-- Guard against stale scoped CSS bundle collision.
-       Blazor generates BirkNext.Web.styles.css during scoped CSS build.
-       A physical wwwroot/BirkNext.Web.styles.css causes StaticWebAssets duplicate error. -->
-  <Target Name="FailIfStaleScopedCssBundleExists"
+  <!-- Scoped CSS bundle collision.
+       Blazor generates BirkNext.Web.styles.css during the scoped CSS build. setup-dev-scoped-css.ps1 (run by dev-build.ps1 and
+       scripts/start-local.ps1 after a Debug build) copies that bundle to wwwroot for the dev server. As ordinary wwwroot content the copy
+       became a second static web asset with the generated bundle's path, and every later build failed in the SDK with
+       "Sequence contains more than one element" (GenerateStaticWebAssetsDevelopmentManifest).
+       The copy is therefore never build content: the generated bundle is always the one built and published, and a stale copy can
+       neither break the build nor ship. The guard stays, as a warning that names the copy. -->
+  <ItemGroup>
+    <Content Remove="wwwroot/BirkNext.Web.styles.css" />
+  </ItemGroup>
+  <Target Name="WarnIfDevelopmentScopedCssCopyExists"
           BeforeTargets="PrepareForBuild"
           Condition="Exists('$(ProjectDir)wwwroot/BirkNext.Web.styles.css')">
-    <Error Text="Stale scoped CSS bundle found at wwwroot/BirkNext.Web.styles.css. Remove this file. Blazor generates BirkNext.Web.styles.css during the scoped CSS build process, and a physical wwwroot copy causes a Static Web Assets duplicate collision (InvalidOperationException: Sequence contains more than one element)." />
+    <Warning Code="BNWEB001" Text="A development copy of the scoped CSS bundle exists at wwwroot/BirkNext.Web.styles.css (written by setup-dev-scoped-css.ps1). It is excluded from this build and from publish; the generated bundle is used. Run setup-dev-scoped-css.ps1 -Clean to remove it." />
   </Target>
 
   <ItemGroup>
