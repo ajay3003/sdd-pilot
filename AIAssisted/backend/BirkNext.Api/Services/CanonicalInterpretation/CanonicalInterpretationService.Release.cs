@@ -169,6 +169,10 @@ public sealed partial class CanonicalInterpretationService
         var modulesJson = System.Text.Json.JsonSerializer.Serialize(assessment.ScopeReference.Modules, ReportJson);
         var name = request.Name.Trim();
         var dimensions = System.Text.Json.JsonSerializer.Serialize(assessment.Dimensions, ReportJson);
+        // The duplicate check and the insert run as one serialised step per scope: two concurrent freezes (two tabs, two reviewers) cannot both pass
+        // the check and store the same report twice.
+        return await Persistence.ScopedWriteLock.RunAsync(db, $"release-freeze|{assessment.ScopeReference.Scope}", async () =>
+        {
         var sameEvidence = await db.ReleaseReports.AsNoTracking().Where(r => r.Scope == assessment.ScopeReference.Scope && r.Name == name && r.ModulesJson == modulesJson
                 && r.InterpretationId == assessment.ScopeReference.InterpretationId && r.PolicySetVersion == assessment.PolicySetVersion && r.Decision == assessment.Decision.ToString())
             .Select(r => r.AssessmentJson).ToListAsync(ct);
@@ -183,7 +187,8 @@ public sealed partial class CanonicalInterpretationService
         };
         db.ReleaseReports.Add(record);
         await db.SaveChangesAsync(ct);
-        return new(record.Id, record.Name, record.FrozenAt, assessment, []);
+        return new ReleaseReadinessReport(record.Id, record.Name, record.FrozenAt, assessment, []);
+        }, ct);
     }
 
     public async Task<IReadOnlyList<ReleaseReadinessReportSummary>> ReleaseReportsAsync(string scope, int take, CancellationToken ct)

@@ -99,7 +99,10 @@ public sealed record SnapshotListPage(IReadOnlyList<SnapshotListItem> Items, int
 public sealed record SnapshotLineageView(SnapshotMetadata Snapshot, IReadOnlyList<SnapshotLineageEdge> Upstream, IReadOnlyList<SnapshotLineageEdge> Downstream,
     IReadOnlyList<SnapshotMetadata> Related);
 
-public sealed record SnapshotPointerView(string? Project, SnapshotType Type, string Module, SnapshotPointerKind Kind, SnapshotReference? Snapshot, DateTimeOffset? SetAt, string? SetBy);
+/// <param name="TargetAvailable">For a stored pointer: whether its owner still holds the snapshot (false = the pointer is stale and must not be
+/// trusted as current evidence). Null when there is no target.</param>
+public sealed record SnapshotPointerView(string? Project, SnapshotType Type, string Module, SnapshotPointerKind Kind, SnapshotReference? Snapshot, DateTimeOffset? SetAt, string? SetBy,
+    bool? TargetAvailable = null);
 
 /// <summary>Whether a snapshot may be deleted: blocking reasons stop deletion; notes are informational (e.g. a report keeps its frozen copy).</summary>
 public sealed record SnapshotDeletionCheck(SnapshotReference Snapshot, bool Allowed, IReadOnlyList<string> Blocking, IReadOnlyList<string> Notes, IReadOnlyList<string> NotChecked);

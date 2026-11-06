@@ -741,10 +741,11 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         if (!_activeByEnvironment.TryAdd(environmentId, run.RunId)) return new(null, [], "A performance test is already running for this environment.");
         run = run with { ExecutionEvidence = PerformanceLiveMonitor.Event(new PerformanceExecutionEvidence { StageChangedAt = now }, now, "Queued", $"readiness re-evaluated by the backend ({readiness.Items.Count} checks)") };
         _trackers[run.RunId] = new RunTracker(run, scopes, _clock);
-        try { await store.SaveRunAsync(run, ct); }
-        catch { _activeByEnvironment.TryRemove(environmentId, out _); _trackers.TryRemove(run.RunId, out _); throw; }
+        // Registered as executing in this process before the Queued row is visible: a concurrent read must never reconcile a run that is starting.
         var cts = new CancellationTokenSource();
         _active[run.RunId] = cts;
+        try { await store.SaveRunAsync(run, ct); }
+        catch { _activeByEnvironment.TryRemove(environmentId, out _); _trackers.TryRemove(run.RunId, out _); _active.TryRemove(run.RunId, out _); cts.Dispose(); throw; }
         var identity = request.Identity;
         LastExecution = Task.Run(() => ExecuteAsync(run, data, cts.Token, identity));
         _tasks[run.RunId] = LastExecution;
@@ -779,7 +780,8 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
     /// <summary>A run left active by a BirkNext restart can never finish: it becomes ExecutionFailed (not a quality result).</summary>
     public async Task ReconcileAsync(PerformanceTestStore store, string environmentId, CancellationToken ct = default)
     {
-        foreach (var run in (await store.RunsAsync(environmentId, null, 20, ct)).Where(r => r.IsActive && !_active.ContainsKey(r.RunId)))
+        // Every active run, however old: a run interrupted before the 20 most recent must not stay "Running" forever.
+        foreach (var run in (await store.ActiveRunsAsync(environmentId, ct)).Where(r => r.IsActive && !_active.ContainsKey(r.RunId)))
             await ReconcileRunAsync(store, run, ct);
     }
 

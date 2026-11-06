@@ -212,8 +212,8 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
     {
         if (asset.Deprecated) return "A deprecated asset is not approved for new usage.";
         var current = registry.Lifecycle(asset.Id) ?? new TestDataLifecycleRecord { AssetId = asset.Id };
-        registry.SetLifecycle(current with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(version), ApprovedAt = time.GetUtcNow() });
-        return null;
+        return registry.SetLifecycle(current with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(version), ApprovedAt = time.GetUtcNow() })
+            ? null : "The approval could not be stored (the Test Data registry file could not be written); nothing was approved. Try again.";
     }
 
     /// <summary>Deprecation keeps the asset and every reference to it; it is no longer offered for new usage.</summary>

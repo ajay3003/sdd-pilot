@@ -67,8 +67,15 @@ public sealed class CanonicalFixtureStore
             storedRegistration["approved"] = false;
             storedRegistration["registeredAt"] = now;
             if (stored["id"] is null || _items.OfType<JsonObject>().Any(i => Text(i, "id") == Text(stored, "id"))) stored["id"] = Guid.NewGuid();
+            // Disk first: the version exists only once the file holds it. A failed write leaves neither a ghost version in memory nor a partial file.
             _items.Add(stored);
-            Write();
+            try { Write(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _items.Remove(stored);
+                _logger.LogWarning(ex, "Canonical fixture {Alias} version {Version} could not be written", alias, version);
+                return (null, $"The fixture could not be stored ({ex.GetType().Name}); no version was created. Try again.");
+            }
             return (version, null);
         }
     }

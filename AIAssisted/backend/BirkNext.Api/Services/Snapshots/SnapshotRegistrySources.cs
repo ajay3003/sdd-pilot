@@ -58,6 +58,17 @@ public sealed class SourceAnalysisSnapshotSource(AppDbContext db) : ISnapshotSou
 /// <summary>Delivery snapshots, comparisons and frozen weekly reports, with the exact baseline/current ids each report recorded.</summary>
 public sealed class DeliverySnapshotSource(DeliveryReportingDbContext db) : ISnapshotSource
 {
+    /// <summary>A deleted delivery snapshot, comparison, scope snapshot or weekly report is marked unavailable in the registry (never deleted).</summary>
+    public async Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in await db.Snapshots.AsNoTracking().Select(s => s.Id).ToListAsync(ct)) keys.Add($"{SnapshotType.Delivery}|{id}");
+        foreach (var id in await db.Comparisons.AsNoTracking().Select(s => s.Id).ToListAsync(ct)) keys.Add($"{SnapshotType.Delivery}|{id}");
+        foreach (var id in await db.ScopeSnapshots.AsNoTracking().Select(s => s.Id).ToListAsync(ct)) keys.Add($"{SnapshotType.Delivery}|{id}");
+        foreach (var id in await db.WeeklyReports.AsNoTracking().Select(s => s.Id).ToListAsync(ct)) keys.Add($"{SnapshotType.GeneratedReport}|{id}");
+        return (new HashSet<string>(StringComparer.Ordinal) { nameof(SnapshotType.Delivery), $"{SnapshotType.GeneratedReport}/delivery-report" }, keys);
+    }
+
     public string Name => "Delivery Management";
 
     public async Task<IReadOnlyList<Item>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct)
@@ -126,6 +137,10 @@ public sealed class DeliverySnapshotSource(DeliveryReportingDbContext db) : ISna
 /// <summary>Frozen canonical interpretations: the source snapshots each was interpreted from, and the one it supersedes.</summary>
 public sealed class InterpretationSnapshotSource(CanonicalInterpretationDbContext db) : ISnapshotSource
 {
+    public async Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct) =>
+        (new HashSet<string>(StringComparer.Ordinal) { nameof(SnapshotType.Interpretation) },
+            (await db.Snapshots.AsNoTracking().Select(s => s.Id).ToListAsync(ct)).Select(id => $"{SnapshotType.Interpretation}|{id}").ToHashSet(StringComparer.Ordinal));
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public string Name => "Canonical interpretation";
 
@@ -150,6 +165,10 @@ public sealed class InterpretationSnapshotSource(CanonicalInterpretationDbContex
 /// <summary>Frozen release readiness reports: generated from exactly the interpretation they were assessed on; frozen and never changed.</summary>
 public sealed class ReleaseReadinessSnapshotSource(CanonicalInterpretationDbContext db) : ISnapshotSource
 {
+    public async Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct) =>
+        (new HashSet<string>(StringComparer.Ordinal) { $"{SnapshotType.GeneratedReport}/release-readiness" },
+            (await db.ReleaseReports.AsNoTracking().Select(s => s.Id).ToListAsync(ct)).Select(id => $"{SnapshotType.GeneratedReport}|{id}").ToHashSet(StringComparer.Ordinal));
+
     public string Name => "Release readiness";
 
     public async Task<IReadOnlyList<Item>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct)
@@ -173,6 +192,16 @@ public sealed class ReleaseReadinessSnapshotSource(CanonicalInterpretationDbCont
 /// <summary>Review runs that record source snapshot ids in columns (Impact Analysis, Code Risk, Test Coverage) or in their result (IQR).</summary>
 public sealed class ReviewRunSnapshotSource(AppDbContext db) : ISnapshotSource
 {
+    public async Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct)
+    {
+        var ids = new List<Guid>();
+        ids.AddRange(await db.ImpactAnalysisRuns.AsNoTracking().Select(r => r.Id).ToListAsync(ct));
+        ids.AddRange(await db.AiCodeReviewRuns.AsNoTracking().Select(r => r.Id).ToListAsync(ct));
+        ids.AddRange(await db.TestCoverageReviewRuns.AsNoTracking().Select(r => r.Id).ToListAsync(ct));
+        ids.AddRange(await db.IntegrationReviewRuns.AsNoTracking().Select(r => r.Id).ToListAsync(ct));
+        return (new HashSet<string>(StringComparer.Ordinal) { nameof(SnapshotType.Review) }, ids.Select(id => $"{SnapshotType.Review}|{id}").ToHashSet(StringComparer.Ordinal));
+    }
+
     public string Name => "Review runs";
 
     public async Task<IReadOnlyList<Item>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct)
@@ -220,6 +249,11 @@ public sealed class ReviewRunSnapshotSource(AppDbContext db) : ISnapshotSource
 /// <summary>Executions: Performance runs (with the source snapshot each ran against) and Critical E2E runs (with the commit they ran on).</summary>
 public sealed class ExecutionSnapshotSource(AppDbContext db, CriticalE2E.ICriticalE2EStore? criticalE2E = null) : ISnapshotSource
 {
+    /// <summary>Performance runs only (the Critical E2E history file keeps its own retention): scoped by module because the type is shared.</summary>
+    public async Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct) =>
+        (new HashSet<string>(StringComparer.Ordinal) { $"{SnapshotType.Execution}/performance-test-review" },
+            (await db.PerformanceTestRuns.AsNoTracking().Select(r => r.Id).ToListAsync(ct)).Select(id => $"{SnapshotType.Execution}|{id}").ToHashSet(StringComparer.Ordinal));
+
     public string Name => "Executions";
 
     public async Task<IReadOnlyList<Item>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct)

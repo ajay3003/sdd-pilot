@@ -152,6 +152,14 @@ public sealed class PerformanceTestStore(AppDbContext db)
         return rows.Select(r => JsonSerializer.Deserialize<PerformanceTestRun>(r.DocumentJson, Json)!).ToList();
     }
 
+    /// <summary>Every run of the environment that still claims to be active, however old (reconciliation must not depend on recency).</summary>
+    public async Task<List<PerformanceTestRun>> ActiveRunsAsync(string environmentId, CancellationToken ct = default)
+    {
+        var active = new[] { nameof(PerformanceRunState.Queued), nameof(PerformanceRunState.Preparing), nameof(PerformanceRunState.Running), nameof(PerformanceRunState.Cancelling) };
+        var rows = await db.PerformanceTestRuns.AsNoTracking().Where(r => r.EnvironmentId == environmentId && active.Contains(r.State)).ToListAsync(ct);
+        return rows.Select(r => JsonSerializer.Deserialize<PerformanceTestRun>(r.DocumentJson, Json)!).ToList();
+    }
+
     public Task<bool> HasActiveRunAsync(string environmentId, CancellationToken ct = default)
     {
         var active = new[] { nameof(PerformanceRunState.Queued), nameof(PerformanceRunState.Preparing), nameof(PerformanceRunState.Running), nameof(PerformanceRunState.Cancelling) };
@@ -192,6 +200,10 @@ public sealed class PerformanceTestStore(AppDbContext db)
         if (run.Metrics is null || run.MetricsPartial) return new(null, null, "The run has no complete metrics.");
         if (run.Verdict == PerformanceQualityVerdict.Fail && !request.AcceptThresholdFailures)
             return new(null, null, "Required thresholds failed in this run. Confirm explicitly to use it as the baseline anyway.");
+        // Reading the scope, superseding the active baseline and adding the new one are one serialised step per scope: two concurrent promotions can
+        // never leave two Active baselines (or two with the same version).
+        return await Persistence.ScopedWriteLock.RunAsync(db, $"performance-baseline|{environmentId}|{run.DefinitionId}|{run.ComparisonFingerprint}", async () =>
+        {
         var scope = await db.PerformanceBaselines.Where(r => r.EnvironmentId == environmentId && r.DefinitionId == run.DefinitionId && r.ComparisonFingerprint == run.ComparisonFingerprint).ToListAsync(ct);
         var version = scope.Count == 0 ? 1 : scope.Max(r => r.Version) + 1;
         var baseline = new PerformanceBaseline
@@ -214,7 +226,8 @@ public sealed class PerformanceTestStore(AppDbContext db)
             Status = baseline.Status.ToString(), Version = version, CreatedAt = now, DocumentJson = JsonSerializer.Serialize(baseline, Json),
         });
         await db.SaveChangesAsync(ct);
-        return new(baseline, superseded, null);
+        return new PerformanceBaselinePromotionResult(baseline, superseded, null);
+        }, ct);
     }
 
     /// <summary>Archives (Historical) a baseline — never deletes it; runs that referenced it keep the reference.</summary>

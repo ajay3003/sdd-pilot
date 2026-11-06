@@ -109,12 +109,17 @@ public sealed class TestDataRegistryStore
         }
     }
 
-    public void SetLifecycle(TestDataLifecycleRecord record)
+    /// <summary>Stores a lifecycle fact (approval, deprecation). False when the file could not be written: the change is then undone in memory too,
+    /// so an approval is never reported or used without being persisted.</summary>
+    public bool SetLifecycle(TestDataLifecycleRecord record)
     {
         lock (_gate)
         {
+            var before = _registry;
             _registry = _registry with { Lifecycle = [.. _registry.Lifecycle.Where(l => l.AssetId != record.AssetId), record] };
-            Write();
+            if (Write()) return true;
+            _registry = before;
+            return false;
         }
     }
 
@@ -287,15 +292,20 @@ public sealed class TestDataRegistryStore
         }
     }
 
-    private void Write()
+    private bool Write()
     {
         try
         {
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(_registry, Json));
             File.Move(temp, _path, overwrite: true);
+            return true;
         }
-        catch (IOException ex) { _logger.LogWarning(ex, "Test Data registry could not be written"); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Test Data registry could not be written");
+            return false;
+        }
     }
 }
 

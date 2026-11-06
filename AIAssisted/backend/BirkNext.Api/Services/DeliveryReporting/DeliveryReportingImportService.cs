@@ -17,6 +17,10 @@ public sealed class DeliveryImportStagingStore(TimeProvider clock)
     public const int Capacity = 6;
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(30);
     private readonly ConcurrentDictionary<Guid, (ParsedDeliverySnapshot Snapshot, DateTimeOffset Expires)> _items = new();
+    /// <summary>Committed previews: the snapshot each became, kept as long as a preview lives so a retried confirmation (a lost response, a double
+    /// click) returns the stored snapshot instead of creating a second one.</summary>
+    private readonly ConcurrentDictionary<Guid, (Guid SnapshotId, DateTimeOffset Expires)> _committed = new();
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
 
     public Guid Add(ParsedDeliverySnapshot snapshot)
     {
@@ -36,13 +40,30 @@ public sealed class DeliveryImportStagingStore(TimeProvider clock)
 
     public void Remove(Guid id) => _items.TryRemove(id, out _);
 
+    /// <summary>One confirmation at a time per preview.</summary>
+    public SemaphoreSlim Gate(Guid id) => _gates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+
+    /// <summary>The preview became this snapshot: it can no longer be committed again, and a retry is answered with the same snapshot.</summary>
+    public void MarkCommitted(Guid id, Guid snapshotId)
+    {
+        _items.TryRemove(id, out _);
+        _committed[id] = (snapshotId, clock.GetUtcNow() + Lifetime);
+    }
+
+    public Guid? CommittedSnapshot(Guid id)
+    {
+        Sweep();
+        return _committed.TryGetValue(id, out var c) ? c.SnapshotId : null;
+    }
+
     /// <summary>Drops every staged (not committed) import: part of the Delivery Management reset.</summary>
-    public void Clear() => _items.Clear();
+    public void Clear() { _items.Clear(); _committed.Clear(); }
 
     private void Sweep()
     {
         var now = clock.GetUtcNow();
         foreach (var expired in _items.Where(i => i.Value.Expires <= now).Select(i => i.Key).ToList()) _items.TryRemove(expired, out _);
+        foreach (var expired in _committed.Where(i => i.Value.Expires <= now).Select(i => i.Key).ToList()) { _committed.TryRemove(expired, out _); _gates.TryRemove(expired, out _); }
     }
 }
 
@@ -105,15 +126,33 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
 
     public async Task<DeliveryCommitOutcome> CommitAsync(Guid stagingId, DeliveryImportCommitRequest request, CancellationToken ct)
     {
+        var gate = staging.Gate(stagingId);
+        await gate.WaitAsync(ct);
+        try { return await CommitOnceAsync(stagingId, request, ct); }
+        finally { gate.Release(); }
+    }
+
+    /// <summary>
+    /// Idempotent per preview: a confirmation that already stored its snapshot returns that snapshot (never a second one with new ids). The
+    /// duplicate check and the insert run serialised per reporting project, so two different previews of the same archive cannot both pass it.
+    /// </summary>
+    private async Task<DeliveryCommitOutcome> CommitOnceAsync(Guid stagingId, DeliveryImportCommitRequest request, CancellationToken ct)
+    {
+        if (staging.CommittedSnapshot(stagingId) is { } stored
+            && await db.Snapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == stored, ct) is { } storedRecord
+            && await db.ReportSources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == storedRecord.ReportSourceId, ct) is { } storedSource)
+            return new(new(DeliverySnapshotStore.Summary(storedRecord, storedSource, 0), null, null), StatusCodes.Status200OK);
         var snapshot = staging.Get(stagingId);
         if (snapshot is null)
             return new(new(null, null, "The preview expired. Choose the ZIP again."), StatusCodes.Status404NotFound);
         var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == request.ProjectId, ct);
         if (project is null) return new(new(null, null, "Choose a reporting project first."), StatusCodes.Status400BadRequest);
         if (request.EffectiveAt == default) return new(new(null, null, "Set the effective snapshot date."), StatusCodes.Status400BadRequest);
+        return await Persistence.ScopedWriteLock.RunAsync(db, $"delivery-import|{project.Id}", async () =>
+        {
         var duplicate = await DuplicateWarningAsync(project.Id, snapshot, ct);
         if (duplicate is not null && !request.ConfirmDuplicate)
-            return new(new(null, duplicate, null), StatusCodes.Status409Conflict);
+            return new DeliveryCommitOutcome(new(null, duplicate, null), StatusCodes.Status409Conflict);
 
         var now = clock.GetUtcNow();
         var source = new DeliveryReportSourceRecord
@@ -193,8 +232,9 @@ public sealed class DeliveryReportingImportService(DeliveryReportingDbContext db
         }));
         project.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
-        staging.Remove(stagingId);
-        return new(new(DeliverySnapshotStore.Summary(record, source, 0), duplicate, null), StatusCodes.Status200OK);
+        staging.MarkCommitted(stagingId, record.Id);
+        return new DeliveryCommitOutcome(new(DeliverySnapshotStore.Summary(record, source, 0), duplicate, null), StatusCodes.Status200OK);
+        }, ct);
     }
 
     private async Task<string?> DuplicateWarningAsync(Guid projectId, ParsedDeliverySnapshot snapshot, CancellationToken ct)

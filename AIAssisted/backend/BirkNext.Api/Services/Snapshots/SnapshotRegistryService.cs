@@ -17,8 +17,9 @@ public interface ISnapshotSource
     Task<IReadOnlyList<(SnapshotMetadata Metadata, IReadOnlyList<SnapshotLineageEdge> Edges)>> ReadAsync(IReadOnlySet<string> registered, IReadOnlySet<string> running, CancellationToken ct);
 
     /// <summary>
-    /// The registry keys ("Type|Id") whose payloads this source currently holds, for the snapshot types it is authoritative for (ids only, never a
-    /// payload). Null when the source cannot enumerate them cheaply; then payload availability of its entries is left as registered.
+    /// The registry keys ("Type|Id") whose payloads this source currently holds, for the scopes it is authoritative for (ids only, never a
+    /// payload). A scope is a snapshot type ("Delivery"), or "Type/Module" when the type is shared with another source ("GeneratedReport/
+    /// release-readiness"). Null when the source cannot enumerate them cheaply; then payload availability of its entries is left as registered.
     /// </summary>
     Task<(IReadOnlySet<string> Types, IReadOnlySet<string> Keys)?> InventoryAsync(CancellationToken ct) =>
         Task.FromResult<(IReadOnlySet<string>, IReadOnlySet<string>)?>(null);
@@ -76,7 +77,8 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
                 try
                 {
                     if (await source.InventoryAsync(ct) is { } inventory)
-                        foreach (var row in existing.Where(e => inventory.Types.Contains(e.Type) && e.PayloadAvailable && !inventory.Keys.Contains($"{e.Type}|{e.Id}")))
+                        foreach (var row in existing.Where(e => (inventory.Types.Contains(e.Type) || inventory.Types.Contains($"{e.Type}/{e.Module}"))
+                                     && e.PayloadAvailable && !inventory.Keys.Contains($"{e.Type}|{e.Id}")))
                         {
                             row.PayloadAvailable = false;
                             row.UpdatedAt = now;
@@ -126,7 +128,15 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
                     }
                 }
             }
-            await db.SaveChangesAsync(ct);
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException ex)
+            {
+                // Another process registered the same snapshot at the same moment (the gate is per process). Nothing is lost: owners stay
+                // authoritative and the next sync registers whatever is still missing.
+                logger?.LogWarning(ex, "Snapshot registry: concurrent registration; the next sync completes it");
+                db.ChangeTracker.Clear();
+                return new(0, 0, 0, names, [.. problems, "Registry sync overlapped with another sync; it completes on the next sync."]);
+            }
             _lastSync = clock.GetUtcNow();
             return new(added, updated, edges, names, problems);
         }
@@ -245,16 +255,20 @@ public sealed class SnapshotRegistryService(SnapshotRegistryDbContext db, IEnume
     {
         await SyncAsync(false, ct);
         var p = project ?? "";
-        var entries = db.Entries.AsNoTracking().Where(e => (e.Project ?? "") == p && e.Type == type.ToString() && e.Module == module);
+        var all = db.Entries.AsNoTracking().Where(e => (e.Project ?? "") == p && e.Type == type.ToString() && e.Module == module);
+        // Computed pointers only ever name a snapshot whose owner still holds it; a stored pointer to a vanished owner is reported as stale.
+        var entries = all.Where(e => e.PayloadAvailable);
         var latest = await entries.OrderByDescending(e => e.CreatedAt).FirstOrDefaultAsync(ct);
         var completed = await entries.Where(e => e.Status == nameof(SnapshotProcessingStatus.Completed)).OrderByDescending(e => e.CreatedAt).FirstOrDefaultAsync(ct);
         var stored = await db.Pointers.AsNoTracking().Where(x => x.Project == p && x.Type == type.ToString() && x.Module == module).ToListAsync(ct);
+        var storedIds = stored.Select(x => x.SnapshotId).ToList();
+        var available = (await all.Where(e => storedIds.Contains(e.Id) && e.PayloadAvailable).Select(e => e.Id).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
         SnapshotPointerView Stored(SnapshotPointerKind kind) => stored.FirstOrDefault(x => x.Kind == kind.ToString()) is { } x
-            ? new(project, type, module, kind, new(type, x.SnapshotId), x.SetAt, x.SetBy) : new(project, type, module, kind, null, null, null);
+            ? new(project, type, module, kind, new(type, x.SnapshotId), x.SetAt, x.SetBy, available.Contains(x.SnapshotId)) : new(project, type, module, kind, null, null, null);
         return
         [
-            new(project, type, module, SnapshotPointerKind.LatestCreated, latest is null ? null : View(latest).Reference, latest?.CreatedAt, "computed"),
-            new(project, type, module, SnapshotPointerKind.LatestCompleted, completed is null ? null : View(completed).Reference, completed?.CreatedAt, "computed"),
+            new(project, type, module, SnapshotPointerKind.LatestCreated, latest is null ? null : View(latest).Reference, latest?.CreatedAt, "computed", latest is null ? null : true),
+            new(project, type, module, SnapshotPointerKind.LatestCompleted, completed is null ? null : View(completed).Reference, completed?.CreatedAt, "computed", completed is null ? null : true),
             Stored(SnapshotPointerKind.CurrentSelected),
             Stored(SnapshotPointerKind.CurrentApproved),
         ];
