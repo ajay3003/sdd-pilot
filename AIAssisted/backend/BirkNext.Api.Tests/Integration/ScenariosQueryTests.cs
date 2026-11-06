@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Testcontainers.PostgreSql;
 using Xunit.Abstractions;
+using BirkNext.Api.Tests.Utilities;
 
 namespace BirkNext.Api.Tests.Integration;
 
@@ -50,7 +51,7 @@ public class ScenariosQueryTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync();
 
-        _client = _factory.CreateClient();
+        _client = _factory.CreateLocalSessionClient();
     }
 
     public async Task DisposeAsync()

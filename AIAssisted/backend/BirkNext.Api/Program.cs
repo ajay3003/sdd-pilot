@@ -77,7 +77,22 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy => policy
         .WithOrigins(frontendOrigin)
         .AllowAnyHeader()
-        .AllowAnyMethod()));
+        .AllowAnyMethod()
+        // The local-session cookie travels with the frontend's requests (one exact origin; never a wildcard with credentials).
+        .AllowCredentials()));
+
+// Supported local mode listens on loopback only: a configured URL beyond loopback (ASPNETCORE_URLS, launch settings, Kestrel endpoints) stops
+// startup unless non-local hosting is chosen explicitly.
+{
+    var configuredUrls = string.Join(';', new[] { builder.Configuration["urls"] }
+        .Concat(builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Select(e => e["Url"])).Where(u => !string.IsNullOrWhiteSpace(u)));
+    var widened = BirkNext.Api.Services.LocalSecurity.LoopbackBinding.Violations(configuredUrls);
+    if (widened.Count > 0 && !builder.Configuration.GetValue<bool>(BirkNext.Api.Services.LocalSecurity.LoopbackBinding.AllowSetting))
+        throw new InvalidOperationException(
+            $"BirkNext listens on localhost only, but it was configured to listen on {string.Join(", ", widened)}. Use http://localhost:<port> " +
+            $"(or set {BirkNext.Api.Services.LocalSecurity.LoopbackBinding.AllowSetting}=true for a deliberately non-local deployment).");
+}
+builder.Services.AddSingleton<BirkNext.Api.Services.LocalSecurity.LocalSessionService>();
 
 builder.Services.AddControllers();
 
@@ -92,7 +107,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     options.Audience = builder.Configuration["Authentication:Entra:Audience"];
     options.RequireHttpsMetadata = true;
     options.MapInboundClaims = false;
-});
+})
+    // The local-session cookie (identity only — it carries no permission claim, so named policies are unaffected).
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, BirkNext.Api.Services.LocalSecurity.LocalSessionAuthenticationHandler>(
+        BirkNext.Api.Services.LocalSecurity.LocalSessionAuthenticationHandler.SchemeName, null);
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution>();
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteHandler>();
@@ -898,6 +916,8 @@ app.UseStaticFiles();
 app.UseCors("Frontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseAuthentication();
+// Central protection for /api and /graphql: loopback Host, an authenticated caller, CSRF checks for state changes, extension origins confined.
+app.UseMiddleware<BirkNext.Api.Services.LocalSecurity.LocalRequestGuardMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 

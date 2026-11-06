@@ -38,7 +38,7 @@ public sealed class TopologyIntegrationTests
     public async Task TheRealHost_ServesTheTopology_AndDiscoveryNeedsThePermission()
     {
         await using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         var response = await client.GetAsync("/api/integration-topology/topology-test-env");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var view = await response.Content.ReadFromJsonAsync<IntegrationTopologyView>();

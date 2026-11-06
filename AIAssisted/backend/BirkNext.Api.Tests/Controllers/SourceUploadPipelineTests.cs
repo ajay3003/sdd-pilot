@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using BirkNext.Api.Tests.Utilities;
 
 namespace BirkNext.Api.Tests.Controllers;
 
@@ -36,7 +37,7 @@ public sealed class SourceUploadPipelineTests : IAsyncLifetime
                 services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(database));
             });
         });
-        _client = _factory.CreateClient();
+        _client = _factory.CreateLocalSessionClient();
         return Task.CompletedTask;
     }
 

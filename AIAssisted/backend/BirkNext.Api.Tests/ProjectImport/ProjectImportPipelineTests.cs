@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using BirkNext.Api.Tests.Utilities;
 
 namespace BirkNext.Api.Tests.ProjectImport;
 
@@ -37,7 +38,7 @@ public sealed class ProjectImportPipelineTests : IAsyncLifetime
     public Task InitializeAsync()
     {
         _factory = CreateHost();
-        _client = _factory.CreateClient();
+        _client = _factory.CreateLocalSessionClient();
         return Task.CompletedTask;
     }
 
@@ -54,7 +55,7 @@ public sealed class ProjectImportPipelineTests : IAsyncLifetime
         _client.Dispose();
         await _factory.DisposeAsync();
         _factory = CreateHost();
-        _client = _factory.CreateClient();
+        _client = _factory.CreateLocalSessionClient();
     }
 
     private async Task<JsonDocument> PreviewAsync(byte[] bytes, string fileName, HttpStatusCode expected = HttpStatusCode.OK)

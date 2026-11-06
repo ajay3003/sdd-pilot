@@ -77,7 +77,7 @@ public sealed class SkoleNaervaerLocalOneClickTests
         await using var __ = harness;
         await kit.ConfigureReadyAsync(harness);
         kit.Http.Calls.Clear();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
         var access = await (await client.SendAsync(FromFrontend(HttpMethod.Get, "/api/execution-access"))).Content.ReadFromJsonAsync<ExecutionAccessView>(json);
@@ -124,7 +124,7 @@ public sealed class SkoleNaervaerLocalOneClickTests
         await kit.ConfigureReadyAsync(harness);
         kit.Options.ConfirmedAppPolicies.Clear();
         kit.Http.Calls.Clear();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
 
         var response = await client.SendAsync(FromFrontend(HttpMethod.Post, "/api/integration-journeys/runs", new IntegrationJourneyRunRequest
         {

@@ -231,7 +231,7 @@ public sealed class LocalTrustedExecutionTests
     public async Task LocalTrustedExecution_RunsJourneys_WithoutEntra_AsTheLocalSession()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         var journeys = factory.Services.GetRequiredService<RecordingJourneys>();
 
         (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", body: Start)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -240,9 +240,9 @@ public sealed class LocalTrustedExecutionTests
         journeys.Initiators.Should().Equal("local-session:loopback");
         journeys.Initiators.Should().NotContain(item => item!.Contains("reporter-a") || item.Contains("01821512345"), "neither the Altinn reporter nor the child is the BirkNext actor");
 
-        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", origin: null, body: Start)).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "no Origin");
-        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", origin: "https://evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "cross-site origin");
-        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", host: "localhost.evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "rebinding host");
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", origin: null, body: Start)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "no Origin: refused before the policy (CSRF)");
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", origin: "https://evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "cross-site origin: refused before the policy (CSRF)");
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", host: "localhost.evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.BadRequest, "rebinding host: the Host must be a loopback name");
         journeys.Initiators.Should().HaveCount(1, "refused requests never reach the service");
     }
 
@@ -254,15 +254,15 @@ public sealed class LocalTrustedExecutionTests
     public async Task WithoutEveryCondition_AnonymousExecutionIsRefused(string remote, bool grant, string environment)
     {
         await using var factory = Host(remote, grant, environment);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
 
         var response = await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", body: Start);
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "without every local-trust condition, execution is refused");
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/integration-journeys/runs") { Content = JsonContent.Create(Start) };
         request.Headers.Add("Origin", Frontend);
         request.Headers.TryAddWithoutValidation("Authorization", "LocalTrustedExecution");
         request.Headers.Add("X-Forwarded-For", "127.0.0.1");
-        (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "no header grants execution");
+        (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "no header grants execution: a forged Authorization or X-Forwarded-For is ignored");
         factory.Services.GetRequiredService<RecordingJourneys>().Initiators.Should().BeEmpty();
     }
 
@@ -270,7 +270,7 @@ public sealed class LocalTrustedExecutionTests
     public async Task TheAuthenticatedPath_IsUnchanged_AndKeptDistinctFromTheLocalSession()
     {
         await using var factory = Host(remote: "192.168.1.20", grant: false, environment: "Test");
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         var journeys = factory.Services.GetRequiredService<RecordingJourneys>();
 
         (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", token: Token("User.Read ActiveEventExecute"), body: Start)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -284,7 +284,7 @@ public sealed class LocalTrustedExecutionTests
     {
         await using (var local = Host())
         {
-            using var client = local.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+            using var client = local.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
             var response = await Send(client, HttpMethod.Get, "/api/execution-access");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Headers.CacheControl!.NoStore.Should().BeTrue();
@@ -303,7 +303,7 @@ public sealed class LocalTrustedExecutionTests
         }
 
         await using var remote = Host(remote: "192.168.1.20", grant: false, environment: "Test");
-        using var remoteClient = remote.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var remoteClient = remote.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         async Task<ExecutionAccessView> Access(string? token) => JsonSerializer.Deserialize<ExecutionAccessView>(
             await (await Send(remoteClient, HttpMethod.Get, "/api/execution-access", token: token)).Content.ReadAsStringAsync(), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         (await Access(Token("ActiveEventExecute"))).Should().BeEquivalentTo(new { Mode = ExecutionAccessMode.Authenticated, CanExecute = true });
@@ -317,11 +317,11 @@ public sealed class LocalTrustedExecutionTests
     public async Task RunValidation_NeedsTheSameExecutionCapability_AndStartsNothing()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         var journeys = factory.Services.GetRequiredService<RecordingJourneys>();
 
         (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs/validate", body: Start)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs/validate", origin: "https://evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs/validate", origin: "https://evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "cross-site origin: refused before the policy (CSRF)");
         journeys.Validations.Should().Be(1);
         journeys.Initiators.Should().BeEmpty("validation never starts a run");
     }
@@ -330,11 +330,11 @@ public sealed class LocalTrustedExecutionTests
     public async Task ConfigurationWrites_AreNotGrantedByLocalTrustedExecution()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         var package = new IntegrationMessageFlowPackage(new MessageFlowDefinition(), new AltinnTestConfiguration(), new(false, 0, 0, [], []), [], []);
         // LocalConfigurationWrites is a separate setting; with it off, local execution access does not imply configuration rights.
         factory.Services.GetRequiredService<IConfiguration>()["Authorization:LocalConfigurationWrites"] = "false";
-        (await Send(client, HttpMethod.Put, "/api/integration-message-flow/dev-env", body: package)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Put, "/api/integration-message-flow/dev-env", body: package)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────────────────────────────────────────────

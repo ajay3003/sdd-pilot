@@ -59,24 +59,24 @@ public sealed class AltinnTestingAuthorizationTests
     public async Task ContractIsReadable_RefreshNeedsConfigurationWrite_SignInNeedsActiveEventExecute()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
         (await Send(client, HttpMethod.Get, "/api/altinn-testing/contract?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/public-metadata?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/public-metadata?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/public-metadata?environmentId=dev-env", Token("ActiveEventExecute"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var refused = await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/public-metadata?environmentId=dev-env", Token("IntegrationConfiguration.Write"));
         refused.StatusCode.Should().Be(HttpStatusCode.BadRequest, "no app id is configured, so nothing is fetched");
         (await refused.Content.ReadAsStringAsync()).Should().Contain("No Altinn app id is configured");
-        (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/source-analysis?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/source-analysis?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/source-analysis?environmentId=dev-env", Token("ActiveEventExecute"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await Send(client, HttpMethod.Post, "/api/altinn-testing/contract/upload?environmentId=dev-env", Token("IntegrationConfiguration.Write"))).StatusCode
             .Should().BeOneOf([HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed], "app source is uploaded only through Source Analysis");
 
-        (await Send(client, HttpMethod.Get, "/api/altinn-testing/sign-in/status?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Get, "/api/altinn-testing/sign-in/status?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Send(client, HttpMethod.Get, "/api/altinn-testing/sign-in/status?environmentId=dev-env", Token("IntegrationConfiguration.Write"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await Send(client, HttpMethod.Get, "/api/altinn-testing/sign-in/status?environmentId=dev-env", Token("ActiveEventExecute"))).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await Send(client, HttpMethod.Post, "/api/altinn-testing/sign-in/start?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Post, "/api/altinn-testing/sign-in/start?environmentId=dev-env", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         var start = await Send(client, HttpMethod.Post, "/api/altinn-testing/sign-in/start?environmentId=dev-env", Token("ActiveEventExecute"));
         start.StatusCode.Should().Be(HttpStatusCode.BadRequest, "ID-porten TEST sign-in is not configured");
         (await start.Content.ReadAsStringAsync()).Should().Contain("not ID-porten");
@@ -86,7 +86,7 @@ public sealed class AltinnTestingAuthorizationTests
     public async Task TheRedirectTarget_IsAnonymous_GoesOnlyToTheConfiguredFrontend_AndNeverEchoesTheCode()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
         var response = await Send(client, HttpMethod.Get, "/api/altinn-testing/sign-in/callback?code=secret-authorization-code&state=never-issued", null);
 

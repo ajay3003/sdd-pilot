@@ -72,10 +72,10 @@ public sealed class ActiveEventAuthorizationTests
     public async Task ActiveEventEndpoints_RequireAnAuthenticatedPrincipalWithActiveEventExecute()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         const string url = "/api/active-events/runs?environmentId=dev-env";
 
-        (await Get(client, url, null)).Should().Be(HttpStatusCode.Unauthorized);
+        (await Get(client, url, null)).Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Get(client, url, Token(scp: "User.Read"))).Should().Be(HttpStatusCode.Forbidden);
         (await Get(client, url, Token(scp: BirkNextPermissions.IntegrationConfigurationWrite))).Should().Be(HttpStatusCode.Forbidden, "configuration rights do not imply execution");
         (await Get(client, url, Token(scp: "User.Read ActiveEventExecute"))).Should().Be(HttpStatusCode.OK, "a realistic space-separated delegated scp claim");
@@ -84,7 +84,7 @@ public sealed class ActiveEventAuthorizationTests
         (await Get(client, url, Token(scp: "ActiveEventExecute", signing: otherKey))).Should().Be(HttpStatusCode.Unauthorized);
         (await Get(client, url, Token(scp: "ActiveEventExecuteX"))).Should().Be(HttpStatusCode.Forbidden, "scope matching is exact");
         using var start = new HttpRequestMessage(HttpMethod.Post, "/api/active-events/runs") { Content = JsonContent.Create(new ActiveEventRunRequest()) };
-        (await client.SendAsync(start)).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "anonymous start");
+        (await client.SendAsync(start)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session without ActiveEventExecute cannot start");
         (await Get(client, $"/api/active-events/runs/{Guid.NewGuid()}", Token(scp: "User.Read"))).Should().Be(HttpStatusCode.Forbidden);
         (await Get(client, "/api/active-events/providers?environmentId=dev-env", null)).Should().Be(HttpStatusCode.OK, "the catalog and readiness explain why execution is unavailable");
         (await Get(client, "/api/active-events/environments/dev-env/trust", null)).Should().Be(HttpStatusCode.OK);
@@ -94,7 +94,7 @@ public sealed class ActiveEventAuthorizationTests
     public async Task IntegrationCatalogWrites_RequireIntegrationConfigurationWrite_ReadsStayOpen()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         async Task<HttpStatusCode> Create(string? token)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integrations?environmentId=dev-env")
@@ -105,12 +105,12 @@ public sealed class ActiveEventAuthorizationTests
             return (await client.SendAsync(request)).StatusCode;
         }
 
-        (await Create(null)).Should().Be(HttpStatusCode.Unauthorized);
+        (await Create(null)).Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Create(Token(scp: "ActiveEventExecute"))).Should().Be(HttpStatusCode.Forbidden, "execution rights do not imply configuration rights");
         (await Create(Token(scp: "User.Read IntegrationConfiguration.Write"))).Should().Be(HttpStatusCode.OK);
         (await Create(Token(roles: ["IntegrationConfiguration.Write"]))).Should().Be(HttpStatusCode.OK);
         using var delete = new HttpRequestMessage(HttpMethod.Delete, "/api/integrations/x?environmentId=dev-env");
-        (await client.SendAsync(delete)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await client.SendAsync(delete)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Get(client, "/api/integrations?environmentId=dev-env", null)).Should().Be(HttpStatusCode.OK, "catalog reads are configuration metadata and stay open");
     }
 

@@ -60,14 +60,14 @@ public sealed class IntegrationJourneyAuthorizationTests
     public async Task JourneyRunsAndHistory_RequireActiveEventExecute_ReadinessStaysOpen()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         var start = new IntegrationJourneyRunRequest { EnvironmentId = "dev-env", PackId = "p", JourneyId = "j", ScenarioId = "s", Confirmed = true };
 
-        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", null, start)).Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", null, start)).Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", Token("User.Read"), start)).Should().Be(HttpStatusCode.Forbidden);
         (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", Token(BirkNextPermissions.IntegrationConfigurationWrite), start)).Should().Be(HttpStatusCode.Forbidden);
         (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", Token("User.Read ActiveEventExecute"), start)).Should().Be(HttpStatusCode.OK);
-        (await Send(client, HttpMethod.Get, "/api/integration-journeys/runs?environmentId=dev-env", null)).Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Get, "/api/integration-journeys/runs?environmentId=dev-env", null)).Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Send(client, HttpMethod.Get, $"/api/integration-journeys/runs/{Guid.NewGuid()}", Token("User.Read"))).Should().Be(HttpStatusCode.Forbidden);
         (await Send(client, HttpMethod.Get, "/api/integration-journeys/packs?environmentId=dev-env", null)).Should().Be(HttpStatusCode.OK);
         (await Send(client, HttpMethod.Get, "/api/integration-journeys/packs/p/architecture-rules?environmentId=dev-env", null)).Should().Be(HttpStatusCode.OK);
@@ -78,10 +78,10 @@ public sealed class IntegrationJourneyAuthorizationTests
     public async Task MessageFlowConfigurationWrites_RequireIntegrationConfigurationWrite_ReadsStayOpen()
     {
         await using var factory = Host();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         var package = new IntegrationMessageFlowPackage(new MessageFlowDefinition(), new AltinnTestConfiguration(), new(false, 0, 0, [], []), [], []);
 
-        (await Send(client, HttpMethod.Put, "/api/integration-message-flow/dev-env", null, package)).Should().Be(HttpStatusCode.Unauthorized);
+        (await Send(client, HttpMethod.Put, "/api/integration-message-flow/dev-env", null, package)).Should().Be(HttpStatusCode.Forbidden, "a local session is an identity, never a permission: refused as Forbidden");
         (await Send(client, HttpMethod.Put, "/api/integration-message-flow/dev-env", Token("ActiveEventExecute"), package)).Should().Be(HttpStatusCode.Forbidden);
         (await Send(client, HttpMethod.Get, "/api/integration-message-flow/dev-env", null)).Should().Be(HttpStatusCode.OK);
     }

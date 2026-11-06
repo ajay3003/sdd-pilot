@@ -1282,6 +1282,28 @@ try {
         Write-Host "Frontend: http://localhost:5173" -ForegroundColor Green
     }
 
+    if (-not $FrontendOnly) {
+        # The connection code for this installation (docs/security/localhost-session-design-2026-11-06.md). The backend writes it to its own
+        # App_Data; it is shown here only — never written to launcher.log, never put in a URL.
+        $codeFiles = @(
+            (Join-Path $backendPath "BirkNext.Api\App_Data\local-session\launch-code.txt"),
+            (Join-Path $backendPath "App_Data\local-session\launch-code.txt"))
+        $codeFile = $null
+        for ($i = 0; $i -lt 30 -and -not $codeFile; $i++) {
+            $codeFile = $codeFiles | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTimeUtc } -Descending | Select-Object -First 1
+            if (-not $codeFile) { Start-Sleep -Seconds 1 }
+        }
+        Write-Host ""
+        if ($codeFile) {
+            $connectionCode = (Get-Content -LiteralPath $codeFile -Raw).Trim()
+            Write-Host "Connection code: $connectionCode" -ForegroundColor Yellow
+            Write-Host "  Enter it in BirkNext when the browser asks to connect (once per browser, and again after BirkNext restarts)."
+        }
+        else {
+            Warn "The connection code is not available yet. When BirkNext asks for it, open App_Data\local-session\launch-code.txt next to the backend."
+        }
+    }
+
     Write-Host ""
     Write-Host "Log files:" -ForegroundColor Cyan
     Write-Host "  $launcherLogFile"

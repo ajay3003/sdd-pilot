@@ -1,0 +1,56 @@
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+@inject NavigationManager Navigation
+
+@* Connect this browser to the local BirkNext service: the code is shown in the BirkNext start window (never in a URL or a log). After connecting
+   the page reloads, so nothing that failed is replayed implicitly. *@
+@if (_show)
+{
+    <div class="lsg-backdrop" role="presentation">
+        <section class="lsg-dialog" role="dialog" aria-modal="true" aria-labelledby="lsg-title" data-testid="local-session-gate">
+            <h2 id="lsg-title">Connect this browser to BirkNext</h2>
+            <p>Enter the code shown in the BirkNext start window. You only need to do this once per browser, and again after BirkNext restarts.</p>
+            <form @onsubmit="ConnectAsync" @onsubmit:preventDefault>
+                <label for="lsg-code">Connection code</label>
+                <input id="lsg-code" class="form-control" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX" @bind="_code" @bind:event="oninput"
+                       aria-describedby="@(_error is null ? "lsg-help" : "lsg-error")" data-testid="local-session-code" />
+                <p id="lsg-help" class="lsg-help">Can't find it? It is also in the file <code>App_Data\local-session\launch-code.txt</code> next to the BirkNext backend.</p>
+                @if (_error is { } error) { <p id="lsg-error" class="lsg-error" role="alert" data-testid="local-session-error">@error</p> }
+                <button type="submit" class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_code))" data-testid="local-session-connect">@(_busy ? "Connecting…" : "Connect")</button>
+            </form>
+        </section>
+    </div>
+}
+
+@code {
+    private LocalSessionState? _state;
+    private LocalSessionApiService? _api;
+    private bool _show, _busy;
+    private string? _code, _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _state = Services.GetService(typeof(LocalSessionState)) as LocalSessionState;
+        _api = Services.GetService(typeof(LocalSessionApiService)) as LocalSessionApiService;
+        if (_state is null || _api is null) return;
+        _state.Changed += OnChanged;
+        if (await _api.ConnectedAsync() is false) _state.MarkRequired();
+        _show = _state.ConnectRequired;
+    }
+
+    private void OnChanged() => InvokeAsync(() => { _show = _state?.ConnectRequired == true; StateHasChanged(); });
+
+    private async Task ConnectAsync()
+    {
+        if (_api is null || string.IsNullOrWhiteSpace(_code)) return;
+        _busy = true; _error = null;
+        var (connected, message) = await _api.ConnectAsync(_code.Trim());
+        _busy = false;
+        if (!connected) { _error = message; return; }
+        _state?.MarkConnected();
+        Navigation.Refresh(forceReload: true);
+    }
+
+    public void Dispose() { if (_state is not null) _state.Changed -= OnChanged; }
+}

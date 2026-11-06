@@ -171,7 +171,13 @@ builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
 // Every backend client stores a never-saved built-in Target Environment before the first write that attaches configuration to it.
 builder.Services.AddTransient<TargetEnvironmentMaterializationHandler>();
-builder.Services.ConfigureHttpClientDefaults(http => http.AddHttpMessageHandler<TargetEnvironmentMaterializationHandler>());
+// Local session (docs/security/localhost-session-design-2026-11-06.md): every backend request carries the HttpOnly session cookie and the client
+// header; requests to other origins (target applications) never do.
+builder.Services.AddSingleton(new LocalSessionBackend(backendBase));
+builder.Services.AddSingleton<LocalSessionState>();
+builder.Services.AddTransient<LocalSessionHandler>();
+builder.Services.ConfigureHttpClientDefaults(http => http.AddHttpMessageHandler<TargetEnvironmentMaterializationHandler>().AddHttpMessageHandler<LocalSessionHandler>());
+builder.Services.AddHttpClient<LocalSessionApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
 builder.Services.AddSingleton<IApiReviewHistoryService, ApiReviewHistoryService>();
 builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();

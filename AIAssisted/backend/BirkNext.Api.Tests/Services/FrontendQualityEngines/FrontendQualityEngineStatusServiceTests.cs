@@ -12,7 +12,7 @@ public sealed class FrontendQualityEngineStatusServiceTests
     public async Task GetStatus_WithDefaultQuery_ReturnsAllFourEngines()
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
 
         var scope = factory.Services.CreateScope();
         var statusService = scope.ServiceProvider.GetRequiredService<IFrontendQualityEngineStatusService>();
@@ -30,7 +30,7 @@ public sealed class FrontendQualityEngineStatusServiceTests
     public async Task GetStatus_WithDisabledLayers_ReturnsUnavailableWithCorrectReasons()
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
 
         var scope = factory.Services.CreateScope();
         var statusService = scope.ServiceProvider.GetRequiredService<IFrontendQualityEngineStatusService>();
@@ -49,7 +49,7 @@ public sealed class FrontendQualityEngineStatusServiceTests
     public async Task GetStatus_WithAnonymousMode_ReturnsAuthSupportedTrueForAllEngines()
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
 
         var scope = factory.Services.CreateScope();
         var statusService = scope.ServiceProvider.GetRequiredService<IFrontendQualityEngineStatusService>();
@@ -64,7 +64,7 @@ public sealed class FrontendQualityEngineStatusServiceTests
     public async Task GetStatus_WithAuthenticatedMode_ReturnsMixedAuthSupport()
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
 
         var scope = factory.Services.CreateScope();
         var statusService = scope.ServiceProvider.GetRequiredService<IFrontendQualityEngineStatusService>();

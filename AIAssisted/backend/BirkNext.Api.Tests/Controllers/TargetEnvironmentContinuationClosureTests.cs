@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using BirkNext.Api.Tests.Utilities;
 
 namespace BirkNext.Api.Tests.Controllers;
 
@@ -96,7 +97,7 @@ public sealed class TargetEnvironmentContinuationClosureTests
                 services.AddSingleton<IAuthenticatedBrowserSessionManager>(manager);
             });
         });
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
         });

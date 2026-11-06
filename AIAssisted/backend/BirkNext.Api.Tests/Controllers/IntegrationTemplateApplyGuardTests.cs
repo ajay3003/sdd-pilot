@@ -69,7 +69,7 @@ public sealed class IntegrationTemplateApplyGuardTests
     {
         var catalog = new RecordingCatalog();
         await using var factory = Host(catalog);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         var response = await Apply(client, "some-env", type, url);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().Contain(reason);
@@ -81,7 +81,7 @@ public sealed class IntegrationTemplateApplyGuardTests
     {
         var catalog = new RecordingCatalog();
         await using var factory = Host(catalog);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         (await Apply(client, "dev-env", "Development", DevUrl)).StatusCode.Should().Be(HttpStatusCode.OK);
         catalog.Written.Should().BeTrue();
     }
@@ -91,7 +91,7 @@ public sealed class IntegrationTemplateApplyGuardTests
     {
         var catalog = new RecordingCatalog();
         await using var factory = Host(catalog);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
         var response = await Apply(client, "qa-env", "Development", DevUrl);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict, "the backend knows qa-env is QA");
         catalog.SeenType.Should().Be("QA");

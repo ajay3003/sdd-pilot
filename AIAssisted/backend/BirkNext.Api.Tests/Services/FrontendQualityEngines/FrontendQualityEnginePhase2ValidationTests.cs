@@ -15,7 +15,7 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
     public async Task Layer1_IsReadOnlyFromSettingsAPI()
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateLocalSessionClient();
 
         var scope = factory.Services.CreateScope();
         using var localSettings = TestHostConfiguration.PreserveLocalSettings(scope.ServiceProvider);
