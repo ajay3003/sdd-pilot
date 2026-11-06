@@ -239,6 +239,18 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
             counts.Select(c => c.GetAttribute("data-result")).Should().Equal("Fail", "Warning", "Pass", "NotTested");
     }
 
+    [Fact]
+    public async Task Performance_StatesItsOwnership_AndImpliesNoLoadTestAcceptance()
+    {
+        var page = await Result();
+        Tab(page, "performance");
+        var ownership = page.Find("[data-testid=aqr-performance-ownership]").TextContent;
+        ownership.Should().Contain("single-request latency observations").And.Contain("load testing").And.Contain("performance acceptance criteria")
+            .And.Contain("Nothing on this tab implies load-test acceptance");
+        page.Find("[data-testid=aqr-performance-owner-link]").GetAttribute("href").Should().Be("/performance-test-review");
+        page.Find("[data-testid=aqr-tabpanel]").TextContent.Should().NotContainEquivalentOf("load test passed").And.NotContainEquivalentOf("meets performance acceptance");
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

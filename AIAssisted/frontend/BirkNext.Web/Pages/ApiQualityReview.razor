@@ -776,6 +776,10 @@
                         <p class="aqr-scope-note aqr-scope-note-strong" role="note" data-testid="aqr-performance-sample"><strong>@sample.Reason</strong></p>
                     }
                     <p class="aqr-scope-note aqr-scope-note-strong" data-testid="aqr-performance-note">@ApiReviewPresentation.PerformanceScopeNote</p>
+                    @* Ownership: AQR observes single-request latency only; acceptance-level performance is owned elsewhere and never implied here. *@
+                    <p class="aqr-muted" data-testid="aqr-performance-ownership"><strong>Owned here:</strong> single-request latency observations from this review's own requests.
+                        <strong>Not owned here:</strong> load testing, workload behaviour, API response Warning/Poor thresholds and performance acceptance criteria — those belong to
+                        <a href="/performance-test-review" data-testid="aqr-performance-owner-link">Performance Test Review</a> and Performance Quality. Nothing on this tab implies load-test acceptance.</p>
                     @* The thresholds THIS review was evaluated with, from its own policy snapshot — never today's settings. *@
                     <p class="aqr-muted" data-testid="aqr-performance-thresholds">@ApiReviewPresentation.PerformanceThresholdsNote(report.Policy)</p>
                     <dl class="aqr-dl aqr-protocol-facts" data-testid="aqr-performance-summary">
