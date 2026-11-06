@@ -1777,8 +1777,13 @@
                 <div data-testid="aqr-contract-cause" data-key="@cause.Key"><dt>@cause.Label</dt><dd><strong>@cause.State</strong>@if (cause.Reason is { } why) { <span class="aqr-muted"> — Reason: @why</span> }</dd></div>
             }
         </dl>
-        <h3>Contract and schema status</h3>
-        <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Contract and schema status">
+        var withContract = report.Targets.Count(t => t.Contract is { Available: true });
+        @* Coverage of contract evidence, never of the API: a service without a usable contract is reviewed structurally only. *@
+        <p class="aqr-contract-coverage" data-testid="aqr-contract-coverage" data-with="@withContract" data-total="@report.Targets.Count">
+            <strong>Contract evidence:</strong> @withContract of @report.Targets.Count service@(report.Targets.Count == 1 ? "" : "s") had a usable contract or schema@(withContract < report.Targets.Count ? $" · {report.Targets.Count - withContract} reviewed without contract validation (not assessed against a contract)" : "").
+        </p>
+        <h3 id="aqr-contracts-status-heading">Contract and schema status</h3>
+        <div class="aqr-tablewrap" tabindex="0" role="region" aria-labelledby="aqr-contracts-status-heading">
             <table class="aqr-table" data-testid="aqr-contracts-table">
                 <thead><tr><th scope="col">Service</th><th scope="col">Contract/schema source</th><th scope="col">Status</th><th scope="col">Baseline &amp; drift</th></tr></thead>
                 <tbody>
@@ -1821,7 +1826,11 @@
                                 }
                             </td>
                             <td data-testid="aqr-contract-drift">
-                                @if (driftFindings > 0) { <span class="aqr-state aqr-state-warning">Drift detected</span> <span class="aqr-muted">· @driftFindings @(driftFindings == 1 ? "change" : "changes") (see Findings)</span> }
+                                @if (driftFindings > 0)
+                                {
+                                    <span class="aqr-state aqr-state-warning">Drift detected</span> <span class="aqr-muted">· @driftFindings @(driftFindings == 1 ? "change" : "changes")</span>
+                                    <button type="button" class="aqr-link-button" data-testid="aqr-contract-drift-findings" @onclick="() => ShowFindings(service: t.Target.TargetId, area: ApiReviewPresentation.FindingArea(ApiReviewFindingType.Drift))">View drift findings</button>
+                                }
                                 else if (driftChecks.Count > 0) { <span class="aqr-state">Compared</span> <span class="aqr-muted">· no drift in the compared evidence</span> }
                                 else { <span class="aqr-state aqr-state-muted">@ApiReviewPostRunPresentation.NoComparableRuntimeBaseline</span> <span class="aqr-muted">· informational@(t.Baseline is not null ? "; this run recorded the first runtime structural baseline (source: runtime observation), not a contract baseline" : "")</span> }
                             </td>
@@ -1833,11 +1842,11 @@
         <p class="aqr-muted">Structural baselines hold contract hashes, root fields and response shapes — never values.</p>
         @if (report.Targets.Where(t => t.GraphQlCompatibility is { Observed: > 0 }).ToList() is { Count: > 0 } gqlTargets)
         {
-            <h3>GraphQL client/server compatibility</h3>
+            <h3 id="aqr-contracts-compat-heading">GraphQL client/server compatibility</h3>
             <p class="aqr-muted">Are the GraphQL operations the frontend actually sends still valid against the server's current contract? Observed operations are validated, never executed.</p>
             @foreach (var t in gqlTargets) { @RenderCompatibilityCard(t, t.GraphQlCompatibility!) }
         }
-        <h3>Drift comparison</h3>
+        <h3 id="aqr-contracts-drift-heading">Drift comparison</h3>
         <p class="aqr-muted">Compares available evidence with previous baselines. No changes detected does not establish contract or schema coverage.</p>
         @RenderChecks(domainChecks.Where(c => c.Area == ApiReviewFindingType.Drift).ToList(), areas)
         @if (!domainChecks.Any(c => c.Area == ApiReviewFindingType.Drift)) { <p class="aqr-empty">Not compared — no previous baseline for these services. The first review records one.</p> }
@@ -1848,7 +1857,7 @@
         }
         @if (domainChecks.Where(c => c.Area != ApiReviewFindingType.Drift).ToList() is { Count: > 0 } other && other.Any(c => c.Result is not (ApiReviewCheckResult.NotTested or ApiReviewCheckResult.Blocked)))
         {
-            <h3>Contract checks</h3>
+            <h3 id="aqr-contracts-checks-heading">Contract checks</h3>
             @RenderChecks(other, areas)
         }
         else

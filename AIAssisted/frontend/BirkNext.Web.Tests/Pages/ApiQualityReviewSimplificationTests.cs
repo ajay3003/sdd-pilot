@@ -196,6 +196,19 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.FindAll("[data-testid=aqr-target-result]").Should().NotBeEmpty("service cards (status, access, next step) stay visible while operations are filtered");
     }
 
+    [Fact]
+    public async Task Contracts_StatesContractEvidenceCoverage_WithoutClaimingSchemaVerification()
+    {
+        var page = await Result();
+        Tab(page, "contracts");
+        var coverage = page.Find("[data-testid=aqr-contract-coverage]");
+        var with = int.Parse(coverage.GetAttribute("data-with")!);
+        var total = int.Parse(coverage.GetAttribute("data-total")!);
+        coverage.TextContent.Should().Contain($"{with} of {total} service");
+        if (with < total) coverage.TextContent.Should().Contain("reviewed without contract validation (not assessed against a contract)");
+        page.Find("[data-testid=aqr-tabpanel]").TextContent.Should().NotContainEquivalentOf("schema verified").And.NotContainEquivalentOf("contract passed");
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
