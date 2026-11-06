@@ -328,4 +328,16 @@ public sealed class DeliveryIntelligenceTests : BunitContext
             "the point marked current is the report the overview shows (the fake API serves the sample report for any id)");
         overview.Find("[data-testid=dtl-milestone]").GetAttribute("data-kind").Should().Be("Checklist completed");
     }
+
+    [Fact]
+    public void A_report_without_neighbours_of_its_scope_still_says_so_and_links_all_reports()
+    {
+        var api = Api();
+        api.ReportRows = [Summary(ReportId, 12), Summary(Guid.NewGuid(), 19, "M2LB-language")];
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-reporting?project={ProjectId}&tab=overview&report={ReportId}");
+        var page = Render<DeliveryReportingPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-report-only]").TextContent.Should().Be("The only report of this comparison"));
+        page.Find("[data-testid=dlr-report-history-link]").GetAttribute("href").Should().Contain("tab=history");
+        page.FindAll("[data-testid=dlr-report-prev], [data-testid=dlr-report-next]").Should().BeEmpty("a scoped report is not a neighbour of a whole-project report");
+    }
 }

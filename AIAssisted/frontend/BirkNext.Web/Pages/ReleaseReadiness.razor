@@ -561,7 +561,7 @@
             else if (_features is { } features)
             {
                 var inScope = features.Where(f => _selected.Count == 0 || _selected.Contains(FeatureModule(f))).ToList();
-                <p class="rr-small" data-testid="rr-reqev-summary">@inScope.Count feature pack@(inScope.Count == 1 ? "" : "s") · @inScope.Sum(f => f.Requirements) requirements · @inScope.Sum(f => f.RequirementsWithExplicitTests) with an explicit test · @inScope.Sum(f => f.RequirementsWithoutTests) without a test</p>
+                <p class="rr-small" data-testid="rr-reqev-summary">@inScope.Count feature pack@(inScope.Count == 1 ? "" : "s") with trace data@(_selected.Count == 0 && a.Facts is { } facts && facts.FeaturePacks != inScope.Count ? $" (of {facts.FeaturePacks} in scope — {Math.Abs(facts.FeaturePacks - inScope.Count)} without a requirement trace)" : "") · @inScope.Sum(f => f.Requirements) requirements · @inScope.Sum(f => f.RequirementsWithExplicitTests) with an explicit test · @inScope.Sum(f => f.RequirementsWithoutTests) without a test</p>
                 <ul class="rr-feature-list">
                     @foreach (var f in inScope.OrderByDescending(f => f.RequirementsWithoutTests).ThenBy(f => f.Feature.DisplayName, StringComparer.OrdinalIgnoreCase))
                     {

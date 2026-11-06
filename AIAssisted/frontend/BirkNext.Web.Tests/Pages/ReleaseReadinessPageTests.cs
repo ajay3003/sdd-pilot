@@ -270,7 +270,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]"));
         cut.Find("[data-testid=rr-tab-scope]").Click();
         cut.Find("[data-testid=rr-reqev-load]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-reqev-summary]").TextContent.Should().Contain("1 feature pack · 1 requirements"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-reqev-summary]").TextContent.Should().Contain("1 feature pack with trace data · 1 requirements"));
         cut.Find("[data-testid=rr-reqev-feature-toggle]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-reqev-row]").GetAttribute("data-state").Should().Be("CandidateOnly"));
         cut.Find("[data-testid=rr-reqev-row]").TextContent.Should().Contain("0 confirmed · 1 candidate (not coverage)").And.Contain("Candidate test only — not coverage");

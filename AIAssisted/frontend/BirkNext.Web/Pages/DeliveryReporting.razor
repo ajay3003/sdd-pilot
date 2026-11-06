@@ -167,7 +167,14 @@
             <div class="dlr-report-title">
                 <h2 class="dlr-h2" data-testid="dlr-report-title">@DeliveryReportTitles.Display(report)</h2>
                 @{ var (previous, next) = DeliveryIntelligenceHistory.Neighbours(_reports, report.ReportId); }
-                @if (previous is not null || next is not null)
+                @if (previous is null && next is null && _reports.Count > 1)
+                {
+                    <nav class="dlr-report-nav" aria-label="Report history" data-testid="dlr-report-nav">
+                        <span class="dlr-muted" data-testid="dlr-report-only">The only report of this @(string.IsNullOrEmpty(report.Scope?.Label) ? "comparison" : "scope")</span>
+                        <a href="@TabHref("history")" data-testid="dlr-report-history-link">All @_reports.Count reports</a>
+                    </nav>
+                }
+                else if (previous is not null || next is not null)
                 {
                     <nav class="dlr-report-nav" aria-label="Report history" data-testid="dlr-report-nav">
                         @if (previous is { } prev) { <a href="@ReportHref(prev.Id)" data-testid="dlr-report-prev" rel="prev">← Previous report <span class="dlr-muted">(@prev.PeriodEnd.ToString("d MMM"))</span></a> }
