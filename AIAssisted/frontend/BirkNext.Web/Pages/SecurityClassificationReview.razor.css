@@ -103,3 +103,9 @@
 .sc-status dt { font-size: .75rem; font-weight: 600; color: var(--clr-text-muted, #475569); }
 .sc-status dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
 .sc-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Kode 6/7 security matrix: readable, bounded, scrolls inside its own region on narrow screens. */
+.sc-table-wrap { overflow-x: auto; }
+[data-testid=sc-control-matrix] .sc-table { font-size: .875rem; min-width: 52rem; }
+[data-testid=sc-control-matrix] .sc-table th[scope=row] { font-weight: 400; }
+.sc-badge-warning { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }

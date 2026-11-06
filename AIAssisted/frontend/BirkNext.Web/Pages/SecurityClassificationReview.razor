@@ -261,11 +261,13 @@
             </ReviewDisclosure>
         </section>
 
+        var (canRun, reason) = ClassificationPresentation.LiveReadiness(Context, _profile.EnvironmentType.ToString(), !string.IsNullOrWhiteSpace(_unauthorizedToken) || !string.IsNullOrWhiteSpace(_authorizedToken));
+        @* Two independent capabilities: the static review (source evidence) and runtime verification (approved synthetic context). *@
+        <GuidedStepList Steps="@SecurityReviewWorkflow.Derive(true, RunScope is not null, MissingNow, canRun, reason, _result)" TestId="sc-steps" Label="M01 review steps" />
         @if (_result is null && _overview is not null) { @NeededCard }
 
         <section class="sc-card" aria-labelledby="sc-run-heading" data-testid="sc-run-card">
             <h2 id="sc-run-heading">Run review</h2>
-            @{ var (canRun, reason) = ClassificationPresentation.LiveReadiness(Context, _profile.EnvironmentType.ToString(), !string.IsNullOrWhiteSpace(_unauthorizedToken) || !string.IsNullOrWhiteSpace(_authorizedToken)); }
             <p class="sc-muted" data-testid="sc-run-source"><strong>Source checks:</strong> @(RunScope is null ? "Not run — no source snapshot selected." : $"On {ScopeLabel} (exact snapshots, bound to the result).")</p>
             <p class="sc-muted" data-testid="sc-live-readiness"><strong>Live checks:</strong> @(canRun ? "Available" : "Not run") — @reason</p>
             @if (RunBlocked)
@@ -273,8 +275,9 @@
                 <p class="sc-error" data-testid="sc-run-blocked">Repair the source scope (or choose no source snapshot) before running.</p>
             }
             <div class="sc-actions">
-                <button type="button" class="btn-primary" data-testid="sc-run" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(_busy ? "Checking…" : "Run safe security checks")</button>
+                <button type="button" class="btn-primary" data-testid="sc-run" data-mode="@(canRun ? "static-runtime" : "static")" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(_busy ? "Checking…" : canRun ? "Run static review + runtime verification" : "Run static security review")</button>
             </div>
+            @if (!canRun) { <p class="sc-muted" data-testid="sc-run-static-only">Runtime verification is not ready, so this run is a static review only: runtime checks stay unverified (never passed) until an approved DEV/QA context exists.</p> }
             <p class="sc-status" role="status" aria-live="polite" data-testid="sc-status">@_status</p>
             @if (_error is { } error) { <p class="sc-error" role="alert" data-testid="sc-error">@error</p> }
             @if (_overview is { History.Count: > 0 } overview)
@@ -290,6 +293,30 @@
 
         @if (_result is { } result)
         {
+            var matrix = SecurityControlMatrix.Build(result);
+            <section class="sc-card" aria-labelledby="sc-control-matrix-heading" data-testid="sc-control-matrix">
+                <h2 id="sc-control-matrix-heading">Kode 6/7 security matrix</h2>
+                <p class="sc-muted">Static evidence and runtime verification are separate columns. A guard or mapping found in source is a mechanism, not verified protection; no finding is never Passed; Passed needs runtime checks that all passed. Families group the existing checks (a check can support more than one family).</p>
+                <div class="sc-table-wrap" tabindex="0" role="region" aria-label="Kode 6/7 security matrix">
+                    <table class="sc-table">
+                        <thead><tr><th scope="col">Control</th><th scope="col">Static evidence</th><th scope="col">Runtime verification</th><th scope="col">Result</th><th scope="col">Residual risk</th><th scope="col">Next action</th></tr></thead>
+                        <tbody>
+                            @foreach (var row in matrix)
+                            {
+                                <tr data-testid="sc-control-row" data-control="@row.Family.Id" data-static="@row.Static" data-runtime="@row.Runtime" data-result="@row.Result">
+                                    <th scope="row"><strong>@row.Family.Id</strong> @row.Family.Title<span class="sc-muted"> — @row.Family.Requirement</span></th>
+                                    <td><span class="sc-badge sc-badge-@SecurityControlMatrix.Tone(row.Static)">@row.Static</span> <span class="sc-muted">(@row.StaticChecks source check@(row.StaticChecks == 1 ? "" : "s"))</span></td>
+                                    <td><span class="sc-badge sc-badge-@SecurityControlMatrix.Tone(row.Runtime)">@row.Runtime</span> <span class="sc-muted">(@row.RuntimeChecks runtime check@(row.RuntimeChecks == 1 ? "" : "s"))</span></td>
+                                    <td data-testid="sc-control-result">@row.Result</td>
+                                    <td>@row.ResidualRisk</td>
+                                    <td>@row.NextAction</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="sc-muted" data-testid="sc-control-provenance">Run @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @(result.SourceScope is { } scope ? $"source snapshot {scope.Primary.SnapshotId.ToString()[..8]}" : "no source snapshot") · @(result.Live.Observations.Count > 0 ? $"runtime evidence captured {result.Live.CapturedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" : "no runtime evidence (runtime unverified)")</p>
+            </section>
             <section class="sc-card" aria-labelledby="sc-summary-heading" data-testid="sc-summary" tabindex="-1" @ref="_resultRef">
                 <h2 id="sc-summary-heading">Security classification <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(result.Overall)" data-testid="sc-overall">@ClassificationLabels.Overall(result.Overall)</span></h2>
                 <p class="sc-muted" data-testid="sc-headline">@ClassificationPresentation.Headline(result) · @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
@@ -661,7 +688,12 @@
         var shown = 0;
         <section class="sc-card sc-needed @(view.Count == 0 ? "sc-needed-done" : "")" aria-labelledby="sc-needed-heading" data-testid="sc-needed" data-count="@view.Count">
             <h2 id="sc-needed-heading">@(view.Count == 0 ? "Review prerequisites complete" : "What’s needed to complete this review") <span class="sc-badge sc-badge-@(view.Count == 0 ? "ready" : "attention")" data-testid="@(view.Count == 0 ? null : "sc-needed-count")">@(view.Count == 0 ? "Complete" : $"{view.Count} item{(view.Count == 1 ? "" : "s")}")</span></h2>
-            <p data-testid="sc-needed-lead">@(view.BlocksLiveChecks ? "Runtime authorization checks cannot run yet: required test context is missing. These are prerequisites, not security findings." : "Runtime authorization checks can run; remaining items add evidence. These are prerequisites, not security findings.")</p>
+            <p data-testid="sc-needed-lead">@(view.BlocksLiveChecks ? "Runtime authorization checks cannot run yet: required test context is missing. The static review can still run on the source evidence. These are prerequisites, not security findings." : "Runtime authorization checks can run; remaining items add evidence. These are prerequisites, not security findings.")</p>
+            @if (view.Rows.Count > 0 && view.Count > 0)
+            {
+                var staticItems = view.Rows.Count(r => r.Counts && r.Group == ClassificationMissingGroup.SourceEvidence);
+                <p class="sc-muted" data-testid="sc-needed-split">@staticItems for the static review (source evidence) · @(view.Count - staticItems) for runtime verification (test context and runtime evidence). Same @view.Count items, grouped by the review they block.</p>
+            }
             @if (view.Recorded)
             {
                 <p class="sc-muted" data-testid="sc-needed-recorded">As recorded with the review from @_result!.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC — not recalculated against today's configuration.</p>
