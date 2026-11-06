@@ -1958,8 +1958,11 @@
     private string _filterService = "";
     private string _filterArea = "";
     private string _filterIssue = "";
-    private bool FiltersActive => _filterSeverity.Length + _filterService.Length + _filterArea.Length + _filterIssue.Length > 0;
-    private void ClearFindingFilters() { _filterSeverity = ""; _filterService = ""; _filterArea = ""; _filterIssue = ""; }
+    private bool FiltersActive => _filterSeverity.Length + _filterService.Length + _filterArea.Length + _filterIssue.Length + _filterSearch.Trim().Length > 0;
+    private void ClearFindingFilters() { _filterSeverity = ""; _filterService = ""; _filterArea = ""; _filterIssue = ""; _filterSearch = ""; }
+    private string _filterSearch = "";
+    /// <summary>Display order only ("" = report order); never part of a filter.</summary>
+    private string _findingsSort = "";
 
     /// <summary>Opens Findings filtered to one service, area or logical issue (the area tabs and Key issues link here).</summary>
     private void ShowFindings(string? service = null, string? area = null, string? issue = null)
@@ -1999,11 +2002,21 @@
             (_filterSeverity.Length == 0 || f.Severity.ToString() == _filterSeverity)
             && (_filterService.Length == 0 || f.TargetId == _filterService)
             && (_filterArea.Length == 0 || ApiReviewPresentation.FindingArea(f.Type) == _filterArea)
-            && (_filterIssue.Length == 0 || ApiReviewPresentation.LogicalIssueKey(f) == _filterIssue)).ToList();
+            && (_filterIssue.Length == 0 || ApiReviewPresentation.LogicalIssueKey(f) == _filterIssue)
+            && (_filterSearch.Trim() is not { Length: > 0 } q || new[] { f.Title, f.Endpoint, f.Check, f.Description }.Any(t => t?.Contains(q, StringComparison.OrdinalIgnoreCase) == true))).ToList();
+        shown = _findingsSort switch
+        {
+            "severity" => [.. shown.OrderBy(f => f.Severity)],
+            "service" => [.. shown.OrderBy(f => ApiReviewPresentation.ServiceNameOf(report, f.TargetId), StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Severity)],
+            _ => shown,
+        };
         <p class="aqr-muted" data-testid="aqr-findings-lead">Every source finding is listed here once. A <strong>logical issue</strong> groups the same rule on the same endpoint; each row is one <strong>occurrence</strong> observed on a service.</p>
         @if (report.Findings.Count > 0)
         {
             <div class="aqr-filters" role="group" aria-label="Filter source findings" data-testid="aqr-finding-filters">
+                <label>Search
+                    <input type="search" value="@_filterSearch" @oninput="e => _filterSearch = e.Value?.ToString() ?? string.Empty" placeholder="Title, endpoint or check" data-testid="aqr-filter-search" />
+                </label>
                 <label>Severity
                     <select @bind="_filterSeverity" data-testid="aqr-filter-severity">
                         <option value="">All</option>
@@ -2028,10 +2041,17 @@
                         @foreach (var i in issues) { <option value="@i.Key">@i.Title (@i.Sources.Count)</option> }
                     </select>
                 </label>
+                <label>Sort
+                    <select value="@_findingsSort" @onchange="e => _findingsSort = e.Value?.ToString() ?? string.Empty" data-testid="aqr-findings-sort">
+                        <option value="">Report order</option>
+                        <option value="severity">Highest severity first</option>
+                        <option value="service">Service</option>
+                    </select>
+                </label>
                 @if (FiltersActive) { <button type="button" class="btn-secondary" data-testid="aqr-filter-clear" @onclick="ClearFindingFilters">Clear filters</button> }
             </div>
         }
-        <h3 class="aqr-group-title" data-testid="aqr-findings-count">Source findings (@(FiltersActive ? $"{shown.Count} of {report.Findings.Count}" : $"{report.Findings.Count}"))</h3>
+        <h3 class="aqr-group-title" data-testid="aqr-findings-count" role="status">Source findings (@(FiltersActive ? $"{shown.Count} of {report.Findings.Count}" : $"{report.Findings.Count}"))</h3>
         @if (report.Findings.Count == 0)
         {
             <p class="aqr-empty" data-testid="aqr-no-findings">No findings on the assessed targets. Blocked or not-assessed targets are listed as such, never as passes.</p>
@@ -2070,12 +2090,18 @@
                                         }
                                         <div><dt>Description</dt><dd>@f.Description</dd></div>
                                         <div><dt>Check</dt><dd>@f.Check · <span class="aqr-state aqr-state-@f.Result.ToString().ToLowerInvariant()" data-testid="aqr-finding-check-result">@ApiReviewStatusLabels.FindingCheckLabel(f)</span></dd></div>
-                                        @if (f.Evidence.Count > 0) { <div><dt>Evidence</dt><dd class="aqr-mono aqr-evidence">@string.Join(" · ", f.Evidence.Take(8))</dd></div> }
+                                        @if (f.Evidence.Count > 0)
+                                        {
+                                            <div><dt>Evidence</dt><dd class="aqr-mono aqr-evidence">@string.Join(" · ", f.Evidence.Take(8))@if (f.Evidence.Count > 8) { <span class="aqr-muted" data-testid="aqr-finding-evidence-more"> · +@(f.Evidence.Count - 8) more not shown</span> }</dd></div>
+                                        }
+                                        else { <div><dt>Evidence</dt><dd class="aqr-muted" data-testid="aqr-finding-no-evidence">No evidence recorded for this finding.</dd></div> }
                                         <div><dt>Recommendation</dt><dd>@f.Recommendation</dd></div>
                                         @if (f.StandardsReferences.Count > 0) { <div><dt>Standards</dt><dd><StandardReferences References="f.StandardsReferences" /></dd></div> }
                                         @if (f.Result == ApiReviewCheckResult.ManualReview) { <div><dt>Manual verification</dt><dd>Required — this item was not verified automatically.</dd></div> }
                                         @if (f.Drift is { } drift) { <div><dt>Contract drift</dt><dd>@ApiReviewStatusLabels.DriftLabel(drift)</dd></div> }
                                     </dl>
+                                    @{ var findingArea = ApiReviewPresentation.FindingArea(f.Type); }
+                                    <button type="button" class="aqr-link-button" data-testid="aqr-finding-open-area" @onclick="() => OpenTab(findingArea)">View its checks in @ApiReviewPresentation.TabLabel(findingArea)</button>
                                 </td>
                             </tr>
                         }

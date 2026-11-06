@@ -251,6 +251,32 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.Find("[data-testid=aqr-tabpanel]").TextContent.Should().NotContainEquivalentOf("load test passed").And.NotContainEquivalentOf("meets performance acceptance");
     }
 
+    [Fact]
+    public async Task Findings_CanBeSearchedAndSorted_WithHonestCounts_AndLinkToTheirArea()
+    {
+        var page = await Result();
+        Tab(page, "findings");
+        var total = page.FindAll("[data-testid=aqr-finding-row]").Count;
+        total.Should().BeGreaterThan(1);
+
+        page.Find("[data-testid=aqr-findings-sort]").Change("severity");
+        var severities = page.FindAll("[data-testid=aqr-finding-row]").Select(r => Enum.Parse<ApiReviewSeverity>(r.GetAttribute("data-severity")!)).ToList();
+        severities.Should().BeInAscendingOrder("Critical sorts before Info");
+        page.FindAll("[data-testid=aqr-finding-row]").Should().HaveCount(total, "sorting never filters");
+
+        page.Find("[data-testid=aqr-filter-search]").Input("zzz-no-such-finding");
+        page.Find("[data-testid=aqr-no-filtered-findings]").Should().NotBeNull();
+        page.Find("[data-testid=aqr-findings-count]").TextContent.Should().Contain($"0 of {total}");
+        page.Find("[data-testid=aqr-filter-clear]").Click();
+        page.FindAll("[data-testid=aqr-finding-row]").Should().HaveCount(total);
+
+        page.Find("[data-testid=aqr-finding-toggle]").Click();
+        var details = page.Find("[data-testid=aqr-finding-details]:not([hidden])");
+        (details.QuerySelector(".aqr-evidence") is null).Should().NotBe(details.QuerySelector("[data-testid=aqr-finding-no-evidence]") is null, "exactly one of: the evidence, or that none was recorded");
+        await page.InvokeAsync(() => details.QuerySelector("[data-testid=aqr-finding-open-area]")!.Click());
+        page.Find("[data-testid=aqr-tabpanel]").GetAttribute("data-tab").Should().NotBe("Findings");
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
