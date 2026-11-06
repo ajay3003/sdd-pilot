@@ -80,3 +80,10 @@
     .sb-workspace.has-inspector .sb-table th:nth-child(7), .sb-workspace.has-inspector .sb-table td:nth-child(7) { display: none; }
 }
 .sb-table td:nth-child(4) { white-space: nowrap; }
+
+/* Filters: one grid, equal control heights, the search wider; nothing overflows at 390px. */
+.sb-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .6rem .75rem; align-items: end; }
+.sb-filters label { min-width: 0; font-weight: 600; font-size: .8rem; }
+.sb-filters input, .sb-filters select { width: 100%; min-height: 2.1rem; font-size: .875rem; font-weight: 400; }
+.sb-filter-search { grid-column: span 2; }
+@media (max-width: 640px) { .sb-filter-search { grid-column: auto; } }

@@ -83,7 +83,7 @@ public sealed class SnapshotBrowserTests : BunitContext
     {
         var cut = Render<SnapshotBrowser>();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-kpi]").Should().HaveCount(6));
-        cut.Find("[data-testid=sb-kpi][data-kpi=attention]").TextContent.Should().Contain("0").And.Contain("No source snapshot has a failed area");
+        cut.Find("[data-testid=sb-kpi][data-kpi=attention]").TextContent.Should().Contain("0").And.Contain("No source snapshot of the active environment has a failed area").And.Contain("a partial area is not counted");
         cut.Find("[data-testid=sb-kpi][data-kpi=partial]").TextContent.Should().Contain("Some areas partial or not supported", "every KPI states its definition");
         cut.Find("[data-testid=sb-kpi][data-kpi=total]").TextContent.Should().Contain("2");
         cut.Find("[data-testid=sb-kpi][data-kpi=partial]").TextContent.Should().Contain("1").And.Contain("analysis partial");
@@ -114,6 +114,8 @@ public sealed class SnapshotBrowserTests : BunitContext
         cut.Find("[data-testid=sb-dimensions]").TextContent.Should().Contain("Analysis: Partial").And.Contain("Storage: available").And.Contain("Immutable")
             .And.Contain("Retention: Working").And.Contain("Project: Unassigned");
         cut.Find("[data-testid=sb-set-approved]").HasAttribute("disabled").Should().BeTrue("only a completed analysis can be approved");
+        cut.Find("[data-testid=sb-approve-reason]").TextContent.Should().Contain("only a snapshot whose analysis completed can be approved").And.Contain("partial");
+        cut.Find("[data-testid=sb-set-approved]").GetAttribute("aria-describedby").Should().Be("sb-approve-reason");
         Location.Should().Contain($"open=SourceAnalysis%3A{Terraform}");
 
         cut.Find("[data-testid=sb-tab][data-tab=processing]").Click();
@@ -203,5 +205,31 @@ public sealed class SnapshotBrowserTests : BunitContext
         cut.Find("[data-testid=sb-tabpanel]").GetAttribute("data-tab").Should().Be("diagnostics");
         cut.Find("[data-testid=sb-tab][data-tab=diagnostics]").GetAttribute("tabindex").Should().Be("0");
         cut.Find("[data-testid=sb-diagnostics]").TextContent.Should().Contain("re-analysis creates a new snapshot");
+    }
+
+    [Fact]
+    public void An_inverted_date_range_is_explained_and_never_shown_as_an_empty_result()
+    {
+        var cut = Render<SnapshotBrowser>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-row]").Should().HaveCount(2));
+        cut.Find("[data-testid=sb-from]").Change("2026-11-05");
+        cut.Find("[data-testid=sb-to]").Change("2026-11-01");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-date-error]").TextContent.Should().Contain("start date is after the end date"));
+        cut.FindAll("[data-testid=sb-empty]").Should().BeEmpty("an impossible range is not 'no snapshots'");
+        cut.Find("[data-testid=sb-from]").GetAttribute("aria-invalid").Should().Be("true");
+        _api.Verify(a => a.QueryAsync(It.Is<SnapshotQuery>(q => q.From > q.To), It.IsAny<CancellationToken>()), Times.Never(), "nothing is queried for an impossible range");
+        cut.Find("[data-testid=sb-clear]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-row]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=sb-date-error]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Summary_counts_are_registry_wide_and_say_so_and_the_filter_controls_share_one_style()
+    {
+        var cut = Render<SnapshotBrowser>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sb-kpi-note]").TextContent.Should().Contain("filters do not change them"));
+        cut.FindAll(".sb-filters select").Should().OnlyContain(s => s.ClassList.Contains("form-select"));
+        cut.Find("[data-testid=sb-search]").GetAttribute("placeholder").Should().Be("Snapshot, source or report name");
+        cut.FindAll("[data-testid=sb-kpi] strong").Should().OnlyContain(s => s.NextElementSibling != null, "count and label are separate elements, never run together");
     }
 }

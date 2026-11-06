@@ -36,35 +36,39 @@
             {
                 var active = status is not null && _status == status.ToString();
                 <li><button type="button" class="sb-kpi @(active ? "is-active" : null)" data-testid="sb-kpi" data-kpi="@key" aria-pressed="@(active ? "true" : "false")"
-                            @onclick="() => FilterStatusAsync(status)"><strong>@count</strong> <span>@label</span><small class="sb-kpi-def">@KpiDefinition(key)</small></button></li>
+                            @onclick="() => FilterStatusAsync(status)"><strong>@count</strong><span>@label</span><small class="sb-kpi-def">@KpiDefinition(key)</small></button></li>
             }
             @{ var attention = Attention; }
             <li><div class="sb-kpi @(attention.Count > 0 ? "is-attention" : null)" data-testid="sb-kpi" data-kpi="attention" title="@(attention.Count > 0 ? string.Join(", ", attention) : null)">
-                <strong>@attention.Count</strong> <span>requiring attention</span>
-                <small class="sb-kpi-def">@(attention.Count == 0 ? "No source snapshot has a failed area" : $"Source snapshots with a failed area: {string.Join(", ", attention.Take(3))}{(attention.Count > 3 ? "…" : "")}")</small></div></li>
+                <strong>@attention.Count</strong><span>requiring attention</span>
+                <small class="sb-kpi-def" data-testid="sb-attention-def">@(attention.Count == 0 ? "No source snapshot of the active environment has a failed area" : $"Source snapshots with a failed area: {string.Join(", ", attention.Take(3))}{(attention.Count > 3 ? "…" : "")}")</small>
+                <small class="sb-kpi-def">Active environment's sources only · a partial area is not counted</small></div></li>
         </ul>
-        <p class="sb-muted sb-small" data-testid="sb-kpi-note">Processing status says whether a snapshot's analysis ran to completion over the areas it contains — not how much of the application it covers.</p>
+        <p class="sb-muted sb-small" data-testid="sb-kpi-note">Counts cover every registered snapshot (filters do not change them; select a card to filter). Processing status says whether a snapshot's analysis ran to completion over the areas it contains — not how much of the application it covers.</p>
     }
 
     <section class="sb-filters" aria-label="Filters">
-        <label>Search <input type="search" class="form-control form-control-sm" placeholder="Source or report name" data-testid="sb-search"
+        <label class="sb-filter-search">Search <input type="search" class="form-control form-control-sm" placeholder="Snapshot, source or report name" data-testid="sb-search"
                              value="@_search" @onchange="e => SetAsync(() => _search = Clean(e.Value))" /></label>
-        <label>Type <select value="@_type" @onchange="e => SetAsync(() => _type = Clean(e.Value))" data-testid="sb-type">
+        <label>Type <select class="form-select form-select-sm" value="@_type" @onchange="e => SetAsync(() => _type = Clean(e.Value))" data-testid="sb-type">
             <option value="">All types</option>
             @foreach (var t in Enum.GetValues<SnapshotType>()) { <option value="@t">@SnapshotPresentation.Type(t)</option> }
         </select></label>
-        <label>Analysis status <select value="@_status" @onchange="e => SetAsync(() => _status = Clean(e.Value))" data-testid="sb-status">
+        <label>Analysis status <select class="form-select form-select-sm" value="@_status" @onchange="e => SetAsync(() => _status = Clean(e.Value))" data-testid="sb-status">
             <option value="">Any status</option>
             @foreach (var s in Enum.GetValues<SnapshotProcessingStatus>()) { <option value="@s">@StatusLabel(s)</option> }
         </select></label>
         <label>Project <input class="form-control form-control-sm" placeholder="Recorded project" data-testid="sb-project" value="@_project" @onchange="e => SetAsync(() => _project = Clean(e.Value))" /></label>
-        <label>Created from <input type="date" class="form-control form-control-sm" data-testid="sb-from" value="@_from" @onchange="e => SetAsync(() => _from = Clean(e.Value))" /></label>
-        <label>to <input type="date" class="form-control form-control-sm" data-testid="sb-to" value="@_to" @onchange="e => SetAsync(() => _to = Clean(e.Value))" /></label>
-        <label>Sort <select value="@_sort" @onchange="e => SetAsync(() => _sort = Clean(e.Value))" data-testid="sb-sort">
+        <label>Created from <input type="date" class="form-control form-control-sm" data-testid="sb-from" value="@_from" max="@_to" aria-invalid="@(DateRangeInvalid ? "true" : "false")"
+                                   aria-describedby="@(DateRangeInvalid ? "sb-date-error" : null)" @onchange="e => SetAsync(() => _from = Clean(e.Value))" /></label>
+        <label>Created to <input type="date" class="form-control form-control-sm" data-testid="sb-to" value="@_to" min="@_from" aria-invalid="@(DateRangeInvalid ? "true" : "false")"
+                                 aria-describedby="@(DateRangeInvalid ? "sb-date-error" : null)" @onchange="e => SetAsync(() => _to = Clean(e.Value))" /></label>
+        <label>Sort <select class="form-select form-select-sm" value="@_sort" @onchange="e => SetAsync(() => _sort = Clean(e.Value))" data-testid="sb-sort">
             <option value="">Newest first</option><option value="created">Oldest first</option><option value="effective">Effective date</option>
             <option value="label">Source name</option><option value="status">Status</option><option value="project">Project</option>
         </select></label>
     </section>
+    @if (DateRangeInvalid) { <p id="sb-date-error" class="sb-error" role="alert" data-testid="sb-date-error">The start date is after the end date — no snapshot can match. Change one of the dates.</p> }
     @if (Chips.Count > 0)
     {
         <div class="sb-chips" data-testid="sb-chips">
@@ -214,9 +218,13 @@
     private SnapshotQuery Query(int skip, int take, SnapshotProcessingStatus? status) => new(_project, Enum.TryParse<SnapshotType>(_type, out var t) ? t : null, status, _search,
         DateTimeOffset.TryParse(_from, out var f) ? f : null, DateTimeOffset.TryParse(_to, out var u) ? u.AddDays(1).AddTicks(-1) : null, _sort, skip, take);
 
+    /// <summary>A start date after the end date: nothing is queried (an empty result would look like "no snapshots").</summary>
+    private bool DateRangeInvalid => DateTimeOffset.TryParse(_from, out var from) && DateTimeOffset.TryParse(_to, out var to) && from > to;
+
     private async Task LoadAsync()
     {
         _loading?.Cancel();
+        if (DateRangeInvalid) { (_page, _error, _loading) = (null, null, null); return; }
         var run = new ReviewAssessment(++_generation, Stages);
         (_loading, _error) = (run, null);
         try
@@ -524,7 +532,9 @@
                             <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-set-current"
                                     @onclick='() => Ask("current", "Make current", $"Makes this the current {SnapshotPresentation.Type(s.Type)} snapshot of {s.Module} for {s.Project ?? "this workspace"}. Reviews that follow the current snapshot read it from now on; the snapshot itself and earlier results are unchanged.", () => PointAsync(SnapshotPointerKind.CurrentSelected))'>Make current</button>
                             <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || s.Status != SnapshotProcessingStatus.Completed)" title="@(s.Status != SnapshotProcessingStatus.Completed ? "Only a snapshot whose analysis completed can be approved" : null)"
+                                    aria-describedby="@(s.Status != SnapshotProcessingStatus.Completed ? "sb-approve-reason" : null)"
                                     @onclick='() => Ask("approved", "Approve as current", "Records your approval of this snapshot as the current one. Latest is never assumed to be approved; the approval is recorded with who and when.", () => PointAsync(SnapshotPointerKind.CurrentApproved))' data-testid="sb-set-approved">Approve as current</button>
+                            @if (s.Status != SnapshotProcessingStatus.Completed) { <p id="sb-approve-reason" class="sb-muted sb-small" data-testid="sb-approve-reason">Approve as current: only a snapshot whose analysis completed can be approved (this one is @StatusLabel(s.Status).ToLowerInvariant()).</p> }
                             @if (s.Retention == SnapshotRetentionClass.Protected)
                             { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-unprotect"
                                       @onclick='() => Ask("unprotect", "Remove protection", "Returns the snapshot to its normal retention class. It can then be deleted by its owning module if nothing references it.", () => RetainAsync(s.Type is SnapshotType.SourceAnalysis or SnapshotType.Delivery ? SnapshotRetentionClass.Working : SnapshotRetentionClass.Historical))'>Remove protection</button> }
