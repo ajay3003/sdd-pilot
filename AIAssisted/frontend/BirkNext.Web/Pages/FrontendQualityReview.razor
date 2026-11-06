@@ -428,7 +428,7 @@
                 <FrontendQualityLogicalIssues Issues="keyIssues" Compact="true" ImpactOf="issue => FrontendQualityPostRunPresentation.IssueImpact(report, issue)" />
                 @if (actionableIssues.Count > keyIssues.Count)
                 {
-                    <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-key-issues-more" @onclick="() => SelectTab(FrontendQualityResultTab.Issues)">
+                    <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-key-issues-more" @onclick="() => OpenTab(FrontendQualityResultTab.Issues)">
                         View all @actionableIssues.Count issues
                     </button>
                 }
@@ -456,14 +456,14 @@
                     </ol>
                     @if (themes.Count > FrontendQualityPostRunPresentation.ActionCount)
                     {
-                        <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-actions-more" @onclick="() => SelectTab(FrontendQualityResultTab.Issues)">View all @themes.Count recommendations</button>
+                        <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-actions-more" @onclick="() => OpenTab(FrontendQualityResultTab.Issues)">View all @themes.Count recommendations</button>
                     }
                 }
             </section>
 
             <div class="fqr-summary-nav" data-testid="fqr-summary-nav">
-                <button type="button" class="btn-secondary" data-testid="fqr-review-issues" @onclick="() => SelectTab(FrontendQualityResultTab.Issues)">Review issues</button>
-                <button type="button" class="btn-secondary" data-testid="fqr-review-coverage" @onclick="() => SelectTab(FrontendQualityResultTab.Coverage)">Review coverage</button>
+                <button type="button" class="btn-secondary" data-testid="fqr-review-issues" @onclick="() => OpenTab(FrontendQualityResultTab.Issues)">Review issues</button>
+                <button type="button" class="btn-secondary" data-testid="fqr-review-coverage" @onclick="() => OpenTab(FrontendQualityResultTab.Coverage)">Review coverage</button>
             </div>
         </div>
 
@@ -1783,6 +1783,15 @@
 
     private void SelectTab(FrontendQualityResultTab tab) => _tab = tab;
 
+    /// <summary>A link inside a panel that opens another view: the clicked control disappears with its panel, so focus moves to the opened panel.</summary>
+    private void OpenTab(FrontendQualityResultTab tab)
+    {
+        _tab = tab;
+        _focusPanel = tab;
+    }
+
+    private FrontendQualityResultTab? _focusPanel;
+
     [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
     private FrontendQualityResultTab? _urlTab;
 
@@ -1793,8 +1802,13 @@
     }
 
     /// <summary>Writes the result tab to the URL after the user changes it (replace: no history entry per click).</summary>
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusPanel is { } focus)
+        {
+            _focusPanel = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", $"fqr-tabpanel-{FrontendQualityPostRunPresentation.TabId(focus)}"); } catch (JSException) { }
+        }
         if (_report is null || _urlTab == _tab) return;
         _urlTab = _tab;
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("tab", _tab == FrontendQualityResultTab.Summary ? null : _tab.ToString().ToLowerInvariant()), replace: true);

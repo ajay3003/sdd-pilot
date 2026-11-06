@@ -405,6 +405,19 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
             .Be(FrontendQualityEngineOutcomePresentation.GetLabel(FrontendQualityEngineOutcomeReason.ReadinessUnavailable));
     }
 
+    [Theory]
+    [InlineData("fqr-review-issues", "issues")]
+    [InlineData("fqr-review-coverage", "coverage")]
+    public void SummaryLinksToAnotherView_MoveFocusToTheOpenedPanel(string button, string panel)
+    {
+        var page = Result(Report());
+        page.Find($"[data-testid={button}]").Click();
+
+        page.Find($"[data-testid=fqr-tab-{panel}]").GetAttribute("aria-selected").Should().Be("true");
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == $"fqr-tabpanel-{panel}",
+            "the clicked control was hidden with its panel"));
+    }
+
     // ── History ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
