@@ -1,0 +1,8 @@
+.mdp { display: grid; gap: .25rem; min-width: 12rem; }
+.mdp-current { margin: 0; font-size: .875rem; overflow-wrap: anywhere; }
+.mdp-muted { color: var(--clr-text-muted); font-size: .82rem; margin: 0; }
+.mdp-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .4rem .6rem; align-items: end; margin-top: .3rem; }
+.mdp-form label { display: grid; gap: .15rem; font-size: .8rem; font-weight: 600; }
+.mdp-wide { grid-column: 1 / -1; }
+.mdp-error { margin: 0; color: var(--clr-danger, #b91c1c); font-size: .85rem; }
+.mdp-history { margin: .25rem 0 0; padding-left: 1.1rem; font-size: .82rem; }

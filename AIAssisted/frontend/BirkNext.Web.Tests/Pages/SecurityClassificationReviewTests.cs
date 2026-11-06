@@ -71,6 +71,17 @@ public sealed class SecurityClassificationReviewTests : BunitContext
             return Task.FromResult(Result!);
         }
         public string? RejectRun { get; set; }
+        public (string? EnvironmentId, ClassificationRunRequest Request)? LastStatic { get; private set; }
+        public Task<ClassificationReviewResult> RunStaticAsync(string? environmentId, ClassificationRunRequest request, CancellationToken ct = default)
+        {
+            LastStatic = (environmentId, request);
+            var result = Result! with { ReviewKind = ClassificationReviewKinds.Static, AnalyzerVersion = 2, StaticScopeKey = environmentId is null ? "source:x" : null };
+            Overview = Overview with { Latest = result, History = [new(result.RunId, result.CompletedAt, result.Overall, result.Findings.Count, 0)] };
+            return Task.FromResult(result);
+        }
+        public int RuntimeCalls { get; private set; }
+        public Task<ClassificationReviewResult> RunRuntimeAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
+        { RuntimeCalls++; throw new InvalidOperationException("Runtime verification is blocked: the security test context is not approved by the test lead."); }
         public Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default) => Task.FromResult(Result?.RunId == runId ? Result : null);
     }
 
@@ -952,5 +963,49 @@ public sealed class SecurityClassificationReviewTests : BunitContext
 
         _api.ScopeRequests.Should().HaveCount(before + 1);
         _api.ScopeRequests.Last()!.PrimarySnapshotId.Should().Be(App.SnapshotId, "the same exact snapshot — never a newer one");
+    }
+
+    // ── Separate capabilities: static security review and runtime verification ────────────────────────────────────
+
+    [Fact]
+    public void The_static_review_runs_on_the_selected_source_without_tokens_or_runtime()
+    {
+        _api.Result = Result();
+        var cut = PageWithSource();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='sc-run-static']").HasAttribute("disabled").Should().BeFalse());
+        cut.FindAll("[data-testid='sc-run-runtime']").Should().BeEmpty("runtime verification is offered only when its context is ready");
+        cut.Find("[data-testid='sc-run-static']").Click();
+        cut.WaitForAssertion(() => _api.LastStatic.Should().NotBeNull());
+        _api.LastStatic!.Value.EnvironmentId.Should().Be("dev");
+        _api.LastStatic.Value.Request.SourceScope.Should().NotBeNull();
+        _api.LastStatic.Value.Request.UnauthorizedToken.Should().BeNull("a static review never sends a token");
+        _api.LastStatic.Value.Request.AuthorizedToken.Should().BeNull();
+        _api.RuntimeCalls.Should().Be(0);
+        cut.Find("[data-testid='sc-status']").TextContent.Should().Contain("Runtime verification was not part of it");
+        cut.Find("[data-testid='sc-control-provenance']").TextContent.Should().Contain("Static review").And.Contain("analyzer v2");
+    }
+
+    [Fact]
+    public void Without_a_source_snapshot_the_static_review_is_unavailable_and_says_why()
+    {
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='sc-run-static']"));
+        cut.Find("[data-testid='sc-run-static']").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid='sc-run-static-why']").TextContent.Should().Contain("needs a Source Analysis snapshot");
+        _api.LastStatic.Should().BeNull();
+    }
+
+    [Fact]
+    public void The_matrix_shows_the_verification_method_and_a_manual_assessment_column_without_changing_the_result()
+    {
+        _api.Overview = new ClassificationOverview { Latest = Result() };
+        _api.Result = Result();
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='sc-control-matrix']"));
+        cut.FindAll("[data-testid='sc-control-row']").Should().HaveCount(7);
+        cut.FindAll("[data-testid='sc-control-method']").Should().OnlyContain(m => m.TextContent.Length > 0);
+        cut.FindAll("[data-testid='sc-control-row']").Should().NotContain(r => r.GetAttribute("data-result") == "Passed" && r.GetAttribute("data-runtime") != "Passed",
+            "Passed only from runtime evidence");
+        cut.FindAll("[data-testid='sc-control-manual']").Should().HaveCount(7);
     }
 }

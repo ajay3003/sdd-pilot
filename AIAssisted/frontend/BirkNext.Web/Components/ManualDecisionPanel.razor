@@ -1,0 +1,98 @@
+@using BirkNext.ManualReview
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* One obligation or control's manual review decision: the current decision, its audit history, and a form to record a new one (append-only).
+   A person's judgement — it never changes the automated result next to it, and it never makes anything Passed. *@
+<div class="mdp" data-testid="@TestId" data-subject="@SubjectKey">
+    @if (_api is null)
+    {
+        <span class="mdp-muted" data-testid="mdp-unavailable">Manual decisions are not available in this host.</span>
+    }
+    else
+    {
+        var current = _decisions.FirstOrDefault(d => d.Current);
+        <p class="mdp-current" data-testid="mdp-current" data-decision="@(current?.Decision.ToString() ?? "None")">
+            @if (current is null) { <span>Not reviewed</span> }
+            else
+            {
+                <strong>@ManualReviewRules.Label(current.Decision)</strong>
+                <span class="mdp-muted">@($" · {current.Reviewer} · {current.DecidedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC{(current.EvidenceReferences.Count > 0 ? $" · {current.EvidenceReferences.Count} evidence reference(s)" : "")}")</span>
+            }
+        </p>
+        <ReviewDisclosure Text="@(current is null ? "Record decision" : "Record a new decision")" CollapseText="Hide" TestId="@($"{TestId}-form")" Class="disclosure-inline disclosure-small">
+            <div class="mdp-form">
+                <label>Reviewer <input class="form-control form-control-sm" data-testid="mdp-reviewer" @bind="_reviewer" maxlength="120" /></label>
+                <label>Decision
+                    <select class="form-select form-select-sm" data-testid="mdp-decision" @bind="_decision">
+                        @foreach (var value in Enum.GetValues<ManualReviewDecisionValue>()) { <option value="@value">@ManualReviewRules.Label(value)</option> }
+                    </select>
+                </label>
+                <label class="mdp-wide">Note <textarea class="form-control form-control-sm" data-testid="mdp-note" rows="2" maxlength="2000" @bind="_note"></textarea></label>
+                <label class="mdp-wide">Evidence references (one per line: test case id, document or run link — never a token)
+                    <textarea class="form-control form-control-sm" data-testid="mdp-evidence" rows="2" @bind="_evidence"></textarea></label>
+                <p class="mdp-muted mdp-wide">A manual decision records a person's judgement for @(AppliesTo ?? "this scope"). It never changes the automated result and never makes a check Passed.</p>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="mdp-save" disabled="@_busy" @onclick="SaveAsync">Save decision</button>
+                @if (_error is { } error) { <p class="mdp-error" role="alert" data-testid="mdp-error">@error</p> }
+                @if (_saved is { } saved) { <p class="mdp-muted" role="status" data-testid="mdp-saved">@saved</p> }
+            </div>
+        </ReviewDisclosure>
+        @if (_decisions.Count > 1)
+        {
+            <ReviewDisclosure Text="@($"Decision history ({_decisions.Count})")" CollapseText="Hide history" TestId="@($"{TestId}-history")" Class="disclosure-inline disclosure-small">
+                <ol class="mdp-history" data-testid="mdp-history">
+                    @foreach (var d in _decisions)
+                    {
+                        <li data-testid="mdp-history-item" data-current="@(d.Current ? "true" : "false")">@d.DecidedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @d.Reviewer · @ManualReviewRules.Label(d.Decision)@(d.Note is { } n ? $" — {n}" : "")@(d.Current ? " (current)" : "")</li>
+                    }
+                </ol>
+            </ReviewDisclosure>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Module { get; set; } = "";
+    [Parameter, EditorRequired] public string ScopeKey { get; set; } = "";
+    [Parameter, EditorRequired] public string SubjectKey { get; set; } = "";
+    [Parameter] public string? AppliesTo { get; set; }
+    [Parameter] public string TestId { get; set; } = "mdp";
+    [Parameter] public EventCallback<ManualReviewDecisionView?> CurrentChanged { get; set; }
+
+    private IManualReviewApiService? _api;
+    private List<ManualReviewDecisionView> _decisions = [];
+    private string _reviewer = "", _note = "", _evidence = "";
+    private ManualReviewDecisionValue _decision = ManualReviewDecisionValue.NeedsEvidence;
+    private bool _busy;
+    private string? _error, _saved, _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _api ??= Services.GetService(typeof(IManualReviewApiService)) as IManualReviewApiService;
+        var key = $"{Module}|{ScopeKey}|{SubjectKey}";
+        if (_api is null || _loadedFor == key) return;
+        _loadedFor = key;
+        _decisions = [.. await _api.ListAsync(Module, ScopeKey, SubjectKey) ?? []];
+        await CurrentChanged.InvokeAsync(_decisions.FirstOrDefault(d => d.Current));
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_api is null) return;
+        _busy = true; _error = null; _saved = null;
+        try
+        {
+            var (decision, error) = await _api.RecordAsync(new ManualReviewDecisionRequest
+            {
+                Module = Module, ScopeKey = ScopeKey, SubjectKey = SubjectKey, Reviewer = _reviewer, Decision = _decision, Note = _note, AppliesTo = AppliesTo,
+                EvidenceReferences = [.. _evidence.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+            });
+            if (error is not null) { _error = error; return; }
+            _decisions = [.. await _api.ListAsync(Module, ScopeKey, SubjectKey) ?? (decision is null ? [] : [decision])];
+            _saved = "Decision saved. Earlier decisions stay in the history.";
+            _note = ""; _evidence = "";
+            await CurrentChanged.InvokeAsync(_decisions.FirstOrDefault(d => d.Current));
+        }
+        finally { _busy = false; }
+    }
+}

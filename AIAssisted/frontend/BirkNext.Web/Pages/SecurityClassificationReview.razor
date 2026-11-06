@@ -155,6 +155,17 @@
             </SourceEvidencePrerequisite>
         </section>
 
+        @if (_profile is null && RunScope is not null)
+        {
+            @* No Target Environment: the static review still runs on the selected source (stored under the source scope). Runtime needs an environment. *@
+            <section class="sc-card" aria-labelledby="sc-static-only-heading" data-testid="sc-static-only">
+                <h2 id="sc-static-only-heading">Static security review</h2>
+                <p class="sc-muted">No Target Environment is selected. The static review reads only the selected source snapshot — no identity, token or network call — and is stored with that source. Runtime verification needs an approved DEV/QA Target Environment and stays unverified.</p>
+                <button type="button" class="btn-primary" data-testid="sc-run-static" disabled="@(_busy || RunBlocked)" @onclick="() => RunStaticAsync(false)">@(_busy ? "Checking…" : "Run static security review")</button>
+                <p class="sc-status" role="status" aria-live="polite" data-testid="sc-static-status">@_status</p>
+                @if (_error is { } staticError) { <p class="sc-error" role="alert" data-testid="sc-error">@staticError</p> }
+            </section>
+        }
         @if (_profile is not null)
         {
         <section class="sc-card" aria-labelledby="sc-setup-heading" data-testid="sc-setup">
@@ -274,9 +285,17 @@
             {
                 <p class="sc-error" data-testid="sc-run-blocked">Repair the source scope (or choose no source snapshot) before running.</p>
             }
+            @* Two separate capabilities, each its own backend operation; the combined run is kept for continuity. *@
             <div class="sc-actions">
-                <button type="button" class="btn-primary" data-testid="sc-run" data-mode="@(canRun ? "static-runtime" : "static")" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(_busy ? "Checking…" : canRun ? "Run static review + runtime verification" : "Run static security review")</button>
+                <button type="button" class="btn-primary" data-testid="sc-run-static" disabled="@(_busy || RunBlocked || RunScope is null)" @onclick="() => RunStaticAsync(true)"
+                        aria-describedby="@(RunScope is null ? "sc-run-static-why" : null)">@(_busy ? "Checking…" : "Run static security review")</button>
+                @if (canRun)
+                {
+                    <button type="button" class="btn-secondary" data-testid="sc-run-runtime" disabled="@(_busy || RunBlocked)" @onclick="RunRuntimeAsync">Run runtime verification</button>
+                }
+                <button type="button" class="btn-secondary" data-testid="sc-run" data-mode="@(canRun ? "static-runtime" : "static")" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(canRun ? "Run both in one review" : "Run combined review")</button>
             </div>
+            @if (RunScope is null) { <p class="sc-muted" id="sc-run-static-why" data-testid="sc-run-static-why">The static review needs a Source Analysis snapshot (choose one under Source evidence).</p> }
             @if (!canRun) { <p class="sc-muted" data-testid="sc-run-static-only">Runtime verification is not ready, so this run is a static review only: runtime checks stay unverified (never passed) until an approved DEV/QA context exists.</p> }
             <p class="sc-status" role="status" aria-live="polite" data-testid="sc-status">@_status</p>
             @if (_error is { } error) { <p class="sc-error" role="alert" data-testid="sc-error">@error</p> }
@@ -299,7 +318,7 @@
                 <p class="sc-muted">Static evidence and runtime verification are separate columns. A guard or mapping found in source is a mechanism, not verified protection; no finding is never Passed; Passed needs runtime checks that all passed. Families group the existing checks (a check can support more than one family).</p>
                 <div class="sc-table-wrap" tabindex="0" role="region" aria-label="Kode 6/7 security matrix">
                     <table class="sc-table">
-                        <thead><tr><th scope="col">Control</th><th scope="col">Static evidence</th><th scope="col">Runtime verification</th><th scope="col">Result</th><th scope="col">Residual risk</th><th scope="col">Next action</th></tr></thead>
+                        <thead><tr><th scope="col">Control</th><th scope="col">Static evidence</th><th scope="col">Runtime verification</th><th scope="col">Result · method</th><th scope="col">Residual risk</th><th scope="col">Next action</th><th scope="col">Manual assessment</th></tr></thead>
                         <tbody>
                             @foreach (var row in matrix)
                             {
@@ -307,15 +326,18 @@
                                     <th scope="row"><strong>@row.Family.Id</strong> @row.Family.Title<span class="sc-muted"> — @row.Family.Requirement</span></th>
                                     <td><span class="sc-badge sc-badge-@SecurityControlMatrix.Tone(row.Static)">@row.Static</span> <span class="sc-muted">(@row.StaticChecks source check@(row.StaticChecks == 1 ? "" : "s"))</span></td>
                                     <td><span class="sc-badge sc-badge-@SecurityControlMatrix.Tone(row.Runtime)">@row.Runtime</span> <span class="sc-muted">(@row.RuntimeChecks runtime check@(row.RuntimeChecks == 1 ? "" : "s"))</span></td>
-                                    <td data-testid="sc-control-result">@row.Result</td>
+                                    <td data-testid="sc-control-result">@row.Result<span class="sc-muted sc-block" data-testid="sc-control-method">@row.Method</span></td>
                                     <td>@row.ResidualRisk</td>
                                     <td>@row.NextAction</td>
+                                    <td><BirkNext.Web.Components.ManualDecisionPanel Module="@BirkNext.ManualReview.ManualReviewModules.SecurityClassification" ScopeKey="@(result.StaticScopeKey ?? result.EnvironmentId)"
+                                            SubjectKey="@row.Family.Id" AppliesTo="@($"{row.Family.Id} {row.Family.Title}")" TestId="sc-control-manual" /></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
-                <p class="sc-muted" data-testid="sc-control-provenance">Run @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @(result.SourceScope is { } scope ? $"source snapshot {scope.Primary.SnapshotId.ToString()[..8]}" : "no source snapshot") · @(result.Live.Observations.Count > 0 ? $"runtime evidence captured {result.Live.CapturedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" : "no runtime evidence (runtime unverified)")</p>
+                <p class="sc-muted">A manual assessment is a person's recorded judgement with its history; it never makes a control Passed and never replaces runtime verification.</p>
+                <p class="sc-muted" data-testid="sc-control-provenance">@(result.ReviewKind ?? "Combined") review · @(result.AnalyzerVersion is { } av ? $"analyzer v{av} · " : "")Run @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @(result.SourceScope is { } scope ? $"source snapshot {scope.Primary.SnapshotId.ToString()[..8]}" : "no source snapshot") · @(result.Live.Observations.Count > 0 ? $"runtime evidence captured {result.Live.CapturedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" : "no runtime evidence (runtime unverified)")</p>
             </section>
             <section class="sc-card" aria-labelledby="sc-summary-heading" data-testid="sc-summary" tabindex="-1" @ref="_resultRef">
                 <h2 id="sc-summary-heading">Security classification <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(result.Overall)" data-testid="sc-overall">@ClassificationLabels.Overall(result.Overall)</span></h2>
@@ -981,6 +1003,56 @@
             _status = null;
         }
         finally { _busy = false; }
+    }
+
+    /// <summary>Static security review only: the selected source, no identity, token or network call. Without a Target Environment it is stored under the source scope.</summary>
+    private async Task RunStaticAsync(bool withEnvironment)
+    {
+        if (RunScope is null || RunBlocked) return;
+        _busy = true; _error = null; _status = "Running the static security review…";
+        try
+        {
+            var environmentId = withEnvironment ? _profile?.Id : null;
+            _result = await Api.RunStaticAsync(environmentId, new ClassificationRunRequest
+            {
+                EnvironmentType = _profile?.EnvironmentType.ToString(), EnvironmentName = withEnvironment ? _profile?.Name : null, SourceScope = RunScope,
+                SourceCounts = _sourceCounts.ToEvidence(), TargetCounts = _targetCounts.ToEvidence(),
+            });
+            _overview = await Api.OverviewAsync(environmentId ?? _result.StaticScopeKey ?? _result.EnvironmentId);
+            _status = $"Static review recorded. {ClassificationPresentation.Headline(_result)}. Runtime verification was not part of it.";
+            _focusResult = true;
+        }
+        catch (InvalidOperationException e) { _error = e.Message; _status = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _error = BackendRequestClassifier.FromException("Running the static security review", ex, "POST api/security-classification/static-reviews").UserMessage;
+            _status = null;
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Runtime verification only: the backend's live probe gate decides; a refusal is shown with its reason and nothing is stored.</summary>
+    private async Task RunRuntimeAsync()
+    {
+        if (_profile is null || RunBlocked) return;
+        _busy = true; _error = null; _status = "Running runtime verification…";
+        try
+        {
+            _result = await Api.RunRuntimeAsync(_profile.Id, new ClassificationRunRequest
+            {
+                EnvironmentType = _profile.EnvironmentType.ToString(), EnvironmentName = _profile.Name, UnauthorizedToken = _unauthorizedToken, AuthorizedToken = _authorizedToken, SourceScope = RunScope,
+            });
+            _overview = await Api.OverviewAsync(_profile.Id);
+            _status = $"Runtime verification recorded. {ClassificationPresentation.Headline(_result)}.";
+            _focusResult = true;
+        }
+        catch (InvalidOperationException e) { _error = e.Message; _status = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _error = BackendRequestClassifier.FromException("Running runtime verification", ex, "POST api/security-classification/runtime-verifications").UserMessage;
+            _status = null;
+        }
+        finally { _busy = false; _unauthorizedToken = null; _authorizedToken = null; }
     }
 
     private async Task OpenAsync(ChangeEventArgs e)

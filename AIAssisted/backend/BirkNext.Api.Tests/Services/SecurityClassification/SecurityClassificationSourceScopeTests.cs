@@ -557,4 +557,77 @@ public sealed class SecurityClassificationSourceScopeTests
         ClassificationSourceScopeService.Evidence(new IqrSourceSnapshot { Id = Guid.NewGuid(), IntegrationId = "source-analysis", Archive = new SourceArchive("old.zip", new string('d', 64), 1) })
             .Subject.Should().BeFalse("no evidence captured");
     }
+
+    // ── Separate capabilities: static security review vs runtime verification ─────────────────────────────────────────
+
+    [Fact]
+    public async Task Static_review_needs_no_environment_identity_token_or_network_and_records_snapshot_and_analyzer()
+    {
+        await using var db = Db();
+        var (service, probe) = Service(db);
+        var a = await Upload(db, "AppRepo.zip", AppRepo());
+        var shared = await Upload(db, "Shared.Security.zip", SharedSecurity());
+
+        var result = await service.RunStaticAsync(null, new ClassificationRunRequest { SourceScope = Scope(a, shared) });
+
+        probe.Calls.Should().Be(0, "a static review never calls the live probe");
+        result.ReviewKind.Should().Be(ClassificationReviewKinds.Static);
+        result.AnalyzerVersion.Should().Be(ClassificationSourceAnalyzer.Version);
+        result.StaticScopeKey.Should().Be($"source:{a.Id}");
+        result.EnvironmentId.Should().Be($"source:{a.Id}");
+        result.SourceScope!.Primary.SnapshotId.Should().Be(a.Id);
+        result.Live.State.Should().Be(IntegrationEvidenceState.NotConfigured);
+        result.Live.Reason.Should().Contain("runtime verification was not part of this review");
+        result.Live.Observations.Should().BeEmpty();
+        result.Overall.Should().NotBe(ClassificationOverall.Verified, "static evidence never verifies runtime protection");
+        result.Checks.Should().NotContain(c => c.State == ClassificationState.Pass, "Pass comes only from the runtime probe");
+        (await service.OverviewAsync(result.StaticScopeKey!)).History.Should().ContainSingle(h => h.RunId == result.RunId, "stored and readable under its source scope");
+    }
+
+    [Fact]
+    public async Task Static_review_with_an_environment_is_stored_for_that_environment_and_without_source_is_refused()
+    {
+        await using var db = Db();
+        var (service, probe) = Service(db);
+        var a = await Upload(db, "AppRepo.zip", AppRepo());
+        var result = await service.RunStaticAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", SourceScope = Scope(a) });
+        result.EnvironmentId.Should().Be("dev");
+        result.StaticScopeKey.Should().BeNull();
+        var none = () => service.RunStaticAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development" });
+        await none.Should().ThrowAsync<InvalidSourceSelectionException>().WithMessage("*needs a Source Analysis snapshot*");
+        probe.Calls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(null, "Development", "No approved DEV/QA security test context")]
+    [InlineData("DEV", "Production", "Production is never tested")]
+    public async Task Runtime_verification_stays_blocked_without_an_approved_context_and_stores_nothing(string? contextEnvironment, string environmentType, string reason)
+    {
+        await using var db = Db();
+        var (service, probe) = Service(db);
+        if (contextEnvironment is not null)
+            await service.SaveContextAsync("dev", new ClassificationTestContext { Environment = contextEnvironment, ApprovedByTestLead = true, GraphQlEndpoint = "https://localhost/graphql" });
+        var (result, blocked) = await service.RunRuntimeAsync("dev", new ClassificationRunRequest { EnvironmentType = environmentType, UnauthorizedToken = "synthetic-token" });
+        result.Should().BeNull();
+        blocked.Should().StartWith("Runtime verification is blocked:").And.Contain(reason);
+        probe.Calls.Should().Be(0, "the gate refuses before any network call");
+        (await service.OverviewAsync("dev")).History.Should().BeEmpty("a blocked verification stores nothing");
+    }
+
+    [Fact]
+    public async Task Runtime_verification_needs_a_per_run_token_even_with_an_approved_context()
+    {
+        await using var db = Db();
+        var (service, probe) = Service(db);
+        var (_, error) = await service.SaveContextAsync("dev", new ClassificationTestContext
+        {
+            Environment = "DEV", ApprovedByTestLead = true, GraphQlEndpoint = "https://localhost/graphql",
+            TestChildren = [new ClassificationTestChild { Nivaa = 2, BarnRegistreringId = Guid.NewGuid() }],
+        });
+        error.Should().BeNull();
+        var (result, blocked) = await service.RunRuntimeAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development" });
+        result.Should().BeNull();
+        blocked.Should().Contain("per-run token");
+        probe.Calls.Should().Be(0);
+    }
 }

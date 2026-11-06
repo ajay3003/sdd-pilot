@@ -18,6 +18,17 @@ public interface IClassificationReviewService
     /// <summary>Runs the review on the request's exact source scope. Throws <see cref="InvalidSourceSelectionException"/> for an invalid scope.</summary>
     Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default);
     Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
+    /// <summary>
+    /// Static security review only: the request's source scope, evaluated without any identity, token, test context or network call. A Target
+    /// Environment is optional — without one the review is stored under the source scope ("source:{snapshot id}"). Never a runtime claim.
+    /// Throws <see cref="InvalidSourceSelectionException"/> without a (valid) source scope.
+    /// </summary>
+    Task<ClassificationReviewResult> RunStaticAsync(string? environmentId, ClassificationRunRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>
+    /// Runtime verification only: requires the environment's approved DEV/QA test context and a per-run token; the live probe gate decides first,
+    /// and a refused gate returns the reason and stores nothing. Never Production, never a mutation, never on page load.
+    /// </summary>
+    Task<(ClassificationReviewResult? Result, string? Blocked)> RunRuntimeAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default) => throw new NotSupportedException();
     /// <summary>The source/configuration part for Integration Quality Review (no live checks, not stored separately).</summary>
     Task<ClassificationReviewResult?> ReviewAsync(string environmentId, string? environmentType, CancellationToken ct = default);
 }
@@ -120,6 +131,54 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
             environmentId, result.Overall, live.State, live.Observations.Count, result.Findings.Count,
             source?.Scope is { } s ? string.Join(",", new[] { s.Primary }.Concat(s.Related).Select(e => e.Fingerprint[..Math.Min(12, e.Fingerprint.Length)])) : "none");
         return result;
+    }
+
+    public static string StaticScopeKeyFor(ReviewSourceScopeRequest scope) => $"source:{scope.PrimarySnapshotId}";
+
+    public async Task<ClassificationReviewResult> RunStaticAsync(string? environmentId, ClassificationRunRequest request, CancellationToken ct = default)
+    {
+        if (request.SourceScope is not { } scope) throw new InvalidSourceSelectionException("The static security review needs a Source Analysis snapshot (the evidence it reviews).");
+        var started = DateTimeOffset.UtcNow;
+        var environment = string.IsNullOrWhiteSpace(environmentId) ? null : environmentId.Trim();
+        var (resolved, error) = await _scopes.ResolveAsync(environment ?? "", scope, ct);
+        var source = resolved ?? throw new InvalidSourceSelectionException(error ?? "The source scope is invalid.");
+        // No context, no identity, no token, no probe: runtime verification is a separate capability.
+        var live = new ClassificationLiveEvidence { State = IntegrationEvidenceState.NotConfigured, CapturedAt = DateTimeOffset.UtcNow,
+            Reason = "Static security review: runtime verification was not part of this review (no network call, identity or token was used)." };
+        var key = environment ?? StaticScopeKeyFor(scope);
+        var result = ClassificationEvaluator.Evaluate(key, source, new ClassificationTestContext(), live, request.SourceCounts, request.TargetCounts, started, DateTimeOffset.UtcNow) with
+        {
+            EnvironmentName = string.IsNullOrWhiteSpace(request.EnvironmentName) ? null : request.EnvironmentName.Trim(),
+            ReviewKind = ClassificationReviewKinds.Static, AnalyzerVersion = source.AnalyzerVersion, StaticScopeKey = environment is null ? key : null,
+        };
+        await StoreAsync(key, RunKind, result.CompletedAt, result, result.RunId, ct);
+        logger.LogInformation("Security classification static review for {Scope}: {Overall}, {Findings} finding(s), analyzer v{Analyzer}.", key, result.Overall, result.Findings.Count, source.AnalyzerVersion);
+        return result;
+    }
+
+    public async Task<(ClassificationReviewResult? Result, string? Blocked)> RunRuntimeAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
+    {
+        var context = ActiveContext(environmentId);
+        // The live probe gate decides first (Production, approved DEV/QA context, endpoint, test children); a refused gate stores nothing.
+        if (GraphQlClassificationProbe.Gate(context, request.EnvironmentType) is { } gate) return (null, $"Runtime verification is blocked: {gate.Reason}");
+        if (string.IsNullOrWhiteSpace(request.UnauthorizedToken) && string.IsNullOrWhiteSpace(request.AuthorizedToken))
+            return (null, "Runtime verification is blocked: supply a per-run token for at least one approved synthetic identity (it is used for this run only and never stored).");
+        var started = DateTimeOffset.UtcNow;
+        ClassificationSourceEvidence? source = null;
+        if (request.SourceScope is { } scope)
+        {
+            var (resolved, error) = await _scopes.ResolveAsync(environmentId, scope, ct);
+            source = resolved ?? throw new InvalidSourceSelectionException(error ?? "The source scope is invalid.");
+        }
+        var live = await probe.ProbeAsync(context, request, source?.Levels ?? [], ct);
+        var result = ClassificationEvaluator.Evaluate(environmentId, source, context, live, request.SourceCounts, request.TargetCounts, started, DateTimeOffset.UtcNow) with
+        {
+            EnvironmentName = string.IsNullOrWhiteSpace(request.EnvironmentName) ? null : request.EnvironmentName.Trim(),
+            ReviewKind = ClassificationReviewKinds.Runtime, AnalyzerVersion = source?.AnalyzerVersion,
+        };
+        await StoreAsync(environmentId, RunKind, result.CompletedAt, result, result.RunId, ct);
+        logger.LogInformation("Security classification runtime verification for {EnvironmentId}: live {Live} ({Observations} observation(s)).", environmentId, live.State, live.Observations.Count);
+        return (result, null);
     }
 
     public async Task<ClassificationReviewResult?> ReviewAsync(string environmentId, string? environmentType, CancellationToken ct = default)

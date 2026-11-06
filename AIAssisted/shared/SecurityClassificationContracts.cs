@@ -459,9 +459,28 @@ public sealed record ClassificationSourceReadiness(bool Disabled, string? Scope,
 }
 
 /// <summary>A stored, immutable review run (source snapshot + configuration + safe runtime observations + counts).</summary>
+/// <summary>Which review capability produced a stored result. Combined = the original single run (source + live probe gate).</summary>
+public static class ClassificationReviewKinds
+{
+    /// <summary>Source/configuration evidence only: no identity, token, network call or runtime claim.</summary>
+    public const string Static = "Static";
+    /// <summary>Runtime verification with an approved synthetic DEV/QA context; only stored when the live gate allowed execution.</summary>
+    public const string Runtime = "Runtime";
+    public const string Combined = "Combined";
+}
+
 public sealed record ClassificationReviewResult
 {
     public Guid RunId { get; init; }
+    /// <summary>See <see cref="ClassificationReviewKinds"/>. Null on runs recorded before the capabilities were separated (Combined).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReviewKind { get; init; }
+    /// <summary>The source analyzer version the static evidence came from (null when the run had no source, or for older runs).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? AnalyzerVersion { get; init; }
+    /// <summary>The storage scope of an environment-independent static review ("source:{snapshot id}"); null for environment runs.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? StaticScopeKey { get; init; }
     public string EnvironmentId { get; init; } = "";
     /// <summary>The Target Environment's display name when the run was recorded (snapshot; null for older runs). Identity is <see cref="EnvironmentId"/>.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

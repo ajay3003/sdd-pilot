@@ -13,7 +13,16 @@ public static class SecurityControlMatrix
     public sealed record Family(string Id, string Title, string Requirement, IReadOnlySet<ClassificationArea> Areas, IReadOnlySet<string> CheckIds, string Unknown, string Evidence);
 
     public sealed record Row(Family Family, string Static, string Runtime, string Result, string ResidualRisk, string NextAction, int StaticChecks, int RuntimeChecks,
-        IReadOnlyList<string> CheckIds);
+        IReadOnlyList<string> CheckIds)
+    {
+        /// <summary>How the result was established: runtime probe, static source analysis (with analyzer version), or nothing yet.</summary>
+        public string Method { get; init; } = "";
+    }
+
+    public static string VerificationMethod(int staticChecks, int runtimeChecks, int? analyzerVersion) =>
+        runtimeChecks > 0 ? $"Runtime probe with synthetic identities ({runtimeChecks} check{(runtimeChecks == 1 ? "" : "s")})" + (staticChecks > 0 ? $" + static source analysis{(analyzerVersion is { } v ? $" (analyzer v{v})" : "")}" : "")
+        : staticChecks > 0 ? $"Static source analysis{(analyzerVersion is { } a ? $" (analyzer v{a})" : "")} — no runtime verification"
+        : "Not verified by any method yet";
 
     private static IReadOnlySet<ClassificationArea> A(params ClassificationArea[] areas) => areas.ToHashSet();
     private static IReadOnlySet<string> C(params string[] ids) => ids.ToHashSet(StringComparer.Ordinal);
@@ -82,7 +91,8 @@ public static class SecurityControlMatrix
                 : staticLabel is "Not assessed" or "No supporting evidence found" && f.Id != "SEC-05" ? "Bind source evidence that covers this family (Source evidence)."
                 : runtimeLabel == "Not assessed" ? $"Runtime verification needed: {f.Evidence}."
                 : "Record the manual security assessment for what runtime checks cannot cover.";
-            return new Row(f, staticLabel, runtimeLabel, result_, residual, next, stat.Count, live.Count, [.. mine.Select(c => c.CheckId).Distinct()]);
+            return new Row(f, staticLabel, runtimeLabel, result_, residual, next, stat.Count, live.Count, [.. mine.Select(c => c.CheckId).Distinct()])
+                { Method = VerificationMethod(stat.Count, live.Count, result.AnalyzerVersion) };
         })];
     }
 

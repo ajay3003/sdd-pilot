@@ -206,6 +206,24 @@ public class TestCoverageDecisionRecord
     public DateTimeOffset DecidedAt { get; set; }
 }
 
+/// <summary>
+/// A person's manual review decision (API Quality Review obligation, M01 security control). Append-only: a new decision supersedes the previous
+/// one for the same module + scope + subject, and earlier rows remain as audit history. Never an automated result; no secret or token.
+/// </summary>
+public class ManualReviewDecisionRecord
+{
+    public Guid Id { get; set; }
+    public string Module { get; set; } = string.Empty;
+    public string ScopeKey { get; set; } = string.Empty;
+    public string SubjectKey { get; set; } = string.Empty;
+    public string Reviewer { get; set; } = string.Empty;
+    public string Decision { get; set; } = string.Empty;
+    public string? Note { get; set; }
+    public string EvidenceJson { get; set; } = "[]";
+    public string? AppliesTo { get; set; }
+    public DateTimeOffset DecidedAt { get; set; }
+}
+
 /// <summary>A reviewer's remembered "same repository" declaration between two repository identities. Never deleted: revoking sets RevokedAt.</summary>
 public class SourceRepositoryAssociationRecord
 {

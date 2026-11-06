@@ -1044,6 +1044,70 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("iqr_source_snapshots", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ManualReviewDecisionRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AppliesTo")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("applies_to");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("decision");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("evidence_json");
+
+                    b.Property<string>("Module")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("module");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Reviewer")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("reviewer");
+
+                    b.Property<string>("ScopeKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("scope_key");
+
+                    b.Property<string>("SubjectKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("subject_key");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Module", "ScopeKey", "SubjectKey", "DecidedAt")
+                        .HasDatabaseName("ix_manual_review_decisions_subject");
+
+                    b.ToTable("manual_review_decisions", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ObservedOperationRecord", b =>
                 {
                     b.Property<Guid>("Id")

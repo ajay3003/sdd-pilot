@@ -109,3 +109,4 @@
 [data-testid=sc-control-matrix] .sc-table { font-size: .875rem; min-width: 52rem; }
 [data-testid=sc-control-matrix] .sc-table th[scope=row] { font-weight: 400; }
 .sc-badge-warning { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+.sc-block { display: block; margin-top: .15rem; }

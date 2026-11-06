@@ -45,6 +45,7 @@ public class AppDbContext : DbContext
     public DbSet<SourceRepositoryAssociationRecord> SourceRepositoryAssociations => Set<SourceRepositoryAssociationRecord>();
     public DbSet<TestCoverageReviewRunRecord> TestCoverageReviewRuns => Set<TestCoverageReviewRunRecord>();
     public DbSet<TestCoverageDecisionRecord> TestCoverageDecisions => Set<TestCoverageDecisionRecord>();
+    public DbSet<ManualReviewDecisionRecord> ManualReviewDecisions => Set<ManualReviewDecisionRecord>();
     public DbSet<PerformanceTestDefinitionRecord> PerformanceTestDefinitions => Set<PerformanceTestDefinitionRecord>();
     public DbSet<PerformanceTestRunRecord> PerformanceTestRuns => Set<PerformanceTestRunRecord>();
     public DbSet<PerformanceBaselineRecord> PerformanceBaselines => Set<PerformanceBaselineRecord>();
@@ -923,6 +924,23 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Note).HasColumnName("note").HasMaxLength(500);
             entity.Property(r => r.DecidedAt).HasColumnName("decided_at");
             entity.HasIndex(r => new { r.RepositoryKey, r.Kind, r.SubjectKey }).HasDatabaseName("ix_test_coverage_decisions_subject");
+        });
+
+        modelBuilder.Entity<ManualReviewDecisionRecord>(entity =>
+        {
+            entity.ToTable("manual_review_decisions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.Module).HasColumnName("module").HasMaxLength(60).IsRequired();
+            entity.Property(r => r.ScopeKey).HasColumnName("scope_key").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.SubjectKey).HasColumnName("subject_key").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Reviewer).HasColumnName("reviewer").HasMaxLength(120).IsRequired();
+            entity.Property(r => r.Decision).HasColumnName("decision").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.Note).HasColumnName("note").HasMaxLength(2000);
+            entity.Property(r => r.EvidenceJson).HasColumnName("evidence_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.AppliesTo).HasColumnName("applies_to").HasMaxLength(300);
+            entity.Property(r => r.DecidedAt).HasColumnName("decided_at");
+            entity.HasIndex(r => new { r.Module, r.ScopeKey, r.SubjectKey, r.DecidedAt }).HasDatabaseName("ix_manual_review_decisions_subject");
         });
 
         modelBuilder.Entity<SourceRepositoryAssociationRecord>(entity =>

@@ -374,6 +374,9 @@ if (entra.Configured)
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = backendBase);
+// Manual review decisions (API Quality Review obligations, M01 controls): append-only, with history; never an automated result.
+builder.Services.AddHttpClient<IManualReviewApiService, ManualReviewApiService>(client =>
+    client.BaseAddress = backendBase);
 // Dependency Review: read-only analysis of uploaded repository archives (synthetic version simulation only) and source-free dependency
 // health over stored inventories (registry/advisory lookups for hundreds of packages can take a while, hence the longer timeout).
 builder.Services.AddHttpClient<IDependencyReviewApiService, DependencyReviewApiService>(client =>

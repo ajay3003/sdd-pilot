@@ -629,6 +629,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.DeliveryEvidence
 builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.SourceRepositoryAssociationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.AiCodeReview.IAiCodeReviewService, BirkNext.Api.Services.AiCodeReview.AiCodeReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestCoverage.ITestCoverageReviewService, BirkNext.Api.Services.TestCoverage.TestCoverageReviewService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ManualReview.ManualReviewDecisionStore>();
 // Active Event Testing: one generic lifecycle and runner for every scenario provider; the only Event Hub SEND path. Off unless
 // ActiveEventTesting:Enabled; backend-owned trusted DEV/QA environments (TargetEnvironments:Trusted) and enrolled destinations only;
 // instance identity only. Providers are compiled extensions registered here; they cannot weaken any core check.

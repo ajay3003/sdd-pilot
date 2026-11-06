@@ -16,6 +16,10 @@ public interface IClassificationReviewApiService
     /// <summary>Throws <see cref="InvalidOperationException"/> with the backend's reason when the source scope is rejected.</summary>
     Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default);
     Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
+    /// <summary>Static security review only (source evidence; no identity, token or network call). environmentId null = environment-independent.</summary>
+    Task<ClassificationReviewResult> RunStaticAsync(string? environmentId, ClassificationRunRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Runtime verification only, behind the backend's live probe gate. A refused gate throws <see cref="InvalidOperationException"/> with the reason.</summary>
+    Task<ClassificationReviewResult> RunRuntimeAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default) => throw new NotSupportedException();
     /// <summary>Each consumer's assessment (M01, Skolenærvær …) of the same shared evidence; null when unavailable.</summary>
     Task<IReadOnlyList<SecurityClassificationConsumerAssessment>?> ConsumersAsync(string environmentId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<SecurityClassificationConsumerAssessment>?>(null);
@@ -54,6 +58,28 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
     public async Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
     {
         using var response = await http.PostAsJsonAsync($"api/security-classification/runs?{Env(environmentId)}", request, Json, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) throw new InvalidOperationException((await response.Content.ReadAsStringAsync(ct)).Trim('"'));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ClassificationReviewResult>(Json, ct))!;
+    }
+
+    public async Task<ClassificationReviewResult> RunStaticAsync(string? environmentId, ClassificationRunRequest request, CancellationToken ct = default)
+    {
+        var query = string.IsNullOrWhiteSpace(environmentId) ? "" : "?" + Env(environmentId);
+        using var response = await http.PostAsJsonAsync($"api/security-classification/static-reviews{query}", request, Json, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) throw new InvalidOperationException((await response.Content.ReadAsStringAsync(ct)).Trim('"'));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ClassificationReviewResult>(Json, ct))!;
+    }
+
+    public async Task<ClassificationReviewResult> RunRuntimeAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync($"api/security-classification/runtime-verifications?{Env(environmentId)}", request, Json, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Json, ct);
+            throw new InvalidOperationException(body.TryGetProperty("message", out var m) ? m.GetString() ?? "Runtime verification is blocked." : "Runtime verification is blocked.");
+        }
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) throw new InvalidOperationException((await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ClassificationReviewResult>(Json, ct))!;

@@ -51,6 +51,29 @@ public sealed class SecurityClassificationController(IClassificationReviewServic
         catch (InvalidSourceSelectionException e) { return BadRequest(e.Message); }
     }
 
+    /// <summary>Static security review only (source evidence; no identity, token or network call). environmentId is optional: without one the
+    /// review is stored under its source scope and read back with <c>GET ?environmentId=source:{snapshot id}</c>.</summary>
+    [HttpPost("static-reviews")]
+    public async Task<ActionResult<ClassificationReviewResult>> RunStatic([FromQuery] string? environmentId, [FromBody] ClassificationRunRequest request, CancellationToken ct)
+    {
+        try { return Ok(await reviews.RunStaticAsync(environmentId, request, ct)); }
+        catch (InvalidSourceSelectionException e) { return BadRequest(e.Message); }
+    }
+
+    /// <summary>Runtime verification only, behind the live probe gate (approved DEV/QA context, synthetic test children, a per-run token).
+    /// A refused gate is 409 with the reason; nothing is stored or called.</summary>
+    [HttpPost("runtime-verifications")]
+    public async Task<ActionResult<ClassificationReviewResult>> RunRuntime([FromQuery] string environmentId, [FromBody] ClassificationRunRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        try
+        {
+            var (result, blocked) = await reviews.RunRuntimeAsync(environmentId, request, ct);
+            return blocked is not null ? Conflict(new { message = blocked }) : Ok(result);
+        }
+        catch (InvalidSourceSelectionException e) { return BadRequest(e.Message); }
+    }
+
     /// <summary>Each consumer's assessment (M01, Skolenærvær …) of the same shared evidence: latest stored review, canonical test context,
     /// approved controlled identity references. Read-only.</summary>
     [HttpGet("consumers")]
