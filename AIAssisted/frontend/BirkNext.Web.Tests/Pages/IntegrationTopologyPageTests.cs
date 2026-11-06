@@ -87,7 +87,7 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         page.Find("[data-testid=it-location]").TextContent.Should().Be("https://report.example.test/");
         page.Find("[data-testid=it-detail-connection]").TextContent.Should().Contain("Conflict").And.Contain("different addresses");
         page.FindAll("textarea").Should().BeEmpty("the topology is read-only; no endpoint is edited here");
-        page.FindAll("input, select").Should().OnlyContain(control => control.Closest(".it-filters") != null, "the only controls filter the interface inventory");
+        page.FindAll("input, select").Should().OnlyContain(control => control.Closest(".it-filters") != null, "the only controls are filters (inventory, map)");
     }
 
     [Fact]
@@ -396,5 +396,88 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         _api.View = Sample() with { Sources = [.. Sample().Sources, new(TopologySource.BrowserObservation, TopologySourceState.Used, "merged")] };
         var page = Render<IntegrationTopologyPage>();
         page.Find("[data-testid=it-count-observations]").TextContent.Should().Contain("runtime observations merged").And.Contain("Endpoint Discovery");
+    }
+
+    // ── Redesign: tabs, guided steps, topology map ─────────────────────────────────────────────────────────────────────────
+
+    private static string Hidden(IRenderedComponent<IntegrationTopologyPage> page, string panel) => page.Find($"[data-testid=it-panel-{panel}]").HasAttribute("hidden") ? "hidden" : "shown";
+
+    [Fact]
+    public void Overview_is_the_default_tab_with_guided_steps_from_actual_coverage()
+    {
+        _api.View = Sample() with { Profiles = ["skolenaervaer"] };
+        _api.Coverage = BindingCoverage();
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=it-tabs]"));
+        page.FindAll("[data-testid=it-tabs] a").Select(a => a.TextContent.Trim()).Should().Equal("Overview", "Topology Map", "Evidence & Gaps", "Technical Inventory");
+        page.Find("[data-testid=it-tab-overview]").GetAttribute("aria-current").Should().Be("page");
+        Hidden(page, "overview").Should().Be("shown");
+        Hidden(page, "gaps").Should().Be("hidden");
+        Hidden(page, "inventory").Should().Be("hidden");
+        page.FindAll("[data-testid=tm]").Should().BeEmpty("the map is drawn only on its tab");
+        string State(string step) => page.Find($"[data-testid=it-steps] [data-step={step}]").GetAttribute("data-state")!;
+        State("coverage").Should().Be("Current");
+        page.Find("[data-testid=it-steps] [data-step=coverage]").TextContent.Should().Contain("1 available but not bound (bind, do not re-import)");
+        State("gaps").Should().Be("Waiting", "one current step");
+        page.Find("[data-testid=it-steps] [data-step=gaps]").TextContent.Should().Contain("3 of 5 expected unresolved");
+        page.Find("[data-testid=it-steps] [data-step=integrations]").TextContent.Should().Contain("never registers a system or approves an integration");
+        page.FindAll("[data-testid=it-steps] [data-testid=gsl-step]").Should().NotContain(s => s.GetAttribute("data-step") == "inspect" && s.GetAttribute("data-state") == "Done", "visiting is never completion");
+        page.Find("[data-testid=it-related]").InnerHtml.Should().Contain("/correlation-review").And.Contain("tab=connected-systems").And.Contain("tab=integrations");
+    }
+
+    [Fact]
+    public void Map_tab_draws_the_expected_flow_with_states_in_text_and_line_style_and_a_table_fallback()
+    {
+        _api.View = Sample() with { Profiles = ["skolenaervaer"] };
+        _api.Coverage = BindingCoverage();
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=it-tab-map]"));
+        page.Find("[data-testid=it-tab-map]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=tm]"));
+        Hidden(page, "map").Should().Be("shown");
+        page.FindAll("[data-testid=tm-row]").Should().HaveCount(5);
+        string Row(string id) => page.Find($"[data-testid=tm-row][data-edge='r:{id}'] [data-testid=tm-row-state]").TextContent;
+        Row("r").Should().Contain("solid line");
+        Row("o").Should().Contain("solid line");
+        page.Find("[data-testid=tm-row][data-edge='r:o']").TextContent.Should().Contain("observed");
+        Row("s").Should().Contain("dashed line", "strongly supported is inferred, never drawn as resolved");
+        Row("m").Should().Contain("dashed line");
+        Row("b").Should().Contain("dotted line");
+        page.Find("[data-testid=tm-row][data-edge='r:b']").TextContent.Should().Contain("BiRK").And.Contain("CDC");
+        page.Find("[data-testid=tm-legend]").TextContent.Should().Contain("Nothing here is confirmed by a person");
+
+        page.Find("[data-testid=tm-filter]").Change("unresolved");
+        page.FindAll("[data-testid=tm-row]").Select(r => r.GetAttribute("data-edge")).Should().Equal("r:b");
+        page.Find("[data-testid=tm-row-select]").Click();
+        page.Find("[data-testid=tm-detail-state]").TextContent.Should().Contain("dotted line");
+        page.Find("[data-testid=tm-detail-missing]").TextContent.Should().Contain("BiRK side");
+        page.Find("[data-testid=tm-detail]").TextContent.Should().Contain("Not observed at runtime");
+        JSInterop.Invocations.Select(i => i.Identifier).Should().Contain("import", "the existing SVG renderer module is used");
+    }
+
+    [Fact]
+    public void Without_an_expected_profile_the_map_shows_system_connections_and_conflicts_say_so()
+    {
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=it-tab-map]"));
+        page.Find("[data-testid=it-tab-map]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=tm]"));
+        page.Find("[data-testid=tm-level]").QuerySelectorAll("option").Select(o => o.GetAttribute("value")).Should().Equal(TopologyMapPresentation.SystemsLevel);
+        page.FindAll("[data-testid=tm-row]").Should().NotBeEmpty();
+        page.FindAll("[data-testid=tm-row]").Select(r => r.QuerySelector("[data-testid=tm-row-state]")!.TextContent).Should().Contain(s => s.Contains("Conflict") && s.Contains("dash-dot line"));
+        page.Find("[data-testid=it-steps] [data-step=coverage]").GetAttribute("data-state").Should().Be("NotApplicable");
+    }
+
+    [Fact]
+    public void Attention_links_open_the_tab_that_holds_their_section()
+    {
+        _api.View = Sample() with { Profiles = ["orders"] };
+        _api.Coverage = Coverage();
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=it-attention]"));
+        page.Find("[data-testid=it-attention-category][data-key=ambiguous] a").Click();
+        page.WaitForAssertion(() => Hidden(page, "inventory").Should().Be("shown"));
+        Hidden(page, "overview").Should().Be("hidden");
+        page.Find("[data-testid=it-tab-inventory]").GetAttribute("aria-current").Should().Be("page");
     }
 }

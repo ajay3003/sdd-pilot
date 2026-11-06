@@ -7,6 +7,8 @@
 @inject IServiceProvider Services
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
+@using W = BirkNext.Web.Services.TopologyWorkflow
 
 <PageTitle>Integration Topology</PageTitle>
 
@@ -72,6 +74,16 @@
             </section>
         }
 
+        <nav class="it-tabs" aria-label="Integration Topology views" data-testid="it-tabs">
+            @foreach (var (key, label) in W.Tabs)
+            {
+                <a href="@TabHref(key)" class="it-tab @(CurrentTab == key ? "it-tab-active" : "")" aria-current="@(CurrentTab == key ? "page" : null)" data-testid="@($"it-tab-{key}")"
+                   @onclick:preventDefault @onclick="() => ShowTab(key)">@label</a>
+            }
+        </nav>
+
+        <div class="it-panel" data-testid="it-panel-overview" hidden="@(CurrentTab != W.OverviewTab)">
+        <GuidedStepList Steps="@W.Derive(view, _coverage, _observationCount, _profile?.Id, TabHref)" TestId="it-steps" Label="Integration Topology steps" />
         <section class="it-card" aria-labelledby="it-summary-heading" data-testid="it-summary">
             <h2 id="it-summary-heading">Topology summary</h2>
             <dl class="it-facts it-summary">
@@ -105,6 +117,14 @@
         <ReviewDisclosure Text="Shared system identities and aliases" CollapseText="Hide shared identities" Hint="canonical aliases this topology applies" TestId="it-canonical" @bind-Expanded="_canonicalOpen">
             @if (_canonicalOpen) { <CanonicalCorrelationPanel Scope="@CorrelationPresentation.Scope(_profile?.Id)" Title="Systems" EntityType="BirkNext.Interpretation.CanonicalEntityType.System" MaxEntities="10" MaxRelations="10" TestId="it-canonical-panel" /> }
         </ReviewDisclosure>
+        <p class="it-note" data-testid="it-related">Identity decisions (for example two systems claiming one component) are made in <a href="/correlation-review">Relationship Review</a>. Systems are configured in <a href="/admin/system-settings?section=target-environments&tab=connected-systems">Connected Systems</a> and integrations in the <a href="/admin/system-settings?section=target-environments&tab=integrations">Integration Catalog</a>; topology registers and approves nothing.</p>
+        </div>
+
+        <div class="it-panel" data-testid="it-panel-map" hidden="@(CurrentTab != W.MapTab)">
+            @if (CurrentTab == W.MapTab) { <TopologyMap View="view" Coverage="_coverage" /> }
+        </div>
+
+        <div class="it-panel" data-testid="it-panel-gaps" hidden="@(CurrentTab != W.GapsTab)">
 
         @if (_coverage is { } coverage)
         {
@@ -247,6 +267,9 @@
             <p class="it-note" data-testid="it-coverage-error">Source coverage is not available: @_coverageError</p>
         }
 
+        </div>
+
+        <div class="it-panel" data-testid="it-panel-inventory" hidden="@(CurrentTab != W.InventoryTab)">
         <h2 class="it-section-heading" id="it-inventory-heading">Technical inventory</h2>
         <section class="it-card" aria-labelledby="it-components-heading" data-testid="it-components">
             <h2 id="it-components-heading">Components</h2>
@@ -386,6 +409,7 @@
             </ul>
         </details>
         <p class="it-note">Configured ≠ discovered ≠ observed. A resolved connection is supported by source evidence; it is not observed, healthy or contract-compatible unless runtime evidence says so. An expected relationship never creates a connection, and runtime observations mark interfaces, never connections.</p>
+        </div>
     }
 </div>
 
@@ -399,6 +423,20 @@
     private string _interfaceFilter = "", _interfaceType = "", _interfaceStatus = "", _interfaceSource = "";
     private bool _loading = true, _discoverOpen, _interfacesOpen, _connectionsOpen;
     private int _observationCount;
+
+    /// <summary>The view is URL state (<c>?tab=</c>); attention links switch to the tab that holds their section.</summary>
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    private string? _tab;
+    private string CurrentTab => _tab ?? W.ResolveTab(Tab);
+    private string TabHref(string key) => Navigation.GetUriWithQueryParameter("tab", key == W.OverviewTab ? null : key);
+
+    protected override void OnParametersSet() => _tab = W.ResolveTab(Tab);
+
+    private void ShowTab(string key)
+    {
+        _tab = key;
+        try { Navigation.NavigateTo(TabHref(key)); } catch (InvalidOperationException) { }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -443,6 +481,7 @@
 
     private async Task Select(string id)
     {
+        _tab = W.InventoryTab;
         _selected = _selected == id ? null : id;
         if (_selected is null) return;
         await Task.Yield();
@@ -452,6 +491,7 @@
     /// <summary>Opens the inventory section an attention category points to (filtered to its items) and moves focus there.</summary>
     private async Task Reveal(string anchor)
     {
+        _tab = W.TabFor(anchor);
         if (anchor == "it-interfaces") { _interfacesOpen = true; _interfaceStatus = "review"; }
         if (anchor == "it-connections") _connectionsOpen = true;
         StateHasChanged();

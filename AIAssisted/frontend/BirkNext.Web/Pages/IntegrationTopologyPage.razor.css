@@ -56,3 +56,12 @@
 .it-role-action { font-size: 0.85rem; }
 .it-section-heading { font-size: 1rem; margin: 0.5rem 0 0; color: var(--text-muted, #57606a); }
 @media (max-width: 480px) { .it-components { grid-template-columns: 1fr; } }
+
+/* Views: one tab row; panels are hidden (not removed) so deep anchors keep working. */
+.it-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--clr-border); margin: .5rem 0 1rem; }
+.it-tab { padding: .45rem .9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; color: var(--clr-text); text-decoration: none; font-weight: 600; font-size: .92rem; }
+.it-tab:hover { background: var(--clr-surface-hover, #f1f5f9); }
+.it-tab:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.it-tab-active { border-color: var(--clr-border); background: var(--clr-surface-white, #fff); margin-bottom: -1px; color: var(--clr-primary, #2563eb); }
+.it-panel { display: grid; gap: 1rem; }
+.it-panel[hidden] { display: none; }
