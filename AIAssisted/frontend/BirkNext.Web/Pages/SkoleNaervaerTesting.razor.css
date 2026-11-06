@@ -442,3 +442,5 @@
 .snt-light div { padding: .45rem .6rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; overflow-wrap: anywhere; }
 .snt-light dt { font-size: .75rem; color: var(--clr-text-muted, #5f6368); }
 .snt-light dd { margin: .15rem 0 0; font-size: .85rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+
+.snt-legend { margin: .25rem 0 .75rem; padding-left: 1.1rem; font-size: .85rem; }

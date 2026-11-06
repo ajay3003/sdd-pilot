@@ -346,6 +346,7 @@
         <section id="snt-verification" class="snt-panel" aria-labelledby="snt-verification-heading">
             <h2 id="snt-verification-heading" tabindex="-1">@verificationView.DisplayName</h2>
             <p class="snt-muted"><span class="snt-dimension-label">Runtime verification</span> What actually happened to one message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only: nothing is sent.</p>
+            <p class="snt-muted" data-testid="snt-verification-scope">One verified message is evidence for that message only: it does not make a journey ready, and an executed step that was not observed downstream stays Executed, not verified.</p>
             @if (_profile is null)
             {
                 <p class="snt-empty" role="status" data-testid="snt-verification-not-ready">Not assessed — no target environment selected. Nothing has been read.</p>
@@ -412,6 +413,11 @@
         <section id="snt-security" class="snt-panel" aria-labelledby="snt-security-heading" data-testid="snt-security">
             <h2 id="snt-security-heading" tabindex="-1">@securityView.DisplayName</h2>
             <p class="snt-muted" data-testid="snt-security-purpose">Checks whether security classification and graded-access expectations are preserved through Skolenærvær journeys. Evidence comes from the shared Security Classification review; nothing is configured or run here.</p>
+            <ul class="snt-muted snt-legend" data-testid="snt-security-legend" aria-label="How to read the security status">
+                <li><strong>Shared evidence</strong> is static (source) evidence — it is not runtime verification.</li>
+                <li><strong>Runtime test</strong> runs only from the M01 review, behind its live-probe gate; it never runs from this tab.</li>
+                <li>A recorded manual decision is shown beside a control but never makes it Passed; Not assessed is not zero.</li>
+            </ul>
             @if (_profile is null)
             {
                 <p role="status" data-testid="snt-security-not-ready">Not assessed — no target environment selected.</p>

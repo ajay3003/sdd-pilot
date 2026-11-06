@@ -272,6 +272,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.WaitForAssertion(() => page.FindAll("[data-testid=sc-consumer]").Should().ContainSingle().Which.GetAttribute("data-consumer").Should().Be("skolenaervaer"));
         page.Find("#snt-security-heading").TextContent.Should().Be("Security / Gradert tilgang");
         page.Find("[data-testid=sc-open-full-review]").GetAttribute("href").Should().Be("/security-classification-review");
+        page.Find("[data-testid=snt-security-legend]").TextContent.Should().Contain("not runtime verification").And.Contain("never makes it Passed").And.Contain("never runs from this tab");
         page.Find("[data-testid=snt-security]").QuerySelectorAll("input, select, textarea").Should().BeEmpty("no duplicate source selection or test context");
         classification.Verify(a => a.SaveContextAsync(It.IsAny<string>(), It.IsAny<ClassificationTestContext>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -737,6 +738,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var without = Open("message-verification");
         without.Find("#snt-verification-heading").TextContent.Should().Be("Runtime Message Verification");
         without.Find("[data-testid=snt-verification-not-ready]").TextContent.Should().Contain("Nothing has been read");
+        without.Find("[data-testid=snt-verification-scope]").TextContent.Should().Contain("does not make a journey ready").And.Contain("Executed, not verified");
         without.FindAll("[data-testid=snt-verification-not-ready] a").Should().BeEmpty("the one environment action is in the shared page context");
         without.Find("[data-testid=snt-select-environment]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments");
         without.FindAll("[data-testid=mvp]").Should().BeEmpty("nothing is loaded without a Target Environment");
