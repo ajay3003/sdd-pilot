@@ -265,11 +265,46 @@
     private string? _saveError;
     private List<ResourceTargetStatus> _resourceTargets = [];
 
-    private RenderFragment ResourcesView() => @<section class="pt-section" aria-labelledby="pt-resources-h" data-testid="pt-resources">
-        <h2 id="pt-resources-h">Resource Stability</h2>
-        <BirkNext.Web.Components.PerformanceResourceConfig Config="_draft.ResourceObservation" Targets="_resourceTargets" Workload="_draft.Workload"
-            OnChange="c => Changed(_draft with { ResourceObservation = c })" />
-    </section>;
+    private RenderFragment ResourcesView() => __builder =>
+    {
+        var current = !_isNew && !_dirty;
+        var rows = PerformanceResourcePresentation.Rows(_overview?.Provider, _readiness, current, _runs.FirstOrDefault(r => !r.IsActive), _draft.TargetOrigin);
+        var warnings = PerformanceResourcePresentation.Warnings(_overview?.Provider, _readiness, current);
+        <section class="pt-section" aria-labelledby="pt-resources-h" data-testid="pt-resources">
+            <h2 id="pt-resources-h">Resources</h2>
+            <p class="sd-muted">What the k6 load generator runs on. Configuration is not enforcement: each resource is shown as configured, validated, available in the runtime and verified by a run — each from its own evidence.</p>
+            @if (!current) { <p class="ptc-reason" data-testid="pt-resources-unsaved">Validation reflects saved versions only — save and check readiness to validate this version.</p> }
+            <div class="ptc-res-wrap">
+                <table class="ptc-res-table" data-testid="pt-exec-resources">
+                    <caption class="visually-hidden">Execution resources by stage: configured, validated, runtime available and execution verified</caption>
+                    <thead><tr><th scope="col">Resource</th>@foreach (var s in PerformanceResourcePresentation.StageLabels) { <th scope="col">@s</th> }</tr></thead>
+                    <tbody>
+                        @foreach (var row in rows)
+                        {
+                            <tr data-testid="pt-exec-resource" data-key="@row.Key" data-warning="@(row.HasWarning ? "true" : "false")">
+                                <th scope="row">@row.Title</th>
+                                @foreach (var (stage, label) in new[] { row.Configured, row.Validated, row.Runtime, row.Verified }.Zip(PerformanceResourcePresentation.StageLabels))
+                                {
+                                    <td data-label="@label" data-testid="pt-exec-stage" data-stage="@label" data-state="@stage.State">
+                                        <span class="ptc-stage ptc-stage-@stage.State.ToString().ToLowerInvariant()">@PerformanceResourcePresentation.Label(stage.State)</span>
+                                        <span class="ptc-stage-detail">@stage.Detail</span>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <section class="ptc-panel" aria-labelledby="pt-runtime-warnings-h" data-testid="pt-runtime-warnings">
+                <h3 id="pt-runtime-warnings-h">Runtime capability warnings</h3>
+                @if (warnings.Count == 0) { <p class="sd-muted" data-testid="pt-runtime-warnings-none">@(current && _readiness is not null ? "None reported by the last readiness check." : "Not checked yet.")</p> }
+                else { <ul>@foreach (var w in warnings) { <li data-testid="pt-runtime-warning">@w</li> }</ul> }
+            </section>
+            <h3>Resource Stability observation (optional)</h3>
+            <BirkNext.Web.Components.PerformanceResourceConfig Config="_draft.ResourceObservation" Targets="_resourceTargets" Workload="_draft.Workload"
+                OnChange="c => Changed(_draft with { ResourceObservation = c })" />
+        </section>
+    };
     private enum HistoryFilter { All, Baselines, Regressions, ThresholdFailures, Cancelled, ExecutionFailures }
 
     private bool _loaded;
@@ -355,7 +390,9 @@
     private PtStatus? TabBadge(Tab t) => t switch
     {
         Tab.Scenario => _draft.Scenario.Steps.Count > 0 ? new($"{_draft.Scenario.Steps.Count} step(s)", "✓", PtTone.Ready) : new("No steps", "!", PtTone.Attention),
-        Tab.Thresholds => _draft.Thresholds.Count > 0 ? new($"{_draft.Thresholds.Count} configured", _draft.Thresholds.Count.ToString(), PtTone.Info) : null,
+        Tab.Workload => _overview is not null && PerformanceWorkloadPresentation.Issues(_draft.Workload, _overview.Limits, _draft.Scenario.Steps).Count is > 0 and var wi ? new($"{wi} problem(s)", "!", PtTone.Attention) : null,
+        Tab.Thresholds => PerformanceTestRules.ThresholdProblems(_draft.Thresholds).Count(p => p is not null) is > 0 and var ti ? new($"{ti} invalid", "!", PtTone.Attention)
+            : _draft.Thresholds.Count > 0 ? new($"{_draft.Thresholds.Count} configured", _draft.Thresholds.Count.ToString(), PtTone.Info) : null,
         Tab.Resources => _draft.ResourceObservation is { Enabled: true } ? new("Enabled", "✓", PtTone.Resource) : new("Optional", "○", PtTone.Neutral),
         Tab.Readiness => PageState.Tone switch { PtTone.Ready => new("Ready", "✓", PtTone.Ready), PtTone.Blocked => new("Blocked", "✕", PtTone.Blocked), PtTone.Running => null, _ => new("Needs action", "!", PtTone.Attention) },
         Tab.Run => ActiveRun is not null ? new("Running", "▶", PtTone.Running) : null,
@@ -1244,83 +1281,166 @@
         return x with { DataMappings = mappings.Count == 0 ? null : mappings };
     });
 
-    private RenderFragment Workload() => @<section class="pt-section" aria-labelledby="pt-workload-h" data-testid="pt-workload">
-        <h2 id="pt-workload-h">Workload</h2>
-        <div class="ptc-workload-form">
-            <fieldset class="ptc-panel" data-testid="pt-workload-definition">
-                <legend>Workload definition</legend>
-                <div class="ptc-grid ptc-grid-3">
-                    <label>Purpose
-                        <select value="@_draft.Workload.Purpose" @onchange="e => UpdateWorkload(w => w with { Purpose = Enum.Parse<WorkloadPurpose>(e.Value!.ToString()!) })" data-testid="pt-purpose">
-                            @foreach (var p in _overview!.Provider?.Capabilities.Purposes ?? []) { <option value="@p">@p</option> }
-                        </select>
-                    </label>
-                    <label>Mode
-                        <select value="@_draft.Workload.Mode" @onchange="e => UpdateWorkload(w => w with { Mode = Enum.Parse<WorkloadMode>(e.Value!.ToString()!) })" data-testid="pt-mode">
-                            @foreach (var m in _overview!.Provider?.Capabilities.Modes ?? [WorkloadMode.VirtualUsers]) { <option value="@m">@(m == WorkloadMode.VirtualUsers ? "Virtual users" : "Arrival rate (req/s)")</option> }
-                        </select>
-                    </label>
-                    <label>@(_draft.Workload.Mode == WorkloadMode.VirtualUsers ? "Virtual users" : "Maximum generator virtual users") <input class="ptc-num" type="number" min="1" value="@_draft.Workload.VirtualUsers" @onchange="e => UpdateWorkload(w => w with { VirtualUsers = Int(e.Value) })" data-testid="pt-vus" /></label>
-                    @if (_draft.Workload.Mode == WorkloadMode.ArrivalRate)
-                    {
-                        <label>Start rate (req/s) <input class="ptc-num" type="number" min="0" step="0.1" value="@_draft.Workload.StartRequestsPerSecond?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateWorkload(w => w with { StartRequestsPerSecond = Dbl(e.Value) })" /></label>
-                        <label>Target rate (req/s) <input class="ptc-num" type="number" min="0.1" step="0.1" value="@_draft.Workload.RequestsPerSecond?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateWorkload(w => w with { RequestsPerSecond = Dbl(e.Value) })" data-testid="pt-rate" /></label>
-                    }
-                </div>
-            </fieldset>
-            <fieldset class="ptc-panel" data-testid="pt-workload-timing">
-                <legend>Timing (seconds)</legend>
-                <div class="ptc-grid ptc-grid-4">
-                    <label>Warm-up <input class="ptc-num" type="number" min="0" value="@_draft.Workload.WarmupSeconds" @onchange="e => UpdateWorkload(w => w with { WarmupSeconds = Int(e.Value) ?? 0 })" data-testid="pt-warmup" /></label>
-                    <label>Ramp-up <input class="ptc-num" type="number" min="0" value="@_draft.Workload.RampUpSeconds" @onchange="e => UpdateWorkload(w => w with { RampUpSeconds = Int(e.Value) ?? 0 })" data-testid="pt-rampup" /></label>
-                    <label>Steady state <input class="ptc-num" type="number" min="10" value="@_draft.Workload.SteadyStateSeconds" @onchange="e => UpdateWorkload(w => w with { SteadyStateSeconds = Int(e.Value) ?? 0 })" data-testid="pt-steady" /></label>
-                    <label>Ramp-down <input class="ptc-num" type="number" min="0" value="@_draft.Workload.RampDownSeconds" @onchange="e => UpdateWorkload(w => w with { RampDownSeconds = Int(e.Value) ?? 0 })" data-testid="pt-rampdown" /></label>
-                </div>
-            </fieldset>
+    /// <summary>One labelled number field with its unit and inline error (aria-invalid + described by the message): nothing invalid is hidden.</summary>
+    private RenderFragment NumField(string key, string label, string unit, string? value, string testId, Action<ChangeEventArgs> onChange, IReadOnlyList<WorkloadFieldIssue> issues,
+        string min = "0", string step = "1") => __builder =>
+    {
+        var issue = issues.FirstOrDefault(i => i.Field == key);
+        var id = $"pt-field-{key}";
+        <div class="ptc-field @(issue is null ? "" : "is-invalid")" data-testid="pt-workload-field" data-field="@key">
+            <label for="@id">@label <span class="ptc-unit">(@unit)</span></label>
+            <input id="@id" class="ptc-num" type="number" min="@min" step="@step" value="@value" @onchange="onChange" data-testid="@testId"
+                   aria-invalid="@(issue is null ? "false" : "true")" aria-describedby="@(issue is null ? null : $"{id}-error")" />
+            @if (issue is not null) { <span id="@($"{id}-error")" class="ptc-field-error" data-testid="pt-field-error" data-field="@key" data-safety="@(issue.Safety ? "true" : "false")">@issue.Message</span> }
         </div>
-        @if (_draft.Workload.Purpose == WorkloadPurpose.Soak)
-        {
-            <p class="sd-muted" data-testid="pt-soak-note">Longer controlled runs provide stronger resource-stability evidence (Resources tab). They still do not prove that resources leak or never leak.</p>
-        }
-        <h3>Timeline</h3>
-        @Timeline(_draft.Workload)
-        <details class="pt-details"><summary>Phase details</summary>
-            <ol class="pt-timeline" data-testid="pt-timeline">@foreach (var line in PerformanceTestRules.Timeline(_draft.Workload)) { <li>@line</li> }</ol>
-        </details>
-        <h3>Safety <span data-testid="pt-workload-policy">@Pill(D.WorkloadPolicy(_draft.Workload, _overview!.Limits), "Workload policy")</span></h3>
-        @if (D.WorkloadPolicy(_draft.Workload, _overview!.Limits).Reason is { } over) { <p class="ptc-reason" data-testid="pt-workload-over">@over</p> }
-        @if (_overview!.Limits is { } lim)
-        {
-            <dl class="ptc-limits" data-testid="pt-safety">
-                <div><dt>Max virtual users</dt><dd>@lim.MaxVirtualUsers</dd></div>
-                <div><dt>Max rate</dt><dd>@lim.MaxRequestsPerSecond.ToString("0.##", CultureInfo.InvariantCulture) req/s</dd></div>
-                <div><dt>Max duration</dt><dd>@P.Duration(lim.MaxDurationSeconds) <span class="ptc-sub">soak @P.Duration(lim.MaxSoakDurationSeconds)</span></dd></div>
-                <div><dt>Max requests</dt><dd>@lim.MaxTotalRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
-                <div class="ptc-limits-this"><dt>This workload</dt><dd>@P.Load(_draft.Workload) <span class="ptc-sub">@P.Duration(_draft.Workload.TotalSeconds)</span></dd></div>
-            </dl>
-            <p class="sd-muted" data-testid="pt-safety-meaning">The backend enforces these limits; a workload beyond them cannot run. “Within policy” means the configured load is within execution safety limits — it says nothing about performance quality.</p>
-        }
-    </section>;
+    };
 
-    private RenderFragment Thresholds() => @<section class="pt-section" aria-labelledby="pt-thresholds-h" data-testid="pt-thresholds">
+    private async Task FocusFieldAsync(string id)
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
+    }
+
+    private RenderFragment Workload() => __builder =>
+    {
+        var w = _draft.Workload;
+        var issues = PerformanceWorkloadPresentation.Issues(w, _overview!.Limits, _draft.Scenario.Steps);
+        var estimate = PerformanceWorkloadPresentation.Estimate(w, _overview!.Limits, _draft.Scenario.Steps);
+        <section class="pt-section" aria-labelledby="pt-workload-h" data-testid="pt-workload" data-valid="@(issues.Count == 0 ? "true" : "false")">
+            <h2 id="pt-workload-h">Workload</h2>
+            <p class="sd-muted">How much load, and for how long. The backend checks the same rules and its safety limits again before any run.</p>
+            @if (issues.Count > 0)
+            {
+                <div class="ptc-inline-errors" role="alert" data-testid="pt-workload-issues">
+                    <strong>@issues.Count problem@(issues.Count == 1 ? "" : "s") to fix before this workload can run:</strong>
+                    <ul>@foreach (var i in issues) { var target = $"pt-field-{(i.Field is "duration" ? "steady" : i.Field is "requests" ? "vus" : i.Field)}"; <li><button type="button" class="ptc-link" data-testid="pt-workload-issue" data-field="@i.Field" @onclick="() => FocusFieldAsync(target)">@i.Message</button></li> }</ul>
+                </div>
+            }
+            <div class="ptc-workload-form">
+                <fieldset class="ptc-panel" data-testid="pt-workload-definition">
+                    <legend>Execution profile</legend>
+                    <div class="ptc-grid ptc-grid-2">
+                        <div class="ptc-field @(issues.Any(i => i.Field == "purpose") ? "is-invalid" : "")">
+                            <label for="pt-field-purpose">Purpose</label>
+                            <select id="pt-field-purpose" value="@w.Purpose" @onchange="e => UpdateWorkload(x => x with { Purpose = Enum.Parse<WorkloadPurpose>(e.Value!.ToString()!) })" data-testid="pt-purpose" aria-describedby="pt-purpose-help">
+                                @foreach (var p in _overview!.Provider?.Capabilities.Purposes ?? []) { <option value="@p">@p</option> }
+                            </select>
+                            <span id="pt-purpose-help" class="ptc-field-help">@PerformanceWorkloadPresentation.PurposeMeaning(w.Purpose)</span>
+                            @if (issues.FirstOrDefault(i => i.Field == "purpose") is { } pi) { <span class="ptc-field-error" data-testid="pt-field-error" data-field="purpose" data-safety="true">@pi.Message</span> }
+                        </div>
+                        <div class="ptc-field">
+                            <label for="pt-field-mode">Load model</label>
+                            <select id="pt-field-mode" value="@w.Mode" @onchange="e => UpdateWorkload(x => x with { Mode = Enum.Parse<WorkloadMode>(e.Value!.ToString()!) })" data-testid="pt-mode" aria-describedby="pt-mode-help">
+                                @foreach (var m in _overview!.Provider?.Capabilities.Modes ?? [WorkloadMode.VirtualUsers]) { <option value="@m">@(m == WorkloadMode.VirtualUsers ? "Virtual users" : "Arrival rate (req/s)")</option> }
+                            </select>
+                            <span id="pt-mode-help" class="ptc-field-help">@(w.Mode == WorkloadMode.VirtualUsers ? "A fixed number of concurrent users; the request rate follows from response times." : "A fixed rate of scenario iterations per second, independent of response times.")</span>
+                        </div>
+                    </div>
+                </fieldset>
+                <fieldset class="ptc-panel" data-testid="pt-workload-load">
+                    <legend>Load</legend>
+                    <div class="ptc-grid ptc-grid-3">
+                        @NumField("vus", w.Mode == WorkloadMode.VirtualUsers ? "Virtual users" : "Maximum generator virtual users", "users", w.VirtualUsers?.ToString(CultureInfo.InvariantCulture), "pt-vus",
+                            e => UpdateWorkload(x => x with { VirtualUsers = Int(e.Value) }), issues, "1")
+                        @if (w.Mode == WorkloadMode.ArrivalRate)
+                        {
+                            @NumField("start-rate", "Start rate", "req/s", w.StartRequestsPerSecond?.ToString(CultureInfo.InvariantCulture), "pt-start-rate", e => UpdateWorkload(x => x with { StartRequestsPerSecond = Dbl(e.Value) }), issues, "0", "0.1")
+                            @NumField("rate", "Target rate", "req/s", w.RequestsPerSecond?.ToString(CultureInfo.InvariantCulture), "pt-rate", e => UpdateWorkload(x => x with { RequestsPerSecond = Dbl(e.Value) }), issues, "0.1", "0.1")
+                        }
+                    </div>
+                </fieldset>
+                <fieldset class="ptc-panel" data-testid="pt-workload-timing">
+                    <legend>Duration</legend>
+                    <div class="ptc-grid ptc-grid-4">
+                        @NumField("warmup", "Warm-up", "s", w.WarmupSeconds.ToString(CultureInfo.InvariantCulture), "pt-warmup", e => UpdateWorkload(x => x with { WarmupSeconds = Int(e.Value) ?? 0 }), issues)
+                        @NumField("rampup", "Ramp-up", "s", w.RampUpSeconds.ToString(CultureInfo.InvariantCulture), "pt-rampup", e => UpdateWorkload(x => x with { RampUpSeconds = Int(e.Value) ?? 0 }), issues)
+                        @NumField("steady", "Steady state", "s", w.SteadyStateSeconds.ToString(CultureInfo.InvariantCulture), "pt-steady", e => UpdateWorkload(x => x with { SteadyStateSeconds = Int(e.Value) ?? 0 }), issues, "10")
+                        @NumField("rampdown", "Ramp-down", "s", w.RampDownSeconds.ToString(CultureInfo.InvariantCulture), "pt-rampdown", e => UpdateWorkload(x => x with { RampDownSeconds = Int(e.Value) ?? 0 }), issues)
+                    </div>
+                    @if (issues.FirstOrDefault(i => i.Field == "duration") is { } di) { <p class="ptc-field-error" data-testid="pt-field-error" data-field="duration" data-safety="true">@di.Message</p> }
+                </fieldset>
+                <fieldset class="ptc-panel" data-testid="pt-workload-pacing">
+                    <legend>Iterations and think time</legend>
+                    <dl class="ptc-facts">
+                        <div><dt>Iterations</dt><dd data-testid="pt-workload-iterations">Not a separate setting: @(w.Mode == WorkloadMode.VirtualUsers ? "each virtual user repeats the scenario until its phase ends." : "the rate above is scenario iterations per second.")</dd></div>
+                        <div><dt>Think time</dt><dd data-testid="pt-workload-think">@PerformanceWorkloadPresentation.ThinkTime(_draft.Scenario.Steps) <button type="button" class="ptc-link" @onclick="() => _tab = Tab.Scenario" data-testid="pt-workload-edit-think">Set per step in Scenario</button></dd></div>
+                    </dl>
+                </fieldset>
+            </div>
+            <section class="ptc-panel ptc-estimate" aria-labelledby="pt-estimate-h" data-testid="pt-workload-estimate">
+                <h3 id="pt-estimate-h">Estimated load</h3>
+                <dl class="ptc-facts">
+                    <div><dt>Total duration</dt><dd data-testid="pt-estimate-duration">@P.Duration(estimate.DurationSeconds)</dd></div>
+                    <div><dt>Peak load</dt><dd data-testid="pt-estimate-peak">@estimate.PeakLoad</dd></div>
+                    <div><dt>Requests (upper bound)</dt><dd data-testid="pt-estimate-requests">~@estimate.MaxRequests.ToString("N0", CultureInfo.InvariantCulture)@(estimate.RequestLimit is { } rl ? $" of {rl.ToString("N0", CultureInfo.InvariantCulture)} allowed" : "")</dd></div>
+                </dl>
+                <p data-testid="pt-workload-impact">@estimate.Impact An estimate, not a measurement — a run reports what was actually sent.</p>
+            </section>
+            @if (w.Purpose == WorkloadPurpose.Soak)
+            {
+                <p class="sd-muted" data-testid="pt-soak-note">Longer controlled runs provide stronger resource-stability evidence (Resources tab). They still do not prove that resources leak or never leak.</p>
+            }
+            <h3>Timeline</h3>
+            @Timeline(w)
+            <details class="pt-details"><summary>Phase details</summary>
+                <ol class="pt-timeline" data-testid="pt-timeline">@foreach (var line in PerformanceTestRules.Timeline(w)) { <li>@line</li> }</ol>
+            </details>
+            <h3>Safety <span data-testid="pt-workload-policy">@Pill(D.WorkloadPolicy(w, _overview!.Limits), "Workload policy")</span></h3>
+            @if (D.WorkloadPolicy(w, _overview!.Limits).Reason is { } over) { <p class="ptc-reason" data-testid="pt-workload-over">@over</p> }
+            @if (_overview!.Limits is { } lim)
+            {
+                <dl class="ptc-limits" data-testid="pt-safety">
+                    <div><dt>Max virtual users</dt><dd>@lim.MaxVirtualUsers</dd></div>
+                    <div><dt>Max rate</dt><dd>@lim.MaxRequestsPerSecond.ToString("0.##", CultureInfo.InvariantCulture) req/s</dd></div>
+                    <div><dt>Max duration</dt><dd>@P.Duration(lim.MaxDurationSeconds) <span class="ptc-sub">soak @P.Duration(lim.MaxSoakDurationSeconds)</span></dd></div>
+                    <div><dt>Max requests</dt><dd>@lim.MaxTotalRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
+                    <div class="ptc-limits-this"><dt>This workload</dt><dd>@P.Load(w) <span class="ptc-sub">@P.Duration(w.TotalSeconds)</span></dd></div>
+                </dl>
+                <p class="sd-muted" data-testid="pt-safety-meaning">The backend enforces these limits; a workload beyond them cannot run. “Within policy” means the configured load is within execution safety limits — it says nothing about performance quality.</p>
+            }
+        </section>
+    };
+
+    private RenderFragment Thresholds() => __builder =>
+    {
+        var unsaved = _isNew || _dirty;
+        var (rows, life) = PerformanceThresholdPresentation.View(_draft.Thresholds, PerformanceThresholdPresentation.EvaluatingRun(_runs, _draft.Id, _draft.Version, unsaved), _draft.Version, unsaved);
+        @ThresholdsBody(rows, life)
+    };
+
+    private RenderFragment ThresholdsBody(IReadOnlyList<ThresholdRowView> rows, ThresholdLifecycle life) => @<section class="pt-section" aria-labelledby="pt-thresholds-h" data-testid="pt-thresholds">
         <h2 id="pt-thresholds-h">Thresholds</h2>
-        <p class="sd-muted">Absolute expectations, evaluated by BirkNext after the run. A metric without a threshold is measured, not passed.</p>
+        <p class="sd-muted">Absolute expectations, evaluated by BirkNext after a run. A metric without a threshold is measured, not passed — and a configured threshold is not an evaluated or passed one.</p>
+        <ol class="ptc-lifecycle" aria-label="Threshold lifecycle" data-testid="pt-threshold-lifecycle">
+            <li data-testid="pt-threshold-stage" data-key="configured"><strong>@life.Configured</strong> configured</li>
+            <li data-testid="pt-threshold-stage" data-key="valid" class="@(life.Valid < life.Configured ? "is-open" : "")"><strong>@life.Valid</strong> valid</li>
+            <li data-testid="pt-threshold-stage" data-key="evaluated"><strong>@life.Evaluated</strong> evaluated</li>
+            <li data-testid="pt-threshold-stage" data-key="passed"><strong>@life.Passed</strong> passed</li>
+            <li data-testid="pt-threshold-stage" data-key="failed" class="@(life.Failed > 0 ? "is-open" : "")"><strong>@life.Failed</strong> failed</li>
+        </ol>
+        <p class="sd-muted" data-testid="pt-threshold-evaluated-in">Evaluation source: @life.EvaluatedIn</p>
         @if (_draft.Thresholds.Count == 0) { <p class="ptc-inline-empty" data-testid="pt-thresholds-empty">No thresholds configured — runs will be measured, not assessed.</p> }
         else
         {
-        <div class="sd-scroll" tabindex="0" role="region" aria-label="Thresholds">
-            <table class="ptc-compact-table" data-testid="pt-threshold-table">
-                <thead><tr><th scope="col">Metric</th><th scope="col">Operator</th><th scope="col">Value</th><th scope="col">Severity</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+        <div class="ptc-thr-wrap">
+            <table class="ptc-compact-table ptc-thr-table" data-testid="pt-threshold-table">
+                <caption class="visually-hidden">Thresholds: metric, condition, target value, unit, policy, validation, readiness impact and the latest evaluation</caption>
+                <thead><tr><th scope="col">Metric</th><th scope="col">Condition</th><th scope="col">Target value</th><th scope="col">Unit</th><th scope="col">Policy</th><th scope="col">Validation</th><th scope="col">Readiness impact</th><th scope="col">Latest evaluation</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
                 <tbody>
-                    @for (var i = 0; i < _draft.Thresholds.Count; i++)
+                    @foreach (var row in rows)
                     {
-                        var index = i; var t = _draft.Thresholds[i];
-                        <tr data-testid="pt-threshold-row">
-                            <td><select aria-label="Metric" value="@t.Metric" @onchange="e => UpdateThreshold(index, x => x with { Metric = Enum.Parse<PerformanceMetric>(e.Value!.ToString()!) })">@foreach (var m in Enum.GetValues<PerformanceMetric>()) { <option value="@m">@PerformanceTestRules.Label(m)</option> }</select></td>
-                            <td><select aria-label="Operator" value="@t.Operator" @onchange="e => UpdateThreshold(index, x => x with { Operator = Enum.Parse<ThresholdOperator>(e.Value!.ToString()!) })">@foreach (var o in Enum.GetValues<ThresholdOperator>()) { <option value="@o">@PerformanceTestRules.Symbol(o)</option> }</select></td>
-                            <td><input aria-label="Value (@PerformanceTestRules.Unit(t.Metric))" type="number" step="any" value="@t.Value.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateThreshold(index, x => x with { Value = Dbl(e.Value) ?? 0 })" /> @PerformanceTestRules.Unit(t.Metric)</td>
-                            <td><select aria-label="Severity" value="@t.Severity" @onchange="e => UpdateThreshold(index, x => x with { Severity = Enum.Parse<ThresholdSeverity>(e.Value!.ToString()!) })"><option value="Required">Required</option><option value="Advisory">Advisory</option></select></td>
-                            <td><button type="button" class="ptc-remove" aria-label="Remove threshold @(index + 1)" @onclick="() => Changed(_draft with { Thresholds = _draft.Thresholds.Where((_, j) => j != index).ToList() })">Remove</button></td>
+                        var index = row.Index; var t = row.Threshold; var n = index + 1;
+                        <tr data-testid="pt-threshold-row" data-valid="@(row.Problem is null ? "true" : "false")" data-run-state="@row.RunState">
+                            <td data-label="Metric"><select aria-label="Metric of threshold @n" value="@t.Metric" @onchange="e => UpdateThreshold(index, x => x with { Metric = Enum.Parse<PerformanceMetric>(e.Value!.ToString()!) })">@foreach (var m in Enum.GetValues<PerformanceMetric>()) { <option value="@m">@PerformanceTestRules.Label(m)</option> }</select></td>
+                            <td data-label="Condition"><select aria-label="Condition of threshold @n" value="@t.Operator" @onchange="e => UpdateThreshold(index, x => x with { Operator = Enum.Parse<ThresholdOperator>(e.Value!.ToString()!) })">@foreach (var o in Enum.GetValues<ThresholdOperator>()) { <option value="@o">@PerformanceTestRules.Symbol(o)</option> }</select></td>
+                            <td data-label="Target value"><input aria-label="Target value of threshold @n (@PerformanceTestRules.Unit(t.Metric))" type="number" step="any" min="0" value="@t.Value.ToString(CultureInfo.InvariantCulture)"
+                                aria-invalid="@(row.Problem is null ? "false" : "true")" aria-describedby="@(row.Problem is null ? null : $"pt-thr-{index}-problem")"
+                                @onchange="e => UpdateThreshold(index, x => x with { Value = Dbl(e.Value) ?? 0 })" data-testid="pt-threshold-value" /></td>
+                            <td data-label="Unit">@PerformanceTestRules.Unit(t.Metric)</td>
+                            <td data-label="Policy"><select aria-label="Policy of threshold @n" value="@t.Severity" @onchange="e => UpdateThreshold(index, x => x with { Severity = Enum.Parse<ThresholdSeverity>(e.Value!.ToString()!) })"><option value="Required">Required</option><option value="Advisory">Advisory</option></select></td>
+                            <td data-label="Validation" data-testid="pt-threshold-validation">@if (row.Problem is { } problem) { <span id="@($"pt-thr-{index}-problem")" class="ptc-field-error">@problem</span> } else { <span>Valid</span> }</td>
+                            <td data-label="Readiness impact" data-testid="pt-threshold-impact">@row.Impact</td>
+                            <td data-label="Latest evaluation" data-testid="pt-threshold-run"><span class="ptc-thr-run ptc-thr-run-@row.RunState.ToString().ToLowerInvariant()">@row.RunText</span></td>
+                            <td><button type="button" class="ptc-remove" aria-label="Remove threshold @n" @onclick="() => Changed(_draft with { Thresholds = _draft.Thresholds.Where((_, j) => j != index).ToList() })">Remove</button></td>
                         </tr>
                     }
                 </tbody>

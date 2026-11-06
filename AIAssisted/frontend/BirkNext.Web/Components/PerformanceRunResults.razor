@@ -39,7 +39,9 @@
             <dl class="prr-facts" aria-label="Run summary">
                 <div><dt>Scenario</dt><dd data-testid="pt-result-scenario">@(string.IsNullOrWhiteSpace(snapshot.Scenario.Name) ? snapshot.Name : snapshot.Scenario.Name)</dd></div>
                 <div><dt>Target</dt><dd class="prr-break" data-testid="pt-result-target">@snapshot.EnvironmentName · @r.TargetOrigin</dd></div>
+                <div><dt>Scenario version</dt><dd data-testid="pt-result-scenario-version">Definition v@(r.DefinitionVersion) · <code title="@r.DefinitionFingerprint">@(r.DefinitionFingerprint.Length > 8 ? r.DefinitionFingerprint[..8] : r.DefinitionFingerprint)</code></dd></div>
                 <div><dt>Started</dt><dd>@P.Utc(r.StartedAt)</dd></div>
+                <div><dt>Finished</dt><dd data-testid="pt-result-finished">@(r.FinishedAt is null ? "—" : P.Utc(r.FinishedAt))</dd></div>
                 <div><dt>Duration</dt><dd data-testid="pt-result-duration">@(m is { DurationSeconds: > 0 } ? P.Duration((int)Math.Round(m.DurationSeconds)) : "—")</dd></div>
                 <div><dt>Workload</dt><dd data-testid="pt-result-workload">@snapshot.Workload.Purpose · @P.Load(snapshot.Workload)</dd></div>
                 <div><dt>Requests</dt><dd data-testid="pt-result-requests">@(m is null ? BirkNext.PerformanceTests.PerformanceExecutionAssessment.RequestsLabel(r) : m.RequestCount.ToString("N0", CultureInfo.InvariantCulture))</dd></div>
@@ -56,6 +58,20 @@
         @if (r.StateReason is { } reason) { <p class="prr-reason" data-testid="pt-result-reason">@reason</p> }
         @if (r.IsActive) { <p class="prr-note" role="status" data-testid="pt-result-in-progress">Run in progress — metrics are not available yet. Final results will appear when collection completes.</p> }
         <PerformanceExecutionEvidencePanel Run="r" />
+        var interpretation = PerformanceResultPresentation.Interpret(r);
+        @* Completeness and the kind of failure, apart: a partial or cancelled run is never a completed one, and an execution failure (the tooling)
+           is never read as a failure of the application under test. *@
+        <section class="prr-interpret" aria-label="Interpretation" data-testid="pt-result-interpretation" data-completeness="@interpretation.Completeness" data-failure="@interpretation.FailureKind">
+            <dl class="prr-mini">
+                <div><dt>Completeness</dt><dd><span class="sd-pill sd-pill-@(interpretation.Completeness == "Complete" ? "complete" : "partial")" data-testid="pt-result-completeness">@interpretation.Completeness</span> <span class="prr-muted">@interpretation.CompletenessDetail</span></dd></div>
+                <div><dt>Failure type</dt><dd data-testid="pt-result-failure-kind"><strong>@interpretation.FailureKind</strong> <span class="prr-muted">— @interpretation.FailureDetail</span></dd></div>
+            </dl>
+            @if (interpretation.Limitations.Count > 0)
+            {
+                <h3 class="prr-subtitle">Execution and resource limitations</h3>
+                <ul class="prr-list" data-testid="pt-result-limitations">@foreach (var l in interpretation.Limitations) { <li>@l</li> }</ul>
+            }
+        </section>
 
         <div class="prr-grid">
             <section class="prr-card" aria-labelledby="prr-perf-h" data-testid="pt-result-performance">
@@ -80,7 +96,7 @@
                         <div><dt>Successful</dt><dd data-testid="pt-result-successful">@m.SuccessfulRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
                         <div><dt>Failed</dt><dd>@m.FailedRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
                         <div><dt>Error rate</dt><dd>@PerformanceTestRules.Format(m.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</dd></div>
-                        @if (m.DroppedIterations is { } dropped) { <div><dt>Dropped iterations</dt><dd>@dropped.ToString("N0", CultureInfo.InvariantCulture)</dd></div> }
+                        <div><dt>Dropped iterations</dt><dd data-testid="pt-result-dropped">@(m.DroppedIterations is { } dropped ? dropped.ToString("N0", CultureInfo.InvariantCulture) : "Not reported by this run")</dd></div>
                     </dl>
                     @StatusCodes(m)
                     @if (snapshot.TargetType == PerformanceTargetType.GraphQlHttp)
@@ -284,7 +300,7 @@
             var limited = !d.Compatible || d.State == PerformanceDriftState.NotComparable;
             <section class="prr-section" aria-labelledby="prr-base-h" data-testid="pt-result-baseline" data-state="@d.State" data-compatible="@(limited ? "false" : "true")">
                 <h3 id="prr-base-h">Baseline snapshot</h3>
-                <p>Baseline v@(d.BaselineVersion) · run @P.Short(d.BaselineRunId) · current run @P.Short(r.RunId) · <span class="sd-pill sd-pill-@P.Tone(d.State)" data-testid="pt-result-baseline-state">@P.Label(d.State)</span></p>
+                <p data-testid="pt-result-baseline-runs">Baseline run <strong>@P.Short(d.BaselineRunId)</strong> (baseline v@(d.BaselineVersion)) compared with this run <strong>@P.Short(r.RunId)</strong> (definition v@(r.DefinitionVersion)) · <span class="sd-pill sd-pill-@P.Tone(d.State)" data-testid="pt-result-baseline-state">@P.Label(d.State)</span></p>
                 @if (limited)
                 {
                     <p class="prr-note" data-testid="pt-result-baseline-limited"><strong>Baseline comparison limited.</strong> @string.Join(" ", d.CompatibilityNotes)</p>

@@ -1452,4 +1452,155 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.FindAll("[data-testid=pt-flow-step]").First().GetAttribute("data-state").Should().Be("current");
         _api.Calls.Should().NotContain("update", "an edit is never saved or versioned without a click");
     }
+
+    // ── NEXT58B: the four redesigned tabs ───────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Workload_shows_units_inline_errors_per_field_and_an_estimate_and_hides_nothing_invalid()
+    {
+        Register();
+        var cut = Page();
+        Tab(cut, "workload");
+        cut.Find("[data-testid=pt-workload]").GetAttribute("data-valid").Should().Be("true");
+        cut.FindAll("[data-testid=pt-workload-field] .ptc-unit").Select(u => u.TextContent).Should().Contain(["(users)", "(s)"]);
+        cut.Find("[data-testid=pt-estimate-requests]").TextContent.Should().Contain("of 200,000 allowed");
+        cut.Find("[data-testid=pt-workload-iterations]").TextContent.Should().StartWith("Not a separate setting");
+        cut.Find("[data-testid=pt-workload-think]").TextContent.Should().Contain("None");
+
+        cut.Find("[data-testid=pt-steady]").Change("5");
+        cut.Find("[data-testid=pt-steady]").GetAttribute("aria-invalid").Should().Be("true");
+        cut.Find("[data-testid=pt-field-error][data-field=steady]").TextContent.Should().Be("The steady state must last at least 10 seconds.");
+        cut.Find("[data-testid=pt-steady]").GetAttribute("aria-describedby").Should().Be("pt-field-steady-error");
+        cut.Find("[data-testid=pt-vus]").Change("80");
+        cut.Find("[data-testid=pt-field-error][data-field=vus]").GetAttribute("data-safety").Should().Be("true");
+        cut.Find("[data-testid=pt-workload]").GetAttribute("data-valid").Should().Be("false");
+        cut.FindAll("[data-testid=pt-workload-issue]").Should().HaveCount(2);
+        cut.Find("[data-testid=pt-tab-workload]").TextContent.Should().Contain("2 problem(s)");
+        cut.Find("[data-testid=pt-unsaved-banner]");
+        _api.Calls.Should().NotContain("start", "editing a workload never runs anything");
+    }
+
+    [Fact]
+    public void Thresholds_distinguish_configured_valid_evaluated_passed_and_failed()
+    {
+        Register();
+        var t = Definition.Thresholds[0];
+        _api.Runs = [Run(PerformanceRunState.Completed, PerformanceQualityVerdict.Fail,
+            [new PerformanceThresholdResult { ThresholdId = t.Id, Metric = t.Metric, Operator = t.Operator, Expected = 500, Measured = 610, Severity = ThresholdSeverity.Required, Outcome = CheckOutcome.Fail }])];
+        var cut = Page();
+        Tab(cut, "thresholds");
+        string Stage(string key) => cut.Find($"[data-testid=pt-threshold-stage][data-key={key}] strong").TextContent;
+        cut.WaitForAssertion(() => Stage("evaluated").Should().Be("1"));
+        (Stage("configured"), Stage("valid"), Stage("passed"), Stage("failed")).Should().Be(("1", "1", "0", "1"));
+        cut.Find("[data-testid=pt-threshold-row]").GetAttribute("data-run-state").Should().Be("Failed");
+        cut.Find("[data-testid=pt-threshold-run]").TextContent.Should().Contain("Failed · measured 610");
+        cut.Find("[data-testid=pt-threshold-table] thead").TextContent.Should().ContainAll("Metric", "Condition", "Target value", "Unit", "Policy", "Validation", "Readiness impact", "Latest evaluation");
+
+        cut.Find("[data-testid=pt-threshold-value]").Change("-1");
+        cut.Find("[data-testid=pt-threshold-row]").GetAttribute("data-valid").Should().Be("false");
+        cut.Find("[data-testid=pt-threshold-validation]").TextContent.Should().Be("The value must be 0 or more.");
+        cut.Find("[data-testid=pt-threshold-impact]").TextContent.Should().Be("Blocks readiness until fixed");
+        Stage("valid").Should().Be("0");
+        Stage("evaluated").Should().Be("0", "unsaved edits were never evaluated");
+        cut.Find("[data-testid=pt-threshold-evaluated-in]").TextContent.Should().Contain("Unsaved changes");
+        cut.Find("[data-testid=pt-tab-thresholds]").TextContent.Should().Contain("1 invalid");
+    }
+
+    [Fact]
+    public void Resources_show_each_execution_resource_by_stage_and_never_promote_unenforced_limits()
+    {
+        var readiness = ReadyState() with
+        {
+            Items = [.. ReadyState().Items,
+                new("runtime", "Execution runtime", PerformanceReadinessState.Ready, "Podman 5.4.2 is available.", false),
+                new("image", "Provider image", PerformanceReadinessState.Ready, "docker.io/grafana/k6:1.0.0", false),
+                new("container-limits", "Container resource limits", PerformanceReadinessState.Optional,
+                    "Requested: memory 1024 MiB · 2 CPU · 512 processes · read-only root file system with /tmp 64 MiB. Not enforced: memory, process limits — no cgroup controller.", false)
+                    { Status = "Partly enforced", Technical = "cgroup controllers: cpu" }],
+        };
+        Register(readiness: readiness);
+        _api.Runs = [Run(PerformanceRunState.Completed) with { ExecutionEvidence = new PerformanceExecutionEvidence(), RuntimeId = "podman", RuntimeVersion = "5.4.2",
+            ContainerImage = "docker.io/grafana/k6:1.0.0", Limitations = ["The container ran without memory/pids limits: the Podman host delegates no such cgroup controller."] }];
+        var cut = Page();
+        Tab(cut, "resources");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-exec-resources]"));
+        string State(string key, string stage) => cut.FindAll($"[data-testid=pt-exec-resource][data-key={key}] [data-testid=pt-exec-stage]").Single(s => s.GetAttribute("data-stage") == stage).GetAttribute("data-state")!;
+        State("limits", "Runtime available").Should().Be("Warning");
+        State("limits", "Execution verified").Should().Be("Warning");
+        State("image", "Runtime available").Should().Be("Yes");
+        State("runtime", "Execution verified").Should().Be("Yes");
+        cut.FindAll("[data-testid=pt-runtime-warning]").Select(w => w.TextContent).Should().Contain(w => w.StartsWith("Container resource limits"))
+            .And.Contain("The provider cannot cancel a run in progress.", "this provider fixture declares no cancellation capability");
+        cut.Find("[data-testid=prc]");
+        cut.FindAll("[data-testid=pt-exec-stage]").Should().OnlyContain(td => !string.IsNullOrEmpty(td.GetAttribute("data-label")), "each stage cell is labelled for the stacked 390 px layout");
+    }
+
+    [Fact]
+    public void Results_label_partial_and_cancelled_runs_and_keep_execution_failure_apart_from_application_failure()
+    {
+        Register();
+        var cancelled = Run(PerformanceRunState.Completed) with { State = PerformanceRunState.Cancelled, MetricsPartial = true, StateReason = "Cancelled by the tester" };
+        _api.Runs = [cancelled];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-result-interpretation]"));
+        cut.Find("[data-testid=pt-result-completeness]").TextContent.Should().Be("Partial");
+        cut.Find("[data-testid=pt-result-failure-kind]").TextContent.Should().Contain("Cancelled").And.Contain("not a completed run");
+        cut.Find("[data-testid=pt-result-status]").TextContent.Should().NotContain("completed", "a cancelled run is never shown as a completed one");
+        cut.Find("[data-testid=pt-result-dropped]").TextContent.Should().Be("Not reported by this run");
+        cut.Find("[data-testid=pt-result-scenario-version]").TextContent.Should().StartWith("Definition v2");
+    }
+
+    [Fact]
+    public void Results_of_an_execution_failure_show_no_metrics_and_never_an_application_failure()
+    {
+        Register();
+        _api.Runs = [Run(PerformanceRunState.ExecutionFailed) with { StateReason = "k6 exited before the workload started" }];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-result-interpretation]"));
+        cut.Find("[data-testid=pt-result-interpretation]").GetAttribute("data-failure").Should().Be("Execution failure");
+        cut.Find("[data-testid=pt-result-completeness]").TextContent.Should().Be("No metrics");
+        cut.FindAll("[data-testid=pt-latency]").Should().BeEmpty("no metrics are shown for a run that measured nothing");
+        cut.FindAll("[data-testid=pt-results] svg").Should().BeEmpty("no result graphs without executed evidence");
+    }
+
+    [Fact]
+    public void The_baseline_snapshot_identifies_both_runs()
+    {
+        Register();
+        var baselineRun = Guid.NewGuid();
+        var run = Run(PerformanceRunState.Completed) with
+        {
+            Drift = new PerformanceDriftAssessment { BaselineId = "b1", BaselineVersion = 1, BaselineRunId = baselineRun, Compatible = true, State = PerformanceDriftState.Stable,
+                Deltas = [PerformanceTestRules.Delta(PerformanceMetric.LatencyP95Ms, 600, 610)] },
+        };
+        _api.Runs = [run];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-result-baseline-runs]").TextContent.Should()
+            .Contain($"Baseline run {baselineRun.ToString("N")[..8]}").And.Contain($"this run {run.RunId.ToString("N")[..8]}"));
+    }
+
+    [Fact]
+    public void An_unsaved_edit_is_reflected_the_same_way_on_workload_thresholds_resources_and_readiness()
+    {
+        Register();
+        var cut = Page();
+        Tab(cut, "workload");
+        cut.Find("[data-testid=pt-steady]").Change("130");
+        foreach (var tab in new[] { "workload", "thresholds", "resources", "readiness", "run" })
+        {
+            Tab(cut, tab);
+            cut.Find("[data-testid=pt-unsaved-banner]").TextContent.Should().Contain("Unsaved changes to v2", tab);
+            cut.Find("[data-testid=pt-status-strip]");
+        }
+        Tab(cut, "thresholds");
+        cut.Find("[data-testid=pt-threshold-evaluated-in]").TextContent.Should().Contain("Unsaved changes");
+        Tab(cut, "resources");
+        cut.Find("[data-testid=pt-resources-unsaved]");
+        cut.FindAll("[data-testid=pt-exec-stage]").Where(s => s.GetAttribute("data-stage") == "Validated").Select(s => s.GetAttribute("data-state"))
+            .Should().OnlyContain(s => s == "NotChecked" || s == "NotApplicable", "validation is never claimed for unsaved changes");
+        _api.Calls.Should().NotContain("start");
+    }
 }

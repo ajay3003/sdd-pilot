@@ -468,3 +468,40 @@
 .ptc-unsaved { margin: .4rem 0; padding: .45rem .7rem; border-radius: 6px; border: 1px solid rgba(180, 83, 9, .4); background: rgba(217, 119, 6, .08); font-size: .88rem; }
 .ptc-save-first { margin: .5rem 0; padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--clr-link, #1d4ed8); background: rgba(29, 78, 216, .05); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .ptc-save-first p { margin: 0; flex: 1 1 20rem; }
+
+/* NEXT58B — Workload fields with units and inline errors, threshold lifecycle, execution resources by stage. Tables stack below 640px. */
+.ptc-grid-2 { display: grid; gap: 0.75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ptc-field { display: grid; gap: 0.2rem; align-content: start; min-width: 0; }
+.ptc-field > label { font-size: 0.86rem; font-weight: 600; }
+.ptc-unit { font-weight: 400; color: var(--clr-text-muted); }
+.ptc-field-help { font-size: 0.78rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.ptc-field-error { display: block; font-size: 0.8rem; color: #b91c1c; overflow-wrap: anywhere; }
+.ptc-field.is-invalid input, .ptc-field.is-invalid select, .ptc-thr-table input[aria-invalid=true] { border-color: #b91c1c; outline: 1px solid #b91c1c; }
+.ptc-inline-errors { border-left: 3px solid #b91c1c; background: #fef2f2; padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.75rem; overflow-wrap: anywhere; }
+.ptc-inline-errors ul { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+.ptc-estimate { margin-top: 1rem; }
+.ptc-lifecycle { display: flex; flex-wrap: wrap; gap: 0.4rem; list-style: none; margin: 0.5rem 0; padding: 0; }
+.ptc-lifecycle li { border: 1px solid var(--clr-border); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.82rem; background: var(--clr-surface-white); }
+.ptc-lifecycle li.is-open { border-color: #b45309; background: #fffbeb; }
+.ptc-thr-wrap, .ptc-res-wrap { max-width: 100%; min-width: 0; }
+.ptc-thr-table, .ptc-res-table { width: 100%; border-collapse: collapse; }
+.ptc-res-table th, .ptc-res-table td { text-align: left; vertical-align: top; padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--clr-border); font-size: 0.84rem; overflow-wrap: anywhere; }
+.ptc-thr-table select, .ptc-thr-table input { max-width: 100%; }
+.ptc-thr-run-passed { color: #166534; font-weight: 600; }
+.ptc-thr-run-failed, .ptc-thr-run-advisorymissed { color: #b91c1c; font-weight: 600; }
+.ptc-thr-run-notevaluated, .ptc-thr-run-notassessed { color: var(--clr-text-muted); }
+.ptc-stage { display: inline-block; font-weight: 700; font-size: 0.78rem; padding: 0 0.4rem; border-radius: 999px; border: 1px solid currentColor; margin-right: 0.3rem; }
+.ptc-stage-yes { color: #166534; background: #f0fdf4; }
+.ptc-stage-no { color: #b91c1c; background: #fef2f2; }
+.ptc-stage-warning { color: #92400e; background: #fffbeb; }
+.ptc-stage-notchecked, .ptc-stage-notapplicable { color: var(--clr-text-muted); }
+.ptc-stage-detail { display: block; font-size: 0.78rem; color: var(--clr-text-body); }
+@media (max-width: 640px) {
+    .ptc-grid-2 { grid-template-columns: minmax(0, 1fr); }
+    .ptc-thr-table thead, .ptc-res-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .ptc-thr-table, .ptc-thr-table tbody, .ptc-thr-table tr, .ptc-thr-table td,
+    .ptc-res-table, .ptc-res-table tbody, .ptc-res-table tr, .ptc-res-table td, .ptc-res-table th { display: block; width: 100%; box-sizing: border-box; }
+    .ptc-thr-table tr, .ptc-res-table tr { padding: 0.4rem 0; border-bottom: 1px solid var(--clr-border); }
+    .ptc-thr-table td, .ptc-res-table td, .ptc-res-table th { border: 0; padding: 0.15rem 0; }
+    .ptc-thr-table td[data-label]::before, .ptc-res-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; font-size: 0.8rem; }
+}

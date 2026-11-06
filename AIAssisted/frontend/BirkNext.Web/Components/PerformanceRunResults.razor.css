@@ -39,3 +39,4 @@
 .prr-list { margin: .3rem 0; padding-left: 1.2rem; font-size: .86rem; }
 .prr-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; font-size: .78rem; padding: .5rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: .35rem; }
 @media (prefers-color-scheme: dark) { .prr-reason, .prr-note { background: rgba(217, 119, 6, .12); } }
+.prr-interpret { margin: .75rem 0; padding: .5rem .75rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; overflow-wrap: anywhere; min-width: 0; }

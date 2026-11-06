@@ -160,16 +160,20 @@ public sealed partial class PodmanContainerExecutionRuntime(IProcessRunner runne
         return await ImageAsync(image, ct);
     }
 
+    /// <summary>Fixed hardening of every run: process limit and the size of the only writable path (/tmp) on the read-only root file system.</summary>
+    public const int PidsLimit = 512;
+    public const int TmpfsMegabytes = 64;
+
     /// <summary>The exact `podman run` argument list for a spec (unit-tested; nothing user-supplied can become a flag).</summary>
     public static List<string> RunArguments(ContainerRunSpec spec, IReadOnlySet<string>? controllers = null)
     {
         if (!ContainerArgumentRules.IsName(spec.Name)) throw new ArgumentException("Invalid container name.", nameof(spec));
         if (!ContainerArgumentRules.IsImage(spec.Image)) throw new ArgumentException("Invalid image reference.", nameof(spec));
         if (spec.Network is { } n && !ContainerArgumentRules.IsNetwork(n)) throw new ArgumentException("Invalid network name.", nameof(spec));
-        var args = new List<string> { "run", "--name", spec.Name, "--rm", "--pull=never", "--read-only", "--tmpfs", "/tmp:rw,size=64m", "--cap-drop=ALL",
+        var args = new List<string> { "run", "--name", spec.Name, "--rm", "--pull=never", "--read-only", "--tmpfs", $"/tmp:rw,size={TmpfsMegabytes}m", "--cap-drop=ALL",
             "--security-opt=no-new-privileges" };
         // Resource limits need the matching cgroup controller (rootless Podman often has none delegated); without it the limit flag fails the run.
-        if (controllers is null || controllers.Contains("pids")) args.Add("--pids-limit=512");
+        if (controllers is null || controllers.Contains("pids")) args.Add($"--pids-limit={PidsLimit}");
         if (controllers is null || controllers.Contains("memory")) args.Add($"--memory={Math.Clamp(spec.MemoryMegabytes, 128, 8192)}m");
         if (controllers is null || controllers.Contains("cpu")) args.Add($"--cpus={Math.Clamp(spec.Cpus, 0.25, 16).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}");
         foreach (var (key, value) in spec.Labels.OrderBy(l => l.Key, StringComparer.Ordinal))

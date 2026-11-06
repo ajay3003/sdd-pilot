@@ -140,8 +140,36 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
 /// and observability are optional: without thresholds a run is measured, not assessed.
 /// </summary>
 public sealed class PerformanceTestReadinessService(PerformanceTestOptions options, PerformanceTestProviderRegistry providers, Resources.ResourceObservationRegistry? resources = null,
-    IServiceScopeFactory? scopes = null)
+    IServiceScopeFactory? scopes = null, ContainerRuntime.IContainerExecutionRuntime? containers = null)
 {
+    /// <summary>
+    /// The load generator's container limits: what is requested (memory, CPU, processes, read-only root with a small /tmp) and whether the runtime can
+    /// enforce each (its delegated cgroup controllers). Never blocking and never Ready when a limit cannot be enforced — rootless Podman often
+    /// delegates none, and the run then proceeds without them (BirkNext's load limits still apply). Whether a run applied them is the run's own evidence.
+    /// </summary>
+    private async Task<PerformanceReadinessItem?> ContainerLimitsItemAsync(CancellationToken ct)
+    {
+        if (containers is null) return null;
+        const string Label = "Container resource limits";
+        var c = options.Container;
+        var requested = $"Requested: memory {c.MemoryMegabytes} MiB · {c.Cpus.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} CPU · {ContainerRuntime.PodmanContainerExecutionRuntime.PidsLimit} processes · read-only root file system with /tmp {ContainerRuntime.PodmanContainerExecutionRuntime.TmpfsMegabytes} MiB";
+        IReadOnlySet<string> controllers;
+        try { controllers = await containers.ControllersAsync(ct); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
+        {
+            return new("container-limits", Label, PerformanceReadinessState.Optional, $"{requested}. Whether the runtime can enforce them could not be determined.", false)
+                { Category = PerformanceReadinessCategories.Optional, Summary = "container limits", Status = "Not assessed" };
+        }
+        var missing = new[] { ("memory", "memory"), ("cpu", "CPU"), ("pids", "process") }.Where(x => !controllers.Contains(x.Item1)).Select(x => x.Item2).ToList();
+        var technical = controllers.Count == 0 ? "cgroup controllers: none delegated" : $"cgroup controllers: {string.Join(", ", controllers.Order(StringComparer.Ordinal))}";
+        return missing.Count == 0
+            ? new("container-limits", Label, PerformanceReadinessState.Ready, $"{requested}. The runtime delegates the memory, CPU and process controllers, so the limits can be enforced.", false)
+                { Category = PerformanceReadinessCategories.Optional, Summary = "container limits", Status = "Enforceable", Technical = technical }
+            : new("container-limits", Label, PerformanceReadinessState.Optional,
+                $"{requested}. Not enforced: {string.Join(", ", missing)} limit{(missing.Count == 1 ? "" : "s")} — the runtime delegates no such cgroup controller (common for rootless Podman). BirkNext's load limits (users, rate, duration, requests) still apply.", false)
+                { Category = PerformanceReadinessCategories.Optional, Summary = "container limits", Status = missing.Count == 3 ? "Not enforced" : "Partly enforced", Technical = technical };
+    }
+
     /// <summary>Resource Stability readiness: provider and target status, policy, and whether the planned duration can give a steady-state trend at all.
     /// Never blocking unless the definition explicitly requires resource evidence — telemetry does not gate the load test.</summary>
     private async Task<List<PerformanceReadinessItem>> ResourceItemsAsync(PerformanceTestDefinition d, CancellationToken ct)
@@ -218,6 +246,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
                 ? new("image", "Provider image", PerformanceReadinessState.Ready, provider.ImageDigest is null ? provider.Image : $"{provider.Image} ({provider.ImageDigest[..Math.Min(19, provider.ImageDigest.Length)]}...)", false) { Category = Setup, Summary = "provider image" }
                 : new("image", "Provider image", PerformanceReadinessState.ImageMissing, provider.Detail, true)
                     { Category = Setup, Summary = "provider image", Headline = "The k6 image is not available locally", Action = PerformanceReadinessActions.OpenEngines, Owner = LocalExecution });
+        if (runtime?.Availability == ProviderAvailability.Available && await ContainerLimitsItemAsync(ct) is { } limits) items.Add(limits);
         var toolReady = provider.Availability == ProviderAvailability.Available;
         // An invalid CA bundle makes the provider "misconfigured"; that is reported once, as Corporate CA trust (its owner and key), not twice.
         var caBlocksProvider = ca is { Configured: true, Usable: false } && provider.Availability == ProviderAvailability.Misconfigured && providerIssues.Count == 0;
@@ -274,7 +303,12 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         await ScenarioEvidenceItemsAsync(d, items, ct);
         Item("workload", "Workload", By("workload"), $"{d.Workload.Purpose}, {d.Workload.Mode}.", Definition, "workload", PerformanceReadinessActions.EditWorkload);
         Item("limits", "Safety limits", By("limit-duration", "limit-purpose", "limit-vus", "limit-rate", "limit-requests"), "Within the configured safety limits.", Safety, "safety limits", PerformanceReadinessActions.EditWorkload);
-        items.Add(d.Thresholds.Count == 0
+        // A threshold no value can meet sensibly (negative, an error rate above 100 %, duplicated or contradictory) is never hidden until a run.
+        var thresholdProblems = PerformanceTestRules.ThresholdProblems(d.Thresholds).Select((p, i) => p is null ? null : $"Threshold {i + 1}: {p}").OfType<string>().ToList();
+        items.Add(thresholdProblems.Count > 0
+            ? new("thresholds", "Thresholds", PerformanceReadinessState.InvalidScenario, string.Join(" ", thresholdProblems), true)
+                { Category = Definition, Summary = "thresholds", Headline = "A threshold cannot be evaluated", Action = PerformanceReadinessActions.EditThresholds }
+            : d.Thresholds.Count == 0
             ? new("thresholds", "Thresholds", PerformanceReadinessState.Optional, "No thresholds: the run will be measured, not assessed (no quality score).", false) { Category = Optional, Summary = "thresholds", Action = PerformanceReadinessActions.EditThresholds }
             : new("thresholds", "Thresholds", PerformanceReadinessState.Ready, $"{d.Thresholds.Count(t => t.Severity == ThresholdSeverity.Required)} required, {d.Thresholds.Count(t => t.Severity == ThresholdSeverity.Advisory)} advisory (configured expectations, not universal standards).", false) { Category = Definition, Summary = "thresholds" });
         items.Add(new("baseline", "Baseline", PerformanceReadinessState.Optional, hasActiveBaseline ? "An active baseline exists for this scope; drift will be assessed against it." : "No baseline selected — promote a completed run explicitly to create one.", false) { Category = Optional, Summary = "baseline" });

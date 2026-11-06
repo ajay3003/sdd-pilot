@@ -539,6 +539,32 @@ public sealed class PerformanceTestReviewTests
     }
 
     [Fact]
+    public async Task Container_limits_report_what_the_runtime_can_enforce_and_never_block_or_claim_ready_without_controllers()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        var service = h.Services.GetRequiredService<PerformanceTestReadinessService>();
+        var all = (await service.EvaluateAsync(d, Data(), false)).Items.Single(i => i.Key == "container-limits");
+        all.Should().Match<PerformanceReadinessItem>(i => i.State == PerformanceReadinessState.Ready && !i.Blocking && i.Status == "Enforceable" && i.Category == PerformanceReadinessCategories.Optional);
+        all.Detail.Should().Contain("memory").And.Contain("512 processes").And.Contain("read-only root file system");
+
+        h.Runner.Controllers = ["cpu"];
+        var partial = (await service.EvaluateAsync(d, Data(), false)).Items.Single(i => i.Key == "container-limits");
+        partial.Should().Match<PerformanceReadinessItem>(i => i.State == PerformanceReadinessState.Optional && !i.Blocking && i.Status == "Partly enforced");
+        partial.Detail.Should().Contain("Not enforced: memory, process limits");
+        partial.Technical.Should().Be("cgroup controllers: cpu");
+
+        h.Runner.Controllers = [];
+        var none = await service.EvaluateAsync(d, Data(), false);
+        none.Items.Single(i => i.Key == "container-limits").Status.Should().Be("Not enforced");
+        none.Blockers.Should().NotContain(b => b.Contains("Not enforced"), "unenforceable container limits never gate the load test");
+
+        h.Runner.RuntimeAvailability = ProviderAvailability.Unavailable;
+        h.Registry.InvalidateStatus(d.ProviderId);
+        (await service.EvaluateAsync(d, Data(), false)).Items.Should().NotContain(i => i.Key == "container-limits", "without a runtime nothing can be said about its limits");
+    }
+
+    [Fact]
     public async Task PodmanMissing_BlocksReadiness_AsAToolLimitation()
     {
         await using var h = new Harness();

@@ -980,5 +980,57 @@ public static class PerformanceTestRules
     }
 
     /// <summary>Warm-up concurrency: a tenth of the target, at least 1.</summary>
+    /// <summary>Upper bound of requests: exact for arrival rate (rate × time × steps); for virtual users assumes ≥ 50 ms per request plus think time.
+    /// One formula for readiness (the request safety limit) and the Workload tab's estimate.</summary>
+    public static long EstimatedMaxRequests(PerformanceWorkload w, IReadOnlyList<HttpPerformanceStep> steps)
+    {
+        var count = Math.Max(1, steps.Count);
+        if (w.Mode == WorkloadMode.ArrivalRate)
+        {
+            var target = w.RequestsPerSecond ?? 0;
+            var start = w.StartRequestsPerSecond ?? Math.Max(1, target / 10);
+            var iterations = start * w.WarmupSeconds + (start + target) / 2 * w.RampUpSeconds + target * w.SteadyStateSeconds + target / 2 * w.RampDownSeconds;
+            return (long)Math.Ceiling(iterations * count);
+        }
+        var vus = w.VirtualUsers ?? 1;
+        var iterationSeconds = steps.Sum(s => 0.05 + (s.ThinkTimeMs ?? 0) / 1000.0);
+        if (iterationSeconds <= 0) iterationSeconds = 0.05;
+        var vuSeconds = WarmupVirtualUsers(w) * (double)w.WarmupSeconds + (vus / 2.0) * w.RampUpSeconds + vus * (double)w.SteadyStateSeconds + vus / 2.0 * w.RampDownSeconds;
+        return (long)Math.Ceiling(vuSeconds / iterationSeconds * count);
+    }
+
+    /// <summary>
+    /// Why a threshold cannot be evaluated meaningfully, index-aligned with <paramref name="thresholds"/> (null = valid): not a number, negative, an
+    /// error rate above 100 %, a duplicate of an earlier rule, or a rule no value can meet together with an earlier one. One rule for the backend
+    /// readiness (blocking) and the Thresholds tab (inline).
+    /// </summary>
+    public static IReadOnlyList<string?> ThresholdProblems(IReadOnlyList<PerformanceThreshold> thresholds)
+    {
+        var problems = new string?[thresholds.Count];
+        static bool Upper(ThresholdOperator o) => o is ThresholdOperator.LessThan or ThresholdOperator.LessThanOrEqual;
+        for (var i = 0; i < thresholds.Count; i++)
+        {
+            var t = thresholds[i];
+            if (!double.IsFinite(t.Value)) { problems[i] = "Enter a number."; continue; }
+            if (t.Value < 0) { problems[i] = "The value must be 0 or more."; continue; }
+            if (t.Metric == PerformanceMetric.ErrorRatePercent && t.Value > 100) { problems[i] = "An error rate cannot exceed 100 %."; continue; }
+            if (t.Operator == ThresholdOperator.LessThan && t.Value <= 0) { problems[i] = "No measured value can be below 0."; continue; }
+            for (var j = 0; j < i && problems[i] is null; j++)
+            {
+                var o = thresholds[j];
+                if (o.Metric != t.Metric || !double.IsFinite(o.Value)) continue;
+                if (o.Operator == t.Operator) problems[i] = $"Duplicates threshold {j + 1} ({Label(t.Metric)} {Symbol(t.Operator)}).";
+                else if (Upper(o.Operator) != Upper(t.Operator))
+                {
+                    var (upper, lower) = Upper(o.Operator) ? (o, t) : (t, o);
+                    var strict = upper.Operator == ThresholdOperator.LessThan || lower.Operator == ThresholdOperator.GreaterThan;
+                    if (lower.Value > upper.Value || strict && lower.Value >= upper.Value)
+                        problems[i] = $"Contradicts threshold {j + 1}: no value can meet both.";
+                }
+            }
+        }
+        return problems;
+    }
+
     public static int WarmupVirtualUsers(PerformanceWorkload w) => Math.Max(1, (int)Math.Ceiling((w.VirtualUsers ?? 1) / 10.0));
 }

@@ -278,23 +278,7 @@ public static partial class PerformanceTestSafety
     }
 
     /// <summary>Upper bound of requests: exact for arrival rate (rate × time × steps); for virtual users assumes ≥ 50 ms per request plus think time.</summary>
-    public static long EstimatedMaxRequests(PerformanceTestDefinition d)
-    {
-        var w = d.Workload;
-        var steps = Math.Max(1, d.Scenario.Steps.Count);
-        if (w.Mode == WorkloadMode.ArrivalRate)
-        {
-            var target = w.RequestsPerSecond ?? 0;
-            var start = w.StartRequestsPerSecond ?? Math.Max(1, target / 10);
-            var iterations = start * w.WarmupSeconds + (start + target) / 2 * w.RampUpSeconds + target * w.SteadyStateSeconds + target / 2 * w.RampDownSeconds;
-            return (long)Math.Ceiling(iterations * steps);
-        }
-        var vus = w.VirtualUsers ?? 1;
-        var iterationSeconds = d.Scenario.Steps.Sum(s => 0.05 + (s.ThinkTimeMs ?? 0) / 1000.0);
-        if (iterationSeconds <= 0) iterationSeconds = 0.05;
-        var vuSeconds = PerformanceTestRules.WarmupVirtualUsers(w) * (double)w.WarmupSeconds + (vus / 2.0) * w.RampUpSeconds + vus * (double)w.SteadyStateSeconds + vus / 2.0 * w.RampDownSeconds;
-        return (long)Math.Ceiling(vuSeconds / iterationSeconds * steps);
-    }
+    public static long EstimatedMaxRequests(PerformanceTestDefinition d) => PerformanceTestRules.EstimatedMaxRequests(d.Workload, d.Scenario.Steps);
 
     [GeneratedRegex(@"\{([A-Za-z_][A-Za-z0-9_]*)\}")] internal static partial Regex PlaceholderPattern();
     [GeneratedRegex(@"^[A-Za-z0-9 _.\-]{1,60}$")] private static partial Regex StepNamePattern();
