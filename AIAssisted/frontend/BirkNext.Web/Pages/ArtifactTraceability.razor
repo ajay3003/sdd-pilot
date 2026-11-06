@@ -9,6 +9,7 @@
 @inject BirkNext.Web.Services.Explorers.IArtifactExplorerContext ArtifactContext
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 @implements IDisposable
 
 <PageTitle>Requirements Traceability</PageTitle>
@@ -705,6 +706,42 @@
     private Exception? _analysisError;
 
     private TraceabilityStatus? _statusFilter;
+
+    // ── URL state: ?tab=, ?q=, ?status= (deep links, Back/Forward). The URL is written after the user changes them, never on load. ──
+    private static readonly HashSet<string> Tabs = ["overview", "const-spec", "spec-plan", "plan-task", "gaps", "matrix"];
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? SearchParam { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusParam { get; set; }
+    private (string Tab, string Search, TraceabilityStatus? Status)? _urlState;
+
+    private static TraceabilityStatus? ParseStatus(string? value) => value switch { "linked" => TraceabilityStatus.Covered, "missing" => TraceabilityStatus.Missing, _ => null };
+    private static string? StatusValue(TraceabilityStatus? status) => status switch { TraceabilityStatus.Covered => "linked", TraceabilityStatus.Missing => "missing", _ => null };
+
+    /// <summary>Applies the URL's tab/search/status (initial load and Back/Forward); unknown values fall back to the defaults.</summary>
+    private void ApplyUrlState()
+    {
+        _tab = TabParam is { } t && Tabs.Contains(t) ? t : "overview";
+        _search = SearchParam ?? string.Empty;
+        _statusFilter = ParseStatus(StatusParam);
+        _urlState = (_tab, _search, _statusFilter);
+    }
+
+    protected override void OnParametersSet()
+    {
+        var fromUrl = (TabParam is { } t && Tabs.Contains(t) ? t : "overview", SearchParam ?? string.Empty, ParseStatus(StatusParam));
+        if (_urlState != fromUrl) ApplyUrlState();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        var now = (_tab, _search, _statusFilter);
+        if (_urlState is null || _urlState == now) return;
+        _urlState = now;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["tab"] = _tab == "overview" ? null : _tab, ["q"] = string.IsNullOrWhiteSpace(_search) ? null : _search, ["status"] = StatusValue(_statusFilter),
+        }), replace: true);
+    }
     private bool _policyOnly;
     private TraceabilityObservationCategory? _categoryFilter;
     private ArtifactType? _gapArtifactFilter;
@@ -920,9 +957,8 @@
             _report = NormalizeReport(TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext));
             _reportKey = _inputs.Key;
             DashboardSnapshot.Publish(_report);
-            _tab            = "overview";
-            _search         = string.Empty;
-            _statusFilter   = null;
+            // A new analysis starts from the URL's view (deep link) rather than always resetting to Overview.
+            ApplyUrlState();
             _gapArtifactFilter = null;
             _categoryFilter = null;
             _policyOnly     = false;

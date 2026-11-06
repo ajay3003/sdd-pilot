@@ -299,4 +299,29 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
         html.Should().Contain($"{report.AssessedTransitionCount} of {report.Transitions.Count} transitions assessed").And.Contain("no combined score");
         html.Should().Contain("Plan → Tasks: Not assessed");
     }
+
+    // ── URL state: tab, search and status filter survive reloads and deep links ──────────────────────────────────────
+
+    [Fact]
+    public void A_deep_link_opens_the_tab_search_and_filter_it_names()
+    {
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("artifact-traceability?tab=const-spec&q=GOV&status=missing");
+        var cut = RenderReport();
+        cut.Find(".at-tab-btn.is-active").TextContent.Should().Contain("Constitution");
+        cut.Find("input.at-search").GetAttribute("value").Should().Be("GOV");
+        cut.FindAll(".at-filter-chip.is-active").Should().ContainSingle(c => c.TextContent.Contains("No explicit reference"));
+    }
+
+    [Fact]
+    public void Changing_tab_writes_the_url_and_an_unknown_tab_falls_back_to_overview()
+    {
+        var navigation = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        navigation.NavigateTo("artifact-traceability?tab=nonsense");
+        var cut = RenderReport();
+        cut.Find(".at-tab-btn.is-active").TextContent.Should().Contain("Overview");
+        Tab(cut, "Matrix");
+        cut.WaitForAssertion(() => navigation.Uri.Should().Contain("tab=matrix"));
+        Tab(cut, "Overview");
+        cut.WaitForAssertion(() => navigation.Uri.Should().NotContain("tab="));
+    }
 }
