@@ -84,6 +84,11 @@
                 }
             </dl>
 
+            @* Guided steps over what this page already loads: each step names the module that owns the fix. *@
+            <GuidedStepList Steps="@SkoleNaervaerWorkflow.Derive(_profile is null ? null : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name, _guidance?.Sources ?? [],
+                                IntegrationCoverage, _testDataStatus, Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>().ToList(), ExecutionConfiguration, TabHref, _profile?.Id)"
+                            TestId="snt-steps" Label="Skolenærvær testing steps" />
+
             @if (_guidance is { } guidance && guidance.Sources.Count > 0)
             {
                 <section class="snt-summary-card" aria-labelledby="snt-source-requirements-heading" data-testid="snt-source-requirements">
@@ -93,7 +98,7 @@
                         {
                             var optional = source.Role.Provider == TestPackSourceProvider.ImportedSource && source.Role.Requirement != TestPackSourceRequirement.Required;
                             <li class="snt-source-summary-item @(optional ? "is-optional" : "")" data-testid="snt-source-summary" data-role="@source.Role.Key">
-                                <span class="snt-source-name">@source.Role.Label@if (optional) { <span class="snt-muted"> · optional</span> }</span>
+                                <span class="snt-source-name">@(source.Role.Label)@if (optional) { <span class="snt-muted"> · optional</span> }</span>
                                 <span class="snt-pill snt-pill-@SourceGuidancePresentation.SourceStateTone(source.State)" data-testid="snt-source-summary-state">@SourceSummaryLabel(source)</span>
                             </li>
                         }
@@ -128,7 +133,7 @@
                     <h3 class="snt-subheading" id="snt-configuration-heading">Configuration</h3>
                     @* Known values are one fact; integration coverage and execution are separate — "9/9 known" never reads as ready. *@
                     <dl class="snt-config-facts" data-testid="snt-config-facts">
-                        <div><dt>Configuration values</dt><dd data-testid="snt-config-known">@known of @configuration.Suggestions.Count known@if (configuration.Suggestions.Count - known > 0) { <span> · @(configuration.Suggestions.Count - known) need attention</span> }</dd></div>
+                        <div><dt>Configuration values</dt><dd data-testid="snt-config-known">@($"{known} of {configuration.Suggestions.Count} known")@if (configuration.Suggestions.Count - known > 0) { <span data-testid="snt-config-attention"> · @(configuration.Suggestions.Count - known) need attention</span> }</dd></div>
                         <div><dt>Integration coverage</dt><dd data-testid="snt-config-integrations">@IntegrationCoverage</dd></div>
                         <div><dt>Execution configuration</dt><dd data-testid="snt-config-execution">@ExecutionConfiguration</dd></div>
                     </dl>
@@ -143,7 +148,7 @@
 
             @* Test Data readiness: the shared Test Data rule and component (owner: Test Data); read-only here, no second definition. *@
             <section class="snt-summary-card" data-testid="snt-test-data">
-                <BirkNext.Web.Components.TestDataTesterReadiness Heading="Test Data" ShowOwnerLink="true" TestId="snt-test-data-readiness" />
+                <BirkNext.Web.Components.TestDataTesterReadiness Heading="Test Data" ShowOwnerLink="true" TestId="snt-test-data-readiness" OnStatus="OnTestDataStatus" />
             </section>
 
             @if (_pack is not null && Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>().ToList() is { Count: > 0 } setupViews)
@@ -179,11 +184,15 @@
                     <p data-testid="snt-attention-summary"><strong>@JourneyReadinessPresentation.AttentionSummary(attention)</strong></p>
                     @if (attention.Count > 0)
                     {
+                        <p class="snt-muted" data-testid="snt-attention-counting">@attention.Sum(c => c.Count) underlying item@(attention.Sum(c => c.Count) == 1 ? "" : "s") in @attention.Count root-cause group@(attention.Count == 1 ? "" : "s"): each item is counted once, and grouping never removes an item.</p>
+                    }
+                    @if (attention.Count > 0)
+                    {
                         <ul class="snt-attention-owner-list">
                             @foreach (var category in attention)
                             {
                                 var href = JourneyReadinessPresentation.OwnerHref(category.OwnerKey, _profile?.Id);
-                                <li data-testid="snt-attention-category" data-dimension="@category.Dimension">@category.Label (@category.Count: @string.Join(", ", category.Journeys)) — owner: @category.Owner@if (href is not null) { <text> · </text><a href="@href">@JourneyReadinessPresentation.OwnerAction(category.OwnerKey)</a> }</li>
+                                <li data-testid="snt-attention-category" data-dimension="@category.Dimension">@category.Label (@category.Count: @string.Join(", ", category.Journeys)) — owner: @(category.Owner)@if (href is not null) { <text> · </text><a href="@href">@JourneyReadinessPresentation.OwnerAction(category.OwnerKey)</a> }</li>
                             }
                         </ul>
                     }
@@ -461,6 +470,9 @@
     private FrontendAnalysisProfile? _profile;
     private string _sourceSummary = "Not available";
     private TestPackSourceGuidance? _guidance;
+    /// <summary>The shared Test Data readiness as its owner computed it (reported by the component; never recomputed here).</summary>
+    private TestDataTesterStatus? _testDataStatus;
+    private void OnTestDataStatus(TestDataTesterStatus? status) => _testDataStatus = status;
     private BirkNext.SourceDomains.SourceConfigurationApplyResult? _applyResult;
     private string? _applyError;
     private bool _applying;

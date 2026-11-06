@@ -362,6 +362,38 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.Find("[data-testid=snt-source-values]").Should().NotBeNull("the values stay collapsed");
     }
 
+    private static BirkNext.SourceDomains.SourceConfigurationSuggestion Suggestion(string key, string? value) =>
+        new(new BirkNext.SourceDomains.SourceConfigurationRequirement(key, key, "Endpoint." + key, "App", "Configuration", "p", "IQR"),
+            value is null ? BirkNext.SourceDomains.SourceSuggestionState.SourceMissing : BirkNext.SourceDomains.SourceSuggestionState.Suggested) { Value = value };
+
+    [Fact]
+    public void Configuration_counts_render_as_text_never_as_a_raw_razor_expression()
+    {
+        WithTarget();
+        _journeys.Guidance = new("skolenaervaer", [Suggestion("a", "https://a.example.test"), Suggestion("b", null), Suggestion("c", null)]);
+        var page = Open();
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-config-known]"));
+        var known = page.Find("[data-testid=snt-config-known]").TextContent;
+        known.Should().MatchRegex(@"^\d+ of 3 known");
+        known.Should().NotContain("Suggestions.Count").And.NotContain("{").And.NotContain("}", "the @if after \"known\" was printed as text (Razor read known@if as an e-mail address)");
+        page.Markup.Should().NotContain("configuration.Suggestions");
+    }
+
+    [Fact]
+    public void Overview_has_seven_guided_steps_and_the_attention_counts_keep_items_and_groups_apart()
+    {
+        WithTarget();
+        var page = Open();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-steps] [data-testid=gsl-step]").Should().HaveCount(7));
+        page.FindAll("[data-testid=snt-steps] [data-testid=gsl-step]").Select(s => s.GetAttribute("data-step"))
+            .Should().Equal("sources", "integrations", "test-data", "journeys", "execution", "verify", "history");
+        page.FindAll("[data-testid=snt-steps] [aria-current=step]").Count.Should().BeLessThanOrEqualTo(1);
+        page.Find("[data-testid=snt-steps] [data-step=verify]").TextContent.Should().Contain("executed is not verified").And.Contain("no live journey runs from this overview");
+        page.Find("[data-testid=snt-steps] [data-step=history]").TextContent.Should().Contain("a historical pass is not current readiness");
+        if (page.FindAll("[data-testid=snt-attention-counting]").Count > 0)
+            page.Find("[data-testid=snt-attention-counting]").TextContent.Should().Contain("root-cause group").And.Contain("grouping never removes an item");
+    }
+
     [Fact]
     public void A_blocker_says_what_kind_of_input_it_needs_and_shows_its_source_guidance_collapsed()
     {
