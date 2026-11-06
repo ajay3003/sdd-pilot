@@ -313,4 +313,24 @@ public sealed class TestDataTesterViewTests : BunitContext
         State("consumers").Should().Be("NeedsAttention", "no consumer binds the fixture yet");
         State("runtime").Should().Be("NotAssessed");
     }
+
+    // ── Test Data Overview: dimension detail and next step are separate elements ─────────────────────────────────────────────
+
+    [Fact]
+    public void Readiness_values_and_dimension_next_steps_render_as_separate_elements()
+    {
+        _catalog = new([.. Identities()], [], []);
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=tdr-dimension]").Should().HaveCount(8));
+        page.Find("[data-testid=tdr-overall] dd").ClassList.Should().Contain("tdr-fields");
+        page.Find("[data-testid=tdr-role][data-role=Reporter] dd").Children.Length.Should().BeGreaterThan(1, "status and identity name are separate");
+        var fixture = page.Find("[data-testid=tdr-dimension][data-key=fixture]");
+        fixture.QuerySelector("[data-testid=tdr-dimension-detail]").Should().NotBeNull();
+        var action = fixture.QuerySelector("[data-testid=tdr-dimension-action]");
+        if (action is not null)
+        {
+            action.TextContent.Should().StartWith("Next step: ");
+            fixture.QuerySelector("[data-testid=tdr-dimension-detail]")!.TextContent.Should().NotContain(action.TextContent.Replace("Next step: ", ""), "the next step is not glued onto the detail");
+        }
+    }
 }

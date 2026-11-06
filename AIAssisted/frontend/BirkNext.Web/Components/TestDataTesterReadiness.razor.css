@@ -27,3 +27,6 @@
 .tdr-evidence li { overflow-wrap: anywhere; }
 .tdr-evidence-label { font-weight: 600; }
 @media (max-width: 640px) { .tdr-dim { grid-template-columns: minmax(0, 1fr) auto; } .tdr-dim-detail { grid-column: 1 / -1; } }
+
+.tdr-fields { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; min-width: 0; overflow-wrap: anywhere; }
+.tdr-dim-action { grid-column: 1 / -1; font-size: .8rem; font-weight: 600; }

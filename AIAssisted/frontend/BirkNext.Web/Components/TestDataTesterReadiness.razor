@@ -26,12 +26,12 @@
             {
                 <div data-testid="tdr-role" data-role="@role.Role" data-ready="@(role.Ready ? "true" : "false")">
                     <dt>@role.Role</dt>
-                    <dd><span class="tdr-pill tdr-@(role.Ready ? "ready" : "attention")">@role.Status</span>@if (role.Label is { } label) { <span class="tdr-label"> @label</span> }@if (role.Note is { } note) { <span class="tdr-muted tdr-note"> @note</span> }</dd>
+                    <dd class="tdr-fields"><span class="tdr-pill tdr-@(role.Ready ? "ready" : "attention")">@role.Status</span>@if (role.Label is { } label) { <span class="tdr-label">@label</span> }@if (role.Note is { } note) { <span class="tdr-muted tdr-note">@note</span> }</dd>
                 </div>
             }
             <div data-testid="tdr-xml" data-state="@status.Xml">
                 <dt>XML fixture</dt>
-                <dd><span class="tdr-pill tdr-@(status.Xml == TestDataXmlReadinessState.Ready ? "ready" : "attention")">@status.XmlText</span>@if (status.Fixture is { } fixture) { <span class="tdr-label"> @(fixture.Label ?? fixture.Alias)</span> }</dd>
+                <dd class="tdr-fields"><span class="tdr-pill tdr-@(status.Xml == TestDataXmlReadinessState.Ready ? "ready" : "attention")">@status.XmlText</span>@if (status.Fixture is { } fixture) { <span class="tdr-label">@(fixture.Label ?? fixture.Alias)</span> }</dd>
             </div>
             @* Fixture validation: a fixture checked against the exact bound XSD. With no fixture yet, it is waiting — never "contract missing". *@
             <div data-testid="tdr-contract" data-state="@status.ContractValidation">
@@ -47,7 +47,7 @@
             }
             <div data-testid="tdr-overall" data-state="@status.Overall">
                 <dt>Test Data readiness</dt>
-                <dd><span class="tdr-pill tdr-@(status.Ready ? "ready" : "attention")">@status.Overall</span>@if (status.Reason is { } reason) { <span class="tdr-muted"> — @reason</span> }</dd>
+                <dd class="tdr-fields"><span class="tdr-pill tdr-@(status.Ready ? "ready" : "attention")">@status.Overall</span>@if (status.Reason is { } reason) { <span class="tdr-muted">@reason</span> }</dd>
             </div>
         </dl>
         @if (ShowDimensions)
@@ -60,7 +60,8 @@
                     <li class="tdr-dim tdr-dim-@dim.State.ToString().ToLowerInvariant()" data-testid="tdr-dimension" data-key="@dim.Key" data-state="@dim.State">
                         <span class="tdr-dim-title">@dim.Title</span>
                         <span class="tdr-pill tdr-@(dim.State == TestDataDimensionState.Ready ? "ready" : "attention")">@TestDataReadinessModel.Label(dim.State)</span>
-                        <span class="tdr-muted tdr-dim-detail">@dim.Detail@if (dim.Action is { } action) { <strong> @action</strong> }</span>
+                        <span class="tdr-muted tdr-dim-detail" data-testid="tdr-dimension-detail">@dim.Detail</span>
+                        @if (dim.Action is { } action) { <span class="tdr-dim-action" data-testid="tdr-dimension-action"><span class="visually-hidden">Next step: </span>@action</span> }
                         @if (dim.Evidence.Count > 0)
                         {
                             <ul class="tdr-evidence" aria-label="Evidence for @dim.Title">

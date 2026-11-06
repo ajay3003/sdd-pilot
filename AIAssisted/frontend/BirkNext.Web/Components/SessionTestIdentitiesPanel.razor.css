@@ -5,3 +5,10 @@
 .sti-form .sti-check { display: flex; gap: .4rem; align-items: center; }
 .sti-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
 .sti-message { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+
+.sti-fields { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin: 0; min-width: 0; }
+.sti-field { display: inline-flex; min-width: 0; }
+.sti-alias { overflow-wrap: anywhere; }
+.sti-badge-ready { color: #166534; }
+.sti-badge-attention { color: #92400e; }
+.sti-note { flex-basis: 100%; }

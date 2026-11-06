@@ -26,18 +26,20 @@
                 var chosen = candidates.Where(a => a.IsDefault).ToList() is { Count: 1 } defaults ? defaults[0] : candidates.Count == 1 ? candidates[0] : null;
                 <div data-testid="sti-role-row" data-role="@role">
                     <dt>@label</dt>
-                    <dd>
+                    @* Separate fields, laid out with gaps (Blazor drops whitespace-only separators, which once rendered "…-defaultDefaultReady"). *@
+                    <dd class="sti-fields">
                         @if (chosen is not null)
                         {
-                            <span data-testid="sti-chosen">@(chosen.Label ?? chosen.Alias)</span> <code class="sti-alias">@chosen.Alias</code>
-                            @if (chosen.IsDefault) { <span class="sti-badge" data-testid="sti-default">Default</span> }
-                            <span class="sti-badge" data-testid="sti-state">@(chosen.Approval == TestDataApproval.Approved ? "Ready" : "Not approved")</span>
-                            @if (candidates.Count > 1) { <span class="sti-muted"> · @(candidates.Count - 1) other identit@(candidates.Count == 2 ? "y" : "ies") available; a run can select another.</span> }
+                            <span class="sti-field"><span class="visually-hidden">Name: </span><span data-testid="sti-chosen">@(chosen.Label ?? chosen.Alias)</span></span>
+                            <span class="sti-field"><span class="visually-hidden">Technical ID: </span><code class="sti-alias" data-testid="sti-alias">@chosen.Alias</code></span>
+                            <span class="sti-field"><span class="visually-hidden">Selected as: </span><span class="sti-badge sti-badge-source" data-testid="sti-default">@(chosen.IsDefault ? "Default" : "Only identity")</span></span>
+                            <span class="sti-field"><span class="visually-hidden">Status: </span><span class="sti-badge sti-badge-@(chosen.Approval == TestDataApproval.Approved ? "ready" : "attention")" data-testid="sti-state">@(chosen.Approval == TestDataApproval.Approved ? "Ready" : "Not approved")</span></span>
+                            @if (candidates.Count > 1) { <span class="sti-muted sti-note">@($"{candidates.Count - 1} other identit{(candidates.Count == 2 ? "y" : "ies")} available; a run can select another.")</span> }
                         }
                         else
                         {
                             <span data-testid="sti-chosen">@(candidates.Count == 0 ? "Missing" : "Choose…")</span>
-                            <span class="sti-muted"> @(candidates.Count == 0 ? "Add one below." : $"{candidates.Count} identities and no default: a run chooses one.")</span>
+                            <span class="sti-muted sti-note">@(candidates.Count == 0 ? "Add one below." : $"{candidates.Count} identities and no default: a run chooses one.")</span>
                         }
                     </dd>
                 </div>

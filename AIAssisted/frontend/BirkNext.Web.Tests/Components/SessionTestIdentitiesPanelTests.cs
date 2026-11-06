@@ -51,4 +51,22 @@ public sealed class SessionTestIdentitiesPanelTests : BunitContext
 
         Render(Identity("reporter-a", "Reporter A", "reporter")).Find("[data-testid=sti-role-row][data-role=child] [data-testid=sti-chosen]").TextContent.Should().Be("Missing");
     }
+
+    // ── Test Data Overview: each value is its own labelled field (no run-together "…-defaultDefaultReady") ─────────────────────
+
+    [Fact]
+    public void Each_identity_value_is_a_separate_labelled_field_and_the_source_is_named()
+    {
+        var cut = Render(Identity("skolenaervaer-reporter-default", "Skolenærvær default reporter", "reporter", isDefault: true),
+            Identity("skolenaervaer-child-only", "Only child", "child"));
+        var reporter = cut.Find("[data-testid=sti-role-row][data-role=reporter]");
+        reporter.QuerySelector("dd")!.ClassList.Should().Contain("sti-fields");
+        reporter.QuerySelectorAll(".sti-field").Should().HaveCount(4, "name, technical ID, source and status are separate fields");
+        reporter.QuerySelector("[data-testid=sti-alias]")!.TextContent.Should().Be("skolenaervaer-reporter-default");
+        reporter.QuerySelector("[data-testid=sti-default]")!.TextContent.Should().Be("Default");
+        reporter.QuerySelector("[data-testid=sti-state]")!.TextContent.Should().Be("Ready");
+        reporter.TextContent.Should().NotContain("defaultDefault").And.NotContain("DefaultReady");
+        reporter.TextContent.Should().Contain("Technical ID:").And.Contain("Status:", "screen readers hear what each value is");
+        cut.Find("[data-testid=sti-role-row][data-role=child] [data-testid=sti-default]").TextContent.Should().Be("Only identity", "chosen because it is the only one, not a default");
+    }
 }
