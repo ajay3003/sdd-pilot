@@ -124,3 +124,5 @@
     border: 1px solid rgba(29, 78, 216, .25); background: rgba(29, 78, 216, .05); }
 .td-next-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--clr-text-muted, #64748b); }
 @media (max-width: 640px) { .td-section-link.is-advanced { margin-left: 0; } }
+.td-auto-draft { border-left: 3px solid #b45309; background: #fffbeb; padding: .5rem .75rem; margin-bottom: .75rem; border-radius: 4px; overflow-wrap: anywhere; }
+.td-auto-draft ul { margin: .25rem 0 .5rem; padding-left: 1.1rem; }

@@ -140,6 +140,19 @@
         {
         <section class="td-card" id="td-xml-fixtures" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
             <h2 id="td-xml-heading">XML fixtures</h2>
+            @if (Services.GetService(typeof(BirkNext.Web.Services.ProjectImport.ProjectImportSession)) is BirkNext.Web.Services.ProjectImport.ProjectImportSession import
+                 && import.AutoDrafts.Where(d => !d.Created && d.Kind is not (XmlFixtureAutoDraftKind.AlreadyCurrent or XmlFixtureAutoDraftKind.NotApplicable)).ToList() is { Count: > 0 } incomplete)
+            {
+                @* A successful import can leave the fixture incomplete: the reason stays visible here until the draft is created (Retry needs no reimport). *@
+                <div class="td-auto-draft" role="status" data-testid="td-auto-draft">
+                    <p><strong>After the last Project Import, no XML fixture draft was created.</strong></p>
+                    <ul>@foreach (var o in incomplete) { <li data-testid="td-auto-draft-reason" data-kind="@o.Kind"><strong>@XmlFixtureAutoDraftOutcome.Label(o.Kind)</strong> · @o.Context: @o.Message</li> }</ul>
+                    @if (incomplete.Any(o => o.Retryable) && import.AutoDraftSnapshot is { } snapshot)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm" data-testid="td-auto-draft-retry" disabled="@_autoDraftBusy" @onclick="() => RetryAutoDraftAsync(import, snapshot)">@(_autoDraftBusy ? "Retrying…" : "Retry XML fixture draft")</button>
+                    }
+                </div>
+            }
             <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" AutoOpen="@(Create == "xml")" />
         </section>
         }
@@ -594,6 +607,22 @@
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = "The Test Data catalog could not be reached: the backend address is not configured."; }
         finally { _loading = false; }
+    }
+
+    private bool _autoDraftBusy;
+
+    /// <summary>Runs the import's automatic draft again for the same snapshot (no reimport), then reloads the catalog so the new draft is listed.</summary>
+    private async Task RetryAutoDraftAsync(BirkNext.Web.Services.ProjectImport.ProjectImportSession import, Guid snapshot)
+    {
+        _autoDraftBusy = true;
+        try
+        {
+            try { import.AutoDrafts = await XmlFixtureAutoDraft.RunAsync(Services, snapshot, import.Target == BirkNext.Web.Services.ProjectImport.ImportTarget.CurrentApplication); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            { import.AutoDrafts = [XmlFixtureAutoDraft.Failure($"The XML fixture draft could not run ({ex.GetType().Name}).")]; }
+            await ReloadAsync(null);
+        }
+        finally { _autoDraftBusy = false; }
     }
 
     private async Task ReloadAsync(string? _)

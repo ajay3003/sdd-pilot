@@ -61,6 +61,15 @@
                         <span class="tdr-dim-title">@dim.Title</span>
                         <span class="tdr-pill tdr-@(dim.State == TestDataDimensionState.Ready ? "ready" : "attention")">@TestDataReadinessModel.Label(dim.State)</span>
                         <span class="tdr-muted tdr-dim-detail">@dim.Detail@if (dim.Action is { } action) { <strong> @action</strong> }</span>
+                        @if (dim.Evidence.Count > 0)
+                        {
+                            <ul class="tdr-evidence" aria-label="Evidence for @dim.Title">
+                                @foreach (var ev in dim.Evidence)
+                                {
+                                    <li data-testid="tdr-evidence" data-key="@ev.Key" data-state="@ev.State"><span class="tdr-evidence-label">@ev.Label:</span> @TestDataReadinessModel.Label(ev.State) <span class="tdr-muted">— @ev.Detail</span></li>
+                                }
+                            </ul>
+                        }
                     </li>
                 }
             </ol>

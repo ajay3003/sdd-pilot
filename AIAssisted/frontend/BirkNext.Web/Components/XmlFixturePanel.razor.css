@@ -55,11 +55,13 @@
 .xf-fields th, .xf-fields td { text-align: left; vertical-align: top; padding: .3rem .45rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); overflow-wrap: anywhere; }
 .xf-fields th[scope=row] { display: grid; font-weight: 600; }
 .xf-small { font-size: .74rem; }
+.xf-field-source { display: block; }
 @media (max-width: 640px) {
     .xf-fields thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .xf-fields, .xf-fields tbody, .xf-fields tr, .xf-fields td, .xf-fields th[scope=row] { display: block; width: 100%; box-sizing: border-box; }
     .xf-fields tr { padding: .35rem 0; border-bottom: 1px solid var(--clr-border, #e2e8f0); }
     .xf-fields td, .xf-fields th { border: 0; padding: .1rem 0; }
+    .xf-fields td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; }
 }
 .xf-tok-tag { color: #7dd3fc; }
 .xf-tok-attributename { color: #fcd34d; }

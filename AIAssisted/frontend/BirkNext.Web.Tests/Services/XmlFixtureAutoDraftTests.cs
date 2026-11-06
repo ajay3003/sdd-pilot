@@ -137,4 +137,70 @@ public sealed class XmlFixtureAutoDraftTests
         (await XmlFixtureAutoDraft.RunAsync(services, Imported, true)).Single().Message.Should().Contain("already has a version generated from this snapshot");
         backend.Saved.Should().BeEmpty();
     }
+
+    // ── NEXT58A: visible skip kinds, failures kept and retryable, idempotent retry ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Skips_are_classified_so_only_technical_failures_offer_retry()
+    {
+        (await XmlFixtureAutoDraft.RunAsync(Setup(Context(Xsd(Imported))).Services, Imported, intoCurrentApplication: false)).Single().Kind.Should().Be(XmlFixtureAutoDraftKind.NotApplicable);
+        (await XmlFixtureAutoDraft.RunAsync(Setup(Context(Xsd(Imported), Xsd(Imported, "other/" + Contract + ".xsd"))).Services, Imported, true)).Single()
+            .Should().Match<XmlFixtureAutoDraftOutcome>(o => o.Kind == XmlFixtureAutoDraftKind.NeedsDecision && !o.Retryable);
+        (await XmlFixtureAutoDraft.RunAsync(Setup(Context(Xsd(Imported)), [Identity("skolenaervaer-reporter-default", "reporter")]).Services, Imported, true)).Single()
+            .Kind.Should().Be(XmlFixtureAutoDraftKind.NeedsDecision);
+        XmlFixtureAutoDraftOutcome.Label(XmlFixtureAutoDraftKind.Failed).Should().Be("Failed");
+    }
+
+    [Fact]
+    public async Task A_package_whose_snapshot_lacks_the_contract_never_yields_a_created_fixture()
+    {
+        // Stands in for the unavailable Tiltak 2 package: without its XSD in the imported snapshot nothing is created, and nothing claims it was.
+        var (services, backend) = Setup(Context(Xsd(Guid.NewGuid())));
+        var outcome = (await XmlFixtureAutoDraft.RunAsync(services, Imported, true)).Single();
+        outcome.Should().Match<XmlFixtureAutoDraftOutcome>(o => !o.Created && o.Kind == XmlFixtureAutoDraftKind.NotApplicable && o.Version == null);
+        backend.Saved.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_unreadable_catalog_creates_nothing_keeps_the_failure_and_a_retry_is_idempotent()
+    {
+        var (services, backend) = Setup(Context(Xsd(Imported)));
+        var testData = Mock.Get(services.GetRequiredService<ITestDataApiService>());
+        testData.Setup(t => t.CatalogAsync(It.IsAny<CancellationToken>())).ReturnsAsync(((TestDataCatalogView?)null, "502 Bad Gateway"));
+        var failed = (await XmlFixtureAutoDraft.RunAsync(services, Imported, true)).Single();
+        failed.Should().Match<XmlFixtureAutoDraftOutcome>(o => o.Kind == XmlFixtureAutoDraftKind.Failed && o.Retryable && o.Message.Contains("502 Bad Gateway") && o.Message.Contains("no duplicate draft"));
+        backend.Saved.Should().BeEmpty("without the catalog it is unknown whether a draft exists, so nothing is generated");
+
+        // Retry (no reimport): the catalog is reachable again → the draft is created once.
+        var catalog = new List<TestDataAssetSummary>(Defaults);
+        testData.Setup(t => t.CatalogAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => (new TestDataCatalogView(catalog, [], []), (string?)null));
+        (await XmlFixtureAutoDraft.RunAsync(services, Imported, true)).Single().Kind.Should().Be(XmlFixtureAutoDraftKind.Created);
+        backend.Saved.Should().HaveCount(1);
+
+        // Retrying again after the catalog lists the draft: already generated from this snapshot — no second draft.
+        catalog.Add(new TestDataAssetSummary
+        {
+            Id = "schema-studio:skolenaervaer-valid-report", Alias = "skolenaervaer-valid-report", Kind = TestDataKind.Structured, MediaType = "application/xml",
+            Schema = new TestDataSchemaReference(XsdFile, Imported), DraftVersion = 2,
+        });
+        var again = (await XmlFixtureAutoDraft.RunAsync(services, Imported, true)).Single();
+        again.Should().Match<XmlFixtureAutoDraftOutcome>(o => o.Kind == XmlFixtureAutoDraftKind.AlreadyCurrent && !o.Retryable && o.Message.Contains("draft v2 awaiting approval"));
+        backend.Saved.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task A_refused_save_or_unreadable_test_packs_stay_visible_as_retryable_failures()
+    {
+        var (services, backend) = Setup(Context(Xsd(Imported)));
+        Mock.Get(services.GetRequiredService<ITestDataApiService>()).Setup(t => t.SaveCanonicalFixtureAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((int?)null, "409 conflict"));
+        (await XmlFixtureAutoDraft.RunAsync(services, Imported, true)).Single()
+            .Should().Match<XmlFixtureAutoDraftOutcome>(o => o.Kind == XmlFixtureAutoDraftKind.Failed && o.Message.Contains("409 conflict"));
+
+        var (unreadable, _) = Setup(Context(Xsd(Imported)));
+        Mock.Get(unreadable.GetRequiredService<IIntegrationJourneysApiService>())
+            .Setup(j => j.IntegrationTemplatesAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("down"));
+        (await XmlFixtureAutoDraft.RunAsync(unreadable, Imported, true)).Single()
+            .Should().Match<XmlFixtureAutoDraftOutcome>(o => o.Kind == XmlFixtureAutoDraftKind.Failed && o.Retryable && o.Message.Contains("test packs could not be read"));
+    }
 }

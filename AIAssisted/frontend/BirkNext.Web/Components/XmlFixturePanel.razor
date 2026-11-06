@@ -238,8 +238,9 @@
                     }
                     @if (_parameters.Count > 0)
                     {
-                        @* What the XSD requires and where each value comes from: XML field | Required | Value source | Status. *@
-                        var fieldRows = FieldRows(context);
+                        @* What the XSD requires and where each value comes from: path, requirement, expected type, Test Data alias, mapping state,
+                           validation issue and guidance. Stale, incompatible and unresolved mappings are listed first and never shown as mapped. *@
+                        var fieldRows = FieldRows(context, current);
                         <div class="xf-field-filters" role="group" aria-label="Show XML fields" data-testid="xf-field-filters">
                             @foreach (var (key, label) in FieldViews)
                             {
@@ -254,16 +255,19 @@
                         {
                             <div class="xf-fields-wrap">
                                 <table class="xf-fields" data-testid="xf-required-table">
-                                    <caption class="visually-hidden">XML fields of the XSD with whether they are required, where their value comes from and their status</caption>
-                                    <thead><tr><th scope="col">XML field</th><th scope="col">Required</th><th scope="col">Value source</th><th scope="col">Status</th></tr></thead>
+                                    <caption class="visually-hidden">XML fields of the XSD: whether they are required, the expected data type, the Test Data alias, the mapping status, any validation issue and what to do</caption>
+                                    <thead><tr><th scope="col">XML field</th><th scope="col">Required</th><th scope="col">Expected type</th><th scope="col">Test Data alias</th><th scope="col">Mapping status</th><th scope="col">Validation issue</th><th scope="col">Guidance</th></tr></thead>
                                     <tbody>
                                         @foreach (var f in shownFields.Take(60))
                                         {
-                                            <tr data-testid="xf-field-row" data-path="@f.Parameter.Path" data-required="@(f.Parameter.Required ? "true" : "false")" data-status="@f.Status">
-                                                <th scope="row"><span>@f.Parameter.Display</span><span class="xf-mono xf-muted xf-small">@f.Parameter.Technical</span></th>
-                                                <td>@(f.Parameter.Required ? "Required" : "Optional")</td>
-                                                <td>@f.Source</td>
-                                                <td><span class="xf-badge @(f.Status is "Mapped" or "Role mapped" ? "xf-badge-ready" : f.Status is "Synthetic value" or "Not used" ? "" : "xf-badge-attention")">@f.Status</span></td>
+                                            <tr data-testid="xf-field-row" data-path="@f.Path" data-required="@(f.Required ? "true" : "false")" data-status="@f.Status" data-state="@f.State">
+                                                <th scope="row"><span>@f.Display</span><span class="xf-mono xf-muted xf-small">@f.Technical</span></th>
+                                                <td data-label="Required">@(f.Required ? "Required" : "Optional")</td>
+                                                <td data-label="Expected type" data-testid="xf-field-type"><span class="xf-mono">@f.ExpectedType</span></td>
+                                                <td data-label="Test Data alias" data-testid="xf-field-alias">@(f.Alias is { } fieldAlias ? fieldAlias : "—")<span class="xf-muted xf-small xf-field-source">@f.Source</span></td>
+                                                <td data-label="Mapping status"><span class="xf-badge @(f.State is XmlFieldState.Valid ? "xf-badge-ready" : f.State is XmlFieldState.Synthetic or XmlFieldState.OptionalUnmapped or XmlFieldState.Suggested ? "" : "xf-badge-attention")" data-testid="xf-field-state">@XmlFieldMappingPresentation.Label(f.State)</span>@if (f.Status != XmlFieldMappingPresentation.Label(f.State)) { <span class="xf-muted xf-small xf-field-source">@f.Status</span> }</td>
+                                                <td data-label="Validation issue" data-testid="xf-field-issue">@(f.Issue ?? (_validation == "Valid" ? "None" : "—"))</td>
+                                                <td data-label="Guidance" data-testid="xf-field-guidance">@(f.Guidance ?? "—")</td>
                                             </tr>
                                         }
                                     </tbody>
@@ -344,6 +348,14 @@
                 <div class="xf-actions">
                     <button type="button" class="btn btn-primary btn-sm" data-testid="xf-generate" disabled="@(_busy || CurrentXsd(context) is null || _mappings.Any(m => m.NeedsReview is not null))" @onclick="GenerateAsync">Generate XML</button>
                     @if (_mappings.Any(m => m.NeedsReview is not null)) { <span class="xf-muted" data-testid="xf-generate-blocked">Review the mappings marked "Needs review" first.</span> }
+                    @if (_confirmReplace)
+                    {
+                        <div class="xf-notice" role="alert" data-testid="xf-replace-confirm">
+                            <p>The editor holds your manual changes. Generating replaces the XML with a new one from the XSD and mappings.</p>
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="xf-replace-yes" disabled="@_busy" @onclick="GenerateAsync">Replace my edits</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-replace-no" @onclick="() => _confirmReplace = false">Keep editing</button>
+                        </div>
+                    }
                 </div>
 
                 @if (_xml is not null)
@@ -382,6 +394,7 @@
                             @if (_xml.Count(c => c == '\n') + 1 > PreviewLines) { <p class="xf-muted">Preview shows the first @PreviewLines lines; the editor and the download hold the whole XML.</p> }
                         </details>
                         <p role="status" aria-live="polite" data-testid="xf-validation" data-state="@_validation">Validation: @_validation</p>
+                        @if (_xmlOutdated is { } outdated) { <p class="xf-notice" role="alert" data-testid="xf-xml-outdated">@outdated</p> }
                         @* Four separate outcomes: well-formed XML, the exact XSD, business rules and runtime behaviour are never one "valid". *@
                         <dl class="xf-tiers" data-testid="xf-validation-tiers">
                             @{ var wellFormed = WellFormed(); }
@@ -392,7 +405,7 @@
                         </dl>
                         @if (_validation == "Valid") { <p class="xf-muted" data-testid="xf-disclaimer">Valid against XSD. Business rules not verified. Runtime behavior not verified.</p> }
                         @if (_issues.Count > 0) { <ul class="xf-issues" data-testid="xf-issues">@foreach (var issue in _issues.Take(10)) { <li>@issue</li> }</ul> }
-                        <button type="button" class="btn btn-primary btn-sm" data-testid="xf-validate" disabled="@_busy" @onclick="Validate">Validate XML</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-testid="xf-validate" disabled="@(_busy || _xmlOutdated is not null)" @onclick="Validate">Validate XML</button>
                     </fieldset>
                     <fieldset class="xf-step" data-testid="xf-save">
                         <legend>Save to Test Data</legend>
@@ -416,7 +429,11 @@
                 }
             </section>
         }
-        @if (_error is { } error) { <p class="xf-error" role="alert" data-testid="xf-error">@error</p> }
+        @if (_error is { } error)
+        {
+            <p class="xf-error" role="alert" data-testid="xf-error">@error</p>
+            @if (_retry is { } retry) { <p><button type="button" class="btn btn-secondary btn-sm" data-testid="xf-retry" disabled="@_busy" @onclick="retry">@_retryLabel</button> <span class="xf-muted">Your XML and choices are kept.</span></p> }
+        }
         @if (_message is { } message) { <p role="status" data-testid="xf-message">@message</p> }
         @if (_savedAlias is { } persistedAlias)
         {
@@ -523,33 +540,23 @@
     [Parameter] public bool AutoOpen { get; set; }
 
     private static readonly (string Key, string Label)[] FieldViews =
-        [("required", "Required"), ("unmapped", "Required without a mapping"), ("suggested", "Suggested"), ("confirmed", "Mapped"), ("optional", "Optional, mapped"), ("all", "All fields")];
+        [("required", "Required"), ("attention", "Needs attention"), ("unmapped", "Required without a mapping"), ("suggested", "Suggested"), ("confirmed", "Mapped"), ("optional", "Optional, mapped"), ("all", "All fields")];
     private string _fieldView = "required";
 
-    /// <summary>One XSD leaf with the mapping or role binding that fills it (if any), in words: where its value comes from and its status.</summary>
-    private sealed record FieldRow(XmlParameter Parameter, XmlValueMapping? Mapping, TestDataFixtureBinding? Binding, string Source, string Status);
+    /// <summary>The XSD's fields (and any mapping to an element it does not declare) with their mapping state. Stale = a mapped asset changed after
+    /// the saved fixture was generated (its recorded value versions), so a fixture is never shown as current after its asset was updated or removed.</summary>
+    private IReadOnlyList<XmlFieldRowView> FieldRows(IntegrationTemplateView context, TestDataAssetSummary? current) =>
+        XmlFieldMappingPresentation.Rows(_parameters, _mappings, context.FixtureBindings, Chosen, Assets,
+            current is null ? [] : TestDataValueVersions.Changed(current, Assets).Where(c => !c.Missing).Select(c => c.Alias).ToHashSet(StringComparer.Ordinal), _issues);
 
-    private IReadOnlyList<FieldRow> FieldRows(IntegrationTemplateView context) =>
-    [
-        .. _parameters.Select(p =>
-        {
-            var mapping = _mappings.FirstOrDefault(m => m.Path == p.Path);
-            var binding = context.FixtureBindings.FirstOrDefault(b => b.ElementPath == p.Path);
-            var (source, status) = mapping is not null ? ($"{SourceLabel(mapping.Kind)}{(mapping.AssetAlias is { } alias ? $" · {alias}" : mapping.FixedValue is { Length: > 0 } fixedValue ? $" · {fixedValue}" : "")}", MappingStatus(mapping))
-                : binding is not null ? ($"Test Data role · {binding.Role}{(Chosen(binding) is { } chosen ? $" · {chosen.Alias}" : "")}", Chosen(binding) is { Approval: TestDataApproval.Approved } ? "Role mapped" : "Needs value")
-                : p.Required ? ("XSD generator (synthetic placeholder)", "Synthetic value")
-                : ("Left out (optional)", "Not used");
-            return new FieldRow(p, mapping, binding, source, status);
-        }).OrderByDescending(r => r.Parameter.Required).ThenBy(r => r.Status is "Mapped" or "Role mapped" ? 1 : 0),
-    ];
-
-    private static bool FieldShown(FieldRow r, string view) => view switch
+    private static bool FieldShown(XmlFieldRowView r, string view) => view switch
     {
-        "required" => r.Parameter.Required,
-        "unmapped" => r.Parameter.Required && r.Mapping is null && r.Binding is null,
-        "suggested" => r.Mapping?.IsSuggested == true,
+        "required" => r.Required || r.State is XmlFieldState.Unresolved,
+        "attention" => r.NeedsAttention,
+        "unmapped" => r.Required && !r.HasMapping,
+        "suggested" => r.IsSuggested,
         "confirmed" => r.Status is "Mapped" or "Role mapped",
-        "optional" => !r.Parameter.Required && (r.Mapping is not null || r.Binding is not null),
+        "optional" => !r.Required && r.HasMapping,
         _ => true,
     };
 
@@ -625,6 +632,13 @@
     private string? _xml, _error, _message, _name, _alias, _savedAlias, _environmentId;
     private string _validation = "Not run";
     private List<string> _issues = [];
+    /// <summary>The failed persistence step to try again (save or approve), kept with the error until it succeeds or something else runs.</summary>
+    private Func<Task>? _retry;
+    private string _retryLabel = "Retry";
+    /// <summary>Why the XML in the editor no longer reflects the mappings (an identity changed after generation): validate is refused until it is generated again.</summary>
+    private string? _xmlOutdated;
+    /// <summary>Generate was asked while the editor holds manual edits: replacing them needs a confirmation.</summary>
+    private bool _confirmReplace;
     private bool _open, _busy, _saveAsVersion;
     /// <summary>The fixture a regeneration started from (its alias): saving then defaults to a new draft version of it.</summary>
     private string? _versionOf;
@@ -689,10 +703,7 @@
         : _parameters.Where(p => p.Path == current || p.Display.Contains(_fieldFilter, StringComparison.OrdinalIgnoreCase)
             || p.Technical.Contains(_fieldFilter, StringComparison.OrdinalIgnoreCase) || (p.Type ?? "").Contains(_fieldFilter, StringComparison.OrdinalIgnoreCase));
 
-    private static string MappingStatus(XmlValueMapping row) =>
-        row.NeedsReview is not null ? "Needs review"
-        : row.Path.Length == 0 || row.Kind == XmlValueSourceKind.TestDataAsset && row.AssetAlias is null || row.Kind == XmlValueSourceKind.Fixed && string.IsNullOrEmpty(row.FixedValue) ? "Needs value"
-        : row.IsSuggested ? "Suggested" : "Mapped";
+    private static string MappingStatus(XmlValueMapping row) => XmlFieldMappingPresentation.MappingStatus(row);
 
     private async Task SelectSnapshotAsync(IntegrationTemplateView context, string? value)
     {
@@ -811,13 +822,7 @@
         if (_package is null && CurrentXsd(_context) is not null) await LoadFieldsAsync();
     }
 
-    private static string SourceLabel(XmlValueSourceKind kind) => kind switch
-    {
-        XmlValueSourceKind.TestDataAsset => "Test Data asset",
-        XmlValueSourceKind.Fixed => "Fixed value",
-        XmlValueSourceKind.Generated => "Generated value",
-        _ => "Leave generated/default",
-    };
+    private static string SourceLabel(XmlValueSourceKind kind) => XmlFieldMappingPresentation.SourceLabel(kind);
 
     /// <summary>A role selection updates the role's suggested mapping only (an explicitly edited row is never overwritten).</summary>
     private void ChooseIdentity(TestDataFixtureBinding binding, string? alias)
@@ -825,7 +830,14 @@
         _explicit[binding.Role] = alias;
         if (binding.ElementPath is not { } path || _explicitPaths.Contains(path)) return;
         var index = _mappings.FindIndex(m => m.Path == path && m.IsSuggested);
-        if (index >= 0) _mappings[index] = _mappings[index] with { AssetAlias = Chosen(binding)?.Alias };
+        if (index < 0) return;
+        var before = _mappings[index].AssetAlias;
+        _mappings[index] = _mappings[index] with { AssetAlias = Chosen(binding)?.Alias };
+        if (_xml is not null && before != _mappings[index].AssetAlias)
+        {
+            _xmlOutdated = $"The {binding.Role.ToLowerInvariant()} changed to {_mappings[index].AssetAlias ?? "none"} after this XML was generated. Generate the XML again.";
+            _validation = "Outdated";
+        }
     }
 
     private void Edit(int index, Func<XmlValueMapping, XmlValueMapping> change)
@@ -884,7 +896,9 @@
 
     private void SelectContext(string? key) { _context = _contexts.FirstOrDefault(c => c.Key == key) ?? _context; _explicitSnapshot = null; _explicitFile = null; _pendingReview = false; Reset(); _package = null; _parameters = []; _mappings = []; _explicitPaths.Clear(); }
 
-    private void Reset() { _xml = null; _validation = "Not run"; _issues = []; _error = null; }
+    private void Reset() { _xml = null; _validation = "Not run"; _issues = []; _error = null; _retry = null; _xmlOutdated = null; _confirmReplace = false; }
+
+    private void Failed(string error, Func<Task> retry, string label) { _error = error; _retry = retry; _retryLabel = label; }
 
     /// <summary>A changed XML is no longer the validated one.</summary>
     private void Edited(ChangeEventArgs e) { _xml = e.Value?.ToString() ?? ""; _validation = "Needs validation"; _issues = []; _manualEdit = true; _dirty = true; _copied = false; }
@@ -892,6 +906,8 @@
     private async Task GenerateAsync()
     {
         if (_context is not { } context || CurrentXsd(context) is not { } xsd) return;
+        // Manual edits are never replaced silently: the first Generate asks; "Replace my edits" generates.
+        if (_manualEdit && _xml is not null && !_confirmReplace) { _confirmReplace = true; return; }
         _busy = true; _error = null; _message = null; Reset();
         try
         {
@@ -932,6 +948,7 @@
 
     private void Validate()
     {
+        if (_xmlOutdated is not null) return;
         if (_package is null || _xml is null || _context is not { } context || CurrentXsd(context) is not { } xsd) return;
         var result = SchemaStudioService.Validate(_package, xsd.File, _xml);
         _validation = result.Status switch
@@ -952,7 +969,7 @@
         if (Services.GetService(typeof(SchemaGeneratedXmlStore)) is not SchemaGeneratedXmlStore store
             || Services.GetService(typeof(IWorkspaceArtifactRepository)) is not IWorkspaceArtifactRepository repository)
         { _error = "The workspace is not loaded, so the fixture has nothing to be stored in. Open the project first; your XML is kept in the editor."; return; }
-        _busy = true; _error = null;
+        _busy = true; _error = null; _retry = null;
         try
         {
             if (repository.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml) is { } existing) store.RestoreJson(existing.Text);
@@ -972,7 +989,7 @@
                 var item = builder.Save(_package, xsd.File, "Test Data XML fixture", null, _xml, scope, null, facts);
                 var entry = builder.Register(item.Id, scope, canonical, "positive", _name?.Trim(), facts);
                 var (version, refusal) = await api.SaveCanonicalFixtureAsync(System.Text.Json.JsonSerializer.Serialize(entry, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
-                if (version is null) { _error = $"The fixture could not be saved: {refusal}"; return; }
+                if (version is null) { Failed($"The fixture could not be saved: {refusal}", SaveAsync, "Retry save"); return; }
                 _alias = canonical;
                 _savedAlias = canonical;
                 _message = version == 1
@@ -991,7 +1008,7 @@
             if (asVersion) _alias = _versionOf;
             repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(scope), "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
             if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is not IWorkspaceAutoSaveService autoSave || !await autoSave.SaveNowAsync())
-            { _error = "The fixture could not be saved durably; it may not survive a reload. Try Save again."; return; }
+            { Failed("The fixture could not be saved durably; it may not survive a reload.", SaveAsync, "Retry save"); return; }
             _savedAlias = _alias!.Trim();
             _message = asVersion
                 ? $"Saved version {registered.TestData?.Version} of {_savedAlias} as a draft. The approved version stays in use until you approve the draft; consumers keep the same Test Data reference."
@@ -999,7 +1016,8 @@
             _open = false; _dirty = false;
             await OnSaved.InvokeAsync(_savedAlias);
         }
-        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or System.Xml.XmlException) { _error = $"The fixture could not be saved: {ex.Message}"; }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or System.Xml.XmlException) { Failed($"The fixture could not be saved: {ex.Message}", SaveAsync, "Retry save"); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Failed("The backend could not be reached; the fixture was not saved.", SaveAsync, "Retry save"); }
         finally { _busy = false; }
     }
 
@@ -1042,7 +1060,8 @@
         _busy = true;
         try
         {
-            _error = await TestDataApiService.Resolve(Services).ApproveVersionAsync(fixture.Id, version);
+            _error = null; _retry = null;
+            if (await TestDataApiService.Resolve(Services).ApproveVersionAsync(fixture.Id, version) is { } refused) { Failed(refused, () => ApproveVersionAsync(fixture, version), "Retry approval"); return; }
             if (_error is null) { _message = $"Version {version} of {fixture.Alias} approved — it is now the current version; consumers use it without rebinding."; await OnSaved.InvokeAsync(fixture.Alias); }
         }
         finally { _busy = false; }
@@ -1053,7 +1072,8 @@
         _busy = true;
         try
         {
-            _error = await TestDataApiService.Resolve(Services).ApproveAsync(assetId);
+            _error = null; _retry = null;
+            if (await TestDataApiService.Resolve(Services).ApproveAsync(assetId) is { } refused) { Failed(refused, () => ApproveAsync(assetId), "Retry approval"); return; }
             if (_error is null) { _message = $"{_savedAlias} approved."; await OnSaved.InvokeAsync(_savedAlias); }
         }
         finally { _busy = false; }

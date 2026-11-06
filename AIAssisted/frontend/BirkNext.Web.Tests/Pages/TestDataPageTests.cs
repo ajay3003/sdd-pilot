@@ -4,6 +4,7 @@ using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -122,5 +123,38 @@ public sealed class TestDataPageTests : BunitContext
     {
         NavigationCatalog.Sections.SelectMany(section => section.Items).Count(item => item.Route == "test-data").Should().Be(1);
         DocumentationCatalog.Features.Should().Contain(feature => feature.Route == "/test-data");
+    }
+
+    [Fact]
+    public void An_incomplete_fixture_after_a_successful_import_stays_visible_with_retry_that_reloads_the_catalog()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        Services.AddSingleton(repository);
+        Services.AddSingleton(new BirkNext.Web.Services.ProjectImport.ProjectImportActivation(repository));
+        Services.AddSingleton(Moq.Mock.Of<BirkNext.Web.Services.ProjectImport.IProjectImportApiService>());
+        Services.AddSingleton(Moq.Mock.Of<IWorkspaceAutoSaveService>());
+        Services.AddSingleton(Moq.Mock.Of<IFrontendAnalysisSettingsService>());
+        var contexts = new Moq.Mock<IFrontendAnalysisContextFactory>();
+        contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new BirkNext.Web.Models.FrontendAnalysisContext());
+        Services.AddSingleton(contexts.Object);
+        Services.AddSingleton(Moq.Mock.Of<ITechnologyCoverageApiService>());
+        Services.AddSingleton(Moq.Mock.Of<ICurrentWorkspaceProjection>());
+        Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectImportSession>();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        var session = Services.GetRequiredService<BirkNext.Web.Services.ProjectImport.ProjectImportSession>();
+        session.AutoDraftSnapshot = Guid.NewGuid();
+        session.AutoDrafts = [XmlFixtureAutoDraft.Failure("The Test Data catalog could not be read (502)."),
+            new XmlFixtureAutoDraftOutcome("Report intake", "report", false, null, "Already generated.") { Kind = XmlFixtureAutoDraftKind.AlreadyCurrent }];
+        Show("fixtures");
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=td-auto-draft]"));
+        page.FindAll("[data-testid=td-auto-draft-reason]").Should().ContainSingle("an already generated fixture is not a problem")
+            .Which.TextContent.Should().Contain("Failed").And.Contain("502");
+        page.Find("[data-testid=td-auto-draft-retry]").Click();
+        // No test pack client in this host: the retry yields no outcome, so the notice goes.
+        page.WaitForAssertion(() => page.FindAll("[data-testid=td-auto-draft]").Should().BeEmpty());
+        session.AutoDrafts.Should().BeEmpty();
     }
 }

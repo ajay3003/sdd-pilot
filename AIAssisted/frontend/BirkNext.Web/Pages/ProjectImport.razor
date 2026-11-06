@@ -516,13 +516,20 @@
             {
                 <div class="pi-auto-drafts" data-testid="pi-auto-drafts">
                     <h3 class="pi-subheading">Test Data XML fixtures</h3>
+                    <p class="pi-auto-draft-summary" role="status" data-testid="pi-auto-draft-summary">@string.Join(" · ", Session.AutoDrafts.GroupBy(d => d.Kind).OrderBy(g => g.Key).Select(g => $"{g.Count()} {XmlFixtureAutoDraftOutcome.Label(g.Key).ToLowerInvariant()}"))@(Session.AutoDrafts.Any(d => !d.Created && d.Kind != XmlFixtureAutoDraftKind.AlreadyCurrent) ? " — the import itself succeeded; the fixture below is incomplete until it is created in Test Data." : "")</p>
                     <ul>
                         @foreach (var d in Session.AutoDrafts)
                         {
-                            <li data-testid="pi-auto-draft" data-created="@(d.Created ? "true" : "false")"><strong>@(d.Created ? "Draft created" : "Not created")</strong> · @d.Context@(d.Alias is null ? "" : $" ({d.Alias})"): @d.Message
-                                @if (d.Created) { <a href="test-data" data-testid="pi-auto-draft-link">Review and approve in Test Data</a> }</li>
+                            <li data-testid="pi-auto-draft" data-created="@(d.Created ? "true" : "false")" data-kind="@d.Kind"><strong>@XmlFixtureAutoDraftOutcome.Label(d.Kind)</strong> · @d.Context@(d.Alias is null ? "" : $" ({d.Alias})"): @d.Message
+                                @if (d.Created || d.Kind == XmlFixtureAutoDraftKind.AlreadyCurrent) { <a href="test-data" data-testid="pi-auto-draft-link">Review and approve in Test Data</a> }
+                                else if (d.Kind == XmlFixtureAutoDraftKind.NeedsDecision) { <a href="test-data" data-testid="pi-auto-draft-decide">Decide in Test Data → XML fixtures</a> }</li>
                         }
                     </ul>
+                    @if (Session.AutoDrafts.Any(d => d.Retryable))
+                    {
+                        <button type="button" class="btn-secondary btn-sm" data-testid="pi-auto-draft-retry" disabled="@_autoDraftBusy" @onclick="RetryAutoDraftAsync">@(_autoDraftBusy ? "Retrying…" : "Retry XML fixture draft")</button>
+                        <span class="pi-muted"> Uses this import's snapshot again — nothing is reimported; a draft that already exists is not created twice.</span>
+                    }
                 </div>
             }
             @if (ProjectImportPresentation.Notes(done, doneDiscovery, _commit?.Source) is { Count: > 0 } notes)
@@ -927,8 +934,26 @@
     {
         if (_commit?.Source is not { State: ProjectImportSourceState.Created or ProjectImportSourceState.Reused, SnapshotId: { } snapshot } || Session.AutoDraftSnapshot == snapshot) return;
         Session.AutoDraftSnapshot = snapshot;
+        await RunAutoDraftAsync(snapshot);
+    }
+
+    private bool _autoDraftBusy;
+
+    /// <summary>Runs the draft for the import's snapshot; a failure is kept as a retryable outcome, never dropped.</summary>
+    private async Task RunAutoDraftAsync(Guid snapshot)
+    {
         try { Session.AutoDrafts = await XmlFixtureAutoDraft.RunAsync(ServiceProvider, snapshot, Session.Target == ImportTarget.CurrentApplication); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { Session.AutoDrafts = []; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        { Session.AutoDrafts = [XmlFixtureAutoDraft.Failure($"The XML fixture draft could not run ({ex.GetType().Name}).")]; }
+    }
+
+    /// <summary>Retry without reimporting: the same snapshot; the catalog is read again, so a draft created meanwhile counts as already generated.</summary>
+    private async Task RetryAutoDraftAsync()
+    {
+        if (Session.AutoDraftSnapshot is not { } snapshot || _autoDraftBusy) return;
+        _autoDraftBusy = true;
+        try { await RunAutoDraftAsync(snapshot); }
+        finally { _autoDraftBusy = false; }
     }
 
     private async Task RetrySourceAsync()

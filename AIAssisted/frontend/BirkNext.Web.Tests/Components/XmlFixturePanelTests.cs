@@ -750,4 +750,96 @@ public sealed class XmlFixturePanelTests : BunitContext
         panel.Find("[data-testid=xf-saved-check]").Click();
         reloads.Should().Be(2, "checking again reloads the catalog — the only confirmation of storage");
     }
+
+    // ── NEXT58A: field table columns, Retry after a failed save, stale XML, no silent overwrite ──────────────────────────────────
+
+    private IRenderedComponent<XmlFixturePanel> GeneratedAndValid(IReadOnlyList<TestDataAssetSummary>? assets = null, Action<string?>? onSaved = null)
+    {
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, assets ?? Defaults).Add(x => x.OnSaved, (string? alias) => onSaved?.Invoke(alias)));
+        panel.WaitForElement("[data-testid=xf-create]").Click();
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForElement("[data-testid=xf-xml]");
+        panel.Find("[data-testid=xf-validate]").Click();
+        panel.Find("[data-testid=xf-validation]").GetAttribute("data-state").Should().Be("Valid");
+        return panel;
+    }
+
+    [Fact]
+    public void The_field_table_shows_path_requirement_type_alias_status_issue_and_guidance()
+    {
+        Setup(Context(Xsd()));
+        var panel = GeneratedAndValid();
+        panel.Find("[data-testid=xf-required-table] thead").TextContent.Should().ContainAll("XML field", "Required", "Expected type", "Test Data alias", "Mapping status", "Validation issue", "Guidance");
+        panel.Find("[data-testid=xf-field-filter][data-filter=all]").Click();
+        var child = panel.Find($"[data-testid=xf-field-row][data-path='{ChildPath}']");
+        child.QuerySelector("[data-testid=xf-field-alias]")!.TextContent.Should().Contain("skolenaervaer-child-default");
+        child.QuerySelector("[data-testid=xf-field-issue]")!.TextContent.Should().Be("None", "validated: no issue on the field");
+        panel.FindAll("[data-testid=xf-field-row]").Select(r => r.GetAttribute("data-state")).Should().Contain(["Synthetic", "OptionalUnmapped"]);
+        panel.FindAll("[data-testid=xf-field-type]").Should().Contain(t => t.TextContent.Trim() != "—", "expected types come from the XSD");
+        panel.FindAll("[data-testid=xf-field-filter]").Select(f => f.GetAttribute("data-filter")).Should().Contain("attention");
+    }
+
+    [Fact]
+    public void A_failed_save_keeps_the_xml_and_retry_saves_it_without_regenerating()
+    {
+        Services.AddSingleton<IWorkspaceArtifactRepository>(new WorkspaceArtifactRepository());
+        Services.AddSingleton(new BirkNext.Web.Services.SchemaStudio.SchemaGeneratedXmlStore());
+        var backend = Setup(Canonical(Xsd()));
+        var attempts = 0;
+        Mock.Get(Services.GetRequiredService<ITestDataApiService>()).Setup(t => t.SaveCanonicalFixtureAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => ++attempts == 1 ? ((int?)null, (string?)"503 Service Unavailable") : ((int?)1, (string?)null));
+        var reloads = 0;
+        var panel = GeneratedAndValid(onSaved: _ => reloads++);
+        panel.Find("[data-testid=xf-save-button]").Click();
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-error]").TextContent.Should().Contain("503 Service Unavailable"));
+        panel.Find("[data-testid=xf-retry]").TextContent.Should().Be("Retry save");
+        panel.FindAll("[data-testid=xf-saved]").Should().BeEmpty("nothing is shown as saved after a refused save");
+        panel.FindAll("[data-testid=xf-xml]").Should().ContainSingle("the XML stays in the editor");
+        reloads.Should().Be(0);
+
+        panel.Find("[data-testid=xf-retry]").Click();
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-saved]"));
+        attempts.Should().Be(2);
+        backend.Binds.Should().HaveCount(1, "retry saves the validated XML; it does not generate again");
+        panel.FindAll("[data-testid=xf-error]").Should().BeEmpty();
+        reloads.Should().Be(1, "a successful save reloads the catalog — the persistence outcome shown is the catalog's");
+    }
+
+    [Fact]
+    public void Changing_the_mapped_identity_after_validation_makes_the_xml_outdated_until_generated_again()
+    {
+        Setup(Context(Xsd()));
+        var panel = GeneratedAndValid();
+        panel.Find("[data-testid=xf-identity][data-role=Child]").Change("child-b");
+        panel.Find("[data-testid=xf-validation]").GetAttribute("data-state").Should().Be("Outdated");
+        panel.Find("[data-testid=xf-xml-outdated]").TextContent.Should().Contain("child-b");
+        panel.Find("[data-testid=xf-save-button]").HasAttribute("disabled").Should().BeTrue("an XML that no longer reflects the mapping is never saved");
+        panel.Find("[data-testid=xf-validate]").HasAttribute("disabled").Should().BeTrue("validating the old XML again would not make it current");
+
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForAssertion(() => panel.FindAll("[data-testid=xf-xml-outdated]").Should().BeEmpty());
+        panel.Find("[data-testid=xf-validation]").GetAttribute("data-state").Should().Be("Not run");
+    }
+
+    [Fact]
+    public void Generate_never_silently_replaces_manual_edits()
+    {
+        var backend = Setup(Context(Xsd()));
+        var panel = GeneratedAndValid();
+        var edited = panel.Find("[data-testid=xf-xml]").GetAttribute("value")!.Replace("<Skolenaervaer", "<Skolenaervaer ");
+        panel.Find("[data-testid=xf-xml]").Input(edited);
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.Find("[data-testid=xf-replace-confirm]").TextContent.Should().Contain("manual changes");
+        panel.Find("[data-testid=xf-xml]").GetAttribute("value").Should().Be(edited, "nothing is replaced before the person confirms");
+        backend.Binds.Should().HaveCount(1);
+
+        panel.Find("[data-testid=xf-replace-no]").Click();
+        panel.FindAll("[data-testid=xf-replace-confirm]").Should().BeEmpty();
+        panel.Find("[data-testid=xf-xml]").GetAttribute("value").Should().Be(edited);
+
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.Find("[data-testid=xf-replace-yes]").Click();
+        panel.WaitForAssertion(() => backend.Binds.Should().HaveCount(2));
+        panel.Find("[data-testid=xf-xml]").GetAttribute("value").Should().NotBe(edited);
+    }
 }

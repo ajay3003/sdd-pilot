@@ -23,4 +23,7 @@
 .tdr-dim-blocked { border-left-color: #b91c1c; }
 .tdr-dim-title { font-weight: 600; font-size: .86rem; }
 .tdr-dim-detail { font-size: .8rem; overflow-wrap: anywhere; }
+.tdr-evidence { grid-column: 1 / -1; list-style: none; margin: .15rem 0 0; padding: 0 0 0 .6rem; border-left: 2px solid var(--clr-border, #e2e8f0); font-size: .78rem; min-width: 0; }
+.tdr-evidence li { overflow-wrap: anywhere; }
+.tdr-evidence-label { font-weight: 600; }
 @media (max-width: 640px) { .tdr-dim { grid-template-columns: minmax(0, 1fr) auto; } .tdr-dim-detail { grid-column: 1 / -1; } }

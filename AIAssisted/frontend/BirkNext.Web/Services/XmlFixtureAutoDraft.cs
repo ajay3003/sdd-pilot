@@ -7,8 +7,25 @@ using BirkNext.Web.Services.SchemaStudio;
 
 namespace BirkNext.Web.Services;
 
+/// <summary>Why a fixture was or was not drafted. Only <see cref="Failed"/> is worth retrying: the others need a person or are already done.</summary>
+public enum XmlFixtureAutoDraftKind { Created, AlreadyCurrent, NeedsDecision, NotApplicable, Failed }
+
 /// <summary>What happened for one Test Pack XML fixture after an import.</summary>
-public sealed record XmlFixtureAutoDraftOutcome(string Context, string? Alias, bool Created, int? Version, string Message, string? Xsd = null);
+public sealed record XmlFixtureAutoDraftOutcome(string Context, string? Alias, bool Created, int? Version, string Message, string? Xsd = null)
+{
+    public XmlFixtureAutoDraftKind Kind { get; init; } = Created ? XmlFixtureAutoDraftKind.Created : XmlFixtureAutoDraftKind.NeedsDecision;
+    /// <summary>A technical failure (backend unreachable, save refused, catalog unreadable): Retry runs the same import's draft again without reimporting.</summary>
+    public bool Retryable => Kind == XmlFixtureAutoDraftKind.Failed;
+
+    public static string Label(XmlFixtureAutoDraftKind kind) => kind switch
+    {
+        XmlFixtureAutoDraftKind.Created => "Draft created",
+        XmlFixtureAutoDraftKind.AlreadyCurrent => "Already generated",
+        XmlFixtureAutoDraftKind.NeedsDecision => "Needs a decision",
+        XmlFixtureAutoDraftKind.NotApplicable => "Not applicable",
+        _ => "Failed",
+    };
+}
 
 /// <summary>
 /// After a Project Import: a draft of each Test Pack's canonical XML fixture (e.g. skolenaervaer-valid-report), built from the snapshot that import
@@ -40,9 +57,9 @@ public static class XmlFixtureAutoDraft
     /// the Target Environment's evidence.</param>
     public static async Task<IReadOnlyList<XmlFixtureAutoDraftOutcome>> RunAsync(IServiceProvider services, Guid snapshotId, bool intoCurrentApplication, CancellationToken ct = default)
     {
-        if (services.GetService(typeof(IIntegrationJourneysApiService)) is not IIntegrationJourneysApiService journeys
-            || ResolveTestData(services) is not { } testData)
-            return [];
+        if (services.GetService(typeof(IIntegrationJourneysApiService)) is not IIntegrationJourneysApiService journeys) return [];
+        if (ResolveTestData(services) is not { } testData)
+            return [Failure("Test Data is not reachable from this browser session, so no XML fixture draft was created.")];
         string? environmentId = null;
         if (services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
             try { environmentId = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
@@ -50,42 +67,52 @@ public static class XmlFixtureAutoDraft
 
         IReadOnlyList<IntegrationTemplateView> templates;
         try { templates = XmlFixturePresentation.Contexts((await journeys.IntegrationTemplatesAsync(environmentId, null)).Value ?? []); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return []; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        { return [Failure($"The test packs could not be read ({ex.GetType().Name}), so no XML fixture draft was created.")]; }
         templates = [.. templates.Where(t => t.CanonicalFixtureAlias is not null)];
         if (templates.Count == 0) return [];
         if (!intoCurrentApplication)
-            return [.. templates.Select(t => Skip(t, "The package was imported as a new application, so it is not this Target Environment's evidence. Create the fixture in Test Data → XML fixtures if it should be."))];
+            return [.. templates.Select(t => Skip(t, "The package was imported as a new application, so it is not this Target Environment's evidence. Create the fixture in Test Data → XML fixtures if it should be.", kind: XmlFixtureAutoDraftKind.NotApplicable))];
         if (environmentId is null || project is null)
-            return [.. templates.Select(t => Skip(t, "No Target Environment is bound to a project, so the import's snapshot is not this environment's evidence. Create the fixture in Test Data → XML fixtures."))];
+            return [.. templates.Select(t => Skip(t, "No Target Environment is bound to a project, so the import's snapshot is not this environment's evidence. Create the fixture in Test Data → XML fixtures.", kind: XmlFixtureAutoDraftKind.NotApplicable))];
 
-        var (catalog, _) = await testData.CatalogAsync(ct);
+        // Without the catalog it is unknown whether this snapshot already has a draft: nothing is generated (no duplicate drafts), the failure is kept.
+        TestDataCatalogView? catalog; string? catalogError;
+        try { (catalog, catalogError) = await testData.CatalogAsync(ct); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { (catalog, catalogError) = (null, ex.GetType().Name); }
+        if (catalog is null)
+            return [.. templates.Select(t => Skip(t, $"The Test Data catalog could not be read ({catalogError ?? "no response"}); nothing was generated, so no duplicate draft can result. Retry when Test Data is reachable.", kind: XmlFixtureAutoDraftKind.Failed))];
         var assets = catalog?.Assets ?? [];
         var outcomes = new List<XmlFixtureAutoDraftOutcome>();
         foreach (var context in templates)
         {
             try { outcomes.Add(await DraftAsync(services, testData, context, assets, snapshotId, environmentId, ct)); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException or System.Xml.XmlException or JsonException)
-            { outcomes.Add(Skip(context, $"The draft could not be created ({ex.GetType().Name}). Create it in Test Data → XML fixtures.")); }
+            { outcomes.Add(Skip(context, $"The draft could not be created ({ex.GetType().Name}). Retry, or create it in Test Data → XML fixtures.", kind: XmlFixtureAutoDraftKind.Failed)); }
         }
         return outcomes;
     }
 
     /// <summary>The decision for one context, before anything is generated (pure: tested without a backend).</summary>
     public static string? Precondition(IntegrationTemplateView context, XmlContractSelection selection, Guid snapshotId, IReadOnlyList<TestDataAssetSummary> assets,
-        IReadOnlyList<XmlValueMapping> mappings)
+        IReadOnlyList<XmlValueMapping> mappings) => Check(context, selection, snapshotId, assets, mappings)?.Reason;
+
+    /// <summary>The precondition with its kind: already generated from this snapshot is done (idempotent), not a failure; the rest need a person.</summary>
+    private static (string Reason, XmlFixtureAutoDraftKind Kind)? Check(IntegrationTemplateView context, XmlContractSelection selection, Guid snapshotId,
+        IReadOnlyList<TestDataAssetSummary> assets, IReadOnlyList<XmlValueMapping> mappings)
     {
         if (selection.Snapshot is null || !context.SchemaCandidates.Any(c => c.SnapshotId == snapshotId))
-            return $"This import's snapshot declares no XSD named as the contract {context.SchemaName}.";
+            return ($"This import's snapshot declares no XSD named as the contract {context.SchemaName}.", XmlFixtureAutoDraftKind.NotApplicable);
         if (!selection.Resolved || selection.Contract is null)
-            return $"The XSD needs a decision ({selection.ContractReason ?? selection.SnapshotReason ?? "several candidates"}). Choose it in Test Data → XML fixtures.";
+            return ($"The XSD needs a decision ({selection.ContractReason ?? selection.SnapshotReason ?? "several candidates"}). Choose it in Test Data → XML fixtures.", XmlFixtureAutoDraftKind.NeedsDecision);
         if (selection.Snapshot?.SnapshotId != snapshotId || selection.Contract.SnapshotId != snapshotId)
-            return $"The resolved XSD is in another snapshot ({selection.Contract.ArchiveFileName} · {selection.Contract.SnapshotId.ToString()[..8]}), not in this import.";
+            return ($"The resolved XSD is in another snapshot ({selection.Contract.ArchiveFileName} · {selection.Contract.SnapshotId.ToString()[..8]}), not in this import.", XmlFixtureAutoDraftKind.NotApplicable);
         if (assets.FirstOrDefault(a => a.Alias == context.CanonicalFixtureAlias) is { } existing
             && (existing.SchemaCheck?.SourceSnapshotId ?? existing.Schema?.SourceSnapshotId) == snapshotId)
-            return $"{context.CanonicalFixtureAlias} already has a version generated from this snapshot.";
-        if (mappings.FirstOrDefault(m => m.NeedsReview is not null) is { } review) return $"A value mapping needs review ({review.NeedsReview}).";
+            return ($"{context.CanonicalFixtureAlias} already has a version generated from this snapshot{(existing.DraftVersion is { } draft ? $" (draft v{draft} awaiting approval)" : "")}.", XmlFixtureAutoDraftKind.AlreadyCurrent);
+        if (mappings.FirstOrDefault(m => m.NeedsReview is not null) is { } review) return ($"A value mapping needs review ({review.NeedsReview}).", XmlFixtureAutoDraftKind.NeedsDecision);
         if (mappings.FirstOrDefault(m => m.Kind == XmlValueSourceKind.TestDataAsset && m.AssetAlias is null) is { } unset)
-            return $"No approved Test Data asset for {unset.Path}. Add or approve it in Test Data.";
+            return ($"No approved Test Data asset for {unset.Path}. Add or approve it in Test Data.", XmlFixtureAutoDraftKind.NeedsDecision);
         return null;
     }
 
@@ -97,11 +124,11 @@ public static class XmlFixtureAutoDraft
         // The roles' deterministic mappings: each role with an element path gets its chosen approved asset; the submitting actor is not in the XML.
         var aliases = context.FixtureBindings.ToDictionary(b => b.Role, b => XmlFixturePresentation.Chosen(XmlFixturePresentation.Candidates(assets, b.Capability), null)?.Alias);
         var mappings = XmlValueMappings.Suggested(context, b => aliases.GetValueOrDefault(b.Role)).ToList();
-        if (Precondition(context, selection, snapshotId, assets, mappings) is { } reason) return Skip(context, reason);
+        if (Check(context, selection, snapshotId, assets, mappings) is { } blocked) return Skip(context, blocked.Reason, kind: blocked.Kind);
         var xsd = selection.Contract!;
 
         var (package, problem) = await PackageAsync(services, xsd, ct);
-        if (package is null) return Skip(context, problem!, xsd.File);
+        if (package is null) return Skip(context, problem!, xsd.File, XmlFixtureAutoDraftKind.Failed);
         var generated = SchemaStudioService.GenerateMinimumValid(package, xsd.File);
         if (generated.State == SchemaGenerationState.Blocked || string.IsNullOrEmpty(generated.Xml))
             return Skip(context, $"The XML could not be generated: {string.Join(" ", generated.Reasons)}", xsd.File);
@@ -113,7 +140,7 @@ public static class XmlFixtureAutoDraft
         if (bindings.Count > 0)
         {
             var (bound, bindProblems) = await testData.BindXmlFixtureAsync(new TestDataXmlBindRequest(applied, bindings), ct);
-            if (bound is null) return Skip(context, $"Test Data values could not be filled in: {string.Join(" ", bindProblems)}", xsd.File);
+            if (bound is null) return Skip(context, $"Test Data values could not be filled in: {string.Join(" ", bindProblems)}", xsd.File, XmlFixtureAutoDraftKind.Failed);
             xml = bound;
         }
         var validation = SchemaStudioService.Validate(package, xsd.File, xml);
@@ -131,7 +158,7 @@ public static class XmlFixtureAutoDraft
         var item = builder.Save(package, xsd.File, "Test Data XML fixture", null, xml, null, null, facts);
         var entry = builder.Register(item.Id, null, context.CanonicalFixtureAlias!, "positive", null, facts);
         var (version, refusal) = await testData.SaveCanonicalFixtureAsync(JsonSerializer.Serialize(entry, new JsonSerializerOptions(JsonSerializerDefaults.Web)), ct);
-        if (version is null) return Skip(context, $"The draft could not be saved: {refusal}", xsd.File);
+        if (version is null) return Skip(context, $"The draft could not be saved: {refusal}", xsd.File, XmlFixtureAutoDraftKind.Failed);
         return new(context.DisplayName, context.CanonicalFixtureAlias, true, version,
             $"Draft version {version} of {context.CanonicalFixtureAlias} created from {Path.GetFileName(xsd.File)}{(xsd.Version is { } v ? $" (version {v})" : "")} · {xsd.ArchiveFileName} · snapshot {xsd.SnapshotId.ToString()[..8]}. "
             + (version == 1 ? "Approve it in Test Data to use it in runs." : "The approved version stays in use until you approve this draft in Test Data."), xsd.File);
@@ -155,6 +182,9 @@ public static class XmlFixtureAutoDraft
         return SchemaStudioPresentation.IsLibrary(package) ? (null, "The XSD is a reusable schema library, not a complete message.") : (package, null);
     }
 
-    private static XmlFixtureAutoDraftOutcome Skip(IntegrationTemplateView context, string reason, string? xsd = null) =>
-        new(context.DisplayName, context.CanonicalFixtureAlias, false, null, reason, xsd);
+    private static XmlFixtureAutoDraftOutcome Skip(IntegrationTemplateView context, string reason, string? xsd = null, XmlFixtureAutoDraftKind kind = XmlFixtureAutoDraftKind.NeedsDecision) =>
+        new(context.DisplayName, context.CanonicalFixtureAlias, false, null, reason, xsd) { Kind = kind };
+
+    /// <summary>A failure before any test pack is known (no Test Data client, test packs unreadable): kept visible and retryable.</summary>
+    public static XmlFixtureAutoDraftOutcome Failure(string reason) => new("Test Pack XML fixtures", null, false, null, reason) { Kind = XmlFixtureAutoDraftKind.Failed };
 }

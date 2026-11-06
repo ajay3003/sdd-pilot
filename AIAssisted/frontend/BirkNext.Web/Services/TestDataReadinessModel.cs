@@ -6,7 +6,14 @@ namespace BirkNext.Web.Services;
 public enum TestDataDimensionState { Ready, NeedsAttention, Blocked, NotAssessed }
 
 /// <summary>One of the eight Test Data readiness dimensions for a test context: its state, what it is based on and what to do.</summary>
-public sealed record TestDataReadinessDimension(string Key, string Title, TestDataDimensionState State, string Detail, string? Action = null);
+public sealed record TestDataReadinessDimension(string Key, string Title, TestDataDimensionState State, string Detail, string? Action = null)
+{
+    /// <summary>The evidence facts this dimension is derived from (source available, XSD resolved, …) — each with its own state, never a second readiness.</summary>
+    public IReadOnlyList<TestDataReadinessEvidence> Evidence { get; init; } = [];
+}
+
+/// <summary>One evidence fact behind a dimension. No evidence is Not assessed, never Ready.</summary>
+public sealed record TestDataReadinessEvidence(string Key, string Label, TestDataDimensionState State, string Detail);
 
 /// <summary>
 /// The eight readiness dimensions of a test context's Test Data, each from its own evidence: test identities, contract (XSD), mapping, the fixture
@@ -37,7 +44,13 @@ public static class TestDataReadinessModel
         };
 
         var unmappedInXml = roles.Where(r => inXml.Contains(r.Role) && !r.Ready).Select(r => r.Role).ToList();
-        var mapping = fixture?.Provenance.FirstOrDefault(p => p.Label == "Value mappings")?.Value is { Length: > 0 } recorded
+        // A mapped asset updated or removed after the fixture was generated: the recorded mapping is stale, never still "Ready".
+        IReadOnlyList<(string Alias, bool Missing)> changed = fixture is null ? [] : TestDataValueVersions.Changed(fixture, assets);
+        var mapping = changed.Count > 0
+            ? new TestDataReadinessDimension("mapping", "Mapping", changed.Any(c => c.Missing) ? TestDataDimensionState.Blocked : TestDataDimensionState.NeedsAttention,
+                $"Mapped Test Data changed after the fixture was generated: {string.Join(", ", changed.Select(c => c.Missing ? $"{c.Alias} (no longer in Test Data)" : c.Alias))}.",
+                "Regenerate the XML fixture as a new draft.")
+            : fixture?.Provenance.FirstOrDefault(p => p.Label == "Value mappings")?.Value is { Length: > 0 } recorded
             ? new TestDataReadinessDimension("mapping", "Mapping", unmappedInXml.Count == 0 ? TestDataDimensionState.Ready : TestDataDimensionState.NeedsAttention,
                 $"Recorded in the fixture: {recorded}")
             : unmappedInXml.Count > 0
@@ -81,6 +94,42 @@ public static class TestDataReadinessModel
 
         var runtime = new TestDataReadinessDimension("runtime", "Runtime readiness", TestDataDimensionState.NotAssessed,
             $"Not assessed by Test Data — {context.PackName} verifies it when a test runs. XSD-valid is not runtime-ready.");
+
+        var preselected = XmlFixturePresentation.Preselected(context);
+        identities = identities with { Evidence =
+        [
+            roles.Count == 0 ? new("approved-test-data", "Approved Test Data available", TestDataDimensionState.NotAssessed, "The test pack declares no Test Data roles.")
+            : roles.All(r => r.Ready) ? new("approved-test-data", "Approved Test Data available", TestDataDimensionState.Ready, $"{roles.Count} of {roles.Count} roles have an approved identity.")
+            : new("approved-test-data", "Approved Test Data available", identities.State, $"{roles.Count(r => r.Ready)} of {roles.Count} roles have an approved identity."),
+        ] };
+        contract = contract with { Evidence =
+        [
+            xsds.Count == 0 ? new("source", "Source available", TestDataDimensionState.NotAssessed, "No imported source declares this contract.")
+                : new("source", "Source available", TestDataDimensionState.Ready, $"{xsds.Select(x => x.SnapshotId).Distinct().Count()} source snapshot(s) declare {context.SchemaName}."),
+            preselected is not null ? new("xsd-resolved", "XSD resolved", TestDataDimensionState.Ready, System.IO.Path.GetFileName(preselected.File))
+                : xsds.Count > 1 ? new("xsd-resolved", "XSD resolved", TestDataDimensionState.NeedsAttention, "Several candidates — choose one.")
+                : new("xsd-resolved", "XSD resolved", TestDataDimensionState.NotAssessed, "No XSD to resolve."),
+        ] };
+        mapping = mapping with { Evidence =
+        [
+            new("required-mappings", "Required mappings complete", mapping.State == TestDataDimensionState.NotAssessed ? TestDataDimensionState.NotAssessed : mapping.State,
+                changed.Count > 0 ? "Stale since generation." : unmappedInXml.Count > 0 ? $"Missing: {string.Join(", ", unmappedInXml)}." : fixture is null ? "Confirmed when the fixture is generated." : "Every role inside the XML is mapped."),
+        ] };
+        persisted = persisted with { Evidence =
+        [
+            fixture is null ? new("xml-generated", "XML generated", TestDataDimensionState.NotAssessed, "No generated XML is stored — an editor preview is not evidence.")
+                : new("xml-generated", "XML generated", TestDataDimensionState.Ready, $"{fixture.Alias}{(fixture.Version is { } gv ? $" v{gv}" : "")}{(fixture.DraftVersion is { } dv ? $" · draft v{dv}" : "")}"),
+            fixture is null ? new("fixture-saved", "Fixture saved", TestDataDimensionState.Blocked, "Test Data lists no fixture for this contract.")
+                : new("fixture-saved", "Fixture saved", TestDataDimensionState.Ready, "Listed by the Test Data catalog."),
+            fixture is null ? new("fixture-approved", "Fixture approved", TestDataDimensionState.NotAssessed, "Nothing saved to approve.")
+                : fixture.Approval == TestDataApproval.Approved
+                    ? new("fixture-approved", "Fixture approved", TestDataDimensionState.Ready, fixture.DraftVersion is { } pending ? $"Approved version in use; draft v{pending} is not approved." : "Approved for test use.")
+                    : new("fixture-approved", "Fixture approved", TestDataDimensionState.NeedsAttention, "Saved as a draft — a draft is never treated as approved."),
+        ] };
+        validation = validation with { Evidence =
+        [
+            new("schema-valid", "XML schema-valid", validation.State, status.ContractValidation == "Missing" ? "No saved fixture to validate." : status.ContractValidation),
+        ] };
 
         return [identities, contract, mapping, persisted, validation, consumers, environment, runtime];
     }
