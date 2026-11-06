@@ -29,7 +29,7 @@ jobs:
 
     - bash: |
         set -euo pipefail
-        required=(azure-pipelines.yml scripts/check-migrations.ps1 scripts/start-local.bat scripts/start-local.ps1 \
+        required=(azure-pipelines.yml scripts/check-migrations.ps1 scripts/start-local.bat scripts/start-local.ps1 scripts/BirkNextPreflight.psm1 scripts/tests/BirkNextPreflight.Tests.ps1 \
           AIAssisted/docker-compose.yml AIAssisted/.env.example AIAssisted/backend/MIGRATION_GUIDE.md \
           AIAssisted/backend/BirkNext.sln AIAssisted/frontend/BirkNext.sln \
           AIAssisted/backend/BirkNext.Api/BirkNext.Api.csproj \
@@ -56,6 +56,10 @@ jobs:
     - script: dotnet restore BirkNext.sln
       displayName: 'Restore backend solution'
       workingDirectory: AIAssisted/backend
+
+    - pwsh: ./scripts/tests/BirkNextPreflight.Tests.ps1
+      displayName: 'Tester package preflight: runtime selection and prerequisite messages (simulated commands)'
+      workingDirectory: .
 
     - pwsh: ./scripts/check-migrations.ps1 -ManifestOut "$(Build.ArtifactStagingDirectory)/migrations.json"
       displayName: 'Validate migration file integrity (every migrations folder) and record migration ids'
@@ -124,7 +128,7 @@ jobs:
           cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/.env.example"
           # The checked-in example contains only local development defaults required by docker-compose.
           cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/.env"
-          cp scripts/start-local.bat scripts/start-local.ps1 scripts/check-migrations.ps1 scripts/validate-package.ps1 "$PACKAGE_DIR/scripts/"
+          cp scripts/start-local.bat scripts/start-local.ps1 scripts/BirkNextPreflight.psm1 scripts/check-migrations.ps1 scripts/validate-package.ps1 "$PACKAGE_DIR/scripts/"
           cp AIAssisted/backend/MIGRATION_GUIDE.md "$PACKAGE_DIR/"
 
           cat > "$PACKAGE_DIR/README.md" <<'EOF'
@@ -140,7 +144,7 @@ jobs:
 
           ## Start
 
-          From the extracted package directory, run `scripts/start-local.ps1`. To select Docker explicitly, run `scripts/start-local.ps1 -ContainerRuntime docker`.
+          From the extracted package directory, run `scripts/start-local.bat` (or `scripts/start-local.ps1`). Prerequisites: Windows, the .NET 8 ASP.NET Core Runtime, and either Podman Desktop or Docker Desktop for the database (whichever is installed and running is used automatically; force one with `-ContainerRuntime podman|docker` or `BIRKNEXT_CONTAINER_RUNTIME`). With PostgreSQL already running on port 5432, use `-SkipContainers`. Missing prerequisites are explained before anything starts. When the browser asks to connect, enter the connection code shown in the start window.
 
           The package includes `AIAssisted/.env` with the checked-in local development defaults. Change those values before using a shared or exposed database. The backend configuration is supplied by the published appsettings and the local startup helper; no developer secrets or machine-specific settings are packaged.
 

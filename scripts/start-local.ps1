@@ -1,6 +1,7 @@
 param(
-    [ValidateSet("podman", "docker")]
-    [string]$ContainerRuntime = "podman",
+    # auto (default): BIRKNEXT_CONTAINER_RUNTIME, else a healthy Podman, else a healthy Docker, else an installed Podman (its machine is started).
+    [ValidateSet("auto", "podman", "docker")]
+    [string]$ContainerRuntime = "auto",
 
     [string]$ComposeFile = "",
 
@@ -20,6 +21,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Import-Module (Join-Path $PSScriptRoot "BirkNextPreflight.psm1") -Force
 
 function Info($message) { Write-Host "[INFO] $message" -ForegroundColor Cyan }
 function Ok($message) { Write-Host "[OK] $message" -ForegroundColor Green }
@@ -665,7 +667,7 @@ function Start-ContainerServices {
         return
     }
 
-    Info "Preparing container services using $ContainerRuntime..."
+    Info "Preparing the database (PostgreSQL in a container)..."
 
     $composePath = Find-ComposeFile -Root $repoRoot
 
@@ -740,7 +742,21 @@ function Start-ContainerServices {
     }
     # ─────────────────────────────────────────────────────────────────────────
 
-    if ($ContainerRuntime -eq "podman") {
+    # One decision for the database runtime: explicit choice, BIRKNEXT_CONTAINER_RUNTIME, then whatever is installed and healthy. Never installs anything.
+    $selection = Select-ContainerRuntime -Requested $ContainerRuntime -EnvironmentChoice $env:BIRKNEXT_CONTAINER_RUNTIME -Probe {
+        param($runtime)
+        if (-not (Command-Exists $runtime)) { return New-ProbeResult $false }
+        $probe = Invoke-NativeCommand -Executable $runtime -Arguments @("info")
+        New-ProbeResult $true $probe.ExitCode ""
+    }
+    if (-not $selection.Ok) {
+        Fail $selection.Message
+        throw "No usable container runtime for PostgreSQL."
+    }
+    Ok $selection.Message
+    $runtime = $selection.Runtime
+
+    if ($runtime -eq "podman") {
         Ensure-PodmanReady
 
         if (Command-Exists "podman-compose") {
@@ -766,8 +782,6 @@ function Start-ContainerServices {
         Invoke-NativeCommand -Executable "podman" -Arguments @("ps") -ShowOutput
     }
     else {
-        Require-Command "docker" "Install Docker Desktop or add docker to PATH."
-
         Info "Running docker compose..."
         $composeResult = Invoke-NativeCommand -Executable "docker" -Arguments @("compose", "-f", $composePath, "up", "-d") -ShowOutput
 
@@ -1135,8 +1149,29 @@ else {
 Ok "Backend target:  $($backendRunnable.Path) [$($backendRunnable.Kind)]"
 Ok "Frontend target: $($frontendRunnable.Path) [$($frontendRunnable.Kind)]"
 
+# Preflight in plain language, before anything starts.
+$preflightProblems = @()
+if ($backendRunnable.Kind -eq "Dll") {
+    $runtimes = $null
+    if (Command-Exists "dotnet") { $runtimes = (Invoke-NativeCommand -Executable "dotnet" -Arguments @("--list-runtimes")).Stdout }
+    $dotnetCheck = Test-DotNetRuntime $runtimes
+    if ($dotnetCheck.Ok) { Ok $dotnetCheck.Message } else { $preflightProblems += $dotnetCheck.Message }
+}
+foreach ($folder in @((Join-Path $repoRoot "logs"), (Join-Path $backendPath "App_Data"))) {
+    $writable = Test-WritableFolder $folder
+    if (-not $writable.Ok) { $preflightProblems += $writable.Message }
+}
+if ($preflightProblems.Count -gt 0) {
+    Write-Host ""
+    Fail "BirkNext cannot start on this PC yet:"
+    foreach ($problem in $preflightProblems) { Write-Host "  - $problem" -ForegroundColor Yellow }
+    Write-Host ""
+    Write-Host "Details are in $launcherLogFile" -ForegroundColor DarkGray
+    exit 2
+}
+
 if ($ValidateOnly) {
-    Ok "Validation only: integrity checks and runnable detection passed. Nothing was started."
+    Ok "Validation only: integrity checks, runnable detection and preflight passed. Nothing was started."
     exit 0
 }
 

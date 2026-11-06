@@ -35,7 +35,7 @@ jobs:
         run: dotnet restore BirkNext.sln
 
       - name: Validate migration file integrity (every migrations folder) and record migration ids
-        run: pwsh -NoProfile -File scripts/check-migrations.ps1 -ManifestOut "${{ runner.temp }}/migrations.json"
+        run: pwsh -NoProfile -File scripts/tests/BirkNextPreflight.Tests.ps1 && pwsh -NoProfile -File scripts/check-migrations.ps1 -ManifestOut "${{ runner.temp }}/migrations.json"
 
       - name: Build backend solution
         working-directory: AIAssisted/backend
@@ -93,7 +93,7 @@ jobs:
           cp AIAssisted/docker-compose.yml "$package_dir/AIAssisted/"
           cp AIAssisted/.env.example "$package_dir/AIAssisted/.env.example"
           cp AIAssisted/.env.example "$package_dir/AIAssisted/.env"
-          cp scripts/start-local.bat scripts/start-local.ps1 scripts/check-migrations.ps1 scripts/validate-package.ps1 "$package_dir/scripts/"
+          cp scripts/start-local.bat scripts/start-local.ps1 scripts/BirkNextPreflight.psm1 scripts/check-migrations.ps1 scripts/validate-package.ps1 "$package_dir/scripts/"
           cp AIAssisted/backend/MIGRATION_GUIDE.md "$package_dir/"
 
           cat > "$package_dir/README.md" <<'EOF'
@@ -109,7 +109,7 @@ jobs:
 
           ## Start
 
-          From the extracted package directory, run `scripts/start-local.ps1`. To select Docker explicitly, run `scripts/start-local.ps1 -ContainerRuntime docker`.
+          From the extracted package directory, run `scripts/start-local.bat` (or `scripts/start-local.ps1`). Prerequisites: Windows, the .NET 8 ASP.NET Core Runtime, and either Podman Desktop or Docker Desktop for the database (whichever is installed and running is used automatically; force one with `-ContainerRuntime podman|docker` or `BIRKNEXT_CONTAINER_RUNTIME`). With PostgreSQL already running on port 5432, use `-SkipContainers`. Missing prerequisites are explained before anything starts. When the browser asks to connect, enter the connection code shown in the start window.
 
           The package includes `AIAssisted/.env` with the checked-in local development defaults. Change those values before using a shared or exposed database. No developer secrets or machine-specific settings are packaged.
 

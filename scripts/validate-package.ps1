@@ -76,6 +76,7 @@ try {
 
     Need "scripts/start-local.ps1" "Launcher script"
     Need "scripts/start-local.bat" "Launcher shortcut"
+    Need "scripts/BirkNextPreflight.psm1" "Launcher preflight module"
     Need "AIAssisted/backend/BirkNext.Api.dll" "Backend runtime"
     Need "AIAssisted/backend/BirkNext.Api.deps.json" "Backend dependency manifest"
     Need "AIAssisted/backend/BirkNext.Api.runtimeconfig.json" "Backend runtime configuration"
