@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -604,5 +605,21 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         navigation.NavigateTo("admin/system-settings?section=target-environments");
 
         cut.WaitForAssertion(() => cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain("Target Environments"));
+    }
+
+    [Fact]
+    public void The_header_never_says_all_clear_while_git_sources_lists_missing_prerequisites_and_counts_failed_checks_as_issues()
+    {
+        var git = new Moq.Mock<IGitSourcesApiService>();
+        git.Setup(g => g.StatusAsync(Moq.It.IsAny<CancellationToken>())).ReturnsAsync((new BirkNext.GitSources.GitConnectionStatus
+        {
+            State = BirkNext.GitSources.GitConnectionState.NotConfigured,
+            Diagnostics = [new("enabled", "Azure environment", BirkNext.GitSources.GitCheckState.Missing, "Disabled."),
+                new("client-id", "App registration", BirkNext.GitSources.GitCheckState.Missing, "Not set.")],
+        }, (string?)null));
+        Services.AddSingleton(git.Object);
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ss-config-health]").GetAttribute("data-state").Should().NotBe("clear"));
+        cut.Find("[data-testid=ss-config-health]").TextContent.Should().Contain("Git Sources not set up", "missing prerequisites stay visible next to other issues").And.NotContain("All clear");
     }
 }

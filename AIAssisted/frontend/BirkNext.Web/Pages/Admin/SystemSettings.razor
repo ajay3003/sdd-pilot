@@ -102,14 +102,22 @@ else if (_settings is not null)
         </span>
         @if (_configHealthIssueCount > 0)
         {
-            <span class="ss-status-pill ss-status-pill-warn">
+            <span class="ss-status-pill ss-status-pill-warn" data-testid="ss-config-health" data-state="issues">
                 <span class="ss-status-label">Config Health</span>
-                <span class="ss-status-value">@_configHealthIssueCount issue@(_configHealthIssueCount != 1 ? "s" : "")</span>
+                <span class="ss-status-value">@($"{_configHealthIssueCount} issue{(_configHealthIssueCount != 1 ? "s" : "")}{(_gitPrerequisites > 0 ? " · Git Sources not set up" : "")}")</span>
+            </span>
+        }
+        else if (_gitPrerequisites > 0)
+        {
+            @* Nothing is failing, but an optional capability is not set up yet: never "All clear" next to a section listing what is missing. *@
+            <span class="ss-status-pill ss-status-pill-warn" data-testid="ss-config-health" data-state="setup" title="Git Sources: @_gitPrerequisites administrator prerequisite(s) not set up">
+                <span class="ss-status-label">Config Health</span>
+                <span class="ss-status-value">No failures · Git Sources not set up</span>
             </span>
         }
         else
         {
-            <span class="ss-status-pill ss-status-pill-ok">
+            <span class="ss-status-pill ss-status-pill-ok" data-testid="ss-config-health" data-state="clear" title="Platform configuration, migrations and Git Sources prerequisites">
                 <span class="ss-status-label">Config Health</span>
                 <span class="ss-status-value">All clear</span>
             </span>
@@ -1619,7 +1627,11 @@ else if (_settings is not null)
     private bool CanEditSelectedPane =>
         _activeSection is "feature-visibility" or "frontend-quality-engines";
 
+    /// <summary>Git Sources: administrator prerequisites not set up (setup, not failures) and checks that ran and failed (issues).</summary>
+    private int _gitPrerequisites, _gitFailures;
+
     private int _configHealthIssueCount =>
+        _gitFailures +
         (UnflaggedList.Count > 0 ? 1 : 0) +
         (_settings?.AzureDevOps.Enabled == true && _settings?.AzureDevOps.PatConfigured == false ? 1 : 0) +
         (_settings?.Database.MigrationStatus is not null && _settings?.Database.MigrationStatus != "Up to date" ? 1 : 0);
@@ -2079,6 +2091,14 @@ else if (_settings is not null)
         // Target Environments live in browser storage. Loading them here (idempotent) means a direct visit sees them too;
         // the browser automation diagnostic defaults to the active one.
         try { await FrontendAnalysisSettingsStore.LoadAsync(JS); } catch { /* the card then says none are configured */ }
+        // The local Git Sources sign-in state (never contacts Azure DevOps): the header's health uses the same prerequisite/failure split as the card.
+        if (ServiceProvider.GetService(typeof(IGitSourcesApiService)) is IGitSourcesApiService gitSources)
+            try
+            {
+                if ((await gitSources.StatusAsync()).Status is { } git)
+                    (_gitPrerequisites, _gitFailures) = (GitSourcesPresentation.Prerequisites(git).Count, GitSourcesPresentation.Failures(git).Count);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { }
         try
         {
             var settingsTask  = AdminApi.GetSystemSettingsAsync();

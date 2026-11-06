@@ -18,9 +18,7 @@
             <div><dt>Status</dt><dd data-testid="gss-state" data-state="@_status.State"><strong>@StateLabel(_status.State)</strong> — @_status.Message</dd></div>
             @if (_status.Account is not null) { <div><dt>Signed-in account</dt><dd data-testid="gss-account">@_status.Account</dd></div> }
             @* Signed in to Microsoft is not Azure DevOps access: only the explicit read-only test verifies the organization, projects and repositories. *@
-            <div><dt>Azure DevOps access</dt><dd data-testid="gss-last-test">@(_status.LastTest is { } t
-                ? $"{(t.Ready ? "Verified" : "Not verified")} by the read-only Git test · {t.TestedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC{(t.RepositoryCount is { } n ? $" · {n} repositor{(n == 1 ? "y" : "ies")} readable" : "")}"
-                : _status.State == GitConnectionState.Connected ? "Not verified yet — a Microsoft sign-in alone does not prove repository access; run Test Git connection" : "Not tested")</dd></div>
+            <div><dt>Azure DevOps access</dt><dd data-testid="gss-last-test">@GitSourcesPresentation.AccessText(_status)</dd></div>
         </dl>
         @if (_status.Requirements.Count > 0)
         {
@@ -29,11 +27,12 @@
         @if (_status.Diagnostics.Count > 0)
         {
             <details class="gss-health" open="@(_status.State is not GitConnectionState.Connected)" data-testid="gss-diagnostics">
-                <summary>Configuration health (@_status.Diagnostics.Count(d => d.State is GitCheckState.Missing or GitCheckState.Invalid or GitCheckState.Failed) need attention)</summary>
+                @* Missing configuration is an administrator prerequisite, not a runtime failure; failed checks are counted apart. *@
+                <summary data-testid="gss-health-summary" data-prerequisites="@GitSourcesPresentation.Prerequisites(_status).Count" data-failures="@GitSourcesPresentation.Failures(_status).Count">@GitSourcesPresentation.HealthSummary(_status)</summary>
                 <ul class="gss-list">
                     @foreach (var d in _status.Diagnostics)
                     {
-                        <li data-testid="gss-check" data-key="@d.Key" data-state="@d.State"><strong>@CheckIcon(d.State) @d.Label</strong> — @d.Detail
+                        <li data-testid="gss-check" data-key="@d.Key" data-state="@d.State"><strong>@($"{CheckIcon(d.State)} {d.Label}")</strong>@($" — {d.Detail}")
                             @if (d.AdminAction is { } action && d.State is not GitCheckState.Ok) { <div class="gss-muted gss-small">Administrator: @action</div> }</li>
                     }
                 </ul>
@@ -60,7 +59,8 @@
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DeviceCodeAsync" data-testid="gss-device-sign-in">Sign in with a device code</button>
             }
             @if (_status.State == GitConnectionState.SigningIn) { <button type="button" class="btn-secondary" @onclick="RefreshAsync" data-testid="gss-refresh-status">I have signed in — refresh</button> }
-            <button type="button" class="btn-secondary" disabled="@(_busy || _status.State == GitConnectionState.NotConfigured)" @onclick="TestAsync" data-testid="gss-test">Test Git connection</button>
+            <button type="button" class="btn-secondary" disabled="@(_busy || _status.State == GitConnectionState.NotConfigured)" @onclick="TestAsync" data-testid="gss-test"
+                    aria-describedby="@(GitSourcesPresentation.TestBlockedReason(_status) is null ? null : "gss-test-reason")">Test Git connection</button>
             @if (_status.State is GitConnectionState.Connected or GitConnectionState.AccessDenied)
             {
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadOrganizationsAsync" data-testid="gss-load-orgs">Find organizations</button>
@@ -68,6 +68,15 @@
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DisconnectAsync" data-testid="gss-disconnect">Disconnect</button>
             }
         </div>
+        @* Every unavailable action says why, and who can fix it. *@
+        @if (GitSourcesPresentation.TestBlockedReason(_status) is { } testBlocked)
+        {
+            <p id="gss-test-reason" class="gss-muted gss-small" data-testid="gss-test-reason">Test Git connection: @testBlocked</p>
+        }
+        @if (_status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed && GitSourcesPresentation.SignInBlockedReason(_status) is { } signInBlocked)
+        {
+            <p class="gss-muted gss-small" data-testid="gss-sign-in-reason">Sign in: @signInBlocked</p>
+        }
         @if (_status.State == GitConnectionState.Connected) { <p class="gss-muted gss-small">Disconnect signs this BirkNext instance out of Microsoft (Azure Environment Analysis too). Settings, tracked branches, imported projects and snapshots stay.</p> }
         @if (_error is not null) { <p class="gss-error" role="alert" data-testid="gss-error">@_error</p> }
 

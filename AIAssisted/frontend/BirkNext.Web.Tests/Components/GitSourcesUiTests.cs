@@ -166,8 +166,69 @@ public sealed class GitSourcesUiTests : BunitContext
         });
         var cut = Render<GitSourcesSettingsCard>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=gss-device-code]").TextContent.Should().Contain("ABCD-1234"));
-        cut.Find("[data-testid=gss-diagnostics] summary").TextContent.Should().Contain("1 need attention");
+        cut.Find("[data-testid=gss-diagnostics] summary").TextContent.Should().Contain("1 check failed", "a failed check is counted apart from administrator prerequisites");
         cut.Find("[data-testid=gss-check][data-key=consent]").TextContent.Should().Contain("Administrator: An administrator grants consent.");
         cut.Find("[data-testid=gss-check][data-key=client-id]").TextContent.Should().NotContain("Administrator");
+    }
+
+    // ── The screenshot state: Entra not enabled, no client id, organization URL set ─────────────────────────────────────────
+
+    private static GitConnectionStatus NotSetUp() => new()
+    {
+        State = GitConnectionState.NotConfigured, OrganizationUrl = "https://dev.azure.com/bufdir", Message = "Microsoft sign-in is not configured on this installation.",
+        Diagnostics =
+        [
+            new("enabled", "Azure environment (AzureEnvironment:Enabled)", GitCheckState.Missing, "Disabled.", "An administrator enables AzureEnvironment:Enabled."),
+            new("client-id", "App registration (AzureEnvironment:ClientId)", GitCheckState.Missing, "Not set.", "An administrator sets the app registration client id."),
+            new("organization", "Azure DevOps organization", GitCheckState.Ok, "https://dev.azure.com/bufdir"),
+        ],
+    };
+
+    [Fact]
+    public void Missing_configuration_is_an_administrator_prerequisite_not_a_failure_and_every_disabled_action_explains_itself()
+    {
+        Api(NotSetUp());
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-health-summary]"));
+        cut.Find("[data-testid=gss-health-summary]").TextContent.Should().Be("Configuration health — 2 administrator prerequisites not set up");
+        cut.Find("[data-testid=gss-health-summary]").GetAttribute("data-failures").Should().Be("0", "missing configuration is not a runtime failure");
+        cut.Find("[data-testid=gss-last-test]").TextContent.Should().StartWith("Not available yet").And.NotContain("Not tested");
+        cut.Find("[data-testid=gss-test]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=gss-test]").GetAttribute("aria-describedby").Should().Be("gss-test-reason");
+        cut.Find("[data-testid=gss-test-reason]").TextContent.Should().Contain("administrator has set up Git Sources");
+        cut.Find("[data-testid=gss-check][data-key=client-id]").TextContent.Should().Contain("✕ App registration").And.Contain("Administrator:");
+        cut.FindAll("[data-testid=gss-sign-in]").Should().BeEmpty("signing in cannot work before the app registration exists");
+    }
+
+    [Fact]
+    public void Not_signed_in_without_a_usable_sign_in_names_the_missing_prerequisite()
+    {
+        Api(new() { State = GitConnectionState.NotConnected, SignInAvailable = false, OrganizationUrl = "https://dev.azure.com/bufdir",
+            Diagnostics = [new("redirect", "Redirect URI", GitCheckState.Invalid, "Not registered for this address.", "An administrator registers the redirect URI.")] });
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-sign-in-reason]").TextContent.Should().Contain("Redirect URI"));
+        cut.Find("[data-testid=gss-sign-in]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=gss-last-test]").TextContent.Should().StartWith("Not tested — sign in");
+    }
+
+    [Fact]
+    public void A_missing_organization_and_denied_access_are_said_plainly()
+    {
+        Api(new() { State = GitConnectionState.NotConnected, SignInAvailable = true });
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-test-reason]").TextContent.Should().Contain("organization URL"));
+
+        var denied = new GitConnectionStatus { State = GitConnectionState.AccessDenied, OrganizationUrl = "https://dev.azure.com/bufdir", Account = "tester@bufdir.no" };
+        GitSourcesPresentation.AccessText(denied).Should().StartWith("Denied");
+        GitSourcesPresentation.TestBlockedReason(denied).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_failed_or_timed_out_test_is_never_shown_as_access()
+    {
+        var failed = new GitTestResult(false, "Timed out", [new("Azure DevOps organization", GitTestStepState.Failed, "Timed out after 30 s", 30000)], DateTimeOffset.UtcNow, "bufdir", null);
+        var status = new GitConnectionStatus { State = GitConnectionState.Connected, OrganizationUrl = "https://dev.azure.com/bufdir", LastTest = failed };
+        GitSourcesPresentation.AccessText(status).Should().StartWith("Not verified by the read-only Git test");
+        GitSourcesPresentation.HealthSummary(status).Should().Be("Configuration health — all prerequisites in place");
     }
 }
