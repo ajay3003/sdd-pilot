@@ -793,3 +793,9 @@
 .aqr-obligation dd { margin: 0; }
 
 .aqr-stored-result { margin: .25rem 0 .5rem; padding: .35rem .6rem; border-left: 3px solid var(--clr-info, #1d4ed8); background: var(--clr-surface-muted, #f6f8fa); font-size: .9rem; }
+
+.aqr-op-toolbar { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; margin: 0 0 .75rem; }
+.aqr-op-search { max-width: 18rem; }
+.aqr-op-view { max-width: 26rem; }
+.aqr-op-jump { display: inline-flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: center; }
+.aqr-target-result:focus-visible { outline: 2px solid var(--clr-focus, #1d4ed8); outline-offset: 2px; }

@@ -170,6 +170,32 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "aqr-tabpanel"));
     }
 
+    [Fact]
+    public async Task RestOperations_CanBeNarrowedToAttentionOrNotExecuted_WithHonestCounts()
+    {
+        var page = await Result();
+        Tab(page, "rest");
+        var rows = page.FindAll("[data-testid=aqr-operation-row]");
+        var total = rows.Count;
+        total.Should().BeGreaterThan(0);
+        page.Find("[data-testid=aqr-op-count]").TextContent.Should().Be($"Showing {total} of {total} operations");
+
+        page.Find("[data-testid=aqr-op-view]").Change("not-executed");
+        var notExecuted = page.FindAll("[data-testid=aqr-operation-row]");
+        notExecuted.Should().OnlyContain(r => r.GetAttribute("data-executed") == "false");
+        notExecuted.Should().OnlyContain(r => r.GetAttribute("data-attention") == "false", "not executed is never shown as a failure");
+        page.Find("[data-testid=aqr-op-count]").TextContent.Should().Be($"Showing {notExecuted.Count} of {total} operations");
+
+        page.Find("[data-testid=aqr-op-view]").Change("attention");
+        page.FindAll("[data-testid=aqr-operation-row]").Should().OnlyContain(r => r.GetAttribute("data-attention") == "true" && r.GetAttribute("data-executed") == "true");
+
+        page.Find("[data-testid=aqr-op-clear]").Click();
+        page.Find("[data-testid=aqr-op-search]").Input("zzz-no-such-operation");
+        page.FindAll("[data-testid=aqr-operation-row]").Should().BeEmpty();
+        page.Find("[data-testid=aqr-op-count]").TextContent.Should().Be($"Showing 0 of {total} operations");
+        page.FindAll("[data-testid=aqr-target-result]").Should().NotBeEmpty("service cards (status, access, next step) stay visible while operations are filtered");
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
