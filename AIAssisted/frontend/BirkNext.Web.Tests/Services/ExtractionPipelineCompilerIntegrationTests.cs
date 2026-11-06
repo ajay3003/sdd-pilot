@@ -65,10 +65,13 @@ public sealed class ExtractionPipelineCompilerIntegrationTests
 
         input.Length.Should().BeGreaterThanOrEqualTo(10_000);
 
-        var result = await service.ExtractAsync(input);
-
-        // Measured on development hardware: ~2 ms (regex compiled at startup, not per call).
-        result.DurationMs.Should().BeLessThan(200,
+        // The first call pays one-time JIT and first-use costs, and a single wall-clock sample is at the mercy of CPU contention when the whole
+        // suite runs in parallel (one run measured 243 ms). The claim is that no regex is compiled per call, so: one warm-up call, then the
+        // median of five calls. Measured on development hardware: ~2 ms.
+        await service.ExtractAsync(input);
+        var durations = new List<long>();
+        for (var run = 0; run < 5; run++) durations.Add((await service.ExtractAsync(input)).DurationMs);
+        durations.Order().ElementAt(2).Should().BeLessThan(200,
             "regex compilation happens at Compile() startup, not during pipeline execution");
     }
 
