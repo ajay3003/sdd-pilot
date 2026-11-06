@@ -76,6 +76,19 @@
             @RunDecision(profile)
             @if (_readiness is { } readiness)
             {
+                @* Guided steps over the page's own state: configuration decisions, static review and active verification stay separate answers. *@
+                <GuidedStepList Steps="@IntegrationReviewWorkflow.Derive(new(readiness, IntegrationReviewLightPresentation.Classify(readiness), IntegrationReviewPrerunPresentation.NeedsAttention(readiness, profile.Id),
+                                    _journeySummary?.Total, _journeySummary?.Ready, _executionAllowed, ViewHref, IntegrationsHref(profile)))"
+                                TestId="iqr-steps" Label="Integration Quality Review steps" />
+                <ReviewDisclosure Text="What these counts mean" CollapseText="Hide count definitions" TestId="iqr-count-definitions" Class="disclosure-inline disclosure-small">
+                    <dl class="iqr-count-defs" data-testid="iqr-count-defs">
+                        <div><dt>Integrations relevant here (@readiness.Subjects.Count)</dt><dd>Enabled Integration Catalog integrations plus integrations discovered from topology evidence and enabled Connected Systems. This is what the review assesses.</dd></div>
+                        <div><dt>Resolved from evidence / need your decision</dt><dd>Of those, the ones whose mapping, source evidence and contract are settled, and the ones that still need a person (a mapping to confirm, missing or ambiguous evidence). Resolved is not runtime verified.</dd></div>
+                        <div><dt>Integration Catalog proposals</dt><dd>Integrations an applicable Test Pack requires, not configured yet. They are not reviewed here until configured.</dd></div>
+                        <div><dt>Technical relationships</dt><dd>Relationships Source Analysis found in source code: evidence, not integrations.</dd></div>
+                        <div><dt>Journeys executable</dt><dd>Test Pack journeys across this environment whose execution prerequisites are met. Active verification only; never part of the static review.</dd></div>
+                    </dl>
+                </ReviewDisclosure>
                 @if (IntegrationReviewPrerunPresentation.NoEnabledIntegrations(readiness))
                 {
                     var empty = IntegrationReviewPrerunPresentation.EmptyState(readiness, profile.Id);

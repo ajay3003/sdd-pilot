@@ -289,4 +289,27 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         cut.Find("[data-testid=iqr-contract-pair-studio]").GetAttribute("href").Should().Be(
             $"/schema-studio?snapshot={snapshot}&contract=xsd%2Fportal_report_v2.xsd&environment=dev&integration={Uri.EscapeDataString(IntakeId)}&from=iqr");
     }
+
+    // ── Guided steps: configuration decisions, static review and active verification are separate answers ───────────────────
+
+    [Fact]
+    public void Guided_steps_put_the_open_decision_first_keep_static_review_runnable_and_active_verification_separate()
+    {
+        Arrange();
+        var cut = Open();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=iqr-steps] [data-testid=gsl-step]").Should().HaveCount(6));
+        string State(string step) => cut.Find($"[data-testid=iqr-steps] [data-step={step}]").GetAttribute("data-state")!;
+        cut.FindAll("[data-testid=iqr-steps] [data-testid=gsl-step]").Select(s => s.GetAttribute("data-step")).Should().Equal("select", "evidence", "resolve", "contracts", "static", "verify");
+        State("select").Should().Be("Done");
+        State("resolve").Should().Be("Current", "the mapping still needs a person");
+        cut.Find("[data-testid=iqr-steps] [data-step=resolve]").TextContent.Should().Contain("need your decision").And.Contain("Nothing is decided for you");
+        cut.Find("[data-testid=iqr-steps] [data-step=static]").TextContent.Should().Contain("Partially reviewable", "the static review can still run with limitations");
+        cut.WaitForAssertion(() => State("verify").Should().Be("Blocked"));
+        cut.Find("[data-testid=iqr-steps] [data-step=verify]").TextContent.Should().Contain("not enabled for this environment").And.Contain("never enable it");
+        cut.FindAll("[data-testid=iqr-steps] [aria-current=step]").Should().ContainSingle();
+        cut.Find("[data-testid=iqr-steps] [data-step=verify] a[data-testid=gsl-action]").GetAttribute("href").Should().Contain("view=test-verify");
+        cut.Find("[data-testid=iqr-count-definitions]").TextContent.Should().Contain("What these counts mean");
+        cut.Find("[data-testid=iqr-count-defs]").TextContent.Should().Contain("Integration Catalog proposals").And.Contain("not reviewed here until configured").And.Contain("evidence, not integrations");
+        cut.FindAll("[data-testid=iqr-back]").Should().BeEmpty("the steps never start a review");
+    }
 }
