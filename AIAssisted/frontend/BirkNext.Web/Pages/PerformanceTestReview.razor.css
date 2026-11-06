@@ -505,3 +505,12 @@
     .ptc-thr-table td, .ptc-res-table td, .ptc-res-table th { border: 0; padding: 0.15rem 0; }
     .ptc-thr-table td[data-label]::before, .ptc-res-table td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; font-size: 0.8rem; }
 }
+
+/* Coordinated Check readiness: progress and the stages it went through. */
+.ptc-check-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.6rem 0.9rem; border: 1px solid var(--clr-border); border-radius: var(--radius-lg); background: var(--clr-surface-white); font-size: 0.9rem; }
+.ptc-check-steps { display: grid; gap: 0.4rem; margin: 0 0 0.75rem; padding: 0.75rem 1rem; list-style: none; border: 1px solid var(--clr-border); border-radius: var(--radius-lg); background: var(--clr-surface-white); }
+.ptc-check-steps li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; font-size: 0.9rem; }
+.ptc-step-state { display: inline-block; min-width: 7.5rem; font-weight: 600; font-size: 0.8rem; }
+.ptc-step-done { color: var(--clr-success, #1a7f37); }
+.ptc-step-skipped { color: var(--clr-text-muted); }
+.ptc-step-attention { color: var(--clr-warning-text, #8a5300); }

@@ -474,9 +474,41 @@
             _tab = Tab.Readiness;
             return;
         }
-        else _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id, _identity);
         _tab = Tab.Readiness;
+        await CoordinatedCheckAsync();
     }
+
+    private PerformanceReadinessCheck? _lastCheck;
+    private bool _checkingReadiness;
+    private CancellationTokenSource? _checkCts;
+
+    /// <summary>
+    /// The coordinated readiness check of the saved version (explicit action only — never on load, render, tab switch or polling). The backend reuses
+    /// a recent container-network check or makes one bounded check from the k6 container when eligible; a second click while one runs is ignored.
+    /// </summary>
+    private async Task CoordinatedCheckAsync()
+    {
+        if (_checkingReadiness || _profile is null || _isNew) return;
+        _checkingReadiness = true;
+        _checkCts = new CancellationTokenSource();
+        StateHasChanged();
+        try
+        {
+            var result = await Api.ReadinessCheckAsync(_profile.Id, _draft.Id, _identity, _checkCts.Token);
+            if (result.Value is { } check)
+            {
+                _readiness = check.Readiness;
+                _lastCheck = check;
+                if (check.Connectivity == PerformanceConnectivityOutcomes.Checked && check.Reachability is { } reach) _reachability = reach;
+            }
+            else if (_checkCts.IsCancellationRequested) _message = "Readiness check cancelled. The last saved evaluation is shown.";
+            else { _message = result.Error; _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id, _identity); _lastCheck = null; }
+        }
+        catch (OperationCanceledException) { _message = "Readiness check cancelled. The last saved evaluation is shown."; }
+        finally { _checkingReadiness = false; _checkCts?.Dispose(); _checkCts = null; }
+    }
+
+    private void CancelCheck() => _checkCts?.Cancel();
 
     /// <summary>Run test: autosave a new draft, evaluate readiness, stop at a blocker, otherwise open the explicit run confirmation. Never starts load.</summary>
     private async Task RunTestAsync()
@@ -518,7 +550,7 @@
         if (D.ActionHref(action, ContextDefinitionId) is { } href) { <a class="@css ptc-action" href="@href" data-testid="@testId" data-action="@action">@label</a> }
         else
         {
-            var busy = action == PerformanceReadinessActions.CheckNetwork && _checkingNetwork || action is "check-readiness" or "save-version" && _saving;
+            var busy = action == PerformanceReadinessActions.CheckNetwork && (_checkingNetwork || _checkingReadiness) || action is "check-readiness" && (_saving || _checkingReadiness) || action == "save-version" && _saving;
             <button type="button" class="@css ptc-action" @onclick="() => PerformAction(action)" disabled="@(busy || action == "check-readiness" && !DraftValid)" data-testid="@testId" data-action="@action"
                 aria-describedby="@(action == PerformanceReadinessActions.CheckNetwork ? $"{testId}-disclosure" : null)">@(busy ? "Working…" : label)</button>
             @if (action == PerformanceReadinessActions.CheckNetwork)
@@ -535,7 +567,7 @@
     /// an unchanged definition is never re-saved.</summary>
     private async Task CheckNetworkAsync()
     {
-        if (_isNew || _dirty) { await CheckReadinessAsync(); if (_isNew || _dirty) return; }
+        if (_isNew || _dirty) { await CheckReadinessAsync(); if (_isNew || _dirty || _lastCheck?.Connectivity == PerformanceConnectivityOutcomes.Checked) return; }
         _checkingNetwork = true;
         try
         {
@@ -610,6 +642,7 @@
     private async Task RefreshDefinitionStateAsync()
     {
         _resourceTargets = _profile is null ? [] : await Api.ResourceTargetsAsync(_profile.Id, _draft.EnvironmentType);
+        _lastCheck = null;
         if (_isNew) { _readiness = null; _runs = []; _baselines = []; _selectedRun = null; return; }
         _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id, _identity);
         _runs = await Api.RunsAsync(_profile.Id, _draft.Id);
@@ -731,7 +764,7 @@
         }
     }
 
-    public void Dispose() => StopPolling();
+    public void Dispose() { StopPolling(); _checkCts?.Cancel(); }
 
     // ── Baselines / compare ───────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1478,6 +1511,13 @@
 
     private RenderFragment ReadinessView() => @<section class="pt-section" aria-labelledby="pt-readiness-h" data-testid="pt-readiness">
         <h2 id="pt-readiness-h">Test readiness</h2>
+        @if (_checkingReadiness)
+        {
+            <div class="ptc-check-progress" role="status" aria-live="polite" data-testid="pt-check-progress">
+                <span>Checking readiness: definition → execution environment → target connectivity (when eligible) → blockers…</span>
+                <button type="button" class="btn-secondary ptc-action" data-testid="pt-check-cancel" @onclick="CancelCheck">Cancel</button>
+            </div>
+        }
         @if (_isNew || _dirty)
         {
             <p class="sd-muted" data-testid="pt-readiness-unsaved">@(_isNew
@@ -1515,6 +1555,24 @@
                     }
                     <p><button type="button" class="ptc-link" data-testid="pt-blocker-count" @onclick="FocusFirstBlockerAsync">@($"Resolve {blocking.Count} required item{(blocking.Count == 1 ? "" : "s")} before running.")</button></p>
                 </section>
+            }
+            <p class="ptc-check-again">
+                <button type="button" class="btn-secondary ptc-action" data-testid="pt-check-readiness" disabled="@(_checkingReadiness || _checkingNetwork)" @onclick="CoordinatedCheckAsync"
+                        aria-describedby="pt-check-readiness-what">@(_checkingReadiness ? "Checking…" : "Check readiness")</button>
+                <span id="pt-check-readiness-what" class="ptc-check-detail">Evaluates v@(_draft.Version) again, including target connectivity from the k6 container when eligible (one request, reused while recent). Never starts a run.</span>
+            </p>
+            @if (_lastCheck is { } lc && !_checkingReadiness)
+            {
+                <ol class="ptc-check-steps" aria-label="What Check readiness did" data-testid="pt-check-steps" data-connectivity="@lc.Connectivity">
+                    @foreach (var step in lc.Steps)
+                    {
+                        <li data-testid="pt-check-step" data-key="@step.Key" data-state="@step.State">
+                            <span class="ptc-step-state ptc-step-@step.State.ToLowerInvariant()">@(step.State switch { "Done" => "Done", "Skipped" => "Skipped", _ => "Needs attention" })</span>
+                            <strong>@step.Label</strong>
+                            <span class="ptc-check-detail">@step.Detail</span>
+                        </li>
+                    }
+                </ol>
             }
             @if (_reachability is { } nr)
             {

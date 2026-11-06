@@ -20,6 +20,26 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
     /// <summary>Local data reset: forgets per-target reachability checks. Provider/runtime status (host capability) is kept.</summary>
     public void ClearReachability() => _reachability.Clear();
 
+    private readonly ConcurrentDictionary<string, Lazy<Task<PerformanceReachability>>> _inFlight = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The container-network check with concurrent duplicates collapsed: a second Check readiness / Check container network for the same provider +
+    /// target while one is running waits for that probe instead of starting another container. The probe itself is bounded by the container timeout
+    /// (and its own token), so one caller cancelling never cancels it for the others; each caller stops waiting on its own token.
+    /// </summary>
+    public async Task<PerformanceReachability> CheckReachabilityOnceAsync(PerformanceTestDefinition d, CancellationToken ct = default)
+    {
+        var key = $"{d.ProviderId}|{d.TargetOrigin}";
+        var mine = new Lazy<Task<PerformanceReachability>>(() => CheckReachabilityAsync(d, CancellationToken.None));
+        var shared = _inFlight.GetOrAdd(key, mine);
+        if (ReferenceEquals(shared, mine))
+            _ = shared.Value.ContinueWith(_ => _inFlight.TryRemove(new KeyValuePair<string, Lazy<Task<PerformanceReachability>>>(key, mine)), TaskScheduler.Default);
+        return await shared.Value.WaitAsync(ct);
+    }
+
+    /// <summary>Whether a container-network check for this provider + target is running now.</summary>
+    public bool ReachabilityInFlight(string providerId, string origin) => _inFlight.ContainsKey($"{providerId}|{origin}");
+
     public async Task<PerformanceReachability> CheckReachabilityAsync(PerformanceTestDefinition d, CancellationToken ct = default)
     {
         if (Find(d.ProviderId) is not { } provider)

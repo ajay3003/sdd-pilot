@@ -547,6 +547,44 @@ public sealed record PerformanceTestReadiness
     public PerformanceProviderStatus? Provider { get; init; }
 }
 
+/// <summary>
+/// The coordinated "Check readiness": the saved definition, the execution environment, target connectivity from the load-generator container (one
+/// bounded, read-only request when eligible — never a load test) and the resulting blockers. Connectivity is checked only on this explicit action,
+/// never on page load, render, tab switch or polling; recent valid evidence is reused.
+/// </summary>
+public sealed record PerformanceReadinessCheck
+{
+    public PerformanceTestReadiness Readiness { get; init; } = new();
+    /// <summary>See <see cref="PerformanceConnectivityOutcomes"/>.</summary>
+    public string Connectivity { get; init; } = PerformanceConnectivityOutcomes.NotRun;
+    /// <summary>Why connectivity was (not) checked, in tester words.</summary>
+    public string ConnectivityDetail { get; init; } = "";
+    /// <summary>The container-network evidence this evaluation used (new or reused); null when none exists.</summary>
+    public PerformanceReachability? Reachability { get; init; }
+    /// <summary>The stages the check went through, in order: definition, execution environment, target connectivity, blockers.</summary>
+    public List<PerformanceReadinessCheckStep> Steps { get; init; } = [];
+}
+
+/// <param name="State">Done · Skipped · Attention.</param>
+public sealed record PerformanceReadinessCheckStep(string Key, string Label, string State, string Detail);
+
+/// <summary>What "Check readiness" did about target connectivity. Only <see cref="Checked"/> sent a request (one, from the load-generator container).</summary>
+public static class PerformanceConnectivityOutcomes
+{
+    /// <summary>A new container-network check ran as part of this readiness check.</summary>
+    public const string Checked = "Checked";
+    /// <summary>A recent check under the same network/TLS configuration was reused (no request sent).</summary>
+    public const string ReusedRecent = "ReusedRecent";
+    /// <summary>Not checked: the container runtime, image or provider is not available.</summary>
+    public const string SkippedRuntimeUnavailable = "SkippedRuntimeUnavailable";
+    /// <summary>Not checked: the environment or target is refused by the safety rules (e.g. Production).</summary>
+    public const string SkippedSafety = "SkippedSafety";
+    /// <summary>The check did not finish within its bound; readiness shows the target as not verified.</summary>
+    public const string TimedOut = "TimedOut";
+    /// <summary>No coordinated check was made (an older backend, or only stored readiness was read).</summary>
+    public const string NotRun = "NotRun";
+}
+
 public sealed record PerformanceLatency
 {
     public double? MinMs { get; init; }

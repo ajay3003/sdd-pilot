@@ -566,6 +566,7 @@ builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Performance
     sp.GetServices<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider>(), sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions>(),
     sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(), sp.GetService<BirkNext.Api.Services.PerformanceTests.IAiaCertificateFetcher>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceReadinessCheckService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceScenarioSources>();
 // Validation requests: no redirects followed (a Location header stays extractable), standard TLS validation, decompression for previews.
 builder.Services.AddHttpClient(BirkNext.Api.Services.PerformanceTests.PerformanceTrialService.ClientName)

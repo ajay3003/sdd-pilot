@@ -13,7 +13,7 @@ namespace BirkNext.Api.Controllers;
 [Route("api/performance-tests")]
 public sealed class PerformanceTestsController(PerformanceTestStore store, PerformanceTestReadinessService readiness, PerformanceTestExecutionService execution,
     PerformanceTestProviderRegistry providers, PerformanceTestOptions options, TimeProvider? clock = null, Services.PerformanceTests.Resources.ResourceObservationRegistry? resources = null,
-    PerformanceLocalExecutionStore? localExecution = null, PerformanceTrialService? trial = null) : ControllerBase
+    PerformanceLocalExecutionStore? localExecution = null, PerformanceTrialService? trial = null, PerformanceReadinessCheckService? readinessCheck = null) : ControllerBase
 {
     // ── Local execution setup: Container TLS trust (machine-local; metadata only; TLS verification is never disabled) ─────────
 
@@ -143,7 +143,24 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         if (definition is null) return NotFound();
         if (PerformanceTestSafety.EnvironmentBlock(definition.EnvironmentType) is { } env) return UnprocessableEntity(new { message = env });
         if (PerformanceTestSafety.Origin(definition.TargetOrigin, definition.EnvironmentType, options).Error is { } error) return UnprocessableEntity(new { message = error });
-        return Ok(await providers.CheckReachabilityAsync(definition, ct));
+        return Ok(await providers.CheckReachabilityOnceAsync(definition, ct));
+    }
+
+    /// <summary>
+    /// The coordinated Check readiness (explicit action only): readiness of the saved version, plus — when eligible — the same bounded container-network
+    /// check (one GET of the target origin from the k6 container; never a load test), then readiness again. Recent evidence under the same network/TLS
+    /// configuration is reused; a safety refusal or an unavailable runtime skips the check with the reason. GET readiness stays side-effect free.
+    /// </summary>
+    [HttpPost("definitions/{id}/readiness-check")]
+    public async Task<ActionResult<PerformanceReadinessCheck>> ReadinessCheck([FromQuery] string environmentId, string id, CancellationToken ct)
+    {
+        if (readinessCheck is null) return NotFound();
+        var definition = await store.DefinitionAsync(environmentId, id, ct);
+        if (definition is null) return NotFound();
+        var baseline = await store.ActiveBaselineAsync(environmentId, id, definition.ComparisonFingerprint, ct);
+        var identity = Request.Query.TryGetValue("profileId", out var profile) && Request.Query.TryGetValue("contextFingerprint", out var fingerprint)
+            ? new BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity(BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy, profile.ToString(), fingerprint.ToString()) : null;
+        return Ok(await readinessCheck.CheckAsync(definition, await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct), baseline is not null, identity, ct));
     }
 
     // ── Smart Scenario Engine sources (stored contract evidence; the engine itself runs with the browser's discovery evidence) ──────

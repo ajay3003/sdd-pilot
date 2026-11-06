@@ -63,6 +63,21 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         public Task<PerformanceApiResult<PerformanceTestDataProfile>> SaveDataProfileAsync(string environmentId, PerformanceTestDataProfile profile, CancellationToken ct = default) =>
             Task.FromResult(PerformanceApiResult<PerformanceTestDataProfile>.Ok(profile));
         public Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default) => Task.FromResult(Readiness);
+        /// <summary>The coordinated Check readiness; null = answer with the current Readiness and a new reachable check.</summary>
+        public Func<Task<PerformanceApiResult<PerformanceReadinessCheck>>>? Check { get; set; }
+        public Task<PerformanceApiResult<PerformanceReadinessCheck>> ReadinessCheckAsync(string environmentId, string definitionId,
+            BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default)
+        {
+            Calls.Add("readiness-check");
+            return Check?.Invoke() ?? Task.FromResult(PerformanceApiResult<PerformanceReadinessCheck>.Ok(new PerformanceReadinessCheck
+            {
+                Readiness = Readiness!, Connectivity = PerformanceConnectivityOutcomes.Checked, ConnectivityDetail = "Checked now from the k6 container: the base target answered HTTP 200.",
+                Reachability = Reachability,
+                Steps = [new("definition", "Checking definition", "Done", "Saved version evaluated."), new("environment", "Checking execution environment", "Done", "Available."),
+                    new("connectivity", "Checking target connectivity", "Done", "Checked now from the k6 container: the base target answered HTTP 200."),
+                    new("blockers", "Evaluating blockers", Readiness!.Ready ? "Done" : "Attention", Readiness.Ready ? "No blocker." : "Blocked.")],
+            }));
+        }
         public Task<PerformanceApiResult<PerformanceTestRun>> StartAsync(string environmentId, PerformanceRunRequest request, CancellationToken ct = default)
         { Calls.Add("start"); return Task.FromResult(StartResult ?? PerformanceApiResult<PerformanceTestRun>.Ok(Run(PerformanceRunState.Running))); }
         public Task<PerformanceTestRun?> RunAsync(string environmentId, Guid runId, CancellationToken ct = default) => Task.FromResult(Runs.FirstOrDefault(r => r.RunId == runId));
@@ -691,7 +706,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         _api.Calls.Should().BeEmpty("nothing is saved without the explicit save");
         cut.Find("[data-testid=pt-save-and-check]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-message]").TextContent.Should().Be("Definition saved as v1 before readiness evaluation."));
-        _api.Calls.Should().Equal(["create"], "one explicit first save, and no load");
+        _api.Calls.Should().Equal(["create", "readiness-check"], "one explicit first save, then the coordinated readiness check of v1 — and no load");
         cut.FindAll("[data-testid=pt-flow-step]").Select(s => s.GetAttribute("data-state")).Should().Equal(["done", "done", "done", "done"]);
         cut.Find("[data-testid=pt-tab-readiness]").GetAttribute("aria-pressed").Should().Be("true");
         cut.Find("[data-testid=pt-readiness-summary]").TextContent.Should().Contain("Ready to run.");
@@ -712,7 +727,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-save-and-check]").Click();
         cut.Find("[data-testid=pt-run-open]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-run]").GetAttribute("aria-pressed").Should().Be("true"));
-        _api.Calls.Should().Equal(["create"]);
+        _api.Calls.Where(c => c != "readiness-check").Should().Equal(["create"], "Run test re-evaluates readiness (the backend reuses recent connectivity evidence) but saves only once");
+        _api.Calls.Should().Contain("readiness-check");
         var traffic = cut.Find("[data-testid=pt-real-traffic]").TextContent;
         traffic.Should().Contain("This sends real load to the QA target.").And.Contain("https://paymenthub-qa.example.test").And.Contain("Nothing starts until you select Run performance test");
         cut.Find("[data-testid=pt-run-start]").TextContent.Should().Be("Run performance test");
@@ -1602,5 +1618,66 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.FindAll("[data-testid=pt-exec-stage]").Where(s => s.GetAttribute("data-stage") == "Validated").Select(s => s.GetAttribute("data-state"))
             .Should().OnlyContain(s => s == "NotChecked" || s == "NotApplicable", "validation is never claimed for unsaved changes");
         _api.Calls.Should().NotContain("start");
+    }
+
+    // ── Coordinated Check readiness: connectivity included when eligible, explicit action only ─────────────────────────────────
+
+    [Fact]
+    public void Check_readiness_includes_target_connectivity_and_never_probes_on_load()
+    {
+        Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["Not checked yet."], Items = [NetworkBlocker()] });
+        var cut = Page();
+        Tab(cut, "readiness");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-check-readiness]"));
+        _api.Calls.Should().NotContain("readiness-check").And.NotContain("network-check", "loading, rendering and tab switches never send a probe");
+        _api.Readiness = ReadyState();
+        cut.Find("[data-testid=pt-check-readiness]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-check-steps]").GetAttribute("data-connectivity").Should().Be("Checked"));
+        _api.Calls.Count(c => c == "readiness-check").Should().Be(1);
+        _api.Calls.Should().NotContain("start").And.NotContain("update").And.NotContain("network-check", "the coordinated check made the one probe; no second manual check");
+        cut.FindAll("[data-testid=pt-check-step]").Select(s => s.GetAttribute("data-key")).Should().Equal("definition", "environment", "connectivity", "blockers");
+        cut.Find("[data-testid=pt-network-result]").GetAttribute("data-state").Should().Be("Reachable");
+        cut.Find("[data-testid=pt-readiness-summary]").TextContent.Should().Contain("Ready to run.");
+    }
+
+    [Fact]
+    public void A_second_click_while_checking_is_ignored_and_the_check_can_be_cancelled()
+    {
+        Register(readiness: new PerformanceTestReadiness { Ready = false, Blockers = ["Not checked yet."], Items = [NetworkBlocker()] });
+        var pending = new TaskCompletionSource<PerformanceApiResult<PerformanceReadinessCheck>>();
+        _api.Check = () => pending.Task;
+        var cut = Page();
+        Tab(cut, "readiness");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-check-readiness]"));
+        cut.Find("[data-testid=pt-check-readiness]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-check-progress]"));
+        cut.Find("[data-testid=pt-check-readiness]").HasAttribute("disabled").Should().BeTrue("one check at a time");
+        cut.Find("[data-testid=pt-check-progress]").TextContent.Should().Contain("target connectivity (when eligible)");
+        cut.Find("[data-testid=pt-check-cancel]").Click();
+        pending.SetResult(PerformanceApiResult<PerformanceReadinessCheck>.Fail("cancelled"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=pt-check-progress]").Should().BeEmpty());
+        _api.Calls.Count(c => c == "readiness-check").Should().Be(1);
+        cut.FindAll("[data-testid=pt-network-result]").Should().BeEmpty("a cancelled check is never shown as reachable");
+    }
+
+    [Fact]
+    public void A_skipped_connectivity_check_says_why_and_is_never_shown_as_reachable()
+    {
+        var blocked = new PerformanceTestReadiness { Ready = false, Blockers = ["Not checked yet."], Items = [NetworkBlocker()] };
+        Register(readiness: blocked);
+        _api.Check = () => Task.FromResult(PerformanceApiResult<PerformanceReadinessCheck>.Ok(new PerformanceReadinessCheck
+        {
+            Readiness = blocked, Connectivity = PerformanceConnectivityOutcomes.SkippedRuntimeUnavailable,
+            ConnectivityDetail = "Not checked — the container runtime, k6 image or provider is not available.",
+            Steps = [new("connectivity", "Checking target connectivity", "Skipped", "Not checked — the container runtime, k6 image or provider is not available.")],
+        }));
+        var cut = Page();
+        Tab(cut, "readiness");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-check-readiness]"));
+        cut.Find("[data-testid=pt-check-readiness]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-check-step][data-key=connectivity]").GetAttribute("data-state").Should().Be("Skipped"));
+        cut.Find("[data-testid=pt-check-step][data-key=connectivity]").TextContent.Should().Contain("Skipped").And.Contain("not available");
+        cut.FindAll("[data-testid=pt-network-result]").Should().BeEmpty();
+        cut.Find("[data-testid=pt-readiness-summary]").TextContent.Should().StartWith("Blocked");
     }
 }

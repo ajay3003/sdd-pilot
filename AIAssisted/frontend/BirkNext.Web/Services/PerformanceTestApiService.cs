@@ -49,6 +49,13 @@ public interface IPerformanceTestApiService
     /// checked exactly as the run would check it, so readiness is never Ready for a run that would be refused.</summary>
     Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default) =>
         ReadinessAsync(environmentId, definitionId, ct);
+    /// <summary>The coordinated Check readiness (explicit action only): readiness plus, when eligible, one bounded container-network check from the
+    /// k6 container (never a load test). Without a coordinating backend it falls back to stored readiness and says connectivity was not checked.</summary>
+    async Task<PerformanceApiResult<PerformanceReadinessCheck>> ReadinessCheckAsync(string environmentId, string definitionId,
+        BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default) =>
+        await ReadinessAsync(environmentId, definitionId, identity, ct) is { } readiness
+            ? PerformanceApiResult<PerformanceReadinessCheck>.Ok(new PerformanceReadinessCheck { Readiness = readiness, Connectivity = PerformanceConnectivityOutcomes.NotRun })
+            : PerformanceApiResult<PerformanceReadinessCheck>.Fail("Readiness could not be evaluated.");
     Task<PerformanceApiResult<PerformanceTestRun>> StartAsync(string environmentId, PerformanceRunRequest request, CancellationToken ct = default);
     Task<PerformanceTestRun?> RunAsync(string environmentId, Guid runId, CancellationToken ct = default);
     Task<List<PerformanceTestRun>> RunsAsync(string environmentId, string? definitionId, CancellationToken ct = default);
@@ -177,6 +184,12 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
 
     public Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default) =>
         Get<PerformanceTestReadiness>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/readiness?{Env(environmentId)}"
+            + (identity is { ProfileId.Length: > 0, ContextFingerprint.Length: > 0 }
+                ? $"&profileId={Uri.EscapeDataString(identity.ProfileId)}&contextFingerprint={Uri.EscapeDataString(identity.ContextFingerprint)}" : ""), ct);
+
+    public Task<PerformanceApiResult<PerformanceReadinessCheck>> ReadinessCheckAsync(string environmentId, string definitionId,
+        BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? identity, CancellationToken ct = default) =>
+        Post<PerformanceReadinessCheck>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/readiness-check?{Env(environmentId)}"
             + (identity is { ProfileId.Length: > 0, ContextFingerprint.Length: > 0 }
                 ? $"&profileId={Uri.EscapeDataString(identity.ProfileId)}&contextFingerprint={Uri.EscapeDataString(identity.ContextFingerprint)}" : ""), ct);
 
