@@ -47,6 +47,9 @@
                 <div><dt>Technical relationships</dt><dd data-testid="ip-summary-suggestions" title="Relationships Source Analysis detected in source — evidence, not proposals.">@(sourceSummary.Available ? sourceSummary.Total.ToString() : "Unavailable")</dd></div>
                 <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime" title="@IntegrationsOverviewPresentation.Meaning(runtime)">@IntegrationsOverviewPresentation.OverviewRuntimeLabel(_catalog, runtime)</span></dd></div>
             </dl>
+            @* Guided steps: discover → review → resolve → save → validate. Step actions are secondary; the page keeps its own primary action. *@
+            <GuidedStepList Steps="@IntegrationCatalogWorkflow.Derive(summary, packProposals, sourceSummary, IntegrationsOverviewPresentation.OverviewRuntimeLabel(_catalog, runtime))"
+                            OnAction="CatalogStepAction" TestId="ip-steps" Label="Integration Catalog steps" />
             @* The one way into the candidate review once integrations exist; while none exist, the empty state below carries it instead. *@
             @if (_catalog.Integrations.Count > 0 && (packProposals.Count > 0 || sourceSummary.Available && sourceSummary.Total > 0))
             {
@@ -88,7 +91,7 @@
         var mappingChecks = MappingEvidence.For(Profile.Id);
         <section class="ip-section" aria-labelledby="ip-configured-heading" data-testid="ip-configured">
             <div class="ip-section-head">
-                <h3 id="ip-configured-heading">Configured integrations</h3>
+                <h3 id="ip-configured-heading" tabindex="-1">Configured integrations</h3>
                 @if (_catalog.Integrations.Count > 0 && _editing is null)
                 {
                     <button type="button" class="btn-primary" id="ip-add-trigger" data-testid="ip-add" @ref="_addTrigger" @onclick="BeginAdd">Add integration</button>
@@ -821,6 +824,7 @@
         if (_focusConfirm) { _focusConfirm = false; try { await _confirmFocus.FocusAsync(); } catch (InvalidOperationException) { } }
         if (_focusSuggestions) { _focusSuggestions = false; try { await _suggestionsFocus.FocusAsync(); } catch (InvalidOperationException) { } }
         if (_focusProposals && ServiceProvider.GetService<IJSRuntime>() is { } focusJs) { _focusProposals = false; try { await focusJs.InvokeVoidAsync("birknextFocusElement", "ip-proposals-heading"); } catch (JSException) { } }
+        if (_focusConfigured && ServiceProvider.GetService<IJSRuntime>() is { } configuredJs) { _focusConfigured = false; try { await configuredJs.InvokeVoidAsync("birknextFocusElement", "ip-configured-heading"); } catch (JSException) { } }
         if (_focusAddTrigger) { _focusAddTrigger = false; try { await _addTrigger.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } }
         if (_viewing is { } viewing && !_discoveries.ContainsKey(viewing) && _discoveryLoading.Add(viewing))
         {
@@ -841,7 +845,16 @@
         _suggestionsOpen = true; _focusSuggestions = true;
     }
 
-    private bool _focusProposals;
+    private bool _focusProposals, _focusConfigured;
+
+    private void CatalogStepAction(string action)
+    {
+        switch (action)
+        {
+            case IntegrationCatalogWorkflow.ReviewProposals: OpenSuggestions(true); break;
+            case IntegrationCatalogWorkflow.ShowConfigured: _focusConfigured = true; break;
+        }
+    }
 
     /// <summary>
     /// One candidate: the relationship in words first (producer → consumer, kind, channel, evidence), technical source details behind a disclosure.

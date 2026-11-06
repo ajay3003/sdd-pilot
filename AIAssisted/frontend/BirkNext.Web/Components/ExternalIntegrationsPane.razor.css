@@ -5,4 +5,4 @@
 .ei-summary dd { margin: 0; font-weight: 700; }
 .ei-empty { border: 1px dashed var(--clr-border-subtle, #e5e7eb); border-radius: 8px; padding: .65rem .8rem; margin: .4rem 0; }
 .ei-empty p { margin: 0 0 .5rem; font-size: .9rem; }
-.ei-empty-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+

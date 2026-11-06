@@ -10,9 +10,10 @@
     <header class="ei-head">
         <h3 id="ei-title" class="ei-title">Connected Systems</h3>
         <div class="ei-actions">
-            @* Discover first, add manually second: Detect stays the primary action even when systems exist (new evidence can reveal more). *@
-            <button type="button" class="btn btn-primary btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync" title="Propose systems from the project's imported evidence. Nothing is saved.">Detect systems</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)" title="Register a system manually (when it cannot be detected).">Add system</button>
+            @* One primary action: Detect (discover first, also when systems exist) — except while candidates are pending (Accept is primary) or when
+               nothing was found and Add is the guided next step. *@
+            <button type="button" class="btn @(DetectPrimary ? "btn-primary" : "btn-secondary") btn-sm" data-testid="ei-detect" disabled="@(_view is null || _busy)" @onclick="DetectAsync" title="Propose systems from the project's imported evidence. Nothing is saved.">Detect systems</button>
+            <button type="button" class="btn @(NextAction == ConnectedSystemsWorkflow.Add ? "btn-primary" : "btn-secondary") btn-sm" data-testid="ei-add" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Add)" title="Register a system manually (when it cannot be detected).">Add system</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-import" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Import)" title="Preview and apply a sanitized setup package (no secrets).">Import setup</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-export" disabled="@(_view is null)" @onclick="() => Toggle(Mode.Export)" title="Export this environment's systems without secrets.">Export setup</button>
             <a class="btn btn-secondary btn-sm" data-testid="ei-library" href="@ExternalIntegrationPresentation.LibraryHref(EnvironmentId)" title="Reusable setup templates; applying one is explicit and never edits live systems silently.">Setup Library</a>
@@ -34,8 +35,9 @@
             <div><dt>Registered systems</dt><dd data-testid="ei-summary-registered">@_view.Integrations.Count</dd></div>
             <div><dt>Enabled</dt><dd data-testid="ei-summary-enabled">@_view.Integrations.Count(i => i.Integration.Enabled)</dd></div>
             <div><dt>Detected candidates</dt><dd data-testid="ei-summary-detected">@_view.Proposals.Count(p => !IsConfigured(p))</dd></div>
-            <div><dt>Need attention</dt><dd data-testid="ei-summary-attention">@_view.Integrations.Count(NeedsAttention)</dd></div>
+            <div><dt>Need attention</dt><dd data-testid="ei-summary-attention">@_view.Integrations.Count(ConnectedSystemsWorkflow.NeedsAttention)</dd></div>
         </dl>
+        <GuidedStepList Steps="@Steps" OnAction="StepActionAsync" Busy="_busy" TestId="ei-steps" Label="Connected Systems steps" />
         @if (_mode == Mode.Add)
         {
             var descriptor = _view.Providers.First(p => p.Type == _newProvider);
@@ -99,12 +101,8 @@
         @if (_view.Integrations.Count == 0)
         {
             <div class="ei-empty" data-testid="ei-empty">
-                <p><strong>No connected systems are configured for this environment.</strong> Detect proposes systems from the project's imported evidence (source, configuration and infrastructure); nothing is registered until you accept it.</p>
-                <div class="ei-empty-actions">
-                    <button type="button" class="btn btn-primary btn-sm" data-testid="ei-empty-detect" disabled="@_busy" @onclick="DetectAsync">Detect from imported evidence</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-empty-add" @onclick="() => Toggle(Mode.Add)">Add system manually</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-testid="ei-empty-import" @onclick="() => Toggle(Mode.Import)">Import existing setup</button>
-                </div>
+                @* One Detect and one Add (in the header and the steps): the empty state explains, it does not repeat the actions. *@
+                <p><strong>No connected systems are configured for this environment.</strong> Detect proposes systems from the project's imported evidence; nothing is registered until you accept it. A system that cannot be detected can be added manually or imported from an existing setup.</p>
             </div>
         }
         <div class="ei-cards">
@@ -216,9 +214,22 @@
         else _error = result.Error;
     }
 
-    /// <summary>A registered system needs attention when any of its dimensions is Partial or Blocked.</summary>
-    private static bool NeedsAttention(ExternalIntegrationView item) =>
-        ExternalIntegrationPresentation.Dimensions(item.Summary).Any(d => ExternalIntegrationPresentation.Tone(d.State) is "warn" or "bad");
+    private IReadOnlyList<GuidedStep> Steps => _view is null ? [] : ConnectedSystemsWorkflow.Derive(EnvironmentId, null, _view, _detectedAt);
+    private string? NextAction => GuidedWorkflow.Next(Steps)?.ActionId;
+    private bool DetectPrimary => NextAction != ConnectedSystemsWorkflow.Add && _view?.Proposals.Count is null or 0;
+
+    private async Task StepActionAsync(string action)
+    {
+        switch (action)
+        {
+            case ConnectedSystemsWorkflow.Detect: await DetectAsync(); break;
+            case ConnectedSystemsWorkflow.Add: _mode = Mode.Add; break;
+            case ConnectedSystemsWorkflow.ReviewCandidates: _focusToggle = "ei-proposals-heading"; break;
+            case ConnectedSystemsWorkflow.ReviewAttention:
+                if (_view?.Integrations.FirstOrDefault(ConnectedSystemsWorkflow.NeedsAttention) is { } first) { _open.Add(first.Integration.Id); _focusToggle = $"ei-toggle-{first.Integration.Id}"; }
+                break;
+        }
+    }
 
     private void Ignore(ExternalIntegrationProposal proposal)
     {

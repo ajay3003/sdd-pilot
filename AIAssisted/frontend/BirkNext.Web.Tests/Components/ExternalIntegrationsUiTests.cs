@@ -112,7 +112,7 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
 
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-accept]").Should().HaveCount(2));
         cut.FindAll("[data-testid=ei-accept]").Should().OnlyContain(b => b.ClassList.Contains("btn-primary"), "accepting a detected system is the next safe action");
-        cut.Find("[data-testid=ei-detect]").ClassList.Should().Contain("btn-primary");
+        cut.Find("[data-testid=ei-detect]").ClassList.Should().Contain("btn-secondary", "while candidates are pending, Accept is the one primary action");
         cut.Find("[data-testid=ei-add]").ClassList.Should().Contain("btn-secondary", "manual add stays the fallback");
         cut.FindAll("[data-testid=ei-proposal-provenance]").Select(p => p.TextContent).Should().OnlyContain(t => t.Contains("Detected from: Integration Quality Review"));
         JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("ei-proposals-heading", "the result region takes focus; the next Tab reaches the first Accept");
@@ -177,14 +177,72 @@ public sealed class ExternalIntegrationsUiTests : BunitContext
     }
 
     [Fact]
-    public void Empty_environment_offers_detect_add_and_import()
+    public void Empty_environment_offers_detect_add_and_import_once_with_detect_as_the_next_step()
     {
         _api.NoSystems = true;
         var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
         cut.WaitForAssertion(() => cut.Find("[data-testid=ei-empty]"));
-        cut.FindAll("[data-testid=ei-empty-detect], [data-testid=ei-empty-add], [data-testid=ei-empty-import]").Should().HaveCount(3);
-        cut.Find("[data-testid=ei-empty-add]").Click();
+        cut.FindAll("[data-testid=ei-empty-detect], [data-testid=ei-empty-add], [data-testid=ei-empty-import]").Should().BeEmpty("no second set of the same actions");
+        cut.FindAll("[data-testid=ei-detect], [data-testid=ei-add], [data-testid=ei-import]").Should().HaveCount(3);
+        cut.Find("[data-testid=ei-detect]").ClassList.Should().Contain("btn-primary", "Detect is the next step");
+        cut.Find("[data-testid=ei-add]").ClassList.Should().Contain("btn-secondary");
+        cut.Find("[data-testid=ei-steps] [data-step=detect]").GetAttribute("aria-current").Should().Be("step");
+        cut.Find("[data-testid=ei-add]").Click();
         cut.Find("[data-testid=ei-add-form]").Should().NotBeNull();
+    }
+
+    // ── Guided steps: environment → detect → candidates → configure → validate ───────────────────────────────────────────────
+
+    private static string StepState(IRenderedComponent<ExternalIntegrationsPane> cut, string step) => cut.Find($"[data-testid=ei-steps] [data-step={step}]").GetAttribute("data-state")!;
+
+    [Fact]
+    public void Nothing_detected_says_catalog_proposals_do_not_register_systems_and_makes_add_the_next_step()
+    {
+        _api.NoSystems = true;
+        _api.Proposals = [];
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        cut.Find("[data-testid=ei-steps] [data-step=detect] [data-testid=gsl-action]").Click();
+        cut.WaitForAssertion(() => StepState(cut, "detect").Should().Be("Done"));
+        cut.Find("[data-testid=ei-steps] [data-step=detect]").TextContent.Should().Contain("Integration Catalog proposals are logical integrations").And.Contain("do not register systems");
+        StepState(cut, "candidates").Should().Be("Done");
+        StepState(cut, "configure").Should().Be("Current");
+        StepState(cut, "validate").Should().Be("Waiting");
+        cut.Find("[data-testid=ei-summary-detected]").TextContent.Should().Be("0", "no system is invented from catalog proposals");
+        cut.Find("[data-testid=ei-add]").ClassList.Should().Contain("btn-primary");
+        cut.Find("[data-testid=ei-detect]").ClassList.Should().Contain("btn-secondary");
+        _api.Saved.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Pending_candidates_are_the_one_current_step_and_ambiguous_ones_need_a_person()
+    {
+        _api.Proposals = [Proposal("Two candidates", ambiguous: true), Proposal("Orders API")];
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ei-detect]").HasAttribute("disabled").Should().BeFalse());
+        cut.Find("[data-testid=ei-detect]").Click();
+        cut.WaitForAssertion(() => StepState(cut, "candidates").Should().Be("Current"));
+        cut.Find("[data-testid=ei-steps] [data-step=candidates]").TextContent.Should().Contain("2 awaiting a decision").And.Contain("1 can be accepted; 1 match more than one system");
+        cut.FindAll("[data-testid=ei-steps] [aria-current=step]").Should().ContainSingle("one next step");
+        StepState(cut, "configure").Should().Be("Waiting", "configuration waits for the candidate decisions");
+    }
+
+    [Fact]
+    public void Registered_systems_needing_attention_open_from_the_step_and_runtime_is_never_verified_by_registration()
+    {
+        var cut = Render<ExternalIntegrationsPane>(p => p.Add(c => c.EnvironmentId, Env));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-card]").Count.Should().Be(2));
+        StepState(cut, "environment").Should().Be("Done");
+        StepState(cut, "detect").Should().Be("Waiting", "systems exist; detecting again is optional");
+        StepState(cut, "configure").Should().Be("Current");
+        cut.Find("[data-testid=ei-steps] [data-step=configure]").TextContent.Should().Contain("2 of 2 need attention");
+        var validate = cut.Find("[data-testid=ei-steps] [data-step=validate]");
+        validate.GetAttribute("data-state").Should().NotBe("Done");
+        validate.TextContent.Should().Contain("never by registration").And.Contain("verified ·");
+        cut.FindAll("[data-testid=ei-review-body]").Should().BeEmpty();
+        cut.Find("[data-testid=ei-steps] [data-step=configure] [data-testid=gsl-action]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ei-review-body]").Should().ContainSingle());
+        _api.Saved.Should().BeEmpty("opening a system never changes it");
     }
 
     [Fact]

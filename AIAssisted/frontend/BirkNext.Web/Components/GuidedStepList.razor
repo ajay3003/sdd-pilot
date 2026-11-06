@@ -1,0 +1,37 @@
+@using BirkNext.Web.Services
+
+@* A guided workflow as numbered steps (✓ when done): title, state, one sentence, evidence and a reason when the step's action is unavailable.
+   Steps stay visible after completion and can be revisited. Step actions are secondary: the host page owns its one primary action. *@
+<ol class="gsl" data-testid="@TestId" aria-label="@Label">
+    @foreach (var (step, index) in Steps.Select((s, i) => (s, i + 1)))
+    {
+        <li class="gsl-step gsl-step-@step.State.ToString().ToLowerInvariant()" data-testid="gsl-step" data-step="@step.Id" data-state="@step.State"
+            aria-current="@(step == Next ? "step" : null)">
+            <span class="gsl-n" aria-hidden="true">@(step.State == GuidedStepState.Done ? "✓" : index.ToString())</span>
+            <div class="gsl-body">
+                <p class="gsl-title"><strong>@step.Title</strong><SemanticStatusBadge Status="@GuidedWorkflow.Status(step.State)" QualifiedLabel="@step.StatusLabel" TestId="gsl-status" /></p>
+                <p class="gsl-text">@step.Explanation</p>
+                @if (step.Evidence is { Length: > 0 } evidence) { <p class="gsl-evidence" data-testid="gsl-evidence">@evidence</p> }
+                @if (step.DisabledReason is { } why) { <p class="gsl-reason" data-testid="gsl-reason">@why</p> }
+            </div>
+            @if (step.Href is { } href && step.ActionLabel is { } linkLabel)
+            {
+                <a class="btn btn-secondary btn-sm gsl-action" href="@href" data-testid="gsl-action" data-action="@step.Id">@linkLabel</a>
+            }
+            else if (step.ActionId is { } action && step.ActionLabel is { } label)
+            {
+                <button type="button" class="btn btn-secondary btn-sm gsl-action" data-testid="gsl-action" data-action="@action"
+                        disabled="@(Busy || step.DisabledReason is not null)" @onclick="() => OnAction.InvokeAsync(action)">@label</button>
+            }
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<GuidedStep> Steps { get; set; } = [];
+    [Parameter] public EventCallback<string> OnAction { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string TestId { get; set; } = "gsl";
+    [Parameter] public string Label { get; set; } = "Workflow steps";
+    private GuidedStep? Next => GuidedWorkflow.Next(Steps);
+}

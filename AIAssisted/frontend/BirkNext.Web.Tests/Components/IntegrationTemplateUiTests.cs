@@ -554,4 +554,29 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         var cut = Open();
         cut.WaitForAssertion(() => _api.LastPrimarySnapshot.Should().Be(SnapshotA));
     }
+
+    // ── Guided steps: discover → review → resolve → save → validate ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Guided_steps_make_proposal_review_the_next_step_and_never_call_configured_validated()
+    {
+        _templates = [Intake(Available((SnapshotA, "Tiltak 2.zip", 'a')))];
+        var cut = Open();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-steps]"));
+        string State(string step) => cut.Find($"[data-testid=ip-steps] [data-step={step}]").GetAttribute("data-state")!;
+        State("review").Should().Be("Current");
+        cut.Find("[data-testid=ip-steps] [data-step=review]").TextContent.Should().Contain("1 open").And.Contain("1 ready to review");
+        cut.FindAll("[data-testid=ip-steps] [aria-current=step]").Should().ContainSingle();
+        State("save").Should().Be("Done", "the fixture catalog has configured integrations");
+        var validate = cut.Find("[data-testid=ip-steps] [data-step=validate]");
+        validate.GetAttribute("data-state").Should().NotBe("Done", "configured is not validated");
+        validate.TextContent.Should().Contain("Configured is not validated");
+        validate.QuerySelector("a[data-testid=gsl-action]")!.GetAttribute("href").Should().Be("/integration-quality-review");
+        cut.Find("[data-testid=ip-steps] [data-step=resolve]").TextContent.Should().Contain("Relationship Review").And.Contain("never confirms or rejects");
+
+        cut.Find("[data-testid=ip-steps] [data-step=review] [data-testid=gsl-action]").Click();
+        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Select(i => i.Arguments.Single()).Should().Contain("ip-proposals-heading"));
+        _api.Created.Should().BeEmpty("reviewing never adds a proposal");
+        _api.Saved.Should().BeEmpty();
+    }
 }
