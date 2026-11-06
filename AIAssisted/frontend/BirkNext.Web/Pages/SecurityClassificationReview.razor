@@ -293,7 +293,7 @@
                 {
                     <button type="button" class="btn-secondary" data-testid="sc-run-runtime" disabled="@(_busy || RunBlocked)" @onclick="RunRuntimeAsync">Run runtime verification</button>
                 }
-                <button type="button" class="btn-secondary" data-testid="sc-run" data-mode="@(canRun ? "static-runtime" : "static")" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(canRun ? "Run both in one review" : "Run combined review")</button>
+                <button type="button" class="btn-secondary" data-testid="sc-run" data-mode="@(canRun ? "static-runtime" : "static")" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(canRun ? "Run both in one review" : "Run review (static only — runtime stays unverified)")</button>
             </div>
             @if (RunScope is null) { <p class="sc-muted" id="sc-run-static-why" data-testid="sc-run-static-why">The static review needs a Source Analysis snapshot (choose one under Source evidence).</p> }
             @if (!canRun) { <p class="sc-muted" data-testid="sc-run-static-only">Runtime verification is not ready, so this run is a static review only: runtime checks stay unverified (never passed) until an approved DEV/QA context exists.</p> }

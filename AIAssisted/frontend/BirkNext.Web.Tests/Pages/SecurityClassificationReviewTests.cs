@@ -974,6 +974,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         var cut = PageWithSource();
         cut.WaitForAssertion(() => cut.Find("[data-testid='sc-run-static']").HasAttribute("disabled").Should().BeFalse());
         cut.FindAll("[data-testid='sc-run-runtime']").Should().BeEmpty("runtime verification is offered only when its context is ready");
+        cut.Find("[data-testid='sc-run']").TextContent.Should().Be("Run review (static only — runtime stays unverified)", "a blocked runtime gate never reads as a combined run");
         cut.Find("[data-testid='sc-run-static']").Click();
         cut.WaitForAssertion(() => _api.LastStatic.Should().NotBeNull());
         _api.LastStatic!.Value.EnvironmentId.Should().Be("dev");
