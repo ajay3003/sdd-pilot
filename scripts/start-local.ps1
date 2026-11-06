@@ -892,7 +892,10 @@ function Start-DotNetProcessLogged {
             Info "Installing dotnet-serve..."
             $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("tool", "install", "--global", "dotnet-serve") -ShowOutput -ThrowOnError
         }
-        $argString = "serve --directory `"$($Runnable.Path)`" --port 5173"
+        # The WASM app takes its environment from the Blazor-Environment response header (Production when absent). This launcher is the
+        # loopback-only local tester setup (backend http://localhost:5000), which the frontend accepts only in Development: Production keeps
+        # requiring an HTTPS BackendUrl (BackendUrlValidator), so the header is set here rather than relaxing that rule.
+        $argString = "serve --directory `"$($Runnable.Path)`" --port 5173 -h `"Blazor-Environment: Development`""
     }
     elseif ($Runnable.Kind -eq "Dll") {
         $argString = "`"$($Runnable.Path)`""
