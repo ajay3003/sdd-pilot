@@ -72,8 +72,9 @@ public sealed class TestDataCatalogUiTests : BunitContext
         DataType = TestDataDataType.SimpleValues, Status = status, ContractStatus = TestDataContractStatus.NotApplicable, Fields = ["personId"], Consumers = consumers,
     };
 
-    private IRenderedComponent<TestDataPage> Page()
+    private IRenderedComponent<TestDataPage> Page(string? section = "assets")
     {
+        if (section is not null) Services.GetRequiredService<NavigationManager>().NavigateTo($"test-data?section={section}");
         var page = Render<TestDataPage>();
         page.WaitForAssertion(() => page.Find("[data-testid=td-page]").GetAttribute("aria-busy").Should().Be("false"));
         return page;
@@ -84,9 +85,10 @@ public sealed class TestDataCatalogUiTests : BunitContext
     {
         _api.Assets.Add(Scalar("person-id", TestDataAssetStatus.Approved, consumers: 2));
         _api.Assets.Add(Scalar("qa-person", TestDataAssetStatus.NeedsReview, environment: "QA"));
-        var page = Page();
+        var page = Page("overview");
 
         page.Find("[data-testid=td-overview-approved]").TextContent.Should().Be("1");
+        Services.GetRequiredService<NavigationManager>().NavigateTo("test-data?section=assets");
         var row = page.FindAll("[data-testid=td-asset]").Single(r => r.GetAttribute("data-alias") == "person-id");
         row.QuerySelector("[data-testid=td-status]")!.TextContent.Should().Be("Approved");
         row.QuerySelector("[data-testid=td-scope]")!.TextContent.Should().Be("Shared");
@@ -120,7 +122,7 @@ public sealed class TestDataCatalogUiTests : BunitContext
             Id = "req-1", Consumer = new() { ConsumerType = "Quantum Review", ConsumerId = "qr-7", DisplayName = "Quantum check", Parent = "Future module" },
             Usage = "Path parameter", RequestedDataType = TestDataDataType.SimpleValues, RequestedFields = ["personId"], EnvironmentId = "TT02",
         });
-        var page = Page();
+        var page = Page("requests");
 
         var requirement = page.Find("[data-testid=td-requirement]");
         requirement.TextContent.Should().Contain("Future module › Quantum check").And.Contain("Quantum Review").And.Contain("TT02");
@@ -141,7 +143,7 @@ public sealed class TestDataCatalogUiTests : BunitContext
     {
         _api.Assets.Add(Scalar("anything", TestDataAssetStatus.Approved) with { Fields = ["other"] });
         _api.Requirements.Add(new() { Id = "req-1", Consumer = new() { ConsumerType = "Journey", ConsumerId = "j1", DisplayName = "J1" }, Usage = "Form value", RequestedDataType = TestDataDataType.SimpleValues, RequestedFields = ["kommune"] });
-        var page = Page();
+        var page = Page("requests");
         page.Find("[data-testid=td-requirement-find]").Click();
         page.Find("[data-testid=td-match]").GetAttribute("data-state").Should().Be("Possible");
         page.FindAll("[data-testid=td-bind]").Should().BeEmpty();
@@ -156,7 +158,7 @@ public sealed class TestDataCatalogUiTests : BunitContext
         _api.Assets.Add(Scalar("person-id", TestDataAssetStatus.Approved));
         _api.Assets.Add(Scalar("draft-id", TestDataAssetStatus.Draft));
         Services.GetRequiredService<NavigationManager>().NavigateTo("/test-data?consumer=flow-checker&consumerType=Flow&operation=GET%20%2Fp%2F%7BpersonId%7D&variable=personId&in=path&dataType=SimpleValues");
-        var page = Page();
+        var page = Page(null);
 
         page.Find("#td-request-heading").TextContent.Should().Be("Requested by Flow checker", "the label comes from the consumer id — Test Data keeps no consumer list");
         page.FindAll("[data-testid=td-request-match]").Select(m => m.GetAttribute("data-state")).Should().BeEquivalentTo(["Compatible", "Conflict"]);

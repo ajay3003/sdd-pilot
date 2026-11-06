@@ -59,6 +59,7 @@ public sealed class TestDataAssetLifecycleUiTests : BunitContext
     [Fact]
     public void The_table_marks_protected_defaults_offers_edit_but_no_delete_and_shows_usage_counts()
     {
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("test-data?section=assets");
         var page = Render<TestDataPage>();
         page.WaitForAssertion(() => page.FindAll("[data-testid=td-asset]").Should().HaveCount(3));
 
@@ -80,6 +81,7 @@ public sealed class TestDataAssetLifecycleUiTests : BunitContext
     public void Protected_default_modified_is_a_neutral_marker()
     {
         _catalog = new([Child(version: 1, modified: true)], [], []);
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("test-data?section=assets");
         var page = Render<TestDataPage>();
         page.WaitForAssertion(() => page.Find("[data-testid=td-protected]").TextContent.Should().Be("Protected default · Modified"));
         page.Find("[data-testid=td-protected]").ClassList.Should().Contain("td-pill-neutral");

@@ -108,6 +108,22 @@
         else
         {
             <section class="xf-flow" aria-label="Create XML fixture" data-testid="xf-flow">
+                @* Where the builder stands (NEXT54): Configure → Review & validate → Save, then the facts a tester checks before saving. *@
+                <ol class="xf-steps" data-testid="xf-steps">
+                    @foreach (var (step, label, hint) in Steps)
+                    {
+                        var state = StepState(context, step);
+                        <li class="xf-step-marker is-@state" data-testid="xf-step" data-step="@step" data-state="@state" aria-current="@(state == "current" ? "step" : null)">
+                            <span class="xf-step-label">@label</span><span class="xf-muted">@hint</span>
+                        </li>
+                    }
+                </ol>
+                <dl class="xf-status" data-testid="xf-status">
+                    <div><dt>XSD</dt><dd data-testid="xf-status-xsd">@(CurrentXsd(context) is { } statusXsd ? $"{System.IO.Path.GetFileName(statusXsd.File)} · {XmlContractResolution.StateLabel(selection.ContractState)}" : "Not chosen yet")</dd></div>
+                    <div><dt>Mappings</dt><dd data-testid="xf-status-mappings">@MappingSummary()</dd></div>
+                    <div><dt>Validation</dt><dd data-testid="xf-status-validation">@(_xml is null ? "Not generated yet" : _validation == "Valid" ? "Valid against the XSD" : _validation)</dd></div>
+                    <div><dt>Saved</dt><dd data-testid="xf-status-saved">@(_xml is null ? "—" : _dirty ? "Unsaved — the XML exists only in this editor" : "Saved")</dd></div>
+                </dl>
                 @if (_contexts.Count > 1)
                 {
                     <label>Test context
@@ -314,7 +330,33 @@
                         </dl>
                         <label for="xf-xml">Advanced / manual override — the generated XML (edits are recorded as manual changes)</label>
                         <textarea id="xf-xml" class="form-control xf-xml" rows="14" spellcheck="false" data-testid="xf-xml" value="@_xml" @oninput="Edited"></textarea>
+                        <div class="xf-actions xf-editor-tools" data-testid="xf-editor-tools">
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-format" disabled="@(_busy || WellFormed().Error is not null)" @onclick="Format">Format XML</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-copy" @onclick="CopyAsync">Copy</button>
+                            <a class="btn btn-secondary btn-sm" data-testid="xf-download" download="@($"{(_alias is { Length: > 0 } a ? a : "fixture")}.xml")" href="@($"data:application/xml;charset=utf-8,{Uri.EscapeDataString(_xml)}")">Download</a>
+                            @if (_copied) { <span class="xf-muted" role="status">Copied to the clipboard.</span> }
+                        </div>
+                        <details class="xf-preview" open data-testid="xf-preview">
+                            <summary>Formatted preview with line numbers@(_issues.Count > 0 ? $" · {IssueLines().Count} line{(IssueLines().Count == 1 ? "" : "s")} with diagnostics" : "")</summary>
+                            <ol class="xf-lines" aria-label="XML preview">
+                                @{ var issueLines = IssueLines(); var lineNo = 0; }
+                                @foreach (var line in _xml.Replace("\r\n", "\n").Split('\n').Take(PreviewLines))
+                                {
+                                    lineNo++;
+                                    <li class="@(issueLines.Contains(lineNo) ? "has-issue" : "")" data-testid="xf-line" data-line="@lineNo"><code>@line</code></li>
+                                }
+                            </ol>
+                            @if (_xml.Count(c => c == '\n') + 1 > PreviewLines) { <p class="xf-muted">Preview shows the first @PreviewLines lines; the editor and the download hold the whole XML.</p> }
+                        </details>
                         <p role="status" aria-live="polite" data-testid="xf-validation" data-state="@_validation">Validation: @_validation</p>
+                        @* Four separate outcomes: well-formed XML, the exact XSD, business rules and runtime behaviour are never one "valid". *@
+                        <dl class="xf-tiers" data-testid="xf-validation-tiers">
+                            @{ var wellFormed = WellFormed(); }
+                            <div data-testid="xf-tier" data-tier="well-formed" data-state="@(wellFormed.Error is null ? "pass" : "fail")"><dt>Well-formed XML</dt><dd>@(wellFormed.Error is null ? "Yes" : $"No — {wellFormed.Error}")</dd></div>
+                            <div data-testid="xf-tier" data-tier="xsd" data-state="@(_validation == "Valid" ? "pass" : _validation == "Invalid" ? "fail" : "pending")"><dt>XSD validation</dt><dd>@(_validation switch { "Valid" => "Passed", "Invalid" => $"Failed · {_issues.Count} issue{(_issues.Count == 1 ? "" : "s")}", "Not assessable" => "Not assessable", _ => "Not run on this XML yet" }) <span class="xf-muted">· @(CurrentXsd(context) is { } tierXsd ? $"{System.IO.Path.GetFileName(tierXsd.File)}, snapshot {tierXsd.SnapshotId.ToString()[..8]}" : "no XSD")</span></dd></div>
+                            <div data-testid="xf-tier" data-tier="business" data-state="not-performed"><dt>Business rules</dt><dd>Not performed — the XSD does not express them</dd></div>
+                            <div data-testid="xf-tier" data-tier="runtime" data-state="not-verified"><dt>Runtime</dt><dd>Not verified — no submission is made from Test Data</dd></div>
+                        </dl>
                         @if (_validation == "Valid") { <p class="xf-muted" data-testid="xf-disclaimer">Valid against XSD. Business rules not verified. Runtime behavior not verified.</p> }
                         @if (_issues.Count > 0) { <ul class="xf-issues" data-testid="xf-issues">@foreach (var issue in _issues.Take(10)) { <li>@issue</li> }</ul> }
                         <button type="button" class="btn btn-primary btn-sm" data-testid="xf-validate" disabled="@_busy" @onclick="Validate">Validate XML</button>
@@ -343,6 +385,28 @@
         }
         @if (_error is { } error) { <p class="xf-error" role="alert" data-testid="xf-error">@error</p> }
         @if (_message is { } message) { <p role="status" data-testid="xf-message">@message</p> }
+        @if (_savedAlias is { } persistedAlias)
+        {
+            @* The persisted identity as the reloaded catalog lists it — never the editor's own state. Not listed = not confirmed. *@
+            var persisted = Assets.FirstOrDefault(a => string.Equals(a.Alias, persistedAlias, StringComparison.Ordinal));
+            <div class="xf-saved" data-testid="xf-saved" data-confirmed="@(persisted is null ? "false" : "true")">
+                @if (persisted is null)
+                {
+                    <p><strong>Saved, but not listed by Test Data yet.</strong> Reload Test Data to confirm the fixture was stored.</p>
+                }
+                else
+                {
+                    <p><strong>Stored in Test Data</strong> — confirmed from the reloaded catalog.</p>
+                    <dl class="xf-fixture-facts">
+                        <div><dt>Alias</dt><dd><code data-testid="xf-saved-alias">@persisted.Alias</code></dd></div>
+                        <div><dt>Test Data id</dt><dd class="xf-mono" data-testid="xf-saved-id">@persisted.Id</dd></div>
+                        <div><dt>Version</dt><dd data-testid="xf-saved-version">@(persisted.DraftVersion is { } draftVersion ? $"Draft v{draftVersion} (approved v{persisted.Version ?? 1} stays in use)" : $"v{persisted.Version ?? 1}")</dd></div>
+                        <div><dt>Approval</dt><dd data-testid="xf-saved-approval">@(persisted.Approval == TestDataApproval.Approved ? "Approved" : "Not approved — approve it to use it in runs")</dd></div>
+                        <div><dt>Schema validation</dt><dd data-testid="xf-saved-validation">@XmlFixturePresentation.SchemaValidation(persisted)</dd></div>
+                    </dl>
+                }
+            </div>
+        }
         @if (_savedAlias is { } savedAlias && fixtures.FirstOrDefault(f => f.Alias == savedAlias) is { Approval: not TestDataApproval.Approved } unapproved
              && !(readiness == TestDataXmlReadinessState.NotApproved && current?.Id == unapproved.Id))
         {
@@ -421,6 +485,56 @@
     [Parameter] public IReadOnlyList<TestDataAssetSummary> Assets { get; set; } = [];
     /// <summary>Called after a fixture is saved or approved, so the page reloads the catalog.</summary>
     [Parameter] public EventCallback<string?> OnSaved { get; set; }
+    /// <summary>Open the builder on arrival (the Test Data Overview's "Generate missing XML fixture").</summary>
+    [Parameter] public bool AutoOpen { get; set; }
+
+    private static readonly (string Step, string Label, string Hint)[] Steps =
+        [("configure", "1 · Configure", "identities, snapshot, XSD, mappings"), ("review", "2 · Review & validate", "XML, XSD validation"), ("save", "3 · Save", "stored in Test Data")];
+    private const int PreviewLines = 400;
+    /// <summary>The XML in the editor differs from what was last saved (generated, edited or formatted since).</summary>
+    private bool _dirty, _copied;
+
+    private string StepState(IntegrationTemplateView context, string step) => step switch
+    {
+        "configure" => _xml is not null ? "done" : "current",
+        "review" => _xml is null ? "todo" : _validation == "Valid" ? "done" : "current",
+        _ => _xml is not null && !_dirty && _savedAlias is not null ? "done" : _validation == "Valid" ? "current" : "todo",
+    };
+
+    /// <summary>"3 mapped · 1 suggested · 1 needs a value" — the rows by state (needs review first).</summary>
+    private string MappingSummary()
+    {
+        if (_mappings.Count == 0) return _parameters.Count == 0 ? "Waiting for the XSD fields" : "No mappings — XSD defaults and generated values are used";
+        var groups = _mappings.GroupBy(MappingStatus).ToDictionary(g => g.Key, g => g.Count());
+        return string.Join(" · ", new[] { "Needs review", "Needs value", "Suggested", "Mapped" }.Where(groups.ContainsKey).Select(k => $"{groups[k]} {k.ToLowerInvariant()}"));
+    }
+
+    private (string? Error, XDocument? Document) WellFormed()
+    {
+        if (string.IsNullOrWhiteSpace(_xml)) return ("empty", null);
+        try { return (null, XDocument.Parse(_xml)); }
+        catch (System.Xml.XmlException ex) { return ($"line {ex.LineNumber}: {ex.Message}", null); }
+    }
+
+    /// <summary>Line numbers named by the validation diagnostics ("line 12"), to mark them in the preview.</summary>
+    private HashSet<int> IssueLines() =>
+        [.. _issues.SelectMany(i => System.Text.RegularExpressions.Regex.Matches(i, @"[Ll]ine (\d+)").Select(m => int.Parse(m.Groups[1].Value)))];
+
+    /// <summary>Indents the XML. Whitespace changes the document, so it must be validated again before saving.</summary>
+    private void Format()
+    {
+        if (WellFormed().Document is not { } document) return;
+        var formatted = (document.Declaration is { } declaration ? declaration + "\n" : "") + document.ToString();
+        if (formatted == _xml) return;
+        _xml = formatted; _validation = "Needs validation"; _issues = []; _dirty = true;
+    }
+
+    private async Task CopyAsync()
+    {
+        if (_xml is null || Services.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is not Microsoft.JSInterop.IJSRuntime js) return;
+        try { await js.InvokeVoidAsync("navigator.clipboard.writeText", _xml); _copied = true; }
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException or TaskCanceledException) { _error = "The XML could not be copied; select it in the editor and copy it."; }
+    }
 
     private IReadOnlyList<IntegrationTemplateView> _contexts = [];
     private IntegrationTemplateView? _context;
@@ -459,6 +573,12 @@
         if (Services.GetService(typeof(IFrontendAnalysisSettingsService)) is IFrontendAnalysisSettingsService settings && settings.ActiveProfile?.Project is { } project)
             _projectBound = BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceResolver.BoundSnapshots(project).ToHashSet();
         if (_context is not null) RestoreSetup(_context);
+        // Arriving from the Overview's next action: open the builder the primary action would open (a new draft version of an approved fixture).
+        if (AutoOpen && _context is { SchemaName: not null } auto)
+        {
+            var (_, _, existing) = XmlFixturePresentation.Readiness(XmlFixturePresentation.Fixtures(Assets, auto.SchemaName), CurrentXsd(auto)?.SnapshotId);
+            await Open(existing?.Approval == TestDataApproval.Approved ? existing.Alias : null);
+        }
     }
 
     private TestDataAssetSummary? Chosen(TestDataFixtureBinding binding) =>
@@ -694,7 +814,7 @@
     private void Reset() { _xml = null; _validation = "Not run"; _issues = []; _error = null; }
 
     /// <summary>A changed XML is no longer the validated one.</summary>
-    private void Edited(ChangeEventArgs e) { _xml = e.Value?.ToString() ?? ""; _validation = "Needs validation"; _issues = []; _manualEdit = true; }
+    private void Edited(ChangeEventArgs e) { _xml = e.Value?.ToString() ?? ""; _validation = "Needs validation"; _issues = []; _manualEdit = true; _dirty = true; _copied = false; }
 
     private async Task GenerateAsync()
     {
@@ -734,7 +854,7 @@
         catch (InvalidDataException ex) { _error = ex.Message; }
         catch (System.Xml.XmlException ex) { _error = $"The generated XML could not be read: {ex.Message}"; }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _error = "The backend could not be reached; nothing was generated."; }
-        finally { _busy = false; }
+        finally { _busy = false; _dirty = _xml is not null; _copied = false; }
     }
 
     private void Validate()
@@ -785,7 +905,7 @@
                 _message = version == 1
                     ? $"Saved {canonical} (version 1) as the canonical XML fixture — protected and kept by Test Data. Approve it to use it in runs and preflight."
                     : $"Saved version {version} of {canonical} as a draft. The approved version stays in use until you approve the draft; consumers keep the same Test Data reference.";
-                _open = false;
+                _open = false; _dirty = false;
                 await OnSaved.InvokeAsync(_savedAlias);
                 return;
             }
@@ -803,7 +923,7 @@
             _message = asVersion
                 ? $"Saved version {registered.TestData?.Version} of {_savedAlias} as a draft. The approved version stays in use until you approve the draft; consumers keep the same Test Data reference."
                 : $"Saved XML fixture {_savedAlias} to Test Data (not approved yet). Approve it to use it in runs and preflight.";
-            _open = false;
+            _open = false; _dirty = false;
             await OnSaved.InvokeAsync(_savedAlias);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or System.Xml.XmlException) { _error = $"The fixture could not be saved: {ex.Message}"; }

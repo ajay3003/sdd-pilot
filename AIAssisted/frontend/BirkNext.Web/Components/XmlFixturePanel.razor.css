@@ -15,3 +15,32 @@
 .xf-mono { font-family: var(--font-mono, monospace); font-size: .8rem; overflow-wrap: anywhere; }
 .xf-muted { color: var(--clr-text-subtle, #64748b); font-size: .85rem; }
 .xf-xml { width: 100%; font-family: var(--font-mono, monospace); font-size: .8rem; }
+
+/* ── Builder steps, status, validation tiers and preview (NEXT54) ─────────────────────────────────────────────────── */
+.xf-steps { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .4rem; }
+.xf-step-marker { display: grid; gap: .1rem; padding: .45rem .65rem; border-radius: 8px; border: 1px solid var(--clr-border-subtle, #e2e8f0); border-top: 3px solid #cbd5e1; font-size: .85rem; }
+.xf-step-marker.is-current { border-top-color: var(--clr-link, #1d4ed8); background: rgba(29, 78, 216, .05); }
+.xf-step-marker.is-done { border-top-color: #15803d; }
+.xf-step-label { font-weight: 700; }
+.xf-status, .xf-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .4rem .9rem; margin: 0 0 .85rem; }
+.xf-status > div, .xf-tiers > div { min-width: 0; padding: .35rem .55rem; border-radius: 6px; background: var(--clr-surface, #f8fafc); }
+.xf-status dt, .xf-tiers dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--clr-text-muted, #64748b); }
+.xf-status dd, .xf-tiers dd { margin: 0; font-size: .86rem; overflow-wrap: anywhere; }
+.xf-tiers [data-state=pass] { box-shadow: inset 3px 0 0 #15803d; }
+.xf-tiers [data-state=fail] { box-shadow: inset 3px 0 0 #b91c1c; }
+.xf-tiers [data-state=pending], .xf-tiers [data-state=not-performed], .xf-tiers [data-state=not-verified] { box-shadow: inset 3px 0 0 #94a3b8; }
+.xf-editor-tools { margin: .4rem 0; }
+.xf-preview { margin: .5rem 0; }
+.xf-preview > summary { cursor: pointer; font-weight: 600; font-size: .86rem; }
+.xf-lines { margin: .35rem 0 0; padding: .4rem 0 .4rem 3.2rem; max-height: 22rem; overflow: auto; background: #0f172a; color: #e2e8f0; border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .78rem; line-height: 1.45; }
+.xf-lines li { white-space: pre; padding-right: .75rem; }
+.xf-lines li::marker { color: #64748b; }
+.xf-lines li.has-issue { background: rgba(239, 68, 68, .25); }
+.xf-lines code { color: inherit; background: none; font-size: inherit; }
+.xf-saved { margin: .6rem 0; padding: .6rem .8rem; border-radius: 8px; border: 1px solid rgba(21, 128, 61, .35); background: rgba(21, 128, 61, .06); }
+.xf-saved[data-confirmed=false] { border-color: rgba(180, 83, 9, .4); background: rgba(217, 119, 6, .08); }
+.xf-saved p { margin: 0 0 .35rem; }
+/* Fieldsets default to min-inline-size: min-content, and contract names are long unbroken identifiers: both pushed the builder past a phone's width. */
+.xf-step { min-width: 0; }
+.xf p, .xf dd, .xf label, .xf legend { overflow-wrap: anywhere; }

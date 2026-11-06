@@ -589,4 +589,86 @@ public sealed class XmlFixturePanelTests : BunitContext
         panel.WaitForAssertion(() => panel.Find("[data-testid=xf-create]").TextContent.Should().Be("Regenerate XML (new draft version)"));
         panel.FindAll("[data-testid=xf-primary-actions] button").Select(b => b.TextContent).Should().NotContain(t => t.Contains("Create"));
     }
+
+    // ── NEXT54: builder steps, status, validation tiers, preview and the persisted identity ───────────────────────────────
+
+    [Fact]
+    public void The_builder_shows_where_it_stands_and_keeps_xsd_business_and_runtime_validation_apart()
+    {
+        Setup(Context(Xsd()));
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, Defaults));
+        panel.WaitForElement("[data-testid=xf-create]").Click();
+
+        string Step(string step) => panel.Find($"[data-testid=xf-step][data-step={step}]").GetAttribute("data-state")!;
+        Step("configure").Should().Be("current");
+        Step("review").Should().Be("todo");
+        panel.Find("[data-testid=xf-status-xsd]").TextContent.Should().StartWith(Contract + ".xsd");
+        panel.Find("[data-testid=xf-status-mappings]").TextContent.Should().NotBeEmpty();
+
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForElement("[data-testid=xf-xml]");
+        Step("configure").Should().Be("done");
+        Step("review").Should().Be("current");
+        panel.Find("[data-testid=xf-status-saved]").TextContent.Should().StartWith("Unsaved");
+        panel.FindAll("[data-testid=xf-line]").Should().NotBeEmpty("a formatted preview with line numbers");
+        string Tier(string tier) => panel.Find($"[data-testid=xf-tier][data-tier={tier}]").GetAttribute("data-state")!;
+        Tier("well-formed").Should().Be("pass");
+        Tier("xsd").Should().Be("pending", "generated is not validated");
+
+        panel.Find("[data-testid=xf-validate]").Click();
+        Tier("xsd").Should().Be("pass");
+        Tier("business").Should().Be("not-performed");
+        Tier("runtime").Should().Be("not-verified");
+        Step("save").Should().Be("current");
+
+        var xml = panel.Find("[data-testid=xf-xml]").GetAttribute("value")!;
+        panel.Find("[data-testid=xf-xml]").Input(xml.Replace("</Fodselsnummer>", "</Fodsel>"));
+        Tier("well-formed").Should().Be("fail");
+        panel.Find("[data-testid=xf-format]").HasAttribute("disabled").Should().BeTrue("malformed XML cannot be formatted");
+        panel.Find("[data-testid=xf-download]").GetAttribute("href").Should().StartWith("data:application/xml");
+    }
+
+    [Fact]
+    public void After_saving_the_persisted_identity_is_confirmed_from_the_reloaded_catalog_not_from_the_editor()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        Services.AddSingleton<IWorkspaceArtifactRepository>(repository);
+        Services.AddSingleton(new BirkNext.Web.Services.SchemaStudio.SchemaGeneratedXmlStore());
+        Setup(Canonical(Xsd()));
+        var testData = Mock.Get(Services.GetRequiredService<ITestDataApiService>());
+        testData.Setup(t => t.SaveCanonicalFixtureAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(((int?)1, (string?)null));
+        var reloads = 0;
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, Defaults).Add(x => x.OnSaved, (string? _) => reloads++));
+
+        panel.WaitForElement("[data-testid=xf-create]").Click();
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForElement("[data-testid=xf-xml]");
+        panel.Find("[data-testid=xf-validate]").Click();
+        panel.Find("[data-testid=xf-save-button]").Click();
+
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-saved]").GetAttribute("data-confirmed").Should().Be("false", "not listed by the catalog yet"));
+        reloads.Should().Be(1, "saving asks the page to reload the catalog");
+
+        // The page reloads the catalog: the fixture is listed with its stable id and version — that, not the editor, is the confirmation.
+        var stored = Fixture(TestDataApproval.Unapproved, TestDataSchemaStatus.Validated) with { Id = "test-data:skolenaervaer-valid-report", Alias = "skolenaervaer-valid-report", Version = 1 };
+        panel.Render(p => p.Add(x => x.Assets, [.. Defaults, stored]));
+        panel.Find("[data-testid=xf-saved]").GetAttribute("data-confirmed").Should().Be("true");
+        panel.Find("[data-testid=xf-saved-alias]").TextContent.Should().Be("skolenaervaer-valid-report");
+        panel.Find("[data-testid=xf-saved-id]").TextContent.Should().Be("test-data:skolenaervaer-valid-report");
+        panel.Find("[data-testid=xf-saved-version]").TextContent.Should().Be("v1");
+        panel.Find("[data-testid=xf-saved-approval]").TextContent.Should().StartWith("Not approved");
+
+        // A new panel (a browser reload) reads the same fixture from the catalog: it survives the reload.
+        var reopened = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, [.. Defaults, stored]));
+        reopened.WaitForAssertion(() => reopened.Find("[data-testid=xf-current-alias]").TextContent.Should().StartWith("skolenaervaer-valid-report"));
+    }
+
+    [Fact]
+    public void Arriving_from_the_overview_next_step_opens_the_builder()
+    {
+        Setup(Context(Xsd()));
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, Defaults).Add(x => x.AutoOpen, true));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-flow]"));
+        panel.Find("[data-testid=xf-step][data-step=configure]").GetAttribute("aria-current").Should().Be("step");
+    }
 }

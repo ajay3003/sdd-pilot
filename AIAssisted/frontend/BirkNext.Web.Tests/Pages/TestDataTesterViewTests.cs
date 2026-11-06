@@ -182,12 +182,15 @@ public sealed class TestDataTesterViewTests : BunitContext
             new() { Id = "declared:skolenaervaer-report-intake:report-payload", Consumer = consumer, Usage = "Valid report payload · XML", Required = false, RequestedDataType = TestDataDataType.XmlPayload, Status = TestDataRequirementStatus.Missing },
         ], [], new TestDataOverview(2, 0, 0, 0, 1, 2, 2, 0, 0));
 
+        var nav = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo("test-data?section=requests");
         var page = Render<TestDataPage>();
         page.WaitForAssertion(() => page.FindAll("[data-testid=td-requirement]").Should().HaveCount(3));
 
         page.FindAll("[data-testid=td-requested-none]").Should().BeEmpty();
         var statuses = page.FindAll("[data-testid=td-requirement-status]").Select(s => (s.TextContent.Trim(), s.GetAttribute("data-optional"))).ToList();
         statuses.Should().Equal(("Resolved", null), ("Resolved", null), ("Optional · not provided", "true"));
+        nav.NavigateTo("test-data?section=assets");
         page.FindAll("[data-testid=td-used-count]").Select(c => c.TextContent).Should().OnlyContain(t => t != "Unused", "the defaults are used by a consumer that persisted them");
     }
 
@@ -203,20 +206,30 @@ public sealed class TestDataTesterViewTests : BunitContext
             new("configured", "Configured catalog", "Declared in configuration.", 0, 0, TestDataSourceStatus.NotConfigured),
             new("registered", "Registered assets", "Registered from candidates.", 0, 0, TestDataSourceStatus.Empty),
         ]);
+        var nav = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
         var page = Render<TestDataPage>();
-        page.WaitForAssertion(() => page.Find("[data-testid=td-docs]"));
+        page.WaitForAssertion(() => page.Find("[data-testid=td-overview]"));
 
-        var order = new[] { "td-overview", "td-session-identities", "td-xml-fixtures", "td-requested", "td-assets", "td-candidates-section", "td-sources", "td-docs" };
-        var positions = order.Select(id => page.Markup.IndexOf($"data-testid=\"{id}\"", StringComparison.Ordinal)).ToList();
-        positions.Should().OnlyContain(p => p >= 0).And.BeInAscendingOrder();
+        // Four sections; the Overview (readiness, next step, session identities) is the default — no long page of every section.
+        page.FindAll("[data-testid=td-sections] a").Select(a => a.TextContent.Trim()).Should().HaveCount(4).And.StartWith("Overview");
+        page.Find("[data-testid=td-section-overview]").GetAttribute("aria-current").Should().Be("page");
+        page.FindAll("[data-testid=td-session-identities]").Should().ContainSingle();
+        page.FindAll("[data-testid=td-assets], [data-testid=td-xml-fixtures], [data-testid=td-requested], [data-testid=td-docs]").Should().BeEmpty();
+        page.Find("[data-testid=td-overview-coverage]").TextContent.Should().Be("None registered");
+        page.Find("[data-testid=sti-help]").TextContent.Should().Be("Approved Test Data identities used by applicable test journeys. Explicit session selections override defaults.");
 
-        page.Find("#td-assets-heading").TextContent.Should().StartWith("Test Data assets");
+        nav.NavigateTo("test-data?section=assets");
+        page.WaitForAssertion(() => page.Find("#td-assets-heading").TextContent.Should().StartWith("Test Data assets"));
         page.FindAll(".td-table thead th").Select(th => th.TextContent).Should().Equal("Name", "Type", "Role", "Applies to", "Status", "Scope", "Consumers", "Actions");
         page.FindAll("[data-testid=td-consumers]").Select(c => c.TextContent).Should().AllBe("Unused");
         page.FindAll("[data-testid=td-detail-row]").Should().OnlyContain(r => r.HasAttribute("hidden"), "asset details are collapsed");
-        page.Find("[data-testid=td-overview-coverage]").TextContent.Should().Be("None registered");
-        page.Find("[data-testid=td-requested-none]").TextContent.Should().Be("No open Test Data requirements.");
 
+        nav.NavigateTo("test-data?section=requests");
+        page.WaitForAssertion(() => page.Find("[data-testid=td-docs]"));
+        var order = new[] { "td-requested", "td-candidates-section", "td-sources", "td-docs" };
+        var positions = order.Select(id => page.Markup.IndexOf($"data-testid=\"{id}\"", StringComparison.Ordinal)).ToList();
+        positions.Should().OnlyContain(p => p >= 0).And.BeInAscendingOrder();
+        page.Find("[data-testid=td-requested-none]").TextContent.Should().Be("No open Test Data requirements.");
         page.FindAll("[data-testid=td-source-summary-item]").Select(i => i.TextContent.Trim()).Should().Equal(
             "Approved local test data2", "Schema Studio fixtures1", "Configured catalogNot configured (optional)", "Registered source assets0");
         page.Find("[data-testid=td-sources-disclosure-body]").HasAttribute("hidden").Should().BeTrue("Sources & configuration is collapsed");
@@ -225,7 +238,47 @@ public sealed class TestDataTesterViewTests : BunitContext
         page.Find("[data-testid=td-documentation-body]").HasAttribute("hidden").Should().BeTrue("technical documentation is not in the default view");
         page.Find("[data-testid=td-documentation-toggle]").TextContent.Should().Contain("View technical documentation");
         page.Find("[data-testid=td-documentation-text]").TextContent.Should().Contain("skolenaervaer-valid-report", "the documentation is still available");
-        page.Find("[data-testid=sti-help]").TextContent.Should().Be("Approved Test Data identities used by applicable test journeys. Explicit session selections override defaults.");
         page.Markup.Should().NotContain(RawChild);
+    }
+
+    // ── NEXT54: the Overview names one next step from the shared readiness ──────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(false, "Generate missing XML fixture", "section=fixtures&create=xml")]
+    [InlineData(true, "Open XML fixture", "section=fixtures")]
+    public void The_overview_next_step_follows_the_shared_readiness(bool fixtureReady, string label, string href)
+    {
+        _catalog = new([.. Identities(), .. fixtureReady ? new[] { Fixture() } : []], [], []);
+        var page = Render<TestDataPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=td-next-action]").TextContent.Should().Be(label));
+        page.Find("[data-testid=td-next-action]").GetAttribute("href").Should().EndWith(href);
+        page.FindAll("[data-testid=td-next-action]").Should().ContainSingle("one primary step, never several equal buttons");
+    }
+
+    [Fact]
+    public void A_missing_approved_identity_comes_before_the_xml_fixture()
+    {
+        _catalog = new([Identity("skolenaervaer-reporter-default", "reporter")], [], []);
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=td-next-action]").TextContent.Should().Be("Choose an approved child"));
+    }
+
+    [Fact]
+    public void A_load_failure_is_an_error_with_retry_never_an_empty_catalog()
+    {
+        var api = new Mock<ITestDataApiService>();
+        var fail = true;
+        api.Setup(a => a.CatalogAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => fail ? ((TestDataCatalogView?)null, "Test Data: the backend could not be reached.") : (_catalog, (string?)null));
+        api.Setup(a => a.ConsumersAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => (_consumerView, (string?)null));
+        Services.AddSingleton(api.Object);
+        _catalog = new([.. Identities()], [], []);
+        var page = Render<TestDataPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=td-error]").TextContent.Should().Contain("could not be reached"));
+        page.FindAll("[data-testid=td-empty]").Should().BeEmpty();
+        fail = false;
+        page.Find("[data-testid=td-error-retry]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=td-overview]"));
     }
 }

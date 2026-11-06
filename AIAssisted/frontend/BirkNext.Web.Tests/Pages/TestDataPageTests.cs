@@ -10,6 +10,8 @@ namespace BirkNext.Web.Tests.Pages;
 /// <summary>The general Test Data page: typed assets of every kind as safe summaries, no sensitive value in the DOM, empty/loading/error states.</summary>
 public sealed class TestDataPageTests : BunitContext
 {
+    /// <summary>Opens one Test Data section (the page shows Overview, assets, XML fixtures or requests & configuration — one at a time).</summary>
+    private void Show(string section) => Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"test-data?section={section}");
     private const string RawIdentifier = "01821512345";
     private readonly FakeApi _api = new();
 
@@ -52,6 +54,7 @@ public sealed class TestDataPageTests : BunitContext
     [Fact]
     public void MixedAssets_ShowKindTypeAndStatus_AndASafeScalarValue_ButNeverASensitiveValue()
     {
+        Show("assets");
         var page = Render<TestDataPage>();
         var rows = page.FindAll("[data-testid=td-asset]").ToDictionary(row => row.GetAttribute("data-alias")!);
         rows.Keys.Should().BeEquivalentTo("period-lock-day", "normal-report", "expected-record", "reporter-a");
@@ -67,6 +70,7 @@ public sealed class TestDataPageTests : BunitContext
         rows["expected-record"].QuerySelector("[data-testid=td-scope]")!.TextContent.Should().Be("Shared");
         details["reporter-a"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("Available securely");
         page.Markup.Should().NotContain(RawIdentifier);
+        Show("requests");
         page.FindAll("[data-testid=td-set]").Should().ContainSingle().Which.TextContent.Should().Contain("Reporter").And.Contain("reporter-a");
         page.FindAll("[data-testid=td-source]").Should().HaveCount(2);
     }
@@ -74,6 +78,7 @@ public sealed class TestDataPageTests : BunitContext
     [Fact]
     public void Details_ShowAPreviewForNonSensitiveData_AndNoneForSensitiveData()
     {
+        Show("assets");
         var page = Render<TestDataPage>();
         page.FindAll("[data-testid=td-asset]").Single(row => row.GetAttribute("data-alias") == "normal-report").QuerySelector("[data-testid=td-toggle]")!.Click();
         page.Find("[data-testid=td-preview]").TextContent.Should().Contain("<report>");
@@ -89,6 +94,7 @@ public sealed class TestDataPageTests : BunitContext
     [Fact]
     public void Filters_NarrowByDataType()
     {
+        Show("assets");
         var page = Render<TestDataPage>();
         page.Find("[data-testid=td-filter-type]").Change(nameof(TestDataDataType.ExpectedResult));
         page.FindAll("[data-testid=td-asset]").Select(row => row.GetAttribute("data-alias")).Should().Equal("expected-record");
@@ -98,6 +104,7 @@ public sealed class TestDataPageTests : BunitContext
     public void EmptyLoadingAndErrorStates_AreExplicit()
     {
         _api.Catalog = new([], [], [new("configured", "Configured catalog", "Declared in configuration.", 0, 0)]);
+        Show("assets");
         var empty = Render<TestDataPage>();
         empty.Find("[data-testid=td-empty]").TextContent.Should().Contain("No reusable Test Data assets yet");
         empty.Find("[data-testid=td-safety]").TextContent.Should().Contain("never generates");

@@ -32,6 +32,7 @@ public sealed class TestDataSchemaStatusTests : BunitContext
                 ["The element 'Periode' has incomplete content. List of possible elements expected: 'StartDato'."], Snapshot, new string('b', 64), "2.0.0"),
         };
         Services.AddSingleton<ITestDataApiService>(new FakeApi(new([asset], [], [new("configured", "Configured catalog", "", 1, 0)])));
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("test-data?section=assets");
         var page = Render<TestDataPage>();
 
         var row = page.Find("[data-testid=td-asset]");
@@ -57,6 +58,7 @@ public sealed class TestDataSchemaStatusTests : BunitContext
             Source = "Configured catalog", ValueAvailable = true, Schema = new("report.xsd"), SchemaCheck = new(status, "report.xsd", "detail", []),
         };
         Services.AddSingleton<ITestDataApiService>(new FakeApi(new([asset], [], [])));
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("test-data?section=assets");
         Render<TestDataPage>().Find("[data-testid=td-schema-status]").TextContent.Should().Be(label);
     }
 }

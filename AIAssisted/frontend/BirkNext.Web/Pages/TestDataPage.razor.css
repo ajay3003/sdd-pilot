@@ -113,3 +113,14 @@
 .td-table td[data-label="Scope"] { white-space: nowrap; }
 
 .td-pill-info { background: var(--clr-info-bg-light); color: var(--clr-info); border-color: var(--clr-info-border); }
+
+/* ── Sections and next step (NEXT54) ─────────────────────────────────────────────────────────────────────────────── */
+.td-sections { display: flex; flex-wrap: wrap; gap: .25rem; margin: .75rem 0 1rem; border-bottom: 1px solid var(--clr-border-subtle, #e2e8f0); }
+.td-section-link { padding: .45rem .85rem; border-bottom: 3px solid transparent; color: var(--clr-text-body, #1f2937); text-decoration: none; font-weight: 600; font-size: .92rem; }
+.td-section-link[aria-current=page] { border-bottom-color: var(--clr-link, #1d4ed8); color: var(--clr-link, #1d4ed8); }
+.td-section-link.is-advanced { margin-left: auto; font-weight: 500; color: var(--clr-text-muted, #64748b); }
+.td-section-link:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.td-next { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .85rem; padding: .7rem .85rem; border-radius: 8px;
+    border: 1px solid rgba(29, 78, 216, .25); background: rgba(29, 78, 216, .05); }
+.td-next-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--clr-text-muted, #64748b); }
+@media (max-width: 640px) { .td-section-link.is-advanced { margin-left: 0; } }

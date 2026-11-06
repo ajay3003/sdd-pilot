@@ -17,6 +17,15 @@
     <p class="td-lead" data-testid="td-lead">Test Data owns reusable assets — values, payloads, files, entity references and expected results — with type, status, scope and provenance. Consumers reference assets; they never copy values.</p>
     <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs. BirkNext never generates identities or business data.</p>
 
+    @* Four sections instead of one long page (NEXT54): readiness and the next action first; the catalog, XML fixtures and the plumbing
+       (requests, candidates, sources, reset, documentation) on request. The section lives in the URL. *@
+    <nav class="td-sections" aria-label="Test Data sections" data-testid="td-sections">
+        @foreach (var (key, label) in SectionLabels)
+        {
+            <a href="@SectionHref(key)" class="td-section-link @(key == "requests" ? "is-advanced" : "")" aria-current="@(Section == key ? "page" : null)" data-testid="@($"td-section-{key}")">@label@SectionCount(key)</a>
+        }
+    </nav>
+
     @if (Consumer is { Length: > 0 })
     {
         @* A consumer opened Test Data with an exact requirement. Matching is a suggestion only; binding is an explicit choice. *@
@@ -78,17 +87,19 @@
     }
     else if (_error is not null)
     {
-        <p role="alert" class="td-error" data-testid="td-error">@_error</p>
+        <LoadError Title="Test Data could not be loaded" Message="@_error" OnRetry="RetryAsync" TestId="td-error" />
     }
     else if (_catalog is { } catalog)
     {
         @if (_actionStatus is { } actionStatus) { <p role="status" class="td-note" data-testid="td-action-status">@actionStatus</p> }
 
+        @if (Section == "overview")
+        {
         @* 1 · Test Data readiness: Reporter, Child, XML fixture and contract validation by the shared rule (also used by Setup Library preflight
            and Skolenærvær Testing), then compact catalog counts. Test Data readiness only. *@
         <section class="td-card td-overview" aria-labelledby="td-readiness-heading" data-testid="td-overview">
             <h2 id="td-readiness-heading">Test Data readiness</h2>
-            <TestDataTesterReadiness Assets="catalog.Assets" Heading="Ready for testing?" TestId="td-tester-readiness" />
+            <TestDataTesterReadiness Assets="catalog.Assets" Heading="Ready for testing?" TestId="td-tester-readiness" OnStatus="OnReadiness" />
             @if (_consumers?.Overview is { } o)
             {
                 <dl class="td-overview-list" aria-label="Test Data counts">
@@ -102,6 +113,14 @@
                     @if (o.ContractMismatches > 0) { <div><dt>Contract mismatches</dt><dd>@o.ContractMismatches</dd></div> }
                 </dl>
             }
+            @if (NextAction() is { } next)
+            {
+                <div class="td-next" data-testid="td-next">
+                    <span class="td-next-label">Next step</span>
+                    <a class="btn-primary td-action" href="@next.Href" data-testid="td-next-action">@next.Label</a>
+                    <span class="td-note" data-testid="td-next-why">@next.Why</span>
+                </div>
+            }
         </section>
 
         @* Session test identities: the approved synthetic reporter and child for Altinn runs, entered here instead of a terminal. *@
@@ -113,13 +132,20 @@
             }
             <SessionTestIdentitiesPanel OnChanged="ReloadAsync" Assets="@(_catalog?.Assets ?? [])" InitialRole="@(CreateRole?.ToLowerInvariant())" />
         </section>
+        }
 
         @* XML fixtures: reusable message payloads for a test pack's contract, created here from the identities above (generation and validation
            reuse Schema Studio; values come from Test Data). *@
+        @if (Section == "fixtures")
+        {
         <section class="td-card" id="td-xml-fixtures" aria-labelledby="td-xml-heading" data-testid="td-xml-fixtures">
             <h2 id="td-xml-heading">XML fixtures</h2>
-            <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" />
+            <XmlFixturePanel Assets="@(_catalog?.Assets ?? [])" OnSaved="ReloadAsync" AutoOpen="@(Create == "xml")" />
         </section>
+        }
+
+        @if (Section == "requests")
+        {
 
         @* Inbound needs registered by consumers. Test Data shows whether each is resolved; it never decides whether the consumer can run. *@
         <section class="td-card" aria-labelledby="td-requested-heading" data-testid="td-requested">
@@ -184,6 +210,10 @@
             }
         </section>
 
+        }
+
+        @if (Section == "assets")
+        {
         @if (catalog.Assets.Count == 0)
         {
             var empty = P.Empty(catalog);
@@ -196,7 +226,7 @@
                     _ => "Reusable assets appear here when you register a reviewed source candidate, configure the catalog, approve a local reference or register a Schema Studio fixture.",
                 })</p>
                 <div class="td-actions">
-                    <a class="btn-primary td-action" href="test-data#td-candidates-heading" data-testid="td-empty-candidates">Review source candidates</a>
+                    <a class="btn-primary td-action" href="test-data?section=requests#td-candidates-heading" data-testid="td-empty-candidates">Review source candidates</a>
                     <a class="btn-secondary td-action" href="@P.UserGuideHref" data-testid="td-empty-configure">Configure catalog</a>
                     <a class="btn-secondary td-action" href="@P.UserGuideHref" data-testid="td-empty-local">Register approved local reference</a>
                     @if (catalog.Sources.Any(source => source.Id == "schema-studio")) { <a class="btn-secondary td-action" href="@P.SchemaStudioHref" data-testid="td-empty-schema-studio">Open Schema Studio</a> }
@@ -385,6 +415,10 @@
             </section>
         }
 
+        }
+
+        @if (Section == "requests")
+        {
         <section class="td-card" aria-labelledby="td-candidates-heading" data-testid="td-candidates-section">
             <h2 id="td-candidates-heading">Candidates from source evidence</h2>
             <p class="td-note">Proposals from Source Analysis; approval stays explicit.</p>
@@ -461,6 +495,7 @@
                 </ReviewDisclosure>
             }
         </section>
+        }
     }
 </div>
 
@@ -481,6 +516,52 @@
     [SupplyParameterFromQuery(Name = "contentType")] public string? ContentType { get; set; }
     [SupplyParameterFromQuery(Name = "schema")] public string? Schema { get; set; }
     [SupplyParameterFromQuery(Name = "environment")] public string? RequestEnvironment { get; set; }
+
+    // ── Sections (NEXT54) ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    [SupplyParameterFromQuery(Name = "section")] public string? SectionQuery { get; set; }
+    /// <summary>"xml" opens the XML fixture builder directly (the Overview's next action).</summary>
+    [SupplyParameterFromQuery(Name = "create")] public string? Create { get; set; }
+
+    private static readonly (string Key, string Label)[] SectionLabels =
+        [("overview", "Overview"), ("assets", "Test Data assets"), ("fixtures", "XML fixtures"), ("requests", "Requests & configuration")];
+
+    /// <summary>The section in the URL; a deep link chooses its own (a consumer request → Requests, an asset to find → Assets).</summary>
+    private string Section => SectionQuery is { } s && SectionLabels.Any(x => x.Key == s) ? s
+        : Consumer is { Length: > 0 } ? "requests" : FocusAsset is { Length: > 0 } ? "assets" : "overview";
+
+    private string SectionHref(string key) => key == "overview" ? "test-data" : $"test-data?section={key}";
+
+    private string SectionCount(string key) => key switch
+    {
+        "assets" when _catalog is { } c => $" ({c.Assets.Count})",
+        "requests" when _consumers?.Overview is { OpenRequirements: > 0 } o => $" ({o.OpenRequirements} open)",
+        _ => "",
+    };
+
+    private TestDataTesterStatus? _readiness;
+    private Task OnReadiness(TestDataTesterStatus? status) { _readiness = status; return Task.CompletedTask; }
+
+    /// <summary>The Overview's next action, from the shared readiness and the catalog counts: one primary step, never several equal buttons.</summary>
+    private (string Label, string Href, string Why)? NextAction()
+    {
+        if (_readiness is { } r && r.Roles.FirstOrDefault(x => !x.Ready) is { } role)
+            return ($"Choose an approved {role.Role.ToLowerInvariant()}", "test-data#td-session-heading", $"{role.Role}: {role.Status}. An XML fixture needs approved test identities first.");
+        if (_readiness is { } x && x.Xml != TestDataXmlReadinessState.Ready)
+            return (x.Fixture is null ? "Generate missing XML fixture" : "Review the XML fixture", "test-data?section=fixtures&create=xml", $"XML fixture: {x.XmlText}.");
+        if (_readiness is { Xml: TestDataXmlReadinessState.Ready } ready)
+            return ("Open XML fixture", "test-data?section=fixtures", $"{ready.Fixture?.Label ?? ready.Fixture?.Alias} is saved, approved and valid against the XSD.");
+        if (_consumers?.Overview is { NeedsReview: > 0 } o) return ($"Review {o.NeedsReview} asset{(o.NeedsReview == 1 ? "" : "s")}", "test-data?section=assets", "Assets awaiting approval are not used by consumers.");
+        if (_consumers?.Overview is { OpenRequirements: > 0 } open) return ($"Resolve {open.OpenRequirements} request{(open.OpenRequirements == 1 ? "" : "s")}", "test-data?section=requests", "Consumers are waiting for Test Data.");
+        return null;
+    }
+
+    private async Task RetryAsync()
+    {
+        _error = null;
+        _api ??= TestDataApiService.Resolve(Services);
+        await ReloadAsync(null);
+    }
 
     private TestDataDataType? RequestedType => Enum.TryParse<TestDataDataType>(DataType, out var t) ? t : null;
     /// <summary>Generic: the consumer's own name, or its id as words ("performance-test-review" → "Performance test review"); Test Data keeps no consumer list.</summary>

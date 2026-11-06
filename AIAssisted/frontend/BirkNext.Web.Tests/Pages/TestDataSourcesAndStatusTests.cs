@@ -13,6 +13,8 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class TestDataSourcesAndStatusTests : BunitContext
 {
+    /// <summary>Opens one Test Data section (the page shows Overview, assets, XML fixtures or requests & configuration — one at a time).</summary>
+    private void Show(string section) => Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"test-data?section={section}");
     private TestDataCatalogView _catalog = new([], [], []);
 
     public TestDataSourcesAndStatusTests() => Services.AddSingleton<ITestDataApiService>(new Api(() => _catalog));
@@ -59,6 +61,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     private IRenderedComponent<TestDataPage> Page(TestDataCatalogView catalog)
     {
         _catalog = catalog;
+        Show("assets");
         var page = Render<TestDataPage>();
         page.WaitForAssertion(() => page.Find("[data-testid=td-page]").GetAttribute("aria-busy").Should().Be("false"));
         return page;
@@ -93,6 +96,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         page.Find("[data-testid=td-empty]").GetAttribute("data-kind").Should().Be("ConfiguredButEmpty");
         page.Find("[data-testid=td-empty] p").TextContent.Should().Be("A source is configured, but it currently supplies no assets.");
         page.FindAll("[data-testid=td-empty-schema-studio]").Should().BeEmpty("no Schema Studio source, so no Schema Studio action");
+        Show("requests");
         page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-status]").TextContent.Should().Contain("Configured catalog · 0 assets");
     }
 
@@ -102,9 +106,10 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         var page = Page(new([Xml("valid-report", TestDataApproval.Approved, TestDataSchemaStatus.Validated)], [],
             [Configured with { Status = TestDataSourceStatus.Unavailable, Problem = "This source could not be read (IOException). Other sources are unaffected." },
              Studio with { AssetCount = 1, Status = TestDataSourceStatus.Available, StatusLabel = "Registered fixtures" }]));
+        page.FindAll("[data-testid=td-asset]").Should().ContainSingle();
+        Show("requests");
         page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-problem]").TextContent.Should().Contain("Source unavailable").And.Contain("Other sources are unaffected");
         page.Find("[data-testid=td-source][data-source=configured]").GetAttribute("data-status").Should().Be("Unavailable");
-        page.FindAll("[data-testid=td-asset]").Should().ContainSingle();
     }
 
     // ── Sources ───────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -113,12 +118,14 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     public void Sources_AreStatusActionCards_WithDomainDetailOnlyBehindViewDetails()
     {
         var page = Page(Populated());
+        var assets = page.FindAll("[data-testid=td-asset]").Count;
+        Show("requests");
         var cards = page.FindAll("[data-testid=td-source]");
         cards.Select(c => c.GetAttribute("data-source")).Should().Equal("configured", "altinn-local", "schema-studio");
         cards.Select(c => c.QuerySelector("[data-testid=td-source-count]")!.TextContent).Should().Equal("2 assets", "0 assets", "3 assets");
         cards.Select(c => c.QuerySelector("[data-testid=td-source-status]")!.TextContent).Should().Equal(["Status: Configured catalog", "Status: No approved assets", "Status: Registered fixtures"],
             "each source states its own truth; Not configured is never used mechanically");
-        page.FindAll("[data-testid=td-source-count]").Sum(c => int.Parse(c.TextContent.Split(' ')[0])).Should().Be(page.FindAll("[data-testid=td-asset]").Count, "source counts reconcile with the assets");
+        page.FindAll("[data-testid=td-source-count]").Sum(c => int.Parse(c.TextContent.Split(' ')[0])).Should().Be(assets, "source counts reconcile with the assets");
         page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-action]").GetAttribute("href").Should().Be("user-guide#test-data");
         page.Find("[data-testid=td-source][data-source=schema-studio] [data-testid=td-source-action]").TextContent.Should().Be("Open Schema Studio");
         page.FindAll("[data-testid=td-source][data-source=altinn-local] [data-testid=td-source-action]").Should().BeEmpty("no real page to configure it from");
