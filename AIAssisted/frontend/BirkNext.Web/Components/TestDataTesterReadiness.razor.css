@@ -12,3 +12,15 @@
 .tdr-note { display: block; }
 .tdr-scope { margin: .5rem 0 0; }
 .tdr-owner { margin: .35rem 0 0; font-size: .85rem; }
+
+/* NEXT54 follow-up: the eight readiness dimensions */
+.tdr-dims-h { margin: .75rem 0 .3rem; font-size: .9rem; }
+.tdr-dims { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.tdr-dim { display: grid; grid-template-columns: minmax(9rem, 13rem) auto minmax(0, 1fr); gap: .2rem .6rem; align-items: baseline; padding: .35rem .5rem; border-radius: 6px;
+    border-left: 3px solid #94a3b8; background: var(--clr-surface, #f8fafc); }
+.tdr-dim-ready { border-left-color: #15803d; }
+.tdr-dim-needsattention { border-left-color: #b45309; }
+.tdr-dim-blocked { border-left-color: #b91c1c; }
+.tdr-dim-title { font-weight: 600; font-size: .86rem; }
+.tdr-dim-detail { font-size: .8rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .tdr-dim { grid-template-columns: minmax(0, 1fr) auto; } .tdr-dim-detail { grid-column: 1 / -1; } }

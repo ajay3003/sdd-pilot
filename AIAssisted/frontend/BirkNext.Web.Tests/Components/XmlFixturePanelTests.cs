@@ -671,4 +671,83 @@ public sealed class XmlFixturePanelTests : BunitContext
         panel.WaitForAssertion(() => panel.Find("[data-testid=xf-flow]"));
         panel.Find("[data-testid=xf-step][data-step=configure]").GetAttribute("aria-current").Should().Be("step");
     }
+
+    // ── NEXT54 follow-up: required fields from the XSD, the field table, syntax highlighting, checking storage again ──────
+
+    [Fact]
+    public void A_field_is_required_only_when_it_and_every_ancestor_are_required_in_the_xsd()
+    {
+        const string xsd = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="Report"><xs:complexType><xs:sequence>
+                <xs:element name="Id" type="xs:string" />
+                <xs:element name="Note" type="xs:string" minOccurs="0" />
+                <xs:element name="Child" minOccurs="0"><xs:complexType><xs:sequence><xs:element name="Name" type="xs:string" /></xs:sequence></xs:complexType></xs:element>
+                <xs:element name="Period"><xs:complexType><xs:sequence><xs:element name="Start" type="xs:date" /></xs:sequence></xs:complexType></xs:element>
+              </xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["report.xsd"] = xsd }, "report.xsd");
+        var required = XmlValueMappings.Parameters(package).ToDictionary(p => p.Path, p => p.Required);
+
+        required["Id"].Should().BeTrue();
+        required["Note"].Should().BeFalse();
+        required["Child.Name"].Should().BeFalse("an optional ancestor makes the leaf optional");
+        required["Period.Start"].Should().BeTrue();
+    }
+
+    [Fact]
+    public void Highlighting_splits_a_line_into_tokens_and_never_changes_its_text()
+    {
+        const string line = "  <Klient id=\"1\"><!-- note --><Navn>Kari &amp; Ola</Navn></Klient>";
+        var tokens = XmlHighlighter.Tokens(line);
+        string.Concat(tokens.Select(t => t.Text)).Should().Be(line);
+        tokens.Where(t => t.Kind == XmlTokenKind.Tag).Select(t => t.Text).Should().Contain(["<Klient", "<Navn", "</Navn", ">"]);
+        tokens.Single(t => t.Kind == XmlTokenKind.AttributeName).Text.Should().Be("id");
+        tokens.Single(t => t.Kind == XmlTokenKind.AttributeValue).Text.Should().Be("\"1\"");
+        tokens.Single(t => t.Kind == XmlTokenKind.Comment).Text.Should().Be("<!-- note -->");
+        XmlHighlighter.Tokens("<?xml version=\"1.0\"?>").Single().Kind.Should().Be(XmlTokenKind.Declaration);
+    }
+
+    [Fact]
+    public void The_field_table_shows_required_fields_their_value_source_and_status()
+    {
+        Setup(Context(Xsd()));
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, Defaults));
+        panel.WaitForElement("[data-testid=xf-create]").Click();
+        if (panel.FindAll("[data-testid=xf-load-fields]").Count > 0) panel.Find("[data-testid=xf-load-fields]").Click();
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-required-table]"));
+
+        panel.Find("[data-testid=xf-field-filter][data-filter=required]").GetAttribute("aria-pressed").Should().Be("true", "required fields are shown first");
+        panel.FindAll("[data-testid=xf-field-row]").Should().OnlyContain(r => r.GetAttribute("data-required") == "true");
+        panel.FindAll("[data-testid=xf-field-row]").Should().Contain(r => r.GetAttribute("data-status") == "Synthetic value",
+            "a required field without a mapping gets a synthetic placeholder from the XSD generator, said in words");
+
+        panel.Find("[data-testid=xf-field-filter][data-filter=all]").Click();
+        var child = panel.Find($"[data-testid=xf-field-row][data-path='{ChildPath}']");
+        child.TextContent.Should().Contain("skolenaervaer-child-default").And.Contain("Optional", "the real XSD makes Klient optional; the child is still mapped by reference");
+        child.GetAttribute("data-status").Should().BeOneOf("Role mapped", "Mapped", "Suggested");
+        panel.Markup.Should().NotContain("04061076692", "values of Test Data never reach the browser");
+    }
+
+    [Fact]
+    public void Saved_but_not_yet_listed_offers_checking_Test_Data_again()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        Services.AddSingleton<IWorkspaceArtifactRepository>(repository);
+        Services.AddSingleton(new BirkNext.Web.Services.SchemaStudio.SchemaGeneratedXmlStore());
+        Setup(Canonical(Xsd()));
+        Mock.Get(Services.GetRequiredService<ITestDataApiService>()).Setup(t => t.SaveCanonicalFixtureAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(((int?)1, (string?)null));
+        var reloads = 0;
+        var panel = Render<XmlFixturePanel>(p => p.Add(x => x.Assets, Defaults).Add(x => x.OnSaved, (string? _) => reloads++));
+        panel.WaitForElement("[data-testid=xf-create]").Click();
+        panel.Find("[data-testid=xf-generate]").Click();
+        panel.WaitForElement("[data-testid=xf-xml]");
+        panel.Find("[data-testid=xf-validate]").Click();
+        panel.Find("[data-testid=xf-save-button]").Click();
+        panel.WaitForAssertion(() => panel.Find("[data-testid=xf-saved]").GetAttribute("data-confirmed").Should().Be("false"));
+
+        panel.Find("[data-testid=xf-saved-check]").Click();
+        reloads.Should().Be(2, "checking again reloads the catalog — the only confirmation of storage");
+    }
 }

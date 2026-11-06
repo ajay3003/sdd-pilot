@@ -44,3 +44,26 @@
 /* Fieldsets default to min-inline-size: min-content, and contract names are long unbroken identifiers: both pushed the builder past a phone's width. */
 .xf-step { min-width: 0; }
 .xf p, .xf dd, .xf label, .xf legend { overflow-wrap: anywhere; }
+
+/* NEXT54 follow-up: required-field table and XML syntax highlighting */
+.xf-field-filters { display: flex; flex-wrap: wrap; gap: .3rem; margin: .4rem 0; }
+.xf-field-filter { border: 1px solid var(--clr-border, #cbd5e1); background: var(--clr-surface, #fff); border-radius: 999px; padding: .1rem .6rem; font-size: .8rem; cursor: pointer; }
+.xf-field-filter.is-active { border-color: var(--clr-link, #1d4ed8); background: rgba(29, 78, 216, .08); font-weight: 600; }
+.xf-field-filter:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.xf-fields-wrap { position: relative; max-width: 100%; }
+.xf-fields { width: 100%; border-collapse: collapse; font-size: .84rem; margin-bottom: .5rem; }
+.xf-fields th, .xf-fields td { text-align: left; vertical-align: top; padding: .3rem .45rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); overflow-wrap: anywhere; }
+.xf-fields th[scope=row] { display: grid; font-weight: 600; }
+.xf-small { font-size: .74rem; }
+@media (max-width: 640px) {
+    .xf-fields thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .xf-fields, .xf-fields tbody, .xf-fields tr, .xf-fields td, .xf-fields th[scope=row] { display: block; width: 100%; box-sizing: border-box; }
+    .xf-fields tr { padding: .35rem 0; border-bottom: 1px solid var(--clr-border, #e2e8f0); }
+    .xf-fields td, .xf-fields th { border: 0; padding: .1rem 0; }
+}
+.xf-tok-tag { color: #7dd3fc; }
+.xf-tok-attributename { color: #fcd34d; }
+.xf-tok-attributevalue { color: #86efac; }
+.xf-tok-comment { color: #94a3b8; font-style: italic; }
+.xf-tok-declaration { color: #c4b5fd; }
+.xf-tok-punctuation { color: #e2e8f0; }

@@ -281,4 +281,36 @@ public sealed class TestDataTesterViewTests : BunitContext
         page.Find("[data-testid=td-error-retry]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=td-overview]"));
     }
+
+    // ── NEXT54 follow-up: the eight readiness parts ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void The_overview_shows_eight_readiness_parts_and_never_calls_runtime_ready()
+    {
+        _catalog = new([.. Identities()], [], []);
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=tdr-dimension]").Should().HaveCount(8));
+        string State(string key) => page.Find($"[data-testid=tdr-dimension][data-key={key}]").GetAttribute("data-state")!;
+        page.FindAll("[data-testid=tdr-dimension]").Select(d => d.GetAttribute("data-key")).Should()
+            .Equal("identities", "contract", "mapping", "fixture", "xsd", "consumers", "environment", "runtime");
+        State("identities").Should().Be("Ready");
+        State("contract").Should().Be("Ready", "one XSD candidate");
+        State("fixture").Should().Be("Blocked", "a preview is not a fixture: nothing is stored");
+        State("xsd").Should().Be("NotAssessed", "waiting for a saved fixture");
+        State("runtime").Should().Be("NotAssessed");
+        page.Find("[data-testid=tdr-dimension][data-key=runtime]").TextContent.Should().Contain("XSD-valid is not runtime-ready");
+    }
+
+    [Fact]
+    public void A_saved_approved_valid_fixture_is_ready_but_unbound_consumers_and_runtime_still_need_their_own_evidence()
+    {
+        _catalog = new([.. Identities(), Fixture()], [], []);
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=tdr-dimension]").Should().HaveCount(8));
+        string State(string key) => page.Find($"[data-testid=tdr-dimension][data-key={key}]").GetAttribute("data-state")!;
+        State("fixture").Should().Be("Ready");
+        State("xsd").Should().Be("Ready");
+        State("consumers").Should().Be("NeedsAttention", "no consumer binds the fixture yet");
+        State("runtime").Should().Be("NotAssessed");
+    }
 }

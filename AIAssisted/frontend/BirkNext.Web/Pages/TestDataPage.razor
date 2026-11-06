@@ -99,7 +99,7 @@
            and Skolenærvær Testing), then compact catalog counts. Test Data readiness only. *@
         <section class="td-card td-overview" aria-labelledby="td-readiness-heading" data-testid="td-overview">
             <h2 id="td-readiness-heading">Test Data readiness</h2>
-            <TestDataTesterReadiness Assets="catalog.Assets" Heading="Ready for testing?" TestId="td-tester-readiness" OnStatus="OnReadiness" />
+            <TestDataTesterReadiness Assets="catalog.Assets" Heading="Ready for testing?" TestId="td-tester-readiness" OnStatus="OnReadiness" ShowDimensions="true" />
             @if (_consumers?.Overview is { } o)
             {
                 <dl class="td-overview-list" aria-label="Test Data counts">

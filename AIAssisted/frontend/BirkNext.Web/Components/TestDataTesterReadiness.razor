@@ -50,6 +50,21 @@
                 <dd><span class="tdr-pill tdr-@(status.Ready ? "ready" : "attention")">@status.Overall</span>@if (status.Reason is { } reason) { <span class="tdr-muted"> — @reason</span> }</dd>
             </div>
         </dl>
+        @if (ShowDimensions)
+        {
+            @* The eight dimensions, each from its own evidence: preview ≠ saved, saved ≠ validated, XSD-valid ≠ runtime-ready. *@
+            <h4 class="tdr-dims-h">Readiness in eight parts</h4>
+            <ol class="tdr-dims" data-testid="tdr-dimensions">
+                @foreach (var dim in TestDataReadinessModel.Dimensions(status, _context, Assets ?? _loaded, _environmentName, _environmentType))
+                {
+                    <li class="tdr-dim tdr-dim-@dim.State.ToString().ToLowerInvariant()" data-testid="tdr-dimension" data-key="@dim.Key" data-state="@dim.State">
+                        <span class="tdr-dim-title">@dim.Title</span>
+                        <span class="tdr-pill tdr-@(dim.State == TestDataDimensionState.Ready ? "ready" : "attention")">@TestDataReadinessModel.Label(dim.State)</span>
+                        <span class="tdr-muted tdr-dim-detail">@dim.Detail@if (dim.Action is { } action) { <strong> @action</strong> }</span>
+                    </li>
+                }
+            </ol>
+        }
         <p class="tdr-muted tdr-scope">Test Data readiness only — covers this test context's roles and XML fixture; a journey may require more Test Data. Runtime and delivery are verified separately.</p>
         @if (ShowOwnerLink) { <p class="tdr-owner">Owner: Test Data · <a href="test-data#td-session-heading" data-testid="tdr-open-test-data">Open Test Data</a></p> }
     }
@@ -63,6 +78,9 @@
     [Parameter] public string TestId { get; set; } = "tdr";
     /// <summary>The test context (template key) to show; null = the first context that declares Test Data roles.</summary>
     [Parameter] public string? ContextKey { get; set; }
+    /// <summary>Also show the eight readiness dimensions (Test Data's own Overview); consumers show the compact summary only.</summary>
+    [Parameter] public bool ShowDimensions { get; set; }
+    private string? _environmentName, _environmentType;
     /// <summary>The computed readiness, for a host that derives its next action from it (reported when it changes, never on every render).</summary>
     [Parameter] public EventCallback<TestDataTesterStatus?> OnStatus { get; set; }
     private (TestDataXmlReadinessState? Xml, string? Overall, bool Reported)? _reported;
@@ -76,7 +94,12 @@
     {
         string? environmentId = null;
         if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
-            try { environmentId = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+            try
+            {
+                var profile = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull;
+                (environmentId, _environmentName, _environmentType) = (profile?.Id, profile?.Name, profile?.EnvironmentType.ToString());
+            }
+            catch (InvalidOperationException) { }
         if (Services.GetService(typeof(IIntegrationJourneysApiService)) is IIntegrationJourneysApiService journeys)
             try
             {

@@ -238,6 +238,39 @@
                     }
                     @if (_parameters.Count > 0)
                     {
+                        @* What the XSD requires and where each value comes from: XML field | Required | Value source | Status. *@
+                        var fieldRows = FieldRows(context);
+                        <div class="xf-field-filters" role="group" aria-label="Show XML fields" data-testid="xf-field-filters">
+                            @foreach (var (key, label) in FieldViews)
+                            {
+                                var view = key;
+                                <button type="button" class="xf-field-filter @(_fieldView == view ? "is-active" : "")" aria-pressed="@(_fieldView == view ? "true" : "false")"
+                                        data-testid="xf-field-filter" data-filter="@view" @onclick="() => _fieldView = view">@label (@fieldRows.Count(r => FieldShown(r, view)))</button>
+                            }
+                        </div>
+                        var shownFields = fieldRows.Where(r => FieldShown(r, _fieldView)).ToList();
+                        @if (shownFields.Count == 0) { <p class="xf-muted" data-testid="xf-fields-empty">No XML field in this view.</p> }
+                        else
+                        {
+                            <div class="xf-fields-wrap">
+                                <table class="xf-fields" data-testid="xf-required-table">
+                                    <caption class="visually-hidden">XML fields of the XSD with whether they are required, where their value comes from and their status</caption>
+                                    <thead><tr><th scope="col">XML field</th><th scope="col">Required</th><th scope="col">Value source</th><th scope="col">Status</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var f in shownFields.Take(60))
+                                        {
+                                            <tr data-testid="xf-field-row" data-path="@f.Parameter.Path" data-required="@(f.Parameter.Required ? "true" : "false")" data-status="@f.Status">
+                                                <th scope="row"><span>@f.Parameter.Display</span><span class="xf-mono xf-muted xf-small">@f.Parameter.Technical</span></th>
+                                                <td>@(f.Parameter.Required ? "Required" : "Optional")</td>
+                                                <td>@f.Source</td>
+                                                <td><span class="xf-badge @(f.Status is "Mapped" or "Role mapped" ? "xf-badge-ready" : f.Status is "Synthetic value" or "Not used" ? "" : "xf-badge-attention")">@f.Status</span></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            @if (shownFields.Count > 60) { <p class="xf-muted">Showing 60 of @shownFields.Count fields — search to narrow.</p> }
+                        }
                         <label class="xf-filter">Search fields <input class="form-control" data-testid="xf-map-filter" type="search" placeholder="e.g. Identifikator" @bind="_fieldFilter" @bind:event="oninput" aria-describedby="xf-filter-help" /></label>
                         <span id="xf-filter-help" class="visually-hidden">Filters the Parameter lists below by full path or data type.</span>
                     }
@@ -343,7 +376,7 @@
                                 @foreach (var line in _xml.Replace("\r\n", "\n").Split('\n').Take(PreviewLines))
                                 {
                                     lineNo++;
-                                    <li class="@(issueLines.Contains(lineNo) ? "has-issue" : "")" data-testid="xf-line" data-line="@lineNo"><code>@line</code></li>
+                                    <li class="@(issueLines.Contains(lineNo) ? "has-issue" : "")" data-testid="xf-line" data-line="@lineNo"><code>@foreach (var t in XmlHighlighter.Tokens(line)) { <span class="xf-tok xf-tok-@t.Kind.ToString().ToLowerInvariant()">@t.Text</span> }</code></li>
                                 }
                             </ol>
                             @if (_xml.Count(c => c == '\n') + 1 > PreviewLines) { <p class="xf-muted">Preview shows the first @PreviewLines lines; the editor and the download hold the whole XML.</p> }
@@ -392,7 +425,8 @@
             <div class="xf-saved" data-testid="xf-saved" data-confirmed="@(persisted is null ? "false" : "true")">
                 @if (persisted is null)
                 {
-                    <p><strong>Saved, but not listed by Test Data yet.</strong> Reload Test Data to confirm the fixture was stored.</p>
+                    <p><strong>Saved, but not listed by Test Data yet.</strong> The fixture counts as stored only once Test Data lists it.</p>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="xf-saved-check" @onclick="CheckSavedAsync">Check Test Data again</button>
                 }
                 else
                 {
@@ -487,6 +521,45 @@
     [Parameter] public EventCallback<string?> OnSaved { get; set; }
     /// <summary>Open the builder on arrival (the Test Data Overview's "Generate missing XML fixture").</summary>
     [Parameter] public bool AutoOpen { get; set; }
+
+    private static readonly (string Key, string Label)[] FieldViews =
+        [("required", "Required"), ("unmapped", "Required without a mapping"), ("suggested", "Suggested"), ("confirmed", "Mapped"), ("optional", "Optional, mapped"), ("all", "All fields")];
+    private string _fieldView = "required";
+
+    /// <summary>One XSD leaf with the mapping or role binding that fills it (if any), in words: where its value comes from and its status.</summary>
+    private sealed record FieldRow(XmlParameter Parameter, XmlValueMapping? Mapping, TestDataFixtureBinding? Binding, string Source, string Status);
+
+    private IReadOnlyList<FieldRow> FieldRows(IntegrationTemplateView context) =>
+    [
+        .. _parameters.Select(p =>
+        {
+            var mapping = _mappings.FirstOrDefault(m => m.Path == p.Path);
+            var binding = context.FixtureBindings.FirstOrDefault(b => b.ElementPath == p.Path);
+            var (source, status) = mapping is not null ? ($"{SourceLabel(mapping.Kind)}{(mapping.AssetAlias is { } alias ? $" · {alias}" : mapping.FixedValue is { Length: > 0 } fixedValue ? $" · {fixedValue}" : "")}", MappingStatus(mapping))
+                : binding is not null ? ($"Test Data role · {binding.Role}{(Chosen(binding) is { } chosen ? $" · {chosen.Alias}" : "")}", Chosen(binding) is { Approval: TestDataApproval.Approved } ? "Role mapped" : "Needs value")
+                : p.Required ? ("XSD generator (synthetic placeholder)", "Synthetic value")
+                : ("Left out (optional)", "Not used");
+            return new FieldRow(p, mapping, binding, source, status);
+        }).OrderByDescending(r => r.Parameter.Required).ThenBy(r => r.Status is "Mapped" or "Role mapped" ? 1 : 0),
+    ];
+
+    private static bool FieldShown(FieldRow r, string view) => view switch
+    {
+        "required" => r.Parameter.Required,
+        "unmapped" => r.Parameter.Required && r.Mapping is null && r.Binding is null,
+        "suggested" => r.Mapping?.IsSuggested == true,
+        "confirmed" => r.Status is "Mapped" or "Role mapped",
+        "optional" => !r.Parameter.Required && (r.Mapping is not null || r.Binding is not null),
+        _ => true,
+    };
+
+    /// <summary>Reads the catalog again (via the page) to confirm a saved fixture is listed — the only confirmation of storage.</summary>
+    private async Task CheckSavedAsync()
+    {
+        _busy = true;
+        try { await OnSaved.InvokeAsync(_savedAlias); }
+        finally { _busy = false; }
+    }
 
     private static readonly (string Step, string Label, string Hint)[] Steps =
         [("configure", "1 · Configure", "identities, snapshot, XSD, mappings"), ("review", "2 · Review & validate", "XML, XSD validation"), ("save", "3 · Save", "stored in Test Data")];

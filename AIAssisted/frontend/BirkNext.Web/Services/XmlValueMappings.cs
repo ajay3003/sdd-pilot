@@ -17,7 +17,11 @@ public enum XmlGeneratedValue { Uuid, Timestamp, Date }
 /// generator and the Test Data binder use; <see cref="Display"/> and <see cref="Technical"/> are the full human and technical paths (two
 /// elements named alike in different parents stay distinguishable).
 /// </summary>
-public sealed record XmlParameter(string Path, string Display, string Technical, string? Type, string? Documentation);
+public sealed record XmlParameter(string Path, string Display, string Technical, string? Type, string? Documentation)
+{
+    /// <summary>The XSD requires the element: it and every ancestor have minOccurs ≥ 1 (an optional ancestor makes the leaf optional).</summary>
+    public bool Required { get; init; }
+}
 
 /// <summary>One row of "XML value mappings". A Test Data mapping stores the asset alias (a reference), never the asset's value.</summary>
 public sealed record XmlValueMapping(string Path, XmlValueSourceKind Kind, string? AssetAlias = null, string? FixedValue = null,
@@ -41,19 +45,20 @@ public static class XmlValueMappings
         var root = package.EffectiveSchema.FirstOrDefault();
         if (root is null) return [];
         var list = new List<XmlParameter>();
-        void Walk(EffectiveMember member, List<string> trail, HashSet<string> types)
+        void Walk(EffectiveMember member, List<string> trail, HashSet<string> types, bool required)
         {
             if (list.Count >= MaxParameters || trail.Count > MaxDepth) return;
+            required = required && member.MinOccurs != "0";
             if (member.Children.Count == 0)
             {
-                list.Add(new(string.Join('.', trail), string.Join(" → ", trail), $"/{root.Name}/{string.Join('/', trail)}", member.Type, member.Documentation));
+                list.Add(new(string.Join('.', trail), string.Join(" → ", trail), $"/{root.Name}/{string.Join('/', trail)}", member.Type, member.Documentation) { Required = required });
                 return;
             }
             // A recursive type (a member containing its own type) is walked once.
             if (member.Type is { } type && !types.Add(type)) return;
-            foreach (var child in member.Children) Walk(child, [.. trail, child.Name], new HashSet<string>(types, StringComparer.Ordinal));
+            foreach (var child in member.Children) Walk(child, [.. trail, child.Name], new HashSet<string>(types, StringComparer.Ordinal), required);
         }
-        foreach (var child in root.Children) Walk(child, [child.Name], []);
+        foreach (var child in root.Children) Walk(child, [child.Name], [], true);
         return list;
     }
 
