@@ -1,10 +1,10 @@
 /* Delivery Intelligence: the dashboard design shared by Delivery Overview and Delivery Reports (global, so shared components get it). */
 /* ── Executive dashboard ─────────────────────────────────────────────────────────────────────────────────────────────
    Semantic tones (always with text): ready green, progress blue, change purple, review amber, blocker red, neutral gray. */
-.dd-tone-ready { --tone: #15803d; --tone-bg: rgba(21, 128, 61, .1); }
+.dd-tone-ready { --tone: #166534; --tone-bg: rgba(21, 128, 61, .1); }
 .dd-tone-progress { --tone: #1d4ed8; --tone-bg: rgba(29, 78, 216, .1); }
 .dd-tone-change { --tone: #7c3aed; --tone-bg: rgba(124, 58, 237, .1); }
-.dd-tone-review { --tone: #b45309; --tone-bg: rgba(217, 119, 6, .12); }
+.dd-tone-review { --tone: #92400e; --tone-bg: rgba(217, 119, 6, .12); }
 .dd-tone-blocker { --tone: #b91c1c; --tone-bg: rgba(185, 28, 28, .1); }
 .dd-tone-neutral { --tone: #475569; --tone-bg: rgba(100, 116, 139, .12); }
 .dd-header { display: grid; gap: .35rem; padding: 1rem 1.1rem; border: 1px solid var(--clr-border-subtle, #e2e8f0); border-radius: 10px; background: var(--clr-surface-white, #fff); }

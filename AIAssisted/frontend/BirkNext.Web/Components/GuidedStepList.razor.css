@@ -4,7 +4,8 @@
 .gsl-step[aria-current=step] { border-color: var(--clr-primary, #2563eb); box-shadow: inset 3px 0 0 var(--clr-primary, #2563eb); }
 .gsl-n { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1px solid var(--clr-border); font-size: .8125rem; }
 .gsl-step-done .gsl-n { background: var(--clr-success-bg, #dcfce7); border-color: var(--clr-success, #15803d); }
-.gsl-step-waiting, .gsl-step-notapplicable { opacity: .85; }
+/* Waiting and not-applicable steps are marked by a dashed border, never by opacity: opacity dimmed the step's text and action below WCAG AA contrast. */
+.gsl-step-waiting, .gsl-step-notapplicable { border-style: dashed; }
 .gsl-body { min-width: 0; }
 .gsl-title { margin: 0; display: flex; flex-wrap: wrap; gap: .375rem; align-items: center; font-size: .95rem; }
 .gsl-text { margin: .125rem 0 0; font-size: .9rem; color: var(--clr-text, #1f2937); overflow-wrap: anywhere; }
