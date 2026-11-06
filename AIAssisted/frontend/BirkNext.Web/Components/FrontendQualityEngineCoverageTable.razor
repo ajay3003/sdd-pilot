@@ -12,6 +12,28 @@
     }
     else
     {
+        @if (Rows.Count > 3)
+        {
+            <div class="fqr-coverage-filters" role="group" aria-label="Filter engine coverage" data-testid="fqr-coverage-filters">
+                <label>Search <input type="search" class="form-control form-control-sm" data-testid="fqr-coverage-search" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" placeholder="Engine, surface, prerequisite or result" /></label>
+                <label>Release impact
+                    <select class="form-select form-select-sm" data-testid="fqr-coverage-impact" value="@_impact" @onchange="e => _impact = e.Value?.ToString() ?? string.Empty">
+                        <option value="">All</option>
+                        @foreach (var impact in Enum.GetValues<FrontendQualityReleaseImpact>()) { <option value="@impact">@FrontendQualityExecutionPlanner.ImpactLabel(impact)</option> }
+                    </select>
+                </label>
+                <label>Sort
+                    <select class="form-select form-select-sm" data-testid="fqr-coverage-sort" value="@_sort" @onchange="e => _sort = e.Value?.ToString() ?? string.Empty">
+                        <option value="plan">Plan order</option>
+                        <option value="impact">Blocking first</option>
+                        <option value="engine">Engine (A–Z)</option>
+                    </select>
+                </label>
+                <span class="fqr-muted" role="status" data-testid="fqr-coverage-count">@($"Showing {Visible.Count} of {Rows.Count}")</span>
+                @if (_search.Length > 0 || _impact.Length > 0) { <button type="button" class="btn btn-link btn-sm" data-testid="fqr-coverage-clear" @onclick="Clear">Clear filters</button> }
+            </div>
+        }
+        @if (Visible.Count == 0) { <p class="fqr-muted" data-testid="fqr-coverage-none">No engine matches these filters.</p> }
         <table class="fqr-coverage-table">
             <caption class="visually-hidden">Engine coverage for this run</caption>
             <thead>
@@ -25,7 +47,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var row in Rows)
+                @foreach (var row in Visible)
                 {
                     <tr data-testid="fqr-engine-coverage-row" data-engine="@row.Engine" data-impact="@row.ReleaseImpact">
                         <th scope="row" data-label="Engine">@row.Engine</th>
@@ -57,6 +79,29 @@
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityEngineCoverageRow> Rows { get; set; } = [];
+
+    private string _search = "", _impact = "", _sort = "plan";
+
+    private IReadOnlyList<FrontendQualityEngineCoverageRow> Visible
+    {
+        get
+        {
+            IEnumerable<FrontendQualityEngineCoverageRow> rows = Rows;
+            if (_search.Trim() is { Length: > 0 } q)
+                rows = rows.Where(r => new[] { r.Engine, r.Surface, r.Prerequisite, r.Result, r.Reason ?? "" }.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            if (Enum.TryParse<FrontendQualityReleaseImpact>(_impact, out var impact)) rows = rows.Where(r => r.ReleaseImpact == impact);
+            rows = _sort switch
+            {
+                "impact" => rows.OrderBy(r => r.ReleaseImpact == FrontendQualityReleaseImpact.Blocking ? 0 : r.ReleaseImpact == FrontendQualityReleaseImpact.NonBlocking ? 1 : 2),
+                "engine" => rows.OrderBy(r => r.Engine, StringComparer.OrdinalIgnoreCase),
+                _ => rows,
+            };
+            return [.. rows];
+        }
+    }
+
+    private void Clear() { _search = ""; _impact = ""; }
+
 
     private static string Tone(FrontendQualityReleaseImpact impact) => impact switch
     {

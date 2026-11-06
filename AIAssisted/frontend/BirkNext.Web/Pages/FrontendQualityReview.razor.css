@@ -1558,3 +1558,5 @@
 ::deep .fqr-a11y-axis { padding: .5rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
 ::deep .fqr-a11y-axis h4 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted); }
 ::deep .fqr-assessed-scope { display: block; margin-top: .25rem; }
+::deep .fqr-coverage-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; margin: 0 0 .5rem; }
+::deep .fqr-coverage-filters label { display: grid; gap: .15rem; font-size: .8rem; }
