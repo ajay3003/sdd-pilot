@@ -297,4 +297,125 @@ public sealed class RelationshipReviewTests : BunitContext
         cut.WaitForAssertion(() => api.Verify(a => a.InterpretAsync("dev", It.Is<InterpretRequest>(r => r.DeliverySnapshotId == delivery && r.SourceSnapshotIds.SequenceEqual(new[] { source })),
             It.IsAny<CancellationToken>()), Times.Once()));
     }
+
+    // ── NEXT56: grouped review queue with an inspector, side-by-side source evidence, master–detail explorer ──────────────
+
+    static CanonicalEntityView Entity(CanonicalEntityType type, string id, string name, Guid? key = null) =>
+        new(key ?? Guid.NewGuid(), type, id, name, name, "explicit id", null, new Dictionary<string, string>(), DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
+
+    static CanonicalRelationView Relation(CanonicalEntityView source, CanonicalEntityView target, CanonicalRelationType type, RelationResolution resolution, string key) =>
+        new(Guid.NewGuid(), key, source, target, type, resolution, resolution, CorrelationConfidence.Medium, "CR-TEST", "correlation/4",
+            [new CorrelationEvidence("comment", "AbsenceTests.cs:12", "mentions FR-001")], "fp", "Requirement id mentioned near the test", RelationReviewState.NotReviewed, null, true);
+
+    [Fact]
+    public async Task The_identity_conflict_shows_each_entitys_source_evidence_side_by_side_and_is_never_resolved_automatically()
+    {
+        var api = await AnalyzedM2lb();
+        var conflict = (await api.Object.ReviewItemsAsync("dev", ReviewItemKind.Decision, null, 0, 20)).Queue!.Page.Items[0].Relation!;
+        CanonicalEntityDetail Detail(CanonicalEntityView e, string declaredBy) => new(e,
+            [new CanonicalAliasView(Guid.NewGuid(), e.Id, "M2LB.SkoleAdapter.Worker", AliasState.Explicit, declaredBy, "CR-ALIAS", DateTimeOffset.UnixEpoch)],
+            [new CanonicalOccurrenceView("3f2a9c1e-snapshot", $"{e.DisplayName}/topology", "Topology", $"declared in {declaredBy}", DateTimeOffset.UnixEpoch)], [], []);
+        api.Setup(a => a.EntityAsync("dev", conflict.Source.Id, It.IsAny<CancellationToken>())).ReturnsAsync((Detail(conflict.Source, "Utdanning/topology.json"), (string?)null));
+        api.Setup(a => a.EntityAsync("dev", conflict.Target.Id, It.IsAny<CancellationToken>())).ReturnsAsync((Detail(conflict.Target, "SkoleAdapter/appsettings.json"), (string?)null));
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tab"] = "review", ["type"] = "IdentityConflict" }));
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-conflict-source-name]").TextContent.Should().Be("Utdanning"));
+        cut.Find("[data-testid=cr-conflict-target-name]").TextContent.Should().Be("SkoleAdapter");
+        cut.Find("[data-testid=cr-conflict-source-aliases]").TextContent.Should().Contain("M2LB.SkoleAdapter.Worker").And.Contain("declared by Utdanning/topology.json");
+        cut.Find("[data-testid=cr-conflict-target-aliases]").TextContent.Should().Contain("declared by SkoleAdapter/appsettings.json");
+        cut.Find("[data-testid=cr-conflict-source-occurrences]").TextContent.Should().Contain("declared in Utdanning/topology.json");
+        cut.FindAll("[data-testid=cr-conflict-source-relation]").Should().BeEmpty("beside a conflict the inspector shows identity and source evidence only");
+        api.Verify(a => a.DecideAsync(It.IsAny<string>(), It.IsAny<ReviewDecisionRequest>(), It.IsAny<CancellationToken>()), Times.Never, "showing evidence never resolves the conflict");
+        cut.Find("[data-testid=cr-conflict-same]").HasAttribute("disabled").Should().BeTrue("a decision needs a written rationale");
+    }
+
+    [Fact]
+    public async Task The_review_queue_groups_related_candidates_and_decides_the_question_open_in_the_inspector()
+    {
+        var api = await AnalyzedM2lb();
+        var fr1 = Entity(CanonicalEntityType.Requirement, "FR-001", "FR-001 Register absence");
+        var fr2 = Entity(CanonicalEntityType.Requirement, "FR-002", "FR-002 Report absence");
+        var test = Entity(CanonicalEntityType.Test, "AbsenceTests.Register", "AbsenceTests.Register");
+        var other = Entity(CanonicalEntityType.Test, "ReportTests.Send", "ReportTests.Send");
+        ReviewItemView Suggestion(string id, CanonicalRelationView r) => new(id, ReviewItemKind.Suggestion, ReviewItemType.TestLink, 5, "Requirement id mentioned near the test — not coverage until confirmed.",
+            ReviewTargetKind.Relation, r.RelationKey, r, null, null, ["Traceability", "Test Coverage"], "CR-TEST", "correlation/4", "Candidate", null, DateTimeOffset.UnixEpoch, null);
+        var items = new[]
+        {
+            Suggestion("s1", Relation(test, fr1, CanonicalRelationType.Verifies, RelationResolution.Candidate, "rel-s1")),
+            Suggestion("s2", Relation(other, fr2, CanonicalRelationType.Verifies, RelationResolution.Candidate, "rel-s2")),
+            Suggestion("s3", Relation(test, fr2, CanonicalRelationType.Verifies, RelationResolution.Candidate, "rel-s3")),
+        };
+        api.Setup(a => a.ReviewItemsAsync("dev", ReviewItemKind.Suggestion, It.IsAny<ReviewItemType?>(), 0, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ReviewQueueView(1, 3, new Dictionary<ReviewItemType, int>(), new Dictionary<ReviewItemType, int> { [ReviewItemType.TestLink] = 3 },
+                new CanonicalPage<ReviewItemView>(items, 3, 0, 20), null), (string?)null));
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tab"] = "review", ["type"] = "TestLink" }));
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-queue-item]").Should().HaveCount(3));
+        cut.Find("[data-testid=cr-inspect]").GetAttribute("data-item").Should().Be("s1", "the first question is open");
+        cut.Find("[data-testid=cr-group-by]").Change(CorrelationQueueGroups.BySource);
+        cut.FindAll("[data-testid=cr-group]").Select(g => g.QuerySelector("strong")!.TextContent).Should().Equal("AbsenceTests.Register", "ReportTests.Send");
+        cut.FindAll("[data-testid=cr-group]")[0].QuerySelectorAll("[data-testid=cr-queue-item]").Select(i => i.QuerySelector("[data-testid=cr-item-open]") is not null).Should().HaveCount(2,
+            "both candidate links of one test are reviewed together");
+        cut.FindAll("[data-testid=cr-item-open]")[1].Click();
+        cut.Find("[data-testid=cr-inspect]").GetAttribute("data-item").Should().Be("s3");
+        cut.Find("[data-testid=cr-inspect-evidence]").TextContent.Should().Contain("AbsenceTests.cs:12").And.Contain("CR-TEST");
+        cut.Find("[data-testid=cr-inspect-affects]").TextContent.Should().Contain("Test Coverage");
+        cut.Find("[data-testid=cr-confirm]").Click();
+        cut.WaitForAssertion(() => api.Verify(a => a.DecideAsync("dev", It.Is<ReviewDecisionRequest>(r => r.TargetKey == "rel-s3" && r.Outcome == ReviewDecisionOutcome.Confirmed), It.IsAny<CancellationToken>()), Times.Once));
+    }
+
+    [Fact]
+    public async Task The_explorer_lists_entities_in_pages_beside_an_inspector_with_established_and_candidate_relations_apart()
+    {
+        var api = await AnalyzedM2lb();
+        var fr1 = Entity(CanonicalEntityType.Requirement, "FR-001", "FR-001 Register absence");
+        var fr2 = Entity(CanonicalEntityType.Requirement, "FR-002", "FR-002 Report absence");
+        var test = Entity(CanonicalEntityType.Test, "AbsenceTests.Register", "AbsenceTests.Register");
+        var story = Entity(CanonicalEntityType.UserStory, "US1", "US1 Register absence");
+        api.Setup(a => a.EntitiesAsync("dev", It.IsAny<CanonicalEntityType?>(), "FR", 0, 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new CanonicalPage<CanonicalEntityView>([fr1, fr2], 30, 0, 25), (string?)null));
+        api.Setup(a => a.EntityAsync("dev", It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(((CanonicalEntityDetail?)null, (string?)"not found"));
+        api.Setup(a => a.EntityAsync("dev", fr1.Id, It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalEntityDetail(fr1, [], [],
+            [], [Relation(story, fr1, CanonicalRelationType.Contains, RelationResolution.Explicit, "r1"), Relation(test, fr1, CanonicalRelationType.Verifies, RelationResolution.Candidate, "r2")]), (string?)null));
+        api.Setup(a => a.EntityAsync("dev", fr2.Id, It.IsAny<CancellationToken>())).ReturnsAsync((new CanonicalEntityDetail(fr2, [], [], [], []), (string?)null));
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tab"] = "relationships" }));
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-explore-text]"));
+        cut.Find("[data-testid=cr-explore-text]").Change("FR");
+        cut.Find("[data-testid=cr-explore-run]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-explorer-item]").Should().HaveCount(2));
+        cut.Find("[data-testid=cr-explorer-count]").TextContent.Should().Be("2 of 30 entities");
+        cut.Find("[data-testid=cr-explorer-more]").TextContent.Should().Contain("Load 25 more");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-explorer-inspector-name]").TextContent.Should().Be("FR-001 Register absence"));
+        cut.Find("[data-testid=cr-explorer-inspector-identity]").TextContent.Should().Be("FR-001");
+        var relations = cut.FindAll("[data-testid=cr-explorer-inspector-relation]");
+        relations.Select(r => r.GetAttribute("data-counts")).Should().BeEquivalentTo(["true", "false"], "established and candidate relations stay apart");
+        cut.FindAll("[data-testid=cr-explorer-inspector-group]").Select(g => g.TextContent).Should().Contain(t => t.Contains("0 established · 1 candidate or not counted"));
+
+        cut.Find("[data-testid=cr-explorer-items]").KeyDown("ArrowDown");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-explorer-inspector-name]").TextContent.Should().Be("FR-002 Report absence"));
+        cut.Find("[data-testid=cr-explorer-item][data-entity=\"" + fr2.Id + "\"]").GetAttribute("aria-selected").Should().Be("true");
+    }
+
+    [Fact]
+    public void Grouping_keeps_the_queue_priority_order_and_groups_by_first_occurrence()
+    {
+        var a = Entity(CanonicalEntityType.Test, "A", "A");
+        var b = Entity(CanonicalEntityType.Test, "B", "B");
+        var target = Entity(CanonicalEntityType.Requirement, "FR-1", "FR-1");
+        ReviewItemView Item(string id, CanonicalEntityView source, ReviewItemType type) => new(id, ReviewItemKind.Decision, type, 1, "r", ReviewTargetKind.Relation, id,
+            Relation(source, target, CanonicalRelationType.Verifies, RelationResolution.Candidate, id), null, null, [], "CR", null, "Candidate", null, DateTimeOffset.UnixEpoch, null);
+        var items = new[] { Item("1", b, ReviewItemType.IdentityConflict), Item("2", a, ReviewItemType.TestLink), Item("3", b, ReviewItemType.TestLink) };
+
+        CorrelationQueueGroups.Group(items, CorrelationQueueGroups.BySource).Select(g => (g.Label, string.Join(",", g.Items.Select(i => i.ReviewItemId))))
+            .Should().Equal(("B", "1,3"), ("A", "2"));
+        CorrelationQueueGroups.Group(items, CorrelationQueueGroups.ByType).Select(g => g.Items.Count).Should().Equal(1, 2);
+        CorrelationQueueGroups.Group(items, CorrelationQueueGroups.ByTarget).Should().ContainSingle().Which.Items.Should().HaveCount(3);
+    }
 }

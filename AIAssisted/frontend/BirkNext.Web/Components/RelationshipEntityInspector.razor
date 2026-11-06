@@ -1,0 +1,163 @@
+@using BirkNext.Interpretation
+@using BirkNext.Web.Models
+@inject ICanonicalInterpretationApiService Api
+@implements IDisposable
+
+@* Relationship Review inspector for one canonical entity: what it is (readable name, type, full identity with copy), where it comes from (aliases
+   with their declaring source and state, occurrences per source snapshot), and how it relates (incoming and outgoing, grouped by relation type,
+   established apart from candidates). Read-only; decisions stay in the review queue. Used by the explorer and beside an identity conflict. *@
+<section class="rei" aria-labelledby="@($"{TestId}-h")" data-testid="@TestId" data-entity="@EntityId">
+    @if (_loading && _detail is null)
+    {
+        <InlineLoading Text="Loading the entity…" TestId="@($"{TestId}-loading")" />
+    }
+    else if (_error is { } error)
+    {
+        <LoadError Title="The entity could not be loaded" Message="@error" OnRetry="LoadAsync" TestId="@($"{TestId}-error")" />
+    }
+    else if (_detail is { } d)
+    {
+        <header class="rei-head">
+            <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(d.Entity.Type)" />
+            <h3 class="rei-name" id="@($"{TestId}-h")" data-testid="@($"{TestId}-name")">@d.Entity.DisplayName</h3>
+        </header>
+        <p class="rei-identity">
+            <code title="Canonical identity — independent of display names, aliases and file locations" data-testid="@($"{TestId}-identity")">@d.Entity.IdentityKey</code>
+            <button type="button" class="btn-link rei-copy" data-testid="@($"{TestId}-copy")" @onclick="CopyAsync">@(_copied ? "Copied" : "Copy id")</button>
+        </p>
+        <dl class="rei-facts">
+            @if (!string.IsNullOrWhiteSpace(d.Entity.SourceIdentity)) { <div><dt>Declared as</dt><dd data-testid="@($"{TestId}-source-identity")">@d.Entity.SourceIdentity</dd></div> }
+            <div><dt>Resolved by</dt><dd>@d.Entity.ResolutionMethod</dd></div>
+            <div><dt>Relationships</dt><dd data-testid="@($"{TestId}-counts")">@d.Outgoing.Count outgoing · @d.Incoming.Count incoming</dd></div>
+            @foreach (var (k, v) in d.Entity.Attributes.Take(Compact ? 3 : 8)) { <div><dt>@k</dt><dd>@v</dd></div> }
+        </dl>
+
+        @if (d.Aliases.Count > 0)
+        {
+            <h4 class="rei-h">Aliases <span class="rei-muted">(@d.Aliases.Count)</span></h4>
+            <ul class="rei-list" data-testid="@($"{TestId}-aliases")">
+                @foreach (var alias in d.Aliases)
+                {
+                    var (status, label) = CorrelationPresentation.AliasStatus(alias.State);
+                    <li data-testid="@($"{TestId}-alias")"><span class="rei-mono">@alias.Alias</span> <SemanticStatusBadge Status="status" QualifiedLabel="@label" /> <span class="rei-muted">declared by @alias.Source · rule @alias.RuleId</span></li>
+                }
+            </ul>
+        }
+
+        <details class="rei-more" open="@(!Compact)" data-testid="@($"{TestId}-occurrences")">
+            <summary>Source evidence · @d.Occurrences.Count occurrence@(d.Occurrences.Count == 1 ? "" : "s")</summary>
+            @if (d.Occurrences.Count == 0) { <p class="rei-muted">No source occurrence recorded.</p> }
+            else
+            {
+                <ul class="rei-list">
+                    @foreach (var o in d.Occurrences.Take(20))
+                    {
+                        <li data-testid="@($"{TestId}-occurrence")"><code class="rei-mono">@o.Kind</code> @o.OccurrenceKey @(o.Detail is { Length: > 0 } detail ? $"· {detail}" : "") <span class="rei-muted">· snapshot @Short(o.SourceSnapshotId)</span></li>
+                    }
+                </ul>
+                @if (d.Occurrences.Count > 20) { <p class="rei-muted">+@(d.Occurrences.Count - 20) more</p> }
+            }
+        </details>
+
+        @if (!Compact)
+        {
+            @Relations("Outgoing", d.Outgoing, outgoing: true)
+            @Relations("Incoming", d.Incoming, outgoing: false)
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="@($"{TestId}-impact")" aria-expanded="@(_impact is not null ? "true" : "false")" @onclick="ToggleImpactAsync">Impact preview</button>
+            @if (_impact is { } impact) { <CanonicalImpactSummary Impact="impact.View" Error="@impact.Error" TestId="@($"{TestId}-impact-view")" /> }
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Scope { get; set; } = "";
+    [Parameter, EditorRequired] public Guid EntityId { get; set; }
+    /// <summary>Identity and source evidence only (beside an identity conflict); the full inspector also lists relationships and impact.</summary>
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public string TestId { get; set; } = "rei";
+
+    private const int RelationPreview = 8;
+    private readonly LoadSequence _loads = new();
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private CanonicalEntityDetail? _detail;
+    private (CanonicalImpactView? View, string? Error)? _impact;
+    private string? _error;
+    private bool _loading, _copied;
+    private Guid _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EntityId && _detail is not null) return;
+        _loadedFor = EntityId;
+        (_impact, _copied) = (null, false);
+        _expanded.Clear();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var load = _loads.Begin();
+        (_loading, _error) = (true, null);
+        try
+        {
+            var (detail, error) = await Api.EntityAsync(Scope, EntityId, load.Token);
+            if (!load.IsCurrent) return;
+            (_detail, _error) = (detail, detail is null ? error ?? "Not found in the latest analysis." : null);
+        }
+        catch (OperationCanceledException) { }
+        finally { if (_loads.End(load)) _loading = false; }
+    }
+
+    /// <summary>Relations grouped by type; established (counted) before candidates, which are labelled as such and never counted.</summary>
+    private RenderFragment Relations(string title, IReadOnlyList<CanonicalRelationView> relations, bool outgoing) => __builder =>
+    {
+        <h4 class="rei-h">@title <span class="rei-muted">(@relations.Count)</span></h4>
+        @if (relations.Count == 0) { <p class="rei-muted" data-testid="@($"{TestId}-{title.ToLowerInvariant()}-none")">None.</p> }
+        @foreach (var group in relations.GroupBy(r => r.Type).OrderByDescending(g => g.Count()))
+        {
+            var key = $"{title}|{group.Key}";
+            var ordered = group.OrderByDescending(r => r.Counts).ThenBy(r => (outgoing ? r.Target : r.Source).DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+            var shown = _expanded.Contains(key) ? ordered : ordered.Take(RelationPreview).ToList();
+            <div class="rei-group" data-testid="@($"{TestId}-group")" data-direction="@title" data-type="@group.Key">
+                <p class="rei-group-h"><strong>@CorrelationPresentation.RelationLabel(group.Key)</strong> <span class="rei-muted">@ordered.Count(r => r.Counts) established · @ordered.Count(r => !r.Counts) candidate or not counted</span></p>
+                <ul class="rei-list">
+                    @foreach (var r in shown)
+                    {
+                        var other = outgoing ? r.Target : r.Source;
+                        var (status, label, explanation) = CorrelationPresentation.Status(r);
+                        <li data-testid="@($"{TestId}-relation")" data-counts="@(r.Counts ? "true" : "false")">
+                            <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(other.Type)" /> <span title="@other.IdentityKey">@other.DisplayName</span>
+                            <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@explanation" />
+                        </li>
+                    }
+                </ul>
+                @if (ordered.Count > RelationPreview)
+                {
+                    <button type="button" class="btn-link rei-toggle" aria-expanded="@(_expanded.Contains(key) ? "true" : "false")" @onclick="() => ToggleGroup(key)">
+                        @(_expanded.Contains(key) ? "Show fewer" : $"Show all {ordered.Count}")</button>
+                }
+            </div>
+        }
+    };
+
+    private void ToggleGroup(string key) { if (!_expanded.Remove(key)) _expanded.Add(key); }
+
+    private async Task ToggleImpactAsync()
+    {
+        if (_impact is not null || _detail is null) { _impact = null; return; }
+        _impact = await Api.ImpactAsync(Scope, _detail.Entity.Key);
+    }
+
+    private async Task CopyAsync()
+    {
+        if (_detail is null || Js is null) return;
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _detail.Entity.IdentityKey); _copied = true; }
+        catch (Exception e) when (e is Microsoft.JSInterop.JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+
+    [Inject] private Microsoft.JSInterop.IJSRuntime? Js { get; set; }
+
+    private static string Short(string id) => id.Length > 8 ? id[..8] : id;
+
+    public void Dispose() => _loads.Dispose();
+}

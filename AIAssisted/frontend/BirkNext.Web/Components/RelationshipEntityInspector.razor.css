@@ -1,0 +1,18 @@
+.rei { display: grid; gap: .35rem; min-width: 0; font-size: .88rem; }
+.rei-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.rei-name { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.rei-identity { margin: 0; display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.rei-identity code { overflow-wrap: anywhere; font-size: .78rem; }
+.rei-copy { font-size: .8rem; }
+.rei-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .3rem .8rem; margin: 0; }
+.rei-facts dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; color: var(--clr-text-muted, #64748b); }
+.rei-facts dd { margin: 0; overflow-wrap: anywhere; }
+.rei-h { margin: .4rem 0 .1rem; font-size: .86rem; }
+.rei-list { margin: 0; padding-left: 1rem; display: grid; gap: .2rem; }
+.rei-list li { overflow-wrap: anywhere; }
+.rei-group { margin: .2rem 0 .4rem; }
+.rei-group-h { margin: 0 0 .15rem; font-size: .84rem; }
+.rei-muted { color: var(--clr-text-muted, #64748b); font-size: .8rem; }
+.rei-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem; }
+.rei-more > summary { cursor: pointer; font-weight: 600; font-size: .84rem; }
+.rei-toggle { font-size: .8rem; }

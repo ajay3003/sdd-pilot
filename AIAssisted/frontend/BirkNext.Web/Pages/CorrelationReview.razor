@@ -231,105 +231,159 @@
         <section class="cr-card" aria-labelledby="cr-queue-h" data-testid="cr-queue">
             <h2 id="cr-queue-h">Needs review <span class="cr-count" data-testid="cr-decision-count">@(_queue?.Decisions ?? 0) decision@(_queue?.Decisions == 1 ? "" : "s")</span></h2>
             <p class="cr-muted">One shared queue for every surface: a question answered here is answered for Delivery, Traceability, Topology, IQR, AQR and Project Evidence.
-                <strong>Required decisions</strong> are identity conflicts, ambiguities, decisions to recheck and story references — they block or change an interpretation.
-                <strong>Optional suggestions</strong> are low-confidence proposals (for example a requirement id only mentioned near a test); nothing counts them until confirmed.</p>
-            <div class="cr-tabs" role="tablist" aria-label="Review items">
-                <button type="button" role="tab" class="cr-tab @(_kind == ReviewItemKind.Decision ? "is-active" : "")" aria-selected="@(_kind == ReviewItemKind.Decision ? "true" : "false")"
-                        data-testid="cr-kind-decisions" @onclick="() => KindAsync(ReviewItemKind.Decision)">Required decisions (@(_queue?.Decisions ?? 0))</button>
-                <button type="button" role="tab" class="cr-tab @(_kind == ReviewItemKind.Suggestion ? "is-active" : "")" aria-selected="@(_kind == ReviewItemKind.Suggestion ? "true" : "false")"
-                        data-testid="cr-kind-suggestions" @onclick="() => KindAsync(ReviewItemKind.Suggestion)">Optional suggestions (@(_queue?.Suggestions ?? 0))</button>
-            </div>
-            @if (_queue is { } counts && (_kind == ReviewItemKind.Decision ? counts.DecisionsByType : counts.SuggestionsByType) is { Count: > 0 } byType)
-            {
-                <label class="cr-filter">Type
-                    <select @onchange="e => FilterAsync((string?)e.Value)" data-testid="cr-type-filter">
-                        <option value="">All types</option>
-                        @foreach (var (t, n) in byType) { <option value="@t" selected="@(t == _type)">@CanonicalReviewQueue.Label(t) (@n)</option> }
+                <strong>Required decisions</strong> block or change an interpretation; <strong>optional suggestions</strong> count nowhere until confirmed.</p>
+            <div class="cr-queue-tools">
+                <div class="cr-tabs" role="tablist" aria-label="Review items">
+                    <button type="button" role="tab" class="cr-tab @(_kind == ReviewItemKind.Decision ? "is-active" : "")" aria-selected="@(_kind == ReviewItemKind.Decision ? "true" : "false")"
+                            data-testid="cr-kind-decisions" @onclick="() => KindAsync(ReviewItemKind.Decision)">Required decisions (@(_queue?.Decisions ?? 0))</button>
+                    <button type="button" role="tab" class="cr-tab @(_kind == ReviewItemKind.Suggestion ? "is-active" : "")" aria-selected="@(_kind == ReviewItemKind.Suggestion ? "true" : "false")"
+                            data-testid="cr-kind-suggestions" @onclick="() => KindAsync(ReviewItemKind.Suggestion)">Optional suggestions (@(_queue?.Suggestions ?? 0))</button>
+                </div>
+                @if (_queue is { } counts && (_kind == ReviewItemKind.Decision ? counts.DecisionsByType : counts.SuggestionsByType) is { Count: > 0 } byType)
+                {
+                    <label class="cr-filter">Type
+                        <select @onchange="e => FilterAsync((string?)e.Value)" data-testid="cr-type-filter">
+                            <option value="">All types</option>
+                            @foreach (var (t, n) in byType) { <option value="@t" selected="@(t == _type)">@CorrelationQueueGroups.TypeOption(t, n)</option> }
+                        </select>
+                    </label>
+                }
+                <label class="cr-filter">Group by
+                    <select value="@_groupBy" @onchange="e => _groupBy = e.Value?.ToString() ?? CorrelationQueueGroups.ByType" data-testid="cr-group-by">
+                        <option value="@CorrelationQueueGroups.ByType">Review type</option>
+                        <option value="@CorrelationQueueGroups.BySource">Source entity</option>
+                        <option value="@CorrelationQueueGroups.ByTarget">Target entity</option>
                     </select>
                 </label>
-            }
-            @if (_queueLoading) { <InlineLoading Text="Loading the review queue…" Class="cr-muted" /> }
-            else if (_queueError is not null) { <p class="cr-error" role="alert">Shared review queue unavailable: @_queueError <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadQueueAsync">Retry</button></p> }
+            </div>
+            @if (_queueLoading && _queue is null) { <InlineLoading Text="Loading the review queue…" Class="cr-muted" /> }
+            else if (_queueError is not null) { <LoadError Title="Shared review queue unavailable" Message="@_queueError" OnRetry="LoadQueueAsync" TestId="cr-queue-error" /> }
             else if (_queue is { Page.Items.Count: 0 }) { <p class="cr-muted" data-testid="cr-queue-empty">@(!Analyzed ? "Not analyzed — analyze relationships on the Overview tab to find what needs review." : _kind == ReviewItemKind.Decision ? "Nothing waits for a decision." : "No suggestions.")</p> }
             else if (_queue is { } queue)
             {
                 var q = queue.Page;
-                <ul class="cr-relations">
-                    @foreach (var item in q.Items)
-                    {
-                        <li class="cr-relation" data-testid="cr-queue-item" data-rule="@item.RuleId" data-type="@item.Type">
-                            <div class="cr-rel-line">
-                                <MetaBadge Kind="BadgeKind.Type" Text="@CanonicalReviewQueue.Label(item.Type)" TestId="cr-item-type" />
-                                @if (item.Relation is { } r)
-                                {
-                                    <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(r.Source.Type)" /> <span>@r.Source.DisplayName</span>
-                                    <span class="cr-verb">@CorrelationPresentation.RelationLabel(r.Type)</span>
-                                    <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(r.Target.Type)" /> <span>@r.Target.DisplayName</span>
-                                }
-                                else if (item.Subject is { } subject) { <span>@subject.DisplayName</span> }
-                            </div>
-                            <div class="cr-rel-line">
-                                @if (item.Relation is { } rel)
-                                {
-                                    var (status, label, explanation) = CorrelationPresentation.Status(rel);
-                                    <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@explanation" />
-                                }
-                                else
-                                {
-                                    <SemanticStatusBadge Status="@(item.Kind == ReviewItemKind.Decision ? SemanticStatus.NeedsReview : SemanticStatus.Inferred)" QualifiedLabel="@item.State" />
-                                }
-                                <span class="cr-muted">@item.Reason</span>
-                            </div>
-                            @if (item.AffectedConsumers.Count > 0) { <p class="cr-muted cr-affects" data-testid="cr-affects">Affects: @string.Join(" · ", item.AffectedConsumers)</p> }
-                            @if (item.Relation is { Evidence.Count: > 0 } withEvidence)
-                            {
-                                <details class="cr-evidence"><summary>Why linked · evidence (@withEvidence.Evidence.Count)</summary>
-                                    <ul>@foreach (var e in withEvidence.Evidence.Take(10)) { <li><code>@e.Kind</code> @e.Reference @(e.Detail is null ? "" : $"· {e.Detail}")</li> }</ul>
-                                    <p class="cr-muted">Rule @item.RuleId@(item.RuleSetVersion is null ? "" : $" · {item.RuleSetVersion}")</p>
-                                </details>
-                            }
-                            @if (item.Candidates is { Count: > 1 } alternatives)
-                            {
-                                <ul class="cr-candidates" aria-label="Alternatives" data-testid="cr-candidates">
-                                    @foreach (var c in alternatives)
+                var selected = SelectedItem(q.Items);
+                @* The queue as a compact, grouped list beside one inspector: the selected question with all its evidence and the focused decision. *@
+                <div class="cr-review" data-testid="cr-review" aria-busy="@(_queueLoading ? "true" : "false")">
+                    <div class="cr-review-list">
+                        @foreach (var group in CorrelationQueueGroups.Group(q.Items, _groupBy))
+                        {
+                            <div class="cr-group" data-testid="cr-group" data-group="@group.Key">
+                                <p class="cr-group-h"><strong>@group.Label</strong> <span class="cr-muted">@group.Items.Count</span></p>
+                                <ul class="cr-items" aria-label="@group.Label">
+                                    @foreach (var item in group.Items)
                                     {
-                                        <li><span>@c.Target.DisplayName</span> <span class="cr-muted">@c.Target.SourceIdentity</span>
-                                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" data-testid="cr-choose" @onclick="() => ChooseAsync(c)">Choose this</button></li>
+                                        var current = item;
+                                        var isSelected = selected?.ReviewItemId == item.ReviewItemId;
+                                        <li class="cr-item @(isSelected ? "is-selected" : "")" data-testid="cr-queue-item" data-rule="@item.RuleId" data-type="@item.Type" data-selected="@(isSelected ? "true" : "false")">
+                                            <button type="button" class="cr-item-btn" aria-pressed="@(isSelected ? "true" : "false")" data-testid="cr-item-open" @onclick="() => _selectedItem = current.ReviewItemId">
+                                                <span class="cr-item-line">
+                                                    <MetaBadge Kind="BadgeKind.Type" Text="@CanonicalReviewQueue.Label(item.Type)" TestId="cr-item-type" />
+                                                    @if (item.Relation is { } r) { <span class="cr-item-title">@r.Source.DisplayName <span class="cr-verb">@CorrelationPresentation.RelationLabel(r.Type)</span> @r.Target.DisplayName</span> }
+                                                    else if (item.Subject is { } subject) { <span class="cr-item-title">@subject.DisplayName</span> }
+                                                </span>
+                                                <span class="cr-muted cr-item-reason">@item.Reason</span>
+                                                @if (item.AffectedConsumers.Count > 0) { <span class="cr-muted cr-small" data-testid="cr-affects">Affects @item.AffectedConsumers.Count consumer@(item.AffectedConsumers.Count == 1 ? "" : "s")</span> }
+                                            </button>
+                                        </li>
                                     }
                                 </ul>
-                                <div class="cr-actions">
-                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" data-testid="cr-none" @onclick="() => RejectAllAsync(alternatives)">None of these</button>
-                                </div>
-                            }
-                            else if (item.TargetKey is null)
-                            {
-                                <p class="cr-muted" data-testid="cr-resolve-in-source">@item.Resolution</p>
-                            }
-                            else if (item.Type == ReviewItemType.IdentityConflict && item.Relation is { } conflict)
-                            {
-                                @IdentityConflict(item, conflict)
-                            }
-                            else
-                            {
-                                <div class="cr-actions">
-                                    <input class="form-control form-control-sm" placeholder="Note (optional)" value="@_notes.GetValueOrDefault(item.ReviewItemId)" @onchange="e => _notes[item.ReviewItemId] = (string?)e.Value" aria-label="Review note" />
-                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Confirmed)" data-testid="cr-confirm">Confirm</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Rejected)" data-testid="cr-reject">Reject</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Deferred)" data-testid="cr-defer">Defer</button>
-                                </div>
-                            }
-                        </li>
-                    }
-                </ul>
-                <div class="cr-pager">
-                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(q.Skip == 0)" @onclick="() => PageAsync(-1)">Previous</button>
-                    <span class="cr-muted">@(q.Skip + 1)–@(q.Skip + q.Items.Count) of @q.Total</span>
-                    <button type="button" class="btn btn-secondary btn-sm" disabled="@(q.Skip + q.Items.Count >= q.Total)" @onclick="() => PageAsync(1)">Next</button>
+                            </div>
+                        }
+                        <div class="cr-pager">
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@(q.Skip == 0 || _queueLoading)" @onclick="() => PageAsync(-1)">Previous</button>
+                            <span class="cr-muted">@(q.Skip + 1)–@(q.Skip + q.Items.Count) of @q.Total</span>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@(q.Skip + q.Items.Count >= q.Total || _queueLoading)" @onclick="() => PageAsync(1)">Next</button>
+                        </div>
+                    </div>
+                    <div class="cr-inspector" aria-live="polite" data-testid="cr-inspector">
+                        @if (selected is { } chosen) { @Inspector(chosen) }
+                    </div>
                 </div>
             }
             @if (_decisionError is not null) { <p class="cr-error" role="alert">@_decisionError</p> }
         </section>
     };
+
+    /// <summary>The selected review question: both sides, status, reason, every piece of evidence with its rule, who is affected, then the decision.</summary>
+    private RenderFragment Inspector(ReviewItemView item) => __builder =>
+    {
+        <article class="cr-inspect" data-testid="cr-inspect" data-item="@item.ReviewItemId">
+            <header class="cr-inspect-head">
+                <MetaBadge Kind="BadgeKind.Type" Text="@CanonicalReviewQueue.Label(item.Type)" />
+                @if (item.Relation is { } rel)
+                {
+                    var (status, label, explanation) = CorrelationPresentation.Status(rel);
+                    <SemanticStatusBadge Status="status" QualifiedLabel="@label" Explanation="@explanation" />
+                }
+                else
+                {
+                    <SemanticStatusBadge Status="@(item.Kind == ReviewItemKind.Decision ? SemanticStatus.NeedsReview : SemanticStatus.Inferred)" QualifiedLabel="@item.State" />
+                }
+            </header>
+            @if (item.Relation is { } r)
+            {
+                <div class="cr-inspect-sides">
+                    @foreach (var (role, side) in new[] { ("Source", r.Source), ("Target", r.Target) })
+                    {
+                        <div class="cr-inspect-side" data-testid="cr-inspect-side">
+                            <span class="cr-muted cr-small">@role</span>
+                            <span><MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(side.Type)" /> <strong>@side.DisplayName</strong></span>
+                            <code class="cr-small" title="Canonical identity">@side.IdentityKey</code>
+                        </div>
+                    }
+                </div>
+                <p class="cr-inspect-verb"><span class="cr-verb">@CorrelationPresentation.RelationLabel(r.Type)</span>@(string.Equals(r.Explanation, item.Reason, StringComparison.Ordinal) ? "" : $" · {r.Explanation}")</p>
+            }
+            else if (item.Subject is { } subject) { <p><strong>@subject.DisplayName</strong> <code class="cr-small">@subject.IdentityKey</code></p> }
+            <p data-testid="cr-inspect-reason">@item.Reason</p>
+            @if (item.AffectedConsumers.Count > 0) { <p class="cr-muted" data-testid="cr-inspect-affects">Affects: @string.Join(" · ", item.AffectedConsumers)</p> }
+            @if (item.Relation is { Evidence.Count: > 0 } withEvidence)
+            {
+                <details class="cr-evidence" open data-testid="cr-inspect-evidence"><summary>Why linked · evidence (@withEvidence.Evidence.Count)</summary>
+                    <ul>@foreach (var e in withEvidence.Evidence.Take(15)) { <li><code>@e.Kind</code> @e.Reference @(e.Detail is null ? "" : $"· {e.Detail}")</li> }</ul>
+                    <p class="cr-muted">Rule @item.RuleId@(item.RuleSetVersion is null ? "" : $" · {item.RuleSetVersion}")</p>
+                </details>
+            }
+            @if (item.Candidates is { Count: > 1 } alternatives)
+            {
+                <ul class="cr-candidates" aria-label="Alternatives" data-testid="cr-candidates">
+                    @foreach (var c in alternatives)
+                    {
+                        <li><span>@c.Target.DisplayName</span> <span class="cr-muted">@c.Target.SourceIdentity</span>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" data-testid="cr-choose" @onclick="() => ChooseAsync(c)">Choose this</button></li>
+                    }
+                </ul>
+                <div class="cr-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" data-testid="cr-none" @onclick="() => RejectAllAsync(alternatives)">None of these</button>
+                </div>
+            }
+            else if (item.TargetKey is null)
+            {
+                <p class="cr-muted" data-testid="cr-resolve-in-source">@item.Resolution</p>
+            }
+            else if (item.Type == ReviewItemType.IdentityConflict && item.Relation is { } conflict)
+            {
+                @IdentityConflict(item, conflict)
+            }
+            else
+            {
+                <div class="cr-actions">
+                    <input class="form-control form-control-sm" placeholder="Note (optional)" value="@_notes.GetValueOrDefault(item.ReviewItemId)" @onchange="e => _notes[item.ReviewItemId] = (string?)e.Value" aria-label="Review note" />
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Confirmed)" data-testid="cr-confirm">Confirm</button>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Rejected)" data-testid="cr-reject">Reject</button>
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_saving" @onclick="() => DecideAsync(item, ReviewDecisionOutcome.Deferred)" data-testid="cr-defer">Defer</button>
+                </div>
+            }
+        </article>
+    };
+
+    /// <summary>The selected item on this page; the first when none is selected or the selection was decided (the next question comes up).</summary>
+    private ReviewItemView? SelectedItem(IReadOnlyList<ReviewItemView> items) =>
+        items.FirstOrDefault(i => i.ReviewItemId == _selectedItem) ?? items.FirstOrDefault();
+
+    private string? _selectedItem;
+    private string _groupBy = CorrelationQueueGroups.ByType;
 
     private RenderFragment ExploreSection() => __builder =>
     {
@@ -358,7 +412,7 @@
                 </form>
                 @if (_exploreSearch is not null)
                 {
-                    <CanonicalCorrelationPanel Scope="@_scope" Title="Matching entities and their relationships" Search="@_exploreSearch" EntityType="@ExploreType" MaxEntities="5" TestId="cr-explore-panel" />
+                    <RelationshipExplorer Scope="@(_scope!)" Search="@_exploreSearch" EntityType="@ExploreType" TestId="cr-explorer" />
                 }
             }
         </section>
@@ -439,6 +493,11 @@
                         @if (!string.IsNullOrWhiteSpace(side.SourceIdentity)) { <span class="cr-muted cr-small">@side.SourceIdentity</span> }
                     </div>
                 }
+            </div>
+            @* Source evidence for a human decision: each entity's declared identity, aliases (and who declared them) and occurrences, side by side. *@
+            <div class="cr-conflict-evidence" data-testid="cr-conflict-evidence">
+                <RelationshipEntityInspector Scope="@(_scope!)" EntityId="conflict.Source.Id" Compact="true" TestId="cr-conflict-source" />
+                <RelationshipEntityInspector Scope="@(_scope!)" EntityId="conflict.Target.Id" Compact="true" TestId="cr-conflict-target" />
             </div>
             <ul class="cr-conflict-options cr-small">
                 <li><strong>Same entity</strong> — the alias is valid; both names mean one thing. Consumers merge them.</li>

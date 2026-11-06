@@ -1,0 +1,106 @@
+@using BirkNext.Interpretation
+@using BirkNext.Web.Models
+@inject ICanonicalInterpretationApiService Api
+@implements IDisposable
+
+@* Relationship explorer for large graphs (thousands of entities): a searchable, server-paged entity list (readable name, type, declared identity)
+   beside the inspector of the selected entity. Nothing renders the whole graph; the list loads 25 at a time and the inspector one entity. Arrow keys
+   move the selection; the full identity is in the inspector with Copy. *@
+<div class="rex" data-testid="@TestId">
+    <div class="rex-list" role="region" aria-label="Matching entities">
+        @if (_loads.IsLoading && _items.Count == 0)
+        {
+            <InlineLoading Text="Searching entities…" TestId="@($"{TestId}-loading")" />
+        }
+        else if (_error is { } error)
+        {
+            <LoadError Title="Entities could not be listed" Message="@error" OnRetry="() => LoadAsync(reset: true)" TestId="@($"{TestId}-error")" />
+        }
+        else if (_items.Count == 0)
+        {
+            <p class="rex-muted" data-testid="@($"{TestId}-empty")">No entity matches@(string.IsNullOrWhiteSpace(Search) ? "" : $" “{Search}”"). Search by name or identity, or choose another type.</p>
+        }
+        else
+        {
+            <p class="rex-muted" role="status" data-testid="@($"{TestId}-count")">@_items.Count of @_total entit@(_total == 1 ? "y" : "ies")</p>
+            <ul class="rex-items" role="listbox" aria-label="Entities" tabindex="0" aria-activedescendant="@(_selected is { } a ? $"rex-{a:N}" : null)" @onkeydown="Key" data-testid="@($"{TestId}-items")">
+                @foreach (var e in _items)
+                {
+                    var entity = e;
+                    <li id="@($"rex-{entity.Id:N}")" role="option" aria-selected="@(_selected == entity.Id ? "true" : "false")" class="rex-item @(_selected == entity.Id ? "is-selected" : "")"
+                        data-testid="@($"{TestId}-item")" data-entity="@entity.Id" @onclick="() => _selected = entity.Id">
+                        <MetaBadge Kind="BadgeKind.Type" Text="@CorrelationPresentation.TypeLabel(entity.Type)" />
+                        <span class="rex-name">@entity.DisplayName</span>
+                        @if (!string.IsNullOrWhiteSpace(entity.SourceIdentity) && entity.SourceIdentity != entity.DisplayName) { <span class="rex-muted rex-sub">@entity.SourceIdentity</span> }
+                    </li>
+                }
+            </ul>
+            @if (_items.Count < _total)
+            {
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@_loads.IsLoading" aria-busy="@(_loads.IsLoading ? "true" : "false")" data-testid="@($"{TestId}-more")" @onclick="() => LoadAsync(reset: false)">
+                    @if (_loads.IsLoading) { <span class="loading-spinner" aria-hidden="true"></span> }Load @Math.Min(PageSize, _total - _items.Count) more</button>
+            }
+        }
+    </div>
+    <div class="rex-inspector" aria-live="polite">
+        @if (_selected is { } id)
+        {
+            <RelationshipEntityInspector Scope="@Scope" EntityId="id" TestId="@($"{TestId}-inspector")" />
+        }
+        else if (_items.Count > 0)
+        {
+            <p class="rex-muted" data-testid="@($"{TestId}-inspector-empty")">Select an entity to see its source evidence and relationships.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Scope { get; set; } = "";
+    [Parameter] public string? Search { get; set; }
+    [Parameter] public CanonicalEntityType? EntityType { get; set; }
+    [Parameter] public string TestId { get; set; } = "rex";
+
+    private const int PageSize = 25;
+    private readonly LoadSequence _loads = new();
+    private readonly List<CanonicalEntityView> _items = [];
+    private int _total;
+    private Guid? _selected;
+    private string? _error;
+    private (string? Search, CanonicalEntityType? Type)? _for;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_for == (Search, EntityType)) return;
+        _for = (Search, EntityType);
+        await LoadAsync(reset: true);
+    }
+
+    /// <summary>One page of matching entities (server-side search); a newer search makes an older response stale.</summary>
+    private async Task LoadAsync(bool reset)
+    {
+        var load = _loads.Begin();
+        _error = null;
+        if (reset) { _items.Clear(); _total = 0; _selected = null; }
+        try
+        {
+            var (page, error) = await Api.EntitiesAsync(Scope, EntityType, string.IsNullOrWhiteSpace(Search) ? null : Search, _items.Count, PageSize, load.Token);
+            if (!load.IsCurrent) return;
+            if (page is null) { _error = error ?? "The search failed."; return; }
+            _items.AddRange(page.Items.Where(i => _items.All(x => x.Id != i.Id)));
+            _total = page.Total;
+            _selected ??= _items.FirstOrDefault()?.Id;
+        }
+        catch (OperationCanceledException) { }
+        finally { _loads.End(load); }
+    }
+
+    private void Key(KeyboardEventArgs e)
+    {
+        if (_items.Count == 0) return;
+        var at = _selected is { } id ? _items.FindIndex(i => i.Id == id) : -1;
+        var next = e.Key switch { "ArrowDown" => Math.Min(_items.Count - 1, at + 1), "ArrowUp" => Math.Max(0, at - 1), "Home" => 0, "End" => _items.Count - 1, _ => at };
+        if (next >= 0) _selected = _items[next].Id;
+    }
+
+    public void Dispose() => _loads.Dispose();
+}

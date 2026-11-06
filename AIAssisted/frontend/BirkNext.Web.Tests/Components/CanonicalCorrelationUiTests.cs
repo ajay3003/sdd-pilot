@@ -165,10 +165,12 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-queue-item]").Should().ContainSingle());
         cut.Find("[data-testid=cr-tab-review]").TextContent.Should().Be("Needs Review (1)");
         cut.Find("[data-testid=cr-queue-item]").GetAttribute("data-rule").Should().Be(CorrelationRules.TestScopeAmbiguityRule);
-        cut.Find("[data-testid=cr-queue-item] .ssb-label").TextContent.Should().Be("Ambiguous");
+        cut.Find("[data-testid=cr-queue-item]").GetAttribute("data-selected").Should().Be("true", "the first question is open in the inspector");
+        cut.Find("[data-testid=cr-inspect] .ssb-label").TextContent.Should().Be("Ambiguous");
         cut.Find("[data-testid=cr-decision-count]").TextContent.Should().Be("1 decision");
         cut.Find("[data-testid=cr-kind-suggestions]").TextContent.Should().Contain("1361");
-        cut.Find("[data-testid=cr-affects]").TextContent.Should().Contain("Traceability").And.Contain("Test Coverage");
+        cut.Find("[data-testid=cr-affects]").TextContent.Should().StartWith("Affects ");
+        cut.Find("[data-testid=cr-inspect-affects]").TextContent.Should().Contain("Traceability").And.Contain("Test Coverage");
 
         cut.Find("[data-testid=cr-tab-history]").Click();
         cut.WaitForAssertion(() => api.Verify(a => a.GovernanceAsync("dev", GateAction.ReleaseReadiness, null, It.IsAny<CancellationToken>()), Times.Once(),
@@ -178,7 +180,7 @@ public sealed class CanonicalCorrelationUiTests : BunitContext
         cut.Find("[data-testid=cr-tab-relationships]").Click();
         cut.Find("[data-testid=cr-explore-text]").Change("MU");
         cut.Find("[data-testid=cr-explore-run]").Click();
-        cut.WaitForAssertion(() => api.Verify(a => a.EntitiesAsync("dev", It.IsAny<CanonicalEntityType?>(), "MU", 0, 5, It.IsAny<CancellationToken>()), Times.Once()));
+        cut.WaitForAssertion(() => api.Verify(a => a.EntitiesAsync("dev", It.IsAny<CanonicalEntityType?>(), "MU", 0, 25, It.IsAny<CancellationToken>()), Times.Once(), "the explorer reads one page of 25 entities"));
         api.Verify(a => a.EntitiesAsync(It.Is<string>(s => s != "dev"), It.IsAny<CanonicalEntityType?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
