@@ -1,0 +1,43 @@
+﻿# BirkNext Independent Audit â€” Gap Register
+
+This is the central register. Items explicitly labeled **coverage limitation** or **unverified risk** are not confirmed product defects. No source change is proposed as part of this audit.
+
+| ID | Classification | Priority | Category / module | Evidence and observed state | Impact / confidence | Recommended correction / verification |
+|---|---|---:|---|---|---|---|
+| BQA-001 | UNVERIFIED HYPOTHESIS | P2 pending verification | Security / API host binding | Startup collects configuration key `urls` and `Kestrel:Endpoints:*:Url` before calling `LoopbackBinding.Violations`; `LoopbackBinding` validates URL hostnames/IPs. No explicit inspection of alternative host port configuration keys appears in this code path. [Program.cs:84â€“94](../../AIAssisted/backend/BirkNext.Api/Program.cs), [LocalRequestGuard.cs:97â€“113](../../AIAssisted/backend/BirkNext.Api/Services/LocalSecurity/LocalRequestGuard.cs) | It is unknown from this repo-only inspection whether any supported launch path can activate a wildcard listener through another host setting without populating the checked keys. **Do not treat as an established bypass.** | Verify actual ASP.NET Core configuration precedence for every supported launch mode, add a source-level/configuration test for any alternate bind input, and perform a controlled local socket-address check when runtime testing is authorized. |
+| BQA-002 | PREVIOUSLY KNOWN â€” RESIDUAL ASSUMPTION | P2 | Security / local launch-code storage | `LocalSessionService` creates `App_Data/local-session`, reads/writes `launch-code.txt`, and does not set explicit Windows ACLs in the service. [LocalSessionService.cs:33â€“45, 109â€“126](../../AIAssisted/backend/BirkNext.Api/Services/LocalSecurity/LocalSessionService.cs) | The effective ACL is inherited from the install/content-root directory; whether another Windows account can read it depends on packaging and directory ACLs. The source documentation explicitly treats same-user processes as trusted. **Conditional risk, not confirmed exposure.** | Document supported install path/ACL assumptions; verify ACLs in the tester package and shared-install scenario. Avoid claiming other-user isolation until checked. |
+| BQA-003 | COVERAGE LIMITATION | Not a product severity | Verification / test execution | Existing Debug and Release test assemblies both produced â€œNo test matchesâ€ for `FullyQualifiedName~LocalSessionSecurityTests`; current source contains that class. [LocalSessionSecurityTests.cs:18â€“60](../../AIAssisted/backend/BirkNext.Api.Tests/Controllers/LocalSessionSecurityTests.cs) | Current security source has no test execution result from this audit. Confidence: confirmed limitation of the attempted run. | Rebuild and run the focused test project in a controlled memory budget, then run partitioned suites; preserve exact result logs outside the repository. |
+| BQA-004 | COVERAGE LIMITATION | Not a product severity | Quality / workflow integration | The audit inventoried 62 Razor route directives and 78 API controller files but did not trace every route through storage or execute every workflow. | Cross-module freshness, state persistence, all error paths, UI actions and project/environment scope remain partly unverified. | Use the cross-module matrix to select producer/consumer acceptance scenarios; identify owners and evidence versions for each. |
+| BQA-005 | COVERAGE LIMITATION | Not a product severity | UX/accessibility | No browser session, visual inspection, keyboard-only walkthrough or screen-reader check was run. The source inventory alone cannot establish the experience. | Layout overflow, focus behavior, responsive behavior and user comprehension remain runtime/visual unknowns. | Run a controlled local UX/accessibility review after the source/test baseline is stable. |
+| BQA-006 | AUDIT BASELINE TRANSITION | Not a product severity | Audit scope / concurrent commits | Initial status showed modified Security Classification files and untracked Manual Review files; later commits from work outside this audit moved the branch to `546584f1`. `appsettings.Local.json` and `testdata/` remained excluded. | The resulting commits were not exhaustively reviewed during this audit; source/test conclusions about those feature changes remain unverified. | Re-audit the committed changes as needed against the final feature acceptance criteria. |
+| BQA-007 | PREVIOUSLY REPORTED â€” SOURCE STATE NOW ADDRESSES | No open severity assigned | Project Import / idempotency | Current code serializes a staged commit and reuses the same current snapshot for identical archive content; focused test source covers duplicate archive and new-version history. [ProjectImportService.cs:95â€“105, 127â€“143](../../AIAssisted/backend/BirkNext.Api/Services/ProjectImport/ProjectImportService.cs), [ProjectImportServiceTests.cs:212â€“240](../../AIAssisted/backend/BirkNext.Api.Tests/ProjectImport/ProjectImportServiceTests.cs) | The previous open-item report is stale for this behavior in the current source. Test passage is **not verified in this audit**. | Run the focused tests and failure/retry cases against a controlled relational provider before closing operationally. |
+
+## Confirmed product defects
+
+None established in the bounded inspection. This is not a clean bill of health; the uninspected modules and unrun tests are explicitly listed as limitations.
+
+### BQA-008 — NEW ARCHITECTURAL RISK — P2 conditional — workspace owner identity
+
+`WorkspacePersistenceService` initializes `_currentUserId` to the literal `default-user`; `WorkspacePersistenceController.List` also explicitly calls `ListAsync("default-user")`. Evidence: `AIAssisted/backend/BirkNext.Api/Services/WorkspacePersistenceService.cs:10-16,120,465,739,853` and `AIAssisted/backend/BirkNext.Api/Controllers/WorkspacePersistenceController.cs:126-134`.
+
+This is compatible with a deliberately single-user local workspace. It does not isolate workspaces by authenticated Entra principal or local session. Cross-user exposure is conditional on shared/non-local deployment; none was runtime verified. If multi-user deployment is supported, derive owner identity from verified claims and enforce it on list/load/update/delete, then add two-principal isolation tests. Otherwise document single-user-only scope and keep shared mode unsupported. This is not included in the “confirmed product defects” count.
+
+The path scope is directly visible: `LoadAsync`, `RenameAsync`, and `DuplicateAsync` query only by `workspaceId` and deletion state; the controller exposes load, bootstrap, documents, rename, duplicate and delete actions without adding an owner predicate. Evidence: `WorkspacePersistenceService.cs:179-240`, `WorkspacePersistenceController.cs:72-124,151-220`. `List` uses the hard-coded default owner. This confirms missing per-principal scoping in this subsystem, while impact remains conditional on multi-principal use.
+
+## Previously catalogued open/scope items (not new findings here)
+
+The branch's `docs/hardening/gap-register-master-hardening-2026-11-06.md` labels MH-11 (traceability model does not support all requested candidate/derived/confirmed states), MH-14 (automatic authentication policy may select None for anonymous-capable operations), and MH-17/MH-19 (scoped-out FQR/topology UX work) as not implemented. This audit did not independently re-trace those requirements through current UI and service behavior, so they remain **previously catalogued, not reclassified**. MH-06/MH-23 are runtime/environment dependencies and remain runtime-unverified in that report.
+
+## Known architectural boundaries, not duplicated as new findings
+
+- Local session is an authentication boundary, not per-person identity, project ownership or a multi-user authorization model.
+- Historical source-analysis and canonical relationship authorities are distinct by design in prior reports; this audit did not find evidence sufficient to relabel that as a defect.
+- Historical M01, SkolenÃ¦rvÃ¦r, Traceability, Delivery and UI changes are not declared fixed solely because their reports say so.
+
+## Priority guidance
+
+1. Close BQA-001 through supported startup-mode verification before making a binding-safety claim.
+2. Close BQA-003 with current source-built focused security tests, then partitioned backend/frontend regression suites.
+3. Define cross-module tests for the high-impact evidence chain (import â†’ snapshot â†’ canonical relations â†’ readiness/report), tracked under BQA-004.
+4. Verify packaged launch-code ACL and browser UX/accessibility (BQA-002 and BQA-005).
+5. Reassess the changes included in the final concurrent commits (BQA-006) against their feature acceptance criteria.
