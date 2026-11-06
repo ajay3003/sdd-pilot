@@ -424,7 +424,7 @@
                     {
                         @* Defined · Configured · Executable: three separate facts, so a defined step never reads as runnable. *@
                         <span class="pss-dims" data-testid="pt-step-dims">
-                            @foreach (var (key, label, dim) in new[] { ("defined", "Defined", dims.Definition), ("configured", "Configured", dims.RuntimeValues), ("executable", "Executable", dims.Execution) })
+                            @foreach (var (key, label, dim) in new[] { ("defined", "Defined", dims.Definition), ("configured", "Configured", dims.RuntimeValues), ("executable", "Executable", ExecutableDimension(dims)) })
                             {
                                 <span class="pss-dim pss-dim-@dim.State.ToString().ToLowerInvariant()" data-testid="pt-step-dim" data-dim="@key" data-state="@dim.State" title="@dim.Text"><span aria-hidden="true">@Glyph(dim.State) </span>@label</span>
                             }
@@ -551,6 +551,13 @@
     }
 
     private void Toggle(HttpPerformanceStep s) => _expanded[s.Id] = !Expanded(s);
+
+    /// <summary>Executable only when defined and configured too (the same rule as the scenario status strip): an executable credential alone is not enough.</summary>
+    private static StepDimension ExecutableDimension(StepDimensions dims) =>
+        dims.Definition.State != StepDimensionState.Ready || dims.RuntimeValues.State is not (StepDimensionState.Ready or StepDimensionState.NotApplicable)
+            ? dims.Execution.State == StepDimensionState.Blocked ? dims.Execution
+                : new StepDimension(StepDimensionState.NeedsConfiguration, "Not executable until the step is defined and its runtime values are resolved")
+            : dims.Execution;
 
     /// <summary>The authentication part: what the evidence requires (observed or declared), what is effective (step override, scenario default or
     /// none) and whether execution can use it. An observed Bearer that nothing configures stays Missing — never "not required".</summary>

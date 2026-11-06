@@ -91,7 +91,7 @@ public static class PerformanceTestReviewDashboard
         if (IsProduction(environmentType))
             return new("Blocked", "✕", PtTone.Blocked, "Performance tests cannot run against Production.");
         if (isNew) return draftValid
-            ? new("Draft", "✎", PtTone.Attention, "Check readiness saves the draft as v1 automatically, then evaluates it.")
+            ? new("Draft", "✎", PtTone.Attention, "Check readiness asks to save the draft as v1, then evaluates that version.")
             : new("Draft · incomplete", "!", PtTone.Attention, "Complete the required fields before readiness.");
         if (dirty) return new("Unsaved changes", "✎", PtTone.Attention, "Save the changes as a new version to re-evaluate readiness.");
         if (readiness is null) return new("Unknown", "○", PtTone.Neutral, "Readiness could not be loaded.");
@@ -378,7 +378,7 @@ public static class PerformanceTestReviewDashboard
         if (page.Tone == PtTone.Running) return new("A performance test is running. Results appear when it finishes.", PtTone.Running, "run", "View run");
         if (page.Label == "Blocked") return new($"Execution blocked. {page.Reason}", PtTone.Blocked, "readiness", "View readiness");
         if (isNew) return draftValid
-            ? new("Check readiness. The prefilled draft is saved as v1 automatically first; nothing runs.", PtTone.Attention, "check-readiness", ActionLabel("check-readiness"))
+            ? new("Check readiness. You are asked to save the prefilled draft as v1 first; nothing runs.", PtTone.Attention, "check-readiness", ActionLabel("check-readiness"))
             : new("Complete the required fields of the definition before readiness.", PtTone.Attention, "scenario", ActionLabel("scenario"));
         if (dirty) return new($"You changed the saved definition. Save the changes as a new version to re-evaluate readiness (earlier runs keep their version).", PtTone.Attention, "save-version", ActionLabel("save-version"));
         if (readiness is { Ready: false })

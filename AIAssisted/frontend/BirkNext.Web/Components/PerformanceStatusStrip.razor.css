@@ -1,0 +1,7 @@
+.pss-strip { display: flex; flex-wrap: wrap; gap: .35rem .5rem; align-items: center; margin: .5rem 0 .75rem; }
+.pss-strip-chip { display: inline-flex; gap: .3rem; align-items: baseline; padding: .2rem .6rem; border-radius: 999px; font-size: .8rem; border: 1px solid currentColor; }
+.pss-strip-chip.is-ok { color: #166534; background: #f0fdf4; }
+.pss-strip-chip.is-open { color: #92400e; background: #fffbeb; }
+.pss-strip-issues { flex: 1 1 100%; font-size: .84rem; }
+.pss-strip-issues summary { cursor: pointer; font-weight: 600; color: #92400e; }
+.pss-strip-issues ul { margin: .25rem 0; padding-left: 1.1rem; overflow-wrap: anywhere; }

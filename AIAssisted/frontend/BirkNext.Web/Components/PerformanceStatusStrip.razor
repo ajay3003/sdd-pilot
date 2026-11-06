@@ -1,0 +1,29 @@
+@using BirkNext.Web.Services
+@* The scenario status on every Performance Test Review tab: steps defined, runtime values resolved, authentication resolved and steps executable —
+   one calculation (PerformanceScenarioStatusModel over the shared runtime rules), so Overview, Scenario, Readiness and Run never disagree. *@
+<section class="pss-strip" aria-label="Scenario status" data-testid="pt-status-strip" data-executable="@(Status.AllExecutable ? "true" : "false")">
+    @Chip("defined", "Defined", $"{Status.Defined} / {Status.Steps}", Status.Steps > 0 && Status.Defined == Status.Steps)
+    @Chip("values", "Runtime values", Status.ValuesTotal == 0 ? "None needed" : $"{Status.ValuesResolved} / {Status.ValuesTotal} resolved", Status.ValuesResolved == Status.ValuesTotal)
+    @Chip("auth", "Authentication", !Status.AuthEvidenceKnown ? "Not fully known" : Status.AuthRequired == 0 ? "None required" : Status.AuthMissing == 0 ? $"{Status.AuthRequired} required · configured" : $"{Status.AuthMissing} of {Status.AuthRequired} missing",
+        Status.AuthEvidenceKnown && Status.AuthMissing == 0)
+    @Chip("executable", "Executable", $"{Status.Executable} / {Status.Steps}", Status.AllExecutable)
+    @if (Status.Issues.Count > 0)
+    {
+        <details class="pss-strip-issues" data-testid="pt-status-issues">
+            <summary>@Status.Issues.Count issue@(Status.Issues.Count == 1 ? "" : "s") block execution</summary>
+            <ul>@foreach (var issue in Status.Issues.Take(12)) { <li>@issue</li> }</ul>
+            @if (OnOpenScenario.HasDelegate) { <button type="button" class="btn-link" data-testid="pt-status-open-scenario" @onclick="OnOpenScenario">Fix in Scenario</button> }
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PerformanceScenarioStatus Status { get; set; } = default!;
+    [Parameter] public EventCallback OnOpenScenario { get; set; }
+
+    private static RenderFragment Chip(string key, string label, string value, bool ok) => __builder =>
+    {
+        <span class="pss-strip-chip @(ok ? "is-ok" : "is-open")" data-testid="pt-status-chip" data-key="@key" data-ok="@(ok ? "true" : "false")">
+            <span aria-hidden="true">@(ok ? "✓" : "!") </span><strong>@label</strong> @value</span>
+    };
+}

@@ -117,7 +117,7 @@
             <section class="ptc-card ptc-card-readiness ptc-accent-@PageState.ToneClass" aria-labelledby="pt-card-ready-h" data-testid="pt-card-readiness">
                 <h2 id="pt-card-ready-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">✓</span>Test readiness</h2>
                 <p class="ptc-value" data-testid="pt-hero-readiness">@PageState.Label</p>
-                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null || _isNew || _dirty ? "Whether this definition can run safely. Check readiness evaluates it (a new draft is saved as v1 first)." : $"{readyCount} of {requiredCount} required readiness checks satisfied for this definition")</p>
+                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null || _isNew || _dirty ? "Whether this definition can run safely. Check readiness evaluates a saved version (you are asked to save a new draft as v1 first)." : $"{readyCount} of {requiredCount} required readiness checks satisfied for this definition")</p>
                 @if (PageState.Reason is { } why) { <p class="ptc-reason" data-testid="pt-readiness-reason">@why</p> }
                 <ul class="ptc-mini-checks">
                     @foreach (var c in groups.SelectMany(g => g.Checks.Select(c => (g.Name, c))).Where(x => x.Name != "Optional" || x.c.Key is "resources").Take(7))
@@ -158,11 +158,33 @@
             </dl>
             <div class="ptc-def-save">
                 <button type="button" class="@(_dirty && !_isNew ? "btn-primary" : "btn-secondary")" @onclick="SaveAsync" disabled="@((!_dirty && !_isNew) || _saving || _isNew && !DraftValid)" aria-describedby="pt-save-hint" data-testid="pt-save">@(_saving ? "Saving…" : _saveFailed ? "Retry save" : _isNew ? "Save definition" : "Save changes as new version")</button>
-                <span class="ptc-save-hint" id="pt-save-hint" data-testid="pt-save-hint">@(_saving ? "Saving the definition…" : _isNew ? DraftValid ? "Optional: Check readiness saves the draft as v1 automatically." : $"Required before readiness: {string.Join(", ", D.DraftIssues(_draft))}." : _dirty ? $"Unsaved changes to v{_draft.Version} — saving creates v{_draft.Version + 1}; earlier runs keep theirs." : $"Saved as v{_draft.Version}.")</span>
+                <span class="ptc-save-hint" id="pt-save-hint" data-testid="pt-save-hint">@(_saving ? "Saving the definition…" : _isNew ? DraftValid ? "Check readiness asks to save the draft as v1 first." : $"Required before readiness: {string.Join(", ", D.DraftIssues(_draft))}." : _dirty ? $"Unsaved changes to v{_draft.Version} — saving creates v{_draft.Version + 1}; earlier runs keep theirs." : $"Saved as v{_draft.Version}.")</span>
             </div>
             @if (_saveError is { } saveError) { <p class="ptc-save-error" role="alert" data-testid="pt-save-error">Not saved: @saveError Your changes are kept; retry when the cause is fixed.</p> }
         </section>
         @if (_message is { } message) { <p class="sd-reason" role="status" data-testid="pt-message">@message</p> }
+        @* Explicit versions: Draft → Saved vN → Readiness checked for vN → Ready to run. Nothing is saved or versioned without a click. *@
+        <ol class="ptc-version-flow" aria-label="Definition version workflow" data-testid="pt-version-flow">
+            @foreach (var (key, label, state) in VersionFlow)
+            {
+                <li class="ptc-flow-step is-@state" data-testid="pt-flow-step" data-step="@key" data-state="@state" aria-current="@(state == "current" ? "step" : null)">@label</li>
+            }
+        </ol>
+        @if (_saveFirstPrompt && _isNew)
+        {
+            <div class="ptc-save-first" role="alertdialog" aria-labelledby="pt-save-first-h" data-testid="pt-save-first">
+                <p id="pt-save-first-h"><strong>Readiness is checked on a saved version.</strong> Save this draft as v1 first? Nothing runs; the draft stays editable and later edits become v2.</p>
+                <button type="button" class="btn-primary" disabled="@_saving" data-testid="pt-save-and-check" @onclick="SaveAndCheckAsync">Save as v1 and check readiness</button>
+                <button type="button" class="btn-secondary" data-testid="pt-save-first-cancel" @onclick="() => _saveFirstPrompt = false">Not now</button>
+            </div>
+        }
+        @if (_dirty && !_isNew)
+        {
+            <p class="ptc-unsaved" role="status" data-testid="pt-unsaved-banner"><span aria-hidden="true">✎ </span><strong>Unsaved changes to v@(_draft.Version).</strong>
+                Readiness and runs use the saved v@(_draft.Version) until you save these changes as v@(_draft.Version + 1).
+                <button type="button" class="btn-link" disabled="@_saving" data-testid="pt-unsaved-save" @onclick="SaveAsync">Save as v@(_draft.Version + 1)</button></p>
+        }
+        <BirkNext.Web.Components.PerformanceStatusStrip Status="ScenarioStatus" OnOpenScenario="() => _tab = Tab.Scenario" />
 
         <nav class="ptc-tabs" aria-label="Performance test sections" data-testid="pt-tabs">
             @TabButton(Tab.Overview)
@@ -257,6 +279,26 @@
     private PerformanceTestDefinition _draft = new();
     private bool _isNew;
     private bool _dirty;
+    private bool _saveFirstPrompt, _saveConfirmed;
+
+    /// <summary>The draft is saved as v1 only after this explicit confirmation; then readiness is checked on that version.</summary>
+    private async Task SaveAndCheckAsync()
+    {
+        _saveConfirmed = true;
+        await CheckReadinessAsync();
+    }
+
+    private PerformanceScenarioStatus ScenarioStatus => PerformanceScenarioStatusModel.Of(_draft,
+        _testDataAssets.Count == 0 ? null : _testDataAssets.Select(a => a.Alias).ToHashSet(StringComparer.Ordinal), _historyLoaded && !_historyFailed ? ObservedAuthentication ?? new HashSet<string>() : null);
+
+    /// <summary>Draft → Saved vN → Readiness checked → Ready to run, each done / current / todo.</summary>
+    private IReadOnlyList<(string Key, string Label, string State)> VersionFlow =>
+    [
+        ("draft", _isNew ? "Draft (not saved)" : _dirty ? $"Unsaved changes to v{_draft.Version}" : "Draft", _isNew || _dirty ? "current" : "done"),
+        ("saved", _isNew ? "Saved as v1" : $"Saved as v{_draft.Version}", _isNew || _dirty ? "todo" : "done"),
+        ("readiness", "Readiness checked", _isNew || _dirty ? "todo" : _readiness is null ? "current" : "done"),
+        ("ready", "Ready to run", _isNew || _dirty || _readiness is null ? "todo" : _readiness.Ready ? "done" : "current"),
+    ];
     private PerformanceTestReadiness? _readiness;
     private List<PerformanceTestRun> _runs = [];
     private List<PerformanceBaseline> _baselines = [];
@@ -374,7 +416,7 @@
     }
 
     /// <summary>
-    /// Check readiness: a new, complete draft is saved as v1 first (no extra confirmation for first persistence), then the backend evaluates the
+    /// Check readiness: a new, complete draft is saved as v1 first — only after the explicit "Save as v1 and check readiness" — then the backend evaluates the
     /// saved version. Edits of a saved version are never versioned silently: they need "Save changes as new version". Nothing runs.
     /// </summary>
     private async Task CheckReadinessAsync()
@@ -382,6 +424,9 @@
         if (_isNew)
         {
             if (!DraftValid) { _message = $"Complete the definition first: {string.Join(", ", D.DraftIssues(_draft))}."; _tab = Tab.Scenario; return; }
+            // Saving creates v1: asked, never done silently by a readiness check.
+            if (!_saveConfirmed) { _saveFirstPrompt = true; _tab = Tab.Readiness; return; }
+            _saveConfirmed = _saveFirstPrompt = false;
             var saved = await SaveCoreAsync();
             if (saved is null) return;
             _message = $"Definition saved as v{saved.Version} before readiness evaluation.";
@@ -857,7 +902,7 @@
     {
         BirkNext.Integrations.JourneySetupStepKind.Target or BirkNext.Integrations.JourneySetupStepKind.Environment =>
             new("Open Target Environments", D.ActionHref(PerformanceReadinessActions.ConfigureTarget), "The target and environment come from the Target Environment; production is refused."),
-        BirkNext.Integrations.JourneySetupStepKind.Scenario => _isNew ? new("Check readiness", null, "The draft is saved as v1 automatically.", "check-readiness")
+        BirkNext.Integrations.JourneySetupStepKind.Scenario => _isNew ? new("Check readiness", null, "You are asked to save the draft as v1 first.", "check-readiness")
             : _dirty ? new("Save changes as new version", null, null, "save-version") : new("Edit scenario", null, null, PerformanceReadinessActions.EditScenario),
         BirkNext.Integrations.JourneySetupStepKind.ExecutionEngine or BirkNext.Integrations.JourneySetupStepKind.ContainerRuntime =>
             new("Open Performance Test Engines", D.ActionHref(PerformanceReadinessActions.OpenEngines), null),
@@ -1316,7 +1361,7 @@
         @if (_isNew || _dirty)
         {
             <p class="sd-muted" data-testid="pt-readiness-unsaved">@(_isNew
-                ? DraftValid ? "This draft is not saved yet. Check readiness saves it as v1 automatically; the backend then evaluates runtime, image, container network, corporate CA trust, limits and environment safety. Nothing runs."
+                ? DraftValid ? "This draft is not saved yet. Check readiness asks to save it as v1; the backend then evaluates runtime, image, container network, corporate CA trust, limits and environment safety. Nothing runs."
                     : $"Complete the definition first: {string.Join(", ", D.DraftIssues(_draft))}."
                 : $"You changed v{_draft.Version}. Readiness is evaluated on saved versions: save the changes as a new version (earlier runs keep theirs).")</p>
             <ul class="ptc-prechecks" data-testid="pt-prechecks">
@@ -1445,7 +1490,7 @@
                     <span class="ptc-empty-icon" aria-hidden="true">!</span>
                     <div><h3 data-testid="pt-run-blocked-title">@(_readiness is { Ready: false } && PageState.Label.StartsWith("Blocked — ") ? $"Run test — blocked by {PageState.Label["Blocked — ".Length..]}" : "Run test — not available yet")</h3>
                         <p data-testid="pt-run-disabled">@RunReason</p>
-                        <p>@(_isNew ? "Check readiness first — the draft is saved as v1 automatically." : _dirty ? "Save your changes as a new version first." : "Resolve the required items in Test readiness.")</p>
+                        <p>@(_isNew ? "Check readiness first — you are asked to save the draft as v1." : _dirty ? "Save your changes as a new version first." : "Resolve the required items in Test readiness.")</p>
                         <p><button type="button" class="btn-secondary" @onclick="() => PerformAction(RunBlockedAction)" data-testid="pt-run-go-readiness">@D.ActionLabel(RunBlockedAction ?? "readiness")</button></p></div>
                 </div>
             }

@@ -458,3 +458,13 @@
 .pt-unresolved ul { margin: 0; padding-left: 1.1rem; }
 .pt-auth { min-width: 0; overflow-wrap: anywhere; }
 .pt-auth-actions .btn-secondary { white-space: normal; max-width: 100%; }
+
+/* NEXT55 follow-up: explicit version flow, unsaved banner, save-first prompt */
+.ptc-version-flow { list-style: none; margin: .5rem 0; padding: 0; display: flex; flex-wrap: wrap; gap: .3rem; }
+.ptc-flow-step { padding: .2rem .65rem; border-radius: 999px; border: 1px solid var(--clr-border, #cbd5e1); font-size: .8rem; color: var(--clr-text-muted, #475569); }
+.ptc-flow-step.is-done { border-color: #15803d; color: #166534; }
+.ptc-flow-step.is-done::before { content: "✓ "; }
+.ptc-flow-step.is-current { border-color: var(--clr-link, #1d4ed8); color: var(--clr-link, #1d4ed8); font-weight: 700; }
+.ptc-unsaved { margin: .4rem 0; padding: .45rem .7rem; border-radius: 6px; border: 1px solid rgba(180, 83, 9, .4); background: rgba(217, 119, 6, .08); font-size: .88rem; }
+.ptc-save-first { margin: .5rem 0; padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--clr-link, #1d4ed8); background: rgba(29, 78, 216, .05); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.ptc-save-first p { margin: 0; flex: 1 1 20rem; }

@@ -477,4 +477,13 @@ public sealed class PerformanceScenarioStepsTests : BunitContext
         cut.FindAll("[data-testid=pt-step]")[0].QuerySelector("[data-testid=pt-step-dim][data-dim=defined]")!.GetAttribute("data-state").Should().Be("Ready");
         cut.FindAll("[data-testid=pt-step]")[0].QuerySelector("[data-testid=pt-step-dim][data-dim=executable]")!.GetAttribute("data-state").Should().NotBe("Ready");
     }
+
+    [Fact]
+    public void A_step_with_a_missing_runtime_value_is_never_shown_as_executable_on_its_row()
+    {
+        var cut = Render(Step("b", "/api/b/{id}"));
+        var chip = cut.Find("[data-testid=pt-step-dim][data-dim=executable]");
+        chip.GetAttribute("data-state").Should().NotBe("Ready", "the same rule as the scenario status strip: defined, configured and a credential");
+        chip.GetAttribute("title").Should().Contain("runtime values are resolved");
+    }
 }

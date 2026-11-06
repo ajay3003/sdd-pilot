@@ -551,7 +551,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft · incomplete", "a new definition has no placeholder step"));
         AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Draft"));
-        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Be("Check readiness saves the draft as v1 automatically, then evaluates it.");
+        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Be("Check readiness asks to save the draft as v1, then evaluates that version.");
         Tab(cut, "scenario");
         cut.Find("[data-testid=pt-target]").TextContent.Should().Be("https://paymenthub-qa.example.test", "only the configured target's origin; no free destination field");
         cut.Find("[data-testid=pt-save-state] .sd-pill").GetAttribute("data-status").Should().Be("Draft · will be saved automatically before readiness check");
@@ -675,20 +675,24 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-run-open]").ClassList.Should().Contain("btn-secondary");
         cut.Find("[data-testid=pt-run-open]").GetAttribute("aria-describedby").Should().Be("pt-run-reason");
         cut.Find("#pt-run-reason").TextContent.Should().Be("Run test saves the draft as v1, checks readiness and then asks for confirmation.");
-        cut.Find("[data-testid=pt-next-step]").TextContent.Should().Contain("Check readiness. The prefilled draft is saved as v1 automatically first; nothing runs.");
+        cut.Find("[data-testid=pt-next-step]").TextContent.Should().Contain("Check readiness. You are asked to save the prefilled draft as v1 first; nothing runs.");
         cut.FindAll("[data-testid=pt-save]").Should().ContainSingle().Which.ClassList.Should().Contain("btn-secondary");
     }
 
     [Fact]
-    public void CheckReadiness_OnANewDraft_SavesV1Automatically_ThenEvaluates_AndNothingRuns()
+    public void CheckReadiness_OnANewDraft_AsksToSaveV1_ThenEvaluates_AndNothingRuns()
     {
         Register(definitions: []);
         var cut = Page();
         AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-primary-action]"));
         cut.Find("[data-testid=pt-primary-action]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-save-first]").TextContent.Should().Contain("Save this draft as v1 first?"));
+        _api.Calls.Should().BeEmpty("nothing is saved without the explicit save");
+        cut.Find("[data-testid=pt-save-and-check]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-message]").TextContent.Should().Be("Definition saved as v1 before readiness evaluation."));
-        _api.Calls.Should().Equal(["create"], "one automatic first save, no confirmation, and no load");
+        _api.Calls.Should().Equal(["create"], "one explicit first save, and no load");
+        cut.FindAll("[data-testid=pt-flow-step]").Select(s => s.GetAttribute("data-state")).Should().Equal(["done", "done", "done", "done"]);
         cut.Find("[data-testid=pt-tab-readiness]").GetAttribute("aria-pressed").Should().Be("true");
         cut.Find("[data-testid=pt-readiness-summary]").TextContent.Should().Contain("Ready to run.");
         Status(cut, "pt-definition-state").Should().Be("Saved · v1");
@@ -702,6 +706,10 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         var cut = Page();
         AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-run-open]"));
+        cut.Find("[data-testid=pt-run-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-save-and-check]"));
+        _api.Calls.Should().BeEmpty("Run test never saves a new draft silently");
+        cut.Find("[data-testid=pt-save-and-check]").Click();
         cut.Find("[data-testid=pt-run-open]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-run]").GetAttribute("aria-pressed").Should().Be("true"));
         _api.Calls.Should().Equal(["create"]);
@@ -1396,5 +1404,52 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         _api.History = () => Task.FromResult<BirkNext.LocalHttpsProxy.EndpointObservationHistoryView?>(null);
         cut.Find("[data-testid=pt-auth-evidence-retry]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-auth-summary]").TextContent.Should().Be("No step requires authentication"));
+    }
+
+    // ── NEXT55 follow-up: one scenario status on every tab, explicit versions, unsaved changes ──────────────────────────────
+
+    [Fact]
+    public void The_scenario_status_model_blocks_on_missing_bearer_and_brukerId_and_never_reads_unknown_evidence_as_none_required()
+    {
+        IReadOnlySet<string> observed = new HashSet<string> { "GET /api/autorisasjon/v1/brukere/{id}", "GET /api/autorisasjon/v1/brukere/{id}/barn" };
+        var status = PerformanceScenarioStatusModel.Of(AutorisasjonGets, null, observed);
+        status.Steps.Should().Be(2);
+        status.AuthRequired.Should().Be(2);
+        status.AuthMissing.Should().Be(2, "an observed Bearer with nothing configured is missing on every step");
+        status.ValuesResolved.Should().BeLessThan(status.ValuesTotal, "brukerId has no value source");
+        status.Executable.Should().Be(0);
+        status.AllExecutable.Should().BeFalse();
+        status.Issues.Should().Contain(i => i.Contains("brukere")).And.Contain(i => i.Contains("Step 2"));
+
+        var unknown = PerformanceScenarioStatusModel.Of(AutorisasjonGets, null, null);
+        unknown.AuthEvidenceKnown.Should().BeFalse("unloaded endpoint evidence is not \"no authentication required\"");
+    }
+
+    [Fact]
+    public void Every_tab_shows_the_same_scenario_status_and_unsaved_changes_are_named_with_the_version_they_would_create()
+    {
+        Register(definitions: [AutorisasjonGets]);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-status-strip]"));
+        string Chips() => string.Join(" | ", cut.FindAll("[data-testid=pt-status-chip]").Select(c => $"{c.GetAttribute("data-key")}={c.GetAttribute("data-ok")}:{c.TextContent.Trim()}"));
+        var overview = Chips();
+        overview.Should().Contain("executable=false");
+        foreach (var tab in new[] { "scenario", "readiness", "run" })
+        {
+            Tab(cut, tab);
+            cut.FindAll("[data-testid=pt-status-strip]").Should().ContainSingle($"the {tab} tab shows the same status");
+            Chips().Should().Be(overview);
+        }
+
+        cut.FindAll("[data-testid=pt-unsaved-banner]").Should().BeEmpty("nothing changed yet");
+        Tab(cut, "scenario");
+        cut.Find("[data-testid=pt-step-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.FindAll("[data-testid=pt-step-part]").Single(p => p.GetAttribute("data-part") == "request").Click();
+        cut.Find("[data-testid=pt-step-edit]").Click();
+        cut.Find("[data-testid=pt-step-expected]").Change("200, 204");
+        var banner = cut.Find("[data-testid=pt-unsaved-banner]").TextContent;
+        banner.Should().Contain($"Unsaved changes to v{AutorisasjonGets.Version}").And.Contain($"v{AutorisasjonGets.Version + 1}");
+        cut.FindAll("[data-testid=pt-flow-step]").First().GetAttribute("data-state").Should().Be("current");
+        _api.Calls.Should().NotContain("update", "an edit is never saved or versioned without a click");
     }
 }
