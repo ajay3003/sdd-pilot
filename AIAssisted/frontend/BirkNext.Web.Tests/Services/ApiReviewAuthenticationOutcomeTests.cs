@@ -55,6 +55,16 @@ public sealed class ApiReviewAuthenticationOutcomeTests
     }
 
     [Fact]
+    public void A_blocked_run_headline_never_reads_completed_or_no_issues()
+    {
+        var report = Report(Result(Target("svc"), ApiReviewTargetStatus.Blocked, ApiReviewAccessMode.Unavailable));
+        var outcome = ApiReviewPostRunPresentation.Outcome(report);
+        var headline = ApiReviewPostRunPresentation.Headline(outcome, ApiReviewPostRunPresentation.Limitations(report));
+        headline.Should().Be("Automated review was blocked before execution: no request was executed, so nothing was assessed.");
+        headline.Should().NotContain("completed").And.NotContain("No automated issues");
+    }
+
+    [Fact]
     public void A_run_that_tried_and_executed_nothing_stays_failed()
     {
         var outcome = ApiReviewPostRunPresentation.Outcome(Report(Result(Target("svc"), ApiReviewTargetStatus.NotTested, ApiReviewAccessMode.AuthenticatedHttp)));

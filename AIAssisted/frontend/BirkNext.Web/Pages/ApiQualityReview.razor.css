@@ -791,3 +791,5 @@
 .aqr-obligation { display: grid; gap: .2rem; margin: .3rem 0 .5rem; font-size: .88rem; }
 .aqr-obligation dt { font-weight: 600; }
 .aqr-obligation dd { margin: 0; }
+
+.aqr-stored-result { margin: .25rem 0 .5rem; padding: .35rem .6rem; border-left: 3px solid var(--clr-info, #1d4ed8); background: var(--clr-surface-muted, #f6f8fa); font-size: .9rem; }

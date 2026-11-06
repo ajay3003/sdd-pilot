@@ -450,6 +450,10 @@
                   execution, never the quality verdict. ─────────────────────────────────────────────────────────────────────────────── *@
             <section class="aqr-card aqr-result-summary" data-testid="aqr-result-summary" aria-labelledby="aqr-result-heading">
                 <h2 id="aqr-result-heading">Review result</h2>
+                @if (_reportFromHistory)
+                {
+                    <p class="aqr-stored-result" role="status" data-testid="aqr-stored-result">Stored result of a previous run in this browser — historical, not current readiness. Run the review again for a current result.</p>
+                }
                 <dl class="aqr-outcome" data-testid="aqr-result-state">
                     <div data-testid="aqr-outcome-execution"><dt>Automated review</dt><dd><span class="aqr-pill aqr-pill-@(outcome.Execution == "Completed" ? "muted" : outcome.Execution == "Failed" ? "attention" : "warning")">@outcome.Execution</span></dd></div>
                     <div data-testid="aqr-outcome-assessment"><dt>Review outcome</dt><dd><span class="aqr-pill aqr-pill-@(outcome.Assessment == "Issues identified" ? "warning" : "muted")">@outcome.Assessment</span></dd></div>
@@ -467,7 +471,7 @@
                             {
                                 <li data-testid="aqr-coverage-reason" data-key="@limitation.Key" data-category="@limitation.Category">
                                     <span class="aqr-muted">@limitation.Category:</span> @limitation.Title
-                                    <button type="button" class="aqr-link-button" data-testid="aqr-coverage-reason-link" @onclick="() => _tab = limitation.Tab"
+                                    <button type="button" class="aqr-link-button" data-testid="aqr-coverage-reason-link" @onclick="() => OpenTab(limitation.Tab)"
                                             aria-label="@($"View {limitation.Title} in {ApiReviewPresentation.TabLabel(limitation.Tab)}")">View in @ApiReviewPresentation.TabLabel(limitation.Tab)</button>
                                 </li>
                             }
@@ -504,7 +508,7 @@
                 }
             </div>
 
-            <div id="aqr-tabpanel" role="tabpanel" aria-labelledby="aqr-tab-btn-@_tab.ToLowerInvariant()" class="aqr-tabpanel" data-testid="aqr-tabpanel" data-tab="@_tab">
+            <div id="aqr-tabpanel" role="tabpanel" aria-labelledby="aqr-tab-btn-@_tab.ToLowerInvariant()" class="aqr-tabpanel" tabindex="0" data-testid="aqr-tabpanel" data-tab="@_tab">
             @if (_tab == "Overview")
             {
                 @* Decision first: what needs attention (canonical logical issues), what was and was not covered and why, what a person must
@@ -540,12 +544,16 @@
                                         <p class="aqr-issue-recommendation" data-testid="aqr-key-issue-recommendation">@recommendation</p>
                                     }
                                     <p class="aqr-issue-links">
-                                        <button type="button" class="aqr-link-button" data-testid="aqr-key-issue-evidence" @onclick="() => _tab = area">View @ApiReviewPresentation.TabLabel(area).ToLowerInvariant() evidence</button>
+                                        <button type="button" class="aqr-link-button" data-testid="aqr-key-issue-evidence" @onclick="() => OpenTab(area)">View @ApiReviewPresentation.TabLabel(area).ToLowerInvariant() evidence</button>
                                         <button type="button" class="aqr-link-button aqr-key-issue-link" data-testid="aqr-key-issue-occurrences" @onclick="() => ShowFindings(issue: issue.Key)" aria-label="@($"View {issue.Sources.Count} occurrence{(issue.Sources.Count == 1 ? "" : "s")} of {issue.Title} in Findings")">View findings (@issue.Sources.Count)</button>
                                     </p>
                                 </li>
                             }
                         </ul>
+                    }
+                    else if (outcome.RequestsExecuted == 0)
+                    {
+                        <p class="aqr-empty" data-testid="aqr-nothing-executed">No request was executed, so nothing was assessed — the absence of findings is not a result. See Coverage &amp; limitations below.</p>
                     }
                     else
                     {
@@ -1036,9 +1044,11 @@
         _history = context.ActiveTargetError is null ? History.For(context.ActiveProfile.Id) : null;
         // The last report is the current result only for the same environment AND the same target it reviewed; after the Target Environment's URL
         // changed it stays in History, never shown as the result for the new target.
+        var fromSession = _report is not null;
         _report ??= _history?.LastReport is { } last && last.Environment.EnvironmentId == context.ActiveProfile.Id
             && (string.IsNullOrEmpty(last.Environment.TargetUrl) // a report saved before the target was recorded: legacy, kept
                 || string.Equals(last.Environment.TargetUrl.TrimEnd('/'), context.TargetUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) ? last : null;
+        _reportFromHistory = !fromSession && _report is not null;
         _targets = targets;
         _capabilities = capabilities;
         (_schemaArtifacts, _schemaArtifactsError) = schemas;
@@ -1142,6 +1152,11 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         SyncTabToUrl();
+        if (_focusId is { } focus)
+        {
+            _focusId = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", focus); } catch (JSException) { }
+        }
         if (_focusReviewDetails)
         {
             _focusReviewDetails = false;
@@ -1192,11 +1207,31 @@
     private void OnTabKey(KeyboardEventArgs e, string current)
     {
         var index = Array.IndexOf(Tabs, current);
-        if (e.Key == "ArrowRight") _tab = Tabs[(index + 1) % Tabs.Length];
-        else if (e.Key == "ArrowLeft") _tab = Tabs[(index - 1 + Tabs.Length) % Tabs.Length];
-        else if (e.Key == "Home") _tab = Tabs[0];
-        else if (e.Key == "End") _tab = Tabs[^1];
+        var next = e.Key switch
+        {
+            "ArrowRight" => Tabs[(index + 1) % Tabs.Length],
+            "ArrowLeft" => Tabs[(index - 1 + Tabs.Length) % Tabs.Length],
+            "Home" => Tabs[0],
+            "End" => Tabs[^1],
+            _ => current,
+        };
+        if (next == current) return;
+        _tab = next;
+        _focusId = $"aqr-tab-btn-{next.ToLowerInvariant()}"; // focus follows the selection (the old tab now has tabindex -1)
     }
+
+    /// <summary>A link that opens another result area: the clicked control disappears with the old content, so focus moves to the panel.</summary>
+    private void OpenTab(string tab)
+    {
+        _tab = tab;
+        _focusId = "aqr-tabpanel";
+    }
+
+    /// <summary>The element to focus after the next render.</summary>
+    private string? _focusId;
+
+    /// <summary>True when the result on screen is the stored last report of a previous run, not a run from this session.</summary>
+    private bool _reportFromHistory;
 
     /// <summary>The shared runtime authentication resolution for authenticated API checks (null until resolved or when the backend is unreachable).</summary>
     private BirkNext.RuntimeAuthentication.RuntimeAuthenticationResolution? _authentication;
@@ -1245,6 +1280,7 @@
             else
             {
                 _report = report;
+                _reportFromHistory = false;
                 _tab = "Overview";
                 _expandedServices.Clear();
                 _expandedFindings.Clear();
@@ -1823,7 +1859,7 @@
     {
         ClearFindingFilters();
         _filterService = service ?? ""; _filterArea = area ?? ""; _filterIssue = issue ?? "";
-        _tab = "Findings";
+        OpenTab("Findings");
     }
 
     /// <summary>

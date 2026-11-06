@@ -293,6 +293,11 @@ public static class ApiReviewPostRunPresentation
             "baseline" => "historical comparison",
             _ => null,
         }).Where(a => a is not null).Distinct().ToList();
+        // Zero executed is not success: a run that executed no request assessed nothing, whatever its findings count says.
+        if (outcome.Execution != "Failed" && outcome.RequestsExecuted == 0)
+            return outcome.Execution == "Blocked before execution"
+                ? "Automated review was blocked before execution: no request was executed, so nothing was assessed."
+                : "No request was executed, so nothing was assessed.";
         var execution = outcome.Execution == "Failed" ? "Automated review failed to run."
             : $"Automated runtime review completed for {outcome.ServicesReviewed}/{outcome.Services} selected service{(outcome.Services == 1 ? "" : "s")}.";
         var found = outcome.LogicalIssues > 0 ? "Issues were identified." : "No automated issues were identified.";

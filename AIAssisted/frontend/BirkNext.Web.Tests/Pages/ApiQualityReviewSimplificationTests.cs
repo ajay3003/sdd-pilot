@@ -151,6 +151,25 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
     private static IReadOnlyList<string> Groups(IRenderedComponent<ApiQualityReview> page) =>
         page.FindAll("[data-testid=aqr-decision-group]").Select(g => g.GetAttribute("data-group")!).ToList();
 
+    // ── Result frame: focus follows the selection; links into another area focus the panel; a fresh run is not "stored" ──
+
+    [Fact]
+    public async Task ArrowKeysMoveFocusWithTheSelection_AndAreaLinksFocusThePanel()
+    {
+        var page = await Result();
+        page.FindAll("[data-testid=aqr-stored-result]").Should().BeEmpty("a run from this session is current, not a stored result");
+        page.Find("[data-testid=aqr-tabpanel]").GetAttribute("tabindex").Should().Be("0");
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-tab-overview]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "ArrowRight" }));
+        page.Find("[data-testid=aqr-tab-rest]").GetAttribute("aria-selected").Should().Be("true");
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "aqr-tab-btn-rest"));
+
+        Tab(page, "overview");
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-all-findings]").Click());
+        page.Find("[data-testid=aqr-tabpanel]").GetAttribute("data-tab").Should().Be("Findings");
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "aqr-tabpanel"));
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
