@@ -189,6 +189,8 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         Cell("utdanningsdata", "Test Data").Should().Be("Not assessed", "no readiness dimension was reported — never guessed");
         page.Find("[data-journey=rapportmottak] [data-testid=snt-attention-count]").TextContent.Should().Be("2 issues", "grouped tester actions, not raw checks");
         page.Find("[data-journey=rapportmottak] [data-testid=snt-attention-action]").GetAttribute("aria-label").Should().Contain("owner:", "one primary owner action per journey");
+        var attention = page.Find("[data-journey=rapportmottak] [data-testid=snt-journey-blockers]").TextContent;
+        attention.Should().StartWith("2 issues · ", "the count and the action are separate text, never run together");
         page.Find("[data-journey=utdanningsdata] th").TextContent.Should().Contain("BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning");
         page.FindAll("[data-testid=ijp-panel], [data-testid=atp-panel], [data-testid=mvp], [data-testid=act-panel]").Should().BeEmpty("no feature is rendered inline on the overview");
         page.FindAll("[data-testid=snt-journey-open]").Select(a => a.GetAttribute("href")).Should().Equal("extensions/skolenaervaer?tab=utdanningsdata",
@@ -519,6 +521,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         WithTarget();
         var page = Open();
         page.WaitForAssertion(() => page.Find("[data-testid=snt-source]").TextContent.Should().Contain("No source evidence bound to this pack's integrations"));
+        page.Find("[data-testid=snt-source]").TextContent.Should().EndWith("until a snapshot is bound · Open evidence", "the summary and its link are separate text");
         page.FindAll("[data-testid=snt-journeys-not-ready]").Should().BeEmpty();
     }
 
