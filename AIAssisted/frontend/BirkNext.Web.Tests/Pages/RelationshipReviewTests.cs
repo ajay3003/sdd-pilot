@@ -418,4 +418,55 @@ public sealed class RelationshipReviewTests : BunitContext
         CorrelationQueueGroups.Group(items, CorrelationQueueGroups.ByType).Select(g => g.Items.Count).Should().Equal(1, 2);
         CorrelationQueueGroups.Group(items, CorrelationQueueGroups.ByTarget).Should().ContainSingle().Which.Items.Should().HaveCount(3);
     }
+
+    // ── NEXT56 follow-up: decision-impact preview, confidence and per-question history ──────────────────────────────────────
+
+    [Fact]
+    public async Task The_identity_conflict_previews_what_each_decision_changes_without_deciding()
+    {
+        var api = await AnalyzedM2lb();
+        var conflict = (await api.Object.ReviewItemsAsync("dev", ReviewItemKind.Decision, null, 0, 20)).Queue!.Page.Items[0].Relation!;
+        api.Setup(a => a.ImpactAsync("dev", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((string _, string key, CancellationToken _) =>
+            (new CanonicalImpactView
+            {
+                RootKey = key,
+                Entities = [new("e1", "Service", "SkoleService", BirkNext.Interpretation.ImpactLevel.Direct, 1, []), new("e2", "Requirement", "FR-001", BirkNext.Interpretation.ImpactLevel.Potential, 2, [])],
+                Tests = [new("t1", "SkoleTests", RetestLevel.ShouldRetest, "candidate")],
+            }, (string?)null));
+        api.Setup(a => a.DecisionsAsync("dev", "rel-1", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<ReviewDecisionView>)
+            [new ReviewDecisionView(Guid.NewGuid(), 7, ReviewTargetKind.Relation, "rel-1", ReviewDecisionOutcome.Deferred, "tester", DateTimeOffset.UnixEpoch, "Waiting for the integration owner", "fp", "correlation/4", null, null, "Ambiguous")], (string?)null));
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["tab"] = "review", ["type"] = "IdentityConflict" }));
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-preview-impact]"));
+        cut.Find("[data-testid=cr-inspect-confidence]").TextContent.Should().Contain("Confidence: Low").And.Contain(CorrelationRules.AliasConflictRule);
+        cut.Find("[data-testid=cr-preview-impact]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=cr-preview-outcome]").Should().HaveCount(3));
+        var outcomes = cut.FindAll("[data-testid=cr-preview-outcome]").ToDictionary(o => o.GetAttribute("data-outcome")!);
+        outcomes["Confirmed"].TextContent.Should().Contain("Same entity").And.Contain("1 direct, 0 downstream, 1 potential dependents · 1 test");
+        outcomes["Confirmed"].GetAttribute("data-governance").Should().Be("true");
+        outcomes["Rejected"].TextContent.Should().Contain("Separate entities").And.Contain("Needs a written rationale");
+        outcomes["Deferred"].TextContent.Should().Contain("Release readiness stays Blocked by this conflict");
+        outcomes["Deferred"].GetAttribute("data-governance").Should().Be("false", "deferring never clears a blocker");
+        api.Verify(a => a.ImpactAsync("dev", conflict.Source.Key, It.IsAny<CancellationToken>()), Times.Once);
+        api.Verify(a => a.ImpactAsync("dev", conflict.Target.Key, It.IsAny<CancellationToken>()), Times.Once);
+
+        cut.Find("[data-testid=cr-item-history-toggle]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-item-history-entry]").TextContent.Should().Contain("#7").And.Contain("Deferred").And.Contain("Waiting for the integration owner"));
+        api.Verify(a => a.DecideAsync(It.IsAny<string>(), It.IsAny<ReviewDecisionRequest>(), It.IsAny<CancellationToken>()), Times.Never, "a preview decides nothing");
+    }
+
+    [Fact]
+    public void A_test_link_preview_says_confirming_is_test_design_never_execution()
+    {
+        var fr = Entity(CanonicalEntityType.Requirement, "FR-001", "FR-001");
+        var test = Entity(CanonicalEntityType.Test, "T", "AbsenceTests.Register");
+        var item = new ReviewItemView("s1", ReviewItemKind.Suggestion, ReviewItemType.TestLink, 5, "r", ReviewTargetKind.Relation, "rel-s1",
+            Relation(test, fr, CanonicalRelationType.Verifies, RelationResolution.Candidate, "rel-s1"), null, null, ["Test Coverage"], "CR", null, "Candidate", null, DateTimeOffset.UnixEpoch, null);
+        var preview = CorrelationDecisionImpact.Preview(item, null, null).ToDictionary(o => o.Outcome);
+        preview[ReviewDecisionOutcome.Confirmed].Consequences.Should().Contain(c => c.Contains("test design, not execution or a pass"));
+        preview[ReviewDecisionOutcome.Confirmed].ChangesGovernance.Should().BeFalse("an optional suggestion never changes a gate");
+        preview[ReviewDecisionOutcome.Deferred].Consequences.Should().Contain(c => c.Contains("counts nowhere"));
+    }
 }

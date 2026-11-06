@@ -345,6 +345,44 @@
                     <p class="cr-muted">Rule @item.RuleId@(item.RuleSetVersion is null ? "" : $" · {item.RuleSetVersion}")</p>
                 </details>
             }
+            @if (item.Relation is { } conf) { <p class="cr-muted cr-small" data-testid="cr-inspect-confidence">Confidence: @conf.Confidence · rule @conf.RuleId · @conf.Resolution</p> }
+            @if (item.TargetKey is not null)
+            {
+                <div class="cr-inspect-tools">
+                    <button type="button" class="btn btn-secondary btn-sm" aria-expanded="@(_previewFor == item.ReviewItemId ? "true" : "false")" data-testid="cr-preview-impact"
+                            @onclick="() => TogglePreviewAsync(item)">@(_previewFor == item.ReviewItemId ? "Hide decision impact" : "Preview the impact of each decision")</button>
+                    <button type="button" class="btn btn-secondary btn-sm" aria-expanded="@(_historyFor == item.TargetKey ? "true" : "false")" data-testid="cr-item-history-toggle"
+                            @onclick="() => ToggleItemHistoryAsync(item)">@(_historyFor == item.TargetKey ? "Hide decision history" : "Decision history")</button>
+                </div>
+                @if (_previewFor == item.ReviewItemId)
+                {
+                    @if (_previewLoading) { <InlineLoading Text="Walking the impact of both entities…" Class="cr-muted" /> }
+                    <div class="cr-preview" data-testid="cr-preview">
+                        @foreach (var o in CorrelationDecisionImpact.Preview(item, ImpactOf(item.Relation?.Source.Key), ImpactOf(item.Relation?.Target.Key)))
+                        {
+                            <section class="cr-preview-outcome" data-testid="cr-preview-outcome" data-outcome="@o.Outcome" data-governance="@(o.ChangesGovernance ? "true" : "false")">
+                                <h4>If you choose “@o.Label”</h4>
+                                <ul>@foreach (var c in o.Consequences) { <li>@c</li> }</ul>
+                            </section>
+                        }
+                    </div>
+                }
+                @if (_historyFor == item.TargetKey)
+                {
+                    @if (_itemHistory is null) { <InlineLoading Text="Loading the decision history…" Class="cr-muted" /> }
+                    else if (_itemHistory.Count == 0) { <p class="cr-muted" data-testid="cr-item-history-empty">No decision has been recorded for this question yet.</p> }
+                    else
+                    {
+                        <ol class="cr-item-history" data-testid="cr-item-history">
+                            @foreach (var h in _itemHistory)
+                            {
+                                <li data-testid="cr-item-history-entry">#@h.Sequence · <strong>@h.Outcome</strong> by @h.Reviewer · @h.DecidedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(h.SupersededById is null ? "" : " · superseded")
+                                    @if (!string.IsNullOrWhiteSpace(h.Notes)) { <span> — @h.Notes</span> }</li>
+                            }
+                        </ol>
+                    }
+                }
+            }
             @if (item.Candidates is { Count: > 1 } alternatives)
             {
                 <ul class="cr-candidates" aria-label="Alternatives" data-testid="cr-candidates">
@@ -383,6 +421,37 @@
         items.FirstOrDefault(i => i.ReviewItemId == _selectedItem) ?? items.FirstOrDefault();
 
     private string? _selectedItem;
+    private string? _previewFor, _historyFor;
+    private bool _previewLoading;
+    private IReadOnlyList<ReviewDecisionView>? _itemHistory;
+    private readonly Dictionary<string, CanonicalImpactView?> _impacts = new(StringComparer.Ordinal);
+
+    private CanonicalImpactView? ImpactOf(string? key) => key is not null ? _impacts.GetValueOrDefault(key) : null;
+
+    /// <summary>Loads the shared impact walk of both entities (once each) and shows what Confirm, Reject and Defer would change. Decides nothing.</summary>
+    private async Task TogglePreviewAsync(ReviewItemView item)
+    {
+        if (_previewFor == item.ReviewItemId) { _previewFor = null; return; }
+        _previewFor = item.ReviewItemId;
+        if (_scope is null || item.Relation is not { } r) return;
+        _previewLoading = true;
+        try
+        {
+            foreach (var key in new[] { r.Source.Key, r.Target.Key }.Where(k => !_impacts.ContainsKey(k)))
+                _impacts[key] = (await Api.ImpactAsync(_scope, key)).Impact;
+        }
+        finally { _previewLoading = false; }
+    }
+
+    /// <summary>Every recorded decision on this question (append-only; superseded ones stay listed).</summary>
+    private async Task ToggleItemHistoryAsync(ReviewItemView item)
+    {
+        if (_historyFor == item.TargetKey) { (_historyFor, _itemHistory) = (null, null); return; }
+        (_historyFor, _itemHistory) = (item.TargetKey, null);
+        if (_scope is null) return;
+        var (items, _) = await Api.DecisionsAsync(_scope, item.TargetKey);
+        if (_historyFor == item.TargetKey) _itemHistory = items ?? [];
+    }
     private string _groupBy = CorrelationQueueGroups.ByType;
 
     private RenderFragment ExploreSection() => __builder =>

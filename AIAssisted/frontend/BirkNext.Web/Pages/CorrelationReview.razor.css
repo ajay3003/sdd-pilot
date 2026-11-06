@@ -94,3 +94,12 @@ button.cr-metric:focus-visible { outline: 2px solid var(--clr-primary-focus, var
     .cr-inspector { position: static; }
 }
 .cr-inspect p { margin: 0; font-size: .9rem; }
+
+/* NEXT56 follow-up: decision-impact preview and per-question history */
+.cr-inspect-tools { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cr-preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .5rem; }
+.cr-preview-outcome { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .5rem .65rem; background: var(--clr-surface-alt, #f8fafc); font-size: .84rem; }
+.cr-preview-outcome[data-outcome=Deferred] { border-style: dashed; }
+.cr-preview-outcome h4 { margin: 0 0 .25rem; font-size: .86rem; }
+.cr-preview-outcome ul { margin: 0; padding-left: 1rem; display: grid; gap: .2rem; }
+.cr-item-history { margin: 0; padding-left: 1.2rem; font-size: .84rem; display: grid; gap: .2rem; }
