@@ -60,6 +60,11 @@
                 criteria it is judged against, whether it can run, and the run action itself. Nothing diagnostic here.
             *@
             <section class="fqr-decide" aria-label="Review setup" data-testid="fqr-decide">
+                @if (_context is not null)
+                {
+                    <GuidedStepList Steps="@FrontendQualityWorkflow.Derive(_context.TargetUrl, SelectedScope(_context), SelectedWcagProfile, _authentication, landing.Capabilities, landing.Readiness, _evidenceLoaded, RunDisabledReason)"
+                                    TestId="fqr-steps" Label="Frontend Quality Review steps" />
+                }
                 <div class="fqr-decide-cards">
                     @* No technical disclosure here: the exact source values live in the ONE Technical details
                        disclosure at the end of Review details, so there is a single place to look for them. *@
@@ -74,6 +79,11 @@
                                 @* Shared runtime authentication for the authenticated browser engines (Browser Runtime, Accessibility). None = Public only scope. *@
                                 <RuntimeAuthenticationSelector OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.FrontendRuntime"
                                     Profile="@_context.ActiveProfileOrNull" ResolutionChanged="OnAuthenticationResolved" />
+                                @* A configured mode that is not used says why; the saved scope is never changed silently. *@
+                                @if (FrontendQualityWorkflow.ScopeAuthenticationMismatch(SelectedScope(_context), _authentication) is { } mismatch)
+                                {
+                                    <p class="fqr-muted" role="note" data-testid="fqr-auth-scope-note">@mismatch</p>
+                                }
                             }
                         </ScopeControl>
                     </FrontendQualityTargetSummary>

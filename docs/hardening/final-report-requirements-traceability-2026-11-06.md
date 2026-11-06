@@ -63,7 +63,12 @@ Filter Traceability*, CanonicalTrace*, ReportExport* and Dashboard*: **305/305 p
 
 ## 7. Browser verification
 
-Run together with the Frontend Quality Review batch; see that report.
+`fqr-trace-e2e.cjs` ran against the published build on the local stack (`birknext_gaps`); see the Frontend Quality Review report.
+- Six steps, with Plan → Tasks Not applicable.
+- The breakdown "16 Constitution rules not cited … · 18 requirements without a plan reference · 32 tasks without a requirement/SC reference". These are the brief's 66.
+- Requirement → code → test counts are "Not assessed" because nothing is interpreted.
+- The disabled feature-pack action explains why.
+- No state-changing request and no page errors.
 
 ## 8. Remaining limitations
 
