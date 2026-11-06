@@ -194,6 +194,7 @@ public sealed partial class CanonicalInterpretationService(
             }
 
         var decisions = await CurrentDecisionsAsync(scope, ct);
+        var priors = await PriorDecisionsAsync(scope, decisions, ct);
 
         // Aliases: ingestion proposes or declares; a human state (Confirmed/Rejected) is never overwritten.
         var aliasRows = await db.Aliases.Where(a => a.Scope == scope).ToListAsync(ct);
@@ -233,7 +234,7 @@ public sealed partial class CanonicalInterpretationService(
                 byKey[fact.Key] = row;
             }
             var decision = decisions.GetValueOrDefault(fact.Key);
-            var (review, _) = CorrelationPrecedence.Apply(fact.Resolution, fact.EvidenceFingerprint, decision);
+            var (review, _) = CorrelationPrecedence.Apply(fact.Resolution, fact.EvidenceFingerprint, decision, priors.GetValueOrDefault(fact.Key));
             var evidence = JsonSerializer.Serialize(fact.Evidence, Json);
             if (row.Resolution != fact.Resolution.ToString() || row.EvidenceFingerprint != fact.EvidenceFingerprint || row.ReviewState != review.ToString() || !row.Active
                 || row.RuleId != fact.RuleId || row.RuleSetVersion != result.RuleSetVersion)
@@ -302,6 +303,16 @@ public sealed partial class CanonicalInterpretationService(
             .GroupBy(d => d.TargetKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => Fact(g.OrderByDescending(d => d.Sequence).First()), StringComparer.Ordinal);
 
+    /// <summary>For each target whose current decision is Deferred: the latest earlier decision that was not (what the deferral postponed).</summary>
+    async Task<Dictionary<string, ReviewDecisionFact>> PriorDecisionsAsync(string scope, IReadOnlyDictionary<string, ReviewDecisionFact> current, CancellationToken ct)
+    {
+        var deferred = current.Where(c => c.Value.Outcome == ReviewDecisionOutcome.Deferred).Select(c => c.Key).ToList();
+        if (deferred.Count == 0) return new(StringComparer.Ordinal);
+        var rows = await db.Decisions.AsNoTracking().Where(d => d.Scope == scope && deferred.Contains(d.TargetKey) && d.Outcome != nameof(ReviewDecisionOutcome.Deferred)).ToListAsync(ct);
+        return rows.GroupBy(d => d.TargetKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => Fact(g.OrderByDescending(d => d.Sequence).First()), StringComparer.Ordinal);
+    }
+
     static ReviewDecisionFact Fact(ReviewDecisionRecord d) => new(d.Id, Enum.Parse<ReviewTargetKind>(d.TargetKind), d.TargetKey, Enum.Parse<ReviewDecisionOutcome>(d.Outcome),
         d.EvidenceFingerprint, d.Reviewer, d.DecidedAt, d.Notes, d.Scope);
 
@@ -355,7 +366,12 @@ public sealed partial class CanonicalInterpretationService(
         if (previous is not null) previous.SupersededById = record.Id;
         if (relation is not null)
         {
-            var (review, _) = CorrelationPrecedence.Apply(Enum.Parse<RelationResolution>(relation.Resolution), relation.EvidenceFingerprint, Fact(record));
+            ReviewDecisionFact? prior = null;
+            if (request.Outcome == ReviewDecisionOutcome.Deferred
+                && await db.Decisions.AsNoTracking().Where(d => d.Scope == scope && d.TargetKey == request.TargetKey && d.Outcome != nameof(ReviewDecisionOutcome.Deferred))
+                    .OrderByDescending(d => d.Sequence).FirstOrDefaultAsync(ct) is { } earlier)
+                prior = Fact(earlier);
+            var (review, _) = CorrelationPrecedence.Apply(Enum.Parse<RelationResolution>(relation.Resolution), relation.EvidenceFingerprint, Fact(record), prior);
             relation.ReviewState = review.ToString();
             relation.ReviewDecisionId = record.Id;
             relation.UpdatedAt = now;

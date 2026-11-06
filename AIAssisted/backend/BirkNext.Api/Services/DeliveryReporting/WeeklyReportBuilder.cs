@@ -276,7 +276,8 @@ public static class WeeklyReportBuilder
             if (regressed > 0) lines.Add($"{regressed} feature{(regressed == 1 ? "" : "s")} went backwards or became blocked.");
         }
         var total = current.Features.Sum(f => f.TaskTotal);
-        if (total > 0) lines.Add($"Overall task completion is {current.Features.Sum(f => f.TaskCompleted)} of {total} ({100 * current.Features.Sum(f => f.TaskCompleted) / total}%). Task completion is not the same as delivered or tested.");
+        if (DeliveryMetrics.ChecklistPercent(current.Features.Sum(f => f.TaskCompleted), total) is { } overall)
+            lines.Add($"Overall task completion is {current.Features.Sum(f => f.TaskCompleted)} of {total} ({overall}%). Task completion is not the same as delivered or tested.");
         var blockers = comparison.Attention.Count(a => a.Severity == DeliveryAttentionSeverity.Blocker);
         if (comparison.Attention.Count > 0)
             lines.Add($"{comparison.Attention.Count} item{(comparison.Attention.Count == 1 ? " needs" : "s need")} attention{(blockers > 0 ? $", {blockers} blocked" : "")}.");

@@ -14,7 +14,9 @@ public enum QualityReviewStatus
     /// <summary>Can run but with reduced/degraded analysis</summary>
     Warning,
     /// <summary>Unrecoverable error; cannot run</summary>
-    Fail
+    Fail,
+    /// <summary>No evidence to decide on here: neither available nor blocked (appended — existing values keep their numbers)</summary>
+    NotAssessed
 }
 
 /// <summary>A single check within a quality review</summary>
@@ -69,4 +71,34 @@ public sealed class QualityReviewPageModel
     public List<QualityReviewCheck> Checks { get; init; } = [];
     public List<string> Actions { get; init; } = [];
     public QualityReviewSummary Summary { get; init; } = new();
+    /// <summary>What the readiness is derived from (for example "workspace artifacts"), or "none" when this model holds no evidence and its status
+    /// is Not assessed. Null on models built before the field existed.</summary>
+    public string? EvidenceAuthority { get; init; }
+}
+
+/// <summary>
+/// The API / Integration / Frontend page-model builders have no configuration evidence (their detectors are placeholders that always answer
+/// "not configured"), and no page reads them: the review pages evaluate readiness with their own engines from the Target Environment. Their
+/// answer is therefore Not assessed — never a "Blocked: configure an endpoint" that would read as an authoritative finding.
+/// </summary>
+public static class PlaceholderPageModel
+{
+    public static QualityReviewPageModel NotAssessed(QualityReviewPageModel model, string ownerPage) => new()
+    {
+        Title = model.Title, Description = model.Description, Target = model.Target, Actions = model.Actions,
+        ReadinessStatus = QualityReviewStatus.NotAssessed,
+        ReviewPacks = [.. model.ReviewPacks.Select(p => new QualityReviewPack
+            { Name = p.Name, Category = p.Category, Description = p.Description, RequiredInputs = p.RequiredInputs, MissingInputs = [], Status = QualityReviewStatus.NotAssessed })],
+        Checks = [.. model.Checks.Select(Check)],
+        Sections = [.. model.Sections.Select(s => new QualityReviewSection { Title = s.Title, Description = s.Description, Checks = [.. s.Checks.Select(Check)] })],
+        Summary = new()
+        {
+            TotalPacks = model.Summary.TotalPacks, TotalChecks = model.Summary.TotalChecks, AvailablePacks = 0, BlockedPacks = 0, CanRun = false,
+            ReadinessMessage = $"Not assessed here: this page model holds no configuration evidence. {ownerPage} evaluates readiness from the active Target Environment.",
+        },
+        EvidenceAuthority = "none",
+    };
+
+    private static QualityReviewCheck Check(QualityReviewCheck c) =>
+        new() { Name = c.Name, Category = c.Category, Description = c.Description, Status = QualityReviewStatus.NotAssessed };
 }

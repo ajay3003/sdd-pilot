@@ -70,7 +70,7 @@ public class QualityReviewPageModelService : IQualityReviewPageModelService
     {
         try
         {
-            return await _apiBuilder.BuildPageModelAsync();
+            return PlaceholderPageModel.NotAssessed(await _apiBuilder.BuildPageModelAsync(), "API Quality Review");
         }
         catch (Exception ex)
         {
@@ -89,7 +89,7 @@ public class QualityReviewPageModelService : IQualityReviewPageModelService
     {
         try
         {
-            return await _frontendBuilder.BuildPageModelAsync();
+            return PlaceholderPageModel.NotAssessed(await _frontendBuilder.BuildPageModelAsync(), "Frontend Quality Review");
         }
         catch (Exception ex)
         {
@@ -108,7 +108,7 @@ public class QualityReviewPageModelService : IQualityReviewPageModelService
     {
         try
         {
-            return await _integrationBuilder.BuildPageModelAsync();
+            return PlaceholderPageModel.NotAssessed(await _integrationBuilder.BuildPageModelAsync(), "Integration Quality Review");
         }
         catch (Exception ex)
         {

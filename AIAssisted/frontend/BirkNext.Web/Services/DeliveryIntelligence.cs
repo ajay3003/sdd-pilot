@@ -85,7 +85,7 @@ public static class DeliveryIntelligence
     public static (string Text, int? Percent) Progress(BacklogItem item, DeliveryStoryRow? row)
     {
         if (row?.Hierarchy is { HasTaskList: false } || item.TasksTotal == 0) return ("No task checklist", null);
-        var pct = 100 * item.TasksCompleted / item.TasksTotal;
+        var pct = DeliveryMetrics.ChecklistPercent(item.TasksCompleted, item.TasksTotal)!.Value;
         return ($"Checklist {item.TasksCompleted} / {item.TasksTotal} ({pct}%)", pct);
     }
 
@@ -167,7 +167,7 @@ public static class DeliveryIntelligence
         var changed = report.Stories.Count(s => !s.NewFeature && !s.RemovedFeature && s.Changed);
         var declaredNow = current.Count(s => s.CurrentStatus == DeliveryStatus.Done);
         var declaredBefore = baseline.Count(s => s.BaselineStatus == DeliveryStatus.Done);
-        int Pct(int done, int total) => total == 0 ? 0 : 100 * done / total;
+        int Pct(int done, int total) => DeliveryMetrics.ChecklistPercent(done, total) ?? 0;
         var (cDone, cTotal) = (current.Sum(s => s.CurrentTaskCompleted), current.Sum(s => s.CurrentTaskTotal));
         var (bDone, bTotal) = (baseline.Sum(s => s.BaselineTaskCompleted), baseline.Sum(s => s.BaselineTaskTotal));
         var attention = report.Attention.Count(a => a.FeatureKey is not null && a.Kind != DeliveryAttentionKind.SourceEncoding);

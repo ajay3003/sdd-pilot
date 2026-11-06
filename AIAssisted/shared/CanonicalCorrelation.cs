@@ -149,10 +149,17 @@ public static class CanonicalKeys
 /// </summary>
 public static class CorrelationPrecedence
 {
-    public static (RelationReviewState Review, RelationResolution Effective) Apply(RelationResolution evidence, string evidenceFingerprint, ReviewDecisionFact? decision)
+    /// <param name="prior">The latest non-deferred decision a Deferred one postponed (null when there is none). Deferring postpones a question; it
+    /// never answers one: a conflict or a stale confirmation the prior decision left stays visible (and keeps blocking where it blocks).</param>
+    public static (RelationReviewState Review, RelationResolution Effective) Apply(RelationResolution evidence, string evidenceFingerprint, ReviewDecisionFact? decision,
+        ReviewDecisionFact? prior = null)
     {
         if (decision is null) return (RelationReviewState.NotReviewed, evidence);
-        var unchanged = string.Equals(decision.EvidenceFingerprint, evidenceFingerprint, StringComparison.Ordinal);
+        if (decision.Outcome == ReviewDecisionOutcome.Deferred && prior is { Outcome: not ReviewDecisionOutcome.Deferred }
+            && Apply(evidence, evidenceFingerprint, prior) is { Review: RelationReviewState.Conflict or RelationReviewState.RevalidationRequired } held)
+            return held;
+        // A decision applies unchanged only while the evidence it was made on is still the current evidence (the shared freshness rule).
+        var unchanged = BirkNext.Evidence.EvidenceFreshnessRules.CanSupportPositive(BirkNext.Evidence.EvidenceFreshnessRules.Of(decision.EvidenceFingerprint, evidenceFingerprint));
         var established = evidence is RelationResolution.Explicit or RelationResolution.Derived;
         return decision.Outcome switch
         {
