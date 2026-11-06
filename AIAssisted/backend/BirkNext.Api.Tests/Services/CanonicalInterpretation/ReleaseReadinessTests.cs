@@ -36,6 +36,9 @@ public sealed class ReleaseReadinessTests
             .Should().Be((GateDecision.Blocked, "Blocked by governance."));
         ReleaseReadinessRules.Decide([D(ReadinessDimensionKey.Governance, R, GateDecision.PassedWithException)]).Decision
             .Should().Be(GateDecision.ReadyWithLimitations, "an accepted exception is a limitation, never plain Ready");
+        ReleaseReadinessRules.Decide([D(ReadinessDimensionKey.Performance, O, GateDecision.Ready), D(ReadinessDimensionKey.CriticalE2E, N, GateDecision.NotAssessed)])
+            .Should().Be((GateDecision.NotAssessed, "No required dimension was assessed."), "no vacuous truth: without a required dimension nothing is Ready");
+        ReleaseReadinessRules.Decide([]).Decision.Should().Be(GateDecision.NotAssessed);
     }
 
     static readonly DateTimeOffset Now = new(2026, 11, 4, 8, 0, 0, TimeSpan.Zero);

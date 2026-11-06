@@ -268,18 +268,17 @@
         <section class="rr-card rr-decision rr-@a.Decision.ToString().ToLowerInvariant()" aria-labelledby="rr-decision-h" data-testid="rr-decision" data-decision="@a.Decision">
             <h2 id="rr-decision-h"><span class="rr-icon" aria-hidden="true">@Icon(a.Decision)</span> @GovernancePolicies.DecisionLabel(a.Decision)</h2>
             <p data-testid="rr-reason">@a.Reason</p>
-            <dl class="rr-facts" data-testid="rr-facts">
-                <div><dt>Requirements assessed</dt><dd data-testid="rr-fact-requirements">@Count(f?.Requirements)</dd></div>
-                <div><dt>Requirements with a confirmed test</dt><dd data-testid="rr-fact-tested">@Count(f?.RequirementsWithConfirmedTest)</dd></div>
-                <div><dt>Tests executed</dt><dd class="rr-na" data-testid="rr-fact-executed" title="Execution results are not read into release readiness; a linked test is not an executed test.">Not assessed</dd>
-                    @if (Execution is { } run)
-                    {
-                        <dd class="rr-small rr-muted" data-testid="rr-fact-imported">@run.Results imported result@(run.Results == 1 ? "" : "s") (@run.Passed passed · @run.Failed failed@(run.Other > 0 ? $" · {run.Other} other" : "")) — not mapped to this scope</dd>
-                    }</div>
-                <div><dt>Blocking findings</dt><dd data-testid="rr-fact-blocking">@Count(f?.BlockingFindings)</dd></div>
-                <div><dt>Open review decisions</dt><dd data-testid="rr-fact-decisions">@Count(f?.OpenDecisions)</dd></div>
-                <div><dt>Evidence not assessed</dt><dd data-testid="rr-fact-missing">@missing dimension@(missing == 1 ? "" : "s")</dd></div>
-            </dl>
+            @* Executive summary: what is in scope, what is assessed, tested and executed, and what blocks — each "Not assessed" when unknown. *@
+            <ul class="rr-metrics" data-testid="rr-facts" aria-label="Release figures">
+                @foreach (var m in ReleaseReadinessPresentation.Metrics(a, Execution))
+                {
+                    <li class="rr-metric is-@m.Tone" data-testid="rr-metric" data-key="@m.Key">
+                        <span class="rr-metric-value" data-testid="@($"rr-fact-{m.Key}")">@m.Value</span>
+                        <span class="rr-metric-label">@m.Label</span>
+                        @if (m.Detail.Length > 0) { <span class="rr-metric-detail">@m.Detail</span> }
+                    </li>
+                }
+            </ul>
             @{ var causes = ReleaseReadinessPresentation.BlockingCauses(a); var gaps = ReleaseReadinessPresentation.RequiredGaps(a); var steps = ReleaseReadinessPresentation.NextSteps(a); }
             @if (causes.Count > 0)
             {
@@ -314,31 +313,36 @@
         </section>
     };
 
+    /// <summary>Evidence dimensions grouped Required → Optional → Not applicable, worst state first, with a tally per group and a state legend.</summary>
     private RenderFragment Dimensions(ReleaseReadinessAssessment a) => __builder =>
     {
-        <section class="rr-card" aria-labelledby="rr-dims-h">
-            <h2 id="rr-dims-h">Dimensions</h2>
-            <div class="rr-table-wrap">
-                <table class="rr-table" data-testid="rr-dimensions">
-                    <thead><tr><th scope="col">Dimension</th><th scope="col">Status</th><th scope="col">Evidence</th><th scope="col">Action</th></tr></thead>
-                    <tbody>
-                        @foreach (var d in a.Dimensions)
+        <section class="rr-card" aria-labelledby="rr-dims-h" data-testid="rr-dimensions">
+            <h2 id="rr-dims-h">Evidence dimensions</h2>
+            <p class="rr-muted rr-small rr-legend" data-testid="rr-legend">
+                <span class="rr-chip is-ready">✓ Ready</span> <span class="rr-chip is-limited">! Ready with limitations</span> <span class="rr-chip is-blocked">✕ Blocked</span>
+                <span class="rr-chip is-notassessed">? Not assessed</span> — a required dimension that is Blocked blocks the release; one that is Not assessed keeps it Not assessed.</p>
+            @foreach (var g in ReleaseReadinessPresentation.Groups(a))
+            {
+                <div class="rr-dim-group" data-testid="rr-dim-group" data-applicability="@g.Applicability">
+                    <h3 class="rr-sub">@g.Title <span class="rr-muted rr-small" data-testid="rr-dim-tally">@g.Tally</span></h3>
+                    <p class="rr-muted rr-small">@g.Explanation</p>
+                    <ul class="rr-dim-list">
+                        @foreach (var d in g.Dimensions)
                         {
-                            <tr data-testid="rr-dimension" data-key="@d.Key" data-state="@d.State" data-applicability="@d.Applicability">
-                                <th scope="row">@d.Title <span class="rr-badge">@ReleaseReadinessRules.ApplicabilityLabel(d.Applicability)</span></th>
-                                <td class="rr-state"><span aria-hidden="true">@Icon(d.State)</span> @GovernancePolicies.DecisionLabel(d.State)</td>
-                                <td><span class="rr-summary">@d.Summary</span>
+                            <li class="rr-dim-row is-@ReleaseReadinessPresentation.Tone(d.State)" data-testid="rr-dimension" data-key="@d.Key" data-state="@d.State" data-applicability="@d.Applicability">
+                                <span class="rr-chip is-@ReleaseReadinessPresentation.Tone(d.State)"><span aria-hidden="true">@Icon(d.State) </span>@GovernancePolicies.DecisionLabel(d.State)</span>
+                                <span class="rr-dim-main"><strong>@d.Title</strong> <span class="rr-summary">@d.Summary</span>
                                     @if (d.Evidence.Count > 0)
                                     {
                                         <details><summary>Evidence (@d.Evidence.Count)</summary><ul class="rr-list rr-small">@foreach (var e in d.Evidence) { <li>@e</li> }</ul></details>
-                                    }</td>
-                                <td class="rr-small">@if (d.NextAction is not null) { <span>@d.NextAction </span> }
-                                    @if (d.Href is not null) { <a href="@d.Href" data-testid="rr-dimension-link">Open @PageLabel(d.Href)</a> }</td>
-                            </tr>
+                                    }</span>
+                                <span class="rr-dim-action rr-small">@if (d.NextAction is not null && d.State != GateDecision.Ready) { <span>@d.NextAction </span> }
+                                    @if (d.Href is not null) { <a href="@d.Href" data-testid="rr-dimension-link">Open @PageLabel(d.Href)</a> }</span>
+                            </li>
                         }
-                    </tbody>
-                </table>
-            </div>
+                    </ul>
+                </div>
+            }
         </section>
     };
 
@@ -428,6 +432,9 @@
             <p class="rr-muted rr-small">The current assessment is a draft and changes with the evidence. Freezing keeps exactly what is known now — scope, environment, relationship
                 analysis, rule and policy versions, dimensions and findings — as an assessment that never changes. It is not an approval: a person records the
                 release decision on the frozen assessment.</p>
+            <dl class="rr-freeze-summary" data-testid="rr-freeze-summary" aria-label="What a freeze records">
+                @foreach (var (label, value) in ReleaseReadinessPresentation.FreezeSummary(a)) { <div><dt>@label</dt><dd>@value</dd></div> }
+            </dl>
             @if (Incomplete(a.Decision))
             {
                 <p class="rr-warning rr-small" data-testid="rr-freeze-incomplete">This assessment is Not assessed: a frozen copy is labelled incomplete and records what was missing.</p>
@@ -448,7 +455,7 @@
             {
                 <div class="rr-table-wrap">
                     <table class="rr-table">
-                        <thead><tr><th scope="col">Name</th><th scope="col">Frozen</th><th scope="col">Scope</th><th scope="col">Result</th><th scope="col">Analysis</th><th scope="col">Release decision</th></tr></thead>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Frozen</th><th scope="col">Scope</th><th scope="col">Result</th><th scope="col">Analysis</th><th scope="col">Release decision</th><th scope="col"><span class="visually-hidden">Inspect</span></th></tr></thead>
                         <tbody>
                             @foreach (var r in _reports)
                             {
@@ -459,11 +466,65 @@
                                     <td><strong>@GovernancePolicies.DecisionLabel(r.Decision)</strong>@(Incomplete(r.Decision) ? " · incomplete" : "")</td>
                                     <td>@(r.InterpretationId is { } i ? i.ToString("D")[..8] : "None")</td>
                                     <td>@(r.LatestSignOff is { } o ? OutcomeLabel(o) : "Not recorded")</td>
+                                    <td><button type="button" class="btn btn-secondary btn-sm" aria-expanded="@(_inspected == r.Id ? "true" : "false")" data-testid="rr-report-inspect"
+                                                @onclick="() => InspectAsync(r.Id)">@(_inspected == r.Id ? "Close" : "Inspect")<span class="visually-hidden"> @r.Name</span></button></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
+                @if (_inspected is not null) { @HistoryInspector(a) }
+            }
+        </section>
+    };
+
+    // ── History inspector (NEXT57): a frozen assessment beside the current draft ───────────────────────────────────────────
+
+    private Guid? _inspected;
+    private ReleaseReadinessReport? _inspectedReport;
+    private string? _inspectError;
+    private bool _inspecting;
+
+    private async Task InspectAsync(Guid id)
+    {
+        if (_scope is null) return;
+        if (_inspected == id) { (_inspected, _inspectedReport) = (null, null); return; }
+        (_inspected, _inspectedReport, _inspectError, _inspecting) = (id, null, null, true);
+        var (report, error) = await Api.ReleaseReportAsync(_scope, id);
+        if (_inspected != id) return;
+        (_inspectedReport, _inspectError, _inspecting) = (report, report is null ? error ?? "The frozen assessment could not be read." : null, false);
+    }
+
+    /// <summary>The frozen assessment's own facts (never recomputed) and, per dimension, its frozen state against the current draft.</summary>
+    private RenderFragment HistoryInspector(ReleaseReadinessAssessment current) => __builder =>
+    {
+        <section class="rr-history-inspector" aria-live="polite" data-testid="rr-history-inspector">
+            @if (_inspecting) { <InlineLoading Text="Loading the frozen assessment…" Class="rr-muted" /> }
+            else if (_inspectError is { } error) { <LoadError Title="The frozen assessment could not be loaded" Message="@error" OnRetry="() => InspectAsync(_inspected!.Value)" TestId="rr-inspect-error" /> }
+            else if (_inspectedReport is { } r)
+            {
+                var frozen = r.Assessment;
+                <h3 class="rr-sub">@r.Name <span class="rr-badge">Frozen @r.FrozenAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</span></h3>
+                <dl class="rr-freeze-summary" data-testid="rr-inspect-summary">
+                    @foreach (var (label, value) in ReleaseReadinessPresentation.FreezeSummary(frozen)) { <div><dt>@label</dt><dd>@value</dd></div> }
+                    <div><dt>Release decision</dt><dd>@(r.SignOffs.LastOrDefault() is { } s ? $"{OutcomeLabel(s.Outcome)} by {s.By}" : "Not recorded")</dd></div>
+                </dl>
+                <h4 class="rr-sub">Compared with the current draft</h4>
+                var changes = ReleaseReadinessPresentation.Compare(frozen, current);
+                <p class="rr-muted rr-small" data-testid="rr-compare-summary">@(changes.Count(c => c.Changed) is var n and > 0 ? $"{n} dimension{(n == 1 ? "" : "s")} changed since it was frozen." : "No dimension changed since it was frozen.")
+                    Result then: <strong>@GovernancePolicies.DecisionLabel(frozen.Decision)</strong> · now: <strong>@GovernancePolicies.DecisionLabel(current.Decision)</strong>. The frozen assessment itself never changes.</p>
+                <ul class="rr-dim-list">
+                    @foreach (var c in changes)
+                    {
+                        <li class="rr-dim-row rr-compare-row @(c.Changed ? "is-changed" : "")" data-testid="rr-compare-row" data-key="@c.Key" data-changed="@(c.Changed ? "true" : "false")">
+                            <strong>@c.Title</strong>
+                            <span class="rr-chip is-@(c.Then is { } t ? ReleaseReadinessPresentation.Tone(t) : "notassessed")">@(c.Then is { } then ? GovernancePolicies.DecisionLabel(then) : "Not in the frozen assessment")</span>
+                            <span aria-hidden="true">→</span>
+                            <span class="rr-chip is-@(c.Now is { } n2 ? ReleaseReadinessPresentation.Tone(n2) : "notassessed")">@(c.Now is { } now ? GovernancePolicies.DecisionLabel(now) : "Not in the current draft")</span>
+                        </li>
+                    }
+                </ul>
+                <p><a href="@($"release-readiness?report={r.Id}")" data-testid="rr-inspect-open">Open the frozen assessment</a></p>
             }
         </section>
     };

@@ -67,12 +67,14 @@ public static class ReleaseReadinessRules
     /// <summary>
     /// The release decision from its dimensions: a Required dimension that is Blocked blocks; a Required dimension Not assessed leaves the release Not
     /// assessed (never Ready); otherwise any limitation — a Required dimension with limitations or an exception, an Optional dimension that is blocked,
-    /// limited or not assessed — gives Ready with limitations. Not applicable never counts.
+    /// limited or not assessed — gives Ready with limitations. Not applicable never counts. No required dimension at all is Not assessed.
     /// </summary>
     public static (GateDecision Decision, string Reason) Decide(IReadOnlyList<ReadinessDimension> dimensions)
     {
         var applicable = dimensions.Where(d => d.Applicability != DimensionApplicability.NotApplicable).ToList();
         var required = applicable.Where(d => d.Applicability == DimensionApplicability.Required).ToList();
+        // No vacuous truth: without a single required dimension nothing was assessed, so the release is Not assessed — never Ready.
+        if (required.Count == 0) return (GateDecision.NotAssessed, "No required dimension was assessed.");
         var blocked = required.Where(d => d.State == GateDecision.Blocked).ToList();
         if (blocked.Count > 0) return (GateDecision.Blocked, $"Blocked by {Names(blocked)}.");
         var unassessed = required.Where(d => d.State == GateDecision.NotAssessed).ToList();

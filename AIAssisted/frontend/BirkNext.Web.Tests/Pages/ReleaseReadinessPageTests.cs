@@ -60,7 +60,8 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").GetAttribute("data-decision").Should().Be("ReadyWithLimitations"));
         cut.Find("[data-testid=rr-decision]").TextContent.Should().Contain("!").And.Contain("Ready with limitations");
         var perf = cut.FindAll("[data-testid=rr-dimension]").Single(d => d.GetAttribute("data-key") == "Performance");
-        perf.TextContent.Should().Contain("Optional").And.Contain("Not assessed").And.Contain("Open Performance Test Review");
+        perf.TextContent.Should().Contain("Not assessed").And.Contain("Open Performance Test Review");
+        perf.Closest("[data-testid=rr-dim-group]")!.GetAttribute("data-applicability").Should().Be("Optional", "dimensions are grouped Required / Optional");
         cut.Find("[data-testid=rr-fact-requirements]").TextContent.Should().Be("4");
         cut.Find("[data-testid=rr-fact-tested]").TextContent.Should().Be("3");
         cut.Find("[data-testid=rr-fact-executed]").TextContent.Should().Be("Not assessed", "a linked test is never counted as executed");
@@ -171,5 +172,44 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.Find("[data-testid=rr-tab-findings]").Click();
         cut.WaitForAssertion(() => api.Verify(a => a.GovernanceAsync("dev", GateAction.ReleaseReadiness,
             It.Is<IReadOnlyList<string>?>(m => m != null && m.SequenceEqual(new[] { "SkoleAdapter" })), It.IsAny<CancellationToken>()), Times.Once()));
+    }
+
+    // ── NEXT57: pre-freeze summary and the history inspector ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task History_shows_what_a_freeze_records_and_inspects_a_frozen_assessment_against_the_current_draft()
+    {
+        var api = await Setup();
+        var reportId = Guid.NewGuid();
+        var frozen = A(GateDecision.Blocked);
+        api.Setup(a => a.ReleaseReportsAsync("dev", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(([new ReleaseReadinessReportSummary(reportId, "Sprint 47", Now, GateDecision.Blocked, [], frozen.ScopeReference.InterpretationId, null)], (string?)null));
+        api.Setup(a => a.ReleaseReportAsync("dev", reportId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ReleaseReadinessReport(reportId, "Sprint 47", Now, frozen, []), (string?)null));
+        var cut = Render<ReleaseReadiness>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]"));
+        cut.Find("[data-testid=rr-tab-history]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-freeze-summary]").TextContent.Should().Contain("Entire project").And.Contain("Ready with limitations"));
+        cut.Find("[data-testid=rr-report-inspect]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-history-inspector]").TextContent.Should().Contain("Sprint 47"));
+        cut.Find("[data-testid=rr-compare-summary]").TextContent.Should().Contain("1 dimension changed").And.Contain("Result then: Blocked").And.Contain("now: Ready with limitations");
+        var governance = cut.FindAll("[data-testid=rr-compare-row]").Single(r => r.GetAttribute("data-key") == "Governance");
+        governance.GetAttribute("data-changed").Should().Be("true");
+        governance.TextContent.Should().Contain("Blocked").And.Contain("Ready");
+        cut.Find("[data-testid=rr-inspect-open]").GetAttribute("href").Should().Be($"release-readiness?report={reportId}");
+        api.Verify(a => a.FreezeReleaseAsync(It.IsAny<string>(), It.IsAny<FreezeReleaseReadinessRequest>(), It.IsAny<CancellationToken>()), Times.Never, "inspecting never freezes or changes anything");
+    }
+
+    [Fact]
+    public async Task The_executive_summary_groups_dimensions_by_applicability_with_a_state_legend()
+    {
+        await Setup();
+        var cut = Render<ReleaseReadiness>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=rr-dimensions]"));
+        cut.FindAll("[data-testid=rr-dim-group]").Select(g => g.GetAttribute("data-applicability")).Should().Equal("Required", "Optional");
+        cut.Find("[data-testid=rr-legend]").TextContent.Should().Contain("Ready").And.Contain("Ready with limitations").And.Contain("Blocked").And.Contain("Not assessed");
+        cut.FindAll("[data-testid=rr-metric]").Select(m => m.GetAttribute("data-key")).Should().Equal("packs", "requirements", "tested", "executed", "blocking", "decisions", "gaps");
+        cut.Find("[data-testid=rr-fact-packs]").TextContent.Should().Be("1");
     }
 }
