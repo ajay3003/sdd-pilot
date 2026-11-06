@@ -696,6 +696,7 @@
 
 @code {
     private BirkNext.Web.Services.Explorers.TraceabilityInputs? _inputs;
+    private DateTimeOffset? _evaluatedAt;
     /// <summary>The inputs the current report was built from (scope + selected artifact ids + content fingerprints).</summary>
     private string? _reportKey;
 
@@ -955,6 +956,7 @@
                 dataModelSemanticModel);
 
             _report = NormalizeReport(TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext));
+            _evaluatedAt = DateTimeOffset.UtcNow;
             _reportKey = _inputs.Key;
             DashboardSnapshot.Publish(_report);
             // A new analysis starts from the URL's view (deep link) rather than always resetting to Overview.
@@ -1019,7 +1021,9 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportArtifactTraceability(_report, _inputs?.ProjectDisplay ?? string.Empty);
+        var provenance = new TraceabilityExportProvenance(_inputs?.ModuleLabel,
+            _inputs?.PackSummary is { } pack ? $"{pack.DisplayName} ({pack.Pack})" : null, _inputs?.SourceLabel, _evaluatedAt);
+        var html = ExportService.ExportArtifactTraceability(_report, _inputs?.ProjectDisplay, provenance);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"artifact-traceability-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 

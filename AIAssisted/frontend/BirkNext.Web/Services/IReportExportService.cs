@@ -23,7 +23,7 @@ public interface IReportExportService
     string ExportClassificationReview(BirkNext.Integrations.ClassificationReviewResult result);
     string ExportPipelineReview(BirkNext.PipelineReview.PipelineReviewResult result) => throw new NotSupportedException();
     string ExportPerformanceReview(WasmPerformanceReviewReport report, string? projectName);
-    string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName);
+    string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName, TraceabilityExportProvenance? provenance = null);
     string ExportImplementationReview(AlignmentReport report, string? projectName, TaskAlignmentSnapshot? snapshot = null, TaskAlignmentCurrentness currentness = TaskAlignmentCurrentness.Current);
     string ExportDataModel(DataModelDocument document, string? projectName, string? layerLabel = null);
     string ExportDashboardSummary(

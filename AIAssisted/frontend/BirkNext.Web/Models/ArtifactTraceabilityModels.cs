@@ -253,6 +253,9 @@ public sealed class TraceabilityHealth
 
 // ── Report root ───────────────────────────────────────────────────────────────
 
+/// <summary>Where an exported traceability report came from: the inputs it was evaluated over and when (null = not captured, never guessed).</summary>
+public sealed record TraceabilityExportProvenance(string? Module, string? Pack, string? Source, DateTimeOffset? EvaluatedAt);
+
 public sealed class ArtifactTraceabilityReport
 {
     // Per-chain coverage stats

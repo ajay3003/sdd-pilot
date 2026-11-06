@@ -236,6 +236,18 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
         html.Should().NotContain("badge-missing\"").And.NotContain("badge badge-orphaned");
     }
 
+    [Fact]
+    public void Export_states_its_provenance_and_never_guesses_unknown_inputs()
+    {
+        var at = new DateTimeOffset(2026, 11, 6, 10, 30, 0, TimeSpan.Zero);
+        var html = new ReportExportService().ExportArtifactTraceability(Analyze(), "Access", new("M01", "Code 67 (code67)", "Sample project", at));
+        html.Should().Contain("data-provenance=\"traceability\"").And.Contain("Module: M01").And.Contain("Artifact pack: Code 67 (code67)")
+            .And.Contain("Evaluated: 2026-11-06 10:30 UTC").And.Contain("Policy:");
+
+        var bare = new ReportExportService().ExportArtifactTraceability(Analyze(), null);
+        bare.Should().Contain("Project: Not recorded").And.Contain("Module: Not recorded").And.Contain("Evaluated: Not recorded");
+    }
+
     // ── Downstream ────────────────────────────────────────────────────────
 
     [Fact]

@@ -904,9 +904,17 @@ public sealed class ReportExportService : IReportExportService
         return BuildHtml("Performance Review Report", projectName, subtitle, sb.ToString());
     }
 
-    public string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName)
+    public string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName, TraceabilityExportProvenance? provenance = null)
     {
         var sb = new StringBuilder();
+
+        // Provenance: what the numbers were evaluated over. Unknown stays "Not recorded" rather than being inferred.
+        static string Known(string? v) => string.IsNullOrWhiteSpace(v) ? "Not recorded" : v;
+        sb.Append("<p class=\"meta\" data-provenance=\"traceability\">")
+          .Append(Esc($"Project: {Known(projectName)} · Module: {Known(provenance?.Module)} · Artifact pack: {Known(provenance?.Pack)} · Artifact source: {Known(provenance?.Source)}"))
+          .Append(Esc($" · Evaluated: {(provenance?.EvaluatedAt is { } at ? at.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "Not recorded")}"))
+          .Append(Esc($" · Policy: {report.Policy.Description}"))
+          .Append("</p>\n");
 
         // Coverage KPIs
         sb.Append("<div class=\"kpi-row\">");
