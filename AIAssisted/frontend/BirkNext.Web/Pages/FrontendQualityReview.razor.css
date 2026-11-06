@@ -1560,3 +1560,8 @@
 ::deep .fqr-assessed-scope { display: block; margin-top: .25rem; }
 ::deep .fqr-coverage-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; margin: 0 0 .5rem; }
 ::deep .fqr-coverage-filters label { display: grid; gap: .15rem; font-size: .8rem; }
+
+.fqr-prerun-history { display: grid; gap: .35rem; justify-items: start; margin: 0 0 1rem; padding: .75rem 1rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; }
+.fqr-prerun-history-heading { margin: 0; font-size: 1rem; }
+.fqr-prerun-history .fqr-muted { margin: 0; }
+.fqr-prerun-history button { white-space: normal; text-align: left; }

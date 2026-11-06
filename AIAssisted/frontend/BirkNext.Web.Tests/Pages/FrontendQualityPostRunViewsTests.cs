@@ -444,6 +444,34 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
     }
 
     [Fact]
+    public async Task StoredRuns_AreReachableWithoutANewRun_LabelledHistorical_AndClosingNeverShowsThemAsCurrent()
+    {
+        var orchestrator = Register(withHistory: true);
+        var history = Services.GetRequiredService<FrontendQualityReviewHistory>();
+        await history.AddAsync(Context().ActiveProfile.Id, Report(requiredCompleted: false, completedAt: new DateTime(2026, 10, 21, 9, 59, 0, DateTimeKind.Utc)));
+        var page = Render<FrontendQualityReview>();
+
+        page.FindAll("[data-testid=fqr-result-summary]").Should().BeEmpty("nothing ran in this session");
+        var entry = page.Find("[data-testid=fqr-prerun-history]");
+        entry.TextContent.Should().Contain("Previous runs (1)").And.Contain("not current readiness");
+        page.Find("[data-testid=fqr-prerun-history-open]").TextContent.Should().Contain("2026-10-21 09:59 UTC").And.Contain("Blocked");
+
+        page.Find("[data-testid=fqr-prerun-history-open]").Click();
+        page.Find("[data-testid=fqr-history-opened]").TextContent.Should().Contain("Historical — not current readiness");
+        page.Find("[data-testid=fqr-release-label]").TextContent.Trim().Should().Be("Blocked");
+        page.Find("[data-testid=fqr-tab-history]").Click();
+        page.Find("[data-testid=fqr-history-run] [data-testid=fqr-history-showing]").Should().NotBeNull();
+
+        var close = page.Find("[data-testid=fqr-history-return]");
+        close.TextContent.Should().Be("Close stored run", "there is no run from this session to return to");
+        close.Click();
+        page.FindAll("[data-testid=fqr-result-summary]").Should().BeEmpty("a stored run is never shown without its historical label");
+        page.Find("[data-testid=fqr-landing]").Should().NotBeNull();
+        orchestrator.Verify(o => o.RunAsync(It.IsAny<string>(), It.IsAny<FrontendAnalysisContext>(), It.IsAny<FrontendQualityEngineExecutionSnapshot?>(), It.IsAny<CancellationToken>()),
+            Times.Never, "opening a stored run never starts a review");
+    }
+
+    [Fact]
     public async Task HistoryStore_KeepsTheNewestTenRunsPerTargetEnvironment_AndPersistsThemLocally()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;

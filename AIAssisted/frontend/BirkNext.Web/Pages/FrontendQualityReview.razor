@@ -54,6 +54,18 @@
             </div>
         }
 
+        @if (HistoryRuns.Count > 0 && HistoryRuns[0] is { } newestStored)
+        {
+            @* Stored runs stay reachable without starting a new review: opening one shows it exactly as it completed, labelled historical. *@
+            <section class="fqr-prerun-history" aria-labelledby="fqr-prerun-history-heading" data-testid="fqr-prerun-history">
+                <h2 id="fqr-prerun-history-heading" class="fqr-prerun-history-heading">Previous runs (@HistoryRuns.Count)</h2>
+                <p class="fqr-muted">Stored in this browser for this Target Environment. A stored run is historical evidence — it is not current readiness and is not recomputed against current settings.</p>
+                <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-prerun-history-open" @onclick="() => OpenHistoryRun(newestStored)">
+                    Open the newest stored run (@newestStored.CompletedAt.ToString("yyyy-MM-dd HH:mm") UTC · @FrontendQualityReviewHistory.DispositionLabel(newestStored.Disposition))
+                </button>
+            </section>
+        }
+
         <div class="fqr-landing" data-testid="fqr-landing">
 
             @*
@@ -346,8 +358,8 @@
         {
             <div class="wsr-banner wsr-banner-info wsr-banner-standalone fqr-history-banner" role="status" data-testid="fqr-history-opened">
                 <span aria-hidden="true">🕘</span>
-                <strong>Previous run</strong> — completed @opened.CompletedAt.ToString("yyyy-MM-dd HH:mm") UTC. This is the stored result exactly as it completed; it is not recomputed against current settings.
-                <button type="button" class="btn-secondary fqr-banner-dismiss" data-testid="fqr-history-return" @onclick="ReturnToLatestRun">Return to latest run</button>
+                <strong>Previous run</strong> — completed @opened.CompletedAt.ToString("yyyy-MM-dd HH:mm") UTC. This is the stored result exactly as it completed; it is not recomputed against current settings. Historical — not current readiness.
+                <button type="button" class="btn-secondary fqr-banner-dismiss" data-testid="fqr-history-return" @onclick="ReturnToLatestRun">@(RuntimeReviews.QualityReview.Report is null ? "Close stored run" : "Return to latest run")</button>
             </div>
         }
 
@@ -932,7 +944,7 @@
             <section class="fqr-section" aria-labelledby="fqr-history-heading" data-testid="fqr-history">
                 <div class="fqr-section-head">
                     <h2 id="fqr-history-heading">Previous runs</h2>
-                    <p class="fqr-section-note">The last @FrontendQualityReviewHistory.MaxRuns runs for this Target Environment, stored in this browser. Opening one shows its result as it completed.</p>
+                    <p class="fqr-section-note">The last @FrontendQualityReviewHistory.MaxRuns runs for this Target Environment, stored in this browser. Opening one shows its result as it completed. Each is historical evidence — not current readiness.</p>
                 </div>
                 @if (HistoryRuns.Count == 0)
                 {
@@ -1886,9 +1898,10 @@
         ClearIssueFilters();
     }
 
+    /// <summary>Back to this session's run; without one, back to setup — a stored run is never shown without its "Previous run" label.</summary>
     private void ReturnToLatestRun()
     {
-        _report = RuntimeReviews.QualityReview.Report ?? HistoryRuns.FirstOrDefault()?.Report;
+        _report = RuntimeReviews.QualityReview.Report;
         _openedHistoryEntry = null;
         _tab = FrontendQualityResultTab.Summary;
         ClearFilters();
