@@ -123,7 +123,9 @@ public sealed class EndpointObservationHistoryServiceTests : IDisposable
     public async Task Only_safe_metadata_is_persisted()
     {
         await Run("run-1", 0, observed: [Rest("GET", "/api/person/12345678901?token=abc&ssn=010101"), GraphQl("GetChildren")]);
-        var stored = JsonSerializer.Serialize(await _db.ObservedOperations.ToListAsync());
+        // Row ids are random GUIDs (hex can spell "abc"): masked, so every other stored field is still checked for the secret values.
+        var stored = System.Text.RegularExpressions.Regex.Replace(JsonSerializer.Serialize(await _db.ObservedOperations.ToListAsync()),
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "<id>");
         stored.Should().NotContain("12345678901").And.NotContain("token").And.NotContain("abc").And.NotContain("Bearer").And.NotContain("ssn");
         (await _db.ObservedOperations.SingleAsync(o => o.Protocol == "REST")).Path.Should().Be("/api/person/{id}");
     }

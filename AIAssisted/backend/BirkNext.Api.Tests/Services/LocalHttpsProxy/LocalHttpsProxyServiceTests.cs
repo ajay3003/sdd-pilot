@@ -248,7 +248,8 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         {
             Assert.DoesNotContain(token, message);
             Assert.DoesNotContain("eyJ", message);
-            Assert.DoesNotContain("abc", message);
+            // Random ids in a log line (GUIDs, hex) can spell "abc": masked, so the secret is still never allowed anywhere else in the line.
+            Assert.DoesNotContain("abc", System.Text.RegularExpressions.Regex.Replace(message, "[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}", "<id>"));
         }
         Assert.Contains(_log.Messages, m => m.Contains("Authenticated API context established"));
         var statusProperties = typeof(LocalHttpsProxyStatus).GetProperties().Select(p => p.Name);
