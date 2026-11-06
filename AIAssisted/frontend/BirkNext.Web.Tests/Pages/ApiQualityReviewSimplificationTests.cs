@@ -209,6 +209,22 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.Find("[data-testid=aqr-tabpanel]").TextContent.Should().NotContainEquivalentOf("schema verified").And.NotContainEquivalentOf("contract passed");
     }
 
+    [Fact]
+    public async Task Security_LinksSummaryToSections_StatesEvidenceKind_AndPointsToTheOneManualDecision()
+    {
+        var page = await Result();
+        Tab(page, "security");
+        page.Find("[data-testid=aqr-security-evidence-kind]").TextContent.Should().Contain("No static source analysis").And.Contain("authentication observed is not authorization verified");
+        page.FindAll("[data-testid=aqr-tabpanel] [data-testid=aqr-obligation-decision]").Should().BeEmpty("the decision form lives once, in Overview");
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-security-summary-link]").Click());
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && ((string)i.Arguments[0]!).StartsWith("aqr-sec-")));
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-security-manual-link]").Click());
+        page.Find("[data-testid=aqr-tabpanel]").GetAttribute("data-tab").Should().Be("Overview");
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "aqr-manual-heading"));
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

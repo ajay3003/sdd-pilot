@@ -587,7 +587,7 @@
 
                 @* Obligations, not defects: never added to issue or finding counts, never a warning or failure. *@
                 <section class="aqr-overview-section aqr-manual" data-testid="aqr-manual-review" aria-labelledby="aqr-manual-heading">
-                    <h3 id="aqr-manual-heading">@ApiReviewPostRunPresentation.ManualReviewLabel(report)</h3>
+                    <h3 id="aqr-manual-heading" tabindex="-1">@ApiReviewPostRunPresentation.ManualReviewLabel(report)</h3>
                     <p class="aqr-muted" data-testid="aqr-manual-count">@ApiReviewPresentation.ManualReviewAreas.Count areas remain outside the automated, read-only review. These are residual review obligations, not findings. @ApiReviewPostRunPresentation.ManualReviewAreasNote</p>
                     <ul class="aqr-manual-areas" data-testid="aqr-manual-areas">@foreach (var m in ApiReviewPresentation.ManualReviewAreas) { <li>@m</li> }</ul>
                     <ReviewDisclosure Text="View manual review details" CollapseText="Hide manual review details" TestId="aqr-limitations" Class="disclosure-inline disclosure-small">
@@ -1202,6 +1202,16 @@
 
     private void FocusTarget(string targetId) => _focusId = $"aqr-target-{targetId}";
 
+    /// <summary>The Security subsection a summary item describes (technology disclosure has no subsection of its own).</summary>
+    private static string? SecuritySection(string key) => key switch
+    {
+        "authentication" => "aqr-sec-auth-h",
+        "cors" => "aqr-sec-cors-h",
+        "headers" => "aqr-sec-headers-h",
+        "documentation" => "aqr-sec-docs-h",
+        _ => null,
+    };
+
     private ElementReference _reviewDetailsHeading;
     private bool _focusReviewDetails;
     private void ShowReviewDetails() { _tab = "Overview"; _focusReviewDetails = true; }
@@ -1373,12 +1383,18 @@
         <dl class="aqr-security-summary" data-testid="aqr-security-summary">
             @foreach (var (key, title, value) in ApiReviewPresentation.SecuritySummary(report))
             {
-                <div data-testid="aqr-security-summary-item" data-key="@key"><dt>@title</dt><dd>@value</dd></div>
+                <div data-testid="aqr-security-summary-item" data-key="@key">
+                    <dt>@if (SecuritySection(key) is { } section) { <button type="button" class="aqr-link-button" data-testid="aqr-security-summary-link" @onclick="() => _focusId = section">@title</button> } else { @title }</dt>
+                    <dd>@value</dd>
+                </div>
             }
         </dl>
+        <p class="aqr-muted" data-testid="aqr-security-evidence-kind"><strong>Evidence kind:</strong> runtime observations from the review's own read-only requests. No static source analysis is part of this review, and authentication observed is not authorization verified.</p>
+        <p class="aqr-muted" data-testid="aqr-security-manual"><strong>Manual assessment:</strong> authorization between roles and tenants is a manual review obligation; its recorded decision and history are kept once, in
+            <button type="button" class="aqr-link-button" data-testid="aqr-security-manual-link" @onclick='() => { _tab = "Overview"; _focusId = "aqr-manual-heading"; }'>Overview → Manual review</button>. A recorded decision never changes these results.</p>
         var enforcement = report.Targets.Where(t => t.AuthenticationEnforcement is not null).ToList();
         <section class="aqr-subsection" data-testid="aqr-security-authentication" aria-labelledby="aqr-sec-auth-h">
-            <h3 id="aqr-sec-auth-h">Authentication enforcement</h3>
+            <h3 id="aqr-sec-auth-h" tabindex="-1">Authentication enforcement</h3>
             <p class="aqr-muted" data-testid="aqr-auth-enforcement-note">One safe read-only request per authenticated target is repeated without any credential. Unauthenticated access rejected as expected confirms that authentication is required. It does not verify authorization correctness between identities or roles.</p>
             <p class="aqr-muted" data-testid="aqr-authorization-correctness"><strong>Authorization correctness:</strong> Not validated by this review — it needs explicit authorization checks with identity expectations.</p>
             @if (enforcement.Count == 0) { <p class="aqr-empty">No selected target requires authentication, so enforcement was not probed.</p> }
@@ -1406,7 +1422,7 @@
 
         var corsTargets = report.Targets.Where(t => t.CorsProbes.Count > 0).ToList();
         <section class="aqr-subsection" data-testid="aqr-security-cors" aria-labelledby="aqr-sec-cors-h">
-            <h3 id="aqr-sec-cors-h">CORS</h3>
+            <h3 id="aqr-sec-cors-h" tabindex="-1">CORS</h3>
             <p class="aqr-muted">Anonymous preflights from the frontend origin, configured allowed origins and one synthetic foreign origin (@BirkNext.RuntimeSecurity.CorsProbeRules.ForeignOrigin — never a real external site). This is the observed configuration: browser enforcement was not exercised. No CORS headers is not a network failure and not a finding by itself.</p>
             @if (corsTargets.Count == 0) { <p class="aqr-empty">No CORS preflights recorded for this review.</p> }
             @foreach (var t in corsTargets)
@@ -1448,7 +1464,7 @@
 
         var headerTargets = report.Targets.Where(t => t.SecurityHeaders.Count > 0).ToList();
         <section class="aqr-subsection" data-testid="aqr-security-headers" aria-labelledby="aqr-sec-headers-h">
-            <h3 id="aqr-sec-headers-h">Headers</h3>
+            <h3 id="aqr-sec-headers-h" tabindex="-1">Headers</h3>
             <p class="aqr-muted" data-testid="aqr-header-expectations-note">@(report.Policy.ExpectedSecurityHeaders is null ? "This review predates saved response-header expectations; BirkNext's default API headers (HSTS, X-Content-Type-Options) were required." : "Required header names come from the selected Target Environment's API review safety settings (presence only; no header values are stored). Document-level headers are assessed on the frontend document by FQR HTTP Security.")</p>
             @if (headerTargets.Count == 0) { <p class="aqr-empty">No response headers were assessed.</p> }
             @foreach (var t in headerTargets)
@@ -1475,7 +1491,7 @@
 
         var exposures = report.Targets.Where(t => t.DocumentationExposure is not null).GroupBy(t => t.DocumentationExposure!.Origin).Select(g => g.First()).ToList();
         <section class="aqr-subsection" data-testid="aqr-security-documentation" aria-labelledby="aqr-sec-docs-h">
-            <h3 id="aqr-sec-docs-h">Documentation exposure</h3>
+            <h3 id="aqr-sec-docs-h" tabindex="-1">Documentation exposure</h3>
             <p class="aqr-muted">Anonymous GETs of a few same-origin documentation paths, judged against the Target Environment's expectation. Public documentation is not a defect by itself; without a configured expectation the result is not a pass or a fail.</p>
             @if (exposures.Count == 0) { <p class="aqr-empty">Not verified — no documentation probes recorded.</p> }
             else
