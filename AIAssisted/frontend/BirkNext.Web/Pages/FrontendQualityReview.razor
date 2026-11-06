@@ -708,9 +708,9 @@
                                placeholder="Search findings..."
                                aria-label="Search findings"
                                value="@_findingSearch"
-                               @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
+                               @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" data-testid="fqr-finding-search" />
 
-                        <select class="form-control fqr-select" @bind="_severityFilterValue" @bind:after="ApplySeverityFilter" aria-label="Filter by severity">
+                        <select class="form-control fqr-select" @bind="_severityFilterValue" @bind:after="ApplySeverityFilter" aria-label="Filter by severity" data-testid="fqr-finding-filter-severity">
                             <option value="">All severities</option>
                             @foreach (var sev in Enum.GetValues<FrontendQualitySeverity>())
                             {
@@ -718,7 +718,7 @@
                             }
                         </select>
 
-                        <select class="form-control fqr-select" @bind="_categoryFilterValue" @bind:after="ApplyCategoryFilter" aria-label="Filter by category">
+                        <select class="form-control fqr-select" @bind="_categoryFilterValue" @bind:after="ApplyCategoryFilter" aria-label="Filter by category" data-testid="fqr-finding-filter-domain">
                             <option value="">All categories</option>
                             @foreach (var cat in Enum.GetValues<FrontendQualityCategory>())
                             {
@@ -728,9 +728,13 @@
 
                         @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrWhiteSpace(_findingSearch))
                         {
-                            <button type="button" class="btn-secondary" @onclick="ClearFilters">Clear</button>
+                            <button type="button" class="btn-secondary" @onclick="ClearFilters" data-testid="fqr-finding-clear">Clear</button>
                         }
                     </div>
+                    @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrWhiteSpace(_findingSearch))
+                    {
+                        <p class="fqr-muted fqr-filter-count" role="status" data-testid="fqr-findings-count">Showing @filtered.Count of @report.Findings.Count source findings</p>
+                    }
 
                     @if (filtered.Count == 0)
                     {
@@ -742,9 +746,9 @@
                             <table class="fqr-findings-table fqr-source-findings-table">
                                 <thead>
                                     <tr>
-                                        <th scope="col"><button type="button" @onclick='() => SortBy("severity")'>Severity @SortGlyph("severity")</button></th>
-                                        <th scope="col"><button type="button" @onclick='() => SortBy("category")'>Domain @SortGlyph("category")</button></th>
-                                        <th scope="col"><button type="button" @onclick='() => SortBy("title")'>Finding @SortGlyph("title")</button></th>
+                                        <th scope="col" aria-sort="@AriaSort("severity")"><button type="button" @onclick='() => SortBy("severity")' data-testid="fqr-finding-sort-severity">Severity <span aria-hidden="true">@SortGlyph("severity")</span></button></th>
+                                        <th scope="col" aria-sort="@AriaSort("category")"><button type="button" @onclick='() => SortBy("category")' data-testid="fqr-finding-sort-domain">Domain <span aria-hidden="true">@SortGlyph("category")</span></button></th>
+                                        <th scope="col" aria-sort="@AriaSort("title")"><button type="button" @onclick='() => SortBy("title")' data-testid="fqr-finding-sort-title">Finding <span aria-hidden="true">@SortGlyph("title")</span></button></th>
                                         <th scope="col">Evidence source</th>
                                         <th scope="col">Grouped into</th>
                                         <th scope="col">Recommendation</th>
@@ -769,7 +773,16 @@
                                                 <span class="fqr-finding-desc">@finding.Description</span>
                                             </td>
                                             <td data-label="Evidence source" data-testid="fqr-finding-evidence-source">@FrontendQualityPostRunPresentation.EvidenceSource(finding)</td>
-                                            <td data-label="Grouped into" data-testid="fqr-finding-grouped-into">@(FrontendQualityPostRunPresentation.IssueFor(groupedInto, finding)?.CanonicalTitle ?? "—")</td>
+                                            <td data-label="Grouped into" data-testid="fqr-finding-grouped-into">
+                                                @if (FrontendQualityPostRunPresentation.IssueFor(groupedInto, finding) is not { } owningIssue) { <span>—</span> }
+                                                else if (owningIssue.IsActionable)
+                                                {
+                                                    @* The issue's one full card is in Issues: open it there (filters cleared so it is visible) and focus it. *@
+                                                    <button type="button" class="fqr-link-button" data-testid="fqr-finding-open-issue" data-logical-id="@owningIssue.LogicalId"
+                                                            aria-label="@($"Open issue {owningIssue.CanonicalTitle} in Issues")" @onclick="() => OpenIssue(owningIssue)">@owningIssue.CanonicalTitle</button>
+                                                }
+                                                else { <span>@owningIssue.CanonicalTitle <span class="fqr-muted">(@(owningIssue.Derived ? "derived indicator" : "observation") — listed below)</span></span> }
+                                            </td>
                                             <td data-label="Recommendation">@finding.Recommendation</td>
                                         </tr>
                                     }
@@ -1791,10 +1804,11 @@
     private void OpenTab(FrontendQualityResultTab tab)
     {
         _tab = tab;
-        _focusPanel = tab;
+        _focusId = $"fqr-tabpanel-{FrontendQualityPostRunPresentation.TabId(tab)}";
     }
 
-    private FrontendQualityResultTab? _focusPanel;
+    /// <summary>The element to focus after the next render (an opened panel or an issue card).</summary>
+    private string? _focusId;
 
     [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
     private FrontendQualityResultTab? _urlTab;
@@ -1808,10 +1822,10 @@
     /// <summary>Writes the result tab to the URL after the user changes it (replace: no history entry per click).</summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_focusPanel is { } focus)
+        if (_focusId is { } focus)
         {
-            _focusPanel = null;
-            try { await JS.InvokeVoidAsync("birknextFocusElement", $"fqr-tabpanel-{FrontendQualityPostRunPresentation.TabId(focus)}"); } catch (JSException) { }
+            _focusId = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", focus); } catch (JSException) { }
         }
         if (_report is null || _urlTab == _tab) return;
         _urlTab = _tab;
@@ -1976,7 +1990,19 @@
     }
 
     private string SortGlyph(string column) =>
-        _sortColumn != column ? "" : _sortDescending ? "v" : "^";
+        _sortColumn != column ? "" : _sortDescending ? "▼" : "▲";
+
+    /// <summary>The sorted column's direction for assistive technology (the glyph is hidden from it); other columns carry none.</summary>
+    private string? AriaSort(string column) =>
+        _sortColumn != column ? null : _sortDescending ? "descending" : "ascending";
+
+    /// <summary>From a source finding to its logical issue's one full card in Issues.</summary>
+    private void OpenIssue(FrontendQualityLogicalIssue issue)
+    {
+        ClearIssueFilters();
+        _tab = FrontendQualityResultTab.Issues;
+        _focusId = BirkNext.Web.Components.FrontendQualityLogicalIssues.AnchorId(issue.LogicalId);
+    }
 
     private IEnumerable<FrontendQualityFinding> FilteredFindings(IReadOnlyList<FrontendQualityFinding> all)
     {

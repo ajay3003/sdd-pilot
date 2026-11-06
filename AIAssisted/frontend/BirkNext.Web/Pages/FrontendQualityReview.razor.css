@@ -1565,3 +1565,7 @@
 .fqr-prerun-history-heading { margin: 0; font-size: 1rem; }
 .fqr-prerun-history .fqr-muted { margin: 0; }
 .fqr-prerun-history button { white-space: normal; text-align: left; }
+
+.fqr-link-button { background: none; border: 0; padding: 0; color: var(--clr-link, #1d4ed8); text-decoration: underline; cursor: pointer; text-align: left; font: inherit; overflow-wrap: anywhere; }
+.fqr-link-button:focus-visible { outline: 2px solid var(--clr-focus, #1d4ed8); outline-offset: 2px; }
+.fqr-filter-count { margin: .25rem 0 .5rem; }

@@ -266,6 +266,42 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
     }
 
     [Fact]
+    public void ASourceFinding_OpensItsOneIssueCard_AndDerivedRowsAreNotLinkedToIssues()
+    {
+        var page = Result(RealisticReport());
+        var evidence = page.Find("[data-testid=fqr-tabpanel-evidence]");
+        var links = evidence.QuerySelectorAll("[data-testid=fqr-finding-open-issue]");
+        links.Should().NotBeEmpty();
+        evidence.QuerySelectorAll("[data-testid=fqr-source-finding][data-origin=Derived] [data-testid=fqr-finding-open-issue]").Should().BeEmpty("a derived indicator has no card in Issues");
+        evidence.QuerySelectorAll("[data-testid=fqr-source-finding][data-origin=Derived] [data-testid=fqr-finding-grouped-into]")
+            .Should().OnlyContain(cell => cell.TextContent.Contains("listed below"));
+
+        page.Find("[data-testid=fqr-issue-search]").Input("zzz"); // a filter that would hide the card is cleared on the way
+        var logicalId = links[0].GetAttribute("data-logical-id")!;
+        page.Find("[data-testid=fqr-finding-open-issue]").Click();
+        page.Find("[data-testid=fqr-tab-issues]").GetAttribute("aria-selected").Should().Be("true");
+        page.Find($"[data-testid=fqr-tabpanel-issues] [data-logical-id='{logicalId}']").Should().NotBeNull();
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement"
+            && (string)i.Arguments[0]! == BirkNext.Web.Components.FrontendQualityLogicalIssues.AnchorId(logicalId)));
+    }
+
+    [Fact]
+    public void SourceFindingSort_IsExposedToAssistiveTechnology_AndAFilterStatesItsCount()
+    {
+        var page = Result(RealisticReport());
+        page.FindAll("[data-testid=fqr-tabpanel-evidence] th[aria-sort]").Should().ContainSingle().Which.GetAttribute("aria-sort").Should().Be("ascending");
+        page.Find("[data-testid=fqr-finding-sort-title]").Click();
+        page.Find("[data-testid=fqr-finding-sort-title]").ParentElement!.GetAttribute("aria-sort").Should().Be("ascending");
+        page.Find("[data-testid=fqr-finding-sort-title]").Click();
+        page.Find("[data-testid=fqr-finding-sort-title]").ParentElement!.GetAttribute("aria-sort").Should().Be("descending");
+
+        page.FindAll("[data-testid=fqr-findings-count]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-finding-search]").Input("Contrast");
+        var rows = page.FindAll("[data-testid=fqr-source-finding]").Count;
+        page.Find("[data-testid=fqr-findings-count]").TextContent.Should().Be($"Showing {rows} of {RealisticReport().Findings.Count} source findings");
+    }
+
+    [Fact]
     public void FullIssueCards_HaveOneAnchorEach_AndCompactSummaryCopiesHaveNone()
     {
         var page = Result(RealisticReport());
