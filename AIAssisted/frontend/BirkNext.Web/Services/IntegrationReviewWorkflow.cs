@@ -50,16 +50,15 @@ public static class IntegrationReviewWorkflow
             : open.Count > 0
                 ? new("resolve", "Resolve integration setup", GuidedStepState.Current, $"{open.Count} need your decision",
                     $"{subjects - open.Count} of {subjects} resolved from evidence. Open decisions: a consumer mapping to confirm, missing or ambiguous source evidence, an unbound source or an ambiguous contract. Nothing is decided for you.",
-                    Evidence: mappings is null ? null : $"Consumer mappings: {mappings.Value}. Evidence checks never confirm a mapping.",
-                    ActionLabel: mappings?.ActionLabel ?? "Open Setup & Evidence", Href: mappings?.ActionHref ?? x.ViewHref(IntegrationReviewPrerunPresentation.SetupView))
+                    Evidence: mappings is null ? null : $"Consumer mappings: {mappings.Value}. Evidence checks never confirm a mapping. The action is in the list below.",
+                    ActionLabel: mappings is null ? "Open Setup & Evidence" : null, Href: mappings is null ? x.ViewHref(IntegrationReviewPrerunPresentation.SetupView) : null)
                 : new("resolve", "Resolve integration setup", GuidedStepState.Done, "No open decision", $"All {subjects} integrations are resolved from evidence (resolved is not runtime verified)."));
 
         steps.Add(subjects == 0
             ? new("contracts", "Configure contracts", GuidedStepState.Waiting, "Not assessed", "Contracts apply to integrations in scope.")
             : contracts is not null
                 ? new("contracts", "Configure contracts", GuidedStepState.Current, $"Contracts: {contracts.Value}",
-                    "Without a contract the review cannot compare payloads with an agreed schema; it can still run with this limitation.",
-                    ActionLabel: contracts.ActionLabel, Href: contracts.ActionHref)
+                    "Without a contract the review cannot compare payloads with an agreed schema; it can still run with this limitation. The action is in the list below.")
                 : new("contracts", "Configure contracts", GuidedStepState.Done, "Contract evidence available", "Every topic in scope has a configured contract or Test Pack contract evidence."));
 
         steps.Add(!r.CanRun
@@ -75,10 +74,10 @@ public static class IntegrationReviewWorkflow
             ? new("verify", "Test & verify", GuidedStepState.Waiting, "Not known", "Active verification readiness could not be read.",
                 ActionLabel: "Open Test & Verify", Href: x.ViewHref(IntegrationReviewPrerunPresentation.TestView))
             : x.ExecutionAllowed != true
-                ? new("verify", "Test & verify", GuidedStepState.Blocked, $"{ready} of {total} journeys executable",
+                ? new("verify", "Test & verify", GuidedStepState.Blocked, $"{ready} of {total} journeys executable (environment-wide)",
                     "Active verification is separate from the static review and is not enabled for this environment; reviews and evidence never enable it.",
                     ActionLabel: "Open Test & Verify", Href: x.ViewHref(IntegrationReviewPrerunPresentation.TestView))
-                : new("verify", "Test & verify", ready > 0 ? GuidedStepState.Waiting : GuidedStepState.Blocked, $"{ready} of {total} journeys executable",
+                : new("verify", "Test & verify", ready > 0 ? GuidedStepState.Waiting : GuidedStepState.Blocked, $"{ready} of {total} journeys executable (environment-wide)",
                     ready > 0 ? "Executable journeys still need their own prerequisites and an explicit confirmation; nothing runs from this page."
                         : "No journey has its execution prerequisites yet (test data, endpoints, authentication).",
                     ActionLabel: "Open Test & Verify", Href: x.ViewHref(IntegrationReviewPrerunPresentation.TestView)));

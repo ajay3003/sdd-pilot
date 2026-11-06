@@ -62,7 +62,7 @@ public static class IntegrationReviewDecisions
     /// <param name="journeys">Active-verification journeys (total, executable) — never part of the review decision.</param>
     public static IqrRunDecision Of(IntegrationReviewReadiness? r, bool loading, string? error, (int Total, int Ready)? journeys, string? profileId)
     {
-        var active = journeys is not { } j ? "Not known" : j.Total == 0 ? "No journeys" : j.Ready > 0 ? $"{j.Ready} / {j.Total} journeys executable" : $"Unavailable — 0 / {j.Total} journeys executable";
+        var active = journeys is not { } j ? "Not known" : j.Total == 0 ? "No journeys" : j.Ready > 0 ? $"{j.Ready} / {j.Total} journeys executable (environment-wide)" : $"Unavailable — 0 / {j.Total} journeys executable (environment-wide)";
         if (r is null)
             return loading || error is null
                 ? new(ReviewDecision.Assessing, AssessingTitle, "Reading project evidence, Integration Topology, Connected Systems, the Integration Catalog, contracts and runtime evidence.", 0, "—", "—", active, [], [])

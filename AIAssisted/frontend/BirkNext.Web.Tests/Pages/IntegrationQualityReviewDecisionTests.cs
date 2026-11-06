@@ -154,7 +154,7 @@ public sealed class IntegrationQualityReviewDecisionTests : BunitContext
     {
         var d = IntegrationReviewDecisions.Of(Readiness(true, new IntegrationDomainReadinessRow(IntegrationReviewDomain.Configuration, IntegrationDomainReadiness.Ready, "")), false, null, (3, 0), "dev");
         d.Decision.Should().NotBe(ReviewDecision.Blocked);
-        d.ActiveExecution.Should().Be("Unavailable — 0 / 3 journeys executable");
+        d.ActiveExecution.Should().Be("Unavailable — 0 / 3 journeys executable (environment-wide)", "journey counts span the whole environment, not this integration");
         d.Limitations.Should().Contain(l => l.StartsWith("Active execution unavailable"));
     }
 

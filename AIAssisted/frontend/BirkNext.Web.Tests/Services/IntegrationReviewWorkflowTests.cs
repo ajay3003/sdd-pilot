@@ -41,7 +41,7 @@ public sealed class IntegrationReviewWorkflowTests
         resolve.StatusLabel.Should().Be("9 need your decision");
         resolve.Explanation.Should().Contain("16 of 25 resolved from evidence");
         resolve.Evidence.Should().Contain("never confirm a mapping");
-        resolve.Href.Should().Be("/catalog&focus=mappings");
+        resolve.Href.Should().BeNull("the attention list below already links to the mappings; no duplicate action");
         Step(steps, "contracts").StatusLabel.Should().Be("Contracts: Not configured");
         Step(steps, "contracts").State.Should().Be(GuidedStepState.Waiting, "one current step");
         var review = Step(steps, "static");
@@ -65,7 +65,7 @@ public sealed class IntegrationReviewWorkflowTests
     {
         var r = new IntegrationReviewReadiness { CanRun = true, Headline = "Ready", Subjects = [Subject("a")] };
         Step(Derive(r, total: 3, ready: 0, allowed: false), "verify").State.Should().Be(GuidedStepState.Blocked);
-        Step(Derive(r, total: 3, ready: 0, allowed: false), "verify").StatusLabel.Should().Be("0 of 3 journeys executable");
+        Step(Derive(r, total: 3, ready: 0, allowed: false), "verify").StatusLabel.Should().Be("0 of 3 journeys executable (environment-wide)");
         var allowed = Step(Derive(r, total: 3, ready: 2, allowed: true), "verify");
         allowed.State.Should().Be(GuidedStepState.Waiting);
         allowed.Explanation.Should().Contain("explicit confirmation").And.Contain("nothing runs from this page");
