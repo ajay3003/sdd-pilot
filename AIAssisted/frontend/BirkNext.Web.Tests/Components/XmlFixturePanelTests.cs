@@ -842,4 +842,36 @@ public sealed class XmlFixturePanelTests : BunitContext
         panel.WaitForAssertion(() => backend.Binds.Should().HaveCount(2));
         panel.Find("[data-testid=xf-xml]").GetAttribute("value").Should().NotBe(edited);
     }
+
+    // ── XML fixture workflow: generation mode, reset to generated, what Save creates ────────────────────────────────────────
+
+    [Fact]
+    public void Placeholder_generation_is_labelled_as_not_test_data_and_manual_edits_can_be_reset()
+    {
+        Setup(Context(Xsd()));
+        var panel = GeneratedAndValid();
+        panel.Find("[data-testid=xf-generation-mode]").GetAttribute("data-mode").Should().Be("synthetic");
+        panel.Find("[data-testid=xf-generation-mode]").TextContent.Should().Contain("generated placeholders").And.Contain("not test data until mapped");
+        var generated = panel.Find("[data-testid=xf-xml]").GetAttribute("value")!;
+        panel.FindAll("[data-testid=xf-reset-generated]").Should().BeEmpty("nothing to reset before a manual edit");
+
+        panel.Find("[data-testid=xf-xml]").Input(generated.Replace("<Skolenaervaer", "<Skolenaervaer "));
+        panel.Find("[data-testid=xf-validation]").GetAttribute("data-state").Should().Be("Needs validation", "an edit invalidates the earlier validation");
+        panel.Find("[data-testid=xf-reset-generated]").Click();
+        panel.Find("[data-testid=xf-xml]").GetAttribute("value").Should().Be(generated);
+        panel.Find("[data-testid=xf-validation]").GetAttribute("data-state").Should().Be("Not run", "the restored XML is validated again, never assumed valid");
+        panel.FindAll("[data-testid=xf-manual-edit]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Save_says_what_it_creates_and_never_overwrites_an_existing_alias()
+    {
+        var existing = new TestDataAssetSummary { Id = "schema-studio:taken", Alias = "skolenaervaer-valid-report", Kind = TestDataKind.Structured, MediaType = "application/xml" };
+        Setup(Context(Xsd()));
+        var panel = GeneratedAndValid([.. Defaults, existing]);
+        panel.Find("[data-testid=xf-alias]").Input("skolenaervaer-valid-report");
+        panel.Find("[data-testid=xf-save-target]").TextContent.Should().Contain("already exists").And.Contain("skolenaervaer-valid-report-2").And.Contain("never overwrites");
+        panel.Find("[data-testid=xf-alias]").Input("brand-new-fixture");
+        panel.Find("[data-testid=xf-save-target]").TextContent.Should().Be("Saves a new fixture brand-new-fixture (not approved).");
+    }
 }

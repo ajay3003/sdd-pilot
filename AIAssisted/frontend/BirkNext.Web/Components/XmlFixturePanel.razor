@@ -367,6 +367,10 @@
                             <div><dt>Generated from</dt><dd data-testid="xf-sum-xsd">@CurrentXsd(context)?.File</dd></div>
                             <div><dt>Source snapshot</dt><dd data-testid="xf-sum-snapshot">@CurrentXsd(context)?.ArchiveFileName · snapshot @CurrentXsd(context)?.SnapshotId.ToString()[..8]</dd></div>
                             <div><dt>Mappings</dt><dd data-testid="xf-sum-mappings">@_appliedMappings applied</dd></div>
+                            @{ var placeholders = FieldRows(context, current).Count(r => r.State == XmlFieldState.Synthetic); }
+                            <div><dt>Generation</dt><dd data-testid="xf-generation-mode" data-mode="@(placeholders > 0 ? "synthetic" : "mapped")">@(placeholders > 0
+                                ? $"Schema-valid XML with {placeholders} required field{(placeholders == 1 ? "" : "s")} filled by generated placeholders — not test data until mapped"
+                                : "Required fields come from mappings or approved Test Data")</dd></div>
                             @foreach (var binding in context.FixtureBindings)
                             {
                                 <div><dt>@binding.Role</dt><dd data-testid="xf-sum-role" data-role="@binding.Role">@(Aliases(context).GetValueOrDefault(binding.Role) ?? "—")@(binding.ElementPath is null ? " · submission context, not in XML" : "")</dd></div>
@@ -377,6 +381,7 @@
                         <textarea id="xf-xml" class="form-control xf-xml" rows="14" spellcheck="false" data-testid="xf-xml" value="@_xml" @oninput="Edited"></textarea>
                         <div class="xf-actions xf-editor-tools" data-testid="xf-editor-tools">
                             <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-format" disabled="@(_busy || WellFormed().Error is not null)" @onclick="Format">Format XML</button>
+                            @if (_manualEdit && _generatedXml is not null) { <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-reset-generated" disabled="@_busy" @onclick="ResetToGenerated">Reset to generated XML</button> }
                             <button type="button" class="btn btn-secondary btn-sm" data-testid="xf-copy" @onclick="CopyAsync">Copy</button>
                             <a class="btn btn-secondary btn-sm" data-testid="xf-download" download="@($"{(_alias is { Length: > 0 } a ? a : "fixture")}.xml")" href="@($"data:application/xml;charset=utf-8,{Uri.EscapeDataString(_xml)}")">Download</a>
                             @if (_copied) { <span class="xf-muted" role="status">Copied to the clipboard.</span> }
@@ -424,7 +429,8 @@
                             <label>Alias <input class="form-control" data-testid="xf-alias" @bind="_alias" @bind:event="oninput" /></label>
                         }
                         <button type="button" class="btn btn-primary btn-sm" data-testid="xf-save-button" disabled="@(_busy || _validation != "Valid" || !AsVersion && string.IsNullOrWhiteSpace(_alias))" @onclick="SaveAsync">@(AsVersion ? "Save as draft version" : "Save XML fixture")</button>
-                        @if (_validation != "Valid") { <span class="xf-muted" data-testid="xf-save-help"> Validate the XML first: only a schema-valid fixture is saved here (negative cases belong in Schema Studio).</span> }
+                        @if (_validation != "Valid") { <span class="xf-muted" data-testid="xf-save-help">Validate the XML first: only a schema-valid fixture is saved here (negative cases belong in Schema Studio).</span> }
+                        <p class="xf-muted xf-small" data-testid="xf-save-target">@SaveTargetText()</p>
                     </fieldset>
                 }
             </section>
@@ -900,6 +906,23 @@
 
     private void Failed(string error, Func<Task> retry, string label) { _error = error; _retry = retry; _retryLabel = label; }
 
+    /// <summary>The XML exactly as last generated; manual edits can be undone back to it (validation then runs again on the restored XML).</summary>
+    private string? _generatedXml;
+
+    private void ResetToGenerated()
+    {
+        if (_generatedXml is null) return;
+        _xml = _generatedXml; _manualEdit = false; _validation = "Not run"; _issues = []; _dirty = true; _confirmReplace = false;
+    }
+
+    /// <summary>What Save will create, before it is pressed: a draft version of the same asset, a new fixture, or a new fixture under a free alias.</summary>
+    private string SaveTargetText() => AsVersion
+        ? $"Saves a new draft version of {_versionOf}. The approved version stays in use until you approve the draft."
+        : string.IsNullOrWhiteSpace(_alias) ? "Enter an alias to save."
+        : Assets.Any(a => string.Equals(a.Alias, _alias.Trim(), StringComparison.Ordinal))
+            ? $"{_alias.Trim()} already exists. Saving creates a separate new fixture, {XmlValueMappings.FreeAlias(_alias.Trim(), Assets)} — it never overwrites the existing one. To update it instead, use Regenerate on that fixture."
+            : $"Saves a new fixture {_alias.Trim()} (not approved).";
+
     /// <summary>A changed XML is no longer the validated one.</summary>
     private void Edited(ChangeEventArgs e) { _xml = e.Value?.ToString() ?? ""; _validation = "Needs validation"; _issues = []; _manualEdit = true; _dirty = true; _copied = false; }
 
@@ -934,10 +957,11 @@
             if (problems.Count > 0) { _error = $"Some mapped fields are not in the generated XML: {string.Join(" ", problems)}"; return; }
             // 4. Test Data assets are filled in by the backend by alias: their values never pass through this page.
             var bindings = mapped.Where(m => m.Kind == XmlValueSourceKind.TestDataAsset).Select(m => new TestDataXmlBinding(m.AssetAlias!, m.Path)).ToList();
-            if (bindings.Count == 0) { _xml = applied; _validation = "Not run"; return; }
+            if (bindings.Count == 0) { _xml = applied; _generatedXml = applied; _validation = "Not run"; return; }
             var (bound, bindProblems) = await TestDataApiService.Resolve(Services).BindXmlFixtureAsync(new TestDataXmlBindRequest(applied, bindings));
             if (bound is null) { _error = $"Test Data values could not be filled in: {string.Join(" ", bindProblems)}"; return; }
             _xml = bound;
+            _generatedXml = bound;
             _validation = "Not run";
         }
         catch (InvalidDataException ex) { _error = ex.Message; }
