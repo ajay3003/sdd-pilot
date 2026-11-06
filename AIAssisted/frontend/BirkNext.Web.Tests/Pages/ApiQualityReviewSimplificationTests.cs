@@ -225,6 +225,20 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "aqr-manual-heading"));
     }
 
+    [Fact]
+    public async Task Errors_HasAHeadingAndIntro_AndKeepsNotExecutedApartFromFailures()
+    {
+        var page = await Result();
+        Tab(page, "errors");
+        page.Find("#aqr-errors-heading").TextContent.Should().Be("Error handling");
+        page.Find("[data-testid=aqr-errors-intro]").TextContent.Should().Contain("never a failure and never a pass");
+        var counts = page.FindAll("[data-testid=aqr-errors-counts] li");
+        if (counts.Count == 0)
+            page.Find("[data-testid=aqr-errors-empty]").TextContent.Should().Contain("Not assessed");
+        else
+            counts.Select(c => c.GetAttribute("data-result")).Should().Equal("Fail", "Warning", "Pass", "NotTested");
+    }
+
     // ── Pre-run decision ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

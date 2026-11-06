@@ -795,7 +795,28 @@
                 {
                     @RenderContracts(report, domainChecks, areas)
                 }
-                else { @RenderChecks(domainChecks, areas) }
+                else
+                {
+                    @* Errors: observed errors (failures and warnings of executed checks) are kept apart from checks that were not executed. *@
+                    <section class="aqr-subsection" aria-labelledby="aqr-errors-heading" data-testid="aqr-errors">
+                        <h3 id="aqr-errors-heading">Error handling</h3>
+                        <p class="aqr-muted" data-testid="aqr-errors-intro">How the reviewed services answer unknown routes, unsupported methods and failures, from the review's own read-only requests. A check that was not executed is Not tested — never a failure and never a pass.</p>
+                        @if (domainChecks.Count == 0)
+                        {
+                            <p class="aqr-empty" data-testid="aqr-errors-empty">No error-handling check ran in this review, so error handling is Not assessed.</p>
+                        }
+                        else
+                        {
+                            <ul class="aqr-errors-counts" data-testid="aqr-errors-counts" aria-label="Error-handling checks by result">
+                                <li data-result="Fail">Observed failures: @domainChecks.Count(c => c.Result == ApiReviewCheckResult.Fail)</li>
+                                <li data-result="Warning">Warnings: @domainChecks.Count(c => c.Result == ApiReviewCheckResult.Warning)</li>
+                                <li data-result="Pass">No issue observed: @domainChecks.Count(c => c.Result == ApiReviewCheckResult.Pass)</li>
+                                <li data-result="NotTested">Not tested (not executed): @domainChecks.Count(c => c.Result is ApiReviewCheckResult.NotTested or ApiReviewCheckResult.Blocked)</li>
+                            </ul>
+                            @RenderChecks(domainChecks, areas)
+                        }
+                    </section>
+                }
                 @RenderFindingSummary(report.Findings.Where(f => areas.Contains(f.Type)).ToList(), "in this area", () => ShowFindings(area: _tab))
             }
             </div>
