@@ -423,7 +423,10 @@ public static class TestDataValueVersions
         var recorded = Parse(fixture.Provenance.FirstOrDefault(p => p.Label == Label)?.Value);
         if (recorded.Count == 0) return [];
         var byAlias = current.GroupBy(a => a.Alias, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        return [.. recorded.Where(r => !byAlias.TryGetValue(r.Key, out var asset) || asset.ValueVersion != r.Value)
-            .Select(r => (r.Key, !byAlias.ContainsKey(r.Key)))];
+        // The shared freshness rule over the recorded value version: Stale when the asset changed, Missing when it is gone.
+        return [.. recorded.Select(r => (r.Key, Freshness: BirkNext.Evidence.EvidenceFreshnessRules.Of(r.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    byAlias.TryGetValue(r.Key, out var asset) ? asset.ValueVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) : null, byAlias.ContainsKey(r.Key))))
+            .Where(r => r.Freshness != BirkNext.Evidence.EvidenceFreshness.Current)
+            .Select(r => (r.Key, r.Freshness == BirkNext.Evidence.EvidenceFreshness.Missing))];
     }
 }

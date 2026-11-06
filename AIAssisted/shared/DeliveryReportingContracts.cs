@@ -755,3 +755,18 @@ public static class DeliveryReportStories
     public static string TaskProgress(int completed, int total, bool hasTaskList) =>
         !hasTaskList ? "No task list found — progress cannot be derived from tasks" : total == 0 ? "Task list has no checkbox tasks" : $"{completed}/{total} tasks checked";
 }
+
+/// <summary>
+/// Delivery metric definitions shared wherever two views mean the same thing (Delivery Overview / Reports in the browser and the backend weekly
+/// report). Metrics with different meanings stay separate on purpose: "attention" (the weekly report counts every item; the comparison KPI only
+/// feature-level, non-encoding items), "completed" (all tasks checked) versus "declared done" (an explicit Status: Done), and "verified" (never
+/// derived from a checklist — Not assessed without test evidence).
+/// </summary>
+public static class DeliveryMetrics
+{
+    public const string ChecklistVersion = "checklist/1";
+
+    /// <summary>Checklist completion: checked ÷ all checklist tasks in scope, truncated to a whole percent (never shows 100 % before every task is
+    /// checked). Null when there are no tasks — "no checklist", never 0 %.</summary>
+    public static int? ChecklistPercent(long completed, long total) => total <= 0 ? null : (int)(100 * completed / total);
+}
