@@ -17,7 +17,8 @@
             @foreach (var issue in Issues)
             {
                 <li class="fqr-issue fqr-issue-@issue.PrimarySeverity.ToString().ToLowerInvariant()"
-                    data-testid="fqr-logical-issue" data-logical-id="@issue.LogicalId" data-severity="@issue.PrimarySeverity">
+                    data-testid="fqr-logical-issue" data-logical-id="@issue.LogicalId" data-severity="@issue.PrimarySeverity"
+                    id="@(Compact ? null : AnchorId(issue.LogicalId))" tabindex="@(Compact ? null : "-1")">
                     <div class="fqr-issue-head">
                         <span class="fqr-severity fqr-severity-@issue.PrimarySeverity.ToString().ToLowerInvariant()" data-testid="fqr-issue-severity"><span class="fqr-sr-label">Technical severity: </span>@issue.PrimarySeverity</span>
                         <span class="fqr-issue-title" data-testid="fqr-issue-title">@issue.CanonicalTitle</span>
@@ -158,6 +159,10 @@
     [Parameter] public bool Compact { get; set; }
     /// <summary>The release impact of each actionable issue, from the stored report's blockers. Omitted: no impact is shown.</summary>
     [Parameter] public Func<FrontendQualityLogicalIssue, FrontendQualityReleaseImpact>? ImpactOf { get; set; }
+
+    /// <summary>The anchor of a full issue card (not the compact Summary copy), so other views can link to the one card of that issue.</summary>
+    public static string AnchorId(string logicalId) =>
+        "fqr-issue-" + new string([.. logicalId.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-')]);
 
     private readonly HashSet<string> _open = new(StringComparer.Ordinal);
     private void Toggle(string id) { if (!_open.Remove(id)) _open.Add(id); }

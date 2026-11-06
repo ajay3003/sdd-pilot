@@ -499,9 +499,13 @@
                     </select>
                     @if (IssueFiltersActive)
                     {
-                        <button type="button" class="btn-secondary" @onclick="ClearIssueFilters">Clear</button>
+                        <button type="button" class="btn-secondary" @onclick="ClearIssueFilters" data-testid="fqr-issue-clear">Clear</button>
                     }
                 </div>
+                @if (IssueFiltersActive)
+                {
+                    <p class="fqr-muted fqr-filter-count" role="status" data-testid="fqr-issues-count">Showing @visibleIssues.Count of @actionableIssues.Count logical issues@(Enum.TryParse<FrontendQualityCategory>(_issueDomain, out var domainFilter) ? $" · domain: {CategoryLabel(domainFilter)} (including issues also seen there)" : "")</p>
+                }
                 @if (actionableIssues.Count > 0 && visibleIssues.Count == 0)
                 {
                     <div class="fqr-empty-panel" data-testid="fqr-issues-filtered-empty">No logical issues match the current filter.</div>
@@ -1868,7 +1872,7 @@
     {
         ClearIssueFilters();
         _issueDomain = category.ToString();
-        _tab = FrontendQualityResultTab.Issues;
+        OpenTab(FrontendQualityResultTab.Issues);
     }
 
     private void ClearIssueFilters()

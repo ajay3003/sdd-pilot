@@ -246,6 +246,35 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
             .Should().OnlyContain(i => i.TextContent.Contains("Repeated authenticated API call"));
     }
 
+    [Fact]
+    public void AnAppliedIssueFilter_IsStated_WithHonestCounts_AndFocusMovesToTheIssues()
+    {
+        var page = Result(RealisticReport());
+        page.FindAll("[data-testid=fqr-issues-count]").Should().BeEmpty("no filter, no filter count");
+        var total = page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]").Length;
+
+        page.Find("[data-testid=fqr-domain-review-issues][data-category=Performance]").Click();
+        var shown = page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]").Length;
+        var count = page.Find("[data-testid=fqr-issues-count]");
+        count.GetAttribute("role").Should().Be("status");
+        count.TextContent.Should().Be($"Showing {shown} of {total} logical issues · domain: Performance (including issues also seen there)");
+        page.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "fqr-tabpanel-issues"));
+
+        page.Find("[data-testid=fqr-issue-clear]").Click();
+        page.FindAll("[data-testid=fqr-issues-count]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]").Length.Should().Be(total);
+    }
+
+    [Fact]
+    public void FullIssueCards_HaveOneAnchorEach_AndCompactSummaryCopiesHaveNone()
+    {
+        var page = Result(RealisticReport());
+        var full = page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]");
+        full.Should().OnlyContain(card => card.Id == BirkNext.Web.Components.FrontendQualityLogicalIssues.AnchorId(card.GetAttribute("data-logical-id")!) && card.GetAttribute("tabindex") == "-1");
+        full.Select(card => card.Id).Should().OnlyHaveUniqueItems();
+        page.Find("[data-testid=fqr-tabpanel-summary]").QuerySelectorAll("[data-testid=fqr-logical-issue]").Should().OnlyContain(card => string.IsNullOrEmpty(card.Id));
+    }
+
     // 30, 41, 44, 75, 76. Raw evidence, the engine diagnostics, the scores and the technical details are all kept and all closed.
     [Fact]
     public void EveryDiagnosticSurfaceIsRetainedAndCollapsed()
