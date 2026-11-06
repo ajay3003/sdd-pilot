@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 
 namespace BirkNext.Api.Services.LocalSecurity;
@@ -8,8 +10,8 @@ namespace BirkNext.Api.Services.LocalSecurity;
 /// The local-session bootstrap (docs/security/localhost-session-design-2026-11-06.md). A launch code — 60 random bits, shown by the launcher from
 /// <c>App_Data/local-session/launch-code.txt</c>, never logged, never in a URL, static file or command line — is exchanged once per browser for an
 /// HttpOnly, SameSite=Strict session cookie. Only session hashes are kept, in memory: an API restart forgets every session (the tester enters the
-/// same code again); rotating the code revokes them all. A process running as the same Windows user can read the code file: this protects against
-/// other machines, other users and web pages — not against a compromised same-user process.
+/// same code again); rotating the code revokes them all. The code file and its folder are owner-only (an explicit ACL, never inherited): this
+/// protects against other machines, other local users and web pages — not against a compromised same-user process.
 /// </summary>
 public sealed class LocalSessionService
 {
@@ -38,6 +40,8 @@ public sealed class LocalSessionService
         _clock = clock;
         _logger = logger;
         Directory.CreateDirectory(directory);
+        // Owner-only before the code is read or written; re-applied on every start, so an install created before this rule is repaired.
+        RestrictToCurrentUser(directory, isDirectory: true);
         _codePath = System.IO.Path.Combine(directory, "launch-code.txt");
         _code = ReadOrCreateCode();
         // The path, never the code.
@@ -122,7 +126,47 @@ public sealed class LocalSessionService
     {
         var temp = _codePath + ".tmp";
         File.WriteAllText(temp, code);
+        RestrictToCurrentUser(temp, isDirectory: false);
         File.Move(temp, _codePath, overwrite: true);
+        RestrictToCurrentUser(_codePath, isDirectory: false);
+    }
+
+    /// <summary>
+    /// The launch code is readable by its owner only. Without an explicit ACL the folder inherited its parent's: under C:\ (the documented
+    /// "extract to a short folder such as C:\BirkNext") that grants Authenticated Users modify access, so another local account could read the
+    /// code and open a session. Windows: a protected DACL (no inheritance) with the current user and SYSTEM only. Elsewhere: 0700 / 0600.
+    /// </summary>
+    internal static void RestrictToCurrentUser(string path, bool isDirectory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var user = identity.User ?? throw new InvalidOperationException("The current Windows user has no SID.");
+            var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+            if (isDirectory)
+            {
+                var security = new DirectorySecurity();
+                security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var sid in new[] { user, system })
+                    security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(path).SetAccessControl(security);
+            }
+            else
+            {
+                var security = new FileSecurity();
+                security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var sid in new[] { user, system })
+                    security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl, AccessControlType.Allow));
+                new FileInfo(path).SetAccessControl(security);
+            }
+        }
+        else
+        {
+            File.SetUnixFileMode(path, isDirectory
+                ? UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                : UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 
     private static string NewCode()
